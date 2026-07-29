@@ -1,0 +1,771 @@
+#!/usr/bin/env python3
+"""Measure Anthropic's pre-dictionary circuit toolkit on the matched decoder panel.
+
+Three measurements run per arm, each testing an assumption the toolkit inherits
+from text:
+
+1. an induction / copying head census, on repeated-token probes built from the
+   arm's own unigram distribution and, separately, on real sequences that contain
+   a genuine internal repeat -- once under an exact-repeat criterion and once
+   under a substitution-tolerant one;
+2. direct logit attribution of the correct-next-token logit onto the embedding
+   and every attention and MLP sublayer;
+3. an activation-patching map over (component kind, layer, patched position) with
+   a sweep of the perturbation-to-read-out distance.
+
+The two natural-repeat probes are both reported and neither is preferred.  The
+exact probe is the one the panel's headline was measured on; the approximate
+probe exists because Pomerants et al., arXiv:2602.23179 v5, show that on protein
+language models approximate-repeat detection subsumes exact-repeat detection, so
+an exact probe measures a special case -- and a special case that BPE text
+supplies far more readily than protein sequence does.  Whether the head-count
+deficit between the two modalities survives the change of probe is the
+measurement; the difference between the two columns is the evidence, so a run
+that produced only one of them would answer nothing.
+
+The output is one JSON per arm plus a panel summary.  Runs are validation-scale
+by default; nothing here is a production sweep.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from collections.abc import Sequence
+from dataclasses import replace
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import torch
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from src.transfer.io import write_json  # noqa: E402
+from src.transfer.arms import (  # noqa: E402
+    MATCHED_PAIR,
+    PANEL,
+    Arm,
+    Cohort,
+    load_arm,
+    protein_cohort,
+    symbols_per_token,
+    text_cohort,
+    tokenize_batch,
+)
+from src.transfer.circuits import (  # noqa: E402
+    DISTANCE_BANDS,
+    INDUCTION_THRESHOLDS,
+    PROTEIN_APPROXIMATE_CRITERION,
+    PROTEIN_EXACT_CRITERION,
+    SCHEMA_VERSION,
+    TEXT_APPROXIMATE_CRITERION,
+    TEXT_EXACT_CRITERION,
+    RepeatCriterion,
+    Unigram,
+    activation_patching,
+    attention_alignment_scores,
+    build_patch_cases,
+    direct_logit_attribution,
+    fit_unigram,
+    head_census,
+    induction_headline,
+    matched_copying_scores,
+    n_head,
+    natural_repeat_probes,
+    ov_copying_scores,
+    protein_repeat_cohort,
+    summarise_head_matrix,
+    summarise_patching,
+    synthetic_repeat_probes,
+    text_repeat_cohort,
+    top_heads,
+    verify_head_decomposition,
+)
+
+DEFAULT_OUTPUT = REPO_ROOT / "results/transfer_20260728/circuit_primitives"
+SECTIONS = ("induction", "attribution", "patching")
+
+#: The two natural-repeat probes, in the order they are reported.  ``exact`` is
+#: first because it is the baseline the approximate probe has to be read against.
+REPEAT_PROBES = ("exact", "approximate")
+
+
+def verify_outputs(directory: Path, names: Sequence[str]) -> None:
+    """Fail loudly if an expected artifact is missing or is not this schema.
+
+    The results root is shared with other measurement tracks that recreate it,
+    so a run that reports success without its artifacts on disk would be a false
+    success.
+    """
+
+    broken: list[str] = []
+    for path in [directory / f"{name}.json" for name in names] + [
+        directory / "panel_summary.json"
+    ]:
+        if not path.is_file():
+            broken.append(f"{path}: missing")
+            continue
+        with path.open(encoding="utf-8") as handle:
+            payload = json.load(handle)
+        if payload.get("schema_version") != SCHEMA_VERSION:
+            broken.append(f"{path}: unexpected schema_version")
+    if broken:
+        raise RuntimeError("output verification failed: " + "; ".join(broken))
+
+
+def cohort_record(cohort: Cohort) -> dict[str, Any]:
+    """Cohort provenance, including the criterion and census when it has one.
+
+    A repeat cohort's criterion travels with every artefact it appears in.  Two
+    induction censuses differing only in whether their repeats were exact are not
+    comparable without it, and a digest alone does not say which is which.
+    """
+
+    record: dict[str, Any] = {
+        "name": cohort.name,
+        "kind": cohort.kind,
+        "digest": cohort.digest,
+        "n_records": len(cohort),
+        "min_symbols": cohort.min_symbols,
+        "max_symbols": cohort.max_symbols,
+        "source": cohort.metadata.get("source"),
+    }
+    for key in (
+        "criterion",
+        "census",
+        "cohort_identity_fraction_mean",
+        "cohort_identity_fraction_min",
+        "cohort_repeat_length_mean",
+        "cohort_mean_blosum62_substituted",
+    ):
+        if key in cohort.metadata:
+            record[key] = cohort.metadata[key]
+    return record
+
+
+def grant_circuits(arm: Arm) -> bool:
+    """Locally declare the ``circuits`` capability for one arm.
+
+    ``arms.py`` withholds ``circuits`` from an arm this module cannot decompose.
+    When the module gains that ability the declaration is the panel's to update,
+    not this script's, so the override is explicit, opt-in per arm, and recorded
+    in the output rather than assumed. It is a statement that the decomposition
+    has been verified for this architecture -- which
+    :func:`verify_head_decomposition` then checks on every run -- not a way of
+    getting past a refusal.
+    """
+
+    if arm.supports("circuits"):
+        return False
+    arm.spec = replace(arm.spec, capabilities=arm.spec.capabilities | {"circuits"})
+    return True
+
+
+def arm_record(arm: Arm, attn_implementation: str, circuits_granted: bool) -> dict[str, Any]:
+    spec = arm.spec
+    return {
+        "circuits_capability_granted_by_runner": circuits_granted,
+        "architecture": spec.architecture,
+        "name": spec.name,
+        "path": str(spec.path),
+        "modality": spec.modality,
+        "n_layer": spec.n_layer,
+        "d_model": spec.d_model,
+        "n_head": n_head(arm),
+        "tokenisation": spec.tokenisation,
+        "input_format": spec.input_format,
+        "source": spec.source,
+        "dtype": arm.dtype,
+        "device": arm.device,
+        "attn_implementation": attn_implementation,
+        "matched_pair_member": spec.name in MATCHED_PAIR,
+    }
+
+
+def repeat_criteria(modality: str, args: argparse.Namespace) -> dict[str, RepeatCriterion]:
+    """The exact and approximate criteria for one modality, with the unit from the CLI.
+
+    Only ``min_unit`` is exposed.  The substitution cap, the two-occurrence,
+    no-indel scope and the BLOSUM62 similarity rule are fixed in
+    :mod:`src.transfer.circuits` from the prior work's stated scope and are
+    deliberately not tunable from a command line: a criterion that can be moved
+    per run is a criterion that will be moved until the answer is convenient.
+    """
+
+    declared = {
+        "text": (TEXT_EXACT_CRITERION, TEXT_APPROXIMATE_CRITERION, args.text_repeat_unit),
+        "protein": (
+            PROTEIN_EXACT_CRITERION,
+            PROTEIN_APPROXIMATE_CRITERION,
+            args.protein_repeat_unit,
+        ),
+    }
+    if modality not in declared:
+        raise ValueError(f"unsupported modality {modality!r}")
+    exact, approximate, min_unit = declared[modality]
+    return {
+        "exact": replace(exact, min_unit=min_unit),
+        "approximate": replace(approximate, min_unit=min_unit),
+    }
+
+
+def build_cohorts(modality: str, args: argparse.Namespace) -> dict[str, Cohort]:
+    """Analysis cohort plus one repeat cohort per criterion, for one modality.
+
+    Protein cohorts are drawn from the EC-labelled Swiss-Prot source so that a
+    single cohort serves ZymCTRL and the unconditional protein arms, keeping the
+    digest identical across the protein arms.  Both repeat cohorts are built here
+    and shared across every arm of the modality, so the exact and approximate
+    columns of the panel differ in the criterion and in nothing else.
+    """
+
+    criteria = repeat_criteria(modality, args)
+    cohorts: dict[str, Cohort] = {}
+    if modality == "text":
+        cohorts["analysis"] = text_cohort(args.cohort_size, min_chars=args.text_min_chars)
+        for label, criterion in criteria.items():
+            cohorts[f"repeat_{label}"] = text_repeat_cohort(
+                repeat_cohort_size(label, args),
+                max_chars=args.text_repeat_chars,
+                criterion=criterion,
+                scan_documents=args.text_repeat_scan,
+                workers=args.repeat_scan_workers,
+                name=f"openwebtext_repeat_{label}",
+            )
+        return cohorts
+    if modality == "protein":
+        cohorts["analysis"] = protein_cohort(
+            args.cohort_size,
+            args.protein_min_len,
+            args.protein_max_len,
+            with_ec=True,
+            name="swissprot_ec_long",
+        )
+        for label, criterion in criteria.items():
+            cohorts[f"repeat_{label}"] = protein_repeat_cohort(
+                repeat_cohort_size(label, args),
+                min_len=args.repeat_min_len,
+                max_len=args.repeat_max_len,
+                criterion=criterion,
+                workers=args.repeat_scan_workers,
+                name=f"swissprot_repeat_{label}",
+            )
+        return cohorts
+    raise ValueError(f"unsupported modality {modality!r}")
+
+
+def repeat_cohort_size(label: str, args: argparse.Namespace) -> int:
+    """Records to draw for one criterion.
+
+    The two criteria may be run at different cohort sizes because their ceilings
+    differ by more than an order of magnitude: the exact criterion admits 48
+    proteins in the whole EC-labelled corpus, so a run that exercises the
+    approximate criterion's achievable cohort cannot also carry an equally large
+    exact cohort.  Sizes are therefore separable, and ``probe_comparison``
+    records whether a given run was size-matched, because an unmatched pair
+    answers "what does the approximate probe measure when it is given the data it
+    can have" and a matched pair answers "what does changing only the criterion
+    do".  Both are worth having and they are not the same question.
+    """
+
+    if label == "exact" or args.approximate_cohort_size is None:
+        return args.repeat_cohort_size
+    return args.approximate_cohort_size
+
+
+def run_induction(
+    arm: Arm,
+    cohorts: dict[str, Cohort],
+    unigram: Unigram,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    """Prefix-matching census plus the OV copying score for every head.
+
+    The natural-repeat census runs once per criterion on the same arm, the same
+    heads and the same copying scores, so the exact and approximate columns are a
+    paired comparison rather than two runs that happen to share a name.
+    """
+
+    analysis = cohorts["analysis"]
+    ec_label = None
+    if arm.spec.input_format == "ec_conditioned":
+        labels = analysis.metadata.get("ec_labels")
+        if not labels:
+            raise ValueError(f"{arm.name}: analysis cohort carries no EC labels")
+        ec_label = labels[0]
+
+    synthetic = synthetic_repeat_probes(
+        arm,
+        unigram,
+        n_probes=args.synthetic_probes,
+        copy_len=args.synthetic_copy_len,
+        seed=args.seed,
+        ec_label=ec_label,
+    )
+    decomposition_error = verify_head_decomposition(
+        arm,
+        arm.n_layer // 2,
+        torch.tensor([synthetic[0].input_ids], dtype=torch.long),
+    )
+    synthetic_scores = attention_alignment_scores(
+        arm, synthetic, batch_size=args.probe_batch_size
+    )
+
+    natural_scores: dict[str, dict[str, Any]] = {}
+    for label in REPEAT_PROBES:
+        cohort = cohorts[f"repeat_{label}"]
+        probes = natural_repeat_probes(arm, cohort, max_tokens=args.natural_max_tokens)
+        natural_scores[label] = attention_alignment_scores(
+            arm, probes, batch_size=args.natural_batch_size
+        )
+
+    support = unigram.token_ids[: args.copy_tokens]
+    copying = ov_copying_scores(arm, support)
+    matched = matched_copying_scores(
+        arm,
+        unigram.token_ids,
+        matched_n=args.copy_matched_n,
+        repeats=args.copy_matched_repeats,
+        seed=args.seed,
+    )
+
+    ranking = {
+        "prefix_matching_synthetic": synthetic_scores["scores"]["prefix_matching"],
+        "same_token_synthetic": synthetic_scores["scores"]["same_token"],
+        "offset_two_synthetic": synthetic_scores["scores"]["offset_two"],
+        "copy_diagonal_fraction": copying["diagonal_fraction"],
+        "copy_mean_normalised_rank": copying["mean_normalised_rank"],
+        "copy_matched_diagonal_fraction": matched["diagonal_fraction"],
+        "copy_matched_mean_normalised_rank": matched["mean_normalised_rank"],
+    }
+    for label in REPEAT_PROBES:
+        scores = natural_scores[label]["scores"]
+        ranking[f"prefix_matching_natural_{label}"] = scores["prefix_matching"]
+        ranking[f"same_token_natural_{label}"] = scores["same_token"]
+
+    result: dict[str, Any] = {
+        "ov_decomposition_relative_error": decomposition_error,
+        "synthetic_repeat": {
+            **{key: value for key, value in synthetic_scores.items() if key != "scores"},
+            "copy_len_tokens": args.synthetic_copy_len,
+            "census": head_census(synthetic_scores["scores"]["prefix_matching"]),
+            "same_token_distribution": _matrix_summary(
+                synthetic_scores["scores"]["same_token"], "same_token"
+            ),
+            "offset_two_distribution": _matrix_summary(
+                synthetic_scores["scores"]["offset_two"], "offset_two"
+            ),
+        },
+        "copying": {
+            "support_size": int(support.size),
+            "matched_support_size": args.copy_matched_n,
+            "matched_repeats": args.copy_matched_repeats,
+            "diagonal_fraction": _matrix_summary(
+                copying["diagonal_fraction"], "diagonal_fraction"
+            ),
+            "mean_normalised_rank": _matrix_summary(
+                copying["mean_normalised_rank"], "mean_normalised_rank"
+            ),
+            "matched_diagonal_fraction": _matrix_summary(
+                matched["diagonal_fraction"], "matched_diagonal_fraction"
+            ),
+            "matched_mean_normalised_rank": _matrix_summary(
+                matched["mean_normalised_rank"], "matched_mean_normalised_rank"
+            ),
+        },
+        "top_heads_synthetic": top_heads(
+            ranking, key="prefix_matching_synthetic", count=args.top_heads
+        ),
+        "per_head": {name: matrix.tolist() for name, matrix in ranking.items()},
+    }
+
+    for label in REPEAT_PROBES:
+        scores = natural_scores[label]
+        census = head_census(scores["scores"]["prefix_matching"])
+        result[f"natural_repeat_{label}"] = {
+            **{key: value for key, value in scores.items() if key != "scores"},
+            "cohort": cohort_record(cohorts[f"repeat_{label}"]),
+            "census": census,
+            "headline": induction_headline(
+                scores, census, threshold=args.headline_threshold
+            ),
+            "same_token_distribution": _matrix_summary(
+                scores["scores"]["same_token"], "same_token"
+            ),
+        }
+        result[f"top_heads_natural_{label}"] = top_heads(
+            ranking, key=f"prefix_matching_natural_{label}", count=args.top_heads
+        )
+    return result
+
+
+def _matrix_summary(values: np.ndarray, label: str) -> dict[str, Any]:
+    return summarise_head_matrix(values, label)
+
+
+def run_attribution(arm: Arm, analysis: Cohort, args: argparse.Namespace) -> dict[str, Any]:
+    strings = analysis.input_strings(arm)[: args.attribution_sequences]
+    ids, mask = tokenize_batch(arm, strings, args.attribution_max_tokens)
+    result = direct_logit_attribution(arm, ids, mask)
+    result["n_sequences"] = len(strings)
+    result["max_tokens"] = args.attribution_max_tokens
+    return result
+
+
+def run_patching(
+    arm: Arm, analysis: Cohort, unigram: Unigram, args: argparse.Namespace
+) -> dict[str, Any]:
+    strings = analysis.input_strings(arm)
+    cases = build_patch_cases(
+        arm,
+        strings,
+        unigram,
+        seq_len=args.patch_seq_len,
+        bands=DISTANCE_BANDS,
+        cases_per_band=args.patch_cases_per_band,
+        seed=args.seed + 1,
+    )
+    result = activation_patching(arm, cases, minimum_effect=args.patch_minimum_effect)
+    result["summary"] = summarise_patching(result, arm=arm)
+    return result
+
+
+def run_arm(
+    name: str, args: argparse.Namespace, cohorts: dict[str, dict[str, Cohort]]
+) -> dict[str, Any]:
+    started = time.time()
+    arm = load_arm(
+        name,
+        device=args.device,
+        dtype=args.dtype,
+        attn_implementation=args.attn_implementation,
+    )
+    circuits_granted = grant_circuits(arm) if name in args.grant_circuits else False
+    if arm.device.startswith("cuda"):
+        torch.cuda.reset_peak_memory_stats(arm.device)
+    modality_cohorts = cohorts[arm.modality]
+    analysis = modality_cohorts["analysis"]
+    strings = analysis.input_strings(arm)
+    unigram = fit_unigram(arm, strings, max_tokens=args.unigram_max_tokens)
+
+    payload: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "generated_utc": datetime.now(timezone.utc).isoformat(),
+        "arm": arm_record(arm, args.attn_implementation, circuits_granted),
+        "cohorts": {
+            label: cohort_record(cohort) for label, cohort in modality_cohorts.items()
+        },
+        "repeat_criteria": {
+            label: criterion.as_dict()
+            for label, criterion in repeat_criteria(arm.modality, args).items()
+        },
+        "seeds": {"master": args.seed, "patching": args.seed + 1},
+        "thresholds": {
+            "induction_prefix_matching": list(INDUCTION_THRESHOLDS),
+            "induction_headline_threshold": args.headline_threshold,
+            "induction_data_driven_sigma": 3.0,
+            "patch_minimum_effect_logits": args.patch_minimum_effect,
+            "ov_decomposition_relative_tolerance": 0.05,
+            "dla_reconstruction_relative_tolerance": 0.02,
+        },
+        "tokenisation": {
+            "symbols_per_token": symbols_per_token(
+                arm, strings[: args.cohort_size], args.unigram_max_tokens
+            ),
+            "unigram": unigram.summary(),
+        },
+        "sections": list(args.sections),
+    }
+
+    if "induction" in args.sections:
+        payload["induction"] = run_induction(arm, modality_cohorts, unigram, args)
+    if "attribution" in args.sections:
+        payload["direct_logit_attribution"] = run_attribution(arm, analysis, args)
+    if "patching" in args.sections:
+        payload["activation_patching"] = run_patching(arm, analysis, unigram, args)
+
+    payload["runtime_seconds"] = round(time.time() - started, 2)
+    payload["peak_gpu_bytes"] = (
+        int(torch.cuda.max_memory_allocated(arm.device))
+        if arm.device.startswith("cuda")
+        else 0
+    )
+
+    del arm
+    if args.device.startswith("cuda"):
+        torch.cuda.empty_cache()
+    return payload
+
+
+def panel_summary(results: dict[str, dict[str, Any]], args: argparse.Namespace) -> dict[str, Any]:
+    """The cross-arm reading: one row per arm with the headline of each measurement.
+
+    Every arm carries both natural-repeat probes, and ``probe_comparison`` puts
+    the two head-count fractions side by side per arm.  That ratio is the whole
+    question the approximate probe was built to answer, and leaving a reader to
+    divide two numbers out of a nested payload is how a comparison gets quoted
+    from the wrong column.
+    """
+
+    rows: dict[str, Any] = {}
+    for name, payload in results.items():
+        row: dict[str, Any] = {"modality": payload["arm"]["modality"]}
+        induction = payload.get("induction")
+        if induction is not None:
+            census = induction["synthetic_repeat"]["census"]
+            row["synthetic_repeat_head_mean"] = census["distribution"]["mean"]
+            row["synthetic_repeat_head_max"] = census["distribution"]["max"]
+            row["synthetic_repeat_n_above_0.10"] = census["count_above_threshold"]["0.10"]
+            row["synthetic_repeat_n_above_data_driven"] = census["count_above_data_driven"]
+            row["synthetic_repeat_uniform_baseline"] = induction["synthetic_repeat"][
+                "uniform_baseline"
+            ]
+            for label in REPEAT_PROBES:
+                probe = induction[f"natural_repeat_{label}"]
+                row[f"natural_repeat_{label}"] = {
+                    **probe["headline"],
+                    "cohort_digest": probe["cohort"]["digest"],
+                    "cohort_n_records": probe["cohort"]["n_records"],
+                    "cohort_census": probe["cohort"]["census"],
+                    "cohort_criterion": probe["cohort"]["criterion"],
+                    "head_mean": probe["census"]["distribution"]["mean"],
+                }
+            row["copy_matched_mean_rank"] = induction["copying"]["matched_mean_normalised_rank"][
+                "max"
+            ]
+            row["copy_matched_mean_rank_panel_mean"] = induction["copying"][
+                "matched_mean_normalised_rank"
+            ]["mean"]
+        attribution = payload.get("direct_logit_attribution")
+        if attribution is not None:
+            row["dla_pathway_magnitude_fraction"] = attribution["pathway_magnitude_fraction"]
+            row["dla_top1_share"] = attribution["concentration"]["top1_share"]
+            row["dla_participation_fraction"] = attribution["concentration"][
+                "participation_fraction"
+            ]
+            row["dla_logit_mean_absolute_error"] = attribution["logit_mean_absolute_error"]
+            row["dla_residual_relative_l2_error"] = attribution["residual_relative_l2_error"]
+        patching = payload.get("activation_patching")
+        if patching is not None:
+            row["patch_corruption_effect"] = {
+                band: values["mean_absolute_effect"]
+                for band, values in patching["corruption_effect"].items()
+            }
+            row["patch_eligible_fraction"] = {
+                band: values["eligible_cases"] / values["n_cases"]
+                for band, values in patching["corruption_effect"].items()
+            }
+            row["patch_best_resid_q"] = {
+                band: entry["best_mean"]
+                for band, entry in patching["summary"]["resid_post|q"].items()
+            }
+        rows[name] = row
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "generated_utc": datetime.now(timezone.utc).isoformat(),
+        "matched_pair": list(MATCHED_PAIR),
+        "arms": rows,
+        "probe_comparison": probe_comparison(rows),
+        "configuration": {key: value for key, value in sorted(vars(args).items()) if key != "output_dir"},
+    }
+
+
+def probe_comparison(rows: dict[str, Any]) -> dict[str, Any]:
+    """Exact against approximate, per arm, and every arm against the text reference.
+
+    ``deficit_versus_reference`` is the reference arm's fraction of heads above
+    threshold divided by this arm's, under each probe: the "five times fewer
+    induction heads" reading, recomputed per probe so that a change of probe
+    cannot be reported without the number it changed.  It is undefined rather
+    than infinite when an arm has no head above threshold, because a zero
+    numerator and a zero denominator carry different meanings and dividing them
+    would hide both.
+    """
+
+    reference = MATCHED_PAIR[0]
+    if reference not in rows:
+        return {"reference_arm": None, "note": f"{reference} not in this run"}
+    sizes = {
+        label: {
+            row[f"natural_repeat_{label}"]["cohort_n_records"]
+            for row in rows.values()
+            if f"natural_repeat_{label}" in row
+        }
+        for label in REPEAT_PROBES
+    }
+    comparison: dict[str, Any] = {
+        "reference_arm": reference,
+        "cohort_sizes": {label: sorted(value) for label, value in sizes.items()},
+        "size_matched": sizes[REPEAT_PROBES[0]] == sizes[REPEAT_PROBES[1]],
+        "arms": {},
+    }
+    for name, row in rows.items():
+        if f"natural_repeat_{REPEAT_PROBES[0]}" not in row:
+            continue
+        entry: dict[str, Any] = {}
+        for label in REPEAT_PROBES:
+            probe = row[f"natural_repeat_{label}"]
+            reference_fraction = rows[reference][f"natural_repeat_{label}"][
+                "fraction_above_threshold"
+            ]
+            entry[label] = {
+                "fraction_above_threshold": probe["fraction_above_threshold"],
+                "peak_over_uniform": probe["peak_over_uniform"],
+                "cohort_n_matching": probe["cohort_census"]["n_matching"],
+                "deficit_versus_reference": (
+                    reference_fraction / probe["fraction_above_threshold"]
+                    if probe["fraction_above_threshold"] > 0.0
+                    else None
+                ),
+            }
+        exact = entry[REPEAT_PROBES[0]]
+        approximate = entry[REPEAT_PROBES[1]]
+        entry["approximate_over_exact_fraction"] = (
+            approximate["fraction_above_threshold"] / exact["fraction_above_threshold"]
+            if exact["fraction_above_threshold"] > 0.0
+            else None
+        )
+        entry["approximate_over_exact_peak"] = (
+            approximate["peak_over_uniform"] / exact["peak_over_uniform"]
+        )
+        comparison["arms"][name] = entry
+    return comparison
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--arms", nargs="+", default=list(MATCHED_PAIR), choices=sorted(PANEL))
+    parser.add_argument("--sections", nargs="+", default=list(SECTIONS), choices=SECTIONS)
+    parser.add_argument(
+        "--grant-circuits",
+        nargs="*",
+        default=[],
+        choices=sorted(PANEL),
+        help=(
+            "Arms for which this runner declares the 'circuits' capability that "
+            "arms.py still withholds. Use only for an architecture whose per-head "
+            "decomposition circuits.py implements; verify_head_decomposition checks "
+            "it on every run and the grant is recorded in the output. Remove once "
+            "arms.py declares the capability itself."
+        ),
+    )
+    parser.add_argument("--device", default="cuda:0")
+    parser.add_argument("--dtype", default="bfloat16")
+    parser.add_argument("--attn-implementation", default="eager")
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--seed", type=int, default=20260728)
+
+    parser.add_argument("--cohort-size", type=int, default=24)
+    parser.add_argument("--protein-min-len", type=int, default=600)
+    parser.add_argument("--protein-max-len", type=int, default=1000)
+    parser.add_argument("--text-min-chars", type=int, default=3000)
+    parser.add_argument("--unigram-max-tokens", type=int, default=256)
+
+    parser.add_argument("--repeat-cohort-size", type=int, default=32)
+    parser.add_argument(
+        "--approximate-cohort-size",
+        type=int,
+        default=None,
+        help=(
+            "records in the approximate repeat cohort; defaults to "
+            "--repeat-cohort-size, which is the size-matched comparison"
+        ),
+    )
+    parser.add_argument("--repeat-min-len", type=int, default=200)
+    parser.add_argument("--repeat-max-len", type=int, default=800)
+    parser.add_argument("--protein-repeat-unit", type=int, default=16)
+    parser.add_argument("--text-repeat-chars", type=int, default=2000)
+    parser.add_argument("--text-repeat-unit", type=int, default=40)
+    parser.add_argument("--text-repeat-scan", type=int, default=3000)
+    parser.add_argument("--natural-max-tokens", type=int, default=840)
+    parser.add_argument("--natural-batch-size", type=int, default=2)
+    # The repeat census is a full scan of the eligible corpus, not a scan that
+    # stops once the cohort is full, because the number of eligible records is
+    # what caps the cohort and it is reported. On the EC-labelled source that is
+    # two hundred thousand searches per criterion, so it is worth spreading.
+    parser.add_argument("--repeat-scan-workers", type=int, default=64)
+    parser.add_argument("--headline-threshold", type=float, default=0.10)
+
+    parser.add_argument("--synthetic-probes", type=int, default=16)
+    parser.add_argument("--synthetic-copy-len", type=int, default=64)
+    parser.add_argument("--probe-batch-size", type=int, default=4)
+    parser.add_argument("--copy-tokens", type=int, default=512)
+    parser.add_argument("--copy-matched-n", type=int, default=20)
+    parser.add_argument("--copy-matched-repeats", type=int, default=8)
+    parser.add_argument("--top-heads", type=int, default=10)
+
+    parser.add_argument("--attribution-sequences", type=int, default=8)
+    parser.add_argument("--attribution-max-tokens", type=int, default=256)
+
+    parser.add_argument("--patch-seq-len", type=int, default=128)
+    parser.add_argument("--patch-cases-per-band", type=int, default=32)
+    parser.add_argument("--patch-minimum-effect", type=float, default=0.25)
+
+    args = parser.parse_args()
+    if len(set(args.arms)) != len(args.arms):
+        raise ValueError("duplicate arms requested")
+    if args.patch_seq_len <= DISTANCE_BANDS[-1][1] + 2:
+        raise ValueError("patch sequence length must exceed the widest distance band")
+    if args.repeat_scan_workers < 1:
+        raise ValueError("repeat scan needs at least one worker")
+    if args.approximate_cohort_size is not None and args.approximate_cohort_size < 1:
+        raise ValueError("approximate cohort size must be positive")
+    if f"{args.headline_threshold:.2f}" not in {f"{v:.2f}" for v in INDUCTION_THRESHOLDS}:
+        raise ValueError(
+            f"headline threshold {args.headline_threshold} is not one of the census "
+            f"thresholds {list(INDUCTION_THRESHOLDS)}"
+        )
+    return args
+
+
+def main() -> None:
+    args = parse_args()
+    if args.device.startswith("cuda") and not torch.cuda.is_available():
+        raise RuntimeError(f"{args.device} was requested but no CUDA device is present")
+    torch.manual_seed(args.seed)
+
+    # Cohorts first, and before any checkpoint is loaded: the repeat census forks
+    # a process pool, and forking a process that has already initialised a CUDA
+    # context is a class of failure that shows up as a hang rather than an error.
+    modalities = {PANEL[name].modality for name in args.arms}
+    cohorts = {modality: build_cohorts(modality, args) for modality in sorted(modalities)}
+    for modality, built in sorted(cohorts.items()):
+        for label in REPEAT_PROBES:
+            census = built[f"repeat_{label}"].metadata["census"]
+            print(
+                f"[cohort] {modality} {label}: {census['n_matching']} matching of "
+                f"{census['scanned_eligible']} eligible "
+                f"({census['match_rate']:.5%}), cohort of "
+                f"{len(built[f'repeat_{label}'])}",
+                flush=True,
+            )
+
+    results: dict[str, dict[str, Any]] = {}
+    for name in args.arms:
+        payload = run_arm(name, args, cohorts)
+        write_json(args.output_dir / f"{name}.json", payload)
+        results[name] = payload
+        print(
+            f"[{name}] done in {payload['runtime_seconds']}s, "
+            f"peak {payload['peak_gpu_bytes'] / 2**30:.1f} GiB",
+            flush=True,
+        )
+
+    # Re-emit every artifact together at the end: the results root is shared and
+    # is recreated by other tracks, so a per-arm write made ten minutes ago may
+    # no longer be on disk.
+    for name, payload in results.items():
+        write_json(args.output_dir / f"{name}.json", payload)
+    write_json(args.output_dir / "panel_summary.json", panel_summary(results, args))
+    verify_outputs(args.output_dir, sorted(results))
+    print(f"wrote {args.output_dir}", flush=True)
+
+
+if __name__ == "__main__":
+    main()

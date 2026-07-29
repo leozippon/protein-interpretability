@@ -1,0 +1,51 @@
+# SAE Training Configuration for ESM-2-3B
+# ==========================================
+
+# ESM-2 model (frozen, inference only)
+model:
+  name_or_path: "/Data/public/esm2_t36_3B_UR50D"
+  dtype: "float16"
+
+# Data
+data:
+  fasta_path: "/Data/lzp/BioInterpretebility-CC/data/uniref50/uniref50.fasta"
+  max_seq_len: 1022             # max amino acids per sequence (ESM-2 limit)
+  num_sequences: 5000000        # sample 5M from UniRef50
+  seed: 42
+  num_workers: 2                # reduced from 4 to lower system RAM usage
+
+# SAE architecture
+sae:
+  d_in: 2560                    # ESM-2-3B hidden size
+  d_sae: 16384                  # 6.4x expansion
+  k: 256                        # per-example TopK (k/d_sae=1.56%)
+  topk_mode: "example"          # per-example TopK
+  auxk_alpha: 0.25              # 1/4, auxiliary dead-feature loss weight
+  dead_feature_threshold: 1000000   # 1M tokens before feature considered dead
+  resample_every: 25000         # reinitialize dead features every 25K steps
+  normalize_activations: true   # per-token LayerNorm before SAE (critical for deeper layers)
+
+# Training
+training:
+  target_layer: 23              # 0-indexed, overridden by --layer CLI arg
+  layers_to_train: [19, 23, 27, 31, 35]  # remaining layers (3,7,11,15 done without normalization)
+  batch_size_tokens: 2048       # AA tokens per GPU per step
+  total_steps: 500000
+  lr: 0.0003                    # 3e-4
+  lr_warmup_steps: 5000
+  lr_decay_start: 250000        # cosine decay starts at 50%
+  grad_clip_norm: 1.0
+  threshold_beta: 0.999         # EMA decay for inference threshold
+  threshold_start_step: 1000
+
+# Checkpointing
+checkpoint:
+  save_dir: "/Data/lzp/BioInterpretebility-CC/r1_encoder_interpretability_benchmark/results/sae_weights"
+  save_every_steps: 10000
+  resume_from: null             # set to checkpoint dir path to resume
+
+# Logging
+logging:
+  wandb_project: "bio-interpretability"
+  wandb_entity: null
+  log_every_steps: 50

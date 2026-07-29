@@ -1,0 +1,1287 @@
+"""The matched model panel and its frozen evaluation cohorts.
+
+Every transfer measurement compares a text decoder against protein decoders, so
+the panel must be matched where it can be and its mismatches must be recorded
+rather than hidden. GPT-2-large and ProtGPT2 share depth, width and vocabulary
+size exactly, which makes that pair the controlled comparison; ZymCTRL and
+ProGen2-medium differ and their differences are declared in ``ArmSpec``.
+
+Cohorts are content-addressed. A cohort is a frozen, hashed list of sequences
+plus the per-arm input strings derived from it, so that two runs either use the
+same cohort or fail loudly.
+"""
+
+from __future__ import annotations
+
+import gzip
+import hashlib
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import torch
+from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+
+import os
+
+
+def env_path(variable: str, default: Path) -> Path:
+    """Read one input location from the environment, defaulting to the L20 host.
+
+    The same code runs on the local L20 host and inside H200 pods, which mount
+    their checkpoints and corpora elsewhere. Every location is therefore a named
+    variable whose default is the local value, so an unset environment
+    reproduces local behaviour exactly and relocating a host is a matter of
+    exports rather than of edits.
+
+    Existence is deliberately not checked here. A module-level check would make
+    importing the package depend on data that a given measurement never touches,
+    and would fail while a corpus is still being staged; it is checked at first
+    use instead, by :func:`require_input_path`.
+    """
+
+    return Path(os.environ.get(variable, str(default)))
+
+
+def require_input_path(path: Path, variable: str) -> Path:
+    """Fail on a missing input, naming the variable that relocates it.
+
+    A missing corpus or checkpoint has to stop the run, because both ways of
+    tolerating it are invisible in the numbers that follow. ``transformers``
+    treats an absent local directory as a Hub repository id and goes to the
+    network; a glob over a missing directory returns an empty list, which reads
+    downstream as "no eligible records" rather than as "wrong host".
+    """
+
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} does not exist; set {variable} to its location on this host"
+        )
+    return path
+
+
+#: Repository root. It is only a default for the corpora below, each of which
+#: carries its own variable, so a host that mounts data outside its checkout
+#: does not have to pretend that the two live together.
+REPO = env_path("R2_REPO_ROOT", Path("/Data/lzp/BioInterpretebility-CC"))
+MODEL_ROOT = env_path("R2_MODEL_BASE_DIR", Path("/Data/public/models_R2"))
+TEXT_MODEL_ROOT = env_path("R2_TEXT_MODEL_DIR", Path("/Data/public/gpt2-large"))
+#: Parent of the text checkpoints that are addressed by name rather than
+#: declared one by one: the ByGPT5 rungs below and the GPT-2 ladder in
+#: :mod:`src.transfer.scaling`.
+TEXT_MODEL_BASE = env_path("R2_TEXT_MODEL_BASE_DIR", Path("/Data/public"))
+OPENWEBTEXT = env_path(
+    "R2_OPENWEBTEXT_DIR", Path("/Data/public/datasets/openwebtext-screen/plain_text")
+)
+SWISSPROT_FASTA = env_path(
+    "R2_SWISSPROT_FASTA", REPO / "data/swissprot/uniprot_sprot.fasta.gz"
+)
+ZYMCTRL_FASTA = env_path(
+    "R2_ZYMCTRL_FASTA", REPO / "data/zymctrl/ec_labeled_swissprot.fasta"
+)
+
+#: Named in the failure message when an arm's checkpoint is absent. Which of the
+#: three applies depends on the arm, and an operator needs the candidate list
+#: rather than the one this module happened to resolve.
+_MODEL_PATH_VARIABLES = "R2_MODEL_BASE_DIR, R2_TEXT_MODEL_DIR or R2_TEXT_MODEL_BASE_DIR"
+
+AA20 = "ACDEFGHIKLMNPQRSTVWY"
+
+_DTYPES = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}
+
+#: Value of :attr:`ArmSpec.pretraining_corpus` for a checkpoint whose model card
+#: does not state its training corpus. It is a sentinel rather than a guess:
+#: inventing a corpus would put a false fact into every artefact that records the
+#: panel, and the corpus contrasts below are only valid between arms that declare
+#: one.
+PRETRAINING_UNDECLARED = "undeclared"
+
+#: How a cohort's records were drawn from their corpus. ``seeded_permutation``
+#: is the only mode Appendix B rule 1 of the transfer audit permits for a
+#: reported number; ``file_order`` is retained because several frozen artefacts
+#: were produced with it and must remain reproducible, and because a census over
+#: a whole corpus is order-independent. The mode is written into every cohort's
+#: metadata so that no artefact can be read without knowing which one produced
+#: it -- that invisibility, not the file order itself, is what manufactured an
+#: effect three times.
+SAMPLING_MODES = ("seeded_permutation", "file_order")
+
+#: Named in the sampling record of a file-order cohort so the hazard travels
+#: with the number rather than living only in a document.
+FILE_ORDER_HAZARD = (
+    "records are the first eligible entries of the corpus in file order; "
+    "biological corpora are grouped by family, so a head-of-file draw is a set "
+    "of near-clonal homologues rather than a sample. Pass seed= to draw under a "
+    "seeded permutation (transfer audit, Appendix B rule 1)"
+)
+
+
+#: Measurement families an arm can legitimately enter. These are capabilities,
+#: not preferences: an arm without a capability must raise rather than return a
+#: number that is not commensurate with the rest of the panel.
+CAPABILITIES = frozenset({"budget", "lens", "pathway", "circuits", "relational"})
+
+#: Architectures that follow the Llama module convention: a block list at
+#: ``model.layers``, attention at ``block.self_attn``, RMSNorm in place of
+#: LayerNorm, a gated feed-forward, grouped-query attention and rotary position
+#: embeddings in place of a learned position table. They are grouped here because
+#: the panel resolves all of them identically, and are still declared one by one
+#: on each :class:`ArmSpec` because they are different pretraining runs whose
+#: differences a downstream fit has to be able to separate.
+_ROTARY_DECODERS = frozenset({"llama", "qwen2"})
+
+#: Where each architecture keeps a block's attention submodule. Declared per
+#: architecture rather than found by trying attribute names in turn: a panel
+#: member whose attention cannot be named is a panel change that must be
+#: declared, and a search would silently resolve a new architecture to whichever
+#: candidate attribute happened to exist on it.
+_ATTENTION_ATTRIBUTE: dict[str, str] = {
+    "gpt2": "attn",
+    "progen": "attn",
+    **{architecture: "self_attn" for architecture in _ROTARY_DECODERS},
+}
+
+#: Architectures whose per-sublayer decomposition is commensurate with a
+#: standard causal decoder, derived from :data:`_ATTENTION_ATTRIBUTE` so that the
+#: two cannot drift apart. Reformer is deliberately absent: LSH attention and
+#: reversible layers mean its "attention share" and "residual stream" are not
+#: the same quantities the rest of the panel measures, and ByGPT5's T5 decoder is
+#: absent for the same kind of reason, its relative position bias and gated
+#: feed-forward making its sublayers different objects. Grouped-query attention
+#: is not such a reason: sharing one value projection across a group of query
+#: heads changes how a per-head decomposition must be built but not what the
+#: attention pathway is, and the pathway measurements ablate a whole sublayer
+#: output rather than a head.
+_DECOMPOSABLE = frozenset(_ATTENTION_ATTRIBUTE)
+
+
+@dataclass(frozen=True)
+class ArmSpec:
+    """Declared properties of one panel member.
+
+    ``capabilities`` encodes which measurement families this arm may enter. It
+    exists because the panel deliberately spans architectures in order to break
+    the modality/tokenisation collinearity, and that breadth is only safe if a
+    non-commensurate arm cannot silently reach a metric that assumes a standard
+    decoder. Prose caveats get lost; a raised exception does not.
+
+    **Two corpora, two fields.** This class used to carry one field named
+    ``source``, holding the corpus the arm's *evaluation cohort* is drawn from.
+    Every text arm carried ``"openwebtext"``, which is true of the cohort and
+    false of the pretraining data for six of the seven text arms -- and the bare
+    name ``source`` reads as provenance, so the field invited exactly the
+    misreading it could not support. The two facts are now separate fields:
+
+    ``evaluation_cohort_source``
+        The corpus this arm is *scored* on. It selects a rendering and a length
+        band and it is what makes two arms' cross-entropies comparable; it says
+        nothing about how the arm was trained.
+    ``pretraining_corpus``
+        The corpus the checkpoint was *trained* on, as stated by its own model
+        card, or :data:`PRETRAINING_UNDECLARED` where no card states one. This is
+        the field the corpus contrasts (:data:`MATCHED_DATA_CONTRAST`,
+        :data:`TEXT_DATA_CONTRAST`) are defined against, and the one an
+        interpretation like "the deficit is a property of the training data"
+        depends on.
+
+    ``source`` remains as a read-only alias of ``evaluation_cohort_source`` so
+    that frozen artefact schemas and existing runners keep working; it should not
+    be used in new code.
+    """
+
+    name: str
+    path: Path
+    modality: str
+    n_layer: int
+    d_model: int
+    tokenisation: str
+    input_format: str
+    evaluation_cohort_source: str
+    pretraining_corpus: str = PRETRAINING_UNDECLARED
+    architecture: str = "gpt2"
+    capabilities: frozenset[str] = CAPABILITIES
+
+    @property
+    def source(self) -> str:
+        """Deprecated alias of :attr:`evaluation_cohort_source`.
+
+        Kept because it is the spelling several frozen artefacts and runners
+        use. It is *not* the pretraining corpus and never was.
+        """
+
+        return self.evaluation_cohort_source
+
+
+PANEL: dict[str, ArmSpec] = {
+    "gpt2-large": ArmSpec(
+        name="gpt2-large",
+        path=TEXT_MODEL_ROOT,
+        modality="text",
+        n_layer=36,
+        d_model=1280,
+        tokenisation="bpe",
+        input_format="raw",
+        evaluation_cohort_source="openwebtext",
+        pretraining_corpus="webtext",
+    ),
+    "protgpt2": ArmSpec(
+        name="protgpt2",
+        path=MODEL_ROOT / "ProtGPT2",
+        modality="protein",
+        n_layer=36,
+        d_model=1280,
+        tokenisation="multi_residue_bpe",
+        input_format="fasta_wrapped",
+        evaluation_cohort_source="swissprot",
+        pretraining_corpus="uniref50",
+    ),
+    "zymctrl": ArmSpec(
+        name="zymctrl",
+        path=MODEL_ROOT / "ZymCTRL",
+        modality="protein",
+        n_layer=36,
+        d_model=1280,
+        tokenisation="residue",
+        input_format="ec_conditioned",
+        evaluation_cohort_source="zymctrl_ec",
+        pretraining_corpus="uniprot_ec_annotated",
+    ),
+    "progen2-medium": ArmSpec(
+        name="progen2-medium",
+        path=MODEL_ROOT / "progen2-medium",
+        modality="protein",
+        n_layer=27,
+        d_model=1536,
+        tokenisation="residue",
+        input_format="n_to_c_control",
+        evaluation_cohort_source="swissprot",
+        pretraining_corpus="uniref90_bfd30",
+    ),
+    # Architecturally identical to progen2-medium down to the parameter count
+    # (764,803,616), differing only in pretraining corpus. That makes the pair a
+    # controlled contrast on training data with architecture, scale and
+    # tokenisation all held fixed, which is the cleanest available test of
+    # whether an interpretability metric tracks data rather than modality.
+    "progen2-base": ArmSpec(
+        name="progen2-base",
+        path=MODEL_ROOT / "progen2-base",
+        modality="protein",
+        n_layer=27,
+        d_model=1536,
+        tokenisation="residue",
+        input_format="n_to_c_control",
+        evaluation_cohort_source="swissprot",
+        pretraining_corpus="progen2_base_mixture",
+    ),
+}
+
+# DialoGPT-small is GPT-2's architecture, GPT-2's tokenizer and GPT-2's size,
+# pretrained on conversational Reddit threads instead of WebText. It is therefore
+# the text-side analogue of the progen2-base/progen2-medium pair: corpus varies,
+# everything else is held. It exists here because the panel had three protein
+# arms spanning corpora, tokenisers and architectures against a single GPT-2
+# lineage on the text side, which left every cross-modality difference open to
+# the reading that it is a GPT-2-large idiosyncrasy rather than a modality one.
+PANEL["dialogpt-small"] = ArmSpec(
+    name="dialogpt-small",
+    # Addressed through TEXT_MODEL_BASE like every other checkpoint named rather
+    # than declared, so that a host which mounts its text models elsewhere moves
+    # this arm with the rest instead of failing on it alone.
+    path=TEXT_MODEL_BASE / "DialoGPT-small",
+    modality="text",
+    n_layer=12,
+    d_model=768,
+    tokenisation="bpe",
+    input_format="raw",
+    evaluation_cohort_source="openwebtext",
+    pretraining_corpus="reddit_dialogue",
+)
+
+# The within-lineage scale ladder, as measurable arms rather than only as
+# convergence-control rungs.
+#
+# These three checkpoints already existed in :data:`src.transfer.scaling.
+# DEFAULT_LADDER`, but a ``LadderMember`` is not an ``ArmSpec``: the ladder
+# feeds the convergence fit, and nothing in it can be handed to the circuit
+# census. That gap is why the induction-prevalence result is still confounded.
+# ``llama-3.2-3b`` is simultaneously the lowest-scoring text arm and the widest
+# and deepest, so "protein decoders have fewer induction heads" and "larger
+# decoders have a lower fraction" currently predict the same table.
+#
+# gpt2 / gpt2-medium / gpt2-large / gpt2-xl separate them, because they vary
+# scale over an order of magnitude -- 124M, 355M, 774M, 1558M; 12, 24, 36 and
+# 48 layers; 12, 16, 20 and 25 heads -- while holding architecture, the
+# 50257-piece BPE and the WebText corpus fixed. Whatever slope the induction
+# fraction has against scale is therefore measured with lineage controlled, and
+# it is measured *within* the text side, so it does not borrow identification
+# from the modality contrast it is meant to adjudicate. If the fraction is flat
+# or rising across this ladder, a scale explanation for the protein deficit is
+# refuted on the text side alone; if it falls steeply, the deficit must be
+# restated against a scale-matched expectation rather than against a mean.
+#
+# ProtGPT2 sits inside this ladder's range at 738M and 36x1280 -- the same
+# depth and width as gpt2-large -- so the ladder also yields a point prediction
+# for what ProtGPT2's fraction *should* be under a pure scale account.
+for _name, _dir, _n_layer, _d_model in (
+    ("gpt2", "gpt2", 12, 768),
+    ("gpt2-medium", "gpt2-medium", 24, 1024),
+    ("gpt2-xl", "gpt2-xl", 48, 1600),
+):
+    PANEL[_name] = ArmSpec(
+        name=_name,
+        path=TEXT_MODEL_BASE / _dir,
+        modality="text",
+        n_layer=_n_layer,
+        d_model=_d_model,
+        tokenisation="bpe",
+        input_format="raw",
+        evaluation_cohort_source="openwebtext",
+        pretraining_corpus="webtext",
+    )
+del _name, _dir, _n_layer, _d_model
+
+# Architecturally diverse text decoders. Every text arm above is one lineage:
+# GPT-2's architecture, GPT-2's 50257-piece BPE and either WebText or a Reddit
+# corpus scraped the same way, at five sizes. The protein side meanwhile spans
+# three architectures, two tokenisation families and four corpora, so a
+# text-versus-protein difference measured against that text side is not
+# separable from a GPT-2-versus-everything-else difference. These two arms exist
+# to make it separable, with models rather than with caveats.
+#
+# Both are rotary, RMSNorm, gated-feed-forward, grouped-query decoders -- a
+# family that postdates every other member of the panel -- from two different
+# laboratories, with byte-level BPE vocabularies two-and-a-half to three times
+# GPT-2's learned over corpora GPT-2 never saw. Their tokenisation *family* is
+# still ``bpe``, because a byte-level BPE over 128k or 152k pieces is the same
+# kind of object on the subword/symbol axis the design identifies against; what
+# they add is architecture, corpus and vocabulary scale, and the measured
+# characters-per-token is what says how much.
+#
+# Rotary position embeddings were audited rather than assumed harmless. Nothing
+# the granted capabilities touch reads a position table: `budget` and `pathways`
+# see only forward passes and module outputs, and the two places in
+# `src.transfer.circuits` that would care -- `direct_logit_attribution`, whose
+# embedding term is `transformer.drop`'s output and therefore the token plus
+# position sum, and `ov_copying_scores`, which reads `transformer.wte` and states
+# that it drops positional embeddings -- both raise on the missing `transformer`
+# attribute before reaching a position table. Position ids are the default
+# `arange` rather than a cumulative sum of the attention mask, so right padding
+# behaves exactly as it does for a learned table: pad positions sit after the
+# content and are masked out of every causal query.
+#
+# Three further candidates were rejected on the evidence of their own model
+# cards rather than on preference. Qwen3-0.6B, Qwen3-1.7B and
+# Llama-3.2-1B-Instruct are all post-trained (SFT, preference optimisation and,
+# for Qwen3, a thinking mode), while every other panel member is a pure
+# next-token pretrained decoder. Admitting one would confound the architecture
+# and corpus contrast these arms exist to draw with a training-objective
+# contrast that no ``ArmSpec`` field records, and it would do so on the very
+# axis the budget stage measures: post-training moves a model's cross-entropy on
+# raw web text, which is the denominator of the convergence axis. No Qwen3 base
+# checkpoint is staged on this host, so the Qwen3 generation cannot currently be
+# admitted without that confound.
+
+#: What a rotary decoder may enter. ``budget`` needs only a forward pass and a
+#: tokenizer. ``lens`` is granted on the same footing as the ByGPT5 rungs: the
+#: output aperture of a final normalisation followed by a linear unembedding is
+#: the same quantity here as in GPT-2, but ``src.transfer.lenses.lens_head``
+#: resolves that normalisation as ``transformer.ln_f`` and requires an
+#: ``nn.LayerNorm`` with a learned bias, so until it grows an RMSNorm branch the
+#: capability is an intent that ``src.transfer.scaling.lens_supported`` records
+#: as a reasoned skip. ``pathway`` is granted outright: it ablates a whole
+#: sublayer output and needs nothing but the block, MLP and attention modules
+#: this file resolves.
+#:
+#: ``circuits`` is withheld. Grouped-query attention is *not* the obstacle -- a
+#: correct per-head decomposition replicates each key/value head's ``W_V`` across
+#: its group of query heads, and rebuilding an attention layer from those weights
+#: reproduces the live forward pass to a relative maximum error of 2.6e-03 in
+#: bfloat16 and 5e-07 in float32, far inside the 5e-02 tolerance
+#: ``circuits.verify_head_decomposition`` enforces. The obstacle is that
+#: ``src.transfer.circuits`` cannot express that decomposition or reach these
+#: models at all: ``head_ov_weights`` knows only GPT-2's fused ``c_attn`` and
+#: ProGen2's ``qkv_proj`` and infers ``d_head`` as ``d_model / n_head``;
+#: ``verify_head_decomposition`` hooks ``block.ln_1``;
+#: ``ov_copying_scores`` reads ``model.transformer.wte``; and
+#: ``direct_logit_attribution`` requires ``transformer.drop``,
+#: ``transformer.ln_f`` and a LayerNorm bias, none of which exist on an RMSNorm
+#: decoder. Declaring the capability would not produce a wrong number, it would
+#: produce an exception at an arbitrary depth of the run; withholding it produces
+#: the panel's own refusal, with the reason attached.
+# Updated 2026-07-28: ``circuits`` granted. The module now resolves the
+# q_proj/v_proj/o_proj layout with the grouped-query index mapping, the
+# per-architecture pre-attention norm, the tied embedding, and an explicit
+# RMSNorm linearisation. Verified per architecture at bfloat16 against a 5e-2
+# tolerance: OV rebuild error 4.11e-3 (Qwen2) and 5.69e-3 (Llama), about 3e-7 in
+# float32, so those are rounding rather than structure.
+#
+# Two failure modes were checked rather than assumed, and they differ in a way
+# that matters. Omitting Qwen2's ``v_proj`` bias gives a rebuild error of 0.518,
+# ten times over tolerance, so it fails loudly. Applying LayerNorm's algebra to
+# an RMSNorm decoder *passes* the reconstruction gate at 0.49% logit error while
+# producing a systematically wrong attribution -- silent, and the reason the
+# explicit normalisation-form resolution is load-bearing rather than cosmetic.
+_ROTARY_CAPABILITIES = frozenset({"budget", "lens", "pathway", "circuits"})
+
+# Qwen2.5-0.5B: the base checkpoint, pretrained only. 24 layers of width 896 is
+# a depth-to-width ratio no other panel member has, and its 151936-piece
+# vocabulary is the largest in the panel by a factor of three. Corpus: the
+# Qwen2.5 pretraining mixture, multilingual web text with a heavy code and
+# mathematics component, which shares neither language distribution nor
+# provenance with WebText.
+PANEL["qwen2.5-0.5b"] = ArmSpec(
+    name="qwen2.5-0.5b",
+    path=TEXT_MODEL_BASE / "Qwen2.5-0.5B",
+    modality="text",
+    n_layer=24,
+    d_model=896,
+    tokenisation="bpe",
+    input_format="raw",
+    evaluation_cohort_source="openwebtext",
+    pretraining_corpus="qwen2.5_pretraining_mixture",
+    architecture="qwen2",
+    capabilities=_ROTARY_CAPABILITIES,
+)
+
+# Llama-3.2-3B: the base checkpoint, not the instruction-tuned sibling that is
+# staged beside it. 28 layers matches ProGen2-medium's 27 almost exactly while
+# differing in everything else, and at 3.2B parameters it extends the panel's
+# scale range above GPT-2-xl. Corpus: up to 9T tokens of public web data with
+# Llama-3.1 logits used as token-level targets during pretraining, per its model
+# card -- a distillation signal no other panel member carries, recorded here
+# because it is the one respect in which this arm is not a plain next-token run.
+PANEL["llama-3.2-3b"] = ArmSpec(
+    name="llama-3.2-3b",
+    path=TEXT_MODEL_BASE / "Llama-3.2-3B",
+    modality="text",
+    n_layer=28,
+    d_model=3072,
+    tokenisation="bpe",
+    input_format="raw",
+    evaluation_cohort_source="openwebtext",
+    pretraining_corpus="llama3_web_corpus_with_llama3.1_logit_distillation",
+    architecture="llama",
+    capabilities=_ROTARY_CAPABILITIES,
+)
+
+#: Same architecture and parameter count, different pretraining corpus.
+MATCHED_DATA_CONTRAST = ("progen2-base", "progen2-medium")
+
+#: The text-side equivalent: gpt2 and DialoGPT-small share architecture,
+#: tokeniser and size (12 layers, width 768, 50257 vocabulary) and differ only in
+#: pretraining corpus. Comparing the two contrasts bounds how much of any
+#: cross-modality difference is corpus rather than modality.
+TEXT_DATA_CONTRAST = ("gpt2", "dialogpt-small")
+
+#: The text arms that are outside the GPT-2 lineage in architecture, tokeniser
+#: and corpus at once. A cross-modality difference has to survive replacing
+#: GPT-2-large with these before it can be read as a text/protein difference
+#: rather than a property of GPT-2, which is the objection they exist to answer.
+#: Named here so that the arms carrying that argument are a value the analysis
+#: can select on, not a fact a reader has to reconstruct from the panel.
+TEXT_ARCHITECTURE_CONTRAST = ("qwen2.5-0.5b", "llama-3.2-3b")
+
+# Byte-level text decoders. These exist to populate the text x symbol-level cell
+# of the modality x tokenisation design, which was empty and left the two
+# indicators nearly collinear. ProtGPT2 is the only public protein model with
+# genuine subword tokenisation, so the protein x subword cell cannot be grown
+# past n=1 and this is the only side of the design that can be repaired.
+#
+# The cost is an architecture difference, declared here rather than in prose:
+# ByGPT5 is T5-derived (relative position bias, T5 layer norm, gated GELU) and
+# admits no GPT-2-style sublayer decomposition, so it carries budget and lens
+# capability only. Reformer uses LSH attention with reversible layers and is
+# restricted to budget alone -- its attention share and residual stream are not
+# the quantities the rest of the panel measures.
+for _name, _layers, _width in (
+    ("bygpt5-small-en", 4, 1472),
+    ("bygpt5-base-en", 6, 1536),
+    ("bygpt5-medium-en", 12, 1536),
+):
+    PANEL[_name] = ArmSpec(
+        name=_name,
+        path=TEXT_MODEL_BASE / _name,
+        modality="text",
+        n_layer=_layers,
+        d_model=_width,
+        tokenisation="byte",
+        input_format="raw",
+        evaluation_cohort_source="openwebtext",
+        # No ByGPT5 model card on this host states a pretraining corpus, and the
+        # rungs carry budget and lens capability only, so no corpus contrast is
+        # defined against them. A guess here would be a false fact in every
+        # artefact that records the panel.
+        pretraining_corpus=PRETRAINING_UNDECLARED,
+        architecture="t5_decoder",
+        capabilities=frozenset({"budget", "lens"}),
+    )
+
+# google/reformer-enwik8 was staged as an architecturally independent byte-level
+# text model and is deliberately NOT in the panel. It ships no tokenizer: the
+# checkpoint expects text encoded manually as byte+2, and AutoTokenizer resolves
+# a ReformerTokenizer that then fails for want of a sentencepiece vocab file.
+# Admitting it would mean a bespoke tokenizer shim in this shared module for a
+# model that, being LSH-attention and reversible-layered, can only ever
+# contribute to the `budget` family anyway. Three ByGPT5 rungs already populate
+# the text x byte-level cell. The checkpoint remains on disk if an independent
+# architecture check is later judged worth that cost.
+
+#: The exactly matched pair. Depth, width and vocabulary size are identical, so
+#: any difference between these two is a modality difference, not an
+#: architecture difference.
+MATCHED_PAIR = ("gpt2-large", "protgpt2")
+
+
+def _check_corpus_contrast(pair: tuple[str, str]) -> None:
+    """A corpus contrast must hold everything but the pretraining corpus fixed.
+
+    The two pairs below are the only evidence in the panel for how much of a
+    cross-modality difference is training data rather than modality, and the
+    claim rests entirely on what is held fixed. That used to be a comment; it is
+    now checked at import, because the field it depends on
+    (:attr:`ArmSpec.pretraining_corpus`) is new and a future edit that leaves it
+    at :data:`PRETRAINING_UNDECLARED` would turn the contrast into a comparison
+    of two arms with no declared difference at all.
+    """
+
+    left, right = (PANEL[name] for name in pair)
+    held = ("modality", "n_layer", "d_model", "tokenisation", "architecture")
+    differing = [key for key in held if getattr(left, key) != getattr(right, key)]
+    if differing:
+        raise AssertionError(f"corpus contrast {pair} does not hold {differing} fixed")
+    if PRETRAINING_UNDECLARED in (left.pretraining_corpus, right.pretraining_corpus):
+        raise AssertionError(
+            f"corpus contrast {pair} has an undeclared pretraining corpus, so the "
+            "quantity it varies is not recorded"
+        )
+    if left.pretraining_corpus == right.pretraining_corpus:
+        raise AssertionError(
+            f"corpus contrast {pair} declares one pretraining corpus "
+            f"{left.pretraining_corpus!r} for both arms, so it varies nothing"
+        )
+
+
+for _pair in (MATCHED_DATA_CONTRAST, TEXT_DATA_CONTRAST):
+    _check_corpus_contrast(_pair)
+del _pair
+
+
+def _check_architecture_contrast() -> None:
+    """The arms that answer "is this just a GPT-2 property?" must not be GPT-2.
+
+    Checked rather than commented for the same reason as the corpus contrasts,
+    and with more at stake: this is the declaration behind the audit's §5.05(d)
+    argument that the pathway-budget separation "survives replacing GPT-2-large
+    with a Qwen2 and a Llama decoder", and it is what killed the QK/OV finding
+    when it turned out to be a GPT-2-lineage property. An edit that left a
+    GPT-2-architecture arm in this tuple would leave that argument stated and
+    unsupported, with nothing raising.
+    """
+
+    for name in TEXT_ARCHITECTURE_CONTRAST:
+        spec = PANEL[name]
+        if spec.modality != "text":
+            raise AssertionError(
+                f"{name} is in TEXT_ARCHITECTURE_CONTRAST but is not a text arm"
+            )
+        if spec.architecture == "gpt2":
+            raise AssertionError(
+                f"{name} declares the gpt2 architecture, so it cannot witness that a "
+                "finding survives leaving the GPT-2 lineage"
+            )
+
+
+_check_architecture_contrast()
+
+
+@dataclass
+class Arm:
+    """A loaded panel member, with the contracts a measurement can rely on.
+
+    ``attn_implementation`` is the attention kernel the checkpoint was actually
+    loaded with, read back from the built model rather than from the request, so
+    that a build which ignored or overrode the request is visible.
+    """
+
+    spec: ArmSpec
+    model: torch.nn.Module
+    tokenizer: object
+    device: str
+    dtype: str
+    attn_implementation: str | None = None
+
+    @property
+    def name(self) -> str:
+        return self.spec.name
+
+    @property
+    def modality(self) -> str:
+        return self.spec.modality
+
+    @property
+    def n_layer(self) -> int:
+        return self.spec.n_layer
+
+    @property
+    def d_model(self) -> int:
+        return self.spec.d_model
+
+    def supports(self, capability: str) -> bool:
+        if capability not in CAPABILITIES:
+            raise ValueError(f"unknown capability {capability!r}; known: {sorted(CAPABILITIES)}")
+        return capability in self.spec.capabilities
+
+    def require(self, capability: str) -> None:
+        """Refuse a measurement this arm cannot enter commensurably."""
+        if not self.supports(capability):
+            raise ValueError(
+                f"{self.name} ({self.spec.architecture}) does not support the "
+                f"{capability!r} measurement family; its declared capabilities are "
+                f"{sorted(self.spec.capabilities)}. Producing a number here would "
+                "not be commensurate with the rest of the panel."
+            )
+
+    def require_eager_attention(self, measurement: str) -> None:
+        """Refuse a measurement that reads or overrides attention patterns on a
+        non-eager kernel.
+
+        The fused kernels never materialise the pattern, so they return ``None``
+        for the weights and ignore a per-head additive mask. Every caller that
+        needs a pattern already raises when it gets ``None`` back, but that check
+        fires deep inside a run and only for the read path; an *override* -- a
+        per-head knockout mask, a frozen pattern -- would be accepted by the
+        fused kernel's signature and quietly not applied. The contract is
+        therefore stated at the top of the measurement, against the
+        implementation the model was actually built with.
+        """
+
+        if self.attn_implementation is None:
+            raise ValueError(
+                f"{self.name}: {measurement} needs a declared attention "
+                "implementation; load the arm with attn_implementation='eager'"
+            )
+        if self.attn_implementation != "eager":
+            raise ValueError(
+                f"{self.name}: {measurement} reads or overrides attention patterns, "
+                f"which the {self.attn_implementation!r} kernel does not materialise; "
+                "load the arm with attn_implementation='eager'"
+            )
+
+    def blocks(self) -> torch.nn.ModuleList:
+        """The transformer block list, resolved per architecture.
+
+        Resolution is explicit rather than duck-typed: a panel member whose
+        block list cannot be named is a panel change that must be declared, not
+        guessed at.
+        """
+        architecture = self.spec.architecture
+        if architecture in ("gpt2", "progen"):
+            if not hasattr(self.model, "transformer") or not hasattr(self.model.transformer, "h"):
+                raise TypeError(f"{self.name}: declared {architecture} but no transformer.h")
+            return self.model.transformer.h
+        if architecture == "t5_decoder":
+            if not hasattr(self.model, "decoder") or not hasattr(self.model.decoder, "block"):
+                raise TypeError(f"{self.name}: declared t5_decoder but no decoder.block")
+            return self.model.decoder.block
+        if architecture in _ROTARY_DECODERS:
+            # The causal-LM wrapper holds the bare decoder at ``.model``, one
+            # level below where GPT-2 keeps ``.transformer``, and the block list
+            # at ``.layers`` rather than ``.h``.
+            inner = getattr(self.model, "model", None)
+            if inner is None or not hasattr(inner, "layers"):
+                raise TypeError(f"{self.name}: declared {architecture} but no model.layers")
+            return inner.layers
+        if architecture == "reformer":
+            return self.model.reformer.encoder.layers
+        raise TypeError(f"{self.name}: unsupported architecture {architecture!r}")
+
+    def mlp(self, layer: int) -> torch.nn.Module:
+        self.require("pathway")
+        if self.spec.architecture not in _DECOMPOSABLE:
+            raise TypeError(
+                f"{self.name}: sublayer decomposition is not defined for "
+                f"{self.spec.architecture!r}"
+            )
+        return self.blocks()[layer].mlp
+
+    def attention(self, layer: int) -> torch.nn.Module:
+        """The attention submodule, named per architecture rather than searched for.
+
+        Searching a block for the first plausible attribute would resolve a newly
+        admitted architecture silently, which is the one failure this panel
+        cannot afford: an arm that reaches a pathway measurement through an
+        attribute nobody declared produces a number that looks like every other
+        number in the table.
+        """
+        self.require("pathway")
+        architecture = self.spec.architecture
+        if architecture not in _DECOMPOSABLE:
+            raise TypeError(
+                f"{self.name}: sublayer decomposition is not defined for {architecture!r}"
+            )
+        block = self.blocks()[layer]
+        attribute = _ATTENTION_ATTRIBUTE[architecture]
+        if not hasattr(block, attribute):
+            raise TypeError(
+                f"{self.name}: declared {architecture} but block {layer} has no {attribute}"
+            )
+        return getattr(block, attribute)
+
+
+def load_arm(
+    name: str,
+    device: str = "cuda:0",
+    dtype: str = "bfloat16",
+    attn_implementation: str | None = None,
+) -> Arm:
+    """Load a panel member and verify its declared shape and inference dtype."""
+    if name not in PANEL:
+        raise KeyError(f"unknown arm {name!r}; panel is {sorted(PANEL)}")
+    if dtype not in _DTYPES:
+        raise ValueError(f"unsupported inference dtype {dtype!r}")
+    spec = PANEL[name]
+    path = str(require_input_path(spec.path, _MODEL_PATH_VARIABLES))
+
+    config = AutoConfig.from_pretrained(path, trust_remote_code=True)
+    n_layer = getattr(config, "n_layer", None) or getattr(config, "num_hidden_layers")
+    d_model = (
+        getattr(config, "n_embd", None)
+        or getattr(config, "hidden_size", None)
+        or getattr(config, "embed_dim")
+    )
+    if (n_layer, d_model) != (spec.n_layer, spec.d_model):
+        raise ValueError(
+            f"{name}: declared {spec.n_layer}L/{spec.d_model}d, loaded {n_layer}L/{d_model}d"
+        )
+
+    extra: dict[str, object] = {}
+    if attn_implementation is not None:
+        # sdpa returns None for attention weights and cannot be intercepted;
+        # anything that reads or overrides patterns must ask for eager.
+        extra["attn_implementation"] = attn_implementation
+    model = AutoModelForCausalLM.from_pretrained(
+        path,
+        # ``torch_dtype`` rather than ``dtype``: the H200 pod runs transformers
+        # 4.52.4, where ``dtype`` is not a recognised loading argument and would
+        # be swallowed as a config keyword, leaving a float32 model. ``dtype``
+        # is the newer spelling and 4.57.3 warns that ``torch_dtype`` is
+        # deprecated, but it is the only spelling both versions honour, and the
+        # observed-dtype check below is what actually enforces the outcome.
+        torch_dtype=_DTYPES[dtype],
+        trust_remote_code=True,
+        device_map={"": device},
+        **extra,
+    )
+    model.eval()
+
+    observed = sorted(
+        {str(p.dtype).removeprefix("torch.") for p in model.parameters() if p.is_floating_point()}
+    )
+    if observed != [dtype]:
+        raise ValueError(f"{name}: declared dtype {dtype}, observed {observed}")
+
+    tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    # Read back rather than echo the request. A remote-code architecture that
+    # never consults ``attn_implementation`` would otherwise be recorded as
+    # eager on the strength of having been asked, and ``require_eager_attention``
+    # would then vouch for a contract nothing enforced.
+    resolved = getattr(model.config, "_attn_implementation", None)
+    return Arm(
+        spec=spec,
+        model=model,
+        tokenizer=tokenizer,
+        device=device,
+        dtype=dtype,
+        attn_implementation=None if resolved is None else str(resolved),
+    )
+
+
+# ------------------------------------------------------------------- cohorts
+
+
+#: The FASTA corpora this package reads, and the variable that relocates each.
+#: :func:`iter_fasta` is the single door to both, and several callers reach it
+#: without going through :func:`protein_cohort`, so the existence check belongs
+#: here rather than at each call site.
+_FASTA_VARIABLE: dict[Path, str] = {
+    SWISSPROT_FASTA: "R2_SWISSPROT_FASTA",
+    ZYMCTRL_FASTA: "R2_ZYMCTRL_FASTA",
+}
+
+
+def iter_fasta(path: Path):
+    path = Path(path)
+    require_input_path(path, _FASTA_VARIABLE.get(path, "the R2_* variable naming it"))
+    opener = gzip.open if str(path).endswith(".gz") else open
+    header, chunks = None, []
+    with opener(path, "rt") as handle:
+        for line in handle:
+            if line.startswith(">"):
+                if header is not None:
+                    yield header, "".join(chunks)
+                header, chunks = line[1:].strip(), []
+            else:
+                chunks.append(line.strip())
+    if header is not None:
+        yield header, "".join(chunks)
+
+
+def sampling_record(
+    *,
+    seed: int | None,
+    skip: int,
+    requested: int,
+    eligible: int | None,
+    corpus: str,
+) -> dict:
+    """How a cohort was drawn, as a value that travels with the cohort.
+
+    Recorded on every cohort this module builds. Which records were drawn is the
+    single most expensive thing this programme has got wrong -- three separate
+    incidents, one worth 1.01 nats -- and every one of them was invisible
+    afterwards because the artefact said what the numbers were and not where the
+    records came from. ``mode`` is therefore mandatory in the record, and the
+    file-order mode carries its own hazard text.
+    """
+
+    if requested < 1:
+        raise ValueError("a cohort must request at least one record")
+    if skip < 0:
+        raise ValueError("skip must be non-negative")
+    mode = "file_order" if seed is None else "seeded_permutation"
+    if mode not in SAMPLING_MODES:  # pragma: no cover - guards a future third mode
+        raise AssertionError(
+            f"sampling mode {mode!r} is not in SAMPLING_MODES {SAMPLING_MODES}; a "
+            "mode that is not declared has no recorded hazard text and no reader "
+            "knows how to interpret it"
+        )
+    record: dict = {
+        "mode": mode,
+        "seed": None if seed is None else int(seed),
+        "skip": int(skip),
+        "requested": int(requested),
+        "corpus": corpus,
+        "eligible_records": None if eligible is None else int(eligible),
+    }
+    if mode == "file_order":
+        record["hazard"] = FILE_ORDER_HAZARD
+    return record
+
+
+@dataclass
+class Cohort:
+    """A frozen evaluation cohort, identified by the hash of its contents."""
+
+    name: str
+    kind: str
+    records: list[str]
+    min_symbols: int
+    max_symbols: int
+    metadata: dict = field(default_factory=dict)
+
+    @property
+    def digest(self) -> str:
+        """Content hash: the records themselves, and nothing else.
+
+        Deliberately unchanged, so that a digest quoted in a frozen artefact
+        still identifies the same content. It does *not* separate two cohorts
+        that hold the same records under different metadata -- an exact-repeat
+        and an approximate-repeat cohort can coincide on records while being
+        different measurements -- which is what :attr:`provenance_digest` is for.
+        """
+
+        payload = json.dumps(
+            {
+                "kind": self.kind,
+                "min": self.min_symbols,
+                "max": self.max_symbols,
+                "records": self.records,
+            },
+            sort_keys=True,
+        )
+        return hashlib.sha256(payload.encode()).hexdigest()
+
+    @property
+    def provenance_digest(self) -> str:
+        """Content hash extended with everything that decided the content.
+
+        Two cohorts agreeing on :attr:`digest` can still be different objects:
+        the nested exact and approximate repeat cohorts can hold identical
+        records under different criteria, an EC-labelled draw carries labels a
+        plain draw does not, and a seeded draw and a file-order draw that happen
+        to coincide are not the same evidence. This digest separates them.
+        Metadata that is not JSON-serialisable is represented by its repr rather
+        than dropped, so nothing silently falls out of the hash.
+        """
+
+        def canonical(value: object) -> object:
+            try:
+                json.dumps(value)
+            except TypeError:
+                return repr(value)
+            return value
+
+        payload = json.dumps(
+            {
+                "content": self.digest,
+                "metadata": {key: canonical(value) for key, value in sorted(self.metadata.items())},
+            },
+            sort_keys=True,
+        )
+        return hashlib.sha256(payload.encode()).hexdigest()
+
+    @property
+    def sampling(self) -> dict:
+        """The draw that produced this cohort, or an explicit "not recorded"."""
+
+        recorded = self.metadata.get("sampling")
+        if isinstance(recorded, dict):
+            return dict(recorded)
+        return {
+            "mode": "unrecorded",
+            "hazard": (
+                "this cohort was constructed without a sampling record, so whether "
+                "its records are a seeded sample or the head of a file is not "
+                "knowable from the artefact"
+            ),
+        }
+
+    def __len__(self) -> int:
+        return len(self.records)
+
+    def input_strings(self, arm: Arm) -> list[str]:
+        """Render the cohort in the arm's native input format."""
+        if self.kind == "text":
+            if arm.modality != "text":
+                raise ValueError(f"{arm.name}: text cohort given to a protein arm")
+            return list(self.records)
+        if arm.modality != "protein":
+            raise ValueError(f"{arm.name}: protein cohort given to a text arm")
+        fmt = arm.spec.input_format
+        if fmt == "raw":
+            return list(self.records)
+        if fmt == "fasta_wrapped":
+            # ProtGPT2 was pretrained on FASTA-formatted UniRef50: sequences are
+            # hard-wrapped at 60 residues and separated by the end-of-text token,
+            # and its BPE merges were learned over exactly that byte stream.
+            # Feeding one unwrapped line is off-distribution and costs 1.42
+            # nats/token, measured on 80 Swiss-Prot sequences of 600-2000
+            # residues: 8.046 raw versus 6.652 wrapped versus 6.623 with the
+            # end-of-text prefix. Getting this wrong makes the model look
+            # untrained and drove a spurious modality effect.
+            eot = arm.tokenizer.eos_token
+            if eot is None:
+                raise ValueError(f"{arm.name}: tokenizer has no end-of-text token")
+            return [
+                eot + "\n" + "\n".join(s[i : i + 60] for i in range(0, len(s), 60))
+                for s in self.records
+            ]
+        if fmt == "n_to_c_control":
+            return ["1" + s for s in self.records]
+        if fmt == "ec_conditioned":
+            labels = self.metadata.get("ec_labels")
+            if labels is None or len(labels) != len(self.records):
+                raise ValueError(
+                    f"{arm.name} requires EC labels; cohort {self.name!r} has none"
+                )
+            return [
+                f"{ec}<sep>{CONDITIONING_START}{seq}{CONDITIONING_END}"
+                for ec, seq in zip(labels, self.records)
+            ]
+        raise ValueError(f"unsupported input format {fmt!r}")
+
+
+#: The markers ``Cohort.input_strings`` wraps a conditioned arm's content in.
+#: Declared beside the rendering that emits them: a measurement module that needs
+#: to *find* them must resolve these, not a second pair spelled by hand. Three
+#: modules used to spell them independently, and the third did not check the
+#: tokenizer's unknown-token id, so a tokenizer without them would have returned
+#: a valid-looking id for a token it does not have.
+CONDITIONING_START = "<start>"
+CONDITIONING_END = "<end>"
+
+
+def conditioning_boundary_ids(
+    arm: Arm, *, ec_conditioning: str = "native"
+) -> tuple[int | None, int | None]:
+    """Token ids delimiting the scored content of a conditioned rendering.
+
+    ``(None, None)`` when the rendering carries no conditioning prompt -- either
+    the arm's input format has none, or ``ec_conditioning="unconditioned"``
+    deliberately removed it -- so the result can be passed straight to
+    :func:`src.transfer.scoring.sequence_target_mask` beside the rule that
+    :func:`src.transfer.scoring.target_rule` selects for the same two inputs.
+
+    Raises rather than returning a plausible id when the tokenizer does not carry
+    the markers. The conditioning prompt is the span a measurement must *not*
+    score -- EXP-R2-034 prices ZymCTRL's EC tag at 1.73 nats of leak -- so a
+    silently wrong boundary id lands directly on the quantity being measured.
+    """
+
+    if arm.spec.input_format != "ec_conditioned" or ec_conditioning == "unconditioned":
+        return None, None
+    unknown = arm.tokenizer.unk_token_id
+    ids: list[int] = []
+    for token in (CONDITIONING_START, CONDITIONING_END):
+        resolved = arm.tokenizer.convert_tokens_to_ids(token)
+        if resolved is None or resolved == unknown:
+            raise ValueError(
+                f"{arm.name}: tokenizer has no {token!r} id, but its input format is "
+                "ec_conditioned, so the span that must not be scored cannot be located"
+            )
+        ids.append(int(resolved))
+    return ids[0], ids[1]
+
+
+def selected_positions(
+    eligible: int, *, n: int, skip: int, seed: int | None, label: str
+) -> list[int]:
+    """Which eligible records a draw selects, given a mode.
+
+    ``seed is None`` reproduces the historical file-order draw exactly:
+    positions ``skip .. skip + n``. With a seed the corpus is permuted first and
+    the same half-open window is taken from the permutation, which makes two
+    draws at the same seed and different ``skip`` genuinely disjoint -- the
+    skip-offset sensitivity Appendix B rule 1 asks for is only a sensitivity if
+    the offsets do not overlap.
+
+    Returned in ascending corpus order so that a second pass over the corpus can
+    collect them in one sweep; the *identity* of the selected set is what the
+    seed decides, not the order they end up in.
+    """
+
+    if n < 1:
+        raise ValueError("a cohort must request at least one record")
+    if skip < 0:
+        raise ValueError("skip must be non-negative")
+    if eligible < skip + n:
+        raise RuntimeError(
+            f"cohort {label!r}: {eligible} eligible records cannot supply {n} "
+            f"after a skip of {skip}"
+        )
+    if seed is None:
+        return list(range(skip, skip + n))
+    import numpy as np
+
+    order = np.random.default_rng(seed).permutation(eligible)
+    return sorted(int(index) for index in order[skip : skip + n])
+
+
+def _eligible_protein_records(min_len: int, max_len: int, *, with_ec: bool):
+    """Every corpus entry passing the length and alphabet filter, in file order.
+
+    One generator serves both the counting pass and the collecting pass, so the
+    two cannot disagree about what "eligible" means -- which is the way a
+    two-pass sampler silently selects the wrong records.
+    """
+
+    allowed = set(AA20)
+    if with_ec:
+        for _, body in iter_fasta(ZYMCTRL_FASTA):
+            if "<start>" not in body or "<end>" not in body:
+                continue
+            sequence = body.split("<start>")[1].split("<end>")[0]
+            if not (min_len <= len(sequence) <= max_len) or not set(sequence) <= allowed:
+                continue
+            yield sequence, body.split("<sep>")[0]
+    else:
+        for _, sequence in iter_fasta(SWISSPROT_FASTA):
+            if not (min_len <= len(sequence) <= max_len) or not set(sequence) <= allowed:
+                continue
+            yield sequence, None
+
+
+def _eligible_text_documents(min_chars: int):
+    """Every screening-subset document at or above ``min_chars``, in shard order."""
+
+    import pyarrow.parquet as pq
+
+    require_input_path(OPENWEBTEXT, "R2_OPENWEBTEXT_DIR")
+    shards = sorted(OPENWEBTEXT.glob("*.parquet"))
+    if not shards:
+        raise RuntimeError(f"no parquet shards under {OPENWEBTEXT}")
+    for shard in shards:
+        for value in pq.read_table(shard, columns=["text"]).column("text"):
+            document = value.as_py()
+            if document is None or len(document) < min_chars:
+                continue
+            yield document
+
+
+def protein_cohort(
+    n: int,
+    min_len: int,
+    max_len: int,
+    *,
+    skip: int = 0,
+    name: str = "swissprot",
+    with_ec: bool = False,
+    seed: int | None = None,
+) -> Cohort:
+    """Canonical-alphabet Swiss-Prot sequences, drawn under a declared mode.
+
+    ``with_ec`` draws from the EC-labelled source so that one cohort can serve
+    both the unconditional arms and ZymCTRL, which needs its conditioning tag.
+
+    ``seed`` selects the draw. **Pass one.** Swiss-Prot and the EC-labelled
+    corpus are both grouped by family, so the first ``n`` eligible entries are a
+    set of near-clonal homologues rather than a sample: they are unusually
+    predictable, which shrinks the context information every share is divided by,
+    and reading past them has moved a headline figure by 1.01 nats. ``seed=None``
+    keeps the historical file-order draw, because several frozen artefacts were
+    produced with it and must stay reproducible; it is recorded as
+    ``sampling.mode == "file_order"`` with its hazard attached, so no artefact
+    built on it can be read without seeing which draw produced it.
+
+    Under a seed the whole corpus is counted first and the draw is a window of a
+    seeded permutation, so ``skip`` produces a genuinely disjoint second sample
+    of the same corpus rather than a different prefix of the same file.
+    """
+
+    corpus = "ec_labelled_swissprot" if with_ec else "plain_swissprot"
+    if seed is None:
+        records: list[str] = []
+        labels: list[str] = []
+        eligible: int | None = None
+        seen = 0
+        for sequence, label in _eligible_protein_records(min_len, max_len, with_ec=with_ec):
+            seen += 1
+            if seen <= skip:
+                continue
+            records.append(sequence)
+            if label is not None:
+                labels.append(label)
+            if len(records) >= n:
+                break
+        if len(records) < n:
+            raise RuntimeError(f"cohort {name!r}: only {len(records)}/{n} eligible sequences")
+    else:
+        eligible = sum(
+            1 for _ in _eligible_protein_records(min_len, max_len, with_ec=with_ec)
+        )
+        wanted = set(selected_positions(eligible, n=n, skip=skip, seed=seed, label=name))
+        records = []
+        labels = []
+        for position, (sequence, label) in enumerate(
+            _eligible_protein_records(min_len, max_len, with_ec=with_ec)
+        ):
+            if position not in wanted:
+                continue
+            records.append(sequence)
+            if label is not None:
+                labels.append(label)
+        if len(records) != n:
+            raise RuntimeError(
+                f"cohort {name!r}: the corpus changed between the counting and the "
+                f"collecting pass ({len(records)} of {n} selected records found)"
+            )
+    metadata: dict = {
+        "sampling": sampling_record(
+            seed=seed, skip=skip, requested=n, eligible=eligible, corpus=corpus
+        )
+    }
+    if with_ec:
+        metadata["ec_labels"] = labels
+    return Cohort(name, "protein", records, min_len, max_len, metadata)
+
+
+def text_cohort(
+    n: int,
+    min_chars: int = 800,
+    *,
+    skip: int = 0,
+    name: str = "openwebtext",
+    seed: int | None = None,
+) -> Cohort:
+    """Documents from the frozen OpenWebText screening subset.
+
+    ``seed`` has the same meaning as in :func:`protein_cohort`. The text control
+    is drawn the same way as the protein cohorts on purpose: a control drawn
+    under a different sampling rule from the arm it controls is not a control.
+    """
+
+    if seed is None:
+        records: list[str] = []
+        eligible: int | None = None
+        seen = 0
+        for document in _eligible_text_documents(min_chars):
+            seen += 1
+            if seen <= skip:
+                continue
+            records.append(document)
+            if len(records) >= n:
+                break
+        if len(records) < n:
+            raise RuntimeError(f"cohort {name!r}: only {len(records)}/{n} documents")
+    else:
+        eligible = sum(1 for _ in _eligible_text_documents(min_chars))
+        wanted = set(selected_positions(eligible, n=n, skip=skip, seed=seed, label=name))
+        records = [
+            document
+            for position, document in enumerate(_eligible_text_documents(min_chars))
+            if position in wanted
+        ]
+        if len(records) != n:
+            raise RuntimeError(
+                f"cohort {name!r}: the corpus changed between the counting and the "
+                f"collecting pass ({len(records)} of {n} selected documents found)"
+            )
+    metadata = {
+        "sampling": sampling_record(
+            seed=seed,
+            skip=skip,
+            requested=n,
+            eligible=eligible,
+            corpus="openwebtext_screen",
+        )
+    }
+    return Cohort(name, "text", records, min_chars, 0, metadata)
+
+
+def tokenize_batch(
+    arm: Arm, texts: list[str], max_len: int
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Right-padded ids and a validity mask, truncated to ``max_len``."""
+    if not texts:
+        raise ValueError(f"{arm.name}: cannot tokenise an empty batch")
+    if max_len < 1:
+        raise ValueError("max_len must be positive")
+    rows = [arm.tokenizer(t, return_tensors=None)["input_ids"][:max_len] for t in texts]
+    empty = [index for index, row in enumerate(rows) if not row]
+    if empty:
+        # A zero-token row would contribute a fully masked line to the batch and
+        # therefore to every mean computed over it, without appearing anywhere
+        # as a dropped record.
+        raise ValueError(f"{arm.name}: rows {empty} of the batch tokenise to no tokens")
+    width = max(len(r) for r in rows)
+    pad = arm.tokenizer.pad_token_id
+    if pad is None:
+        raise ValueError(f"{arm.name}: tokenizer has no pad token")
+    ids = torch.full((len(rows), width), pad, dtype=torch.long)
+    mask = torch.zeros((len(rows), width), dtype=torch.long)
+    for i, row in enumerate(rows):
+        ids[i, : len(row)] = torch.tensor(row, dtype=torch.long)
+        mask[i, : len(row)] = 1
+    return ids, mask
+
+
+def symbols_per_token(arm: Arm, texts: list[str], max_len: int) -> float:
+    """Measured tokenizer expansion over exactly the scored window.
+
+    Protein arms count residues; the text arm counts characters. Counting before
+    truncation inflates the ratio for long sequences, so both are counted after.
+    """
+    tokens = 0
+    symbols = 0
+    for text in texts:
+        ids = arm.tokenizer(text, return_tensors=None)["input_ids"][:max_len]
+        decoded = arm.tokenizer.decode(ids)
+        tokens += len(ids)
+        symbols += (
+            sum(1 for c in decoded if c in AA20) if arm.modality == "protein" else len(decoded)
+        )
+    if tokens == 0:
+        raise RuntimeError(f"{arm.name}: empty cohort")
+    return symbols / tokens

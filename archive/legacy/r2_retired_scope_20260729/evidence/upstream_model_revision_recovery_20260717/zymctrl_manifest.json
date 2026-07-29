@@ -1,0 +1,70 @@
+{
+  "schema_version": "r2_upstream_model_revision_recovery_v1",
+  "recovery_date": "2026-07-17",
+  "status": "best_supported_revision_weight_verified_whole_tree_unresolved",
+  "model": "zymctrl",
+  "upstream_repository": "AI4PD/ZymCTRL",
+  "best_supported_upstream_revision": "3c532ef172b9cd2e95238baadf5167ebb89fbc32",
+  "exact_complete_tree_revision_verified": false,
+  "deployed_root": "/gpfs/jiaotongdamoxing/zhk_zip/models/ZymCTRL",
+  "verification": {
+    "weight_bytes_verified": true,
+    "weight_sha256_verified": true,
+    "ordinary_file_object_identities_independently_retrievable": false,
+    "current_main_tree_consistent_with_deployed_files": true,
+    "older_candidate_revision_rejected": "abe5e887907197e4381029a26c32ef79a48f372b",
+    "older_candidate_rejection_reason": "README byte length and later merged code-fence edits do not match the deployed README",
+    "best_supported_commit_url": "https://huggingface.co/AI4PD/ZymCTRL/commit/3c532ef172b9cd2e95238baadf5167ebb89fbc32"
+  },
+  "files": [
+    {
+      "path": ".gitattributes",
+      "bytes": 1384,
+      "sha256": "73c6c7bb48c33639bb0c9fce7456b8f9cf8a65ea9777bd5de54d37f109953bd1",
+      "deployed_bytes_git_sha1": "637fa167e56685c01bc97f08a420ea76330cf6df"
+    },
+    {
+      "path": "5.run_clm-post.py",
+      "bytes": 15867,
+      "sha256": "5fcccce124d6d7389302a93ef4ff7c616ff02fd521a186d84d0e75e3cb28bdef",
+      "deployed_bytes_git_sha1": "6406d4d7fe6a5d7d8036803182cf54cc90c7154b"
+    },
+    {
+      "path": "README.md",
+      "bytes": 16448,
+      "sha256": "3b75d9f2f3a55ca471b8d9797c7bb4fd63fb683b4caba84cc965067e0e4e24fc",
+      "deployed_bytes_git_sha1": "2568ce17e154b162f5727f478bf1d2f1f70419fa"
+    },
+    {
+      "path": "config.json",
+      "bytes": 765,
+      "sha256": "e0ed9a64d87a2c29ae66d856d4ba3675bd78afac11a78fceb8ac2fe2d58b9c4f",
+      "deployed_bytes_git_sha1": "5acb95e9e61762a7f0f2b9a223aca6b7ccb9a22f"
+    },
+    {
+      "path": "github1.png",
+      "bytes": 53727,
+      "sha256": "5d12b49e2b2188dbbc2b346af46ad5491f26ea28a6c6a2e65f22d6ab2e6bbb4c",
+      "deployed_bytes_git_sha1": "b0d22c4d5e5c8d18454894f0e0a8965589e105ff"
+    },
+    {
+      "path": "pytorch_model.bin",
+      "bytes": 2879060617,
+      "sha256": "7497973d9b5950dee3d2a97e150fd959098981622f560aea74f1a647fad7e94a",
+      "deployed_bytes_git_sha1": "78f15b59b981dfd558304422e6e4a345ef28e117"
+    },
+    {
+      "path": "tokenizer.json",
+      "bytes": 84283,
+      "sha256": "fa18b7a46dd44bbde8a0d2c07ffaa766a12651a0844fc2d8a7c8a287798032b1",
+      "deployed_bytes_git_sha1": "c246cf967a9f7330626a7e62895cd34aada17038"
+    },
+    {
+      "path": "vocab.json",
+      "bytes": 4327,
+      "sha256": "208b29df9f39eafc62057b8a6140521b6ef05639472df10079b080e6fcf748de",
+      "deployed_bytes_git_sha1": "d81768e5285edfdac8d6c16a7fc2d47652d578f7"
+    }
+  ],
+  "claim_boundary": "The deployed ZymCTRL weight is verified and commit 3c532ef172b9cd2e95238baadf5167ebb89fbc32 is the best-supported complete snapshot. Strict complete-tree cryptographic identity is unresolved, so this does not establish an exact whole-tree revision or pass P0-1."
+}

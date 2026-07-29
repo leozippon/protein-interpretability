@@ -1,0 +1,63 @@
+{
+  "command": "/home/lzp/miniconda3/envs/ct/bin/python paper_r2_nature_mi/scripts/49_reaudit_triplet_mi.py",
+  "canonical_command": "source ~/miniconda3/etc/profile.d/conda.sh && conda activate ct && python paper_r2_nature_mi/scripts/49_reaudit_triplet_mi.py",
+  "resolved_parameters": {
+    "source_dir": "paper_r2_nature_mi/results/circuit_analysis/swissprot_triplet_annotation_20260513",
+    "out_dir": "paper_r2_nature_mi/results/circuit_analysis/swissprot_triplet_mi_reaudit_20260716",
+    "swissprot_cache": "data/processed/swissprot_all_max1022.pkl",
+    "pfam_residue": "data/interpro/pfam_residue.tsv",
+    "n_permutations": 2000,
+    "seed": 20260716
+  },
+  "environment": {
+    "python": "3.11.14",
+    "numpy": "1.26.4"
+  },
+  "inputs": {
+    "paper_r2_nature_mi/results/circuit_analysis/swissprot_triplet_annotation_20260513/per_triplet_max_act_rich.tsv": "bf0c9f1183221800e2f6758345324cab94b4158e78932971f0c3156c18b929df",
+    "paper_r2_nature_mi/results/circuit_analysis/swissprot_triplet_annotation_20260513/rich_label_mi.tsv": "999568857480d7226b20dc51a762c198b74d43914b4f7ba6e1b4ea67f727c30b",
+    "paper_r2_nature_mi/results/circuit_analysis/swissprot_triplet_annotation_20260513/summary.json": "cc3af51e71da8ac95192a1309811394c673c073552a191915a875134b8ff243e",
+    "paper_r2_nature_mi/scripts/33_swissprot_triplet_annotation.py": "1af5c39d0c4c3dad564cfbc8c00640cf325cf122ea3288bc9965778ce4a36be4",
+    "data/interpro/pfam_residue.tsv": "cd1af645f520460f12ff767cf6f8e155bd19f62e10147d495b99e6b84189c1e9",
+    "data/processed/swissprot_all_max1022.pkl": "b294b1967eb719177d9bad4df720adc8a04a40f63a157c5d8f61096635a3aaa6"
+  },
+  "source_script": {
+    "path": "paper_r2_nature_mi/scripts/49_reaudit_triplet_mi.py",
+    "sha256": "ee35b9a13a3fe8eb39502dc970ddceecf9e348f9582bf59c64589047b56cbf62"
+  },
+  "cohort_meta": {
+    "n_swissprot_total": 556222,
+    "n_length_pfam_eligible": 317993,
+    "n_pfam_families_eligible": 9382,
+    "n_selected": 500,
+    "top_selected_pfams": {
+      "PF00005": 1,
+      "PF04055": 1,
+      "PF00033": 1,
+      "PF00156": 1,
+      "PF00696": 1,
+      "PF00001": 1,
+      "PF00977": 1,
+      "PF01467": 1,
+      "PF00042": 1,
+      "PF00288": 1,
+      "PF00163": 1,
+      "PF00177": 1,
+      "PF00318": 1,
+      "PF00185": 1,
+      "PF00252": 1,
+      "PF03947": 1,
+      "PF00238": 1,
+      "PF00164": 1,
+      "PF00410": 1,
+      "PF00411": 1
+    },
+    "sampling": "round-robin over dominant Pfam families, sorted by family size"
+  },
+  "sequence_valid_lengths_sha256": "357589fea38e25ae97ba4b25379c768b93b37a61d4253b694c12e22a9f256a78",
+  "outputs": {
+    "paper_r2_nature_mi/results/circuit_analysis/swissprot_triplet_mi_reaudit_20260716/mi_reanalysis.tsv": "c144bfb16123bc774aaf5a22b291bba113ea0d5f2058a0f05e7fb11a39941556",
+    "paper_r2_nature_mi/results/circuit_analysis/swissprot_triplet_mi_reaudit_20260716/triplet_summary.tsv": "96296e31170492f88b32ca709f54f6039a153e1a17fe66bc3827ca4d3ac94784",
+    "paper_r2_nature_mi/results/circuit_analysis/swissprot_triplet_mi_reaudit_20260716/summary.json": "7479d30d523955a4e58f7817a6982921435e73054500874babb68ec4c344cafa"
+  }
+}

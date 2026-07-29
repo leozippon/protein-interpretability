@@ -1,0 +1,37 @@
+{
+  "task": "M-1 triplet characterization: k-mer / positional / BPE-boundary / attention-sink / high-norm",
+  "status": "completed",
+  "runtime_seconds": 583.8288631439209,
+  "cohort_meta": {
+    "sources": [
+      {
+        "name": "n1_cohort",
+        "path": "/oss-pvc/zhk_zip/biocc/Research2/results/circuit_analysis/swissprot_triplet_annotation_20260513/cohort.json",
+        "n": 500
+      },
+      {
+        "name": "balanced_calibration",
+        "path": "/oss-pvc/zhk_zip/biocc/Research2/results/ec_metrics/calibration_lysozyme_20260507/calibration_sequences.json",
+        "n": 200
+      }
+    ],
+    "n_records": 700
+  },
+  "n_triplets": 38,
+  "top_positions": 100,
+  "n_perm": 2000,
+  "q_threshold": 0.05,
+  "category_counts": {
+    "positional": 17,
+    "k-mer": 17,
+    "high-norm": 3,
+    "unknown": 1
+  },
+  "n_categorized": 37,
+  "outcome": "PASS",
+  "outputs": {
+    "triplet_characterization": "Research2/results/circuit_analysis/triplet_characterization_20260515_nperm2000/triplet_characterization.tsv",
+    "top_firing_positions": "Research2/results/circuit_analysis/triplet_characterization_20260515_nperm2000/top_firing_positions.tsv",
+    "summary_md": "Research2/results/circuit_analysis/triplet_characterization_20260515_nperm2000/summary.md"
+  }
+}

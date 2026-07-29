@@ -1,0 +1,295 @@
+% Standalone Supplementary Information for the npj Artificial Intelligence
+% submission. This file uses the official December 2024 Springer Nature class
+% and the Nature Portfolio bibliography style selected by sn-nature.
+
+\documentclass[pdflatex,sn-nature]{sn-jnl}
+
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{graphicx}
+
+\raggedbottom
+
+\begin{document}
+
+\title[Supplementary Information]{Supplementary Information: Auditing semantic and causal claims from cross-model sparse readouts in protein language models}
+
+\author*[1]{\fnm{Zipeng} \sur{Liu}}\email{liuzipeng@tju.edu.cn}
+\author[1]{\fnm{Coauthors} \sur{to be added}}
+
+\affil*[1]{\orgdiv{Affiliation to be updated}, \orgname{Institution to be updated}, \orgaddress{\city{City}, \country{Country}}}
+
+\maketitle
+
+\renewcommand{\tablename}{Supplementary Table}
+\setcounter{table}{0}
+
+\section*{Supplementary tables}
+
+This standalone file contains the 11 tables cited as Supplementary Tables in
+the accompanying Article. Captions distinguish procedure-specific or
+exploratory analyses from confirmatory evidence and state the principal audit
+limitations needed to interpret each result.
+
+\begin{table}[p!]
+\caption{Protein generator models and sparse dictionaries. The architecture-specific cross-layer-transcoder (CLT) input is the layer-normalized post-attention MLP input for ProtGPT2 and ZymCTRL, and the layer-normalized block input shared by attention and the MLP for ProGen2-medium. It is not the raw residual stream. FVU denotes fraction of variance unexplained. These values are legacy unmasked quick-evaluation or checkpoint summaries, not matched mask-aware held-out quality estimates; the historical atlas used one reference dictionary per model without dictionary-seed replication. In the reconstructed ProtGPT2 and ZymCTRL quick evaluations, respectively, 298 of 8,342 positions (3.57\%) and 673 of 24,466 positions (2.75\%) were right-padding positions that contributed to the reported diagnostics. Atlas extraction was sequence-by-sequence, so padding did not directly enter the extracted real-token atlas activations, although dictionary training was exposed to padding gradients.}
+\label{tab:supp-modelpanel}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.8cm}rrrrr>{\raggedright\arraybackslash}p{2.2cm}@{}}
+\toprule
+Model & Layers & $d_{\mathrm{CLT}}$ & $k$ & Mean FVU & Dead fraction & Main use \\
+\midrule
+ProtGPT2 reference & 36 & 8,192 & 128 & 0.2013 & 0.6197 & atlas, intervention \\
+ZymCTRL reference & 36 & 8,192 & 128 & 0.3307 & 0.6682 & atlas, steering \\
+ProGen2-medium & 27 & 4,096 & 64 & 0.33 & 0.57 & atlas, intervention \\
+\botrule
+\end{tabular}
+\end{table}
+
+\clearpage
+
+\begin{table}[p!]
+\caption{Procedure- and cohort-sensitive three-model recurrent-triplet atlas and pair/layer-specific sequence-reassignment null. Activation profiles were extracted from a fixed balanced cohort of 200 sequences. ProtGPT2/ZymCTRL anchor depths 5, 12 and 30 were mapped to ProGen2-medium depths 4, 9 and 22; exact triplets were assembled through greedy top-300 matches among top-variance feature pools. Matching used absolute correlation, so anticorrelated profiles counted as recurrent even though they may reflect complementary rather than equivalent behaviour; signed and positive-only replication is outstanding. In each of 30 null replicates, every model-pair/layer edge used a separate sequence reassignment; null triangles therefore did not arise from one coherent model-wise permutation. A separate 500-sequence UniRef50 cohort yielded eight triplets at 0.90 and three at 0.95, with no exact feature-identity overlap with the canonical 38. The comparison documents recurrence under this extraction and matching procedure, not stable conservation across cohorts, layers or matching algorithms.}
+\label{tab:supp-atlas}
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+Threshold & Observed triplets & Null mean & Null s.d. & Null maximum \\
+\midrule
+$|r|\geq 0.90$ & 38 & 0.07 & 0.25 & 1 \\
+$|r|\geq 0.95$ & 30 & 0.07 & 0.25 & 1 \\
+$|r|\geq 0.98$ & 8 & 0.03 & 0.18 & 1 \\
+\botrule
+\end{tabular}
+
+\medskip
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+Cohort & $n_{0.90}$ & $n_{0.95}$ & Exact canonical identity overlap \\
+\midrule
+Balanced 200 (canonical) & 38 & 30 & 38 (reference) \\
+UniRef50 500 (development) & 8 & 3 & 0 \\
+\botrule
+\end{tabular}
+\end{table}
+
+\clearpage
+
+\begin{table}[p!]
+\caption{Exploratory Swiss-Prot matched-null re-audit and representation-basis diagnostic. The original 0.1-nat mutual-information (MI) gate is invalid and is not reported as a negative result: selecting 100 of 122,671 positions gives a binary-event entropy, and hence a maximum possible MI, of only 0.00661 nats. The re-audit tested 38 triplets against ten rich-label families using 2,000 permutations and Benjamini--Hochberg (BH) correction over 380 hypotheses. The global null sampled positions uniformly; the matched null sampled within the same protein while matching amino-acid identity and fine position. Only the saved top 100 positions per triplet, rather than continuous activations, were available, so the re-audit is exploratory and cannot establish absence of biological alignment. The dominant-Pfam label had 500 levels among 500 proteins and therefore did not provide replicated cross-protein family evidence. The 38-dimensional basis probes are quick, dimension-unmatched comparisons with 2,560-dimensional ESM-2 embeddings; the saved implementation also used record-level folds and different seeds/folds across representation arms. They are not family-aware semantic null tests.}
+\label{tab:supp-negativebio}
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{5.3cm}>{\raggedright\arraybackslash}p{3.0cm}@{}}
+\toprule
+Analysis & Metric or comparison & Result \\
+\midrule
+Original MI-gate audit & Maximum attainable MI versus original gate & 0.00661 versus 0.100 nats; gate 15.12$\times$ above maximum \\
+Exploratory global-null re-audit & BH $q<0.05$ across triplet--label hypotheses & 224 / 380 \\
+Exploratory matched-null re-audit & BH $q<0.05$ across triplet--label hypotheses & 0 / 380 \\
+Exploratory matched-null re-audit & Largest excess normalized MI; raw $P$; BH $q$ & 0.0218; 0.000500; 0.09495 \\
+Triplet basis versus ESM-2, Pfam family & Macro-F1 & 0.40 versus 1.00 \\
+Triplet basis versus ESM-2, EC top class & Macro-F1 & 0.26 versus 0.71 \\
+Triplet basis versus ESM-2, secondary-structure fraction & $R^2$ & $-0.60$ versus 0.32 \\
+\botrule
+\end{tabular}
+\end{table}
+
+\clearpage
+
+\begin{table}[p!]
+\caption{Exploratory synthesis of recurrent-triplet characterization. ``High norm'' refers to association with the architecture-specific CLT-input norm, not residual-stream magnitude. Received-attention correlation is unnormalized for the greater causal opportunity of early key positions in a decoder. Counts use the implemented residue-level permutation procedures and BH-adjusted $q<0.05$, but those procedures do not fully account for within-protein dependence; the stronger of the 3-mer and 5-mer tests was also selected. The rows are overlapping descriptive associations and post hoc cluster summaries, not mutually exclusive biological concepts or evidence that one covariate explains another.}
+\label{tab:supp-synthesis}
+\scriptsize
+\begin{tabular}{@{}llr@{}}
+\toprule
+Analysis & Descriptive category & Count \\
+\midrule
+Per-test association & k-mer & 27 \\
+Per-test association & normalized position & 35 \\
+Per-test association & high CLT-input norm & 25 \\
+Per-test association & unnormalized received attention & 4 \\
+Per-test association & ProtGPT2 BPE boundary & 1 \\
+Full signatures & at least one implemented test & 37 / 38 \\
+Full signatures & three or more implemented tests & 21 / 38 \\
+Cluster summary & k-mer + position + CLT-input norm & 17 \\
+Cluster summary & position + CLT-input norm & 6 \\
+Cluster summary & k-mer-dominant mixed & 6 \\
+Cluster summary & position-only & 4 \\
+Cluster summary & received-attention cluster & 4 \\
+Cluster summary & unclassified & 1 \\
+\botrule
+\end{tabular}
+\end{table}
+
+\clearpage
+
+\begin{table}[p!]
+\caption{Within-run checkpoint-sensitivity comparison. The early condition replaced the ProtGPT2 and ZymCTRL reference checkpoints with their 10,000-step checkpoints while retaining the same mature ProGen2-medium checkpoint. Only this one checkpoint pair, one cohort and one matching configuration were tested. The difference shows sensitivity to training stage and motivates recurrent-triplet recovery as a candidate diagnostic; it does not validate a general dictionary-quality diagnostic across seeds, trajectories or model families. CKA denotes centred kernel alignment.}
+\label{tab:supp-qualitydiag}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{4.7cm}ccc@{}}
+\toprule
+Atlas condition & \shortstack{Recurrent\\triplets} & \shortstack{Mean layer\\CKA} & \shortstack{Mean matched-feature\\$|r|$} \\
+\midrule
+Mature ProtGPT2/ZymCTRL references & 38 & 0.5559 & 0.8259 \\
+ProtGPT2/ZymCTRL at 10k steps & 16 & 0.4504 & 0.6403 \\
+\botrule
+\end{tabular}
+\end{table}
+
+\clearpage
+
+\begin{table}[p!]
+\caption{N-terminal initiator-methionine readouts and a non-N-terminal comparator. Fractions summarize the 100 saved top-firing rows per triplet rather than population prevalence. T011, T018 and T023 each selected the first two residues of 100 distinct proteins and were enriched for initiator-methionine contexts. Their same-layer received-attention correlations are unnormalized for the greater number of causal queries able to attend to early key positions. They are therefore descriptive N-terminal readouts with high unnormalized received attention, not validated attention-sink features or evidence of a causal attention mechanism. T025 is a non-N-terminal motif comparator with low correlation.}
+\label{tab:supp-nterminal}
+\scriptsize
+\setlength{\tabcolsep}{2pt}
+\begin{tabular}{@{}lrrrl>{\raggedright\arraybackslash}p{3.5cm}@{}}
+\toprule
+Triplet & Received-attention $r$ & First 2 & First 5 & Top 3-mers & Descriptive role \\
+\midrule
+T011 & 0.921 & 1.00 & 1.00 & MKA, MKI, MTA & N-terminal initiator-methionine readout \\
+T018 & 0.914 & 1.00 & 1.00 & MKK, MKI, MKA & N-terminal initiator-methionine readout \\
+T023 & 0.885 & 1.00 & 1.00 & MRI, MRS, MRA & N-terminal initiator-methionine readout \\
+T025 & 0.079 & 0.00 & 0.00 & HNC, NHI, IHN & non-N-terminal motif comparator \\
+\botrule
+\end{tabular}
+\end{table}
+
+\clearpage
+
+\begin{table}[p!]
+\caption{ZymCTRL TopK-aware steering pipeline pilot. The reported score is the predeclared motif/composition heuristic implemented as a placeholder in the benchmark; it is not a validated enzyme-commission (EC) classifier or biological class-purity endpoint. The selector fell back to absolute-effect-ranked candidates when fewer than five positive candidates were available, introducing 19 negative-attribution interventions across six class/layer cells. Each row compares 100 steered with 100 unsteered generations, and $P$ is from the implemented permutation test. No comparison met the specified positive gate. Because of the sign defect, this run supplies no positive evidence but is not a clean positive-direction steering negative.}
+\label{tab:supp-steering}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Class & Unsteered heuristic & Steered heuristic & Difference & Permutation $P$ \\
+\midrule
+Lysozyme & 0.890 & 0.894 & 0.004 & 0.8678 \\
+Trypsin & 0.723 & 0.737 & 0.013 & 0.6743 \\
+Alcohol dehydrogenase & 0.650 & 0.669 & 0.019 & 0.6373 \\
+Catalase & 0.981 & 0.970 & $-0.011$ & 0.0904 \\
+DNA polymerase & 0.967 & 0.959 & $-0.008$ & 0.5693 \\
+Lipase & 0.769 & 0.826 & 0.057 & 0.0913 \\
+Kinase & 0.510 & 0.617 & 0.107 & 0.0532 \\
+Carbonic anhydrase & 0.900 & 0.855 & $-0.045$ & 0.1439 \\
+\botrule
+\end{tabular}
+\end{table}
+
+\clearpage
+
+\begin{table}[p!]
+\caption{External metrics for an older 29 April z-score-selected/off-manifold lysozyme intervention, not the 3 May direct-effect pilot. Pfam and CLEAN values for the ``all'' rows are generation-wide, whereas the steered-lead row was post-selected. Foldseek was evaluated only where local-ESMFold structures had been staged: ten selected steered leads and the first 20 unsteered sequences. Structure display and steered-lead selection were not blinded. Accordingly, the two Foldseek means are not a generation-wide or symmetric structural comparison. The generation-wide sequence endpoints did not meet a positive-evidence gate over prompt conditioning; the mixed-run, unequal structural samples do not establish a general negative and cannot validate or refute the later pilot.}
+\label{tab:supp-metrictriad}
+\scriptsize
+\setlength{\tabcolsep}{2pt}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{3.1cm}rrrrrr@{}}
+\toprule
+Source & \begin{tabular}[c]{@{}c@{}}Sequence\\$n$\end{tabular} & \begin{tabular}[c]{@{}c@{}}Structure\\$n$\end{tabular} & Pfam & \begin{tabular}[c]{@{}c@{}}CLEAN\\exact EC\end{tabular} & \begin{tabular}[c]{@{}c@{}}CLEAN\\prefix\end{tabular} & \begin{tabular}[c]{@{}c@{}}Foldseek\\TM\end{tabular} \\
+\midrule
+Selected steered leads & 10 & 10 & 0.900 & 0.900 & 0.900 & 0.883 \\
+Steered, all generations & 200 & --- & 0.860 & 0.775 & 0.865 & --- \\
+Unsteered, all generations & 200 & 20 & 0.820 & 0.775 & 0.875 & 0.938 \\
+\botrule
+\end{tabular}
+\end{table}
+
+\clearpage
+
+\begin{table}[p!]
+\caption{Specified causal and intervention gates for N-terminal readouts and associated heads. Head-selection statistics, including first-two-residue attention mass, are unnormalized for causal opportunity. None of the tested interventions met its joint expected-direction, feature-damage and nominal matched-control gate. The available random controls were primarily layer matched and were not uniformly matched on activation magnitude, decoder norm or received-attention mass, weakening the specificity test. The historical pipeline had no valid planted known-mechanism positive control; logit-moving hook checks establish numerical reachability, not calibrated sensitivity or effect recovery. These bounded gate failures apply to the tested features, heads, sites and intervention strengths; they do not exclude every distributed, alternative-site or nonlinear mechanism, and feature/head discovery was not fully separated from evaluation. Feature-, head- and head-set summaries used bootstrap intervals, whereas the saved attention-output pilot retained means only. A separate mean-difference direction experiment is not treated as an oracle controllability test because its direction was derived in the CLT-input space but added to the MLP-output space; its heuristic-score result is therefore site-mismatched and mechanistically uninterpretable.}
+\label{tab:supp-causal}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.7cm}>{\raggedright\arraybackslash}p{3.0cm}>{\raggedright\arraybackslash}p{4.5cm}>{\raggedright\arraybackslash}p{1.7cm}@{}}
+\toprule
+Test & Target & Key result & Specified gate \\
+\midrule
+CLT MLP-output feature patch & T011/T018/T023 in three models & $\Delta$NLL at positions 2--10 was near zero or negative; no consistent expected-direction attention redistribution & Not met \\
+Direct single-head ablation & Paired high-first-two-mass heads & Unnormalized first-two mass was 0.90--0.97, but feature drop and $\Delta$NLL were near zero & Not met \\
+Top-8 head-set ablation & Top N-terminal-attention heads & Largest $\Delta$NLL at positions 2--10 was 0.0406 in ZymCTRL; target-feature drop was negative & Not met \\
+Top-32 head-set ablation & Broader N-terminal-attention head sets & ZymCTRL random-control $\Delta$NLL of 0.1652 exceeded targeted-set $\Delta$NLL of 0.0161 & Not met \\
+Attention-output sparse pilot & ZymCTRL layer 23, feature 1671 & Descriptive readout criterion was met, but target first-two $\Delta$NLL was $-0.3577$ & Not met \\
+\botrule
+\end{tabular}
+\end{table}
+
+\clearpage
+
+\begin{table}[p!]
+\caption{Amended representation-recoverability audit and exploratory wider-dictionary quality check. In panel a, skill is chance-corrected; $C$ is linear-probe skill from the architecture-specific CLT-input tensor and $F$ is skill from the same-layer sparse code. Thus $C$ is neither a raw-residual nor a model-wide information ceiling. The reported recovery ratio is $\rho=\operatorname{clip}(F/C,0,1)$ when $C>0$; clipping prevents negative ratios or values above 1 from being interpreted as negative or super-recovery. The ratio $\phi=C/C_{\mathrm{ESM\text{-}2}}$ is undefined for residue- and decoder-level readouts without a matched ESM-2 reference. The table reports the logged amended-v2 analysis after post-result validity corrections; best-layer selection used the same cross-validated predictions and the values should therefore be treated as exploratory. The cohort comprised 820 proteins, 44,626 residues and 48 decoder-native sequences. The numerically unstable protein-level secondary-structure-fraction regression is omitted. In panel b, all wider checkpoints missed the preregistered quality criterion of FVU $<0.15$ and dead fraction $<0.30$. The final training-log metrics are not a matched held-out comparison with the reference checkpoints, and only ProGen2-medium received a fourfold width increase. The exploratory wider runs therefore do not rule out dictionary capacity or optimization as contributors; the atlas and biological-interpretation analyses were not rerun on a quality-gated wider dictionary.}
+\label{tab:supp-recoverability}
+\scriptsize
+\setlength{\tabcolsep}{2pt}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.4cm}>{\raggedright\arraybackslash}p{3.5cm}rrrr@{}}
+\multicolumn{6}{@{}l}{\textbf{a, Amended reference-dictionary probe results.}} \\[3pt]
+\toprule
+Model & Readout & $C$ & $F$ & $\rho$ & $\phi$ \\
+\midrule
+ProtGPT2 & EC top class (family-disjoint) & 0.260 & 0.262 & 1.00 & 0.99 \\
+ & EC top class (stratified) & 0.557 & 0.547 & 0.98 & 0.96 \\
+ & Pfam family & 0.939 & 0.808 & 0.86 & 0.99 \\
+ & residue secondary structure & 0.221 & 0.217 & 0.98 & --- \\
+ZymCTRL & EC top class (family-disjoint) & 0.123 & 0.022 & 0.18 & 0.47 \\
+ & EC top class (stratified) & 0.356 & 0.229 & 0.64 & 0.61 \\
+ & Pfam family & 0.902 & 0.768 & 0.85 & 0.95 \\
+ & residue secondary structure & 0.149 & 0.129 & 0.87 & --- \\
+ & decoder-native EC & 0.652 & 0.525 & 0.81 & --- \\
+ProGen2-medium & EC top class (family-disjoint) & 0.272 & 0.153 & 0.56 & 1.04 \\
+ & EC top class (stratified) & 0.594 & 0.497 & 0.84 & 1.02 \\
+ & Pfam family & 0.952 & 0.910 & 0.96 & 1.00 \\
+ & residue secondary structure & 0.256 & 0.208 & 0.81 & --- \\
+\bottomrule
+\end{tabular}
+
+\bigskip
+\begin{tabular}{@{}lrrrrl@{}}
+\multicolumn{6}{@{}l}{\textbf{b, Exploratory wider-checkpoint training-log quality.}} \\[3pt]
+\toprule
+Model & $d_{\mathrm{CLT}}$ & Width ratio & Final FVU & Dead fraction & Preregistered quality gate \\
+\midrule
+ProtGPT2 & 16,384 & 2$\times$ & 0.2782 & 0.334 & Fails both criteria \\
+ZymCTRL & 16,384 & 2$\times$ & 0.3348 & 0.044 & Fails FVU criterion \\
+ProGen2-medium & 16,384 & 4$\times$ & 0.3101 & 0.122 & Fails FVU criterion \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\clearpage
+
+\begin{table}[p!]
+\caption{Prospectively frozen synthetic planted-control outcome. The benchmark used model seeds 11, 29 and 47 and disjoint train, discovery and assessment splits of 48 synthetic canonical-amino-acid sequences each. A future W/Y endpoint depended on equality of residues at zero-based positions 8 and 32. The seed-rotated sparse carrier/adapter comparator was fixed by construction rather than learned as a biological circuit. Candidate selection and matched-control construction preceded opening the assessment split. All target paths localized; all wrong-layer, wrong-position and two active nuisance-direction effects at doses 0.5, 1.0 and 2.0 passed paired equivalence tests inside the frozen $\pm0.50$ W/Y log-odds band. Dose recovery denotes the observed-to-known log-odds effect ratio across the three doses. The result establishes sensitivity of this synthetic CLT/intervention pipeline at the planted effect size only; it supplies no causal evidence for ProtGPT2, ZymCTRL or ProGen2-medium, does not upgrade the historical controls and leaves the real held-out pretrained-model gate open.}
+\label{tab:supp-synthetic-control}
+\scriptsize
+\setlength{\tabcolsep}{2pt}
+\begin{tabular}{@{}rccccc@{}}
+\multicolumn{6}{@{}l}{\textbf{a, Immutable production outcome by model seed.}} \\[3pt]
+\toprule
+Seed & Sens./spec./FDR & Acc. & FVU (mean/L1) & Recovery & Path / controls \\
+\midrule
+11 & 1.00/1.00/0.00 & 1.00 & 0.017/0.029 & 1.000--1.000 & yes / equiv. \\
+29 & 1.00/1.00/0.00 & 1.00 & 0.297/0.082 & 1.000--1.000 & yes / equiv. \\
+47 & 1.00/1.00/0.00 & 1.00 & 0.065/0.041 & 1.000--1.000 & yes / equiv. \\
+\bottomrule
+\end{tabular}
+
+\bigskip
+\begin{tabular}{@{}lr@{}}
+\multicolumn{2}{@{}l}{\textbf{b, Assessment-set confound-adjusted activation alignment.}} \\[3pt]
+\toprule
+Model-seed pair & Spearman $r$ \\
+\midrule
+11 versus 29 & 0.935 \\
+11 versus 47 & 0.998 \\
+29 versus 47 & 0.946 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\end{document}

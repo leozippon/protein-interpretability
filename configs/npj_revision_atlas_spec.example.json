@@ -1,0 +1,101 @@
+{
+  "confirmatory": true,
+  "analyses": [
+    {
+      "name": "eligible_dictionary_seed_17",
+      "models": ["protgpt2", "zymctrl", "progen2-medium"],
+      "discovery_manifest": "../results/npj_revision/inputs/atlas/discovery_manifest.json",
+      "discovery_manifest_sha256": "replace_with_exact_discovery_builder_manifest_sha256",
+      "heldout_manifest": "../results/npj_revision/inputs/atlas/heldout_manifest.json",
+      "heldout_manifest_sha256": "replace_with_exact_heldout_builder_manifest_sha256",
+      "eligibility_receipt_sha256": "replace_with_exact_p0_2_eligibility_receipt_sha256",
+      "model_seed": 0,
+      "dictionary_seed": 17,
+      "layer_maps": {
+        "fractional_depth": {
+          "early": {"protgpt2": "5", "zymctrl": "5", "progen2-medium": "4"},
+          "middle": {"protgpt2": "18", "zymctrl": "18", "progen2-medium": "13"},
+          "late": {"protgpt2": "30", "zymctrl": "30", "progen2-medium": "23"}
+        },
+        "nearest_depth_alternative": {
+          "early": {"protgpt2": "6", "zymctrl": "6", "progen2-medium": "5"},
+          "middle": {"protgpt2": "19", "zymctrl": "19", "progen2-medium": "14"},
+          "late": {"protgpt2": "31", "zymctrl": "31", "progen2-medium": "24"}
+        }
+      }
+    },
+    {
+      "name": "eligible_dictionary_seed_29",
+      "models": ["protgpt2", "zymctrl", "progen2-medium"],
+      "discovery_manifest": "../results/npj_revision/inputs/atlas/discovery_manifest.json",
+      "discovery_manifest_sha256": "replace_with_exact_discovery_builder_manifest_sha256",
+      "heldout_manifest": "../results/npj_revision/inputs/atlas/heldout_manifest.json",
+      "heldout_manifest_sha256": "replace_with_exact_heldout_builder_manifest_sha256",
+      "eligibility_receipt_sha256": "replace_with_exact_p0_2_eligibility_receipt_sha256",
+      "model_seed": 0,
+      "dictionary_seed": 29,
+      "layer_maps": {
+        "fractional_depth": {
+          "early": {"protgpt2": "5", "zymctrl": "5", "progen2-medium": "4"},
+          "middle": {"protgpt2": "18", "zymctrl": "18", "progen2-medium": "13"},
+          "late": {"protgpt2": "30", "zymctrl": "30", "progen2-medium": "23"}
+        },
+        "nearest_depth_alternative": {
+          "early": {"protgpt2": "6", "zymctrl": "6", "progen2-medium": "5"},
+          "middle": {"protgpt2": "19", "zymctrl": "19", "progen2-medium": "14"},
+          "late": {"protgpt2": "31", "zymctrl": "31", "progen2-medium": "24"}
+        }
+      }
+    },
+    {
+      "name": "eligible_dictionary_seed_43",
+      "models": ["protgpt2", "zymctrl", "progen2-medium"],
+      "discovery_manifest": "../results/npj_revision/inputs/atlas/discovery_manifest.json",
+      "discovery_manifest_sha256": "replace_with_exact_discovery_builder_manifest_sha256",
+      "heldout_manifest": "../results/npj_revision/inputs/atlas/heldout_manifest.json",
+      "heldout_manifest_sha256": "replace_with_exact_heldout_builder_manifest_sha256",
+      "eligibility_receipt_sha256": "replace_with_exact_p0_2_eligibility_receipt_sha256",
+      "model_seed": 0,
+      "dictionary_seed": 43,
+      "layer_maps": {
+        "fractional_depth": {
+          "early": {"protgpt2": "5", "zymctrl": "5", "progen2-medium": "4"},
+          "middle": {"protgpt2": "18", "zymctrl": "18", "progen2-medium": "13"},
+          "late": {"protgpt2": "30", "zymctrl": "30", "progen2-medium": "23"}
+        },
+        "nearest_depth_alternative": {
+          "early": {"protgpt2": "6", "zymctrl": "6", "progen2-medium": "5"},
+          "middle": {"protgpt2": "19", "zymctrl": "19", "progen2-medium": "14"},
+          "late": {"protgpt2": "31", "zymctrl": "31", "progen2-medium": "24"}
+        }
+      }
+    }
+  ],
+  "grid": {
+    "feature_pool_sizes": [128, 256, 512, 4096],
+    "matchers": ["greedy", "hungarian", "optimal_transport", "joint_triangle"],
+    "correlation_modes": ["positive", "absolute"],
+    "thresholds": [0.9, 0.95, 0.98],
+    "max_matches": 300,
+    "ambiguity_tolerance": 0.02,
+    "ot_regularization": 0.05,
+    "joint_candidate_width": 8,
+    "max_feature_pool_by_matcher": {
+      "greedy": 4096,
+      "hungarian": 512,
+      "optimal_transport": 512,
+      "joint_triangle": 512
+    }
+  },
+  "null": {
+    "n_permutations": 1000,
+    "seed": 20260716,
+    "selection": {
+      "layer_maps": ["fractional_depth"],
+      "feature_pool_sizes": [128],
+      "matchers": ["greedy"],
+      "correlation_modes": ["positive"],
+      "thresholds": [0.9]
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "schema_version": "r2_historical_reference_checkpoint_recovery_v1",
+  "status": "located_and_hash_verified_on_archived_compute_storage_not_deposited",
+  "recovery_date": "2026-07-17",
+  "claim_boundary": "This manifest identifies the exact historical CLT files named by the saved atlas output. It does not restore upstream pretrained-model revisions, create a public deposit, or change any scientific result.",
+  "atlas_output": {
+    "path": "results/circuit_analysis/cross_model_conservation_3model_balanced200_wide_20260512.json",
+    "sha256": "f5a293a8e78f6e062aab0dd658635709ad0e83639b1a12be1d6b646c74fde0d5"
+  },
+  "checkpoints": [
+    {
+      "model": "protgpt2",
+      "remote_path": "/oss-pvc/zhk_zip/outputs/research2/clt_weights/protgpt2_v2/step_200000",
+      "clt": {
+        "bytes": 12418875728,
+        "sha256": "5eca3b19284dbd9b302078e3a7e34ce7a2fc78d97b1566eae927d4d1c30f1f00"
+      },
+      "config": {
+        "path": "protgpt2_config.yaml",
+        "bytes": 613,
+        "sha256": "928325c8ec029cd4a69588adddd69661385699806a703c966c06a5fd6a00b2c8"
+      },
+      "optimizer_present_unhashed": true,
+      "scheduler_present_unhashed": true
+    },
+    {
+      "model": "zymctrl",
+      "remote_path": "/oss-pvc/zhk_zip/outputs/research2/clt_weights/zymctrl_v2/step_200000",
+      "clt": {
+        "bytes": 12418875728,
+        "sha256": "5da70c530b83a034d1fe683a72a8cc5bd7b49463d2598036cd6b5db94ca5761d"
+      },
+      "config": {
+        "path": "zymctrl_config.yaml",
+        "bytes": 607,
+        "sha256": "6635434ff93f2a2dee077e294a2280a63f57d22b403185901b956016eface277"
+      },
+      "optimizer_present_unhashed": true,
+      "scheduler_present_unhashed": true
+    },
+    {
+      "model": "progen2-medium",
+      "remote_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/final_checkpoints/r2_clt_progen2_medium_rerun_20260403/clt_weights/progen2-medium/step_100000",
+      "clt": {
+        "bytes": 5412154231,
+        "sha256": "5e384733dc28ecad3947b65c0c8b34f058ce50a61aab67399548c2b21687b8fd"
+      },
+      "config": {
+        "path": "progen2_medium_config.yaml",
+        "bytes": 592,
+        "sha256": "f18feec0a2e27fde545a1922337a97ef4170739d5f9b0395468d2309aed663e3"
+      },
+      "optimizer_present_unhashed": false,
+      "scheduler_present_unhashed": false
+    }
+  ],
+  "release_requirements": [
+    "copy the hash-verified CLT files into a persistent licensed deposit",
+    "record immutable upstream pretrained-model and tokenizer revisions",
+    "bind the final repository tag and DOI to the deposited files"
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "date": "2026-07-16",
+  "finding": "ProteinModel.get_activations accepts only input_ids and does not pass attention_mask; CLT training/evaluation discard tokenizer attention_mask and include padded EOS positions in model forward, reconstruction loss, FVU and feature firing statistics.",
+  "exact_reference_quick_eval_reconstruction": {
+    "cohort": "05_evaluate_checkpoints.load_eval_sequences(data/uniref50/uniref50.fasta, num_seqs=100, max_len=256, skip=200000), batch_size=2",
+    "protgpt2": {
+      "total_positions": 8342,
+      "real_positions": 8044,
+      "pad_positions": 298,
+      "pad_fraction": 0.03572284823783265,
+      "matches_saved_total_eval_tokens": true
+    },
+    "zymctrl": {
+      "total_positions": 24466,
+      "real_positions": 23793,
+      "pad_positions": 673,
+      "pad_fraction": 0.027507561513937708,
+      "matches_saved_total_eval_tokens": true
+    }
+  },
+  "training_like_pair_samples": {
+    "note": "Diagnostic estimates, not exact remote training streams. Random pairs use seed 42 and the same padding/truncation pattern.",
+    "protgpt2": {
+      "source": "first 1000 UniRef50 sequences eligible at raw length <=256",
+      "mean_pad_fraction": 0.20810080442162016,
+      "p95_pair_pad_fraction": 0.4238386691776521
+    },
+    "progen2-medium": {
+      "source": "same 1000 UniRef50 eligible sequences",
+      "mean_pad_fraction": 0.20227275059243394,
+      "p95_pair_pad_fraction": 0.4101467661691541
+    },
+    "zymctrl": {
+      "source": "first 3000 data/zymctrl/ec_labeled_swissprot.fasta sequences eligible at raw length <=256",
+      "mean_pad_fraction": 0.1065682208266326,
+      "p95_pair_pad_fraction": 0.2775890966831333
+    }
+  },
+  "scope": "Right padding cannot alter preceding real-token states in a causal decoder, but padded positions still contributed CLT gradients and reported quality metrics. Single-sequence atlas/attention extraction has no padding, so this issue does not directly change those forward activations.",
+  "required_repair": "Pass attention_mask through get_activations and exclude padding from CLT loss/FVU/firing/dead statistics; then run a sequence-at-a-time or mask-aware held-out evaluation on all reference and expanded checkpoints. Retraining is required to remove pad-position gradients from the reference dictionaries."
+}

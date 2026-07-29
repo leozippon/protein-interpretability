@@ -1,0 +1,57 @@
+{
+  "builder_sha256": "3c2734e84436fb0fe9ecf9b685e1ef3190632c534dbf657afaea0765fea6b4d8",
+  "eligible_unexcluded_unique_sequences": 248,
+  "evaluation_jsonl": {
+    "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/p0_2b_dictionary_fidelity_20260727_r3/cohort/evaluation.jsonl",
+    "sha256": "19474c1f94be9e4e3ff9b9ef30c76b5870a211b1c8dc3b7d0c0852afebc35dd3"
+  },
+  "excluded_manifests": [
+    {
+      "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/cohorts/uniref50/train.jsonl",
+      "rows": 300000,
+      "sha256": "f4270143c1c22904d4f548de9837572040d2b10b87d9c64363fdb811422525bb"
+    },
+    {
+      "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/cohorts/uniref50/validation.jsonl",
+      "rows": 5000,
+      "sha256": "8c3e9e83ce0d75ebaf0a4e1a0c95010b20875fc46fdfdeaf908d3290a5b207ae"
+    },
+    {
+      "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/cohorts/uniref50/test.jsonl",
+      "rows": 5000,
+      "sha256": "d43737a0860579c52634d535449129bb04e2c3b02c37649d4a688e9f35d4de03"
+    },
+    {
+      "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/cohorts/zymctrl/train.jsonl",
+      "rows": 44000,
+      "sha256": "f9727a374209f7329bed910624430fcf747b735314895215d1eff313b0d3f755"
+    },
+    {
+      "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/cohorts/zymctrl/validation.jsonl",
+      "rows": 2500,
+      "sha256": "f35fe72297bff551700a62c26e64094b4a23323faa701bfa5cc34b2ef239a0cf"
+    },
+    {
+      "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/cohorts/zymctrl/test.jsonl",
+      "rows": 2500,
+      "sha256": "a2b08d1980b78db955e6fc7558d9fa41c908dde597449c15cae803ede12f4289"
+    }
+  ],
+  "excluded_source_prefix": {
+    "reason": "reconstruct_and_exclude_all_ZymCTRL_source_records_that_could_have_entered_the_20260724_transfer_gap_pilots",
+    "records": 40000,
+    "unique_sequence_sha256": 32409
+  },
+  "excluded_unique_sequences": 380385,
+  "maximum_sequence_length": 246,
+  "minimum_sequence_length": 64,
+  "rows": 240,
+  "schema_version": "r2_dictionary_fidelity_cohort_v1",
+  "selection": "lowest_sha256_of_p0_2b_20260727_colon_sequence_sha256",
+  "source_fasta": {
+    "path": "/gpfs/jiaotongdamoxing/zhk_zip/data/zymctrl/ec_labeled_swissprot.fasta",
+    "sha256": "2a1253cea7dcb669828904f4d7c9b83a532aa5d81e1c71b2dd587ae86974cda3"
+  },
+  "source_records": 244343,
+  "status": "frozen_before_evaluation"
+}

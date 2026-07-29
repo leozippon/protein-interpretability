@@ -1,0 +1,339 @@
+\begin{thebibliography}{10}
+\expandafter\ifx\csname url\endcsname\relax
+  \def\url#1{\burl{#1}}\fi
+\expandafter\ifx\csname urlprefix\endcsname\relax\def\urlprefix{URL }\fi
+\providecommand{\bibinfo}[2]{#2}
+\providecommand{\eprint}[2][]{\url{#2}}
+\providecommand{\doi}[1]{\url{https://doi.org/#1}}
+\bibcommenthead
+
+\bibitem{lee2025selfexplanation}
+\bibinfo{author}{Lee, S.} \emph{et~al.}
+\newblock \bibinfo{title}{Toward faithful and human-aligned self-explanation of
+  deep models}.
+\newblock \emph{\bibinfo{journal}{npj Artificial Intelligence}}
+  \textbf{\bibinfo{volume}{1}}, \bibinfo{pages}{21} (\bibinfo{year}{2025}).
+
+\bibitem{esserskala2023reliable}
+\bibinfo{author}{Esser-Skala, W.} \& \bibinfo{author}{Fortelny, N.}
+\newblock \bibinfo{title}{Reliable interpretability of biology-inspired deep
+  neural networks}.
+\newblock \emph{\bibinfo{journal}{npj Systems Biology and Applications}}
+  \textbf{\bibinfo{volume}{9}}, \bibinfo{pages}{50} (\bibinfo{year}{2023}).
+
+\bibitem{haufe2026formalization}
+\bibinfo{author}{Haufe, S.} \emph{et~al.}
+\newblock \bibinfo{title}{Explainable {AI} needs formalization}.
+\newblock \emph{\bibinfo{journal}{npj Artificial Intelligence}}
+  \textbf{\bibinfo{volume}{2}}, \bibinfo{pages}{42} (\bibinfo{year}{2026}).
+
+\bibitem{pesapane2026evidence}
+\bibinfo{author}{Pesapane, F.}, \bibinfo{author}{Rotili, A.},
+  \bibinfo{author}{Penco, S.}, \bibinfo{author}{Nicosia, L.} \&
+  \bibinfo{author}{Cassano, E.}
+\newblock \bibinfo{title}{Evidence over explanations: put medical {AI} to the
+  test}.
+\newblock \emph{\bibinfo{journal}{npj Artificial Intelligence}}
+  \textbf{\bibinfo{volume}{2}}, \bibinfo{pages}{53} (\bibinfo{year}{2026}).
+
+\bibitem{achtibat2023crp}
+\bibinfo{author}{Achtibat, R.} \emph{et~al.}
+\newblock \bibinfo{title}{From attribution maps to human-understandable
+  explanations through {Concept Relevance Propagation}}.
+\newblock \emph{\bibinfo{journal}{Nature Machine Intelligence}}
+  \textbf{\bibinfo{volume}{5}}, \bibinfo{pages}{1006--1019}
+  (\bibinfo{year}{2023}).
+
+\bibitem{dreyer2025semanticlens}
+\bibinfo{author}{Dreyer, M.} \emph{et~al.}
+\newblock \bibinfo{title}{Mechanistic understanding and validation of large
+  {AI} models with {SemanticLens}}.
+\newblock \emph{\bibinfo{journal}{Nature Machine Intelligence}}
+  \textbf{\bibinfo{volume}{7}}, \bibinfo{pages}{1572--1585}
+  (\bibinfo{year}{2025}).
+
+\bibitem{ferruz2022protgpt2}
+\bibinfo{author}{Ferruz, N.}, \bibinfo{author}{Schmidt, S.} \&
+  \bibinfo{author}{H{\"o}cker, B.}
+\newblock \bibinfo{title}{Protgpt2 is a deep unsupervised language model for
+  protein design}.
+\newblock \emph{\bibinfo{journal}{Nature Communications}}
+  \textbf{\bibinfo{volume}{13}}, \bibinfo{pages}{4348} (\bibinfo{year}{2022}).
+
+\bibitem{munsamy2022zymctrl}
+\bibinfo{author}{Munsamy, G.}, \bibinfo{author}{Lindner, S.},
+  \bibinfo{author}{Lorenz, P.} \& \bibinfo{author}{Ferruz, N.}
+\newblock \bibinfo{title}{Zymctrl: a conditional language model for the
+  controllable generation of artificial enzymes}.
+\newblock \bibinfo{howpublished}{Machine Learning for Structural Biology
+  Workshop, NeurIPS} (\bibinfo{year}{2022}).
+
+\bibitem{madani2023large}
+\bibinfo{author}{Madani, A.} \emph{et~al.}
+\newblock \bibinfo{title}{Large language models generate functional protein
+  sequences across diverse families}.
+\newblock \emph{\bibinfo{journal}{Nature Biotechnology}}
+  \textbf{\bibinfo{volume}{41}}, \bibinfo{pages}{1099--1106}
+  (\bibinfo{year}{2023}).
+
+\bibitem{nijkamp2023progen2}
+\bibinfo{author}{Nijkamp, E.}, \bibinfo{author}{Ruffolo, J.~A.},
+  \bibinfo{author}{Weinstein, E.~N.}, \bibinfo{author}{Naik, N.} \&
+  \bibinfo{author}{Madani, A.}
+\newblock \bibinfo{title}{Progen2: exploring the boundaries of protein language
+  models}.
+\newblock \emph{\bibinfo{journal}{Cell Systems}} \textbf{\bibinfo{volume}{14}},
+  \bibinfo{pages}{968--978.e3} (\bibinfo{year}{2023}).
+
+\bibitem{rives2021biological}
+\bibinfo{author}{Rives, A.} \emph{et~al.}
+\newblock \bibinfo{title}{Biological structure and function emerge from scaling
+  unsupervised learning to 250 million protein sequences}.
+\newblock \emph{\bibinfo{journal}{Proceedings of the National Academy of
+  Sciences of the United States of America}} \textbf{\bibinfo{volume}{118}},
+  \bibinfo{pages}{e2016239118} (\bibinfo{year}{2021}).
+
+\bibitem{elnaggar2022prottrans}
+\bibinfo{author}{Elnaggar, A.} \emph{et~al.}
+\newblock \bibinfo{title}{Prottrans: toward understanding the language of life
+  through self-supervised learning}.
+\newblock \emph{\bibinfo{journal}{IEEE Transactions on Pattern Analysis and
+  Machine Intelligence}} \textbf{\bibinfo{volume}{44}},
+  \bibinfo{pages}{7112--7127} (\bibinfo{year}{2022}).
+
+\bibitem{rao2021structure}
+\bibinfo{author}{Rao, R.}, \bibinfo{author}{Meier, J.}, \bibinfo{author}{Sercu,
+  T.}, \bibinfo{author}{Ovchinnikov, S.} \& \bibinfo{author}{Rives, A.}
+\newblock \bibinfo{title}{Transformer protein language models are unsupervised
+  structure learners}.
+\newblock \bibinfo{howpublished}{Proceedings of the International Conference on
+  Learning Representations} (\bibinfo{year}{2021}).
+
+\bibitem{lin2023esm}
+\bibinfo{author}{Lin, Z.} \emph{et~al.}
+\newblock \bibinfo{title}{Evolutionary-scale prediction of atomic-level protein
+  structure with a language model}.
+\newblock \emph{\bibinfo{journal}{Science}} \textbf{\bibinfo{volume}{379}},
+  \bibinfo{pages}{1123--1130} (\bibinfo{year}{2023}).
+
+\bibitem{alwer2026kinform}
+\bibinfo{author}{Alwer, S.} \& \bibinfo{author}{Fleming, R. M.~T.}
+\newblock \bibinfo{title}{{KinForm}: kinetics-informed feature optimised
+  representation models for enzyme kcat and {KM} prediction}.
+\newblock \emph{\bibinfo{journal}{npj Systems Biology and Applications}}
+  \textbf{\bibinfo{volume}{12}}, \bibinfo{pages}{71} (\bibinfo{year}{2026}).
+
+\bibitem{dumontet2026enzyme}
+\bibinfo{author}{Dumontet, L.} \emph{et~al.}
+\newblock \bibinfo{title}{Interpretable {Kolmogorov--Arnold} networks for
+  enzyme commission number prediction}.
+\newblock \emph{\bibinfo{journal}{npj Artificial Intelligence}}
+  \textbf{\bibinfo{volume}{2}}, \bibinfo{pages}{11} (\bibinfo{year}{2026}).
+
+\bibitem{prabakaran2026uncertainty}
+\bibinfo{author}{Prabakaran, R.} \& \bibinfo{author}{Bromberg, Y.}
+\newblock \bibinfo{title}{Quantifying uncertainty in protein representations
+  across models and tasks}.
+\newblock \emph{\bibinfo{journal}{Nature Methods}}
+  \textbf{\bibinfo{volume}{23}}, \bibinfo{pages}{796--804}
+  (\bibinfo{year}{2026}).
+
+\bibitem{zhu2026controllable}
+\bibinfo{author}{Zhu, Y.} \emph{et~al.}
+\newblock \bibinfo{title}{Generative {AI} for controllable protein sequence
+  design: a survey}.
+\newblock \emph{\bibinfo{journal}{npj Drug Discovery}}
+  \textbf{\bibinfo{volume}{3}}, \bibinfo{pages}{19} (\bibinfo{year}{2026}).
+
+\bibitem{watson2023rfdiffusion}
+\bibinfo{author}{Watson, J.~L.} \emph{et~al.}
+\newblock \bibinfo{title}{De novo design of protein structure and function with
+  {RFdiffusion}}.
+\newblock \emph{\bibinfo{journal}{Nature}} \textbf{\bibinfo{volume}{620}},
+  \bibinfo{pages}{1089--1100} (\bibinfo{year}{2023}).
+
+\bibitem{brixi2026evo2}
+\bibinfo{author}{Brixi, G.} \emph{et~al.}
+\newblock \bibinfo{title}{Genome modelling and design across all domains of
+  life with {Evo 2}}.
+\newblock \emph{\bibinfo{journal}{Nature}} \textbf{\bibinfo{volume}{652}},
+  \bibinfo{pages}{1349--1361} (\bibinfo{year}{2026}).
+
+\bibitem{gujral2025proteinSAE}
+\bibinfo{author}{Gujral, O.}, \bibinfo{author}{Bafna, M.},
+  \bibinfo{author}{Alm, E.~J.} \& \bibinfo{author}{Berger, B.}
+\newblock \bibinfo{title}{Sparse autoencoders uncover biologically
+  interpretable features in protein language model representations}.
+\newblock \emph{\bibinfo{journal}{Proceedings of the National Academy of
+  Sciences of the United States of America}} \textbf{\bibinfo{volume}{122}},
+  \bibinfo{pages}{e2506316122} (\bibinfo{year}{2025}).
+
+\bibitem{adams2025mechanisticBiology}
+\bibinfo{author}{Adams, E.}, \bibinfo{author}{Bai, L.}, \bibinfo{author}{Lee,
+  M.}, \bibinfo{author}{Yu, Y.} \& \bibinfo{author}{AlQuraishi, M.}
+\newblock \bibinfo{title}{From mechanistic interpretability to mechanistic
+  biology: training, evaluating, and interpreting sparse autoencoders on
+  protein language models}.
+\newblock \bibinfo{howpublished}{Proceedings of the 42nd International
+  Conference on Machine Learning} (\bibinfo{year}{2025}).
+
+\bibitem{simon2025interplm}
+\bibinfo{author}{Simon, E.} \& \bibinfo{author}{Zou, J.}
+\newblock \bibinfo{title}{Interplm: discovering interpretable features in
+  protein language models via sparse autoencoders}.
+\newblock \emph{\bibinfo{journal}{Nature Methods}}
+  \textbf{\bibinfo{volume}{22}}, \bibinfo{pages}{2107--2117}
+  (\bibinfo{year}{2025}).
+
+\bibitem{elhage2022toy}
+\bibinfo{author}{Elhage, N.} \emph{et~al.}
+\newblock \bibinfo{title}{Toy models of superposition}.
+\newblock \bibinfo{howpublished}{arXiv preprint arXiv:2209.10652}
+  (\bibinfo{year}{2022}).
+
+\bibitem{bricken2023monosemanticity}
+\bibinfo{author}{Bricken, T.} \emph{et~al.}
+\newblock \bibinfo{title}{Towards monosemanticity: decomposing language models
+  with dictionary learning} (\bibinfo{year}{2023}).
+\newblock
+  \urlprefix\url{https://transformer-circuits.pub/2023/monosemantic-features}.
+
+\bibitem{cunningham2024sparse}
+\bibinfo{author}{Cunningham, H.}, \bibinfo{author}{Ewart, A.},
+  \bibinfo{author}{Riggs, L.}, \bibinfo{author}{Huben, R.} \&
+  \bibinfo{author}{Sharkey, L.}
+\newblock \bibinfo{title}{Sparse autoencoders find highly interpretable
+  features in language models}.
+\newblock \bibinfo{howpublished}{Proceedings of the International Conference on
+  Learning Representations} (\bibinfo{year}{2024}).
+
+\bibitem{templeton2024scaling}
+\bibinfo{author}{Templeton, A.} \emph{et~al.}
+\newblock \bibinfo{title}{Scaling monosemanticity: extracting interpretable
+  features from claude 3 sonnet} (\bibinfo{year}{2024}).
+\newblock
+  \urlprefix\url{https://transformer-circuits.pub/2024/scaling-monosemanticity}.
+
+\bibitem{dunefsky2024transcoders}
+\bibinfo{author}{Dunefsky, J.}, \bibinfo{author}{Chlenski, P.} \&
+  \bibinfo{author}{Nanda, N.}
+\newblock \bibinfo{title}{Transcoders find interpretable llm feature circuits}.
+\newblock \bibinfo{howpublished}{Advances in Neural Information Processing
+  Systems} (\bibinfo{year}{2024}).
+
+\bibitem{ameisen2025circuit}
+\bibinfo{author}{Ameisen, E.} \emph{et~al.}
+\newblock \bibinfo{title}{Circuit tracing: revealing computational graphs in
+  language models} (\bibinfo{year}{2025}).
+\newblock
+  \urlprefix\url{https://transformer-circuits.pub/2025/attribution-graphs/methods.html}.
+
+\bibitem{lindsey2024crosscoders}
+\bibinfo{author}{Lindsey, J.} \emph{et~al.}
+\newblock \bibinfo{title}{Sparse crosscoders for cross-layer features and model
+  diffing} (\bibinfo{year}{2024}).
+\newblock
+  \urlprefix\url{https://transformer-circuits.pub/2024/crosscoders/index.html}.
+
+\bibitem{klindt2026unifying}
+\bibinfo{author}{Klindt, D.} \emph{et~al.}
+\newblock \bibinfo{title}{A unifying framework from neural superposition to
+  sparse interpretable codes}.
+\newblock \emph{\bibinfo{journal}{Nature Machine Intelligence}}
+  (\bibinfo{year}{2026}).
+
+\bibitem{hewitt2019control}
+\bibinfo{author}{Hewitt, J.} \& \bibinfo{author}{Liang, P.}
+\newblock \bibinfo{title}{Designing and interpreting probes with control
+  tasks}.
+\newblock \bibinfo{howpublished}{Proceedings of the 2019 Conference on
+  Empirical Methods in Natural Language Processing and the 9th International
+  Joint Conference on Natural Language Processing} (\bibinfo{year}{2019}).
+
+\bibitem{elazar2021amnesic}
+\bibinfo{author}{Elazar, Y.}, \bibinfo{author}{Ravfogel, S.},
+  \bibinfo{author}{Jacovi, A.} \& \bibinfo{author}{Goldberg, Y.}
+\newblock \bibinfo{title}{Amnesic probing: behavioral explanation with amnesic
+  counterfactuals}.
+\newblock \emph{\bibinfo{journal}{Transactions of the Association for
+  Computational Linguistics}} \textbf{\bibinfo{volume}{9}},
+  \bibinfo{pages}{160--175} (\bibinfo{year}{2021}).
+
+\bibitem{meng2022rome}
+\bibinfo{author}{Meng, K.}, \bibinfo{author}{Bau, D.},
+  \bibinfo{author}{Andonian, A.} \& \bibinfo{author}{Belinkov, Y.}
+\newblock \bibinfo{title}{Locating and editing factual associations in gpt}.
+\newblock \bibinfo{howpublished}{Advances in Neural Information Processing
+  Systems} (\bibinfo{year}{2022}).
+
+\bibitem{wang2023ioi}
+\bibinfo{author}{Wang, K.~R.}, \bibinfo{author}{Variengien, A.},
+  \bibinfo{author}{Conmy, A.}, \bibinfo{author}{Shlegeris, B.} \&
+  \bibinfo{author}{Steinhardt, J.}
+\newblock \bibinfo{title}{Interpretability in the wild: a circuit for indirect
+  object identification in gpt-2 small}.
+\newblock \bibinfo{howpublished}{Proceedings of the International Conference on
+  Learning Representations} (\bibinfo{year}{2023}).
+
+\bibitem{wu2025sparsepatterns}
+\bibinfo{author}{Wu, Y.} \emph{et~al.}
+\newblock \bibinfo{title}{How large language models encode theory-of-mind: a
+  study on sparse parameter patterns}.
+\newblock \emph{\bibinfo{journal}{npj Artificial Intelligence}}
+  \textbf{\bibinfo{volume}{1}}, \bibinfo{pages}{20} (\bibinfo{year}{2025}).
+
+\bibitem{kornblith2019similarity}
+\bibinfo{author}{Kornblith, S.}, \bibinfo{author}{Norouzi, M.},
+  \bibinfo{author}{Lee, H.} \& \bibinfo{author}{Hinton, G.}
+\newblock \bibinfo{title}{Similarity of neural network representations
+  revisited}.
+\newblock \bibinfo{howpublished}{Proceedings of the 36th International
+  Conference on Machine Learning} (\bibinfo{year}{2019}).
+\newblock \urlprefix\url{https://proceedings.mlr.press/v97/kornblith19a.html}.
+
+\bibitem{johnson2025computational}
+\bibinfo{author}{Johnson, S.~R.} \emph{et~al.}
+\newblock \bibinfo{title}{Computational scoring and experimental evaluation of
+  enzymes generated by neural networks}.
+\newblock \emph{\bibinfo{journal}{Nature Biotechnology}}
+  \textbf{\bibinfo{volume}{43}}, \bibinfo{pages}{396--405}
+  (\bibinfo{year}{2025}).
+
+\bibitem{uniprot2025}
+\bibinfo{author}{{The UniProt Consortium}}.
+\newblock \bibinfo{title}{Uniprot: the universal protein knowledgebase in
+  2025}.
+\newblock \emph{\bibinfo{journal}{Nucleic Acids Research}}
+  \textbf{\bibinfo{volume}{53}}, \bibinfo{pages}{D609--D617}
+  (\bibinfo{year}{2025}).
+
+\bibitem{mistry2021pfam}
+\bibinfo{author}{Mistry, J.} \emph{et~al.}
+\newblock \bibinfo{title}{Pfam: the protein families database in 2021}.
+\newblock \emph{\bibinfo{journal}{Nucleic Acids Research}}
+  \textbf{\bibinfo{volume}{49}}, \bibinfo{pages}{D412--D419}
+  (\bibinfo{year}{2021}).
+
+\bibitem{potter2018hmmer}
+\bibinfo{author}{Potter, S.~C.} \emph{et~al.}
+\newblock \bibinfo{title}{Hmmer web server: 2018 update}.
+\newblock \emph{\bibinfo{journal}{Nucleic Acids Research}}
+  \textbf{\bibinfo{volume}{46}}, \bibinfo{pages}{W200--W204}
+  (\bibinfo{year}{2018}).
+
+\bibitem{yu2023clean}
+\bibinfo{author}{Yu, T.} \emph{et~al.}
+\newblock \bibinfo{title}{Enzyme function prediction using contrastive
+  learning}.
+\newblock \emph{\bibinfo{journal}{Science}} \textbf{\bibinfo{volume}{379}},
+  \bibinfo{pages}{1358--1363} (\bibinfo{year}{2023}).
+
+\bibitem{vankempen2024foldseek}
+\bibinfo{author}{van Kempen, M.} \emph{et~al.}
+\newblock \bibinfo{title}{Fast and accurate protein structure search with
+  foldseek}.
+\newblock \emph{\bibinfo{journal}{Nature Biotechnology}}
+  \textbf{\bibinfo{volume}{42}}, \bibinfo{pages}{243--246}
+  (\bibinfo{year}{2024}).
+
+\end{thebibliography}

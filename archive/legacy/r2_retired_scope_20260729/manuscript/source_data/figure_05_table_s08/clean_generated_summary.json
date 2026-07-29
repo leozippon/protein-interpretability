@@ -1,0 +1,369 @@
+{
+  "task": "R2 T2-C CLEAN generated-sequence EC prediction",
+  "status": "completed",
+  "input": "/oss-pvc/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_leads_v2.json",
+  "clean_root": "/oss-pvc/zhk_zip/biocc/external_resources/ec_metrics/clean/CLEAN",
+  "esm1b": "/oss-pvc/zhk_zip/biocc/external_resources/ec_metrics/clean/esm1b_checkpoints/esm1b_t33_650M_UR50S.pt",
+  "target_ec": "3.2.1.17",
+  "n_records": 410,
+  "elapsed_s": 22.6,
+  "by_source": {
+    "steered_leads": {
+      "n": 10,
+      "n_pred": 10,
+      "prediction_rate": 1.0,
+      "exact_target_rate": 0.9,
+      "glycosidase_prefix_rate": 0.9,
+      "top_ec": [
+        [
+          "3.2.1.17",
+          9
+        ],
+        [
+          "1.3.7.5",
+          1
+        ]
+      ]
+    },
+    "steered_all": {
+      "n": 200,
+      "n_pred": 200,
+      "prediction_rate": 1.0,
+      "exact_target_rate": 0.775,
+      "glycosidase_prefix_rate": 0.865,
+      "top_ec": [
+        [
+          "3.2.1.17",
+          155
+        ],
+        [
+          "3.2.1.14",
+          11
+        ],
+        [
+          "3.2.2.22",
+          9
+        ],
+        [
+          "3.2.1.4",
+          6
+        ],
+        [
+          "4.2.2.n2",
+          3
+        ],
+        [
+          "4.6.1.24",
+          3
+        ],
+        [
+          "1.3.7.5",
+          1
+        ],
+        [
+          "3.2.2.6",
+          1
+        ],
+        [
+          "3.4.24.75",
+          1
+        ],
+        [
+          "3.5.1.28",
+          1
+        ]
+      ]
+    },
+    "unsteered": {
+      "n": 200,
+      "n_pred": 200,
+      "prediction_rate": 1.0,
+      "exact_target_rate": 0.775,
+      "glycosidase_prefix_rate": 0.875,
+      "top_ec": [
+        [
+          "3.2.1.17",
+          155
+        ],
+        [
+          "3.2.1.14",
+          15
+        ],
+        [
+          "3.2.2.22",
+          5
+        ],
+        [
+          "4.2.2.n2",
+          4
+        ],
+        [
+          "3.2.1.4",
+          3
+        ],
+        [
+          "3.1.1.59",
+          3
+        ],
+        [
+          "3.4.23.42",
+          3
+        ],
+        [
+          "4.6.1.24",
+          2
+        ],
+        [
+          "3.2.1.96",
+          1
+        ],
+        [
+          "4.1.1.28",
+          1
+        ]
+      ]
+    }
+  },
+  "examples": [
+    {
+      "id": "steered_leads_0000",
+      "source": "steered_leads",
+      "length": 174,
+      "predictions": [
+        {
+          "ec": "3.2.1.17",
+          "distance": 5.7825608253479,
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "id": "steered_leads_0001",
+      "source": "steered_leads",
+      "length": 185,
+      "predictions": [
+        {
+          "ec": "1.3.7.5",
+          "distance": 7.375186920166016,
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "id": "steered_leads_0002",
+      "source": "steered_leads",
+      "length": 187,
+      "predictions": [
+        {
+          "ec": "3.2.1.17",
+          "distance": 4.617300510406494,
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "id": "steered_leads_0003",
+      "source": "steered_leads",
+      "length": 181,
+      "predictions": [
+        {
+          "ec": "3.2.1.17",
+          "distance": 5.450335502624512,
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "id": "steered_leads_0004",
+      "source": "steered_leads",
+      "length": 180,
+      "predictions": [
+        {
+          "ec": "3.2.1.17",
+          "distance": 5.556649684906006,
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "id": "steered_leads_0005",
+      "source": "steered_leads",
+      "length": 158,
+      "predictions": [
+        {
+          "ec": "3.2.1.17",
+          "distance": 5.441967487335205,
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "id": "steered_leads_0006",
+      "source": "steered_leads",
+      "length": 171,
+      "predictions": [
+        {
+          "ec": "3.2.1.17",
+          "distance": 5.152120590209961,
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "id": "steered_leads_0007",
+      "source": "steered_leads",
+      "length": 169,
+      "predictions": [
+        {
+          "ec": "3.2.1.17",
+          "distance": 5.774024963378906,
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "id": "steered_leads_0008",
+      "source": "steered_leads",
+      "length": 151,
+      "predictions": [
+        {
+          "ec": "3.2.1.17",
+          "distance": 5.163098335266113,
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "id": "steered_leads_0009",
+      "source": "steered_leads",
+      "length": 176,
+      "predictions": [
+        {
+          "ec": "3.2.1.17",
+          "distance": 3.835862398147583,
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "id": "steered_all_0010",
+      "source": "steered_all",
+      "length": 174,
+      "predictions": [
+        {
+          "ec": "3.2.1.17",
+          "distance": 5.7825608253479,
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "id": "steered_all_0011",
+      "source": "steered_all",
+      "length": 185,
+      "predictions": [
+        {
+          "ec": "1.3.7.5",
+          "distance": 7.375186920166016,
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "id": "steered_all_0012",
+      "source": "steered_all",
+      "length": 187,
+      "predictions": [
+        {
+          "ec": "3.2.1.17",
+          "distance": 4.617300510406494,
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "id": "steered_all_0013",
+      "source": "steered_all",
+      "length": 181,
+      "predictions": [
+        {
+          "ec": "3.2.1.17",
+          "distance": 5.450335502624512,
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "id": "steered_all_0014",
+      "source": "steered_all",
+      "length": 180,
+      "predictions": [
+        {
+          "ec": "3.2.1.17",
+          "distance": 5.556649684906006,
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "id": "steered_all_0015",
+      "source": "steered_all",
+      "length": 158,
+      "predictions": [
+        {
+          "ec": "3.2.1.17",
+          "distance": 5.441967487335205,
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "id": "steered_all_0016",
+      "source": "steered_all",
+      "length": 171,
+      "predictions": [
+        {
+          "ec": "3.2.1.17",
+          "distance": 5.152120590209961,
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "id": "steered_all_0017",
+      "source": "steered_all",
+      "length": 169,
+      "predictions": [
+        {
+          "ec": "3.2.1.17",
+          "distance": 5.774024963378906,
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "id": "steered_all_0018",
+      "source": "steered_all",
+      "length": 151,
+      "predictions": [
+        {
+          "ec": "3.2.1.17",
+          "distance": 5.163098335266113,
+          "rank": 1
+        }
+      ]
+    },
+    {
+      "id": "steered_all_0019",
+      "source": "steered_all",
+      "length": 176,
+      "predictions": [
+        {
+          "ec": "3.2.1.17",
+          "distance": 3.835862398147583,
+          "rank": 1
+        }
+      ]
+    }
+  ]
+}

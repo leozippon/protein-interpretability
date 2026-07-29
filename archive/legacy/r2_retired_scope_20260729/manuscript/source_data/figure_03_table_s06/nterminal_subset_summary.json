@@ -1,0 +1,14 @@
+{
+  "task": "R2-Add-1 attention-sink subset summary",
+  "attention_sink_triplets": [
+    "T011",
+    "T018",
+    "T023",
+    "T025"
+  ],
+  "n_attention_sink_triplets": 4,
+  "outputs": {
+    "table": "/Data/lzp/BioInterpretebility-CC/Research2/results/circuit_analysis/attention_sink_subset_20260516/attention_sink_subset.tsv",
+    "summary_md": "/Data/lzp/BioInterpretebility-CC/Research2/results/circuit_analysis/attention_sink_subset_20260516/summary.md"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "confirmatory": true,
+  "module": {
+    "path": "../../src/revision/dictionary_controls.py",
+    "sha256": "347a095c2e18a429e09011f84a45bd40b1cf5d46ebf38398e6e2a7afe57c6596"
+  },
+  "production_scientific_eligibility": true,
+  "pytest_exit_code": 0,
+  "schema_version": "r2_p0_2_mask_validation_receipt_v1",
+  "status": "complete",
+  "test_file": {
+    "path": "../../tests/test_dictionary_controls.py",
+    "sha256": "a1f2f61f8933c1e1a766bc5e827ba3747215c2286a2df2421e32d0e2b8fc1253"
+  },
+  "tests": {
+    "test_valid_token_cache_is_padding_invariant_and_all_valid_equivalent": true,
+    "test_windowed_metrics_are_padding_invariant_end_to_end": true
+  }
+}

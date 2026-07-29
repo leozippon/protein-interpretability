@@ -1,0 +1,757 @@
+{
+  "schema_version": "r2_p0_2_dictionary_gate_spec_v1",
+  "confirmatory": true,
+  "profile": {
+    "path": "p0_2_dictionary_controls_production_profile.json",
+    "sha256": "35dc4923294de439a8707c6390ca85c290ecedced4d874672f2cf628e76ab217"
+  },
+  "protocol": {
+    "path": "../docs/P0_2_DICTIONARY_PROTOCOL_20260717.md",
+    "sha256": "75aca9cdd8bf220374bc890d7a5d7694990e9a30cc24fdd9079c49c694ae3b32"
+  },
+  "mask_validation_receipt": {
+    "path": "../results/npj_revision/p0_2/mask_validation_receipt.json",
+    "sha256": "replace_with_lowercase_sha256"
+  },
+  "caches": [
+    {
+      "model_name": "protgpt2",
+      "manifest": {
+        "path": "../results/npj_revision/p0_2/caches/protgpt2/manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "zymctrl",
+      "manifest": {
+        "path": "../results/npj_revision/p0_2/caches/zymctrl/manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "progen2-medium",
+      "manifest": {
+        "path": "../results/npj_revision/p0_2/caches/progen2-medium/manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    }
+  ],
+  "screening_runs": [
+    {
+      "model_name": "protgpt2",
+      "method": "relu_l1_sae",
+      "run_seed": 20260717,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/screening/protgpt2/relu_l1_sae/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/screening/protgpt2/relu_l1_sae/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/screening/protgpt2/relu_l1_sae/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "protgpt2",
+      "method": "gated_sae",
+      "run_seed": 20260717,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/screening/protgpt2/gated_sae/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/screening/protgpt2/gated_sae/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/screening/protgpt2/gated_sae/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "zymctrl",
+      "method": "relu_l1_sae",
+      "run_seed": 20260717,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/screening/zymctrl/relu_l1_sae/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/screening/zymctrl/relu_l1_sae/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/screening/zymctrl/relu_l1_sae/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "zymctrl",
+      "method": "gated_sae",
+      "run_seed": 20260717,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/screening/zymctrl/gated_sae/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/screening/zymctrl/gated_sae/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/screening/zymctrl/gated_sae/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "progen2-medium",
+      "method": "relu_l1_sae",
+      "run_seed": 20260717,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/screening/progen2-medium/relu_l1_sae/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/screening/progen2-medium/relu_l1_sae/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/screening/progen2-medium/relu_l1_sae/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "progen2-medium",
+      "method": "gated_sae",
+      "run_seed": 20260717,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/screening/progen2-medium/gated_sae/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/screening/progen2-medium/gated_sae/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/screening/progen2-medium/gated_sae/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    }
+  ],
+  "full_runs": [
+    {
+      "model_name": "protgpt2",
+      "method": "topk_clt",
+      "run_seed": 17,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/topk_clt/seed_17/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/topk_clt/seed_17/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/topk_clt/seed_17/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "protgpt2",
+      "method": "topk_clt",
+      "run_seed": 29,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/topk_clt/seed_29/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/topk_clt/seed_29/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/topk_clt/seed_29/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "protgpt2",
+      "method": "topk_clt",
+      "run_seed": 43,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/topk_clt/seed_43/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/topk_clt/seed_43/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/topk_clt/seed_43/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "protgpt2",
+      "method": "relu_l1_sae",
+      "run_seed": 17,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/relu_l1_sae/seed_17/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/relu_l1_sae/seed_17/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/relu_l1_sae/seed_17/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "protgpt2",
+      "method": "relu_l1_sae",
+      "run_seed": 29,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/relu_l1_sae/seed_29/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/relu_l1_sae/seed_29/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/relu_l1_sae/seed_29/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "protgpt2",
+      "method": "relu_l1_sae",
+      "run_seed": 43,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/relu_l1_sae/seed_43/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/relu_l1_sae/seed_43/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/relu_l1_sae/seed_43/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "protgpt2",
+      "method": "gated_sae",
+      "run_seed": 17,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/gated_sae/seed_17/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/gated_sae/seed_17/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/gated_sae/seed_17/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "protgpt2",
+      "method": "gated_sae",
+      "run_seed": 29,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/gated_sae/seed_29/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/gated_sae/seed_29/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/gated_sae/seed_29/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "protgpt2",
+      "method": "gated_sae",
+      "run_seed": 43,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/gated_sae/seed_43/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/gated_sae/seed_43/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/gated_sae/seed_43/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "protgpt2",
+      "method": "dense_low_rank",
+      "run_seed": 17,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/dense_low_rank/seed_17/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/dense_low_rank/seed_17/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/dense_low_rank/seed_17/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "protgpt2",
+      "method": "dense_low_rank",
+      "run_seed": 29,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/dense_low_rank/seed_29/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/dense_low_rank/seed_29/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/dense_low_rank/seed_29/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "protgpt2",
+      "method": "dense_low_rank",
+      "run_seed": 43,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/dense_low_rank/seed_43/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/dense_low_rank/seed_43/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/protgpt2/dense_low_rank/seed_43/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "zymctrl",
+      "method": "topk_clt",
+      "run_seed": 17,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/topk_clt/seed_17/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/topk_clt/seed_17/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/topk_clt/seed_17/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "zymctrl",
+      "method": "topk_clt",
+      "run_seed": 29,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/topk_clt/seed_29/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/topk_clt/seed_29/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/topk_clt/seed_29/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "zymctrl",
+      "method": "topk_clt",
+      "run_seed": 43,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/topk_clt/seed_43/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/topk_clt/seed_43/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/topk_clt/seed_43/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "zymctrl",
+      "method": "relu_l1_sae",
+      "run_seed": 17,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/relu_l1_sae/seed_17/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/relu_l1_sae/seed_17/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/relu_l1_sae/seed_17/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "zymctrl",
+      "method": "relu_l1_sae",
+      "run_seed": 29,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/relu_l1_sae/seed_29/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/relu_l1_sae/seed_29/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/relu_l1_sae/seed_29/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "zymctrl",
+      "method": "relu_l1_sae",
+      "run_seed": 43,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/relu_l1_sae/seed_43/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/relu_l1_sae/seed_43/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/relu_l1_sae/seed_43/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "zymctrl",
+      "method": "gated_sae",
+      "run_seed": 17,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/gated_sae/seed_17/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/gated_sae/seed_17/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/gated_sae/seed_17/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "zymctrl",
+      "method": "gated_sae",
+      "run_seed": 29,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/gated_sae/seed_29/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/gated_sae/seed_29/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/gated_sae/seed_29/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "zymctrl",
+      "method": "gated_sae",
+      "run_seed": 43,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/gated_sae/seed_43/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/gated_sae/seed_43/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/gated_sae/seed_43/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "zymctrl",
+      "method": "dense_low_rank",
+      "run_seed": 17,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/dense_low_rank/seed_17/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/dense_low_rank/seed_17/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/dense_low_rank/seed_17/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "zymctrl",
+      "method": "dense_low_rank",
+      "run_seed": 29,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/dense_low_rank/seed_29/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/dense_low_rank/seed_29/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/dense_low_rank/seed_29/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "zymctrl",
+      "method": "dense_low_rank",
+      "run_seed": 43,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/dense_low_rank/seed_43/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/dense_low_rank/seed_43/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/zymctrl/dense_low_rank/seed_43/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "progen2-medium",
+      "method": "topk_clt",
+      "run_seed": 17,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/topk_clt/seed_17/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/topk_clt/seed_17/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/topk_clt/seed_17/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "progen2-medium",
+      "method": "topk_clt",
+      "run_seed": 29,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/topk_clt/seed_29/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/topk_clt/seed_29/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/topk_clt/seed_29/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "progen2-medium",
+      "method": "topk_clt",
+      "run_seed": 43,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/topk_clt/seed_43/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/topk_clt/seed_43/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/topk_clt/seed_43/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "progen2-medium",
+      "method": "relu_l1_sae",
+      "run_seed": 17,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/relu_l1_sae/seed_17/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/relu_l1_sae/seed_17/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/relu_l1_sae/seed_17/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "progen2-medium",
+      "method": "relu_l1_sae",
+      "run_seed": 29,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/relu_l1_sae/seed_29/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/relu_l1_sae/seed_29/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/relu_l1_sae/seed_29/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "progen2-medium",
+      "method": "relu_l1_sae",
+      "run_seed": 43,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/relu_l1_sae/seed_43/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/relu_l1_sae/seed_43/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/relu_l1_sae/seed_43/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "progen2-medium",
+      "method": "gated_sae",
+      "run_seed": 17,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/gated_sae/seed_17/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/gated_sae/seed_17/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/gated_sae/seed_17/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "progen2-medium",
+      "method": "gated_sae",
+      "run_seed": 29,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/gated_sae/seed_29/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/gated_sae/seed_29/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/gated_sae/seed_29/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "progen2-medium",
+      "method": "gated_sae",
+      "run_seed": 43,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/gated_sae/seed_43/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/gated_sae/seed_43/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/gated_sae/seed_43/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "progen2-medium",
+      "method": "dense_low_rank",
+      "run_seed": 17,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/dense_low_rank/seed_17/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/dense_low_rank/seed_17/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/dense_low_rank/seed_17/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "progen2-medium",
+      "method": "dense_low_rank",
+      "run_seed": 29,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/dense_low_rank/seed_29/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/dense_low_rank/seed_29/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/dense_low_rank/seed_29/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    },
+    {
+      "model_name": "progen2-medium",
+      "method": "dense_low_rank",
+      "run_seed": 43,
+      "run_manifest": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/dense_low_rank/seed_43/run_manifest.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "result": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/dense_low_rank/seed_43/results.json",
+        "sha256": "replace_with_lowercase_sha256"
+      },
+      "checkpoint": {
+        "path": "../results/npj_revision/p0_2/full/progen2-medium/dense_low_rank/seed_43/selected_best.pt",
+        "sha256": "replace_with_lowercase_sha256"
+      }
+    }
+  ]
+}

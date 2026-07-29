@@ -1,0 +1,75 @@
+{
+  "confirmatory": true,
+  "data": {
+    "path": "../results/npj_revision/semantics/continuous_activations.npz",
+    "sha256": "replace_with_exact_bundle_sha256"
+  },
+  "prospective_power_plan": {
+    "path": "npj_conditional_semantics_power_plan.json",
+    "sha256": "replace_with_exact_power_plan_sha256"
+  },
+  "arrays": {
+    "protein_id": "protein_id",
+    "family_id": "family_id",
+    "position": "normalized_position",
+    "kmer": "centered_3mer",
+    "input_norm": "input_norm",
+    "protein_length": "protein_length",
+    "sequence_source": "sequence_source"
+  },
+  "representations": [
+    {
+      "name": "sparse_aligned",
+      "role": "sparse",
+      "construction": "continuous activations of frozen cohort-A aligned CLT features",
+      "array": "sparse_activations",
+      "feature_names": ["replace_with_frozen_sparse_feature_ids"]
+    },
+    {
+      "name": "dense_matched",
+      "role": "dense",
+      "construction": "held-out train-fit dense directions with matched output dimension",
+      "array": "dense_matched_directions",
+      "feature_names": ["replace_with_frozen_dense_direction_ids"]
+    },
+    {
+      "name": "randomized_dictionary",
+      "role": "randomized",
+      "construction": "independently sampled frozen random dictionary",
+      "seed": 20260717,
+      "array": "randomized_dictionary_activations",
+      "feature_names": ["replace_with_frozen_random_feature_ids"]
+    }
+  ],
+  "labels": [
+    {
+      "name": "pfam_residue",
+      "role": "biological",
+      "family": "pfam",
+      "construction": "prespecified binary residue-level Pfam hypothesis",
+      "array": "pfam_residue_label"
+    },
+    {
+      "name": "pfam_residue_negative",
+      "role": "negative",
+      "family": "pfam",
+      "construction": "within-protein randomized label with exactly matched prevalence",
+      "seed": 20260718,
+      "array": "pfam_residue_label_matched_negative",
+      "matched_to": "pfam_residue"
+    }
+  ],
+  "covariates": {
+    "position_degree": 3,
+    "kmer_hash_buckets": 64
+  },
+  "test": {
+    "n_folds": 5,
+    "n_permutations": 1000,
+    "n_bootstrap": 1000,
+    "ridge_alpha": 1.0,
+    "seed": 20260716,
+    "fdr_alpha": 0.05,
+    "power": 0.8
+  }
+}

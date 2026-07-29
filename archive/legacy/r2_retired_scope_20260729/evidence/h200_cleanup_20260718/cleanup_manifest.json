@@ -1,0 +1,87 @@
+{
+  "schema_version": "h200_storage_cleanup_v1",
+  "observed_at": "2026-07-18T12:09:54+08:00",
+  "pod": "damoxing-zhk-zipbio-master-0",
+  "revision_root": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717",
+  "removed_artifacts": [
+    {
+      "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/dictionaries_topk_stable_r1",
+      "apparent_bytes_removed": 223519958526,
+      "disposition": "deleted_full_root",
+      "reason": "Superseded pre-amendment float16 r6 TopK outputs; forbidden for resume, pooling, or scientific credit."
+    },
+    {
+      "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/p0_2_exact_cache_r1",
+      "apparent_bytes_removed": 184683511863,
+      "disposition": "deleted_full_root",
+      "reason": "Aborted pre-amendment float16 partial cache with no completion receipt."
+    },
+    {
+      "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/topk_checkpoint_publication_smoke_r2/clt_weights/protgpt2/step_4",
+      "apparent_bytes_removed": 37251935377,
+      "disposition": "deleted_checkpoint_state_only",
+      "reason": "Nonconfirmatory four-step publication smoke superseded by complete production checkpoint publication and resume.",
+      "retained_files": [
+        {
+          "path": "checkpoint_manifest.json",
+          "sha256": "9b87370996984eebe3aaf0f01b77e1e01db2c61f938a46b92bbdfea235ca0996"
+        },
+        {
+          "path": "config.yaml",
+          "sha256": "4da510ac377b6ef8c36bdc8a24452b488eb0b65622e33413c556ca55f8b58cc1"
+        },
+        {
+          "path": "../../../logs/clt_protgpt2.log",
+          "sha256": "2cf145bba05f59422b8cf2971a5071c3726c15cbaac46a66d1599b079fc79c7f"
+        }
+      ]
+    },
+    {
+      "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/p0_2_exact_cache_bf16_r2_ineligible_unbound_code_receipt/.protgpt2.tmp-15141",
+      "apparent_bytes_removed": 184683511688,
+      "disposition": "deleted_ineligible_staging_payload_only",
+      "reason": "Stopped r7 unbound-code attempt with no completion receipt; the explicitly suffixed parent root and failure log remain retained.",
+      "retained_failure_log_sha256": "9e4dc8161fc1346dccbe050fac7e470f84d2a856b30104ac78dad5fc8db8acf5"
+    },
+    {
+      "path": "/oss-pvc/zhk_zip/outputs/npj_revision_20260717",
+      "apparent_bytes_removed": 112920458240,
+      "disposition": "deleted_eight_superseded_smoke_weight_files",
+      "reason": "Superseded full-width stability/resume and bounded ZymCTRL smoke weights; small logs, configs, manifests, scheduler, and trainer-state evidence remain in place.",
+      "deleted_files": [
+        "smokes/topk_stability_seed43_r2/step_300/clt.pt",
+        "smokes/topk_stability_seed43_r2/step_300/optimizer.pt",
+        "smokes/topk_stability_seed43_r2/step_600/clt.pt",
+        "smokes/topk_stability_seed43_r2/step_600/optimizer.pt",
+        "smokes/topk_stability_seed43_r3_resume/step_600/clt.pt",
+        "smokes/topk_stability_seed43_r3_resume/step_600/optimizer.pt",
+        "smoke/zymctrl_seed17_d256_steps4/clt_weights/zymctrl/step_4/clt.pt",
+        "smoke/zymctrl_seed17_d256_steps4/clt_weights/zymctrl/step_4/optimizer.pt"
+      ]
+    }
+  ],
+  "totals": {
+    "gpfs_apparent_bytes_removed": 630138917454,
+    "oss_apparent_bytes_removed": 112920458240,
+    "all_apparent_bytes_removed": 743059375694,
+    "all_gib_removed": 692.027970864
+  },
+  "retained_cleanup_evidence": {
+    "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/logs/cleanup_evidence_20260718/superseded_large_artifacts_small_evidence.tar.gz",
+    "bytes": 23329,
+    "sha256": "7601f41f8a859ceb599215b29d717d1d31cad08b6d3afd7a95dcc062f45b09c1"
+  },
+  "protected_active_roots": [
+    "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/dictionaries_topk_bf16_r2",
+    "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/p0_2_exact_cache_bf16_r3",
+    "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/p0_2_exact_cache_bf16_r3/.zymctrl.tmp-17403"
+  ],
+  "post_cleanup_verification": {
+    "active_launcher_pids": [13694, 13695, 13696, 16502],
+    "active_exact_cache_runner_pid": 17403,
+    "gpfs_available_bytes_immediate": 49802486218752,
+    "gpfs_percent_used": 17,
+    "host_memory_available": "1.8 TiB",
+    "active_processes_survived_cleanup": true
+  }
+}

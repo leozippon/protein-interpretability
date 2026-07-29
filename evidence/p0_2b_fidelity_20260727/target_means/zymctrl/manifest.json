@@ -1,0 +1,28 @@
+{
+  "analysis_layer_fraction": 0.5,
+  "builder_sha256": "3c2734e84436fb0fe9ecf9b685e1ef3190632c534dbf657afaea0765fea6b4d8",
+  "cache_manifest": {
+    "content_sha256": "cb91a518627e516dfe7cd66dc9fbd61afcb60526b21df392f811f7b9bc1050de",
+    "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/p0_2_exact_cache_bf16_r3/zymctrl/manifest.json",
+    "sha256": "26307ed3694c884543d3033cd99e6cee52cd5441c9ce7f37f6f9a4f1a48dbc70"
+  },
+  "dimension": 1280,
+  "model_artifacts": {
+    "model_config_sha256": "e0ed9a64d87a2c29ae66d856d4ba3675bd78afac11a78fceb8ac2fe2d58b9c4f",
+    "model_weights_sha256": "5ebc23b19d63e352802552b9d7220be669ab6447d7a0a7ca427c3ae0873650fe",
+    "tokenizer_sha256": "feb7088533715aae6b73e952d1f69b2c0f99ee62e3cd1f0615578ea22888a954"
+  },
+  "model_name": "zymctrl",
+  "rows": 1000000,
+  "schema_version": "r2_dictionary_fidelity_target_mean_v1",
+  "status": "complete",
+  "target_layer": 18,
+  "target_mean": {
+    "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/p0_2b_dictionary_fidelity_20260727_r3/target_means/zymctrl/target_mean.npy",
+    "sha256": "eacd501ff9ab74e71fffd19bbde9014ca9d1feac61c143f2ac00a66558ed45aa"
+  },
+  "training_target_shard": {
+    "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/p0_2_exact_cache_bf16_r3/zymctrl/train/layer_018/target.npy",
+    "sha256": "8884c9c82a9d1a001b35442670873bfed9678ecea1a81e287e417a073b175996"
+  }
+}

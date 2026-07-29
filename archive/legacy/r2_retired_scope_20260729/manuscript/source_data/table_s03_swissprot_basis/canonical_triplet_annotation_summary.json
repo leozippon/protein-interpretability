@@ -1,0 +1,17 @@
+{
+  "task": "N-1 Swiss-Prot anchored triplet annotation",
+  "status": "completed",
+  "cohort_size": 500,
+  "n_triplets": 38,
+  "top_positions": 100,
+  "mi_gate": 0.1,
+  "n_interpretable": 0,
+  "outcome": "FAIL",
+  "outputs": {
+    "interpretation": "Research2/results/circuit_analysis/swissprot_triplet_annotation_20260513/interpretation.md",
+    "interpretation_gate": "Research2/results/circuit_analysis/swissprot_triplet_annotation_20260513/interpretation_gate.tsv",
+    "rich_label_mi": "Research2/results/circuit_analysis/swissprot_triplet_annotation_20260513/rich_label_mi.tsv",
+    "per_triplet_max_act_rich": "Research2/results/circuit_analysis/swissprot_triplet_annotation_20260513/per_triplet_max_act_rich.tsv"
+  },
+  "runtime_seconds": 333.98150396347046
+}

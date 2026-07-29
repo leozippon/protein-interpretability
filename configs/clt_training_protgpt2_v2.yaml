@@ -1,0 +1,50 @@
+# ProtGPT2 CLT v2 retrain — fix high dead-feature rate (was 82%)
+# =============================================================
+# Rationale (R2-A in TODO.md):
+#   The original ProtGPT2 CLT had 82% dead features, with no usable deep
+#   layers, blocking steering. We quadruple k (64 → 128), double d_clt
+#   (4096 → 8192), shorten the resampling interval, extend training, and
+#   tighten the dead-feature threshold to force revival of quiet features.
+#
+# Target quality gates:
+#   - deep-layer alive rate >= 30%
+#   - per-layer FVU < 0.5 for at least 20/36 layers
+#   - usable deep steering layer emerges (at least one L > 24 with alive >= 20%)
+#
+# Run on H200:
+#   bash r2_decoder_sparse_readout_audit/scripts/04_run_h200_clt.sh \
+#       --config r2_decoder_sparse_readout_audit/configs/clt_training_protgpt2_v2.yaml
+
+model:
+  name: "protgpt2"
+  dtype: "float16"
+
+data:
+  fasta_path: "/gpfs/jiaotongdamoxing/zhk_zip/data/uniref50/uniref50.fasta"
+  max_seq_len: 256
+  num_sequences: 300000        # 3x more training data than v1
+
+clt:
+  d_clt: 8192                  # 2x v1
+  k: 128                       # 2x v1 — allows more features to participate
+  window: 8
+  resample_every: 2500         # was 5000 — resample twice as often
+  dead_feature_threshold: 5000 # was 10000 — catch dead features earlier
+
+training:
+  seed: 0
+  gpu: 0
+  batch_size: 2
+  total_steps: 200000          # 2x v1
+  lr: 0.0003
+  lr_warmup_steps: 3000
+  grad_clip_norm: 1.0
+
+checkpoint:
+  save_dir: "/oss-pvc/zhk_zip/outputs/research2/clt_weights/protgpt2_v2"
+  save_every_steps: 10000
+
+logging:
+  wandb_project: "r2-clt-v2"
+  wandb_entity: null
+  log_every_steps: 50

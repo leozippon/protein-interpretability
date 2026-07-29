@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "experiment": "EXP-R2-021",
+  "status": "exploratory",
+  "source_document": "docs/R2_EXPANDED_DOWNSTREAM_ANALYSIS_20260612.md",
+  "remote_result_root": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/representation_audit_20260612_expanded_eval/",
+  "dictionary": {
+    "width": 16384,
+    "training_steps": 300000
+  },
+  "value_precision_note": "Values are the three-decimal probe summary recorded in the source document.",
+  "figure6_panel_c_selection_note": "Pairs retained from the pre-existing panel to show one reference-versus-expanded comparison across each displayed model/readout combination; the panel is not an exhaustive expanded-run summary.",
+  "rows": [
+    {"model": "protgpt2", "task": "ec_topclass", "ceiling_skill": 0.260, "floor_skill": 0.204, "recovery_ratio": 0.785, "figure6_panel_c": true, "report_only": false},
+    {"model": "protgpt2", "task": "pfam_family", "ceiling_skill": 0.939, "floor_skill": 0.789, "recovery_ratio": 0.840, "figure6_panel_c": false, "report_only": false},
+    {"model": "protgpt2", "task": "secondary_fraction", "ceiling_skill": 0.621, "floor_skill": 0.003, "recovery_ratio": 0.004, "figure6_panel_c": false, "report_only": true},
+    {"model": "protgpt2", "task": "residue_ss", "ceiling_skill": 0.221, "floor_skill": 0.224, "recovery_ratio": 1.000, "figure6_panel_c": false, "report_only": false},
+    {"model": "zymctrl", "task": "ec_topclass", "ceiling_skill": 0.123, "floor_skill": 0.144, "recovery_ratio": 1.000, "figure6_panel_c": false, "report_only": false},
+    {"model": "zymctrl", "task": "pfam_family", "ceiling_skill": 0.902, "floor_skill": 0.719, "recovery_ratio": 0.796, "figure6_panel_c": true, "report_only": false},
+    {"model": "zymctrl", "task": "secondary_fraction", "ceiling_skill": 0.397, "floor_skill": -6.133, "recovery_ratio": 0.000, "figure6_panel_c": false, "report_only": true},
+    {"model": "zymctrl", "task": "residue_ss", "ceiling_skill": 0.149, "floor_skill": 0.133, "recovery_ratio": 0.890, "figure6_panel_c": false, "report_only": false},
+    {"model": "zymctrl", "task": "decoder_ec", "ceiling_skill": 0.652, "floor_skill": 0.623, "recovery_ratio": 0.955, "figure6_panel_c": true, "report_only": false},
+    {"model": "progen2-medium", "task": "ec_topclass", "ceiling_skill": 0.272, "floor_skill": 0.228, "recovery_ratio": 0.837, "figure6_panel_c": true, "report_only": false},
+    {"model": "progen2-medium", "task": "pfam_family", "ceiling_skill": 0.952, "floor_skill": 0.931, "recovery_ratio": 0.978, "figure6_panel_c": true, "report_only": false},
+    {"model": "progen2-medium", "task": "secondary_fraction", "ceiling_skill": 0.608, "floor_skill": -253.863, "recovery_ratio": 0.000, "figure6_panel_c": false, "report_only": true},
+    {"model": "progen2-medium", "task": "residue_ss", "ceiling_skill": 0.256, "floor_skill": 0.205, "recovery_ratio": 0.803, "figure6_panel_c": false, "report_only": false}
+  ]
+}

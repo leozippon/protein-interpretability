@@ -1,0 +1,114 @@
+# =====================================================================
+# WARNING -- `git clean -fdx` (or -fdX) FROM THIS DIRECTORY DELETES
+# EVERY EXPERIMENT RESULT IN THE REPOSITORY.
+#
+# The results trees below are ignored, so -x removes them. As of
+# 2026-07-29 that is ~47 GB under r2_interpretability_transfer/results,
+# ~3.5 GB under archive/retired_research_roots/ and ~230 MB under
+# archive/legacy/. None of it is synced off this machine. This already
+# destroyed completed experiment artefacts three times on 2026-07-28,
+# when the hazard lived in the nested r2 repository; consolidating to
+# one root repository did not remove it, it enlarged it.
+#
+# Use `git clean -fd` without -x, or clean an explicit subpath.
+# =====================================================================
+
+# Large data directories (generic results/ matches at any depth; explicit
+# per-research lines document the canonical roots)
+data/
+results/
+r2_interpretability_transfer/results/
+archive/legacy/r2_retired_scope_20260729/results/
+archive/retired_research_roots/r0_shared_interpretability_framework/results/
+archive/retired_research_roots/r1_encoder_interpretability_benchmark/results/
+
+# Experiment tracking
+wandb/
+r2_interpretability_transfer/wandb/
+archive/retired_research_roots/r1_encoder_interpretability_benchmark/wandb/
+
+# Runtime logs (keep documentation logs, exclude runtime logs/)
+logs/*
+!logs/README.md
+r2_interpretability_transfer/logs/
+archive/legacy/r2_retired_scope_20260729/logs/
+archive/legacy/r2_transfer_log_snapshots_20260728/results_snapshot_*/
+archive/legacy/r2_transfer_log_snapshots_20260728/convergence_control_backup/
+archive/retired_research_roots/r1_encoder_interpretability_benchmark/logs/
+*.log
+
+# Downloaded third-party resources stay on B/H200; track only local metadata.
+external_resources/*
+!external_resources/README.md
+!external_resources/setup_h200_external_env.sh
+!external_resources/manifests/
+external_resources/manifests/*
+!external_resources/manifests/*.md
+
+# Retired live-root names. These are quarantined to prevent accidental
+# resurrection after the 2026-07-16 structure migration.
+ProteinInterpret/
+benchmark_encoder/
+paper_r2_nature_mi/
+r2_decoder_sparse_readout_audit/
+project_records/
+
+# Archived repositories retain old history outside the live Git graph.
+archive/legacy/nested_git_history_*/
+
+# Frozen legacy document containing a local access token.
+archive/legacy/R2_RESEARCH_PROPOSAL_v1.md
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+
+# Environments
+.venv/
+.conda/
+*.egg-info/
+.env.local
+
+# Large binary / model files
+*.h5
+*.hdf5
+*.pkl
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.npy
+*.npz
+*.parquet
+*.feather
+*.arrow
+*.pdf
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# Bioinformatics data files
+*.vcf.gz
+*.vcf.bgz
+*.dat.gz
+*.tsv.gz
+*.bam
+*.bai
+*.fasta
+*.fastq
+*.fasta.gz
+*.fastq.gz
+
+# System
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Sync tool
+.mutagenignore
+.claude/

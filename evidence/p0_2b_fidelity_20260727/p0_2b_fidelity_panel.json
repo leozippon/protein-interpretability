@@ -1,0 +1,297 @@
+{
+  "confirmatory_scope": "prospective_new_cohort_instrument_qualification_not_p0_2_regating",
+  "eligible_sparse_model_methods": [],
+  "model_method_adjudications": [
+    {
+      "all_seed_fidelity_gate_pass": false,
+      "method": "dense_low_rank",
+      "model_name": "protgpt2",
+      "revised_downstream_eligible": false,
+      "runs": [
+        {
+          "kl_recovered": null,
+          "loss_recovered": null,
+          "result_sha256": "b54be9de2f94ef6c493c2a97564a41d10909401db61683eccabd7bd327ebdf4b",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 17
+        },
+        {
+          "kl_recovered": null,
+          "loss_recovered": null,
+          "result_sha256": "c7512a5d2535a1603c673e8651d0721c62ceab3cabb89134a038659084e3397e",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 29
+        },
+        {
+          "kl_recovered": null,
+          "loss_recovered": null,
+          "result_sha256": "2d3ac97a2ac0008a49d4a442298c672fb0a03b5c10278dcd1bbab26b8f24c43b",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 43
+        }
+      ]
+    },
+    {
+      "all_seed_fidelity_gate_pass": false,
+      "method": "topk_clt",
+      "model_name": "protgpt2",
+      "revised_downstream_eligible": false,
+      "runs": [
+        {
+          "kl_recovered": null,
+          "loss_recovered": null,
+          "result_sha256": "06d350c21b9f4c964e367ec36f7cd09fc03a73dbbf78b4de621ff6c2aee628f1",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 17
+        },
+        {
+          "kl_recovered": null,
+          "loss_recovered": null,
+          "result_sha256": "d28100954bde7303d61dc786d696ea4e87fc0e7f1ef41a92792a87e9510e552f",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 29
+        },
+        {
+          "kl_recovered": null,
+          "loss_recovered": null,
+          "result_sha256": "46e47fc04bb21a91d73e5b6259d258ccf83c10e6c6a02cdf8028307f9f569288",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 43
+        }
+      ]
+    },
+    {
+      "all_seed_fidelity_gate_pass": false,
+      "method": "dense_low_rank",
+      "model_name": "zymctrl",
+      "revised_downstream_eligible": false,
+      "runs": [
+        {
+          "kl_recovered": null,
+          "loss_recovered": null,
+          "result_sha256": "5b36bfce93fc31e21f37322368f92e4405cb924320cc90f8cbb81d14e287e72a",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 17
+        },
+        {
+          "kl_recovered": null,
+          "loss_recovered": null,
+          "result_sha256": "8b6cf608a896ee8313ac38f263a8073c5bf3e855be0cdec3549f4a74a8abe21b",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 29
+        },
+        {
+          "kl_recovered": null,
+          "loss_recovered": null,
+          "result_sha256": "d627c7bb01fd94629ef990082e48904204e8af86852a7c96e5db5e45ac023629",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 43
+        }
+      ]
+    },
+    {
+      "all_seed_fidelity_gate_pass": false,
+      "method": "gated_sae",
+      "model_name": "zymctrl",
+      "revised_downstream_eligible": false,
+      "runs": [
+        {
+          "kl_recovered": null,
+          "loss_recovered": null,
+          "result_sha256": "dc688d5141d700b1a56590067026f6a8dc2566324351fffc9abf947c82a5297d",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 17
+        },
+        {
+          "kl_recovered": null,
+          "loss_recovered": null,
+          "result_sha256": "1fd50aa87240c231adfbaf65c81ce5044431aed8bc0a737e3d2292422e9f0c95",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 29
+        },
+        {
+          "kl_recovered": null,
+          "loss_recovered": null,
+          "result_sha256": "88ec9ad265135b3f8cdee4f430d62a637ba3aac0b73c93af0c7dc9f16471d1a3",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 43
+        }
+      ]
+    },
+    {
+      "all_seed_fidelity_gate_pass": false,
+      "method": "relu_l1_sae",
+      "model_name": "zymctrl",
+      "revised_downstream_eligible": false,
+      "runs": [
+        {
+          "kl_recovered": null,
+          "loss_recovered": null,
+          "result_sha256": "a4548c7033aba67822f1e1a872bec6e2a99553d49f7af72bb9ba166b723864aa",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 17
+        },
+        {
+          "kl_recovered": null,
+          "loss_recovered": null,
+          "result_sha256": "650612193b7ac63dd0bc9dd6952dfe4389355e382a528cbab9ae19a81fa7bd7f",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 29
+        },
+        {
+          "kl_recovered": null,
+          "loss_recovered": null,
+          "result_sha256": "8328cba6cd36b9a06882a036f8781e7ac420f03afad3fe1e8c916c7644a70c9c",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 43
+        }
+      ]
+    },
+    {
+      "all_seed_fidelity_gate_pass": false,
+      "method": "topk_clt",
+      "model_name": "zymctrl",
+      "revised_downstream_eligible": false,
+      "runs": [
+        {
+          "kl_recovered": null,
+          "loss_recovered": null,
+          "result_sha256": "52eb63362dc6f5aac81bdab35ea3db975a3fb41e6a4ca9b7905de31b1ef1b188",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 17
+        },
+        {
+          "kl_recovered": null,
+          "loss_recovered": null,
+          "result_sha256": "fe2f0afca9b29a635301c8427500d0eac973c3191d228be06cd34e4309b51a63",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 29
+        },
+        {
+          "kl_recovered": null,
+          "loss_recovered": null,
+          "result_sha256": "0a707ec5e9b7bc58f000354e4de85a1732c70ec4927066f2da74eeea11635bf6",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 43
+        }
+      ]
+    },
+    {
+      "all_seed_fidelity_gate_pass": false,
+      "method": "dense_low_rank",
+      "model_name": "progen2-medium",
+      "revised_downstream_eligible": false,
+      "runs": [
+        {
+          "kl_recovered": 0.07094419913234729,
+          "loss_recovered": 0.1202356050993875,
+          "result_sha256": "2fad9fe60eeef242e571823502bad8c3a501263dbb9ff4652fc7eb3c31c3b8df",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 17
+        },
+        {
+          "kl_recovered": 0.060272279407105334,
+          "loss_recovered": 0.11377909867673278,
+          "result_sha256": "e3c9db05083c85cd8608f9256be28d8da9ede965b69c63ebbf5a81edc8da1190",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 29
+        },
+        {
+          "kl_recovered": 0.07963016834653647,
+          "loss_recovered": 0.10223470444065891,
+          "result_sha256": "14ca021a3a2368c95e674fcad8b99f6afdf40ef0b066f9c59a5a56b403a1fc41",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 43
+        }
+      ]
+    },
+    {
+      "all_seed_fidelity_gate_pass": false,
+      "method": "gated_sae",
+      "model_name": "progen2-medium",
+      "revised_downstream_eligible": false,
+      "runs": [
+        {
+          "kl_recovered": 0.22929361398184755,
+          "loss_recovered": 0.32286398708762315,
+          "result_sha256": "fba5a96bcc5f55f52afa6503a33aaf7542592d75da6714b50b5838b414da638e",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 17
+        },
+        {
+          "kl_recovered": 0.2337279032799362,
+          "loss_recovered": 0.30465165013677753,
+          "result_sha256": "923c75c0c8299b2c2382f39903ff369a36cbe9283e2113591135c3c67a933c58",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 29
+        },
+        {
+          "kl_recovered": 0.24290268418479133,
+          "loss_recovered": 0.3309622492623136,
+          "result_sha256": "2a5ee3661ea9440a8394c5dccc0b58c310078b217de86a67174c7a045172e5a3",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 43
+        }
+      ]
+    },
+    {
+      "all_seed_fidelity_gate_pass": false,
+      "method": "topk_clt",
+      "model_name": "progen2-medium",
+      "revised_downstream_eligible": false,
+      "runs": [
+        {
+          "kl_recovered": 0.26174944383110077,
+          "loss_recovered": 0.36807467252142556,
+          "result_sha256": "0e0faf6eaeef0675ca6bf0452a3267b87c4fb5b4ec1935be06121f8c369f186e",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 17
+        },
+        {
+          "kl_recovered": 0.2536861986066298,
+          "loss_recovered": 0.35454731225472735,
+          "result_sha256": "81afc54a073e93c3026446f73f027d8de72be34886bef64dcb5604d99f3b0af7",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 29
+        },
+        {
+          "kl_recovered": 0.2503237037989203,
+          "loss_recovered": 0.33310449192534847,
+          "result_sha256": "82351ca5c1379ffb1c583db8ec6163a46f170b91865773b9dd0d83272a9e77d4",
+          "run_fidelity_gate_pass": false,
+          "run_seed": 43
+        }
+      ]
+    }
+  ],
+  "required_run_count": 27,
+  "schema_version": "r2_dictionary_fidelity_panel_v1",
+  "spec_sha256": "11092e16891922380a2d224288138968e45ea982d36b46a4007f9f6b76a8d6bf",
+  "status": "complete",
+  "unavailable_model_methods": [
+    {
+      "failure_reasons": [
+        "validation_sparsity_match_failure"
+      ],
+      "method": "relu_l1_sae",
+      "model_name": "protgpt2",
+      "status": "sparsity_match_failure"
+    },
+    {
+      "failure_reasons": [
+        "validation_sparsity_match_failure"
+      ],
+      "method": "gated_sae",
+      "model_name": "protgpt2",
+      "status": "sparsity_match_failure"
+    },
+    {
+      "failure_reasons": [
+        "validation_sparsity_match_failure"
+      ],
+      "method": "relu_l1_sae",
+      "model_name": "progen2-medium",
+      "status": "sparsity_match_failure"
+    }
+  ]
+}

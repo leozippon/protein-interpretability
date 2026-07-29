@@ -1,0 +1,260 @@
+"""TG-02: is the long-range information order-dependent or order-invariant?
+
+Attribution graphs trace token-to-token computation. They only have a target if
+the model's use of distant context depends on *which* symbol sits *where*. This
+script splits the far-context contribution into an order-dependent part and an
+order-invariant (composition/profile) part.
+
+Every condition keeps the nearest `near` tokens intact, so the prediction point
+is locally well formed in all arms and the manipulation is confined to the far
+context:
+
+    [ far block: 120 tokens, manipulated ][ near block: 8 tokens, intact ] -> target
+
+    intact    true far block
+    shuffled  same far tokens, permuted (composition preserved, order destroyed)
+    foreign   far block taken from a different sequence in the cohort
+
+    I_far          = NLL(foreign)  - NLL(intact)      total far-context information
+    I_far_order    = NLL(shuffled) - NLL(intact)      order-dependent part
+    I_far_compose  = NLL(foreign)  - NLL(shuffled)    order-invariant part
+
+**Corrections against the 2026-07-24 run.** Rendering and cohort now come from
+`src.transfer.arms` via `tg_common`, so ProtGPT2 is scored on its FASTA stream and
+records are a seeded permutation rather than the corpus head.
+
+That correction creates a manipulation problem this script did not previously
+have, and it is handled rather than absorbed. Under a native rendering the far
+block contains **separator tokens** -- a newline every 60 residues for ProtGPT2 --
+and permuting the block destroys the line structure along with the residue order.
+The resulting "order information" would then be partly the cost of malformed
+FASTA, which is a fact about the format and not about whether the model's use of
+distant context is order-dependent. Two shuffles are therefore scored:
+
+    shuffled_all       every far token permuted (the original manipulation)
+    shuffled_symbols   only alphabet-bearing tokens permuted, separators held in
+                       place, so the block stays well-formed and only residue
+                       order is destroyed
+
+For an arm whose rendering has no separators the two are the same manipulation
+and the two numbers agree; the difference between them is the price of the
+format. `shuffled_symbols` is the primary, because it is the one that answers the
+question the script was written to ask.
+
+The order share `I_far_order / I_far` is also guarded: on ZymCTRL `I_far` was
+0.31 nats, and a ratio against that is not a share.
+"""
+
+from __future__ import annotations
+
+import argparse
+import inspect
+import math
+from pathlib import Path
+
+import numpy as np
+import torch
+import torch.nn.functional as F
+
+from tg_common import (
+    DEFAULT_COHORT_SEED,
+    REPO,
+    AA20,
+    cohort_for,
+    cohort_provenance,
+    load_arm,
+    write_json,
+)
+
+LN2 = math.log(2.0)
+
+#: Floor on ``I_far`` before ``I_far_order / I_far`` is reported as a share.
+MIN_FAR_INFORMATION_NATS = 0.5
+
+
+def symbol_token_ids(arm) -> set[int]:
+    """Token ids whose decoded piece carries at least one alphabet symbol.
+
+    Resolved once over the whole vocabulary rather than per window: the
+    manipulation has to treat the same token the same way in every block, and a
+    per-window decode would make that depend on which tokens happened to appear.
+    """
+
+    alphabet = set(AA20) if arm.modality == "protein" else None
+    keep = set()
+    for token in range(arm.model.config.vocab_size):
+        piece = arm.tokenizer.decode([token])
+        if alphabet is None:
+            if piece.strip():
+                keep.add(token)
+        elif any(character in alphabet for character in piece):
+            keep.add(token)
+    return keep
+
+
+def shuffle_symbols_only(block: list[int], symbols: set[int], rng) -> list[int]:
+    """Permute the alphabet-bearing tokens of ``block``, holding the rest fixed."""
+
+    slots = [i for i, token in enumerate(block) if token in symbols]
+    if len(slots) < 2:
+        return list(block)
+    permuted = list(block)
+    values = rng.permutation([block[i] for i in slots])
+    for slot, value in zip(slots, values):
+        permuted[slot] = int(value)
+    return permuted
+
+
+@torch.no_grad()
+def score(arm, blocks: np.ndarray, batch: int) -> np.ndarray:
+    """NLL of the final column given the preceding columns."""
+    trimmed = "logits_to_keep" in inspect.signature(arm.model.forward).parameters
+    if not trimmed and arm.model.config.vocab_size > 1024:
+        raise RuntimeError(f"{arm.name}: large vocab without logits_to_keep support")
+    out = []
+    for start in range(0, len(blocks), batch):
+        chunk = torch.tensor(blocks[start : start + batch], dtype=torch.long).to(arm.device)
+        kwargs = {"logits_to_keep": 1} if trimmed else {}
+        logits = arm.model(input_ids=chunk[:, :-1], **kwargs).logits
+        logp = F.log_softmax(logits[:, -1].float(), dim=-1)
+        out.append(-logp.gather(-1, chunk[:, -1:]).squeeze(-1).cpu().numpy())
+    return np.concatenate(out)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--arm", required=True)
+    ap.add_argument("--device", default="cuda:0")
+    ap.add_argument("--n-seq", type=int, default=400)
+    ap.add_argument("--far", type=int, default=120)
+    ap.add_argument("--near", type=int, default=8)
+    ap.add_argument("--n-query", type=int, default=6)
+    ap.add_argument("--batch", type=int, default=48)
+    ap.add_argument("--max-len", type=int, default=384)
+    ap.add_argument("--seed", type=int, default=DEFAULT_COHORT_SEED)
+    ap.add_argument("--res-min", type=int, default=400)
+    ap.add_argument("--res-max", type=int, default=1000)
+    ap.add_argument("--out", default=None)
+    args = ap.parse_args()
+
+    arm = load_arm(args.arm, device=args.device)
+    cohort = cohort_for(arm, args.n_seq, args.res_min, args.res_max, seed=args.seed)
+    texts = cohort.input_strings(arm)
+    symbols = symbol_token_ids(arm)
+
+    ctx = args.far + args.near
+    encoded = [
+        arm.tokenizer(t, return_tensors=None)["input_ids"][: args.max_len] for t in texts
+    ]
+    encoded = [ids for ids in encoded if len(ids) >= ctx + 2]
+    if len(encoded) < 50:
+        raise RuntimeError(f"{arm.name}: only {len(encoded)} usable sequences")
+
+    rng = np.random.default_rng(args.seed)
+    intact, shuffled_all, shuffled_symbols, foreign = [], [], [], []
+    separator_tokens_in_far = 0
+    for i, ids in enumerate(encoded):
+        picks = rng.choice(
+            np.arange(ctx, len(ids)), size=min(args.n_query, len(ids) - ctx), replace=False
+        )
+        for q in picks:
+            window = ids[q - ctx : q + 1]
+            far, near, target = window[: args.far], window[args.far : ctx], window[ctx:]
+            separator_tokens_in_far += sum(1 for t in far if t not in symbols)
+            intact.append(far + near + target)
+            shuffled_all.append([int(x) for x in rng.permutation(far)] + near + target)
+            shuffled_symbols.append(shuffle_symbols_only(far, symbols, rng) + near + target)
+            # far block from a different sequence, same length, same position band
+            j = (i + 1 + int(rng.integers(len(encoded) - 1))) % len(encoded)
+            other = encoded[j]
+            off = int(rng.integers(0, max(1, len(other) - args.far)))
+            foreign.append(other[off : off + args.far] + near + target)
+
+    conditions = {
+        "intact": intact,
+        "shuffled_all": shuffled_all,
+        "shuffled_symbols": shuffled_symbols,
+        "foreign": foreign,
+    }
+    widths = {len(row) for rows in conditions.values() for row in rows}
+    if widths != {ctx + 1}:
+        raise ValueError(f"ragged conditions: {sorted(widths)}")
+
+    nll = {
+        name: score(arm, np.asarray(rows, dtype=np.int64), args.batch)
+        for name, rows in conditions.items()
+    }
+    n = len(intact)
+    i_far = float((nll["foreign"] - nll["intact"]).mean())
+
+    def sem(x):
+        return float(x.std(ddof=1) / math.sqrt(x.size))
+
+    def decomposition(shuffle_name: str) -> dict:
+        order = float((nll[shuffle_name] - nll["intact"]).mean())
+        compose = float((nll["foreign"] - nll[shuffle_name]).mean())
+        return {
+            "nll_shuffled_nats": float(nll[shuffle_name].mean()),
+            "far_order_information_bits": order / LN2,
+            "far_composition_information_bits": compose / LN2,
+            # A share of a quantity that is itself near zero is not a share. On
+            # the 2026-07-24 run ZymCTRL's far-context information was 0.31 nats
+            # and its "order share" of 0.786 was arithmetic on that.
+            "far_order_share": (
+                order / i_far if i_far >= MIN_FAR_INFORMATION_NATS else None
+            ),
+            "sem_order_bits": sem(nll[shuffle_name] - nll["intact"]) / LN2,
+            "frac_queries_order_helps": float(
+                (nll[shuffle_name] > nll["intact"]).mean()
+            ),
+        }
+
+    separator_share = separator_tokens_in_far / (n * args.far)
+    payload = dict(
+        arm=arm.name,
+        modality=arm.modality,
+        seed=args.seed,
+        n_queries=n,
+        n_sequences=len(encoded),
+        far_tokens=args.far,
+        near_tokens=args.near,
+        cohort=cohort_provenance(cohort, arm),
+        nll_intact_nats=float(nll["intact"].mean()),
+        nll_foreign_nats=float(nll["foreign"].mean()),
+        far_context_information_bits=i_far / LN2,
+        far_context_information_nats=i_far,
+        far_information_floor_nats=MIN_FAR_INFORMATION_NATS,
+        far_information_sufficient=i_far >= MIN_FAR_INFORMATION_NATS,
+        sem_far_bits=sem(nll["foreign"] - nll["intact"]) / LN2,
+        frac_queries_far_helps=float((nll["foreign"] > nll["intact"]).mean()),
+        separator_share_of_far_block=separator_share,
+        primary_shuffle="shuffled_symbols",
+        shuffled_symbols=decomposition("shuffled_symbols"),
+        shuffled_all=decomposition("shuffled_all"),
+        format_cost_of_all_token_shuffle_bits=(
+            float((nll["shuffled_all"] - nll["shuffled_symbols"]).mean()) / LN2
+        ),
+    )
+    out = Path(args.out) if args.out else (
+        REPO / "results/transfer_gap_20260729_corrected/tg02"
+    )
+    write_json(out / f"{arm.name}.json", payload)
+    print(f"  {'nll_intact_nats':38s} {payload['nll_intact_nats']:.4f}")
+    print(f"  {'far_context_information_bits':38s} {payload['far_context_information_bits']:.4f}")
+    print(f"  {'separator_share_of_far_block':38s} {separator_share:.4f}")
+    for name in ("shuffled_symbols", "shuffled_all"):
+        block = payload[name]
+        share = block["far_order_share"]
+        print(
+            f"  {name:24s} order={block['far_order_information_bits']:+.4f} bits  "
+            f"compose={block['far_composition_information_bits']:+.4f} bits  "
+            f"share=" + ("refused" if share is None else f"{share:.4f}")
+        )
+    print(
+        f"  {'format cost of all-token shuffle':38s} "
+        f"{payload['format_cost_of_all_token_shuffle_bits']:+.4f} bits"
+    )
+
+
+if __name__ == "__main__":
+    main()

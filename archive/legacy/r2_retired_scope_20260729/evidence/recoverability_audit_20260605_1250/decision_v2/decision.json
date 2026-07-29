@@ -1,0 +1,81 @@
+{
+  "thresholds": {
+    "margin_macro_f1": 0.1,
+    "rho_lo": 0.5,
+    "rho_hi": 0.8,
+    "phi_rich": 0.5,
+    "min_tasks": 2
+  },
+  "per_model_verdict": {
+    "protgpt2": {
+      "rich_tasks": [
+        "ec_topclass",
+        "pfam_family",
+        "secondary_fraction",
+        "residue_ss"
+      ],
+      "bottleneck_tasks": [
+        "secondary_fraction"
+      ],
+      "faithful_tasks": [
+        "ec_topclass",
+        "pfam_family",
+        "residue_ss"
+      ],
+      "substrate_rich": true,
+      "substrate_thin": false,
+      "dictionary_bottleneck": false,
+      "dictionary_near_faithful": false
+    },
+    "zymctrl": {
+      "rich_tasks": [
+        "secondary_fraction",
+        "residue_ss",
+        "decoder_ec"
+      ],
+      "bottleneck_tasks": [
+        "secondary_fraction"
+      ],
+      "faithful_tasks": [
+        "residue_ss",
+        "decoder_ec"
+      ],
+      "substrate_rich": true,
+      "substrate_thin": false,
+      "dictionary_bottleneck": false,
+      "dictionary_near_faithful": false
+    },
+    "progen2-medium": {
+      "rich_tasks": [
+        "ec_topclass",
+        "pfam_family",
+        "secondary_fraction",
+        "residue_ss"
+      ],
+      "bottleneck_tasks": [
+        "secondary_fraction"
+      ],
+      "faithful_tasks": [
+        "pfam_family",
+        "residue_ss"
+      ],
+      "substrate_rich": true,
+      "substrate_thin": false,
+      "dictionary_bottleneck": false,
+      "dictionary_near_faithful": false
+    }
+  },
+  "model_mean_gap": {
+    "protgpt2": 3.7758684754371643,
+    "zymctrl": 185.06576883792877,
+    "progen2-medium": 918.0726813077927
+  },
+  "retrain_decision": {
+    "decision": "NO-GO",
+    "reason": "no model meets the GO conditions",
+    "retrain_target": null
+  },
+  "controllability": {
+    "zymctrl": "distributed_or_robust"
+  }
+}

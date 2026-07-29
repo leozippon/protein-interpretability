@@ -1,0 +1,1468 @@
+{
+  "artifact_completeness": true,
+  "claim_boundary": "Eligibility authorizes only the named model/method and allowlisted layers; it does not establish biological conservation or causality.",
+  "frozen_gate": {
+    "downstream_layer_dead_fraction_strictly_below_every_seed": 0.7,
+    "mean_test_fvu_strictly_below": 0.5,
+    "median_dead_fraction_strictly_below": 0.5,
+    "minimum_fraction_layers_fvu_strictly_below_0_50": 0.75,
+    "relu_and_gated_validation_l0_interval_inclusive": [
+      115.2,
+      140.8
+    ],
+    "required_seeds": [
+      17,
+      29,
+      43
+    ],
+    "test_access_count_after_validation_selection": 1
+  },
+  "mask_evidence": {
+    "module_name": "dictionary_controls.py",
+    "module_sha256": "347a095c2e18a429e09011f84a45bd40b1cf5d46ebf38398e6e2a7afe57c6596",
+    "test_file_name": "test_dictionary_controls.py",
+    "test_file_sha256": "a1f2f61f8933c1e1a766bc5e827ba3747215c2286a2df2421e32d0e2b8fc1253"
+  },
+  "mask_gate_pass": true,
+  "mask_validation_receipt_sha256": "5966e274881984b2eeabeedd749d94c313fce02fb814911f0d1082ac3c3232db",
+  "model_adjudications": [
+    {
+      "atlas_eligible_methods": [],
+      "model_name": "protgpt2",
+      "status": "one_or_more_methods_quality_gate_failed"
+    },
+    {
+      "atlas_eligible_methods": [],
+      "model_name": "zymctrl",
+      "status": "one_or_more_methods_quality_gate_failed"
+    },
+    {
+      "atlas_eligible_methods": [
+        "topk_clt"
+      ],
+      "model_name": "progen2-medium",
+      "status": "one_or_more_methods_quality_gate_failed"
+    }
+  ],
+  "model_method_adjudications": [
+    {
+      "atlas_eligible": false,
+      "cache_content_sha256": "ddf4ea1e99d5b382124b31b80fba1bcd99c4e84a9c48b00e28827c955c4f87dc",
+      "cache_manifest_sha256": "d3fa68212612bb42ed9d75c0b49a606db44a9171c00b0662c05b41f48f63dd34",
+      "downstream_layer_policy": "use_only_receipt_allowlisted_layers; any further subset must be frozen before test-set biological outcomes",
+      "eligible_downstream_layers": [
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12
+      ],
+      "failure_reasons": [
+        "one_or_more_seed_quality_gates_failed"
+      ],
+      "geometry": {
+        "d_clt": 8192,
+        "d_model": 1280,
+        "k": 128,
+        "n_layers": 36,
+        "window": 8
+      },
+      "method": "topk_clt",
+      "model_name": "protgpt2",
+      "required_seeds": [
+        17,
+        29,
+        43
+      ],
+      "runs": [
+        {
+          "checkpoint_sha256": "768dab1a6d91f0178364b0bdebb4fdf20f005a3a9f90f626e97daa5bb0ec06c2",
+          "failure_reasons": [
+            "median_dead_fraction_not_below_0.50"
+          ],
+          "layers_below_fvu_0_50": 27,
+          "mean_l0": 127.96146833333333,
+          "mean_test_fvu": 0.2608285499556646,
+          "median_dead_fraction": 0.8865966796875,
+          "quality_gate_pass": false,
+          "required_layer_count": 27,
+          "result_sha256": "e91195c87b59103421fe90450eb7b5cb188ade05c34e38e201a517e7784e2ad5",
+          "run_manifest_sha256": "8396e9fd9d784c5b5eb1e5040e4d4adeb26fd3ef83a55a18f3ba1b1859e859a3",
+          "run_seed": 17
+        },
+        {
+          "checkpoint_sha256": "b4eeca1c52ec803ea47fb8f6f1d582366139576d526b5f122aafee962b18a561",
+          "failure_reasons": [
+            "median_dead_fraction_not_below_0.50"
+          ],
+          "layers_below_fvu_0_50": 27,
+          "mean_l0": 127.96767833333334,
+          "mean_test_fvu": 0.2609030739058236,
+          "median_dead_fraction": 0.88885498046875,
+          "quality_gate_pass": false,
+          "required_layer_count": 27,
+          "result_sha256": "81815363d678c803cb709675d380744b62bbe6d3e0c1ea597743b06ce542f81f",
+          "run_manifest_sha256": "984f9d1044a68789840d4016e990df29cee42c4736ed06f3452e7efc01163efb",
+          "run_seed": 29
+        },
+        {
+          "checkpoint_sha256": "100a1ad7677864a35c03a7e3f505d1e6625f3bda35e2b798f04d5403f989e7f4",
+          "failure_reasons": [
+            "median_dead_fraction_not_below_0.50"
+          ],
+          "layers_below_fvu_0_50": 27,
+          "mean_l0": 127.96938583333333,
+          "mean_test_fvu": 0.2610179649123431,
+          "median_dead_fraction": 0.8846435546875,
+          "quality_gate_pass": false,
+          "required_layer_count": 27,
+          "result_sha256": "0d86b35d415d3c910650535c98eff754cc76a0c61aee1adb64c4cbe42bf7ba45",
+          "run_manifest_sha256": "8f1e4d8342f11cb47c1f37b27362495cb1801387726e0cc9574dba979925b428",
+          "run_seed": 43
+        }
+      ],
+      "selected_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35
+      ],
+      "source_manifest_sha256_by_split": {
+        "test": "d43737a0860579c52634d535449129bb04e2c3b02c37649d4a688e9f35d4de03",
+        "train": "f4270143c1c22904d4f548de9837572040d2b10b87d9c64363fdb811422525bb",
+        "validation": "8c3e9e83ce0d75ebaf0a4e1a0c95010b20875fc46fdfdeaf908d3290a5b207ae"
+      },
+      "status": "quality_gate_failed"
+    },
+    {
+      "atlas_eligible": false,
+      "cache_content_sha256": "ddf4ea1e99d5b382124b31b80fba1bcd99c4e84a9c48b00e28827c955c4f87dc",
+      "cache_manifest_sha256": "d3fa68212612bb42ed9d75c0b49a606db44a9171c00b0662c05b41f48f63dd34",
+      "downstream_layer_policy": "use_only_receipt_allowlisted_layers; any further subset must be frozen before test-set biological outcomes",
+      "eligible_downstream_layers": [],
+      "failure_reasons": [
+        "validation_sparsity_match_failure"
+      ],
+      "geometry": {
+        "d_clt": 8192,
+        "d_model": 1280,
+        "k": null,
+        "n_layers": 36,
+        "window": 8
+      },
+      "method": "relu_l1_sae",
+      "model_name": "protgpt2",
+      "required_seeds": [
+        17,
+        29,
+        43
+      ],
+      "runs": [],
+      "selected_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35
+      ],
+      "source_manifest_sha256_by_split": {
+        "test": "d43737a0860579c52634d535449129bb04e2c3b02c37649d4a688e9f35d4de03",
+        "train": "f4270143c1c22904d4f548de9837572040d2b10b87d9c64363fdb811422525bb",
+        "validation": "8c3e9e83ce0d75ebaf0a4e1a0c95010b20875fc46fdfdeaf908d3290a5b207ae"
+      },
+      "status": "sparsity_match_failure"
+    },
+    {
+      "atlas_eligible": false,
+      "cache_content_sha256": "ddf4ea1e99d5b382124b31b80fba1bcd99c4e84a9c48b00e28827c955c4f87dc",
+      "cache_manifest_sha256": "d3fa68212612bb42ed9d75c0b49a606db44a9171c00b0662c05b41f48f63dd34",
+      "downstream_layer_policy": "use_only_receipt_allowlisted_layers; any further subset must be frozen before test-set biological outcomes",
+      "eligible_downstream_layers": [],
+      "failure_reasons": [
+        "validation_sparsity_match_failure"
+      ],
+      "geometry": {
+        "d_clt": 8192,
+        "d_model": 1280,
+        "k": null,
+        "n_layers": 36,
+        "window": 8
+      },
+      "method": "gated_sae",
+      "model_name": "protgpt2",
+      "required_seeds": [
+        17,
+        29,
+        43
+      ],
+      "runs": [],
+      "selected_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35
+      ],
+      "source_manifest_sha256_by_split": {
+        "test": "d43737a0860579c52634d535449129bb04e2c3b02c37649d4a688e9f35d4de03",
+        "train": "f4270143c1c22904d4f548de9837572040d2b10b87d9c64363fdb811422525bb",
+        "validation": "8c3e9e83ce0d75ebaf0a4e1a0c95010b20875fc46fdfdeaf908d3290a5b207ae"
+      },
+      "status": "sparsity_match_failure"
+    },
+    {
+      "atlas_eligible": false,
+      "cache_content_sha256": "ddf4ea1e99d5b382124b31b80fba1bcd99c4e84a9c48b00e28827c955c4f87dc",
+      "cache_manifest_sha256": "d3fa68212612bb42ed9d75c0b49a606db44a9171c00b0662c05b41f48f63dd34",
+      "downstream_layer_policy": "use_only_receipt_allowlisted_layers; any further subset must be frozen before test-set biological outcomes",
+      "eligible_downstream_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35
+      ],
+      "failure_reasons": [
+        "one_or_more_seed_quality_gates_failed"
+      ],
+      "geometry": {
+        "d_clt": 128,
+        "d_model": 1280,
+        "k": null,
+        "n_layers": 36,
+        "window": 8
+      },
+      "method": "dense_low_rank",
+      "model_name": "protgpt2",
+      "required_seeds": [
+        17,
+        29,
+        43
+      ],
+      "runs": [
+        {
+          "checkpoint_sha256": "81c377b8b6e5d4c2af55b5a3454b418edea49a42cad61db2a008be983bad5cba",
+          "failure_reasons": [
+            "fewer_than_75_percent_layers_below_0.50_fvu"
+          ],
+          "layers_below_fvu_0_50": 22,
+          "mean_l0": 127.99999638888889,
+          "mean_test_fvu": 0.33987185596230374,
+          "median_dead_fraction": 0.0,
+          "quality_gate_pass": false,
+          "required_layer_count": 27,
+          "result_sha256": "e4d61fa04c0dc5b668e287572d444b02889333514dc731379cd05bc077944a7b",
+          "run_manifest_sha256": "cd492b902663e0ab58a488b1a81733b4ddcc9812151536bddebb3c972ed36ab1",
+          "run_seed": 17
+        },
+        {
+          "checkpoint_sha256": "1112844c8844297a18fed691264189fa60219b750a6c4fd44a99469b614d0833",
+          "failure_reasons": [
+            "fewer_than_75_percent_layers_below_0.50_fvu"
+          ],
+          "layers_below_fvu_0_50": 22,
+          "mean_l0": 127.99999666666666,
+          "mean_test_fvu": 0.3397647587074115,
+          "median_dead_fraction": 0.0,
+          "quality_gate_pass": false,
+          "required_layer_count": 27,
+          "result_sha256": "3ef00af3af71876a7ae38dbf9cda5abd00237890a3154a8a77c37e4f8a4f8ce7",
+          "run_manifest_sha256": "354a19cd6ce157456cf2a588b7503955312e3ad3a2193942757089a07efd656e",
+          "run_seed": 29
+        },
+        {
+          "checkpoint_sha256": "4f63cafca6b2f9f6dc8b5ba0d1b415843366ff3a20212ffa6b6243bdd8f24a87",
+          "failure_reasons": [
+            "fewer_than_75_percent_layers_below_0.50_fvu"
+          ],
+          "layers_below_fvu_0_50": 22,
+          "mean_l0": 127.99999694444445,
+          "mean_test_fvu": 0.3397599868352837,
+          "median_dead_fraction": 0.0,
+          "quality_gate_pass": false,
+          "required_layer_count": 27,
+          "result_sha256": "cf0ecf91480d7aa564607a87a9598e7e96a328c61437e35e31be572a6399056e",
+          "run_manifest_sha256": "9ea54018caa127eb33f2fd4196858a17aab1d3ea29d7b61f3ba48fb707921e09",
+          "run_seed": 43
+        }
+      ],
+      "selected_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35
+      ],
+      "source_manifest_sha256_by_split": {
+        "test": "d43737a0860579c52634d535449129bb04e2c3b02c37649d4a688e9f35d4de03",
+        "train": "f4270143c1c22904d4f548de9837572040d2b10b87d9c64363fdb811422525bb",
+        "validation": "8c3e9e83ce0d75ebaf0a4e1a0c95010b20875fc46fdfdeaf908d3290a5b207ae"
+      },
+      "status": "quality_gate_failed"
+    },
+    {
+      "atlas_eligible": false,
+      "cache_content_sha256": "cb91a518627e516dfe7cd66dc9fbd61afcb60526b21df392f811f7b9bc1050de",
+      "cache_manifest_sha256": "26307ed3694c884543d3033cd99e6cee52cd5441c9ce7f37f6f9a4f1a48dbc70",
+      "downstream_layer_policy": "use_only_receipt_allowlisted_layers; any further subset must be frozen before test-set biological outcomes",
+      "eligible_downstream_layers": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30
+      ],
+      "failure_reasons": [
+        "one_or_more_seed_quality_gates_failed"
+      ],
+      "geometry": {
+        "d_clt": 8192,
+        "d_model": 1280,
+        "k": 128,
+        "n_layers": 36,
+        "window": 8
+      },
+      "method": "topk_clt",
+      "model_name": "zymctrl",
+      "required_seeds": [
+        17,
+        29,
+        43
+      ],
+      "runs": [
+        {
+          "checkpoint_sha256": "f5895556b1b3bf7be6d9818370983bd37e5ddb7a81bb8a56159a16e42596cee1",
+          "failure_reasons": [
+            "fewer_than_75_percent_layers_below_0.50_fvu",
+            "median_dead_fraction_not_below_0.50"
+          ],
+          "layers_below_fvu_0_50": 26,
+          "mean_l0": 40.987405,
+          "mean_test_fvu": 0.40451994309001443,
+          "median_dead_fraction": 0.736083984375,
+          "quality_gate_pass": false,
+          "required_layer_count": 27,
+          "result_sha256": "64c883f843553efd86f51047faf54ca068362d41a413157cc7d9866c5a212f1b",
+          "run_manifest_sha256": "a2e3cad0cca06e0358b1cf5fc769024e1f08e783c814ccf26696b19dff89ca83",
+          "run_seed": 17
+        },
+        {
+          "checkpoint_sha256": "38dfba62917885fbc0d9b9e41c9c45d86b59a8078041ddce71e6b2c11594ffda",
+          "failure_reasons": [
+            "median_dead_fraction_not_below_0.50"
+          ],
+          "layers_below_fvu_0_50": 27,
+          "mean_l0": 40.844635,
+          "mean_test_fvu": 0.40463036421218296,
+          "median_dead_fraction": 0.728515625,
+          "quality_gate_pass": false,
+          "required_layer_count": 27,
+          "result_sha256": "619344a45f5d6edb9d37fbfada549a1d8ed6a96dbcc3997e6fa1fe42fc338038",
+          "run_manifest_sha256": "308bbbead1b1b2bdbbfe3b9b80e9b4ae9c0e7d6bd026b35fe373dddf1b2caa17",
+          "run_seed": 29
+        },
+        {
+          "checkpoint_sha256": "745673f3d3c94e0715790c0e34caa2095d6de7c5751127c027a3e863a879a155",
+          "failure_reasons": [
+            "median_dead_fraction_not_below_0.50"
+          ],
+          "layers_below_fvu_0_50": 27,
+          "mean_l0": 40.830018055555556,
+          "mean_test_fvu": 0.4045129748007362,
+          "median_dead_fraction": 0.73577880859375,
+          "quality_gate_pass": false,
+          "required_layer_count": 27,
+          "result_sha256": "aa9b567a02aebb282845d9227bf986b8b5943675971870a98934d566a5ffee73",
+          "run_manifest_sha256": "3d2be35db73c975c9678ca5fb08ea15bfbf0595bba3df8fca388dc60ac25a14a",
+          "run_seed": 43
+        }
+      ],
+      "selected_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35
+      ],
+      "source_manifest_sha256_by_split": {
+        "test": "a2b08d1980b78db955e6fc7558d9fa41c908dde597449c15cae803ede12f4289",
+        "train": "f9727a374209f7329bed910624430fcf747b735314895215d1eff313b0d3f755",
+        "validation": "f35fe72297bff551700a62c26e64094b4a23323faa701bfa5cc34b2ef239a0cf"
+      },
+      "status": "quality_gate_failed"
+    },
+    {
+      "atlas_eligible": false,
+      "cache_content_sha256": "cb91a518627e516dfe7cd66dc9fbd61afcb60526b21df392f811f7b9bc1050de",
+      "cache_manifest_sha256": "26307ed3694c884543d3033cd99e6cee52cd5441c9ce7f37f6f9a4f1a48dbc70",
+      "downstream_layer_policy": "use_only_receipt_allowlisted_layers; any further subset must be frozen before test-set biological outcomes",
+      "eligible_downstream_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30
+      ],
+      "failure_reasons": [
+        "one_or_more_seed_quality_gates_failed"
+      ],
+      "geometry": {
+        "d_clt": 8192,
+        "d_model": 1280,
+        "k": null,
+        "n_layers": 36,
+        "window": 8
+      },
+      "method": "relu_l1_sae",
+      "model_name": "zymctrl",
+      "required_seeds": [
+        17,
+        29,
+        43
+      ],
+      "runs": [
+        {
+          "checkpoint_sha256": "657b80b11443b5a33808682b0a950540ed14c30dabd24073cdf3f0b9234b184c",
+          "failure_reasons": [
+            "fewer_than_75_percent_layers_below_0.50_fvu",
+            "median_dead_fraction_not_below_0.50"
+          ],
+          "layers_below_fvu_0_50": 25,
+          "mean_l0": 34.76552888888889,
+          "mean_test_fvu": 0.403711377754869,
+          "median_dead_fraction": 0.7288818359375,
+          "quality_gate_pass": false,
+          "required_layer_count": 27,
+          "result_sha256": "ce1a4426975bb6842c4ec2e352d0a0c28e30485ffe0fc2ab296f7fe3a99c3c34",
+          "run_manifest_sha256": "fe2feba370d6bed746b917c748407cf534260b9cdaf29e4bb92594d4bea018d4",
+          "run_seed": 17
+        },
+        {
+          "checkpoint_sha256": "ea63ff826172c7392e886272a03760c0002ae62ad1be2698a3d4d0a4d17ad756",
+          "failure_reasons": [
+            "fewer_than_75_percent_layers_below_0.50_fvu",
+            "median_dead_fraction_not_below_0.50"
+          ],
+          "layers_below_fvu_0_50": 25,
+          "mean_l0": 34.655285,
+          "mean_test_fvu": 0.4039165365499994,
+          "median_dead_fraction": 0.7347412109375,
+          "quality_gate_pass": false,
+          "required_layer_count": 27,
+          "result_sha256": "5118a2594f22d17da046692840fc700b89e7faf8613c94f49568f30104bf89ca",
+          "run_manifest_sha256": "08104d2498c8b6cc8181866edcd0a7ef4ec0b6964d1f28fe2d279880cb47e900",
+          "run_seed": 29
+        },
+        {
+          "checkpoint_sha256": "0fc8720e023369544b94b80de493eba5d6707e57d7e8ce23d3cfa6e6125fedc2",
+          "failure_reasons": [
+            "fewer_than_75_percent_layers_below_0.50_fvu",
+            "median_dead_fraction_not_below_0.50"
+          ],
+          "layers_below_fvu_0_50": 25,
+          "mean_l0": 34.79845944444445,
+          "mean_test_fvu": 0.40391733707026567,
+          "median_dead_fraction": 0.7335205078125,
+          "quality_gate_pass": false,
+          "required_layer_count": 27,
+          "result_sha256": "b7cc998322688a4dfbb4bbb6c40c0bc202e8c3efda4b66263885f4f8d060afae",
+          "run_manifest_sha256": "af83a3b36f8049c3ceeda5b4280bf1c4cea55e26b3ab9e24f54e96364adb4471",
+          "run_seed": 43
+        }
+      ],
+      "selected_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35
+      ],
+      "source_manifest_sha256_by_split": {
+        "test": "a2b08d1980b78db955e6fc7558d9fa41c908dde597449c15cae803ede12f4289",
+        "train": "f9727a374209f7329bed910624430fcf747b735314895215d1eff313b0d3f755",
+        "validation": "f35fe72297bff551700a62c26e64094b4a23323faa701bfa5cc34b2ef239a0cf"
+      },
+      "status": "quality_gate_failed"
+    },
+    {
+      "atlas_eligible": false,
+      "cache_content_sha256": "cb91a518627e516dfe7cd66dc9fbd61afcb60526b21df392f811f7b9bc1050de",
+      "cache_manifest_sha256": "26307ed3694c884543d3033cd99e6cee52cd5441c9ce7f37f6f9a4f1a48dbc70",
+      "downstream_layer_policy": "use_only_receipt_allowlisted_layers; any further subset must be frozen before test-set biological outcomes",
+      "eligible_downstream_layers": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        25,
+        26,
+        27,
+        28,
+        29
+      ],
+      "failure_reasons": [
+        "one_or_more_seed_quality_gates_failed"
+      ],
+      "geometry": {
+        "d_clt": 8192,
+        "d_model": 1280,
+        "k": null,
+        "n_layers": 36,
+        "window": 8
+      },
+      "method": "gated_sae",
+      "model_name": "zymctrl",
+      "required_seeds": [
+        17,
+        29,
+        43
+      ],
+      "runs": [
+        {
+          "checkpoint_sha256": "c09a7bdbb9a4be5e5d81086494a2511deee5635b43b41eb074ed115c9754246d",
+          "failure_reasons": [
+            "fewer_than_75_percent_layers_below_0.50_fvu",
+            "median_dead_fraction_not_below_0.50"
+          ],
+          "layers_below_fvu_0_50": 22,
+          "mean_l0": 25.544919444444446,
+          "mean_test_fvu": 0.41453390466454565,
+          "median_dead_fraction": 0.79595947265625,
+          "quality_gate_pass": false,
+          "required_layer_count": 27,
+          "result_sha256": "d200c42d9e2b583bdad3549002cf39767f7f123f36f0282d9994cfe3b9e99eb3",
+          "run_manifest_sha256": "83d2a68b820e6d7e951c08e1b9ad5c38b94b942d3cc8d73483b4f57002db4f72",
+          "run_seed": 17
+        },
+        {
+          "checkpoint_sha256": "6fa87fb18cea03425114787b071939f1b1422b9e6b15c5b483072d859761bd57",
+          "failure_reasons": [
+            "fewer_than_75_percent_layers_below_0.50_fvu",
+            "median_dead_fraction_not_below_0.50"
+          ],
+          "layers_below_fvu_0_50": 22,
+          "mean_l0": 25.467619444444445,
+          "mean_test_fvu": 0.414698632667706,
+          "median_dead_fraction": 0.79296875,
+          "quality_gate_pass": false,
+          "required_layer_count": 27,
+          "result_sha256": "4159715992453e51963129fcb010c3004095e86324bccfa3b6cee3a2104575a9",
+          "run_manifest_sha256": "742ce36893bba4f8530d276733c8180f3d9052d5deb0e64a870508a0eeb3b308",
+          "run_seed": 29
+        },
+        {
+          "checkpoint_sha256": "7ccc9f2bc01ec5002664be0204167eff400d7f32bf87ac077a070e1a05976cd9",
+          "failure_reasons": [
+            "fewer_than_75_percent_layers_below_0.50_fvu",
+            "median_dead_fraction_not_below_0.50"
+          ],
+          "layers_below_fvu_0_50": 22,
+          "mean_l0": 25.474306944444443,
+          "mean_test_fvu": 0.4147826343667497,
+          "median_dead_fraction": 0.7896728515625,
+          "quality_gate_pass": false,
+          "required_layer_count": 27,
+          "result_sha256": "56939ed09261acae2941b02f6b74ef30e1e1a3979f46e26f30e808cea759540a",
+          "run_manifest_sha256": "c7384910f6aad333c1e5173f24a52ffef4b832d5a49a6abef6f83ae1d45bae53",
+          "run_seed": 43
+        }
+      ],
+      "selected_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35
+      ],
+      "source_manifest_sha256_by_split": {
+        "test": "a2b08d1980b78db955e6fc7558d9fa41c908dde597449c15cae803ede12f4289",
+        "train": "f9727a374209f7329bed910624430fcf747b735314895215d1eff313b0d3f755",
+        "validation": "f35fe72297bff551700a62c26e64094b4a23323faa701bfa5cc34b2ef239a0cf"
+      },
+      "status": "quality_gate_failed"
+    },
+    {
+      "atlas_eligible": false,
+      "cache_content_sha256": "cb91a518627e516dfe7cd66dc9fbd61afcb60526b21df392f811f7b9bc1050de",
+      "cache_manifest_sha256": "26307ed3694c884543d3033cd99e6cee52cd5441c9ce7f37f6f9a4f1a48dbc70",
+      "downstream_layer_policy": "use_only_receipt_allowlisted_layers; any further subset must be frozen before test-set biological outcomes",
+      "eligible_downstream_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35
+      ],
+      "failure_reasons": [
+        "one_or_more_seed_quality_gates_failed"
+      ],
+      "geometry": {
+        "d_clt": 128,
+        "d_model": 1280,
+        "k": null,
+        "n_layers": 36,
+        "window": 8
+      },
+      "method": "dense_low_rank",
+      "model_name": "zymctrl",
+      "required_seeds": [
+        17,
+        29,
+        43
+      ],
+      "runs": [
+        {
+          "checkpoint_sha256": "ea1dfb2c561f57c02533cc7576fe131f83a9a02ed66ea53c005016f0d923bd08",
+          "failure_reasons": [
+            "mean_test_fvu_not_below_0.50",
+            "fewer_than_75_percent_layers_below_0.50_fvu"
+          ],
+          "layers_below_fvu_0_50": 5,
+          "mean_l0": 127.99999861111111,
+          "mean_test_fvu": 0.7435651938728829,
+          "median_dead_fraction": 0.0,
+          "quality_gate_pass": false,
+          "required_layer_count": 27,
+          "result_sha256": "2b2f5b1cec484d62196bdd1c1a3b5306556a3261e55cf90a429589fbe4c8dc07",
+          "run_manifest_sha256": "f2efc7263e671035f2b6aef63d48d3ec3fb157119ea3e73c12a64acc48664dde",
+          "run_seed": 17
+        },
+        {
+          "checkpoint_sha256": "8b7babcb5a82459490adf1bd84e0fcd36b1e2590b3d956ec5389eaa7df119182",
+          "failure_reasons": [
+            "mean_test_fvu_not_below_0.50",
+            "fewer_than_75_percent_layers_below_0.50_fvu"
+          ],
+          "layers_below_fvu_0_50": 5,
+          "mean_l0": 127.99999694444445,
+          "mean_test_fvu": 0.7435063020450694,
+          "median_dead_fraction": 0.0,
+          "quality_gate_pass": false,
+          "required_layer_count": 27,
+          "result_sha256": "a2165098a33cd6ee24caf37404e03f7df0f7e6c03662a02f332ff363ad99d343",
+          "run_manifest_sha256": "6e9600a22c8d491464a1b9825116b8f8cd5ea061cc6c43efdf72c495e9e0883f",
+          "run_seed": 29
+        },
+        {
+          "checkpoint_sha256": "d7976cf7e8fd75490f6b40887788f0984e471b06ada2c47b2c0bb13fcb3aa921",
+          "failure_reasons": [
+            "mean_test_fvu_not_below_0.50",
+            "fewer_than_75_percent_layers_below_0.50_fvu"
+          ],
+          "layers_below_fvu_0_50": 5,
+          "mean_l0": 127.99999833333334,
+          "mean_test_fvu": 0.7436333555049133,
+          "median_dead_fraction": 0.0,
+          "quality_gate_pass": false,
+          "required_layer_count": 27,
+          "result_sha256": "b0f0937f06e651cd8a5a1f117744965cb96aac8e15e0d94c6a543351efb80ce4",
+          "run_manifest_sha256": "c98ecbf8ac9843219b7fe6d8aa5b482499653365bff5b0cf39c52b18c91d8fc2",
+          "run_seed": 43
+        }
+      ],
+      "selected_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35
+      ],
+      "source_manifest_sha256_by_split": {
+        "test": "a2b08d1980b78db955e6fc7558d9fa41c908dde597449c15cae803ede12f4289",
+        "train": "f9727a374209f7329bed910624430fcf747b735314895215d1eff313b0d3f755",
+        "validation": "f35fe72297bff551700a62c26e64094b4a23323faa701bfa5cc34b2ef239a0cf"
+      },
+      "status": "quality_gate_failed"
+    },
+    {
+      "atlas_eligible": true,
+      "cache_content_sha256": "fc3d0e80016a672d6e58a9f9c6f0f92cf5394c464ca4c633929c4b98880d3166",
+      "cache_manifest_sha256": "e51c9dacfc7cbb56fb8f860800a4e2315686838853e34f1905d95fa757d72ea9",
+      "downstream_layer_policy": "use_only_receipt_allowlisted_layers; any further subset must be frozen before test-set biological outcomes",
+      "eligible_downstream_layers": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20
+      ],
+      "failure_reasons": [],
+      "geometry": {
+        "d_clt": 8192,
+        "d_model": 1536,
+        "k": 128,
+        "n_layers": 27,
+        "window": 8
+      },
+      "method": "topk_clt",
+      "model_name": "progen2-medium",
+      "required_seeds": [
+        17,
+        29,
+        43
+      ],
+      "runs": [
+        {
+          "checkpoint_sha256": "4f21089571023cc5bb0edf8e8aa4fa8cc897bde9ca88bbbdb12b1feeaa8fe3f3",
+          "failure_reasons": [],
+          "layers_below_fvu_0_50": 25,
+          "mean_l0": 84.50996518518518,
+          "mean_test_fvu": 0.304399288789183,
+          "median_dead_fraction": 0.4346923828125,
+          "quality_gate_pass": true,
+          "required_layer_count": 21,
+          "result_sha256": "24e7cb3b2ac95c1e82cbe7de853b648650ce4537e5ea9f33ea6df09bd8f44437",
+          "run_manifest_sha256": "df55d0c87ac817dd2772da7f15e7833a5cd7fe97299e7b9239dca5dd9bb61b27",
+          "run_seed": 17
+        },
+        {
+          "checkpoint_sha256": "c288e71eb9b8875ab3506b771258c8b711d4f54d7b7244bb7f84c3619985bb46",
+          "failure_reasons": [],
+          "layers_below_fvu_0_50": 26,
+          "mean_l0": 84.64378444444445,
+          "mean_test_fvu": 0.30422651806712003,
+          "median_dead_fraction": 0.432861328125,
+          "quality_gate_pass": true,
+          "required_layer_count": 21,
+          "result_sha256": "4cfce645836e6c48bdb7f84321e527c6330b0653360a454a723821f0f62730b1",
+          "run_manifest_sha256": "830145e82589dd917f79d51ad1825fb2a10d2e59172fec565d60dd71ab6bfc06",
+          "run_seed": 29
+        },
+        {
+          "checkpoint_sha256": "c2355661580e8bac2a04c1df3b9291ba5bf0e04c3b4b3b3ddac114843199256b",
+          "failure_reasons": [],
+          "layers_below_fvu_0_50": 25,
+          "mean_l0": 84.71802111111111,
+          "mean_test_fvu": 0.304156780823961,
+          "median_dead_fraction": 0.433349609375,
+          "quality_gate_pass": true,
+          "required_layer_count": 21,
+          "result_sha256": "ea5b49945fc3eaef91d8fc9125eb982671800177f61ff33bdb2e9a07af3f0354",
+          "run_manifest_sha256": "7ae71189cf2a3a6cd9370abcbd5ead7cb10eaf35f7976b9dac5b3a037dfeb7fd",
+          "run_seed": 43
+        }
+      ],
+      "selected_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26
+      ],
+      "source_manifest_sha256_by_split": {
+        "test": "d43737a0860579c52634d535449129bb04e2c3b02c37649d4a688e9f35d4de03",
+        "train": "f4270143c1c22904d4f548de9837572040d2b10b87d9c64363fdb811422525bb",
+        "validation": "8c3e9e83ce0d75ebaf0a4e1a0c95010b20875fc46fdfdeaf908d3290a5b207ae"
+      },
+      "status": "atlas_eligible"
+    },
+    {
+      "atlas_eligible": false,
+      "cache_content_sha256": "fc3d0e80016a672d6e58a9f9c6f0f92cf5394c464ca4c633929c4b98880d3166",
+      "cache_manifest_sha256": "e51c9dacfc7cbb56fb8f860800a4e2315686838853e34f1905d95fa757d72ea9",
+      "downstream_layer_policy": "use_only_receipt_allowlisted_layers; any further subset must be frozen before test-set biological outcomes",
+      "eligible_downstream_layers": [],
+      "failure_reasons": [
+        "validation_sparsity_match_failure"
+      ],
+      "geometry": {
+        "d_clt": 8192,
+        "d_model": 1536,
+        "k": null,
+        "n_layers": 27,
+        "window": 8
+      },
+      "method": "relu_l1_sae",
+      "model_name": "progen2-medium",
+      "required_seeds": [
+        17,
+        29,
+        43
+      ],
+      "runs": [],
+      "selected_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26
+      ],
+      "source_manifest_sha256_by_split": {
+        "test": "d43737a0860579c52634d535449129bb04e2c3b02c37649d4a688e9f35d4de03",
+        "train": "f4270143c1c22904d4f548de9837572040d2b10b87d9c64363fdb811422525bb",
+        "validation": "8c3e9e83ce0d75ebaf0a4e1a0c95010b20875fc46fdfdeaf908d3290a5b207ae"
+      },
+      "status": "sparsity_match_failure"
+    },
+    {
+      "atlas_eligible": false,
+      "cache_content_sha256": "fc3d0e80016a672d6e58a9f9c6f0f92cf5394c464ca4c633929c4b98880d3166",
+      "cache_manifest_sha256": "e51c9dacfc7cbb56fb8f860800a4e2315686838853e34f1905d95fa757d72ea9",
+      "downstream_layer_policy": "use_only_receipt_allowlisted_layers; any further subset must be frozen before test-set biological outcomes",
+      "eligible_downstream_layers": [
+        2,
+        3,
+        4,
+        5,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        19,
+        20
+      ],
+      "failure_reasons": [
+        "one_or_more_seed_quality_gates_failed"
+      ],
+      "geometry": {
+        "d_clt": 8192,
+        "d_model": 1536,
+        "k": null,
+        "n_layers": 27,
+        "window": 8
+      },
+      "method": "gated_sae",
+      "model_name": "progen2-medium",
+      "required_seeds": [
+        17,
+        29,
+        43
+      ],
+      "runs": [
+        {
+          "checkpoint_sha256": "7a2a049814fe27de0cb92ac528d779c3dbb505c09cd3ae6608bb4e4a60a86f04",
+          "failure_reasons": [
+            "median_dead_fraction_not_below_0.50"
+          ],
+          "layers_below_fvu_0_50": 24,
+          "mean_l0": 22.515202592592594,
+          "mean_test_fvu": 0.3314323978311892,
+          "median_dead_fraction": 0.7060546875,
+          "quality_gate_pass": false,
+          "required_layer_count": 21,
+          "result_sha256": "a6d16d350f6e6ae6eeb05dbf63fa0bcfe03ca0c1391e57d3fea7b8164b253773",
+          "run_manifest_sha256": "fbcf036d3ed0f4832b43118bc21e9f7c8baeed335444bf53f0ed24e90fa862f9",
+          "run_seed": 17
+        },
+        {
+          "checkpoint_sha256": "021f57df46f63f0ee0198dc3d67eecbecae9470033b4a6ebd42efd965c39e860",
+          "failure_reasons": [
+            "median_dead_fraction_not_below_0.50"
+          ],
+          "layers_below_fvu_0_50": 24,
+          "mean_l0": 22.56750851851852,
+          "mean_test_fvu": 0.3313130322054761,
+          "median_dead_fraction": 0.697998046875,
+          "quality_gate_pass": false,
+          "required_layer_count": 21,
+          "result_sha256": "7d4418c3cde2e76a81b65b991e448fecaeed73c1aa69fa3824a61a60996b004f",
+          "run_manifest_sha256": "978c9ba967f8a9eb3102cd56b2ebbdeb4120e17a1a3cae9b8838b76f4b17a913",
+          "run_seed": 29
+        },
+        {
+          "checkpoint_sha256": "9635e7eb6a698362c5177be4f9576c1fc68aed14642c36089c0ae3288f8174d2",
+          "failure_reasons": [
+            "median_dead_fraction_not_below_0.50"
+          ],
+          "layers_below_fvu_0_50": 24,
+          "mean_l0": 23.342124814814813,
+          "mean_test_fvu": 0.33135979043207286,
+          "median_dead_fraction": 0.6722412109375,
+          "quality_gate_pass": false,
+          "required_layer_count": 21,
+          "result_sha256": "92f6f4f28515c9164bc532fef29d60fecf1e6856703e901ee0778511ba7da4a8",
+          "run_manifest_sha256": "3eedc56d32e546df14a75554e5e3cf8741d48545bc7e776c351fb49483e11f87",
+          "run_seed": 43
+        }
+      ],
+      "selected_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26
+      ],
+      "source_manifest_sha256_by_split": {
+        "test": "d43737a0860579c52634d535449129bb04e2c3b02c37649d4a688e9f35d4de03",
+        "train": "f4270143c1c22904d4f548de9837572040d2b10b87d9c64363fdb811422525bb",
+        "validation": "8c3e9e83ce0d75ebaf0a4e1a0c95010b20875fc46fdfdeaf908d3290a5b207ae"
+      },
+      "status": "quality_gate_failed"
+    },
+    {
+      "atlas_eligible": false,
+      "cache_content_sha256": "fc3d0e80016a672d6e58a9f9c6f0f92cf5394c464ca4c633929c4b98880d3166",
+      "cache_manifest_sha256": "e51c9dacfc7cbb56fb8f860800a4e2315686838853e34f1905d95fa757d72ea9",
+      "downstream_layer_policy": "use_only_receipt_allowlisted_layers; any further subset must be frozen before test-set biological outcomes",
+      "eligible_downstream_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26
+      ],
+      "failure_reasons": [
+        "one_or_more_seed_quality_gates_failed"
+      ],
+      "geometry": {
+        "d_clt": 128,
+        "d_model": 1536,
+        "k": null,
+        "n_layers": 27,
+        "window": 8
+      },
+      "method": "dense_low_rank",
+      "model_name": "progen2-medium",
+      "required_seeds": [
+        17,
+        29,
+        43
+      ],
+      "runs": [
+        {
+          "checkpoint_sha256": "d6ec09fdca930a842f12dd5b6352c8b9eb2cc7872abb37e94f80afa2a6618ab4",
+          "failure_reasons": [
+            "fewer_than_75_percent_layers_below_0.50_fvu"
+          ],
+          "layers_below_fvu_0_50": 8,
+          "mean_l0": 127.99999555555556,
+          "mean_test_fvu": 0.49945322011973503,
+          "median_dead_fraction": 0.0,
+          "quality_gate_pass": false,
+          "required_layer_count": 21,
+          "result_sha256": "81ca2801493d7b307d3edb4ecd07ab4655951e8f7bd9eb0e7ff950250d7b70a2",
+          "run_manifest_sha256": "c5bf6c743506f8a23fd01845525620013314bb672494f7abfefd4896047bdbb8",
+          "run_seed": 17
+        },
+        {
+          "checkpoint_sha256": "0712411850e849bb0e818ef45dc7d9d8d93eff921e9f87a62504792f12f7db3f",
+          "failure_reasons": [
+            "fewer_than_75_percent_layers_below_0.50_fvu"
+          ],
+          "layers_below_fvu_0_50": 8,
+          "mean_l0": 127.9999962962963,
+          "mean_test_fvu": 0.49942969734412046,
+          "median_dead_fraction": 0.0,
+          "quality_gate_pass": false,
+          "required_layer_count": 21,
+          "result_sha256": "dd61b1afb56b11c4fdefc59c45b4ba5f03400576fa689a59ec2ee8c99d958002",
+          "run_manifest_sha256": "67e7eaaca13518ad5d3de41a71b673ca863a41611e04d90316646afa6710fe08",
+          "run_seed": 29
+        },
+        {
+          "checkpoint_sha256": "47eb07f1923a13e9d7811d2686deccc8e28b56c942df59c7a148ef30d22b990a",
+          "failure_reasons": [
+            "fewer_than_75_percent_layers_below_0.50_fvu"
+          ],
+          "layers_below_fvu_0_50": 8,
+          "mean_l0": 127.99999444444444,
+          "mean_test_fvu": 0.49945827587150343,
+          "median_dead_fraction": 0.0,
+          "quality_gate_pass": false,
+          "required_layer_count": 21,
+          "result_sha256": "ef96ec20afef17b07ee0672b2b9ba4b19c64f3c0ca484171a1e43875ca71ca92",
+          "run_manifest_sha256": "4bf1452bf7ba79dfebdfbd9d37f6d8277839650f258e16d4bce29ad7fb466825",
+          "run_seed": 43
+        }
+      ],
+      "selected_layers": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26
+      ],
+      "source_manifest_sha256_by_split": {
+        "test": "d43737a0860579c52634d535449129bb04e2c3b02c37649d4a688e9f35d4de03",
+        "train": "f4270143c1c22904d4f548de9837572040d2b10b87d9c64363fdb811422525bb",
+        "validation": "8c3e9e83ce0d75ebaf0a4e1a0c95010b20875fc46fdfdeaf908d3290a5b207ae"
+      },
+      "status": "quality_gate_failed"
+    }
+  ],
+  "p0_2_panel_eligible": false,
+  "panel_status": "one_or_more_model_method_quality_gates_failed",
+  "profile_sha256": "eb33d6e8fdf551b60b95238766fcf97e3e2fe5a91f0f5882dd9212d129572db2",
+  "protocol_sha256": "dca92f3b43a5fda545c708ec988e66a063ee35a7ad98f14d8a4c6ad73531481e",
+  "required_full_run_count": 27,
+  "required_methods": [
+    "topk_clt",
+    "relu_l1_sae",
+    "gated_sae",
+    "dense_low_rank"
+  ],
+  "required_models": [
+    "protgpt2",
+    "zymctrl",
+    "progen2-medium"
+  ],
+  "required_screening_run_count": 6,
+  "schema_version": "r2_p0_2_eligibility_receipt_v1",
+  "spec_sha256": "f96aa1da3316adc064aa9cb14e03c772e8dc3b3954325ba3387a61530f8af2a1",
+  "status": "complete"
+}

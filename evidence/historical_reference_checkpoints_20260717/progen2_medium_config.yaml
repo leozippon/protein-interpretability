@@ -1,0 +1,27 @@
+checkpoint:
+  save_dir: /oss-pvc/zhk_zip/outputs/r2_clt_progen2_medium_rerun_20260403/clt_weights/progen2-medium
+  save_every_steps: 5000
+clt:
+  d_clt: 4096
+  dead_feature_threshold: 10000
+  k: 64
+  resample_every: 5000
+  window: 8
+data:
+  fasta_path: /gpfs/jiaotongdamoxing/zhk_zip/data/uniref50/uniref50.fasta
+  max_seq_len: 256
+  num_sequences: 100000
+logging:
+  log_every_steps: 50
+  wandb_entity: null
+  wandb_project: null
+model:
+  dtype: float16
+  name: progen2-medium
+training:
+  batch_size: 2
+  gpu: 0
+  grad_clip_norm: 1.0
+  lr: 0.0003
+  lr_warmup_steps: 2000
+  total_steps: 100000

@@ -1,0 +1,78 @@
+{
+  "schema_version": "r2_upstream_model_revision_recovery_v1",
+  "recovery_date": "2026-07-17",
+  "status": "no_single_upstream_revision_matches_deployed_tree",
+  "model": "progen2-medium",
+  "upstream_repository": "hugohrban/progen2-medium",
+  "exact_complete_tree_revision_verified": false,
+  "deployed_root": "/gpfs/jiaotongdamoxing/zhk_zip/models/progen2-medium",
+  "verification": {
+    "upstream_commits_audited": 6,
+    "single_matching_revision_exists": false,
+    "decisive_mismatch_file": "config.json",
+    "decisive_mismatch": "deployed config combines the updated _name_or_path introduced by 1170fb9c03de86a9be11ca4fd6500b7016934fa0 with the earlier unqualified auto_map; upstream changed those fields together",
+    "upstream_history_url": "https://huggingface.co/hugohrban/progen2-medium/commits/main",
+    "required_release_action": "deposit the exact deployed local snapshot and file manifest"
+  },
+  "component_revisions": {
+    ".gitattributes": "cfc4f01de57ab4092e729843c91c1f956af4aed2",
+    "README.md": "5db952d5ef9956e85f959f29696d95bee116b476",
+    "configuration_progen.py": "a6d129fd07a104d9c183974e339c70741888e0af",
+    "generation_config.json": "00a235d72044ffffbc7403ba94f930c0fabda147",
+    "model.safetensors": "00a235d72044ffffbc7403ba94f930c0fabda147",
+    "modeling_progen.py": "a6d129fd07a104d9c183974e339c70741888e0af",
+    "tokenizer.json": "6f022f76b5db11142dc8f446cfab111fe75422d6",
+    "config.json": null
+  },
+  "files": [
+    {
+      "path": ".gitattributes",
+      "bytes": 1519,
+      "sha256": "11ad7efa24975ee4b0c3c3a38ed18737f0658a5f75a0a96787b576a78a023361",
+      "deployed_bytes_git_sha1": "a6344aac8c09253b3b630fb776ae94478aa0275b"
+    },
+    {
+      "path": "README.md",
+      "bytes": 1124,
+      "sha256": "92157c3b96234b7b80c2d9e9b227d99d8e6977e22194ca7530f37691d962fb83",
+      "deployed_bytes_git_sha1": "a7f40a8d3135395caf6a0059464d86a2d2bd7e5c"
+    },
+    {
+      "path": "config.json",
+      "bytes": 1156,
+      "sha256": "ed9358213db1b9449f02f0080483967b8bbab398a7fe4cae073523c717d924b1",
+      "deployed_bytes_git_sha1": "da7a147453e179444f9e35548705585ba7470e09"
+    },
+    {
+      "path": "configuration_progen.py",
+      "bytes": 2627,
+      "sha256": "e00fde880ae7ea9891033d30fadfeb43afebdc8f5ecf198a000bc66e6ac1fba5",
+      "deployed_bytes_git_sha1": "ffff7ad29500253d8fcb46431aa1a877118115e7"
+    },
+    {
+      "path": "generation_config.json",
+      "bytes": 111,
+      "sha256": "5d96ed7903c0b56b0bfb894ffe2fb9783b57d75eaf58726b81b36a330904fb09",
+      "deployed_bytes_git_sha1": "9188e67b98e3b9ae3f6eb7179a89631e4ea1401e"
+    },
+    {
+      "path": "model.safetensors",
+      "bytes": 3059237976,
+      "sha256": "93ed2f0077b9b6c6aff0408bc13bf374b2897dbf31d926191a51e9803ea51215",
+      "deployed_bytes_git_sha1": "1b1b096ba84d62c8d18095729ca3ebbb7f9ee238"
+    },
+    {
+      "path": "modeling_progen.py",
+      "bytes": 24612,
+      "sha256": "182d08571a3956aa3e540b292f7f4d7890605aa8630200dde8ccf4253b33d29b",
+      "deployed_bytes_git_sha1": "e88c044e62a594cf5cbc65dbbe5fd7df7d8c3d4f"
+    },
+    {
+      "path": "tokenizer.json",
+      "bytes": 1632,
+      "sha256": "dbb0ba7691906bec8568a10bb8c8a14ea88b236a061308e3ebdf5207a33f50de",
+      "deployed_bytes_git_sha1": "08b606b0ea0c4b41f62dfa4b032ff60b7587d7c7"
+    }
+  ],
+  "claim_boundary": "The deployed files have recoverable component-level provenance, but no single upstream commit contains the deployed hybrid config and complete tree. Naming one exact upstream revision would be false; P0-1 requires a deposited local snapshot and remains open."
+}

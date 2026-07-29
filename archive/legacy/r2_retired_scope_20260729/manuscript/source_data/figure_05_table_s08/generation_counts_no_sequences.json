@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "derivation": "Retain only counts used for Figure 5 labels; omit every sequence-bearing record.",
+  "canonical_source": "r2_decoder_sparse_readout_audit/results/drug_design/ec_lysozyme_leads_v2.json",
+  "canonical_source_sha256": "b2b262e9f519633716be902a25e0e338b9326379a20468ebdf3c5988ae8a5b53",
+  "n_generated": 200,
+  "n_selected_leads": 10,
+  "n_all_records": 200,
+  "n_unsteered_baseline": 200,
+  "top_k": 10,
+  "excluded_top_level_fields": [
+    "all_records",
+    "elapsed_s",
+    "interventions",
+    "leads",
+    "model",
+    "prompt",
+    "steering_layers",
+    "summary_criteria",
+    "target",
+    "unsteered_baseline"
+  ],
+  "sequence_bearing_top_level_fields": [
+    "leads",
+    "all_records",
+    "unsteered_baseline"
+  ]
+}

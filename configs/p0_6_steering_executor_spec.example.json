@@ -1,0 +1,45 @@
+{
+  "schema_version": 3,
+  "device": "cuda:0",
+  "model": {
+    "name": "zymctrl",
+    "model_root": "/gpfs/jiaotongdamoxing/zhk_zip/models/ZymCTRL",
+    "model_revision": "replace_with_exact_frozen_model_revision",
+    "tokenizer_revision": "replace_with_exact_frozen_tokenizer_revision",
+    "model_artifacts": {
+      "model_config_sha256": "replace_with_exact_config_sha256",
+      "model_weights_sha256": "replace_with_exact_weight_tree_sha256",
+      "tokenizer_sha256": "replace_with_exact_tokenizer_support_tree_sha256"
+    },
+    "model_inference_dtype": "bfloat16",
+    "model_inference_dtype_verification": "all_floating_model_parameters_exactly_declared_before_first_activation",
+    "activation_finiteness_check": "all_required_layer_captured_activation_and_logit_tensors_before_downstream_conversion_or_use"
+  },
+  "p0_2": {
+    "eligibility_receipt": {
+      "path": "/gpfs/replace/p0_2_eligibility_receipt.json",
+      "sha256": "replace_with_exact_eligibility_receipt_sha256"
+    },
+    "method": "topk_clt",
+    "run_seed": 17,
+    "checkpoint_path": "/gpfs/replace/topk_clt_seed_17/candidates/candidate_000/best.pt",
+    "run_manifest_sha256_by_seed": {
+      "17": "replace_with_seed_17_run_manifest_sha256",
+      "29": "replace_with_seed_29_run_manifest_sha256",
+      "43": "replace_with_seed_43_run_manifest_sha256"
+    },
+    "checkpoint_sha256_by_seed": {
+      "17": "replace_with_seed_17_best_pt_sha256",
+      "29": "replace_with_seed_29_best_pt_sha256",
+      "43": "replace_with_seed_43_best_pt_sha256"
+    },
+    "source_manifest_sha256_by_split": {
+      "train": "f9727a374209f7329bed910624430fcf747b735314895215d1eff313b0d3f755",
+      "validation": "f35fe72297bff551700a62c26e64094b4a23323faa701bfa5cc34b2ef239a0cf",
+      "test": "a2b08d1980b78db955e6fc7558d9fa41c908dde597449c15cae803ede12f4289"
+    },
+    "requested_layers": [
+      0
+    ]
+  }
+}

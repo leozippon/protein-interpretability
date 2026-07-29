@@ -1,0 +1,377 @@
+{
+  "schema_version": "r2_p0_2_screening_terminal_receipt_v1",
+  "status": "verified_terminal_screening_panel",
+  "audited_at": "2026-07-22T11:15:50+08:00",
+  "receipt_scope": "validation_only_dictionary_screening",
+  "screening_root": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/p0_2_dictionary_controls_bf16_r3/screening",
+  "lineage": {
+    "code_archive_sha256": "6f191b554de901c7be25968f2fc96d989ae7d5d0bcb2a1c9285fdd1c3b840e44",
+    "code_tree_manifest_sha256": "486ba4e9c00a7a1a88a58a31691095e72aaf45f39745ad3117b88c694de579d4",
+    "production_profile_sha256": "eb33d6e8fdf551b60b95238766fcf97e3e2fe5a91f0f5882dd9212d129572db2",
+    "runner_sha256": "56ca3c4d8e230ea6ef5cf36d394564f747fa2c5bcb4f9b837dd3e5825e6401b8",
+    "dictionary_module_sha256": "347a095c2e18a429e09011f84a45bd40b1cf5d46ebf38398e6e2a7afe57c6596",
+    "launcher_sha256": "bc511f78f872ce70cc85ed098ec9aad15e44aa2dc1a5add3de2a52683fcef2f6",
+    "git_commit": "d765d4bf761d566fb45b6318c6067c9981cf96ad",
+    "git_dirty": true,
+    "pod_name": "damoxing-zhk-zipbio-master-0",
+    "node_name": "i-d5cvmv6heob1nidq4ujg",
+    "gpu_model": "NVIDIA H200",
+    "screening_seed": 20260717
+  },
+  "cache_identities": {
+    "protgpt2": {
+      "manifest_sha256": "d3fa68212612bb42ed9d75c0b49a606db44a9171c00b0662c05b41f48f63dd34",
+      "content_sha256": "ddf4ea1e99d5b382124b31b80fba1bcd99c4e84a9c48b00e28827c955c4f87dc"
+    },
+    "zymctrl": {
+      "manifest_sha256": "26307ed3694c884543d3033cd99e6cee52cd5441c9ce7f37f6f9a4f1a48dbc70",
+      "content_sha256": "cb91a518627e516dfe7cd66dc9fbd61afcb60526b21df392f811f7b9bc1050de"
+    },
+    "progen2-medium": {
+      "manifest_sha256": "e51c9dacfc7cbb56fb8f860800a4e2315686838853e34f1905d95fa757d72ea9",
+      "content_sha256": "fc3d0e80016a672d6e58a9f9c6f0f92cf5394c464ca4c633929c4b98880d3166"
+    }
+  },
+  "frozen_grid_contract": {
+    "methods": {
+      "gated_sae": {
+        "candidate_count_per_model": 10,
+        "l1_coefficient": [
+          0.00001,
+          0.00003,
+          0.0001,
+          0.0003,
+          0.001
+        ],
+        "auxiliary_coefficient": [
+          0.1,
+          1.0
+        ],
+        "enumeration_order": "l1_coefficient_outer_auxiliary_coefficient_inner"
+      },
+      "relu_l1_sae": {
+        "candidate_count_per_model": 5,
+        "l1_coefficient": [
+          0.00001,
+          0.00003,
+          0.0001,
+          0.0003,
+          0.001
+        ],
+        "auxiliary_coefficient": [
+          0.0
+        ]
+      }
+    },
+    "activation_threshold": [
+      0.0,
+      0.000001,
+      0.00001,
+      0.0001,
+      0.001
+    ],
+    "eligible_validation_l0_interval": [
+      115.2,
+      140.8
+    ],
+    "selection_order": [
+      "validation_fvu_mean_ascending",
+      "absolute_validation_l0_minus_128_ascending",
+      "l1_coefficient_ascending",
+      "activation_threshold_ascending",
+      "auxiliary_coefficient_ascending"
+    ],
+    "validation_milestone_steps": [
+      1000,
+      2000,
+      3000,
+      4000,
+      5000,
+      6000,
+      7000,
+      8000,
+      9000,
+      10000
+    ]
+  },
+  "panel_invariants": {
+    "terminal_invocation_count": 6,
+    "candidate_count": 45,
+    "selection_row_count": 225,
+    "candidate_validation_files_exactly_match_embedded_summaries": true,
+    "timing_sidecar_count": 45,
+    "timing_sidecars_identity_step_size_and_finiteness_verified": true,
+    "result_test_evaluation_count": 0,
+    "candidate_training_test_split_access_count": 0,
+    "all_json_numbers_finite": true,
+    "post_candidate_accelerator_memory_allocated_bytes": 67108864,
+    "post_candidate_accelerator_memory_reserved_bytes": 67108864,
+    "post_candidate_accelerator_memory_limit_bytes": 134217728,
+    "post_candidate_memory_identical_for_all_candidates": true,
+    "temporary_or_partial_files_found": 0,
+    "symbolic_links_found": 0,
+    "live_screening_processes_found": 0,
+    "queue_logs_with_terminal_completion": 4,
+    "queue_log_error_or_nonfinite_hits": 0,
+    "accelerators_idle_after_completion": true
+  },
+  "terminal_results": [
+    {
+      "model_name": "progen2-medium",
+      "method": "gated_sae",
+      "status": "completed_validation_screening",
+      "relative_output_path": "progen2-medium/gated_sae",
+      "result_sha256": "8d49d227021c32e65ce831c428649c6648df0dc9e5d2aaa03852f55f194dadd4",
+      "run_manifest_sha256": "7acb5c200ba76eb3988573ce0972daca0fa680adf4c39cb71486218d13ddafeb",
+      "run_state_sha256": "a00ead64d66ae8c042839fb7c03e6fb18ba5570769d905c4a2992d25266683ac",
+      "queue_id": 2,
+      "queue_pid": 27371,
+      "queue_pid_terminal_state": "exited",
+      "queue_log_sha256": "53ca516e58767299f18d498170504afc6c49e0a1db771b5c5c247db74d093ca7",
+      "candidate_count": 10,
+      "selection_row_count": 50,
+      "eligible_row_count": 5,
+      "peak_accelerator_memory_allocated_bytes_per_candidate": 54274764800,
+      "selection": {
+        "candidate_index": 0,
+        "l1_coefficient": 0.00001,
+        "auxiliary_coefficient": 0.1,
+        "activation_threshold": 0.0,
+        "validation_fvu_mean": 0.4397525937186076,
+        "validation_l0_mean": 132.16376074074074
+      },
+      "selected_checkpoint": {
+        "relative_path": "progen2-medium/gated_sae/candidates/candidate_000/best.pt",
+        "size_bytes": 10824135149,
+        "sha256": "475283ed26edcd3fb2da4af948dfa78e34aa0bb0205f1f92ad480d433f8151ee",
+        "sha256_independently_recomputed": true
+      },
+      "closest_l0_failure_row": null
+    },
+    {
+      "model_name": "progen2-medium",
+      "method": "relu_l1_sae",
+      "status": "sparsity_match_failure",
+      "relative_output_path": "progen2-medium/relu_l1_sae",
+      "result_sha256": "ceca32f71131f7109980db1475265c7f44c14330275a5dce781c4a990525b61f",
+      "run_manifest_sha256": "e89a15c30635da43a6cfa2c5ff4e1ad2418d692fc3cd0611d43f193ce6a8860f",
+      "run_state_sha256": "8fc9c2326b735b66319d6c69f53352705016ebae3f1cb7882e3ec55ddfd471f1",
+      "queue_id": 2,
+      "queue_pid": 27371,
+      "queue_pid_terminal_state": "exited",
+      "queue_log_sha256": "53ca516e58767299f18d498170504afc6c49e0a1db771b5c5c247db74d093ca7",
+      "candidate_count": 5,
+      "selection_row_count": 25,
+      "eligible_row_count": 0,
+      "peak_accelerator_memory_allocated_bytes_per_candidate": 54265916928,
+      "selection": null,
+      "selected_checkpoint": null,
+      "failure_reason": "no validation candidate achieved L0 within [115.2, 140.8]",
+      "closest_l0_failure_row": {
+        "candidate_index": 1,
+        "l1_coefficient": 0.00003,
+        "auxiliary_coefficient": 0.0,
+        "activation_threshold": 0.0,
+        "validation_fvu_mean": 0.43158149140574503,
+        "validation_l0_mean": 109.82516444444444
+      }
+    },
+    {
+      "model_name": "protgpt2",
+      "method": "gated_sae",
+      "status": "sparsity_match_failure",
+      "relative_output_path": "protgpt2/gated_sae",
+      "result_sha256": "6c4f954bb21ad10a1369a2b102646ae7813d450e738c3dcf6edea10bd1140a28",
+      "run_manifest_sha256": "ed5ad704f374d1cde3eddf4013bc692aff10aba84fd210ed143171cf4e6c4cfc",
+      "run_state_sha256": "6eb52deec3bbe0765c4b3a639969e3c4438290fd1b3c4178e3c9db1f75c11409",
+      "queue_id": 0,
+      "queue_pid": 27369,
+      "queue_pid_terminal_state": "exited",
+      "queue_log_sha256": "3dff1c48959c7bd78c3f87927e7df68b8f4d35a47a1f5c3a3d0020aa4c5ef7c3",
+      "candidate_count": 10,
+      "selection_row_count": 50,
+      "eligible_row_count": 0,
+      "peak_accelerator_memory_allocated_bytes_per_candidate": 62259861504,
+      "selection": null,
+      "selected_checkpoint": null,
+      "failure_reason": "no validation candidate achieved L0 within [115.2, 140.8]",
+      "closest_l0_failure_row": {
+        "candidate_index": 8,
+        "l1_coefficient": 0.001,
+        "auxiliary_coefficient": 0.1,
+        "activation_threshold": 0.001,
+        "validation_fvu_mean": 0.3097163399101646,
+        "validation_l0_mean": 1424.622846388889
+      }
+    },
+    {
+      "model_name": "protgpt2",
+      "method": "relu_l1_sae",
+      "status": "sparsity_match_failure",
+      "relative_output_path": "protgpt2/relu_l1_sae",
+      "result_sha256": "61e1837e94c41d72e5e8d3bd3bfeed9339c6ce6d67b6cf5ee0459436efe23bf7",
+      "run_manifest_sha256": "2c03f22b90f4e7bdef57f7cd931df3e80fa06b4d13f49df5ab87eaeb0d5c036b",
+      "run_state_sha256": "4d4c817aa7529974c458d44906e4373997b1e324bc370c53aafff091e3d76e5a",
+      "queue_id": 3,
+      "queue_pid": 27372,
+      "queue_pid_terminal_state": "exited",
+      "queue_log_sha256": "2a9116b1e9056816a18cb061155a030ffbeccc3dd530f28ec976077d88023387",
+      "candidate_count": 5,
+      "selection_row_count": 25,
+      "eligible_row_count": 0,
+      "peak_accelerator_memory_allocated_bytes_per_candidate": 62245836288,
+      "selection": null,
+      "selected_checkpoint": null,
+      "failure_reason": "no validation candidate achieved L0 within [115.2, 140.8]",
+      "closest_l0_failure_row": {
+        "candidate_index": 4,
+        "l1_coefficient": 0.001,
+        "auxiliary_coefficient": 0.0,
+        "activation_threshold": 0.001,
+        "validation_fvu_mean": 0.27994633128534935,
+        "validation_l0_mean": 1298.928968888889
+      }
+    },
+    {
+      "model_name": "zymctrl",
+      "method": "gated_sae",
+      "status": "completed_validation_screening",
+      "relative_output_path": "zymctrl/gated_sae",
+      "result_sha256": "ea354362e10801192c4ff4c52a22a462a8d9432c859fd9c79a3c770f881ebe4e",
+      "run_manifest_sha256": "d772e7311a2374d8870949ab9df2da0887b56e2ac90b34de65ca352109c7514e",
+      "run_state_sha256": "04396d559412cbb1f348551fff1216f29f5b8f8921ac245dd363d777c8f77b37",
+      "queue_id": 1,
+      "queue_pid": 27370,
+      "queue_pid_terminal_state": "exited",
+      "queue_log_sha256": "1f11287dd3d2250647fc5deb571cd7f5996eb7fb866362a770322d1fd0481e01",
+      "candidate_count": 10,
+      "selection_row_count": 50,
+      "eligible_row_count": 5,
+      "peak_accelerator_memory_allocated_bytes_per_candidate": 62259861504,
+      "selection": {
+        "candidate_index": 3,
+        "l1_coefficient": 0.00003,
+        "auxiliary_coefficient": 1.0,
+        "activation_threshold": 0.0,
+        "validation_fvu_mean": 0.5929956473037449,
+        "validation_l0_mean": 120.02304111111111
+      },
+      "selected_checkpoint": {
+        "relative_path": "zymctrl/gated_sae/candidates/candidate_003/best.pt",
+        "size_bytes": 12418876667,
+        "sha256": "7b7de87a370aa49f68b2525a162707712675fade013e9c36efdb5aed74eef1b0",
+        "sha256_independently_recomputed": true
+      },
+      "closest_l0_failure_row": null
+    },
+    {
+      "model_name": "zymctrl",
+      "method": "relu_l1_sae",
+      "status": "completed_validation_screening",
+      "relative_output_path": "zymctrl/relu_l1_sae",
+      "result_sha256": "96e19e97e62af904959973b85646aed595d23635375e47888ad1cff9acf26f1c",
+      "run_manifest_sha256": "f9c6f2c959de729bbf1d4e20e7ed73f2e5f32f2e579c7ddbd758b86291144e84",
+      "run_state_sha256": "f4092fab8a12ab6af36c7bd6a9fdca0d3b181a74708530b4b4dc30d6eafb5e41",
+      "queue_id": 3,
+      "queue_pid": 27372,
+      "queue_pid_terminal_state": "exited",
+      "queue_log_sha256": "2a9116b1e9056816a18cb061155a030ffbeccc3dd530f28ec976077d88023387",
+      "candidate_count": 5,
+      "selection_row_count": 25,
+      "eligible_row_count": 5,
+      "peak_accelerator_memory_allocated_bytes_per_candidate": 62245836288,
+      "selection": {
+        "candidate_index": 0,
+        "l1_coefficient": 0.00001,
+        "auxiliary_coefficient": 0.0,
+        "activation_threshold": 0.0,
+        "validation_fvu_mean": 0.5899043000429988,
+        "validation_l0_mean": 131.2233588888889
+      },
+      "selected_checkpoint": {
+        "relative_path": "zymctrl/relu_l1_sae/candidates/candidate_000/best.pt",
+        "size_bytes": 12416516799,
+        "sha256": "46327294afbad0f464e20db8073870d66367ebeb94a1fceb669c017a6ddb7ea2",
+        "sha256_independently_recomputed": true
+      },
+      "closest_l0_failure_row": null
+    }
+  ],
+  "full_run_disposition": {
+    "identity_format": "model_name/method/run_seed",
+    "allowed_identity_count": 27,
+    "allowed_identities": [
+      "protgpt2/topk_clt/17",
+      "protgpt2/topk_clt/29",
+      "protgpt2/topk_clt/43",
+      "protgpt2/dense_low_rank/17",
+      "protgpt2/dense_low_rank/29",
+      "protgpt2/dense_low_rank/43",
+      "zymctrl/topk_clt/17",
+      "zymctrl/topk_clt/29",
+      "zymctrl/topk_clt/43",
+      "zymctrl/relu_l1_sae/17",
+      "zymctrl/relu_l1_sae/29",
+      "zymctrl/relu_l1_sae/43",
+      "zymctrl/gated_sae/17",
+      "zymctrl/gated_sae/29",
+      "zymctrl/gated_sae/43",
+      "zymctrl/dense_low_rank/17",
+      "zymctrl/dense_low_rank/29",
+      "zymctrl/dense_low_rank/43",
+      "progen2-medium/topk_clt/17",
+      "progen2-medium/topk_clt/29",
+      "progen2-medium/topk_clt/43",
+      "progen2-medium/gated_sae/17",
+      "progen2-medium/gated_sae/29",
+      "progen2-medium/gated_sae/43",
+      "progen2-medium/dense_low_rank/17",
+      "progen2-medium/dense_low_rank/29",
+      "progen2-medium/dense_low_rank/43"
+    ],
+    "forbidden_identity_count": 9,
+    "forbidden_identities": [
+      "protgpt2/relu_l1_sae/17",
+      "protgpt2/relu_l1_sae/29",
+      "protgpt2/relu_l1_sae/43",
+      "protgpt2/gated_sae/17",
+      "protgpt2/gated_sae/29",
+      "protgpt2/gated_sae/43",
+      "progen2-medium/relu_l1_sae/17",
+      "progen2-medium/relu_l1_sae/29",
+      "progen2-medium/relu_l1_sae/43"
+    ],
+    "forbidden_reason": "terminal_validation_sparsity_match_failure",
+    "aggregate_gpu_hour_planning_proxy_allowed_runs": 1500.0,
+    "ideal_four_gpu_days_before_evaluation_and_io_overhead": 15.625,
+    "planned_retained_full_checkpoint_bytes": 862469941248
+  },
+  "screening_checkpoint_storage_disposition": {
+    "screening_checkpoint_payload_bytes_before_cleanup": 2139624732840,
+    "all_best_checkpoint_bytes": 534895878345,
+    "all_progress_checkpoint_bytes": 1604728854495,
+    "selected_best_checkpoint_count_to_preserve": 3,
+    "selected_best_checkpoint_bytes_to_preserve": 35659528615,
+    "nonselected_best_checkpoint_count_eligible_for_deletion": 42,
+    "nonselected_best_checkpoint_bytes_eligible_for_deletion": 499236349730,
+    "progress_checkpoint_count_eligible_for_deletion": 45,
+    "progress_checkpoint_bytes_eligible_for_deletion": 1604728854495,
+    "total_checkpoint_bytes_eligible_for_deletion": 2103965204225,
+    "cleanup_execution_status_at_audit": "not_performed_by_read_only_terminal_audit",
+    "cleanup_preconditions_satisfied": true,
+    "cleanup_receipt_reference": {
+      "path": "r2_decoder_sparse_readout_audit/evidence/h200_cleanup_20260722/cleanup_manifest.json",
+      "status": "to_be_written_by_cleanup_executor"
+    }
+  },
+  "claim_boundary": {
+    "p0_2_passed": false,
+    "heldout_test_evaluated": false,
+    "screening_results_p0_2_eligible": false,
+    "full_run_screening_prerequisite_complete_for_allowed_identities": true,
+    "sparsity_match_failures_are_terminal_calibrated_negatives": true,
+    "sparsity_match_failures_must_not_be_promoted_to_full_runs": true,
+    "biological_or_causal_claim_authorized": false,
+    "disposition": "This receipt closes validation-only coefficient and threshold screening. It authorizes only the listed full-run identities and does not pass P0-2, evaluate held-out test rows, establish atlas eligibility, or support biological or causal claims."
+  }
+}

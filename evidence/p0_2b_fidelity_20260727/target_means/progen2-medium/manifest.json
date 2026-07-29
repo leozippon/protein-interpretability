@@ -1,0 +1,28 @@
+{
+  "analysis_layer_fraction": 0.5,
+  "builder_sha256": "3c2734e84436fb0fe9ecf9b685e1ef3190632c534dbf657afaea0765fea6b4d8",
+  "cache_manifest": {
+    "content_sha256": "fc3d0e80016a672d6e58a9f9c6f0f92cf5394c464ca4c633929c4b98880d3166",
+    "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/p0_2_exact_cache_bf16_r3/progen2-medium/manifest.json",
+    "sha256": "e51c9dacfc7cbb56fb8f860800a4e2315686838853e34f1905d95fa757d72ea9"
+  },
+  "dimension": 1536,
+  "model_artifacts": {
+    "model_config_sha256": "ed9358213db1b9449f02f0080483967b8bbab398a7fe4cae073523c717d924b1",
+    "model_weights_sha256": "23aeeff4031fc56dd371dad5c408f6930dedfb6d46e538006bf7f589afc08c31",
+    "tokenizer_sha256": "cfc9cc1382e509ea9b77082e966e7a7374e1247cdd3681b2422ff1cdf3e190b1"
+  },
+  "model_name": "progen2-medium",
+  "rows": 1000000,
+  "schema_version": "r2_dictionary_fidelity_target_mean_v1",
+  "status": "complete",
+  "target_layer": 13,
+  "target_mean": {
+    "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/p0_2b_dictionary_fidelity_20260727_r3/target_means/progen2-medium/target_mean.npy",
+    "sha256": "fe6f60f88fd9814b08422f859cfa98ccdc687499ed5a45ee6c3992803d7cb15c"
+  },
+  "training_target_shard": {
+    "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/p0_2_exact_cache_bf16_r3/progen2-medium/train/layer_013/target.npy",
+    "sha256": "8f585377927e87fd4ce1b0a806f3a5363cefb0453c46a7cb00eeaf6d3a0628e7"
+  }
+}

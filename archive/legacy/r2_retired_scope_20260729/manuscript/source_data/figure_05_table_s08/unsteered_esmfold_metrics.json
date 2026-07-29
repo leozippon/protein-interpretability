@@ -1,0 +1,199 @@
+{
+  "input": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_leads_v2.json",
+  "field": "unsteered_baseline",
+  "backend": "local",
+  "aggregate": {
+    "n_folded": 20,
+    "mean_plddt_dist": {
+      "mean": 73.19065856933594,
+      "median": 75.67289733886719,
+      "q25": 67.73408508300781,
+      "q75": 81.72252655029297
+    },
+    "frac_globally_confident": 0.7
+  },
+  "per_sequence": [
+    {
+      "idx": 0,
+      "seq_len": 167,
+      "mean_plddt": 81.67182159423828,
+      "frac_confident": 0.9401197604790419,
+      "ptm": 0.9090577363967896,
+      "rank_score_input": null,
+      "pdb_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs/lead_0000.pdb"
+    },
+    {
+      "idx": 1,
+      "seq_len": 197,
+      "mean_plddt": 52.29079818725586,
+      "frac_confident": 0.18781725888324874,
+      "ptm": 0.560328483581543,
+      "rank_score_input": null,
+      "pdb_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs/lead_0001.pdb"
+    },
+    {
+      "idx": 2,
+      "seq_len": 149,
+      "mean_plddt": 73.4931869506836,
+      "frac_confident": 0.7986577181208053,
+      "ptm": 0.7824438214302063,
+      "rank_score_input": null,
+      "pdb_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs/lead_0002.pdb"
+    },
+    {
+      "idx": 3,
+      "seq_len": 144,
+      "mean_plddt": 78.46131896972656,
+      "frac_confident": 0.8472222222222222,
+      "ptm": 0.831449031829834,
+      "rank_score_input": null,
+      "pdb_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs/lead_0003.pdb"
+    },
+    {
+      "idx": 4,
+      "seq_len": 271,
+      "mean_plddt": 68.9039306640625,
+      "frac_confident": 0.5018450184501845,
+      "ptm": 0.5727943778038025,
+      "rank_score_input": null,
+      "pdb_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs/lead_0004.pdb"
+    },
+    {
+      "idx": 5,
+      "seq_len": 240,
+      "mean_plddt": 87.2017593383789,
+      "frac_confident": 0.9833333333333333,
+      "ptm": 0.878512442111969,
+      "rank_score_input": null,
+      "pdb_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs/lead_0005.pdb"
+    },
+    {
+      "idx": 6,
+      "seq_len": 169,
+      "mean_plddt": 50.799583435058594,
+      "frac_confident": 0.023668639053254437,
+      "ptm": 0.5146289467811584,
+      "rank_score_input": null,
+      "pdb_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs/lead_0006.pdb"
+    },
+    {
+      "idx": 7,
+      "seq_len": 400,
+      "mean_plddt": 58.5585823059082,
+      "frac_confident": 0.3375,
+      "ptm": 0.5811556577682495,
+      "rank_score_input": null,
+      "pdb_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs/lead_0007.pdb"
+    },
+    {
+      "idx": 8,
+      "seq_len": 272,
+      "mean_plddt": 84.10333251953125,
+      "frac_confident": 0.8860294117647058,
+      "ptm": 0.8371053338050842,
+      "rank_score_input": null,
+      "pdb_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs/lead_0008.pdb"
+    },
+    {
+      "idx": 9,
+      "seq_len": 400,
+      "mean_plddt": 61.85026931762695,
+      "frac_confident": 0.49,
+      "ptm": 0.4614110589027405,
+      "rank_score_input": null,
+      "pdb_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs/lead_0009.pdb"
+    },
+    {
+      "idx": 10,
+      "seq_len": 148,
+      "mean_plddt": 80.70347595214844,
+      "frac_confident": 0.8783783783783784,
+      "ptm": 0.8410521149635315,
+      "rank_score_input": null,
+      "pdb_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs/lead_0010.pdb"
+    },
+    {
+      "idx": 11,
+      "seq_len": 149,
+      "mean_plddt": 79.21553802490234,
+      "frac_confident": 0.8523489932885906,
+      "ptm": 0.8271271586418152,
+      "rank_score_input": null,
+      "pdb_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs/lead_0011.pdb"
+    },
+    {
+      "idx": 12,
+      "seq_len": 154,
+      "mean_plddt": 73.14562225341797,
+      "frac_confident": 0.7337662337662337,
+      "ptm": 0.762556791305542,
+      "rank_score_input": null,
+      "pdb_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs/lead_0012.pdb"
+    },
+    {
+      "idx": 13,
+      "seq_len": 206,
+      "mean_plddt": 72.43651580810547,
+      "frac_confident": 0.6699029126213593,
+      "ptm": 0.7203878164291382,
+      "rank_score_input": null,
+      "pdb_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs/lead_0013.pdb"
+    },
+    {
+      "idx": 14,
+      "seq_len": 165,
+      "mean_plddt": 81.87464141845703,
+      "frac_confident": 0.9515151515151515,
+      "ptm": 0.9093962907791138,
+      "rank_score_input": null,
+      "pdb_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs/lead_0014.pdb"
+    },
+    {
+      "idx": 15,
+      "seq_len": 175,
+      "mean_plddt": 64.22453308105469,
+      "frac_confident": 0.5485714285714286,
+      "ptm": 0.7345408201217651,
+      "rank_score_input": null,
+      "pdb_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs/lead_0015.pdb"
+    },
+    {
+      "idx": 16,
+      "seq_len": 144,
+      "mean_plddt": 83.04331970214844,
+      "frac_confident": 0.9305555555555556,
+      "ptm": 0.9037063121795654,
+      "rank_score_input": null,
+      "pdb_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs/lead_0016.pdb"
+    },
+    {
+      "idx": 17,
+      "seq_len": 260,
+      "mean_plddt": 77.85260009765625,
+      "frac_confident": 0.7423076923076923,
+      "ptm": 0.7913123369216919,
+      "rank_score_input": null,
+      "pdb_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs/lead_0017.pdb"
+    },
+    {
+      "idx": 18,
+      "seq_len": 152,
+      "mean_plddt": 70.15959167480469,
+      "frac_confident": 0.7236842105263158,
+      "ptm": 0.7692704796791077,
+      "rank_score_input": null,
+      "pdb_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs/lead_0018.pdb"
+    },
+    {
+      "idx": 19,
+      "seq_len": 275,
+      "mean_plddt": 83.82270050048828,
+      "frac_confident": 0.8690909090909091,
+      "ptm": 0.8309640288352966,
+      "rank_score_input": null,
+      "pdb_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs/lead_0019.pdb"
+    }
+  ],
+  "pdb_dir": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/drug_design/ec_lysozyme_unsteered_esmfold_metrics_v2_20260425_r2_v2_1gpu_pdbs",
+  "elapsed_s": 28.4
+}

@@ -1,0 +1,273 @@
+{
+    "schema_version": "r2_p0_2_dictionary_controls_production_profile_v2",
+    "confirmatory": true,
+    "status": "amended_before_restart",
+    "frozen_date": "2026-07-17",
+    "amendment_date": "2026-07-17",
+    "amendment_reason": "reproduced_nonfinite_fp16_frozen_model_activations_with_finite_bfloat16_replay",
+    "protocol": "docs/P0_2_DICTIONARY_PROTOCOL_20260717.md",
+    "estimand": {
+        "objective": "windowed_multi_layer_clt_input_to_mlp_output_transcoding",
+        "source_tensor": "architecture_specific_clt_input",
+        "target_tensor": "mlp_output",
+        "feature_input_hook": "hook_resid_mid",
+        "feature_output_hook": "hook_mlp_out",
+        "decoder_window": 8,
+        "decoder_edge_rule": "source_layer_l_writes_to_target_layers_l_through_min_l_plus_7",
+        "padding_policy": "exclude_all_padding_rows_from_loss_selection_and_evaluation"
+    },
+    "models": ["protgpt2", "zymctrl", "progen2-medium"],
+    "cache_extraction": {
+        "selection_schema": "r2_hash_priority_valid_tokens_v1",
+        "selection_method": "lowest_sha256_record_digest_colon_unpadded_token_position",
+        "token_position_definition": "ordinal_in_unpadded_model_token_stream",
+        "selected_tokens_include": "all_nonpadding_model_input_tokens_including_control_and_special_tokens",
+        "valid_token_budget_by_split": {
+            "train": 1000000,
+            "validation": 100000,
+            "test": 100000
+        },
+        "model_input_format_by_model": {
+            "protgpt2": "sequence",
+            "zymctrl": "zymctrl_ec",
+            "progen2-medium": "sequence"
+        },
+        "tokenization": {
+            "add_special_tokens": true,
+            "padding": "longest",
+            "padding_side": "right",
+            "truncation_side": "right",
+            "truncation": true,
+            "max_model_tokens": 256
+        },
+        "first_pass_tokenizer_batch_size": 256,
+        "model_forward_sequence_batch_size": 2,
+        "model_inference_dtype": "bfloat16",
+        "model_inference_dtype_verification": "all_floating_model_parameters_exactly_declared_before_first_activation",
+        "activation_finiteness_check": "all_clt_input_and_mlp_output_tensors_before_storage_conversion_and_write",
+        "storage_dtype": "float16",
+        "layout": "preallocated_single_file_per_layer_split",
+        "files_per_layer_split": 2,
+        "free_space_safety_factor": 1.2,
+        "model_cache_geometry": {
+            "protgpt2": {"n_layers": 36, "input_dim": 1280, "target_dim": 1280},
+            "zymctrl": {"n_layers": 36, "input_dim": 1280, "target_dim": 1280},
+            "progen2-medium": {"n_layers": 27, "input_dim": 1536, "target_dim": 1536}
+        },
+        "estimated_activation_payload_bytes_by_model": {
+            "protgpt2": 221184000000,
+            "zymctrl": 221184000000,
+            "progen2-medium": 199065600000
+        },
+        "estimated_activation_payload_bytes_total": 641433600000,
+        "required_free_bytes_total_at_safety_factor": 769720320000,
+        "panel_free_space_gate_required_before_each_model": true,
+        "panel_completion_receipt_schema": "r2_dictionary_cache_completion_receipt_v3",
+        "exact_budget_failure_action": "abort_without_cache",
+        "split_sequence_disjointness_required": true
+    },
+    "compute_schedule": {
+        "screening": {
+            "purpose": "validation_only_regularization_and_threshold_selection",
+            "seed": 20260717,
+            "train_cache_priority_prefix_rows": 100000,
+            "steps_per_candidate": 10000,
+            "warmup_steps": 1000,
+            "validation_every_steps": 1000,
+            "checkpoint_every_steps": 1000,
+            "validation_rows": 100000,
+            "relu_l1_candidates_per_model": 5,
+            "gated_candidates_per_model": 10,
+            "topk_candidates_per_model": 0,
+            "dense_candidates_per_model": 0,
+            "freeze_selected_coefficient_and_threshold_before_full_runs": true,
+            "test_access_count": 0
+        },
+        "full": {
+            "seeds": [17, 29, 43],
+            "steps_per_run": 200000,
+            "screened_sparse_runs_use_frozen_screening_coefficient_and_threshold": true,
+            "topk_runs_skip_screening": true,
+            "dense_runs_skip_screening": true,
+            "test_access_count_after_training": 1
+        },
+        "planning_estimate": {
+            "assumed_optimizer_steps_per_second": 1.0,
+            "screening_gpu_hours_per_candidate": 2.7777777777777777,
+            "screening_candidates_per_model": 15,
+            "screening_gpu_hours_per_model": 41.666666666666664,
+            "screening_gpu_hours_all_models": 125.0,
+            "full_runs_per_model": 12,
+            "full_gpu_hours_per_run": 55.55555555555556,
+            "full_gpu_hours_per_model": 666.6666666666667,
+            "full_gpu_hours_all_models": 2000.0,
+            "aggregate_gpu_hours_all_models": 2125.0,
+            "screening_validation_passes_per_candidate": 10,
+            "full_validation_passes_per_run": 40,
+            "full_heldout_test_passes_per_run": 1,
+            "cache_extraction_and_evaluation_are_measured_not_in_step_rate_proxy": true,
+            "basis": "single_gpu_optimizer_step_hours_at_one_step_per_second; cache extraction and every validation/test pass reported from observed wall time"
+        }
+    },
+    "preflight": {
+        "mode": "bounded_nonconfirmatory_h200_preflight",
+        "records_per_split": 2,
+        "valid_token_rows_per_split": 2,
+        "dictionary_optimizer_steps": 1,
+        "dictionary_batch_valid_token_rows": 2,
+        "dictionary_seed": 20260717,
+        "production_scientific_eligibility": false,
+        "production_cache_reuse_forbidden": true
+    },
+    "seeds": [17, 29, 43],
+    "panel": {
+        "topk_clt": {"width": 8192, "k": 128, "activation": "relu_then_topk"},
+        "relu_l1_sae": {"width": 8192, "activation": "relu"},
+        "gated_sae": {"width": 8192, "activation": "hard_gate_relu_magnitude"},
+        "dense_low_rank": {
+            "rank": 128,
+            "matched_quantity": "active_bottleneck_width",
+            "matched_value": 128,
+            "raw_parameter_matched": false
+        }
+    },
+    "training": {
+        "optimizer": "adam",
+        "total_steps": 200000,
+        "train_batch_valid_token_rows": 256,
+        "evaluation_batch_valid_token_rows": 1024,
+        "learning_rate": 0.0003,
+        "warmup_steps": 3000,
+        "validation_every_steps": 5000,
+        "gradient_clip_norm": 1.0,
+        "checkpoint_every_steps": 5000,
+        "resume_requires_optimizer_scheduler_rng_and_data_cursor": true,
+        "identical_batch_stream_across_methods": true
+    },
+    "loss_grids": {
+        "topk_clt": {"regularization_coefficient": [0.0]},
+        "relu_l1_sae": {"l1_coefficient": [0.00001, 0.00003, 0.0001, 0.0003, 0.001]},
+        "gated_sae": {
+            "l1_coefficient": [0.00001, 0.00003, 0.0001, 0.0003, 0.001],
+            "auxiliary_coefficient": [0.1, 1.0]
+        },
+        "dense_low_rank": {"regularization_coefficient": [0.0]}
+    },
+    "checkpoint_storage_planning": {
+        "parameter_state_definition": "best_fp32_model_4_bytes_plus_progress_fp32_model_and_adam_states_12_bytes",
+        "retained_bytes_per_parameter_per_candidate": 16,
+        "atomic_progress_rewrite_temporary_bytes_per_parameter": 12,
+        "free_space_gate_includes_atomic_rewrite_temporary": true,
+        "free_space_safety_factor_per_invocation": 1.1,
+        "raw_trainable_parameters_by_model_method": {
+            "protgpt2": {"topk_clt": 3104125952, "relu_l1_sae": 3104125952, "gated_sae": 3104715776, "dense_low_rank": 48547328},
+            "zymctrl": {"topk_clt": 3104125952, "relu_l1_sae": 3104125952, "gated_sae": 3104715776, "dense_low_rank": 48547328},
+            "progen2-medium": {"topk_clt": 2705588736, "relu_l1_sae": 2705588736, "gated_sae": 2706031104, "dense_low_rank": 42315648}
+        },
+        "retained_screening_checkpoint_bytes_by_model": {"protgpt2": 745084600320, "zymctrl": 745084600320, "progen2-medium": 649412075520},
+        "retained_screening_checkpoint_bytes_total": 2139581276160,
+        "retained_full_checkpoint_bytes_by_model": {"protgpt2": 449352720384, "zymctrl": 449352720384, "progen2-medium": 391657162752},
+        "retained_full_checkpoint_bytes_total": 1290362603520,
+        "retained_checkpoint_bytes_total": 3429943879680,
+        "worst_case_checkpoint_bytes_written_screening": 21395812761600,
+        "worst_case_checkpoint_bytes_written_full": 51614504140800,
+        "worst_case_checkpoint_bytes_written_total": 73010316902400,
+        "worst_case_definition": "every scheduled validation improves best and every progress checkpoint is written"
+    },
+    "validation_only_selection": {
+        "validation_l0_target": 128.0,
+        "validation_l0_tolerance_fraction": 0.1,
+        "eligible_l0_interval": [115.2, 140.8],
+        "activation_threshold_grid": [0.0, 0.000001, 0.00001, 0.0001, 0.001],
+        "primary_selection_metric": "validation_fvu_min",
+        "tie_breakers": [
+            "absolute_validation_l0_minus_128_min",
+            "regularization_coefficient_ascending",
+            "activation_threshold_ascending"
+        ],
+        "no_eligible_candidate_action": "report_sparsity_match_failure",
+        "test_set_selection_forbidden": true,
+        "atlas_or_semantic_selection_forbidden": true
+    },
+    "cache_contract": {
+        "same_cache_manifest_across_methods": true,
+        "same_cache_content_sha256_across_methods": true,
+        "same_selected_layers_across_methods": true,
+        "same_split_rows_and_order_across_methods": true,
+        "same_attention_mask_across_methods": true,
+        "test_evaluation_count_after_selection": 1
+    },
+    "required_reports": {
+        "quality": [
+            "test_fvu",
+            "reconstruction_error_quantiles",
+            "mean_l0",
+            "firing_frequency",
+            "dead_fraction",
+            "decoder_norms"
+        ],
+        "resources": [
+            "raw_trainable_parameter_count",
+            "training_flop_proxy",
+            "inference_flop_proxy",
+            "wall_time_seconds",
+            "peak_accelerator_memory_allocated_bytes",
+            "peak_accelerator_memory_reserved_bytes"
+        ],
+        "resource_comparison_note": "dense_rank_128_is_active_width_matched_not_raw_parameter_matched"
+    },
+    "required_provenance_fields": [
+        "schema_version",
+        "status",
+        "command",
+        "pod_name",
+        "node_name",
+        "gpu_index",
+        "gpu_model",
+        "model_name",
+        "model_revision",
+        "model_config_sha256",
+        "model_weights_sha256",
+        "tokenizer_sha256",
+        "model_loader_sha256",
+        "model_inference_dtype",
+        "observed_model_parameter_dtypes",
+        "model_inference_dtype_verification",
+        "model_inference_dtype_verified",
+        "activation_finiteness_check",
+        "model_input_format",
+        "tokenization_config_sha256",
+        "source_manifest_sha256_by_split",
+        "cache_manifest_path",
+        "cache_manifest_sha256",
+        "cache_content_sha256",
+        "cache_layout",
+        "cache_storage_dtype",
+        "token_selection_method",
+        "valid_token_budget_by_split",
+        "cache_row_order_sha256_by_split",
+        "cache_shard_sha256",
+        "selected_layers",
+        "feature_input_hook",
+        "feature_output_hook",
+        "decoder_window",
+        "stage",
+        "method",
+        "run_seed",
+        "model_seed",
+        "batch_stream_seed",
+        "executed_profile_path",
+        "executed_profile_sha256",
+        "script_sha256",
+        "module_sha256",
+        "git_commit",
+        "git_dirty",
+        "python_version",
+        "torch_version",
+        "cuda_runtime",
+        "started_at_utc",
+        "finished_at_utc",
+        "checkpoint_sha256",
+        "result_sha256"
+    ]
+}

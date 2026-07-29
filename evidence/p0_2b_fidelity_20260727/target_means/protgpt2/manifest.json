@@ -1,0 +1,28 @@
+{
+  "analysis_layer_fraction": 0.5,
+  "builder_sha256": "3c2734e84436fb0fe9ecf9b685e1ef3190632c534dbf657afaea0765fea6b4d8",
+  "cache_manifest": {
+    "content_sha256": "ddf4ea1e99d5b382124b31b80fba1bcd99c4e84a9c48b00e28827c955c4f87dc",
+    "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/p0_2_exact_cache_bf16_r3/protgpt2/manifest.json",
+    "sha256": "d3fa68212612bb42ed9d75c0b49a606db44a9171c00b0662c05b41f48f63dd34"
+  },
+  "dimension": 1280,
+  "model_artifacts": {
+    "model_config_sha256": "b1eb50b2e360c8c9e433f234eeec53e809c99df254271ace5454b89244818195",
+    "model_weights_sha256": "972767ca741ef0f31c165241e94692e3a5a799cfecc3bfe4d6db6938f1d229bc",
+    "tokenizer_sha256": "b6899c546a4acc5cdbbfaac5471fa7b21d8bcb1148a7511612f257610701ec78"
+  },
+  "model_name": "protgpt2",
+  "rows": 1000000,
+  "schema_version": "r2_dictionary_fidelity_target_mean_v1",
+  "status": "complete",
+  "target_layer": 18,
+  "target_mean": {
+    "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/p0_2b_dictionary_fidelity_20260727_r3/target_means/protgpt2/target_mean.npy",
+    "sha256": "43b95f54b9664ea0d294b62cf61db0eefec419a0bb4e1af539e940e15a37efb6"
+  },
+  "training_target_shard": {
+    "path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/p0_2_exact_cache_bf16_r3/protgpt2/train/layer_018/target.npy",
+    "sha256": "f0dd247845f8a13421b467c814f953c2aabe926dc55e9bceca55beab7f99212a"
+  }
+}

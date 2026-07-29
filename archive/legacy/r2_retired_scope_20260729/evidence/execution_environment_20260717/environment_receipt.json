@@ -1,0 +1,37 @@
+{
+  "generated_at_utc": "2026-07-17T13:19:56.022463+00:00",
+  "gpu_name_and_driver_by_index": [
+    "NVIDIA H200, 570.172.08",
+    "NVIDIA H200, 570.172.08",
+    "NVIDIA H200, 570.172.08",
+    "NVIDIA H200, 570.172.08"
+  ],
+  "immutable_run_binding": {
+    "code_archive_sha256": "eb646dffac5b2bfe151af47e36b53ad2233c1204af69a819529897c5a257ebe9",
+    "code_content_manifest_sha256": "3098a61a1b1617d023fa1badd92d28727f121d7f2d1a217c0b9b20e06be5fad6",
+    "launcher_sha256": "c87a45e3454b687c15853e6d90b2958cb263e7ef6c6c385b0aa70295864af5d1",
+    "profile_sha256": "eb33d6e8fdf551b60b95238766fcf97e3e2fe5a91f0f5882dd9212d129572db2",
+    "runner_sha256": "1e3ffdcb2b721bc0d119dc15bdf1804b3cac43bc98bf2174caacd882d59a801e"
+  },
+  "node_name": "i-d5cvmv6heob1nidq4ujg",
+  "packages": {
+    "huggingface-hub": "0.33.0",
+    "numpy": "2.1.2",
+    "safetensors": "0.5.3",
+    "tokenizers": "0.21.1",
+    "torch": "2.7.1+cu128",
+    "transformers": "4.52.4"
+  },
+  "pip_freeze_path": "/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/environment_receipts/exact_cache_bf16_r3/pip_freeze.txt",
+  "pip_freeze_sha256": "02d5b4cfd98079188bfdf7d20382d5e5d62f6d44412e92d59129f7d45eefbafa",
+  "platform": "Linux-5.10.134-19.1.al8.x86_64-x86_64-with-glibc2.39",
+  "pod_name": "damoxing-zhk-zipbio-master-0",
+  "python_executable": "/opt/ac2/bin/python3.12",
+  "python_executable_sha256": "494258abcd838d90b6b490c7bdc6b6d98285a62034883fddfb72b3d16bbc2f3a",
+  "python_implementation": "CPython",
+  "python_version": "3.12.7+gc",
+  "queue_launcher_pid_at_capture": 16502,
+  "schema_version": "r2_execution_environment_receipt_v1",
+  "status": "captured_during_exact_cache_bf16_r3",
+  "torch_cuda_runtime": "12.8"
+}
