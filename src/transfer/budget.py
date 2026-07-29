@@ -74,6 +74,26 @@ MIN_CONTEXT_INFORMATION_NATS = 0.30
 MEASURABLE = "measurable"
 UNMEASURABLE = "unmeasurable_on_this_cohort"
 
+#: The same two verdicts, qualified by the estimator that produced them.
+#:
+#: :func:`arm_power` decides measurability against a *plug-in* unigram baseline
+#: unless the caller supplies a held-out one, and ``pathways.UNIGRAM_ESTIMATORS``
+#: declares the plug-in to be "an explicit opt-in diagnostic" whose bias "grows
+#: with vocabulary against sample size" -- roughly +0.003 nats at 32 symbols
+#: against +1.65 at 50257 pieces on a cohort of this size. That differential is
+#: several times :data:`MIN_CONTEXT_INFORMATION_NATS`, so which arms pass a
+#: plug-in verdict is set mostly by vocabulary size.
+#:
+#: ``01_cohort_power.py`` recomputes the verdict from the held-out estimator
+#: whenever a reference cohort is given, so no published verdict came from the
+#: plug-in. The defect is that nothing stopped a *caller* inheriting one: the
+#: estimator was recorded in a different field from the verdict, and a reader
+#: who took ``measurability`` alone could not tell which they had. The verdict
+#: now carries its estimator in its own value when that estimator is the
+#: diagnostic one, which is the only form a reader cannot separate them in.
+MEASURABLE_PLUG_IN = "measurable_against_plug_in_baseline"
+UNMEASURABLE_PLUG_IN = "unmeasurable_on_this_cohort_against_plug_in_baseline"
+
 
 @dataclass(frozen=True)
 class ScoredTokens:
@@ -164,6 +184,44 @@ def scored_tokens(
     )
 
 
+def scored_symbols_per_token(arm: Arm, scored: ScoredTokens) -> float:
+    """Tokenizer expansion over exactly the tokens the cross-entropy was taken on.
+
+    ``arms.symbols_per_token`` measures the expansion of the *whole rendered
+    string*: every token the tokenizer produced, against every alphabet symbol
+    it decodes to. That is the right quantity for describing a rendering and the
+    wrong one for converting a per-token cross-entropy into bits per symbol,
+    because ``clean_ce`` and the unigram baseline are taken over
+    :class:`ScoredTokens` -- which for an EC-conditioned arm excludes the EC
+    tag, ``<sep>``, ``<start>`` and ``<end>``.
+
+    Those prompt tokens raise the token count and contribute no AA20 symbols, so
+    the whole-string expansion is *understated* for ZymCTRL alone, and a
+    per-symbol figure divides by it. Every ``*_bits_per_symbol`` field was
+    therefore inflated for exactly one arm, on the axis this module declares to
+    be the cross-arm comparable one. ProtGPT2 is unaffected: its newlines are
+    scored like any other token, so its scored window and its rendered string
+    are the same multiset apart from the first token.
+
+    Computed here rather than in ``arms`` because ``arms.symbols_per_token`` has
+    a legitimate second caller and a legitimate second meaning; this is a third
+    quantity, not a correction to that one, and both are reported.
+    """
+
+    decoded = arm.tokenizer.decode([int(value) for value in scored.target_ids])
+    symbols = (
+        sum(1 for character in decoded if character in AA20)
+        if arm.modality == "protein"
+        else len(decoded)
+    )
+    if symbols < 1:
+        raise RuntimeError(
+            f"{arm.name}: the scored targets decode to no alphabet symbols, so a "
+            "per-symbol conversion is undefined"
+        )
+    return symbols / len(scored)
+
+
 def unigram_entropy_nats(target_ids: np.ndarray, vocab_size: int) -> float:
     """Plug-in entropy of the cohort's own scored-token distribution.
 
@@ -248,6 +306,62 @@ def markov_cross_entropy_bits(
     return total / scored
 
 
+#: Substring length at which a shared exact match between a training and a test
+#: protein is evidence of family membership rather than of chance. Over a
+#: twenty-letter alphabet a specific 30-mer has probability 20**-30; a corpus of
+#: 10**10 residues expects none by chance, so every shared 30-mer is homology.
+NEAR_DUPLICATE_KMER = 30
+
+
+def near_duplicate_fraction(
+    train_sequences: Sequence[str], test_sequences: Sequence[str], *, k: int = NEAR_DUPLICATE_KMER
+) -> dict[str, Any]:
+    """Share of test sequences that have a ``k``-residue exact match in the train set.
+
+    :func:`markov_cross_entropy_bits` enforces "held out" by exact string
+    identity, which catches byte-identical records and nothing else -- while the
+    hazard this programme has actually declared for these corpora is *near-clonal
+    family grouping*. Two sequences differing at one residue share essentially
+    every order-1 and order-2 statistic, so an order-2 Markov model fitted on one
+    is not held out with respect to the other in any sense that matters, and this
+    ladder is described as "the only tokenizer-independent axis on which the
+    protein arms can be compared".
+
+    Exact set disjointness cannot be strengthened into clustering here without
+    importing an alignment tool this module has no business owning, so the
+    remaining leak is *measured* rather than removed: a shared 30-mer is a fact a
+    reader can weigh, and a ladder computed on a train/test split where most test
+    sequences have one is a ladder to distrust. One pass and one set, so it costs
+    nothing next to the ladder it annotates.
+    """
+
+    if k < 2:
+        raise ValueError("the near-duplicate substring must be at least two residues")
+    seen: set[str] = set()
+    for sequence in train_sequences:
+        seen.update(sequence[i : i + k] for i in range(len(sequence) - k + 1))
+    scorable = [sequence for sequence in test_sequences if len(sequence) >= k]
+    matched = sum(
+        1
+        for sequence in scorable
+        if any(sequence[i : i + k] in seen for i in range(len(sequence) - k + 1))
+    )
+    return {
+        "kmer": int(k),
+        "n_test_sequences_scorable": len(scorable),
+        "n_test_sequences_with_shared_kmer": matched,
+        "fraction_test_sequences_with_shared_kmer": (
+            matched / len(scorable) if scorable else None
+        ),
+        "interpretation": (
+            "disjointness is enforced by exact string identity only; a shared "
+            f"{k}-mer over a twenty-letter alphabet is homology rather than chance, "
+            "so this fraction bounds how much of the 'held-out' ladder is fitted on "
+            "the test set's own protein families"
+        ),
+    }
+
+
 def markov_baselines(
     train_sequences: Sequence[str],
     test_sequences: Sequence[str],
@@ -270,6 +384,9 @@ def markov_baselines(
             for order in orders
         },
         "maximum_bits_per_residue": math.log2(len(alphabet)),
+        # Travels with the ladder, because a reader who is handed only the
+        # cross-entropies cannot tell a held-out corpus from a near-clonal one.
+        "held_out_strictness": near_duplicate_fraction(train_sequences, test_sequences),
     }
 
 
@@ -371,6 +488,20 @@ def truncation_curve(
 
     shortest = lengths[0]
     span = curve[shortest] - curve[longest]
+    # ``span > 1e-9`` collapsed two different answers into one ``None``. A
+    # negative span -- NLL *rising* as context is added -- is a finding: it says
+    # the arm is off-distribution on this cohort in a way a single cross-entropy
+    # cannot show, and it is one of the two readings this curve exists to
+    # separate. A span at zero says the curve is flat and the fraction is
+    # genuinely undefined. Reported apart, so a reader does not have to guess
+    # which of the two produced the null.
+    span_status = (
+        "negative_nll_rises_with_context"
+        if span < -1e-9
+        else "flat_no_context_effect"
+        if abs(span) <= 1e-9
+        else "positive"
+    )
     return {
         "n_windows": len(windows),
         "seed": int(seed),
@@ -382,11 +513,20 @@ def truncation_curve(
         "context_lengths": lengths,
         "nll_nats_by_context": {str(context): value for context, value in curve.items()},
         "nll_reduction_shortest_to_longest_nats": span,
+        "nll_reduction_status": span_status,
         "fraction_of_reduction_beyond_context_8": (
             (curve[8] - curve[longest]) / span if 8 in curve and span > 1e-9 else None
         ),
         "fraction_of_reduction_beyond_context_32": (
             (curve[32] - curve[longest]) / span if 32 in curve and span > 1e-9 else None
+        ),
+        "fraction_undefined_because": (
+            None
+            if span > 1e-9
+            else (
+                "the context span is not positive, so there is no reduction to take "
+                "a fraction of; see nll_reduction_status for which case this is"
+            )
         ),
     }
 
@@ -416,17 +556,41 @@ def arm_power(
     max_len: int,
     batch_size: int,
     minimum_context_information_nats: float = MIN_CONTEXT_INFORMATION_NATS,
+    held_out_unigram_nats: float | None = None,
 ) -> dict[str, Any]:
-    """The headline power figure for one arm on one frozen cohort."""
+    """The headline power figure for one arm on one frozen cohort.
+
+    ``held_out_unigram_nats`` makes the estimator behind the verdict explicit at
+    the call. Supply it and the baseline, the context information, every
+    per-symbol view and the verdict all come from the held-out estimator, and
+    the record says so. Omit it and everything is computed against the in-cohort
+    plug-in exactly as before -- but the ``measurability`` verdict then names the
+    estimator in its own value, so it cannot be quoted as a cross-arm one, and
+    the plug-in verdict is additionally published under an estimator-qualified
+    key that no caller overwrites. See :data:`MEASURABLE_PLUG_IN`.
+    """
 
     inputs = cohort.input_strings(arm)
     scored = scored_tokens(arm, inputs, max_len=max_len, batch_size=batch_size)
     vocab = int(arm.model.config.vocab_size)
-    baseline = unigram_entropy_nats(scored.target_ids, vocab)
+    plug_in = unigram_entropy_nats(scored.target_ids, vocab)
     baseline_mm = miller_madow_entropy_nats(scored.target_ids, vocab)
     clean_ce = float(scored.nll_nats.mean())
+    held_out = None if held_out_unigram_nats is None else float(held_out_unigram_nats)
+    if held_out is not None and not math.isfinite(held_out):
+        raise ValueError("the held-out unigram baseline must be finite")
+    baseline = plug_in if held_out is None else held_out
     context_information = baseline - clean_ce
     verdict, status = power_status(context_information, minimum_context_information_nats)
+    # Always the plug-in verdict, under a name that says so. It is what
+    # ``power_verdict`` is when no held-out baseline was supplied, and it stays
+    # true when a caller replaces ``power_verdict`` afterwards, so it can never
+    # go stale the way an "estimator" label beside a recomputed verdict would.
+    plug_in_verdict, plug_in_status = power_status(
+        plug_in - clean_ce, minimum_context_information_nats
+    )
+    if held_out is None:
+        status = MEASURABLE_PLUG_IN if status == MEASURABLE else UNMEASURABLE_PLUG_IN
 
     order = np.argsort(scored.sequence_index, kind="mergesort")
     grouped = np.split(
@@ -434,7 +598,13 @@ def arm_power(
         np.unique(scored.sequence_index[order], return_index=True)[1][1:],
     )
     per_sequence_ce = [float(block.mean()) for block in grouped]
-    expansion = symbols_per_token(arm, inputs, max_len)
+    rendered_expansion = symbols_per_token(arm, inputs, max_len)
+    # The per-symbol conversion divides a per-*scored-token* quantity, so it has
+    # to divide by the expansion of the scored window and not of the rendered
+    # string. Both are reported: the rendered figure describes the rendering and
+    # several artefacts quote it, the scored figure is the one the bits-per-
+    # symbol axis is built on.
+    expansion = scored_symbols_per_token(arm, scored)
 
     return {
         "arm": arm.name,
@@ -447,6 +617,13 @@ def arm_power(
         "n_scored_tokens": len(scored),
         "n_distinct_scored_tokens": int(np.unique(scored.target_ids).size),
         "symbols_per_token": expansion,
+        "symbols_per_token_rendered_string": rendered_expansion,
+        "symbols_per_token_basis": (
+            "scored next-token targets only; for an EC-conditioned arm the "
+            "rendered-string figure counts prompt tokens that carry no alphabet "
+            "symbol and so understates the expansion, which inflates every "
+            "bits-per-symbol figure for that arm alone"
+        ),
         # The baseline here is the in-cohort plug-in estimator. It is biased
         # downwards, and the bias grows with vocabulary against sample size: on a
         # cohort of this size roughly +0.003 nats for a 32-symbol arm against
@@ -457,14 +634,19 @@ def arm_power(
         # ``src.transfer.prediction_addressed.cohort_power_held_out`` is the
         # held-out estimator a cross-arm number must use. Named in the record so
         # a reader does not have to know which function produced it.
-        "unigram_estimator": "cohort_plug_in",
+        "unigram_estimator": (
+            "cohort_plug_in" if held_out is None else "held_out_disjoint"
+        ),
         "unigram_estimator_bias": (
             "plug-in on the scored targets; biased downwards by an amount that "
             "grows with vocabulary size, so context information is understated "
             "and understated unequally across the panel"
+            if held_out is None
+            else "held-out cross-entropy supplied by the caller"
         ),
-        "cross_arm_comparable": False,
-        "unigram_entropy_on_cohort_nats": baseline,
+        "cross_arm_comparable": held_out is not None,
+        "unigram_entropy_on_cohort_nats": plug_in,
+        "unigram_entropy_used_for_verdict_nats": baseline,
         "unigram_entropy_miller_madow_nats": baseline_mm,
         "clean_ce_nats": clean_ce,
         "context_information_nats": context_information,
@@ -472,11 +654,41 @@ def arm_power(
         "context_information_bits_per_symbol": context_information / LN2 / expansion,
         "clean_ce_bits_per_symbol": clean_ce / LN2 / expansion,
         "unigram_entropy_bits_per_symbol": baseline / LN2 / expansion,
-        "per_sequence_clean_ce_interval": mean_interval(per_sequence_ce),
-        "per_sequence_context_information_interval": mean_interval(
-            [baseline - value for value in per_sequence_ce]
-        ),
+        # ``clean_ce_nats`` above is token-weighted: a 2000-residue sequence
+        # contributes thirty times what a 64-residue one does, which is the
+        # convention ``scoring.per_sequence_scores`` states and defends. This
+        # interval is over an unweighted mean of per-sequence cross-entropies.
+        # On a 64-2000 residue cohort those are not the same estimand, so the
+        # interval is not an interval *for* the number printed beside it, and
+        # ``mean_interval``'s own ``mean`` key is the only place the difference
+        # was visible. The sequence-weighted point estimate is now published so
+        # that the pair reads as a point estimate and its interval.
+        "clean_ce_nats_sequence_weighted": float(np.mean(per_sequence_ce)),
+        "clean_ce_weighting": "token",
+        "per_sequence_clean_ce_interval": {
+            **mean_interval(per_sequence_ce),
+            "estimand": "unweighted mean over sequences of the per-sequence clean CE",
+            "is_an_interval_for_clean_ce_nats": False,
+        },
+        # The same shift applied to every endpoint: this interval is the one
+        # above translated by a constant baseline, so it carries the spread of
+        # the cross-entropy and none of the uncertainty in the baseline it is
+        # measured against, despite the baseline being an estimate too.
+        "per_sequence_context_information_interval": {
+            **mean_interval([baseline - value for value in per_sequence_ce]),
+            "estimand": (
+                "unweighted mean over sequences of (fixed baseline - per-sequence "
+                "clean CE)"
+            ),
+            "is_an_interval_for_context_information_nats": False,
+            "baseline_uncertainty_included": False,
+        },
         "minimum_context_information_nats": float(minimum_context_information_nats),
         "power_verdict": verdict,
         "measurability": status,
+        # Estimator-qualified and never overwritten, so an artefact always holds
+        # one verdict whose provenance is unambiguous even after a caller
+        # recomputes ``power_verdict`` from a better baseline.
+        "power_verdict_plug_in": plug_in_verdict,
+        "measurability_plug_in": plug_in_status,
     }

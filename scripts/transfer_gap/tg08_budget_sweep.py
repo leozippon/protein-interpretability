@@ -47,6 +47,7 @@ from tg_common import (
     write_json,
 )
 from tg03_matched_sae import TopKSAE, collect
+from tg_contract import stage_contract_record
 
 DEFAULT_OUT = (
     REPO / "results/transfer_gap_20260729_corrected/tg08"
@@ -70,9 +71,14 @@ def train(acts, d_sae, k, steps, batch, lr, device, seed, log_every=2000):
         loss = (recon - x).pow(2).sum(-1).mean()
         opt.zero_grad(set_to_none=True)
         loss.backward()
+        opt.step()
+        # After the step, not before it. See tg03_matched_sae.train_sae: renormed
+        # before the update, the unit-norm decoder constraint holds at no point
+        # from which a forward pass is taken, and this stage sweeps expansion and
+        # sparsity, so the free encoder/decoder scale trade-off varies across
+        # exactly the axes the sweep is comparing.
         with torch.no_grad():
             sae.decoder.weight.data /= sae.decoder.weight.data.norm(dim=0, keepdim=True)
-        opt.step()
         sched.step()
         if step % log_every == 0:
             print(f"      step {step:6d} mse {loss.item():.3f}", flush=True)
@@ -198,6 +204,14 @@ def main() -> None:
     # Four axes, each varied alone from the centre point so that data volume and
     # optimisation compute are not conflated (the preliminary screen scaled them
     # together and could not tell them apart).
+    #
+    # The data axis takes `pool[:full // 16]`, a positional slice of the
+    # activation pool in sequence order, and it is the low point that the
+    # "budget-limited" reading of limitation L3 rests on. In corpus order that
+    # sixteenth was the corpus-earliest sequences of an accession-sorted FASTA --
+    # a near-clonal homologue block, which is unusually predictable and therefore
+    # flatters the low-data point. It is a sample of the pool only because
+    # `cohort_for` returns its draw in seeded record order.
     full = min(8_000_000, pool.shape[0])
     centre = (full, 8000, 32, 8)
     grid = [
@@ -244,7 +258,9 @@ def main() -> None:
 
     write_json(
         out_root / f"{arm.name}.json",
-        dict(arm=arm.name, modality=arm.modality, layer=layer, n_layer=arm.n_layer,
+        dict(arm=arm.name, modality=arm.modality,
+             contract=stage_contract_record("tg08", [arm.name]),
+             layer=layer, n_layer=arm.n_layer,
              d_model=arm.d_model, pool_tokens=int(pool.shape[0]),
              eval_tokens=int(eval_acts.shape[0]), tokens_per_sequence=per_seq,
              seed=args.seed, sweep=rows,

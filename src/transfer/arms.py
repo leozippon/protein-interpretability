@@ -106,6 +106,23 @@ PRETRAINING_UNDECLARED = "undeclared"
 #: effect three times.
 SAMPLING_MODES = ("seeded_permutation", "file_order")
 
+#: The seed every campaign stage draws its corpus under, declared once.
+#:
+#: Two facts make a shared constant the right object rather than a per-stage
+#: default. A stage's cohort must be comparable with the cohort
+#: ``01_cohort_power.py`` *qualified* its arms on, and cohorts drawn under
+#: different seeds are different populations -- EXP-R2-060 priced protein
+#: cohort-block sensitivity at 0.16-0.60 nats, which is the size of several
+#: effects this programme has reported. And a per-stage default is a second
+#: declaration of the same decision, which is the hazard Appendix B rule 12 was
+#: written about.
+#:
+#: A stage may still be pointed at a different draw from the command line, and
+#: ``0`` selects the historical file-order draw. Both are declared choices that
+#: reach the artefact through :attr:`Cohort.sampling`; neither is a default that
+#: nobody notices.
+DEFAULT_CORPUS_DRAW_SEED = 20260728
+
 #: Named in the sampling record of a file-order cohort so the hazard travels
 #: with the number rather than living only in a document.
 FILE_ORDER_HAZARD = (
@@ -191,6 +208,17 @@ class ArmSpec:
 
     name: str
     path: Path
+    #: The environment variable ``path`` is built from, declared rather than
+    #: inferred. It used to be recovered by comparing the resolved ``path``
+    #: against the three constants, which is correct only while the three resolve
+    #: to *different* directories. The H200 pod sets
+    #: ``TRANSFER_TEXT_MODEL_BASE_DIR="${TRANSFER_MODEL_BASE_DIR}"`` because every
+    #: checkpoint sits in one GPFS directory, so on that host the comparison
+    #: aliased and six text arms classified as protein-root arms. The worker
+    #: re-derives the generated contract inside the pod and refused the campaign
+    #: -- correctly, and only because that check exists. Appendix B rule 12: the
+    #: declaration is made where the path is made.
+    path_variable: str
     modality: str
     n_layer: int
     d_model: int
@@ -216,6 +244,7 @@ PANEL: dict[str, ArmSpec] = {
     "gpt2-large": ArmSpec(
         name="gpt2-large",
         path=TEXT_MODEL_ROOT,
+        path_variable="TRANSFER_TEXT_MODEL_DIR",
         modality="text",
         n_layer=36,
         d_model=1280,
@@ -228,6 +257,7 @@ PANEL: dict[str, ArmSpec] = {
     "protgpt2": ArmSpec(
         name="protgpt2",
         path=MODEL_ROOT / "ProtGPT2",
+        path_variable="TRANSFER_MODEL_BASE_DIR",
         modality="protein",
         n_layer=36,
         d_model=1280,
@@ -240,6 +270,7 @@ PANEL: dict[str, ArmSpec] = {
     "zymctrl": ArmSpec(
         name="zymctrl",
         path=MODEL_ROOT / "ZymCTRL",
+        path_variable="TRANSFER_MODEL_BASE_DIR",
         modality="protein",
         n_layer=36,
         d_model=1280,
@@ -252,6 +283,7 @@ PANEL: dict[str, ArmSpec] = {
     "progen2-medium": ArmSpec(
         name="progen2-medium",
         path=MODEL_ROOT / "progen2-medium",
+        path_variable="TRANSFER_MODEL_BASE_DIR",
         modality="protein",
         n_layer=27,
         d_model=1536,
@@ -269,6 +301,7 @@ PANEL: dict[str, ArmSpec] = {
     "progen2-base": ArmSpec(
         name="progen2-base",
         path=MODEL_ROOT / "progen2-base",
+        path_variable="TRANSFER_MODEL_BASE_DIR",
         modality="protein",
         n_layer=27,
         d_model=1536,
@@ -293,6 +326,7 @@ PANEL["dialogpt-small"] = ArmSpec(
     # than declared, so that a host which mounts its text models elsewhere moves
     # this arm with the rest instead of failing on it alone.
     path=TEXT_MODEL_BASE / "DialoGPT-small",
+    path_variable="TRANSFER_TEXT_MODEL_BASE_DIR",
     modality="text",
     n_layer=12,
     d_model=768,
@@ -336,6 +370,7 @@ for _name, _dir, _n_layer, _d_model in (
     PANEL[_name] = ArmSpec(
         name=_name,
         path=TEXT_MODEL_BASE / _dir,
+        path_variable="TRANSFER_TEXT_MODEL_BASE_DIR",
         modality="text",
         n_layer=_n_layer,
         d_model=_d_model,
@@ -439,6 +474,7 @@ _ROTARY_CAPABILITIES = frozenset({"budget", "lens", "pathway", "circuits"})
 PANEL["qwen2.5-0.5b"] = ArmSpec(
     name="qwen2.5-0.5b",
     path=TEXT_MODEL_BASE / "Qwen2.5-0.5B",
+    path_variable="TRANSFER_TEXT_MODEL_BASE_DIR",
     modality="text",
     n_layer=24,
     d_model=896,
@@ -460,6 +496,7 @@ PANEL["qwen2.5-0.5b"] = ArmSpec(
 PANEL["llama-3.2-3b"] = ArmSpec(
     name="llama-3.2-3b",
     path=TEXT_MODEL_BASE / "Llama-3.2-3B",
+    path_variable="TRANSFER_TEXT_MODEL_BASE_DIR",
     modality="text",
     n_layer=28,
     d_model=3072,
@@ -508,6 +545,7 @@ for _name, _layers, _width in (
     PANEL[_name] = ArmSpec(
         name=_name,
         path=TEXT_MODEL_BASE / _name,
+        path_variable="TRANSFER_TEXT_MODEL_BASE_DIR",
         modality="text",
         n_layer=_layers,
         d_model=_width,

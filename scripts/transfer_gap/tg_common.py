@@ -17,15 +17,20 @@ chosen. Measured on 80 Swiss-Prot sequences of 600-2000 residues (EXP-R2-028):
 raw 8.046, end-of-text + raw 8.090, wrapped-at-60 6.652, end-of-text + wrapped
 6.623 nats/token. ProtGPT2's context information moved from -1.31 to +2.23.
 
-What this module does own is **cohort selection**, and it owns it because the
-selection rule here differs deliberately from ``src.transfer.arms.protein_cohort``.
-That function takes eligible records in FASTA file order, which is a documented
-hazard of this programme: reading past the first 48 records moved ProGen2's
-context information by +1.01 nats (EXP-R2-059), and the same failure has occurred
-three times. Every cohort built here is a **seeded permutation of the complete
-eligible set**, so a cohort is a sample from the corpus rather than a sample from
-its first block, and ``skip`` partitions that permutation rather than walking
-further down the file.
+What this module does own is **which draw**, and it owns two halves of that.
+Every cohort built here is a seeded draw from the complete eligible set, so a
+cohort is a sample from the corpus rather than a sample from its first block, and
+``skip`` partitions that permutation rather than walking further down the file --
+file order is a documented hazard of this programme, worth +1.01 nats on ProGen2
+when it was last measured (EXP-R2-059), three times over.
+
+The second half is **which order**, and it was missing. ``arms.selected_positions``
+returns a seeded draw sorted back into ascending corpus order, so the identity of
+a cohort was seeded while its order stayed file order -- and six stages consume a
+cohort positionally, by slicing it or by breaking out of it at a token cap. Each
+of those was therefore reading the corpus-earliest part of a seeded set, which is
+rule 1 wearing a seed. :func:`in_seeded_record_order` permutes once, at the point
+of construction, so no stage has to remember.
 
 Nothing here falls back silently: a missing corpus, a missing model, an arm whose
 rendering needs metadata the cohort does not carry, or a loss-recovered
@@ -42,8 +47,10 @@ recorded number, and would not have stayed that way.
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 
+import numpy as np
 import torch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -77,6 +84,7 @@ __all__ = [
     "build_cohort",
     "cohort_for",
     "cohort_provenance",
+    "in_seeded_record_order",
     "iter_fasta",
     "load_arm",
     "load_text",
@@ -175,15 +183,14 @@ def cohort_for(
     *eligibility* predicate is the same hazard, deciding which records exist
     before anything decides how they are drawn.
 
-    One consequence is recorded rather than hidden. ``arms.selected_positions``
-    returns its draw in ascending corpus order where the layer this replaces
-    returned it in permutation order. The selected *set* is unchanged for a given
-    ``(seed, skip, n)`` -- verified directly against the previous implementation,
-    including the EC label pairing -- but ``Cohort.digest`` hashes an ordered
-    list, so a digest recorded before 2026-07-29 will not reproduce byte for byte
-    even though the sequences behind it are the same. No stage in this series
-    slices a cohort positionally (train/eval splits are ``skip``-partitioned), so
-    no measured quantity depends on the order.
+    The draw is returned in **seeded record order**, not corpus order, by
+    :func:`in_seeded_record_order`. See that function for why; in short, the set
+    is seeded but ``arms.selected_positions`` hands it back sorted, and half the
+    stages in this series consume a cohort positionally.
+
+    One consequence is recorded rather than hidden. ``Cohort.digest`` hashes an
+    ordered list, so a digest recorded before 2026-07-29 will not reproduce byte
+    for byte even though the sequences behind it are the same.
     """
 
     if n < 1:
@@ -191,9 +198,9 @@ def cohort_for(
     source = PANEL[arm.name].source
     name = f"{source}_n{n}_skip{skip}_seed{seed}"
     if source == "openwebtext":
-        return text_cohort(n, min_chars=min_chars, skip=skip, name=name, seed=seed)
-    if source in ("zymctrl_ec", "swissprot"):
-        return protein_cohort(
+        drawn = text_cohort(n, min_chars=min_chars, skip=skip, name=name, seed=seed)
+    elif source in ("zymctrl_ec", "swissprot"):
+        drawn = protein_cohort(
             n,
             res_min,
             res_max,
@@ -202,7 +209,72 @@ def cohort_for(
             with_ec=source == "zymctrl_ec",
             seed=seed,
         )
-    raise ValueError(f"{arm.name}: unsupported cohort source {source!r}")
+    else:
+        raise ValueError(f"{arm.name}: unsupported cohort source {source!r}")
+    return in_seeded_record_order(drawn, seed)
+
+
+def in_seeded_record_order(cohort: Cohort, seed: int) -> Cohort:
+    """The same records, permuted under ``seed`` instead of left in corpus order.
+
+    **A seeded set is not a seeded prefix, and this series kept confusing the
+    two.** ``arms.selected_positions`` decides *which* records a draw contains
+    from the seed and then returns them in ascending corpus order, because the
+    collecting pass sweeps the corpus once. The identity of the set is therefore
+    seeded; the order is file order. Every stage that then consumes part of a
+    cohort -- and most of them do -- was consuming the corpus-earliest part of it:
+
+    * ``tg01`` fitted its symbol-level Markov ladder on ``base_raw[:4000]`` of an
+      8000-record cohort;
+    * ``tg07`` and ``tg09`` stop ``collect`` at a token cap of 200k against a
+      4000-sequence cohort, so they read roughly a fifth of it -- and an
+      *arm-dependent* fifth, because ProtGPT2's multi-residue BPE yields about
+      half as many tokens per protein as ProGen2's residue tokenizer, which
+      compared four arms on prefixes of four different depths;
+    * ``tg03`` and ``tg08`` slice ``eval_texts[:n]``;
+    * ``tg08``'s data-axis low point trains on ``pool[:full // 16]``, the first
+      sixteenth of the activation pool in sequence order -- a near-clonal
+      homologue block, and that low point is what the "budget-limited" reading of
+      limitation L3 rests on;
+    * ``tg06`` draws 2000 sequences and keeps the first 400 usable windows.
+
+    Swiss-Prot is sorted by accession, which groups by source organism and by
+    curation date, so a corpus-order prefix is the rule-1 hazard that has
+    manufactured an effect in this programme three times, once worth +1.01
+    nats/token (EXP-R2-059). Permuting once, here, makes every one of those
+    slices a sample of the drawn cohort instead, without any stage having to
+    remember to do it -- which is the only version of this fix that stays fixed.
+
+    The EC labels travel with their sequences. A cohort whose labels were
+    permuted independently of its records would feed ZymCTRL another protein's
+    conditioning tag, which is a 1.73-nat prompt (EXP-R2-034) attached to the
+    wrong sequence.
+    """
+
+    if not cohort.records:
+        raise ValueError(f"cohort {cohort.name!r} has no records to order")
+    order = [int(i) for i in np.random.default_rng(seed).permutation(len(cohort.records))]
+    metadata = dict(cohort.metadata)
+    labels = metadata.get("ec_labels")
+    if labels is not None:
+        if len(labels) != len(cohort.records):
+            raise ValueError(
+                f"cohort {cohort.name!r} carries {len(labels)} EC labels for "
+                f"{len(cohort.records)} records; they cannot be reordered together"
+            )
+        metadata["ec_labels"] = [labels[i] for i in order]
+    metadata["record_order"] = {
+        "mode": "seeded_permutation_of_the_drawn_set",
+        "seed": int(seed),
+        "reason": (
+            "arms.selected_positions returns a seeded draw in ascending corpus "
+            "order; a stage that slices or short-circuits over a cohort would "
+            "otherwise be reading the corpus-earliest part of it"
+        ),
+    }
+    return replace(
+        cohort, records=[cohort.records[i] for i in order], metadata=metadata
+    )
 
 
 def build_cohort(
@@ -230,11 +302,21 @@ def load_text(n: int, min_chars: int = 800, skip: int = 0,
     """Documents drawn under a seeded permutation of the whole OpenWebText subset.
 
     Delegates to :func:`src.transfer.arms.text_cohort` for the same reason
-    :func:`cohort_for` does: one eligibility predicate, one draw.
+    :func:`cohort_for` does: one eligibility predicate, one draw. The records
+    come back in seeded order for the reason :func:`in_seeded_record_order`
+    gives: a caller that keeps the first usable ``k`` of them would otherwise be
+    keeping the earliest ``k`` shard entries.
     """
 
-    return text_cohort(
-        n, min_chars=min_chars, skip=skip, name=f"openwebtext_n{n}_skip{skip}", seed=seed
+    return in_seeded_record_order(
+        text_cohort(
+            n,
+            min_chars=min_chars,
+            skip=skip,
+            name=f"openwebtext_n{n}_skip{skip}",
+            seed=seed,
+        ),
+        seed,
     ).records
 
 
@@ -265,30 +347,40 @@ def protein_input(arm: Arm, seq: str, ec_label: str | None = None) -> str:
     return cohort.input_strings(arm)[0]
 
 
-def _sampling(cohort: Cohort) -> dict:
-    """``arms``' own sampling record, or empty for a hand-built cohort."""
-
-    record = cohort.metadata.get("sampling")
-    return record if isinstance(record, dict) else {}
-
-
 def cohort_provenance(cohort: Cohort, arm: Arm) -> dict:
-    """The record that lets a reader tell two cohorts, or two renderings, apart."""
+    """The record that lets a reader tell two cohorts, or two renderings, apart.
+
+    ``selection`` is :attr:`src.transfer.arms.Cohort.sampling`'s ``mode`` and
+    nothing else. It used to be ``sampling.get("mode", "file_order")``, which
+    substituted a *specific and hazardous* claim for an absence: a cohort built
+    without a sampling record emitted ``selection: "file_order"`` beside
+    ``sampling: null``, asserting the one draw this programme has been burned by
+    three times about an artefact that recorded no draw at all. ``Cohort.sampling``
+    already declares the correct answer -- ``mode: "unrecorded"`` with the hazard
+    text -- so the default here was a second, wrong copy of a decision that had
+    been made properly one import away. The Failure Principle inverted: the
+    silent fallback was the dangerous value, not the safe one.
+    """
 
     lengths = sorted(len(record) for record in cohort.records)
+    sampling = cohort.sampling
     return {
         "name": cohort.name,
         "kind": cohort.kind,
         "digest": cohort.digest,
         "sequences": len(cohort.records),
-        # arms.sampling_record is now the source of these four; it carries the
-        # same facts under `sampling` and adds the file-order hazard text when
-        # there is no seed. The old keys are kept as the artefact spelling.
-        "selection": _sampling(cohort).get("mode", "file_order"),
-        "seed": _sampling(cohort).get("seed"),
-        "skip": _sampling(cohort).get("skip"),
-        "eligible_records": _sampling(cohort).get("eligible_records"),
-        "sampling": _sampling(cohort) or None,
+        # arms.sampling_record is the source of these four; it carries the same
+        # facts under `sampling` and adds the file-order hazard text when there
+        # is no seed. The old keys are kept as the artefact spelling.
+        "selection": sampling["mode"],
+        "seed": sampling.get("seed"),
+        "skip": sampling.get("skip"),
+        "eligible_records": sampling.get("eligible_records"),
+        "sampling": sampling,
+        # Which records were drawn and which order they are consumed in are two
+        # different facts, and only the first was ever recorded. See
+        # `in_seeded_record_order`.
+        "record_order": cohort.metadata.get("record_order"),
         "symbols_min": lengths[0],
         "symbols_median": lengths[len(lengths) // 2],
         "symbols_max": lengths[-1],

@@ -44,12 +44,16 @@ set -euo pipefail
 # failure neither `bash -n` nor the controller's `--dry-run` can catch,
 # since neither executes Python.
 #
-# Dependency order:
+# Dependency order (all eleven contract stages; tier 4 was added when
+# 10_homology_control.py and 11_induction_path_patching.py were wired and this
+# list was not updated with them, which is the same stale-enumeration class as
+# the hand-written import-preflight list below):
 #   tier 1  01_cohort_power.py (prerequisite)
 #   tier 2  02_pathway_budget.py, then 03_estimand_power.py measure/recommend
 #   tier 3  04_circuit_primitives.py, 05_relational_channel.py,
 #           06_explanation_channel.py, 07_convergence_control.py,
 #           08_lens_family.py, 09_probe_and_erasure.py, in that order
+#   tier 4  10_homology_control.py, 11_induction_path_patching.py
 #
 # Per-stage invocation quirks (read from scripts/transfer/*.py at the time
 # this was written; re-verify with --help if a stage script changed):
@@ -97,9 +101,12 @@ set -euo pipefail
 #       progen2-medium's non-EC cohorts -- identical content, hence
 #       identical digest under the shared default name -- do not collide on
 #       the same output filename.
-#       See also "Known host-bound quantities" in scripts/transfer/README.md
-#       for logits_to_keep_used and why cross-host truncation-curve
-#       comparisons must check it rather than assume it matches.
+#       Each truncation curve records `logits_to_keep_used`
+#       (src/transfer/budget.py), because whether the trimmed path was taken
+#       is host-bound, not arm-bound: ZymCTRL takes the trimmed path on L20
+#       and the untrimmed one on the pod. A cross-host comparison of two
+#       truncation curves must read that field rather than assume the two
+#       hosts agreed.
 #   02  --arms A --device --output-root DIR. One JSON per arm; per-arm.
 #   03  subcommands `measure` (--arms A --device --output-root DIR) and
 #       `recommend` (--arms A [A...] --results-root DIR --output FILE, no
@@ -140,12 +147,23 @@ set -euo pipefail
 #       capability-filtered rather than run over the whole arm list -- see
 #       LENS_ARMS below. Its own --arms default is sorted(PANEL) with no
 #       capability guard, so the arm list is always passed explicitly.
-#   09  --arm A (singular) --device --out DIR. All four arms are valid;
+#   09  --arm A (singular) --device --out DIR. Every campaign arm is valid;
 #       refusals for a given arm/concept pair are written into the output
 #       rather than raised, so no arm restriction is applied here.
+#   10  --arms A [A ...] --device --output-dir DIR. Panel-scoped like 04: it
+#       builds one homology database and sweeps arms inside one process, so
+#       splitting it across GPUs would rebuild that database per shard. Its
+#       arm list is the script's OWN PROTEIN_ARMS declaration, mirrored in the
+#       panel contract and checked against the source by
+#       tests/test_transfer_stage_contract.py.
+#   11  --arms A [A ...] --device --output-dir DIR. Panel-scoped for the same
+#       reason (one shared repeat cohort). Refuses rotary layouts inside
+#       path_patching.require_supported_layout, after the checkpoint is
+#       already on the GPU, which is why the contract filters the arm list
+#       here instead.
 #
-# Neither this worker nor the controller makes 02/03/04/05/06/07/08/09
-# read 01's unmeasurable-arms verdict automatically -- 01 only reports it.
+# Neither this worker nor the controller makes any later stage read 01's
+# unmeasurable-arms verdict automatically -- 01 only reports it.
 #
 # DTYPE POLICY: do not pass --dtype unless there is a measured, documented
 # reason to override that specific script's own default, and record the
@@ -215,11 +233,39 @@ DEFERRED_FAILURES=()
 SKIPPED_FOR_DATA=()
 SKIP_DATA_STATUS=75
 
+#: Requested stages that produced no measurement at all, with the reason. Same
+#: false-success class as SKIPPED_FOR_DATA and closed by the same accounting: a
+#: stage that measured nothing must never be indistinguishable from one that
+#: succeeded.
+#:
+#: Two routes reach it, and they were separate holes until EXP-R2-067:
+#:
+#: 1. A requested stage whose eligible arm list came out empty. run_stage_wave,
+#:    run_estimand_power and run_panel_stage each logged one "skipping" line and
+#:    returned 0, so `ARMS=gpt2-large,protgpt2 STAGES=relational_channel,
+#:    homology_control` -- neither of which can serve either arm -- measured
+#:    nothing, printed "campaign complete" and exited 0.
+#: 2. A requested stage that no branch of the tier chain below dispatches. The
+#:    chain is hand-maintained, one `if stage_requested X` per stage, and nothing
+#:    reconciled it against REQUESTED_STAGES: a stage added to the panel contract
+#:    and forgotten here passed every preflight (which derives from the contract),
+#:    never ran, and exited 0. reconcile_dispatched_stages closes that by
+#:    construction -- only dispatch_stage marks a stage as dispatched.
+UNMEASURED_STAGES=()
+
+#: Stages dispatch_stage actually handed to a runner, for that reconciliation.
+DISPATCHED_STAGES=()
+
+#: Set by finish_campaign so the EXIT trap can tell "the campaign ended and its
+#: ledger has been printed" from "the worker exited early and the ledger is about
+#: to be lost". See report_early_exit.
+CAMPAIGN_LEDGER_PRINTED=0
+
 # Per-stage scale-parameter passthrough (--n-seq, --pool-size, --seeds and so
 # on). Populated from repeated --stage-args STAGE BASE64 flags below and
 # appended verbatim to that stage's command in build_command. This is how
 # the controller's ARGS_<STAGE> environment variables reach the worker; see
-# scripts/transfer/README.md's "Environment contract" for the full list.
+# scripts/transfer/README.md's "Controller Environment" for the full table.
 declare -A STAGE_EXTRA_ARGS=()
 #: Same, scoped to one item of one stage, keyed "stage/item". A stage-wide flag
 #: cannot be overridden for a single item, and cohort_power's four items differ
@@ -228,24 +274,44 @@ declare -A ITEM_EXTRA_ARGS=()
 
 # ------------------------------------------------------------------ helpers
 
+# The valid STAGE and ITEM values are deliberately NOT enumerated here. This
+# text used to name nine stages while the worker accepted and dispatched eleven
+# -- a hand-maintained list that drifted from the contract exactly the way the
+# five lists panel_contract.sh replaced did, and one an operator reading --help
+# would have believed. The authority is TRANSFER_STAGE_ORDER in
+# scripts/transfer/panel_contract.sh, which the argument validation below checks
+# against and which --help cannot print because the contract is sourced only
+# after the snapshot manifest is verified (and that needs these arguments).
 usage() {
   cat <<'EOF'
 Usage: h200_worker.sh --run-id ID --snapshot-dir DIR --results-root DIR
          --logs-root DIR --arms A,A,... --gpus N,N,... --text-arm ARM
          --stages STAGE,STAGE,...
          [--expected-gpu-count N] [--min-free-mem-mib N]
-         [--stage-args STAGE BASE64 ...] [--force]
+         [--stage-args STAGE BASE64 ...] [--item-args STAGE ITEM BASE64 ...]
+         [--force]
 
 --expected-gpu-count, if given, is an extra minimum-count assertion on top
 of whatever nvidia-smi reports; the default is to trust nvidia-smi alone,
 since pods are disposable and the GPU count varies between them.
 
 --stage-args STAGE BASE64 appends the base64-decoded, space-split argument
-string to that stage's invocation (e.g. "--n-seq 500 --pool-size 1000").
-Repeatable, once per stage that needs an override. STAGE is one of
-cohort_power, pathway_budget, estimand_power, circuit_primitives,
-relational_channel, explanation_channel, convergence_control, lens_family,
-probe_and_erasure.
+string to every item of that stage's invocation (e.g. "--n-seq 500
+--pool-size 1000"). Repeatable, once per stage that needs an override.
+
+--item-args STAGE ITEM BASE64 is the same scoped to one item of one stage,
+because a stage-wide knob cannot express "give the residue cohort_power item
+a different --n-seq" without moving the other items with it. Repeatable, once
+per stage/item pair.
+
+Either kind is refused if it repeats a flag this worker already sets for that
+item, rather than letting argparse silently take the last occurrence.
+
+Valid STAGE values are TRANSFER_STAGE_ORDER in
+scripts/transfer/panel_contract.sh (generated from src/transfer/arms.py); an
+unknown stage is refused at argument validation. ITEM is the stage's own item
+namespace: an arm name for a per-arm stage, one of TRANSFER_COHORT_ITEMS for
+cohort_power, and the literal "panel" for a panel-wide stage.
 EOF
 }
 
@@ -390,16 +456,16 @@ fi
 # two seconds later to `ModuleNotFoundError: No module named 'src.revision'`
 # -- a missing dependency that neither `bash -n` nor the controller's
 # `--dry-run` could ever catch, since neither executes Python. This runs
-# before any GPU is touched: it imports each of the nine wired entry
-# points (as a module, not as __main__, so main() never runs and no model
-# or GPU work happens) inside the frozen snapshot and fails loudly,
+# before any GPU is touched: it imports each entry point this run will
+# actually invoke (as a module, not as __main__, so main() never runs and no
+# model or GPU work happens) inside the frozen snapshot and fails loudly,
 # collecting every failure rather than stopping at the first, if any
 # import raises -- whether that is a missing dependency (what this exists
 # because of) or a syntax error in a file still being edited (which is a
 # real defect and must fail here too, not be worked around).
 #
 # Each entry point gets its OWN short-lived interpreter (one `TRANSFER_PYTHON -c`
-# subprocess per file), not one shared interpreter for all nine. Run
+# subprocess per file), not one shared interpreter for all of them. Run
 # 20260728152900_02f91a55c9e7 hit a false positive from the shared-
 # interpreter version: `03_estimand_power.py` failed with
 # `AttributeError: 'NoneType' object has no attribute '__dict__'` under the
@@ -593,6 +659,40 @@ model_var_for_arm() {
   printf '%s\n' "${value}"
 }
 
+# The arm's own checkpoint directory, not the root the variable above points at.
+#
+# The variable is the wrong granularity for a preflight and it mattered: six of
+# the seven text arms resolve TRANSFER_TEXT_MODEL_BASE_DIR, which is the models
+# ROOT. That directory exists as soon as any text checkpoint is staged, so an arm
+# whose own checkpoint was absent passed this check and raised inside load_arm
+# instead -- and cohort_power scores all seven text arms in ONE process, so the
+# one missing checkpoint took the six that were fine down with it, mid-run,
+# instead of the item being reported as a skip before anything was scheduled.
+#
+# The relative segment comes from the contract's TRANSFER_ARM_MODEL_REL
+# (panel_contract.py::model_relative_path, which reads ArmSpec.path), so no leaf
+# name is written here and re-pointing any of the three environment variables
+# moves the root and the checkpoint together. "." means the arm IS the variable
+# (gpt2-large is declared as TRANSFER_TEXT_MODEL_DIR itself).
+model_path_for_arm() {
+  local arm="$1" var rel root
+  var="$(model_var_for_arm "${arm}")"
+  if [ -z "${TRANSFER_ARM_MODEL_REL[${arm}]+set}" ]; then
+    echo "model_path_for_arm: ${arm} has no checkpoint path in the panel contract" >&2
+    exit 2
+  fi
+  rel="${TRANSFER_ARM_MODEL_REL[${arm}]}"
+  root="${!var:-}"
+  if [ -z "${root}" ]; then
+    return 1
+  fi
+  if [ "${rel}" = "." ]; then
+    printf '%s\n' "${root}"
+  else
+    printf '%s\n' "${root}/${rel}"
+  fi
+}
+
 # Corpus variables needed to build a cohort covering the given arms.
 corpus_vars_for_arms() {
   local arm var
@@ -693,20 +793,47 @@ extra_vars_for_stage() {
 # MISSING_DATA_REASON set for the caller to log as a skip, rather than
 # exiting the process the way a genuine computation error does. Skipped
 # items write no manifest, so a later run of the same command retries them
-# once the input lands -- see run_item_atomic and "Atomicity and resume"
+# once the input lands -- see run_item_atomic and "Resume And Output Safety"
 # in scripts/transfer/README.md.
 verify_item_data_paths() {
   local stage="$1" item="$2"
-  local -a item_arms=() vars=() checked=()
-  local a v value already c
+  local -a item_arms=() vars=() checked=() checkpoints=()
+  local a v value already c checkpoint status
 
   MISSING_DATA_REASON=""
   while IFS= read -r a; do
     [ -n "${a}" ] && item_arms+=("${a}")
   done < <(arms_for_item "${stage}" "${item}")
+
+  # Checkpoints first, at checkpoint granularity rather than at the granularity of
+  # the variable that relocates them -- see model_path_for_arm for why the
+  # variable alone let a missing text checkpoint through and lost six arms with
+  # it. The variable's own absence is reported separately from the checkpoint's,
+  # because "h200_env.sh exports nothing for this arm" and "the root is staged but
+  # this arm's checkpoint is not in it" are different scheduling facts.
   for a in "${item_arms[@]}"; do
-    vars+=("$(model_var_for_arm "${a}")")
+    status=0
+    checkpoint="$(model_path_for_arm "${a}")" || status=$?
+    case "${status}" in
+      0) ;;
+      1)
+        MISSING_DATA_REASON="h200_env.sh did not export $(model_var_for_arm "${a}"), which arm ${a} needs"
+        return 1
+        ;;
+      *)
+        # model_path_for_arm named the problem on stderr already. An arm the
+        # contract does not know is a defect, not a staging fact, so it must not
+        # be laundered into a skip.
+        exit "${status}"
+        ;;
+    esac
+    if [ ! -e "${checkpoint}" ]; then
+      MISSING_DATA_REASON="missing checkpoint for arm ${a}: ${checkpoint}"
+      return 1
+    fi
+    checkpoints+=("${checkpoint}")
   done
+
   if [ "${#item_arms[@]}" -gt 0 ]; then
     while IFS= read -r v; do
       [ -n "${v}" ] && vars+=("${v}")
@@ -733,8 +860,8 @@ verify_item_data_paths() {
       return 1
     fi
   done
-  if [ "${#checked[@]}" -gt 0 ]; then
-    log "  data paths ok for ${stage}/${item}: ${checked[*]}"
+  if [ "${#checkpoints[@]}" -gt 0 ] || [ "${#checked[@]}" -gt 0 ]; then
+    log "  data paths ok for ${stage}/${item}: checkpoints=[${checkpoints[*]:-}] vars=[${checked[*]:-}]"
   fi
   return 0
 }
@@ -743,10 +870,33 @@ gpu_free_mib() {
   nvidia-smi --id="$1" --query-gpu=memory.free --format=csv,noheader,nounits
 }
 
+# Standing rule 13's before-and-after GPU and memory record.
+#
+# Both call sites used to end in `|| true`, which is precisely the mechanism by
+# which the record the rule requires can be silently absent: an nvidia-smi that
+# failed emitted nothing and said nothing, and a reader of the log could not tell
+# "the GPUs were idle" from "nobody looked". A failure is logged as a failure now.
+# It still does not stop the campaign -- this is evidence about the host, not an
+# input to any measurement, and verify_gpus has already refused an occupied or
+# invisible GPU by the time the first call runs.
+record_host_state() {
+  local label="$1" status=0
+  log "host state ${label} (standing rule 13):"
+  nvidia-smi --query-gpu=index,name,memory.total,memory.used,utilization.gpu --format=csv || status=$?
+  if [ "${status}" -ne 0 ]; then
+    log "WARNING: nvidia-smi failed with status ${status} ${label}; standing rule 13's GPU record is MISSING for this run"
+  fi
+  status=0
+  free -h || status=$?
+  if [ "${status}" -ne 0 ]; then
+    log "WARNING: free -h failed with status ${status} ${label}; standing rule 13's memory record is MISSING for this run"
+  fi
+}
+
 # Occupancy (another process already using the GPU) is a hard failure --
 # scheduling onto a busy GPU is simply wrong. Free memory is a soft
 # warning, not a gate: MIN_FREE_MEM_MIB is not a measured requirement for
-# any of the nine scripts (observed L20 validation peaks were 1.6-12.2 GiB
+# any of the entry-point scripts (observed L20 validation peaks were 1.6-12.2 GiB
 # per arm), and a fabricated threshold that blocks a valid run is worse
 # than no threshold.
 verify_gpu_idle() {
@@ -1106,8 +1256,60 @@ verify_commands_buildable() {
   log "command preflight passed"
 }
 
-finish_campaign() {
-  local failed=0 failure skipped
+# A requested stage produced no measurement. Recorded rather than logged-and-
+# forgotten, because "measured nothing" and "measured successfully" are different
+# facts and every route that conflated them reported success. See
+# UNMEASURED_STAGES for the two routes.
+record_unmeasured_stage() {
+  local stage="$1" reason="$2"
+  log "UNMEASURED stage=${stage} (${reason})"
+  UNMEASURED_STAGES+=("${stage} (${reason})")
+}
+
+# Runs one requested stage and records that it was dispatched; logs and skips a
+# stage this run did not ask for.
+#
+# Every tier-chain entry goes through this, which is what makes
+# reconcile_dispatched_stages meaningful: a stage that reaches a runner by some
+# other path would not be marked, and a stage with no path at all is caught.
+dispatch_stage() {
+  local stage="$1"
+  shift
+  if ! stage_requested "${stage}"; then
+    log "stage ${stage} not in STAGES=${STAGES}; skipping"
+    return 0
+  fi
+  DISPATCHED_STAGES+=("${stage}")
+  "$@"
+}
+
+# Every requested stage must have been dispatched. The tier chain is eleven
+# hand-written branches and nothing checked it against the contract-derived
+# REQUESTED_STAGES, so a stage added to panel_contract.py and forgotten below
+# passed the panel-contract verify, the command preflight and both import
+# preflights -- all of which derive from the contract -- then never ran, and the
+# campaign exited 0 with no line anywhere saying so.
+#
+# Only meaningful on the normal path: after an early exit the later stages
+# genuinely have not run and the non-zero status already says so, which is why
+# this is called from main and not from the EXIT trap.
+reconcile_dispatched_stages() {
+  local stage
+  for stage in "${REQUESTED_STAGES[@]}"; do
+    case " ${DISPATCHED_STAGES[*]:-} " in
+      *" ${stage} "*) ;;
+      *)
+        record_unmeasured_stage "${stage}" \
+          "requested, and accepted by every preflight, but no branch of this worker's tier chain dispatches it"
+        ;;
+    esac
+  done
+}
+
+# Prints everything the campaign accumulated. Returns 1 if any of it means the
+# campaign did not measure what it was asked to, 0 otherwise.
+print_campaign_ledger() {
+  local failed=0 failure skipped unmeasured
   if [ "${#DEFERRED_FAILURES[@]}" -gt 0 ]; then
     failed=1
     echo "campaign FAILED: run_id=${RUN_ID}; ${#DEFERRED_FAILURES[@]} deferred failure(s):" >&2
@@ -1122,12 +1324,80 @@ finish_campaign() {
       echo "  SKIP-DATA: ${skipped}" >&2
     done
   fi
-  if [ "${failed}" -ne 0 ]; then
+  if [ "${#UNMEASURED_STAGES[@]}" -gt 0 ]; then
+    failed=1
+    echo "campaign INCOMPLETE: run_id=${RUN_ID}; ${#UNMEASURED_STAGES[@]} requested stage(s) measured nothing:" >&2
+    for unmeasured in "${UNMEASURED_STAGES[@]}"; do
+      echo "  UNMEASURED: ${unmeasured}" >&2
+    done
+  fi
+  return "${failed}"
+}
+
+finish_campaign() {
+  CAMPAIGN_LEDGER_PRINTED=1
+  if ! print_campaign_ledger; then
     echo "Completed items are retained. Re-run the same command after fixing the reported failures." >&2
     exit 1
   fi
   log "campaign complete: run_id=${RUN_ID} results=${RESULTS_ROOT} logs=${LOGS_ROOT}"
 }
+
+# finish_campaign is the only printer of the ledger and is reachable only by
+# falling off the end of this file, but four call sites leave before then:
+# run_stage_wave exits 1 on a hard item failure, verify_gpu_idle exits 2,
+# build_command exits 2, assert_no_duplicate_options exits 2. Three items
+# SKIP-DATA in tier 1 followed by a tier-3 item failure therefore discarded the
+# SKIP-DATA record entirely -- the record that exists precisely so a data skip
+# cannot be lost -- and left the operator with one failure message and no
+# statement that three other items had never run at all.
+#
+# The trap only prints; it never calls `exit`, so bash exits with the status that
+# triggered it and every exit code in this file is preserved exactly. It does not
+# fire in the `&` subshells run_stage_wave forks, nor in command substitution,
+# because bash runs an inherited EXIT trap only when the shell that installed it
+# exits.
+report_early_exit() {
+  local status=$?
+  if [ "${CAMPAIGN_LEDGER_PRINTED}" -eq 1 ]; then
+    emit_exit_sentinel "${status}"
+    return 0
+  fi
+  CAMPAIGN_LEDGER_PRINTED=1
+  if print_campaign_ledger; then
+    # Nothing had been accumulated -- a preflight refusal, say. Whatever exited
+    # already said why, so adding a second voice here would only obscure it.
+    emit_exit_sentinel "${status}"
+    return 0
+  fi
+  echo "The above was accumulated before the worker exited early with status ${status}" >&2
+  echo "(run_id=${RUN_ID:-unknown}). Completed items are retained; re-run the same" >&2
+  echo "command after fixing the reported failure." >&2
+  emit_exit_sentinel "${status}"
+  return 0
+}
+
+#: Prefix of the line the controller reads this worker's real exit status from.
+#:
+#: **The access layer does not propagate it.** `h200_pod_exec.sh -- bash -c "exit
+#: 7"` returns 0, measured directly on this deployment, so every non-zero exit of
+#: this script has been invisible to `run_transfer_h200.sh`: a preflight refusal
+#: that scheduled no GPU came back as "campaign complete" and status 0. That is
+#: the false-success shape the whole ledger above exists to prevent, sitting one
+#: layer above the ledger and defeating it.
+#:
+#: Fixed here rather than in the access layer because the access layer is outside
+#: this repository and shared with other projects: a campaign's success must be
+#: decidable from the campaign's own output. Emitted from the EXIT trap so it is
+#: the last line whatever path exits, and its *absence* is itself a failure the
+#: controller reports -- a worker killed mid-run, or a pod exec that never
+#: started, prints no sentinel.
+WORKER_EXIT_SENTINEL="TRANSFER_WORKER_EXIT="
+
+emit_exit_sentinel() {
+  printf '%s%s\n' "${WORKER_EXIT_SENTINEL}" "${1:-0}"
+}
+trap report_early_exit EXIT
 
 # Re-derives panel_contract.sh from the live src/transfer/arms.py and refuses if
 # the sourced copy disagrees. This is what makes the generated file a cache of
@@ -1234,8 +1504,9 @@ run_stage_wave() {
   local i j gpu item status fail=0 skipped=0 n_gpu="${#GPU_LIST[@]}"
 
   if [ "${#items[@]}" -eq 0 ]; then
-    log "stage ${stage}: nothing to run for the configured arms; skipping"
-    return
+    record_unmeasured_stage "${stage}" \
+      "requested, but no item to run: no arm in ARMS=${ARMS} is eligible for this stage"
+    return 0
   fi
   for i in "${!items[@]}"; do
     item="${items[$i]}"
@@ -1294,7 +1565,8 @@ run_estimand_power() {
 
   out_dir="$(stage_final_dir estimand_power)"
   if [ "${#arms[@]}" -eq 0 ]; then
-    log "stage estimand_power: no eligible arm in ARMS; skipping"
+    record_unmeasured_stage estimand_power \
+      "requested, but no arm in ARMS=${ARMS} is eligible for this stage"
     return 0
   fi
   # The text control is not optional here: `recommend` anchors the panel verdict
@@ -1349,12 +1621,34 @@ run_estimand_power() {
   # measure outputs that no longer existed -- a stale panel verdict that verifies
   # cleanly against its own checksum. The consumed manifests are folded in, so a
   # measure re-run invalidates the aggregation that reads it.
-  local -a input_manifests=()
+  local -a input_manifests=() absent_measures=()
   for arm in "${recommend_arms[@]}"; do
+    if [ ! -f "${out_dir}/.manifests/${arm}.sha256" ]; then
+      absent_measures+=("${arm}")
+    fi
     input_manifests+=("${out_dir}/.manifests/${arm}.sha256")
   done
+  # A missing per-arm manifest is exactly what a legitimate SKIP-DATA above
+  # produces, and it used to end the worker without a word: `cat` on an absent
+  # file exits 1, `2>/dev/null` hid the message, `pipefail` made the whole
+  # pipeline non-zero and `set -e` exited the process here -- before tiers 3 and
+  # 4, and before finish_campaign could print the SKIP-DATA summary that
+  # explained why. Refuse explicitly instead. `recommend` cannot anchor a panel
+  # verdict on a measure that never ran, so this is a refusal, not a crash and
+  # not an aggregation over whatever happens to be on disk.
+  if [ "${#absent_measures[@]}" -gt 0 ]; then
+    log "SKIP-DATA  stage=estimand_power item=recommend (no measure output for: ${absent_measures[*]})"
+    SKIPPED_FOR_DATA+=(
+      "estimand_power/recommend (cannot anchor a panel verdict: no measure output for ${absent_measures[*]})"
+    )
+    return 0
+  fi
   local inputs_digest
-  inputs_digest="$(cat -- "${input_manifests[@]}" 2>/dev/null | sha256sum | awk '{print $1}')"
+  if ! inputs_digest="$(cat -- "${input_manifests[@]}" | sha256sum | awk '{print $1}')"; then
+    echo "estimand_power: could not read the measure manifests recommend aggregates" >&2
+    echo "  ${input_manifests[*]}" >&2
+    exit 2
+  fi
   provenance="$(provenance_record recommend --arms "${recommend_arms[@]}" \
     --measure-inputs-sha256 "${inputs_digest}" \
     --results-root "<pending>" --output "<pending>")"
@@ -1414,7 +1708,8 @@ run_panel_stage() {
   local stage="$1" gpu="$2"
   shift 2
   if [ "$#" -eq 0 ]; then
-    log "stage ${stage}: no eligible arm in ARMS; skipping rather than falling back to the script default"
+    record_unmeasured_stage "${stage}" \
+      "requested, but no arm in ARMS=${ARMS} is eligible; not dispatched, because an empty --arms would fall back to the entry point's own default panel"
     return 0
   fi
   run_item_serial "${stage}" panel "${gpu}"
@@ -1589,80 +1884,39 @@ verify_entry_points_parse_args
 verify_gpfs_read_write
 verify_gpus
 mkdir -p "${RESULTS_ROOT}"
-nvidia-smi --query-gpu=index,name,memory.total,memory.used,utilization.gpu --format=csv || true
-free -h || true
+record_host_state "before the campaign"
 
 # Every stage not in REQUESTED_STAGES is logged and left alone rather than
 # dispatched -- this is how a campaign scoped to what is staged today (see
-# scripts/transfer/README.md's "Environment contract") avoids the stages
+# scripts/transfer/README.md's "Controller Environment") avoids the stages
 # that need data that has not landed yet. Re-running the same command once
 # more data lands picks up exactly the stages/items that were skipped,
 # without --force and without editing this file, because a skip -- for
 # either reason, an unrequested stage or (see verify_item_data_paths) a
 # missing input -- never writes a completion manifest.
+#
+# Every line below goes through dispatch_stage, which is what makes
+# reconcile_dispatched_stages able to catch a contract stage this chain forgets.
 log "tier 1: cohort_power (prerequisite; must pass before anything consumes the cohort)"
-if stage_requested cohort_power; then
-  run_stage_wave cohort_power "${COHORT_ITEMS[@]}"
-else
-  log "stage cohort_power not in STAGES=${STAGES}; skipping"
-fi
+dispatch_stage cohort_power run_stage_wave cohort_power "${COHORT_ITEMS[@]}"
 
 log "tier 2: pathway_budget, then estimand_power"
-if stage_requested pathway_budget; then
-  run_stage_wave pathway_budget "${PATHWAY_ARMS[@]}"
-else
-  log "stage pathway_budget not in STAGES=${STAGES}; skipping"
-fi
-if stage_requested estimand_power; then
-  run_estimand_power "${ESTIMAND_ARMS[@]}"
-else
-  log "stage estimand_power not in STAGES=${STAGES}; skipping"
-fi
+dispatch_stage pathway_budget run_stage_wave pathway_budget "${PATHWAY_ARMS[@]}"
+dispatch_stage estimand_power run_estimand_power "${ESTIMAND_ARMS[@]}"
 
 log "tier 3: circuit_primitives, relational_channel, explanation_channel, convergence_control, lens_family, probe_and_erasure"
-if stage_requested circuit_primitives; then
-  run_circuit_primitives
-else
-  log "stage circuit_primitives not in STAGES=${STAGES}; skipping"
-fi
-if stage_requested relational_channel; then
-  run_stage_wave relational_channel "${RELATIONAL_ARMS[@]}"
-else
-  log "stage relational_channel not in STAGES=${STAGES}; skipping"
-fi
-if stage_requested explanation_channel; then
-  run_explanation_channel
-else
-  log "stage explanation_channel not in STAGES=${STAGES}; skipping"
-fi
-if stage_requested convergence_control; then
-  run_convergence_control
-else
-  log "stage convergence_control not in STAGES=${STAGES}; skipping"
-fi
-if stage_requested lens_family; then
-  run_stage_wave lens_family "${LENS_ARMS[@]}"
-else
-  log "stage lens_family not in STAGES=${STAGES}; skipping"
-fi
-if stage_requested probe_and_erasure; then
-  run_stage_wave probe_and_erasure "${PROBE_ARMS[@]}"
-else
-  log "stage probe_and_erasure not in STAGES=${STAGES}; skipping"
-fi
+dispatch_stage circuit_primitives run_circuit_primitives
+dispatch_stage relational_channel run_stage_wave relational_channel "${RELATIONAL_ARMS[@]}"
+dispatch_stage explanation_channel run_explanation_channel
+dispatch_stage convergence_control run_convergence_control
+dispatch_stage lens_family run_stage_wave lens_family "${LENS_ARMS[@]}"
+dispatch_stage probe_and_erasure run_stage_wave probe_and_erasure "${PROBE_ARMS[@]}"
 
 log "tier 4: homology_control, induction_path_patching"
-if stage_requested homology_control; then
-  run_homology_control
-else
-  log "stage homology_control not in STAGES=${STAGES}; skipping"
-fi
-if stage_requested induction_path_patching; then
-  run_induction_path_patching
-else
-  log "stage induction_path_patching not in STAGES=${STAGES}; skipping"
-fi
+dispatch_stage homology_control run_homology_control
+dispatch_stage induction_path_patching run_induction_path_patching
 
-nvidia-smi --query-gpu=index,memory.used,utilization.gpu --format=csv || true
+record_host_state "after the campaign"
 
+reconcile_dispatched_stages
 finish_campaign

@@ -52,6 +52,72 @@ from sklearn.model_selection import GroupKFold, StratifiedGroupKFold
 MINIMUM_FINITE_DRAW_FRACTION = 0.95
 
 
+#: Smallest number of resampling units at which a percentile bootstrap interval
+#: may be published. One declaration, imported by every module that resamples;
+#: ``homology`` held the only copy and ``prediction_addressed.cluster_bootstrap``
+#: and ``path_patching.bootstrap_difference`` each carried their own weaker
+#: ``n < 2`` guard, so the same hazard was defended in one place out of three.
+#:
+#: **The derivation this constant used to carry did not support it.** It read:
+#: "eight is the point at which the probability of an all-identical resample
+#: falls below the discarded tail mass". That probability is ``n**(1-n)``, which
+#: is 1.6% at four units and already below the 2.5% each tail discards, so the
+#: stated reasoning selects four, not eight. A future reader following it would
+#: "correct" the floor downward. The constant is right and the reason was wrong,
+#: which is the more dangerous of the two combinations.
+#:
+#: The property a floor has to defend is coverage, not width. Measured here on
+#: 1200 normal samples per point, the realised coverage of a nominal 95%
+#: percentile interval over the cluster mean is 0.50 at two units, 0.74 at
+#: three, 0.82 at four, 0.86 at six, 0.89 at eight, 0.92 at sixteen and 0.94 at
+#: four hundred. Below eight the interval delivers between half and six-sevenths
+#: of what it advertises; eight is where the shortfall stops being of the same
+#: order as the confidence level itself. That is the derivation.
+#:
+#: Note also that average width is *not* monotone at the bottom: two units give
+#: a mean width of 1.17 against 1.98 at three units, on the same generating
+#: distribution, because the two-unit resample distribution has three atoms and
+#: the percentile rule trims the extreme ones. So a small stratum can read as
+#: the precise one, which is how two ``consistent_with_memorisation`` verdicts in
+#: the 2026-07-28 run came to be decided by non-overlap of a four-unit interval
+#: against a four-hundred-unit one.
+MINIMUM_BOOTSTRAP_UNITS = 8
+
+
+def bootstrap_unit_floor(
+    n_units: int, *, minimum_units: int = MINIMUM_BOOTSTRAP_UNITS
+) -> dict[str, object]:
+    """The publishability record for a percentile interval over ``n_units`` units.
+
+    Returned rather than raised, because "too few units to bound this" is a
+    finding about the stratum, arm or head population and belongs in the
+    artefact. Callers merge the record in and null their interval fields when
+    ``degenerate`` is true; what they must not do is publish an interval and a
+    unit count side by side and leave the reader to notice.
+    """
+
+    if minimum_units < 2:
+        raise ValueError("a percentile interval needs at least two units")
+    if n_units < 0:
+        raise ValueError("unit counts are non-negative")
+    degenerate = n_units < minimum_units
+    return {
+        "n_units": int(n_units),
+        "minimum_units": int(minimum_units),
+        "degenerate": bool(degenerate),
+        "degenerate_reason": (
+            (
+                f"{n_units} units is below the {minimum_units}-unit floor; a nominal "
+                "95% percentile interval over so few atoms realises well under 95% "
+                "coverage and can come out narrower than one over hundreds of units, "
+                "so it must not be compared against another population's"
+            )
+            if degenerate
+            else None
+        ),
+    }
+
+
 def _finite_vector(values: Sequence[float], name: str) -> np.ndarray:
     array = np.asarray(values, dtype=np.float64)
     if array.ndim != 1 or array.size < 2:
@@ -71,7 +137,15 @@ def mean_interval(values: Sequence[float], confidence: float = 0.95) -> dict:
         raise ValueError("confidence must lie strictly between zero and one")
     mean = float(sample.mean())
     standard_error = float(stats.sem(sample))
-    if standard_error == 0.0:
+    # A zero standard error gives a zero-width interval, which reads as perfect
+    # precision and is the one shape a reader will not question. It comes from
+    # identical values, and identical values on a cohort of proteins of
+    # different lengths mean a degenerate input -- one sequence repeated, a
+    # metric that saturated -- not a measurement without uncertainty. The
+    # interval is still returned, because refusing would turn a diagnostic into
+    # an abort deep inside a run, but it is flagged where it is produced.
+    degenerate = standard_error == 0.0
+    if degenerate:
         interval = [mean, mean]
     else:
         radius = (
@@ -85,6 +159,7 @@ def mean_interval(values: Sequence[float], confidence: float = 0.95) -> dict:
         "confidence": float(confidence),
         "interval": interval,
         "n": int(sample.size),
+        "zero_width_from_zero_variance": bool(degenerate),
     }
 
 
@@ -249,8 +324,22 @@ def make_group_splits(
     for train, test in splits:
         if np.intersect1d(group_ids[train], group_ids[test]).size:
             raise RuntimeError("group leakage detected in a generated fold")
-        if task_type == "classification" and np.unique(truth[train]).size < 2:
-            raise ValueError("a training fold contains fewer than two classes")
+        if task_type == "classification":
+            if np.unique(truth[train]).size < 2:
+                raise ValueError("a training fold contains fewer than two classes")
+            # The test fold was never checked. A single-class test fold makes
+            # every threshold-free score on it undefined -- AUC has no negative
+            # class to rank against -- and the undefined value then propagates
+            # as a nan that compares false against every gate, which is the
+            # exact failure mode :func:`mean_interval`'s finiteness check exists
+            # to stop one step later. Checked on the same footing as the
+            # training fold, because a fold that cannot be scored is a fold
+            # that cannot be used.
+            if np.unique(truth[test]).size < 2:
+                raise ValueError(
+                    "a test fold contains fewer than two classes; group-disjoint "
+                    "folds over this grouping cannot be scored"
+                )
         test_counts[test] += 1
     if not np.all(test_counts == 1):
         raise RuntimeError(

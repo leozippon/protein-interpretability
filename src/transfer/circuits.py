@@ -2207,6 +2207,81 @@ def direct_logit_attribution(
 # ---------------------------------------------------------- activation patching
 
 
+#: Below this many cases a percentile interval on a fraction is pinched inward
+#: rather than merely wide -- the resample distribution has too few distinct
+#: atoms for its tails to mean anything. The same floor and the same reasoning
+#: are in ``homology.MINIMUM_BOOTSTRAP_UNITS``; the constant is restated here
+#: only because importing it would make the circuit census depend on the
+#: homology module, and the two are declared to agree by test.
+MINIMUM_ELIGIBILITY_CASES = 8
+
+#: Minimum-effect thresholds the eligible fraction is reported at, beside the one
+#: the run was scored on.
+#:
+#: The eligible fraction *is* the non-local propagation measurement, and it is a
+#: fraction above a threshold — so Appendix B rule 8 applies directly: prefer a
+#: threshold-free statistic, and where a threshold cannot be removed, sweep it and
+#: show the ordering is invariant rather than asserting it. B6's first run reported
+#: the fraction at one value (0.25 logits) and stored only the aggregate, so no
+#: reader could recompute the curve or check the ordering at any other cut.
+#: `absolute_effect_quantiles` below is the threshold-free companion: the
+#: distribution the fraction is a single slice of.
+ELIGIBILITY_THRESHOLD_LADDER: tuple[float, ...] = (0.05, 0.10, 0.25, 0.50, 1.00, 2.00)
+
+
+def _case_resampled_interval(
+    flags: np.ndarray,
+    sources: np.ndarray,
+    generator: np.random.Generator,
+    resamples: int,
+) -> dict[str, Any]:
+    """Percentile interval for an eligibility fraction, clustered by source sequence.
+
+    **The sampling unit is the sequence, not the case.** Cases are drawn with
+    replacement from the cohort's usable rows, so at a production case count they
+    are many corruptions of the *same* few sequences -- 512 cases per band from a
+    24-record cohort is about twenty cases per sequence. Whether a single-token
+    change propagates 33-64 positions is a property of the sequence at least as
+    much as of the position, so resampling cases would treat twenty correlated
+    observations as twenty independent ones and report an interval too narrow by
+    roughly the square root of that factor. Resampling sequences and taking all
+    of a drawn sequence's cases is the same rule the rest of the package applies.
+
+    Returns ``degenerate`` rather than an interval below the floor: a percentile
+    interval over four units reads *narrower* than one over eight, and that
+    pinching decided two verdicts in this programme before (EXP-R2-061).
+    """
+
+    n = int(flags.size)
+    clusters = np.unique(sources)
+    if clusters.size < MINIMUM_ELIGIBILITY_CASES:
+        return {
+            "n_cases": n,
+            "n_source_sequences": int(clusters.size),
+            "degenerate": True,
+            "reason": (
+                f"{clusters.size} source sequences is below the "
+                f"{MINIMUM_ELIGIBILITY_CASES}-cluster floor; a percentile interval "
+                "here is pinched inward rather than wide, so none is reported"
+            ),
+        }
+    members = [np.flatnonzero(sources == cluster) for cluster in clusters]
+    draws = np.empty(resamples, dtype=np.float64)
+    for index in range(resamples):
+        picked = generator.integers(0, clusters.size, size=clusters.size)
+        taken = np.concatenate([members[int(choice)] for choice in picked])
+        draws[index] = flags[taken].mean()
+    return {
+        "n_cases": n,
+        "n_source_sequences": int(clusters.size),
+        "resampling_unit": "source_sequence",
+        "degenerate": False,
+        "resamples": int(resamples),
+        "q025": float(np.quantile(draws, 0.025)),
+        "q975": float(np.quantile(draws, 0.975)),
+    }
+
+
 @dataclass(frozen=True)
 class PatchCase:
     """One clean/corrupted pair with its perturbation and read-out positions."""
@@ -2216,6 +2291,13 @@ class PatchCase:
     position_p: int
     position_q: int
     band: str
+    #: Index of the cohort row this case was cut from. Cases are drawn with
+    #: replacement, so several cases share a source; that is the cluster any
+    #: interval over cases has to resample. Defaulted so the frozen artefacts and
+    #: the tests that construct cases by hand keep working, and -1 is a distinct
+    #: cluster per the ``np.unique`` in :func:`_case_resampled_interval` only when
+    #: every case carries it, which is the honest reading of "source unrecorded".
+    source: int = -1
 
     def __post_init__(self) -> None:
         if len(self.clean_ids) != len(self.corrupt_ids):
@@ -2271,7 +2353,8 @@ def build_patch_cases(
         label = f"{low}-{high}"
         produced = 0
         for _ in range(cases_per_band * 64):
-            row = usable[int(rng.integers(0, len(usable)))]
+            source = int(rng.integers(0, len(usable)))
+            row = usable[source]
             begin, end = content_bounds(arm, row, len(row))
             begin = max(begin, 1)
             distance = int(rng.integers(low, high + 1))
@@ -2290,6 +2373,7 @@ def build_patch_cases(
                     position_p=position_p,
                     position_q=position_q,
                     band=label,
+                    source=source,
                 )
             )
             produced += 1
@@ -2319,6 +2403,9 @@ def activation_patching(
     *,
     minimum_effect: float,
     component_kinds: Sequence[str] = COMPONENT_KINDS,
+    batch_size: int = 64,
+    eligibility_resamples: int = 2000,
+    eligibility_seed: int = 20260730,
 ) -> dict[str, Any]:
     """Recovered fraction when one component at one position is restored.
 
@@ -2332,6 +2419,22 @@ def activation_patching(
     then a ratio of noise.  The exclusion rate is reported per band and is itself
     a measurement: a modality where a single-token change never propagates has no
     circuit for patching to find.
+
+    **Forward passes run in chunks of ``batch_size`` cases.**  Every pass used to
+    run the whole case set at once, and ``read_at_q`` materialises the model's
+    full ``[cases, width, vocab]`` logit tensor before selecting the single
+    position it needs.  At the historical 192 cases that is about 2.5 GB and
+    invisible; at the case count the far bands actually need it is the binding
+    constraint, because the non-local propagation figure rests on 2-16 eligible
+    cases in the 33-64 band and reaching thirty per arm takes roughly sixteen
+    times as many.  Chunking bounds the peak at one chunk's logits and changes no
+    number: the hooks, the metric and the eligibility rule are per case and carry
+    no cross-case state.
+
+    ``eligible_fraction_interval`` accompanies each band's exclusion rate.  The
+    fraction *is* the measurement here -- "a single-token change never
+    propagates" is the claim -- and a bare ratio over as few as two cases cannot
+    say whether two arms differ.
     """
 
     arm.require("circuits")
@@ -2339,6 +2442,8 @@ def activation_patching(
         raise ValueError("no patching cases were supplied")
     if minimum_effect <= 0:
         raise ValueError("minimum_effect must be positive")
+    if batch_size < 1:
+        raise ValueError("batch_size must be positive")
     unknown = set(component_kinds) - set(COMPONENT_KINDS)
     if unknown:
         raise ValueError(f"unknown component kinds {sorted(unknown)}")
@@ -2349,71 +2454,104 @@ def activation_patching(
     device = arm.device
     clean = torch.tensor([case.clean_ids for case in cases], dtype=torch.long, device=device)
     corrupt = torch.tensor([case.corrupt_ids for case in cases], dtype=torch.long, device=device)
-    rows = torch.arange(len(cases), device=device)
     sites = {
         "p": torch.tensor([case.position_p for case in cases], dtype=torch.long, device=device),
         "q": torch.tensor([case.position_q for case in cases], dtype=torch.long, device=device),
     }
+    chunks = [
+        slice(start, min(start + batch_size, len(cases)))
+        for start in range(0, len(cases), batch_size)
+    ]
 
     modules = _component_modules(arm)
     cache: dict[tuple[str, int, str], torch.Tensor] = {}
     handles = []
 
-    def capture(kind: str, layer: int):
+    # Filled chunk by chunk on the clean pass. The read-out tokens are fixed
+    # there and reused everywhere after, which is what makes every later pass a
+    # difference against a constant rather than against a moving target.
+    top_token = torch.zeros(len(cases), dtype=torch.long, device=device)
+    alternative = torch.zeros(len(cases), dtype=torch.long, device=device)
+
+    def capture(kind: str, layer: int, span: slice, local_rows: torch.Tensor):
         def hook(_module, _args, output: Any) -> None:
             tensor = _leading_tensor(output)
             for site, index in sites.items():
-                cache[(kind, layer, site)] = tensor[rows, index].detach().clone()
+                key = (kind, layer, site)
+                if key not in cache:
+                    cache[key] = torch.zeros(
+                        (len(cases), tensor.shape[-1]), dtype=tensor.dtype, device=device
+                    )
+                cache[key][span] = tensor[local_rows, index[span]].detach()
 
         return hook
 
-    for (kind, layer), module in modules.items():
-        if kind in component_kinds:
-            handles.append(module.register_forward_hook(capture(kind, layer)))
+    def logits_at_q(ids: torch.Tensor, span: slice, local_rows: torch.Tensor) -> torch.Tensor:
+        """Logits at the read-out position only, for one chunk of cases."""
 
-    def read_at_q(ids: torch.Tensor) -> torch.Tensor:
-        """Logits at the read-out position only; the full tensor is never kept."""
+        logits = arm.model(input_ids=ids[span], use_cache=False).logits
+        return logits[local_rows, sites["q"][span]].float()
 
-        logits = arm.model(input_ids=ids, use_cache=False).logits
-        return logits[rows, sites["q"]].float()
+    metric_clean = torch.zeros(len(cases), dtype=torch.float32, device=device)
+    for span in chunks:
+        local_rows = torch.arange(span.stop - span.start, device=device)
+        handles = [
+            module.register_forward_hook(capture(kind, layer, span, local_rows))
+            for (kind, layer), module in modules.items()
+            if kind in component_kinds
+        ]
+        try:
+            read = logits_at_q(clean, span, local_rows)
+        finally:
+            for handle in handles:
+                handle.remove()
+        ranked = read.topk(2, dim=-1)
+        top_token[span] = ranked.indices[:, 0]
+        alternative[span] = ranked.indices[:, 1]
+        metric_clean[span] = (
+            read.gather(1, ranked.indices[:, :1]).squeeze(1)
+            - read.gather(1, ranked.indices[:, 1:2]).squeeze(1)
+        )
 
-    try:
-        clean_read = read_at_q(clean)
-    finally:
-        for handle in handles:
-            handle.remove()
-
-    ranked = clean_read.topk(2, dim=-1)
-    top_token = ranked.indices[:, 0]
-    alternative = ranked.indices[:, 1]
-
-    def metric(read: torch.Tensor) -> torch.Tensor:
-        return read.gather(1, top_token.unsqueeze(1)).squeeze(1) - read.gather(
-            1, alternative.unsqueeze(1)
+    def metric(read: torch.Tensor, span: slice) -> torch.Tensor:
+        return read.gather(1, top_token[span].unsqueeze(1)).squeeze(1) - read.gather(
+            1, alternative[span].unsqueeze(1)
         ).squeeze(1)
 
-    metric_clean = metric(clean_read)
-    metric_corrupt = metric(read_at_q(corrupt))
+    def corrupt_metric(patch_site: tuple[str, int, str] | None) -> torch.Tensor:
+        """The metric on the corrupted input, optionally with one component restored."""
+
+        out = torch.zeros(len(cases), dtype=torch.float32, device=device)
+        for span in chunks:
+            local_rows = torch.arange(span.stop - span.start, device=device)
+            handle = None
+            if patch_site is not None:
+                kind, layer, site = patch_site
+                cached = cache[(kind, layer, site)][span]
+                index = sites[site][span]
+
+                def hook(_module, _args, output: Any) -> Any:
+                    tensor = _leading_tensor(output)
+                    patched = tensor.clone()
+                    patched[local_rows, index] = cached.to(patched.dtype)
+                    if isinstance(output, tuple):
+                        return (patched,) + tuple(output[1:])
+                    return patched
+
+                handle = modules[(kind, layer)].register_forward_hook(hook)
+            try:
+                out[span] = metric(logits_at_q(corrupt, span, local_rows), span)
+            finally:
+                if handle is not None:
+                    handle.remove()
+        return out
+
+    metric_corrupt = corrupt_metric(None)
     denominator = metric_clean - metric_corrupt
     eligible = denominator.abs() >= minimum_effect
 
     def patch(kind: str, layer: int, site: str) -> torch.Tensor:
-        cached = cache[(kind, layer, site)]
-        index = sites[site]
-
-        def hook(_module, _args, output: Any) -> Any:
-            tensor = _leading_tensor(output)
-            patched = tensor.clone()
-            patched[rows, index] = cached.to(patched.dtype)
-            if isinstance(output, tuple):
-                return (patched,) + tuple(output[1:])
-            return patched
-
-        handle = modules[(kind, layer)].register_forward_hook(hook)
-        try:
-            return metric(read_at_q(corrupt))
-        finally:
-            handle.remove()
+        return corrupt_metric((kind, layer, site))
 
     bands = sorted({case.band for case in cases}, key=lambda label: int(label.split("-")[0]))
     band_index = {
@@ -2425,16 +2563,51 @@ def activation_patching(
         for band in bands
     }
 
+    generator = np.random.default_rng(eligibility_seed)
+    case_sources = np.asarray([case.source for case in cases], dtype=np.int64)
     corruption: dict[str, Any] = {}
     for band, index in band_index.items():
         effects = denominator.index_select(0, index)
+        flags = eligible.index_select(0, index).detach().cpu().numpy()
+        sources = case_sources[index.detach().cpu().numpy()]
         corruption[band] = {
             "n_cases": int(index.numel()),
             "mean_absolute_effect": _finite(float(effects.abs().mean()), f"effect {band}"),
             "median_absolute_effect": _finite(
                 float(effects.abs().median()), f"median effect {band}"
             ),
-            "eligible_cases": int(eligible.index_select(0, index).sum()),
+            "eligible_cases": int(flags.sum()),
+            "eligible_fraction": float(flags.mean()),
+            # The exclusion rate is the measurement, not bookkeeping: "a
+            # single-token change does not propagate this far" is the claim the
+            # non-local propagation result makes. A bare ratio over as few as two
+            # cases cannot support a comparison between arms, and two of the four
+            # arms had fewer than ten eligible far-band cases when that result was
+            # first reported.
+            "eligible_fraction_interval": _case_resampled_interval(
+                flags, sources, generator, eligibility_resamples
+            ),
+            # Appendix B rule 8. The fraction at one cut cannot show that an
+            # ordering across arms is a property of the arms rather than of the
+            # cut, and an aggregate-only artefact cannot be re-cut afterwards.
+            "eligible_fraction_by_threshold": {
+                f"{threshold:g}": _case_resampled_interval(
+                    (effects.abs() >= threshold).detach().cpu().numpy(),
+                    sources,
+                    np.random.default_rng(eligibility_seed),
+                    eligibility_resamples,
+                )
+                | {"fraction": float((effects.abs() >= threshold).float().mean())}
+                for threshold in ELIGIBILITY_THRESHOLD_LADDER
+            },
+            # The threshold-free companion: the distribution every fraction above
+            # is one slice of, so a reader can re-cut at any value without a re-run.
+            "absolute_effect_quantiles": {
+                f"q{int(q * 1000):03d}": _finite(
+                    float(effects.abs().quantile(q)), f"|effect| quantile {q} {band}"
+                )
+                for q in (0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95)
+            },
             "mean_clean_metric": _finite(
                 float(metric_clean.index_select(0, index).mean()), f"clean metric {band}"
             ),

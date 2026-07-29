@@ -48,6 +48,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.transfer.io import write_json  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
+    DEFAULT_CORPUS_DRAW_SEED,
     MATCHED_PAIR,
     PANEL,
     Arm,
@@ -125,16 +126,26 @@ def cohort_record(cohort: Cohort) -> dict[str, Any]:
     A repeat cohort's criterion travels with every artefact it appears in.  Two
     induction censuses differing only in whether their repeats were exact are not
     comparable without it, and a digest alone does not say which is which.
+
+    ``sampling`` travels for the same reason one step earlier.  The analysis
+    cohort's draw moved from a file-order prefix to a seeded permutation of the
+    whole corpus (EXP-R2-068), and until then this record said only that a cohort
+    existed and what it hashed to -- not which of the two produced it, which is
+    the single most expensive thing this programme has got wrong.
+    ``Cohort.sampling`` answers ``"unrecorded"`` with its own hazard text rather
+    than guessing, so a hand-built cohort is visibly not a declared draw.
     """
 
     record: dict[str, Any] = {
         "name": cohort.name,
         "kind": cohort.kind,
         "digest": cohort.digest,
+        "provenance_digest": cohort.provenance_digest,
         "n_records": len(cohort),
         "min_symbols": cohort.min_symbols,
         "max_symbols": cohort.max_symbols,
         "source": cohort.metadata.get("source"),
+        "sampling": cohort.sampling,
     }
     for key in (
         "criterion",
@@ -227,9 +238,25 @@ def build_cohorts(modality: str, args: argparse.Namespace) -> dict[str, Cohort]:
 
     criteria = repeat_criteria(modality, args)
     cohorts: dict[str, Cohort] = {}
+    # The repeat cohorts below already draw under a seed (they are censuses over
+    # the whole corpus for records meeting a criterion). The analysis cohort did
+    # not, and it is the one that fits the unigram every synthetic probe is built
+    # from and supplies the patching cases -- so a family-grouped head-of-file
+    # block reached the probes themselves.
+    draw_seed = args.cohort_draw_seed or None
+    # Only the induction section reads the repeat cohorts, and building them is a
+    # multi-process scan of the whole corpus for internal repeats. A patching-only
+    # run paid for that scan and discarded it, which is most of the wall clock of
+    # the run plan item B6 needs.
+    want_repeats = "induction" in args.sections
     if modality == "text":
-        cohorts["analysis"] = text_cohort(args.cohort_size, min_chars=args.text_min_chars)
-        for label, criterion in criteria.items():
+        cohorts["analysis"] = text_cohort(
+            args.cohort_size,
+            min_chars=args.text_min_chars,
+            skip=args.cohort_skip,
+            seed=draw_seed,
+        )
+        for label, criterion in criteria.items() if want_repeats else ():
             cohorts[f"repeat_{label}"] = text_repeat_cohort(
                 repeat_cohort_size(label, args),
                 max_chars=args.text_repeat_chars,
@@ -237,6 +264,7 @@ def build_cohorts(modality: str, args: argparse.Namespace) -> dict[str, Cohort]:
                 scan_documents=args.text_repeat_scan,
                 workers=args.repeat_scan_workers,
                 name=f"openwebtext_repeat_{label}",
+                seed=draw_seed,
             )
         return cohorts
     if modality == "protein":
@@ -246,8 +274,10 @@ def build_cohorts(modality: str, args: argparse.Namespace) -> dict[str, Cohort]:
             args.protein_max_len,
             with_ec=True,
             name="swissprot_ec_long",
+            skip=args.cohort_skip,
+            seed=draw_seed,
         )
-        for label, criterion in criteria.items():
+        for label, criterion in criteria.items() if want_repeats else ():
             cohorts[f"repeat_{label}"] = protein_repeat_cohort(
                 repeat_cohort_size(label, args),
                 min_len=args.repeat_min_len,
@@ -255,6 +285,7 @@ def build_cohorts(modality: str, args: argparse.Namespace) -> dict[str, Cohort]:
                 criterion=criterion,
                 workers=args.repeat_scan_workers,
                 name=f"swissprot_repeat_{label}",
+                seed=draw_seed,
             )
         return cohorts
     raise ValueError(f"unsupported modality {modality!r}")
@@ -431,7 +462,12 @@ def run_patching(
         cases_per_band=args.patch_cases_per_band,
         seed=args.seed + 1,
     )
-    result = activation_patching(arm, cases, minimum_effect=args.patch_minimum_effect)
+    result = activation_patching(
+        arm,
+        cases,
+        minimum_effect=args.patch_minimum_effect,
+        batch_size=args.patch_batch_size,
+    )
     result["summary"] = summarise_patching(result, arm=arm)
     return result
 
@@ -662,6 +698,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=20260728)
 
     parser.add_argument("--cohort-size", type=int, default=24)
+    parser.add_argument(
+        "--cohort-skip",
+        type=int,
+        default=0,
+        help="records to pass over before the draw starts. Under a seed this "
+        "indexes a DISJOINT window of the same permutation, so two runs at one "
+        "seed and different skips are the sampling sensitivity Appendix B rule 1 "
+        "asks for rather than two overlapping prefixes",
+    )
+    parser.add_argument(
+        "--cohort-draw-seed",
+        type=int,
+        default=DEFAULT_CORPUS_DRAW_SEED,
+        help="seed for the permutation the analysis cohort is drawn under; 0 "
+        "selects the historical file-order prefix, which is a declared choice "
+        "and not a default (transfer audit, Appendix B rule 1). At the default "
+        "--cohort-size of 24 this matters more than anywhere else in the "
+        "package: 24 head-of-file Swiss-Prot records are a single family",
+    )
     parser.add_argument("--protein-min-len", type=int, default=600)
     parser.add_argument("--protein-max-len", type=int, default=1000)
     parser.add_argument("--text-min-chars", type=int, default=3000)
@@ -704,7 +759,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--attribution-max-tokens", type=int, default=256)
 
     parser.add_argument("--patch-seq-len", type=int, default=128)
-    parser.add_argument("--patch-cases-per-band", type=int, default=32)
+    parser.add_argument(
+        "--patch-cases-per-band",
+        type=int,
+        default=32,
+        help="cases drawn per distance band. The default is a validation size: "
+        "at 32 the 33-64 band yielded 2-16 *eligible* cases across the panel, "
+        "which is what plan item B6 raises. Eligibility rates differ by an order "
+        "of magnitude across arms (ZymCTRL 0.06, ProGen2-medium 0.50), so a "
+        "production run must size this against the weakest arm",
+    )
+    parser.add_argument(
+        "--patch-batch-size",
+        type=int,
+        default=64,
+        help="cases per forward pass. The read-out needs one position but the "
+        "model materialises the full [cases, width, vocab] logit tensor, so this "
+        "and not the model is what bounds --patch-cases-per-band",
+    )
     parser.add_argument("--patch-minimum-effect", type=float, default=0.25)
 
     args = parser.parse_args()
@@ -736,7 +808,11 @@ def main() -> None:
     modalities = {PANEL[name].modality for name in args.arms}
     cohorts = {modality: build_cohorts(modality, args) for modality in sorted(modalities)}
     for modality, built in sorted(cohorts.items()):
-        for label in REPEAT_PROBES:
+        # Only present when the induction section was requested; build_cohorts
+        # skips the corpus-wide repeat scan otherwise. Keyed off what was built
+        # rather than off the section list a second time, so the two cannot
+        # disagree about whether a scan happened.
+        for label in [name for name in REPEAT_PROBES if f"repeat_{name}" in built]:
             census = built[f"repeat_{label}"].metadata["census"]
             print(
                 f"[cohort] {modality} {label}: {census['n_matching']} matching of "

@@ -74,6 +74,7 @@ if _STAGE_DIR not in sys.path:
 from panel_contract import CAMPAIGN_PANEL, arm_can_run, stage_contract_record  # noqa: E402
 from src.transfer.io import sha256_file, write_json  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
+    DEFAULT_CORPUS_DRAW_SEED,
     PANEL,
     Arm,
     Cohort,
@@ -149,9 +150,13 @@ def cohort_pool(arm_names: list[str], args: argparse.Namespace) -> dict[str, Coh
         raise ValueError(f"unknown protein cohort source {args.protein_source!r}")
     modalities = {PANEL[name].modality for name in arm_names}
     pools: dict[str, Cohort] = {}
+    seed = args.cohort_draw_seed or None
     if "text" in modalities:
         pools["text"] = text_cohort(
-            args.pool_size, min_chars=args.text_min_chars, name=TEXT_COHORT_SOURCE
+            args.pool_size,
+            min_chars=args.text_min_chars,
+            name=TEXT_COHORT_SOURCE,
+            seed=seed,
         )
     if "protein" in modalities:
         pools["protein"] = protein_cohort(
@@ -160,6 +165,7 @@ def cohort_pool(arm_names: list[str], args: argparse.Namespace) -> dict[str, Coh
             args.res_max,
             name=args.protein_source,
             with_ec=args.protein_source == "ec_labelled_swissprot",
+            seed=seed,
         )
     return pools
 
@@ -662,6 +668,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dtype", default="float32", choices=["float32", "bfloat16", "float16"])
     parser.add_argument("--n-seq", type=int, default=128)
     parser.add_argument("--pool-size", type=int, default=4000)
+    parser.add_argument(
+        "--cohort-draw-seed",
+        type=int,
+        default=DEFAULT_CORPUS_DRAW_SEED,
+        help="seed for the permutation the corpus pool is drawn under, distinct "
+        "from --cohort-seed, which subsamples that pool; 0 selects the historical "
+        "file-order prefix (transfer audit, Appendix B rule 1)",
+    )
     parser.add_argument("--max-len", type=int, default=192)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--cohort-seed", type=int, default=20260728)

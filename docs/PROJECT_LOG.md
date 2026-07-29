@@ -896,3 +896,14 @@ Immediate operational consequence: add a loss-recovered splice metric to the P0-
 - Moved frozen provenance and retired live configuration from the repository to `/Data2/lzp/bio_archive` using copy-then-verify semantics. The external `MIGRATION_SHA256SUMS` verifies 2,928 regular files; `docs/ARCHIVE.md` records the boundary.
 - Preserved final checkpoint hashes and before/after remote inventories under `evidence/checkpoint_receipts_20260729/`, then removed intermediate checkpoints and optimizer-only state. The idle four-GPU pod and temporary zero-GPU transfer pod were released; the cluster reported four schedulable H200s afterward.
 - Unified active runtime resource variables under `TRANSFER_*`, moved new remote outputs under the InterpretabilityTransfer GPFS root, and retained historical identifiers only in immutable records and artifact schemas.
+
+---
+
+## 2026-07-30 — Repository-wide audit and repair; two plan items executed
+
+- Audited the live code in four regions under the Development Principles: the H200 controller and worker, `src/transfer`, `scripts/transfer`, and `scripts/transfer_gap`. Findings, corrections and the two overstated claims that were rejected rather than acted on are in `docs/EXPERIMENT_LOG.md` under EXP-R2-068; engineering state is in `docs/ENGINEERING_AUDIT.md`; scientific consequences are in `docs/INTERPRETABILITY_TRANSFER_AUDIT.md`.
+- Found that the remote-execution layer does not propagate a remote exit status: both access helpers return 0 whatever the remote command exits with. The campaign verdict, the remote code-freeze verification and the invocation-manifest push all depended on it, and no invocation manifest had ever reached GPFS. Repaired inside the repository — the worker states its status on its last line and every remote predicate answers on stdout — and verified against the live cluster in both directions. Catalogued as limitation L20; a second host-portability defect in the generated panel contract is L21.
+- Plumbed one declared corpus draw seed through every campaign stage, replacing head-of-file prefixes; measured the exposure at 342 versus 398 distinct sequences per 400-record draw on the qualifying band.
+- Ran plan item B3 (explanation channel, CPU, two seeds) and plan item B6 (non-local propagation, ~1.5 H200 GPU-h, four per-arm campaigns), and ran TG-01 for the first time. Artefacts under `results/transfer_20260730/` and `results/transfer_gap_20260729_corrected/tg01/`.
+- Test suite grew from 205 tests plus 9 subtests to 303 plus 34. Ruff, both generated contracts, and shell syntax checks pass.
+- `EXP-R2-067` is referenced by comments in committed code but has no log entry; that work is unlogged and this session took `EXP-R2-068` rather than collide with it.

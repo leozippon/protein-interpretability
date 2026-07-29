@@ -31,6 +31,14 @@ positions would be a statement about FASTA formatting, not about protein
 representation. Every cross-entropy is therefore reported twice: over all scored
 positions, and over the positions whose target token carries at least one
 residue.
+
+**A fourth correction, against this stage's own corrected run.** The spectrum
+this stage published under the names ``participation_ratio``, ``variance_top1``
+and ``rank_for_90pct_variance`` was measured over *all* positions, and the audit
+retracted the headline comparison built on it. Those names now carry the
+interior, alphabet-bearing spectrum; the all-position numbers are suffixed
+``_all_positions`` and carry their hazard text. See :data:`PRIMARY_SUBSET` for
+the sizes involved -- they are not a rounding.
 """
 
 from __future__ import annotations
@@ -53,6 +61,7 @@ from tg_common import (
     tokenize_batch,
     write_json,
 )
+from tg_contract import stage_contract_record
 
 RANKS = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
 
@@ -125,18 +134,139 @@ def collect(arm, texts: list[str], layer: int, max_len: int, batch: int,
     return out, positions, tokens
 
 
+def covariance_of(acts: torch.Tensor) -> torch.Tensor:
+    """Centred covariance of one activation set."""
+
+    centred = acts - acts.mean(0)
+    return (centred.T @ centred) / centred.shape[0]
+
+
 def spectrum_of(acts: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Descending eigenvalues and eigenvectors of the centred covariance."""
 
-    centred = acts - acts.mean(0)
-    cov = (centred.T @ centred) / centred.shape[0]
-    values, vectors = torch.linalg.eigh(cov.double())
+    values, vectors = torch.linalg.eigh(covariance_of(acts).double())
     order = torch.argsort(values, descending=True)
     return values[order].clamp(min=0), vectors[:, order]
 
 
 def participation_ratio(values: torch.Tensor) -> float:
     return float((values.sum() ** 2 / (values**2).sum()).item())
+
+
+def variance_along(basis: torch.Tensor, cov: torch.Tensor) -> torch.Tensor:
+    """Variance of a subset along each column of an externally chosen basis.
+
+    ``v.T @ C_subset @ v`` for every column ``v``, which is the variance the
+    rank-r truncation of ``basis`` actually removes *from that subset*. The
+    sweep's basis is the all-position one, because the splice is applied at
+    every position; the variance the sweep reports against loss recovered must
+    nonetheless be the variance of the representation, not of the separators.
+    Those are two different questions and this function is what keeps them from
+    being answered with one number.
+    """
+
+    return ((cov.double() @ basis.double()) * basis.double()).sum(0)
+
+
+#: The positions a residual-stream spectrum is reported on, and the *only* ones a
+#: number named ``participation_ratio`` or ``variance_top1`` in these artefacts
+#: refers to. Appendix B rule 11, earned here.
+#:
+#: The all-position spectrum was the primary, plainly-named statistic of this
+#: stage and of TG-09, and the audit retracted the comparison built on it. At
+#: relative depth 0.5 over 200k activations it reads PC1 0.809 / participation
+#: ratio 1.53 for GPT-2-large against 0.034 / 253.4 on interior alphabet-bearing
+#: positions; 0.971 / 1.06 for ProtGPT2 against 0.439 / 4.86; 0.182 / 26.99 for
+#: ZymCTRL against 0.008 / 577.3. ProtGPT2's headline
+#: ``rank_for_90pct_variance = 1`` was the FASTA newline direction. The interior
+#: values were present in the artefact all along, nested under a subset key,
+#: while the retracted quantity kept the name a reader or a downstream script
+#: picks up by default. Renaming is the fix: the numbers were never the problem.
+PRIMARY_SUBSET = "interior_symbol_positions"
+
+#: Attached to every all-position spectrum field so the hazard travels with the
+#: number instead of living in this comment.
+ALL_POSITION_SPECTRUM_HAZARD = (
+    "measured over every scored position, including position 0 and every "
+    "separator or conditioning token. Three of four TG arms receive a leading "
+    "control token and one puts a FASTA newline into roughly one position in "
+    "seventeen; both carry anomalously large residual norms, so this is a "
+    "statistic about the attention sink and the format, not about the "
+    "representation. Reported for traceability against the retracted 2026-07-24 "
+    "table and for the sweep, whose splice is applied at every position. Read "
+    f"the {PRIMARY_SUBSET!r} fields instead (Appendix B rule 11)"
+)
+
+#: Below this an eigendecomposition of a d_model-dimensional covariance is not
+#: estimated, it is interpolated.
+MIN_SUBSET_ACTIVATIONS = 1000
+
+
+def position_subsets(arm, positions: torch.Tensor, tokens: torch.Tensor) -> dict:
+    """The four position sets a spectrum can legitimately be read on.
+
+    Shared with TG-09 rather than restated there: TG-09 called ``collect`` and
+    discarded the positions and tokens outright (``acts, _, _``), so it had no
+    subset diagnostic at any depth and its ``alignment_gap`` was built entirely
+    on the all-position spectrum this stage retracted.
+    """
+
+    interior = positions > 0
+    symbol = symbol_position_mask(arm, tokens)
+    return {
+        "all_positions": torch.ones_like(interior),
+        "interior_positions": interior,
+        "symbol_positions": symbol,
+        "interior_symbol_positions": interior & symbol,
+    }
+
+
+def spectrum_fields(spectra: dict, share_all, evals: torch.Tensor) -> dict:
+    """The named spectrum statistics an artefact of this family publishes.
+
+    One declaration, used by TG-07's payload and TG-09's per-depth rows, because
+    the defect this closes was a *naming* defect and a naming rule restated in
+    two files is a naming rule that will diverge in one of them. The unqualified
+    names carry :data:`PRIMARY_SUBSET`; the retracted all-position quantities are
+    suffixed and travel with their hazard.
+    """
+
+    primary = spectra[PRIMARY_SUBSET]
+    return {
+        "spectrum_positions": PRIMARY_SUBSET,
+        "n_spectrum_activations": primary["n_activations"],
+        "participation_ratio": primary["participation_ratio"],
+        "variance_top1": primary["variance_top1"],
+        "variance_top10": primary["variance_top10"],
+        "variance_top64": primary["variance_top64"],
+        "participation_ratio_all_positions": participation_ratio(evals),
+        "variance_top1_all_positions": float(share_all[0]),
+        "variance_top10_all_positions": float(share_all[:10].sum()),
+        "variance_top64_all_positions": float(share_all[:64].sum()),
+        "all_position_spectrum_hazard": ALL_POSITION_SPECTRUM_HAZARD,
+        "spectrum_by_position_subset": spectra,
+    }
+
+
+def subset_spectra(arm, acts: torch.Tensor, subsets: dict) -> dict:
+    """One spectrum per position subset, each with the count it was measured on."""
+
+    spectra = {}
+    for label, selection in subsets.items():
+        if int(selection.sum()) < MIN_SUBSET_ACTIVATIONS:
+            raise RuntimeError(
+                f"{arm.name}: subset {label!r} has {int(selection.sum())} activations"
+            )
+        values, _ = spectrum_of(acts[selection])
+        share = (values / values.sum()).numpy()
+        spectra[label] = {
+            "n_activations": int(selection.sum()),
+            "variance_top1": float(share[0]),
+            "variance_top10": float(share[:10].sum()),
+            "variance_top64": float(share[:64].sum()),
+            "participation_ratio": participation_ratio(values),
+        }
+    return spectra
 
 
 @torch.no_grad()
@@ -209,44 +339,25 @@ def main() -> None:
 
     mean = acts.mean(0)
     evals, evecs = spectrum_of(acts)
-    spectrum = (evals / evals.sum()).numpy()
     mean_d, evecs_d = mean.to(arm.device), evecs.float().to(arm.device)
 
-    # The special-position diagnostic, and the reason it is not optional.
-    #
-    # "Variance is concentrated in one direction" is the premise of the whole
-    # variance-versus-behaviour comparison, and on this panel it is false for
-    # both of the arms whose contrast carried it. Measured at relative depth 0.5,
-    # 200k activations: GPT-2-large reads PC1 = 0.809 over all positions and
-    # PC1 = 0.034 once position 0 is dropped, a participation ratio moving 1.53
-    # -> 251.9. ProtGPT2 reads PC1 = 0.971 over all positions and PC1 = 0.439
-    # once the FASTA newlines are dropped, participation ratio 1.06 -> 4.86.
-    # Neither headline number described the representation; one was an
-    # attention-sink token and the other a separator. The subsets are reported
-    # together so that a reader can see which positions a spectrum came from.
-    interior = positions > 0
-    symbol = symbol_position_mask(arm, tokens)
-    subsets = {
-        "all_positions": torch.ones_like(interior),
-        "interior_positions": interior,
-        "symbol_positions": symbol,
-        "interior_symbol_positions": interior & symbol,
-    }
-    spectra = {}
-    for label, selection in subsets.items():
-        if int(selection.sum()) < 1000:
-            raise RuntimeError(
-                f"{arm.name}: subset {label!r} has {int(selection.sum())} activations"
-            )
-        values, _ = spectrum_of(acts[selection])
-        share = (values / values.sum()).numpy()
-        spectra[label] = {
-            "n_activations": int(selection.sum()),
-            "variance_top1": float(share[0]),
-            "variance_top10": float(share[:10].sum()),
-            "variance_top64": float(share[:64].sum()),
-            "participation_ratio": participation_ratio(values),
-        }
+    # The position-subset spectra, and the reason the primary is not the
+    # all-position one. See PRIMARY_SUBSET.
+    subsets = position_subsets(arm, positions, tokens)
+    spectra = subset_spectra(arm, acts, subsets)
+
+    # Two cumulative variance curves against the *same* rank-r basis, because the
+    # sweep splices at every position and so must project onto the all-position
+    # eigenvectors, while the quantity worth comparing against loss recovered is
+    # how much of the representation that projection keeps. `share` is therefore
+    # the interior alphabet-bearing variance captured by the spliced basis, and
+    # `share_all` is the all-position variance it captures -- the retracted
+    # quantity, kept under its own name so the 2026-07-24 rows remain traceable.
+    share_all = (evals / evals.sum()).numpy()
+    primary_along = variance_along(evecs, covariance_of(acts[subsets[PRIMARY_SUBSET]]))
+    share = (primary_along / primary_along.sum()).numpy()
+
+    interior, symbol = subsets["interior_positions"], subsets["symbol_positions"]
     norms = acts.norm(dim=1)
     first_position_norm_ratio = float(norms[~interior].mean() / norms[interior].mean())
     separator_norm_ratio = (
@@ -285,7 +396,8 @@ def main() -> None:
         scored = splice_ce(arm, eval_batches, layer, project)
         row = dict(
             rank=rank,
-            variance_explained=float(spectrum[:rank].sum()),
+            variance_explained=float(share[:rank].sum()),
+            variance_explained_all_positions=float(share_all[:rank].sum()),
             ce_nats=scored["all"],
             ce_nats_symbol_positions=scored["symbol"],
             **loss_recovered(clean["all"], ablated["all"], scored["all"]),
@@ -296,20 +408,21 @@ def main() -> None:
         rows.append(row)
         recovered = row["loss_recovered"]
         print(
-            f"  r={rank:4d}  var={row['variance_explained']:.4f}  ce={scored['all']:.4f}  "
+            f"  r={rank:4d}  var={row['variance_explained']:.4f} "
+            f"(all pos {row['variance_explained_all_positions']:.4f})  "
+            f"ce={scored['all']:.4f}  "
             f"loss_recovered=" + ("refused" if recovered is None else f"{recovered:+.4f}"),
             flush=True,
         )
 
-    participation = participation_ratio(evals)
-
     def first_rank(key, target):
-        hit = [r for r in rows if r[key] is not None and r[key] >= target]
+        hit = [r for r in rows if r.get(key) is not None and r[key] >= target]
         return hit[0]["rank"] if hit else None
 
     payload = dict(
         arm=arm.name,
         modality=arm.modality,
+        contract=stage_contract_record("tg07", [arm.name]),
         layer=layer,
         n_layer=arm.n_layer,
         d_model=arm.d_model,
@@ -327,18 +440,18 @@ def main() -> None:
         symbol_position_share=symbol_share,
         n_scored_positions=clean["n_scored_all"],
         n_scored_symbol_positions=clean["n_scored_symbol"],
-        participation_ratio=participation,
-        variance_top1=float(spectrum[0]),
-        variance_top10=float(spectrum[:10].sum()),
-        variance_top64=float(spectrum[:64].sum()),
-        # Spectra by position subset, reported beside the primary rather than in
-        # place of it: the splice is applied at every position, so the
-        # all-position spectrum is the one the sweep corresponds to. It is also
-        # the one that is not a property of the representation.
-        spectrum_by_position_subset=spectra,
+        # The unqualified spectrum names are the interior, alphabet-bearing ones.
+        # They used to be the all-position ones, which is the quantity the audit
+        # retracted; the interior values existed only nested inside
+        # `spectrum_by_position_subset`, so the retracted number was still what a
+        # reader or a downstream script picked up by default.
+        **spectrum_fields(spectra, share_all, evals),
         first_position_norm_ratio=first_position_norm_ratio,
         separator_norm_ratio=separator_norm_ratio,
         rank_for_90pct_variance=first_rank("variance_explained", 0.90),
+        rank_for_90pct_variance_all_positions=first_rank(
+            "variance_explained_all_positions", 0.90
+        ),
         rank_for_90pct_loss_recovered=first_rank("loss_recovered", 0.90),
         sweep=rows,
     )
@@ -361,7 +474,9 @@ def main() -> None:
         )
     )
     print(
-        f"  rank@90%var={payload['rank_for_90pct_variance']}  "
+        f"  rank@90%var={payload['rank_for_90pct_variance']} ({PRIMARY_SUBSET})  "
+        f"rank@90%var(all positions)="
+        f"{payload['rank_for_90pct_variance_all_positions']}  "
         f"rank@90%loss={payload['rank_for_90pct_loss_recovered']}"
     )
 

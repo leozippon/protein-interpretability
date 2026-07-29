@@ -567,9 +567,24 @@ class TransferGapCohortLayerRemoved(unittest.TestCase):
     """`tg_common` no longer implements corpus eligibility or its own permutation."""
 
     def test_no_second_eligibility_predicate_survives(self):
+        # Matched as definitions rather than as bare substrings. `_permutation`
+        # as a substring also matches the string literal
+        # "seeded_permutation_of_the_drawn_set" that the record-order provenance
+        # writes, so the loose form failed on a change that introduced no second
+        # selection layer at all -- a test that fires on the wrong thing is worse
+        # than no test, because the next reader loosens it instead of reading it.
         source = (REPO_ROOT / "scripts" / "transfer_gap" / "tg_common.py").read_text(
             encoding="utf-8"
         )
+        tree = ast.parse(source)
+        defined = {
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+        }
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                defined |= {t.id for t in node.targets if isinstance(t, ast.Name)}
         for symbol in (
             "_ELIGIBLE_CACHE",
             "_eligible_swissprot",
@@ -577,7 +592,7 @@ class TransferGapCohortLayerRemoved(unittest.TestCase):
             "_eligible_text",
             "_permutation",
         ):
-            self.assertNotIn(symbol, source, f"{symbol} is a second selection layer")
+            self.assertNotIn(symbol, defined, f"{symbol} is a second selection layer")
 
     def test_cohort_for_source_calls_the_shared_constructors(self):
         source = (REPO_ROOT / "scripts" / "transfer_gap" / "tg_common.py").read_text(
@@ -629,12 +644,26 @@ class ExplanationChannelSelection(unittest.TestCase):
         self.assertIn("alphafold_model_sample(", source)
         self.assertNotIn("alphafold_models(ALPHAFOLD_ROOT, limit=", source)
 
-    def test_the_remaining_file_order_channels_say_so(self):
-        # The Pfam and text channels are still file-order draws. That is a
-        # limitation, and an unrecorded limitation is the defect.
+    def test_no_channel_is_drawn_in_corpus_file_order(self):
+        # The Pfam and text channels were file-order draws until plan item B3.
+        # Their bits/symbol are entropies of a label channel measured over
+        # whichever records were read, so a family-grouped prefix understates
+        # them; both now draw under a seeded permutation of the whole corpus.
         source = (STAGE_DIR / "06_explanation_channel.py").read_text(encoding="utf-8")
-        self.assertNotIn("deterministic_file_order_no_stochastic_sampling", source)
-        self.assertIn("swissprot_file_order_prefix", source)
+        self.assertNotIn("swissprot_file_order_prefix", source)
+        self.assertIn("selected_positions(", source)
+        self.assertIn("seed=args.pfam_seed", source)
+        self.assertIn("seed=args.text_seed", source)
+
+    def test_the_max_units_cut_is_not_a_prefix_of_the_draw(self):
+        # A seeded draw arrives in ascending corpus order. Taking the first
+        # --max-units members that reach the window would reintroduce the
+        # file-order prefix one step later, so every channel visits its draw
+        # under a seeded permutation.
+        source = (STAGE_DIR / "06_explanation_channel.py").read_text(encoding="utf-8")
+        self.assertEqual(source.count("draw_order("), 4)
+        for anchor in ("for index in draw_order(", "def draw_order("):
+            self.assertIn(anchor, source)
 
 
 class ConvergenceControlRecordsBothCorpora(unittest.TestCase):

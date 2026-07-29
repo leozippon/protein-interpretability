@@ -68,6 +68,23 @@ CONTROLLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "${CONTROLLER_DIR}/../.." && pwd)}"
 PROJECT_ROOT="${PROJECT_ROOT:-${REPO_ROOT}}"
 
+# The prefix of the line the worker states its own exit status on. Read out of
+# the worker source rather than restated here, for the reason the panel contract
+# is generated rather than restated: two copies of one decision is the defect
+# class this directory has already paid for. Sourcing the worker is not an
+# option -- it runs a campaign -- so the declaration is extracted statically,
+# the same way panel_contract.py reads a sibling entry point's arm tuple.
+WORKER_EXIT_SENTINEL="$(
+  sed -n 's/^WORKER_EXIT_SENTINEL="\(.*\)"$/\1/p' \
+    "${CONTROLLER_DIR}/h200_worker.sh" | head -1
+)"
+if [ -z "${WORKER_EXIT_SENTINEL}" ]; then
+  echo "h200_worker.sh declares no WORKER_EXIT_SENTINEL; this controller cannot" >&2
+  echo "determine whether a campaign succeeded, because the access layer does not" >&2
+  echo "propagate the worker's exit status." >&2
+  exit 2
+fi
+
 # The campaign panel, the stage list and each stage's eligible arms, generated
 # from src/transfer/arms.py by scripts/transfer/panel_contract.py --emit. Sourced
 # rather than restated: this file and h200_worker.sh each used to carry their own
@@ -115,7 +132,7 @@ FORCE="${FORCE:-0}"
 # Per-stage scale-parameter passthrough. This is the ONLY way to reach a
 # stage script's own --n-seq/--pool-size/--seeds/etc: the worker otherwise
 # runs every script at its own built-in defaults, which are validation-scale
-# (see scripts/transfer/README.md's "Environment contract"). Each script
+# (see scripts/transfer/README.md's "Controller Environment"). Each script
 # names its scale knobs differently, so this is one raw-flag-string variable
 # per stage rather than an enumerated set of options; e.g.
 #   ARGS_PATHWAY_BUDGET="--n-seq 500 --pool-size 1000"
@@ -163,8 +180,8 @@ item, e.g. ARGS_COHORT_POWER__PROTEIN_PROGEN2_MEDIUM="--n-seq 100"),
 EXPECTED_GPU_COUNT (optional extra minimum-count assertion; empty means the
 worker trusts nvidia-smi alone), MIN_FREE_MEM_MIB (soft warning only in the
 worker), FORCE (0/1), RUN_ID (reuse an existing frozen snapshot instead of
-freezing a new one). See scripts/transfer/README.md's "Environment
-contract" for the full table.
+freezing a new one). See scripts/transfer/README.md's "Controller
+Environment" for the full table.
 
 The pod name is never written to stdout, to the controller log or to the run
 manifest; see `redact`.
@@ -558,11 +575,43 @@ check_snapshot_absence() {
   esac
 }
 
+# Answer a yes/no question on the pod ON STDOUT, never by exit status.
+#
+# The access layer does not propagate a remote exit code: `h200_pod_bash.sh "exit
+# 5"` returns 0, measured on this deployment, exactly as `h200_pod_exec.sh` does
+# (L20). So `if "${H200_POD_BASH}" "test -e X"` was always true and
+# `if ! "${H200_POD_BASH}" "sha256sum -c ..."` was never true. Two consequences,
+# both measured rather than reasoned about:
+#
+#   * verify_remote_snapshot could not fail, so the remote half of the code-freeze
+#     guarantee -- that the bytes the pod will execute are the bytes that were
+#     hashed -- was never actually checked;
+#   * push_run_manifest took its "already present and verified" branch on every
+#     run, so the invocation manifest was never pushed. Every run directory on
+#     GPFS held INVOCATIONS=0 while the controller logged that the manifest was
+#     present and verified.
+#
+# check_snapshot_absence was written the right way from the start -- it reads a
+# word from stdout and refuses anything it does not recognise -- and this is that
+# pattern factored out so the remaining call sites cannot drift back.
+pod_predicate() {
+  local question="$1" command="$2" reply
+  reply="$("${H200_POD_BASH}" "{ ${command} ; } >/dev/null 2>&1 && echo YES || echo NO")"
+  case "${reply}" in
+    YES) return 0 ;;
+    NO) return 1 ;;
+    *)
+      echo "could not evaluate '${question}' on the pod (got: ${reply})" >&2
+      exit 2
+      ;;
+  esac
+}
+
 verify_remote_snapshot() {
   local snapshot_q
   printf -v snapshot_q '%q' "${SNAPSHOT_DIR}"
-  if ! "${H200_POD_BASH}" \
-      "cd -- ${snapshot_q} && printf '%s  %s\n' '${CODE_HASH}' CODE_CONTENT_SHA256SUMS | sha256sum -c - >/dev/null && sha256sum -c -- CODE_CONTENT_SHA256SUMS >/dev/null"; then
+  if ! pod_predicate "snapshot checksums under ${SNAPSHOT_DIR}" \
+      "cd -- ${snapshot_q} && printf '%s  %s\n' '${CODE_HASH}' CODE_CONTENT_SHA256SUMS | sha256sum -c - && sha256sum -c -- CODE_CONTENT_SHA256SUMS"; then
     echo "snapshot checksum verification failed on GPFS: ${SNAPSHOT_DIR}" >&2
     exit 2
   fi
@@ -677,8 +726,9 @@ push_run_manifest() {
   printf -v snapshot_q '%q' "${SNAPSHOT_DIR}"
   printf -v destination_q '%q' "${destination}"
   "${H200_POD_BASH}" "mkdir -p -- ${snapshot_q}/INVOCATIONS"
-  if "${H200_POD_BASH}" "test -e ${destination_q}"; then
-    if ! "${H200_POD_BASH}" "printf '%s  %s\n' '${digest}' ${destination_q} | sha256sum -c - >/dev/null"; then
+  if pod_predicate "invocation manifest present" "test -e ${destination_q}"; then
+    if ! pod_predicate "invocation manifest checksum" \
+        "printf '%s  %s\n' '${digest}' ${destination_q} | sha256sum -c -"; then
       echo "existing invocation manifest failed checksum verification: ${destination}" >&2
       exit 2
     fi
@@ -687,7 +737,8 @@ push_run_manifest() {
   fi
   log "pushing append-only invocation manifest -> ${destination}"
   "${H200_GPFS_PUSH}" "${RUN_MANIFEST}" "${destination}"
-  if ! "${H200_POD_BASH}" "printf '%s  %s\n' '${digest}' ${destination_q} | sha256sum -c - >/dev/null"; then
+  if ! pod_predicate "invocation manifest checksum after transfer" \
+      "printf '%s  %s\n' '${digest}' ${destination_q} | sha256sum -c -"; then
     echo "invocation manifest failed checksum verification after transfer: ${destination}" >&2
     exit 2
   fi
@@ -695,13 +746,28 @@ push_run_manifest() {
 
 # ------------------------------------------------------------- worker call
 
+# Runs the worker and returns its exit status. The status is the only thing the
+# caller needs, but the run-id and the log path are the only things the operator
+# needs, so both must survive a failure.
+#
+# The pipeline is run as an `if` condition on purpose. `set -e` does not suspend
+# errexit for a bare pipeline inside a function, so the previous form -- pipeline
+# on its own line, `return "${PIPESTATUS[0]}"` after it -- exited the whole
+# controller AT the pipeline the moment the worker returned non-zero: the
+# `return` never ran, `status=$?` in main never ran, and the "worker failed with
+# status N (run_id=...); see logs/..." diagnostic was unreachable code. The exit
+# status still propagated, so this was never a false success -- it just deleted
+# the run-id and the log pointer at exactly the moment the operator needs them.
+# An `if` condition is exempt from errexit, and PIPESTATUS survives into the
+# branch because branch selection runs no command of its own.
 invoke_worker() {
   local force_flag=()
   [ "${FORCE}" = "1" ] && force_flag=(--force)
   mkdir -p "${CONTROLLER_LOG_DIR}"
   local controller_log="${CONTROLLER_LOG_DIR}/${RUN_ID}.log"
   log "invoking worker inside pod, run_id=${RUN_ID}; controller-side copy: ${controller_log}"
-  "${H200_POD_EXEC}" -- \
+  local worker_status=0
+  if "${H200_POD_EXEC}" -- \
     bash "${SNAPSHOT_DIR}/scripts/transfer/h200_worker.sh" \
     --run-id "${RUN_ID}" \
     --snapshot-dir "${SNAPSHOT_DIR}" \
@@ -716,11 +782,62 @@ invoke_worker() {
     "${STAGE_ARGS_FLAGS[@]}" \
     "${force_flag[@]}" \
     2>&1 | redact | tee "${controller_log}"
-  # PIPESTATUS[0] is h200_pod_exec.sh's own exit code, which is the remote
-  # worker's exit code (kubectl exec propagates it) since h200_pod_exec.sh
-  # execs kubectl directly rather than wrapping it. `redact` and `tee` are later
-  # stages of the same pipeline and do not change that index.
-  return "${PIPESTATUS[0]}"
+  then
+    worker_status=0
+  else
+    worker_status="${PIPESTATUS[0]}"
+  fi
+
+  # The access layer's exit code is not trusted, because it is not the worker's.
+  # Measured on this deployment: `h200_pod_exec.sh -- bash -c "exit 7"` returns
+  # 0. The comment this replaces asserted the opposite ("kubectl exec propagates
+  # it"), and on that assumption a worker that refused a campaign at preflight
+  # and scheduled no GPU came back to the operator as "campaign complete". Every
+  # H200 failure this controller has ever reported on was reported on that basis.
+  #
+  # The worker therefore states its own status as its last line, and this is the
+  # authority. Absence is a failure in its own right: it means the worker never
+  # reached its EXIT trap, which covers a killed process, a dropped connection
+  # and a pod exec that never started -- none of which the access layer
+  # distinguishes from success either.
+  # Matched as the last NON-EMPTY line of the log and required to be unique and
+  # numeric in 0-255, not merely present somewhere. The worker emits it from its
+  # EXIT trap, so it is structurally last; accepting it anywhere would let a
+  # stage's own output -- a Python traceback quoting the constant, a log line a
+  # future stage prints -- decide a campaign's verdict.
+  local sentinel matches
+  matches="$(grep -ac "^${WORKER_EXIT_SENTINEL}" "${controller_log}" || true)"
+  sentinel="$(grep -av '^[[:space:]]*$' "${controller_log}" | tail -1 || true)"
+  case "${sentinel}" in
+    "${WORKER_EXIT_SENTINEL}"*) ;;
+    *) sentinel="" ;;
+  esac
+  if [ -n "${sentinel}" ] && [ "${matches}" != "1" ]; then
+    echo "the worker's log carries ${matches} ${WORKER_EXIT_SENTINEL} lines (run_id=${RUN_ID});" >&2
+    echo "exactly one is expected, so which one states the campaign's status is not" >&2
+    echo "decidable. See ${controller_log}" >&2
+    return 91
+  fi
+  if [ -n "${sentinel}" ]; then
+    local reported_status="${sentinel#${WORKER_EXIT_SENTINEL}}"
+    case "${reported_status}" in
+      ''|*[!0-9]*) sentinel="" ;;
+      *) [ "${reported_status}" -le 255 ] || sentinel="" ;;
+    esac
+  fi
+  if [ -z "${sentinel}" ]; then
+    echo "worker produced no ${WORKER_EXIT_SENTINEL} line (run_id=${RUN_ID}); it did not" >&2
+    echo "reach its own exit handler, so the campaign cannot be reported as complete." >&2
+    echo "The access layer's status was ${worker_status} and is not authoritative." >&2
+    echo "See ${controller_log}" >&2
+    return 90
+  fi
+  local reported="${sentinel#${WORKER_EXIT_SENTINEL}}"
+  if [ "${reported}" != "0" ]; then
+    log "worker reported exit status ${reported} (access layer said ${worker_status})"
+    return "${reported}"
+  fi
+  return 0
 }
 
 # ----------------------------------------------------------------- main
@@ -782,6 +899,33 @@ for arm in "${ARM_LIST[@]}"; do
   esac
 done
 reject_duplicate_values ARMS "${ARM_LIST[@]}"
+
+# TEXT_ARM decides which single arm the panel verdict is anchored on: 03's
+# `recommend` is control_anchored, and evidence discipline rule 1 says a gate is
+# applied to a protein arm only after it has been shown attainable on *the* text
+# control -- which control it is, is the whole content of the rule.
+#
+# ARMS, STAGES and GPUS were each validated against the contract above and this
+# one was validated nowhere, on either side. The worst case is not a crash:
+# TEXT_ARM=gpt2 instead of gpt2-large is two valid text arms, so the campaign runs
+# to completion, every downstream number is well-formed, and the verdict is
+# anchored on a different control with nothing anywhere saying so. That is L18's
+# shape, and it is checked here -- before the freeze and the push -- because the
+# controller already sources the modality map the check needs.
+case " ${KNOWN_ARMS} " in
+  *" ${TEXT_ARM} "*) ;;
+  *)
+    echo "unknown TEXT_ARM: ${TEXT_ARM} (panel is: ${KNOWN_ARMS})" >&2
+    exit 2
+    ;;
+esac
+if [ "${TRANSFER_ARM_MODALITY[${TEXT_ARM}]}" != text ]; then
+  echo "TEXT_ARM=${TEXT_ARM} has modality ${TRANSFER_ARM_MODALITY[${TEXT_ARM}]};" >&2
+  echo "03_estimand_power.py's recommend() requires exactly one TEXT positive" >&2
+  echo "control in its arm list and raises otherwise (evidence discipline rule 1)" >&2
+  exit 2
+fi
+
 if ! [[ "${GPUS}" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
   echo "GPUS must be a comma-separated list of integers, got: ${GPUS}" >&2
   exit 2
@@ -868,8 +1012,10 @@ fi
 write_run_manifest "${SCRATCH}"
 push_run_manifest
 
-invoke_worker
-status=$?
+# `invoke_worker || status=$?`, not a bare call: errexit would otherwise end the
+# controller at the call itself and the diagnostic below would again be dead code.
+status=0
+invoke_worker || status=$?
 if [ "${status}" -ne 0 ]; then
   echo "worker failed with status ${status} (run_id=${RUN_ID}); see ${CONTROLLER_LOG_DIR}/${RUN_ID}.log" >&2
   exit "${status}"

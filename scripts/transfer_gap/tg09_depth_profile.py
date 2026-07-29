@@ -20,6 +20,15 @@ A fixed rank is not a fixed *fraction* of the residual basis: 256 of ProGen2's
 1536 dimensions is a sixth, against a fifth of GPT-2-large's 1280. The rank is
 reported alongside ``d_model`` and the depth profile is read within an arm, never
 as a cross-arm level.
+
+**A fourth correction, and it is this stage's largest.** The profile had no
+position-subset diagnostic at all: it called TG-07's ``collect`` as
+``acts, _, _``, discarding the position indices and token ids, so its variance
+curve was the all-position spectrum at every depth and ``alignment_gap`` -- the
+whole output of the stage -- was variance-explained-of-the-attention-sink minus
+loss recovered. Every depth now reports the four subset spectra TG-07 reports,
+the primary names carry the interior alphabet-bearing spectrum, and the
+all-position quantities are suffixed.
 """
 
 from __future__ import annotations
@@ -39,12 +48,19 @@ from tg_common import (
     write_json,
 )
 from tg07_variance_behaviour import (
+    ALL_POSITION_SPECTRUM_HAZARD,
+    PRIMARY_SUBSET,
     collect,
+    covariance_of,
     encode_batches,
-    participation_ratio,
+    position_subsets,
+    spectrum_fields,
     spectrum_of,
     splice_ce,
+    subset_spectra,
+    variance_along,
 )
+from tg_contract import stage_contract_record
 
 DEPTHS = [0.15, 0.33, 0.50, 0.67, 0.85]
 
@@ -78,12 +94,24 @@ def main() -> None:
     rows = []
     for frac in DEPTHS:
         layer = analysis_layer(arm.n_layer, frac)
-        acts, _, _ = collect(
+        # The positions and token ids are kept. This call used to read
+        # `acts, _, _`, discarding both, so this stage had no position-subset
+        # diagnostic at any depth and its variance curve -- and therefore every
+        # `alignment_gap` in the profile -- was the all-position spectrum TG-07
+        # retracted. On GPT-2-large that spectrum is the attention sink: PC1
+        # 0.809 against 0.034 on interior alphabet-bearing positions.
+        acts, positions, tokens = collect(
             arm, fit_texts, layer, args.max_len, args.batch, args.fit_tokens
         )
         mean = acts.mean(0)
         evals, evecs = spectrum_of(acts)
-        spectrum = (evals / evals.sum()).numpy()
+        subsets = position_subsets(arm, positions, tokens)
+        spectra = subset_spectra(arm, acts, subsets)
+        share_all = (evals / evals.sum()).numpy()
+        primary_along = variance_along(
+            evecs, covariance_of(acts[subsets[PRIMARY_SUBSET]])
+        )
+        share = (primary_along / primary_along.sum()).numpy()
         mean_d = mean.to(arm.device)
         basis = evecs[:, : args.rank].float().to(arm.device)
         del acts
@@ -102,8 +130,9 @@ def main() -> None:
         row = dict(
             depth_fraction=frac,
             layer=layer,
-            variance_explained=float(spectrum[: args.rank].sum()),
-            participation_ratio=participation_ratio(evals),
+            **spectrum_fields(spectra, share_all, evals),
+            variance_explained=float(share[: args.rank].sum()),
+            variance_explained_all_positions=float(share_all[: args.rank].sum()),
             ce_clean_nats=clean["all"],
             ce_mean_ablated_nats=ablated["all"],
             ce_projected_nats=projected["all"],
@@ -114,10 +143,19 @@ def main() -> None:
             )["loss_recovered"],
             **recovered,
         )
+        # Built on the interior alphabet-bearing variance, which is the variance
+        # of the representation. The all-position version is kept beside it
+        # because the 2026-07-24 and 2026-07-29 profiles are that quantity and a
+        # reader comparing against them needs to be able to.
         row["alignment_gap"] = (
             None
             if row["loss_recovered"] is None
             else row["variance_explained"] - row["loss_recovered"]
+        )
+        row["alignment_gap_all_positions"] = (
+            None
+            if row["loss_recovered"] is None
+            else row["variance_explained_all_positions"] - row["loss_recovered"]
         )
         rows.append(row)
         shown = (
@@ -139,7 +177,10 @@ def main() -> None:
     write_json(
         out / f"{arm.name}.json",
         dict(arm=arm.name, modality=arm.modality, rank=args.rank, seed=args.seed,
+             contract=stage_contract_record("tg09", [arm.name]),
              d_model=arm.d_model, n_layer=arm.n_layer,
+             spectrum_positions=PRIMARY_SUBSET,
+             all_position_spectrum_hazard=ALL_POSITION_SPECTRUM_HAZARD,
              fit_cohort=cohort_provenance(fit_cohort, arm),
              eval_cohort=cohort_provenance(eval_cohort, arm),
              profile=rows),

@@ -71,6 +71,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.transfer.io import write_json  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
+    DEFAULT_CORPUS_DRAW_SEED,
     MATCHED_PAIR,
     PANEL,
     Arm,
@@ -212,8 +213,11 @@ def build_cohorts(modality: str, args: argparse.Namespace) -> dict[str, Cohort]:
 
     criteria = repeat_criteria(modality, args)
     cohorts: dict[str, Cohort] = {}
+    draw_seed = args.cohort_draw_seed or None
     if modality == "text":
-        cohorts["analysis"] = text_cohort(args.cohort_size, min_chars=args.text_min_chars)
+        cohorts["analysis"] = text_cohort(
+            args.cohort_size, min_chars=args.text_min_chars, seed=draw_seed
+        )
         for label, criterion in criteria.items():
             cohorts[f"repeat_{label}"] = text_repeat_cohort(
                 args.repeat_cohort_size,
@@ -222,6 +226,7 @@ def build_cohorts(modality: str, args: argparse.Namespace) -> dict[str, Cohort]:
                 scan_documents=args.text_repeat_scan,
                 workers=args.repeat_scan_workers,
                 name=f"openwebtext_repeat_{label}",
+                seed=draw_seed,
             )
         return cohorts
     if modality == "protein":
@@ -231,6 +236,7 @@ def build_cohorts(modality: str, args: argparse.Namespace) -> dict[str, Cohort]:
             args.protein_max_len,
             with_ec=True,
             name="swissprot_ec_long",
+            seed=draw_seed,
         )
         for label, criterion in criteria.items():
             cohorts[f"repeat_{label}"] = protein_repeat_cohort(
@@ -240,6 +246,7 @@ def build_cohorts(modality: str, args: argparse.Namespace) -> dict[str, Cohort]:
                 criterion=criterion,
                 workers=args.repeat_scan_workers,
                 name=f"swissprot_repeat_{label}",
+                seed=draw_seed,
             )
         return cohorts
     raise ValueError(f"unsupported modality {modality!r}")
@@ -599,6 +606,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=20260728)
 
     parser.add_argument("--cohort-size", type=int, default=24)
+    parser.add_argument(
+        "--cohort-draw-seed",
+        type=int,
+        default=DEFAULT_CORPUS_DRAW_SEED,
+        help="seed for the permutation the analysis cohort is drawn under; 0 "
+        "selects the historical file-order prefix, which is a declared choice "
+        "and not a default (transfer audit, Appendix B rule 1)",
+    )
     parser.add_argument("--protein-min-len", type=int, default=600)
     parser.add_argument("--protein-max-len", type=int, default=1000)
     parser.add_argument("--text-min-chars", type=int, default=3000)

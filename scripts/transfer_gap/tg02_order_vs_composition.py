@@ -43,6 +43,16 @@ question the script was written to ask.
 
 The order share `I_far_order / I_far` is also guarded: on ZymCTRL `I_far` was
 0.31 nats, and a ratio against that is not a share.
+
+**A third correction, to the foreign condition itself.** The donor offset was
+uniform over the whole donor sequence while the intact far block always sits at
+`[q - 128, q - 8)`, so a foreign block could begin at index 0 -- ProtGPT2's
+end-of-text prefix and first FASTA line, or ZymCTRL's EC tag, `<sep>` and
+`<start>` -- against an intact block that contains none of that. `I_far` was
+then far-context information plus a format artefact, and it is the denominator
+of `far_order_share`. The foreign block now occupies the same absolute index
+range as the intact one, and every query is drawn far enough into its sequence
+that neither block can start inside the conditioning prompt.
 """
 
 from __future__ import annotations
@@ -65,11 +75,38 @@ from tg_common import (
     load_arm,
     write_json,
 )
+from tg_contract import stage_contract_record
+from src.transfer.arms import CONDITIONING_START, PANEL, conditioning_boundary_ids
 
 LN2 = math.log(2.0)
 
 #: Floor on ``I_far`` before ``I_far_order / I_far`` is reported as a share.
 MIN_FAR_INFORMATION_NATS = 0.5
+
+
+def conditioning_prefix_length(arm, ids: list[int]) -> int:
+    """How many leading tokens of one rendering are the conditioning prompt.
+
+    Zero for a raw rendering; one for ProtGPT2's end-of-text prefix and ProGen2's
+    N-to-C control token; for ZymCTRL, everything up to and including ``<start>``
+    -- the EC tag, the ``<sep>`` and the marker -- which is a variable number of
+    tokens because EC numbers tokenise differently.
+
+    The boundary token id comes from ``arms.conditioning_boundary_ids``, the
+    declaration that emits the markers in the first place, rather than from a
+    second pair of literals here.
+    """
+
+    start_id, _ = conditioning_boundary_ids(arm)
+    if start_id is not None:
+        if start_id not in ids:
+            raise ValueError(
+                f"{arm.name}: rendering carries no {CONDITIONING_START!r} token, so "
+                "the conditioning prompt cannot be located and a far block cannot be "
+                "kept clear of it"
+            )
+        return ids.index(start_id) + 1
+    return 0 if PANEL[arm.name].input_format == "raw" else 1
 
 
 def symbol_token_ids(arm) -> set[int]:
@@ -150,24 +187,55 @@ def main() -> None:
     if len(encoded) < 50:
         raise RuntimeError(f"{arm.name}: only {len(encoded)} usable sequences")
 
+    # How many leading tokens of each rendering are the conditioning prompt, so
+    # that no block -- intact or foreign -- can start inside one.
+    prompt = np.asarray([conditioning_prefix_length(arm, ids) for ids in encoded])
+    lengths = np.asarray([len(ids) for ids in encoded])
+    index = np.arange(len(encoded))
+
     rng = np.random.default_rng(args.seed)
     intact, shuffled_all, shuffled_symbols, foreign = [], [], [], []
     separator_tokens_in_far = 0
+    skipped_no_donor = 0
     for i, ids in enumerate(encoded):
+        # The first admissible query keeps the far block clear of the
+        # conditioning prompt: the block spans [q - ctx, q - near), so q - ctx
+        # must be at or past the end of the prompt.
+        lo = ctx + int(prompt[i])
+        if len(ids) <= lo:
+            continue
         picks = rng.choice(
-            np.arange(ctx, len(ids)), size=min(args.n_query, len(ids) - ctx), replace=False
+            np.arange(lo, len(ids)), size=min(args.n_query, len(ids) - lo), replace=False
         )
         for q in picks:
+            # The foreign far block occupies the *same absolute index range* as
+            # the intact one it replaces. The comment here has always said "same
+            # position band" while the code drew a uniform offset over the whole
+            # donor, so `off` could be 0: for ProtGPT2 that hands the model the
+            # end-of-text prefix and the first FASTA line, and for ZymCTRL the EC
+            # tag, `<sep>` and `<start>` -- a conditioning prompt priced at 1.73
+            # nats of leak (EXP-R2-034) -- in a block whose intact counterpart
+            # never contains any of it. `I_far = NLL(foreign) - NLL(intact)` was
+            # then far-context information plus a format artefact, and `I_far` is
+            # the denominator of `far_order_share`.
+            off = int(q) - ctx
+            eligible = np.flatnonzero(
+                (lengths >= off + args.far) & (prompt <= off) & (index != i)
+            )
+            if eligible.size == 0:
+                # No donor reaches this far into a sequence without either
+                # running out or starting inside its own prompt. Dropping the
+                # query is the only alternative to a mismatched block.
+                skipped_no_donor += 1
+                continue
+            other = encoded[int(rng.choice(eligible))]
+
             window = ids[q - ctx : q + 1]
             far, near, target = window[: args.far], window[args.far : ctx], window[ctx:]
             separator_tokens_in_far += sum(1 for t in far if t not in symbols)
             intact.append(far + near + target)
             shuffled_all.append([int(x) for x in rng.permutation(far)] + near + target)
             shuffled_symbols.append(shuffle_symbols_only(far, symbols, rng) + near + target)
-            # far block from a different sequence, same length, same position band
-            j = (i + 1 + int(rng.integers(len(encoded) - 1))) % len(encoded)
-            other = encoded[j]
-            off = int(rng.integers(0, max(1, len(other) - args.far)))
             foreign.append(other[off : off + args.far] + near + target)
 
     conditions = {
@@ -176,9 +244,17 @@ def main() -> None:
         "shuffled_symbols": shuffled_symbols,
         "foreign": foreign,
     }
+    if not intact:
+        raise RuntimeError(
+            f"{arm.name}: every query was dropped for want of a donor long enough to "
+            "supply a far block at the same absolute index range"
+        )
     widths = {len(row) for rows in conditions.values() for row in rows}
     if widths != {ctx + 1}:
         raise ValueError(f"ragged conditions: {sorted(widths)}")
+    counts = {name: len(rows) for name, rows in conditions.items()}
+    if len(set(counts.values())) != 1:
+        raise ValueError(f"conditions are not paired query for query: {counts}")
 
     nll = {
         name: score(arm, np.asarray(rows, dtype=np.int64), args.batch)
@@ -213,12 +289,20 @@ def main() -> None:
     payload = dict(
         arm=arm.name,
         modality=arm.modality,
+        contract=stage_contract_record("tg02", [arm.name]),
         seed=args.seed,
         n_queries=n,
         n_sequences=len(encoded),
         far_tokens=args.far,
         near_tokens=args.near,
         cohort=cohort_provenance(cohort, arm),
+        foreign_block_offset="same_absolute_index_range_as_the_intact_block",
+        conditioning_prefix_tokens={
+            "min": int(prompt.min()),
+            "median": int(np.median(prompt)),
+            "max": int(prompt.max()),
+        },
+        n_queries_dropped_for_want_of_a_donor=skipped_no_donor,
         nll_intact_nats=float(nll["intact"].mean()),
         nll_foreign_nats=float(nll["foreign"].mean()),
         far_context_information_bits=i_far / LN2,

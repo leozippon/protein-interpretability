@@ -69,7 +69,10 @@ from src.transfer.scaling import LENS_ARCHITECTURES  # noqa: E402
 #: second path to keep in step.
 SHELL_CONTRACT = Path(__file__).resolve().parent / "panel_contract.sh"
 
-SCHEMA_VERSION = "r2_transfer_panel_contract_v1"
+#: v2 adds the per-arm checkpoint path relative to the variable that relocates it
+#: (:func:`model_relative_path`), which is what lets the worker preflight a
+#: checkpoint rather than a models root.
+SCHEMA_VERSION = "r2_transfer_panel_contract_v2"
 
 
 # --------------------------------------------------------------- campaign panel
@@ -652,19 +655,91 @@ def _vocab_regime(arm: str) -> str:
 #: Re-pointing any of the three environment variables moves the constant and the
 #: arm's path together, so the mapping this produces on the controller host is the
 #: mapping the pod re-derives under ``--verify``.
+MODEL_PATH_VARIABLES = frozenset(
+    {"TRANSFER_TEXT_MODEL_DIR", "TRANSFER_MODEL_BASE_DIR", "TRANSFER_TEXT_MODEL_BASE_DIR"}
+)
+
+
 def model_variable(arm: str) -> str:
-    path = PANEL[arm].path
-    if path == TEXT_MODEL_ROOT:
-        return "TRANSFER_TEXT_MODEL_DIR"
-    if path.parent == MODEL_ROOT:
-        return "TRANSFER_MODEL_BASE_DIR"
-    if path.parent == TEXT_MODEL_BASE:
-        return "TRANSFER_TEXT_MODEL_BASE_DIR"
-    raise AssertionError(
-        f"{arm}: ArmSpec.path {path} is built from none of TRANSFER_TEXT_MODEL_DIR, "
-        "TRANSFER_MODEL_BASE_DIR or TRANSFER_TEXT_MODEL_BASE_DIR, so no environment variable "
-        "relocates it and the worker cannot preflight it"
-    )
+    """The declared variable, read from the panel rather than inferred from paths.
+
+    This used to compare the resolved ``ArmSpec.path`` against the three
+    constants, and claimed to be host-invariant on the grounds that re-pointing a
+    variable moves the constant and the arm's path together. That reasoning holds
+    only while the three constants resolve to *distinct* directories. They do not
+    on the H200 pod: every checkpoint lives in one GPFS directory, so
+    ``h200_env.sh`` sets ``TRANSFER_TEXT_MODEL_BASE_DIR="${TRANSFER_MODEL_BASE_DIR}"``,
+    the ``path.parent == MODEL_ROOT`` branch matched first, and six text arms
+    classified as protein-root arms. The rendered contract therefore disagreed
+    with the live panel *inside the pod and nowhere else*, which is why the
+    worker's own re-derivation refused the campaign before any GPU was scheduled.
+
+    The variable is now declared beside the path it builds, so an alias cannot
+    change the answer.
+    """
+
+    variable = PANEL[arm].path_variable
+    if variable not in MODEL_PATH_VARIABLES:
+        raise AssertionError(
+            f"{arm}: declares path_variable {variable!r}, which is not one of "
+            f"{sorted(MODEL_PATH_VARIABLES)}, so no environment variable relocates "
+            "it and the worker cannot preflight it"
+        )
+    return variable
+
+
+def _check_declared_paths_match_their_variables() -> None:
+    """The declaration and the construction must agree where they can be compared.
+
+    A declared variable that no longer matches how the path is built would be a
+    silent lie, so it is checked -- but only when the constants are distinct,
+    because when two of them alias there is nothing to check and the declaration
+    is the only thing that carries the answer. That is precisely the situation
+    this field exists for.
+    """
+
+    roots = {
+        "TRANSFER_TEXT_MODEL_DIR": TEXT_MODEL_ROOT,
+        "TRANSFER_MODEL_BASE_DIR": MODEL_ROOT,
+        "TRANSFER_TEXT_MODEL_BASE_DIR": TEXT_MODEL_BASE,
+    }
+    if len({str(value) for value in roots.values()}) != len(roots):
+        return
+    for arm, spec in PANEL.items():
+        variable = spec.path_variable
+        expected = roots[variable]
+        built = spec.path if variable == "TRANSFER_TEXT_MODEL_DIR" else spec.path.parent
+        if built != expected:
+            raise AssertionError(
+                f"{arm}: declares path_variable {variable!r} but its path {spec.path} "
+                f"is not built from {expected}"
+            )
+
+
+_check_declared_paths_match_their_variables()
+
+
+#: The arm's checkpoint path *relative to* :func:`model_variable`'s answer: ``"."``
+#: when the arm is declared as that variable itself, and the checkpoint directory's
+#: own name otherwise.
+#:
+#: :func:`model_variable` alone is the wrong granularity for a preflight. Six of the
+#: seven text arms resolve ``TRANSFER_TEXT_MODEL_BASE_DIR``, which is the models
+#: *root*: it exists as soon as any text checkpoint is staged, so an arm whose own
+#: checkpoint was absent passed the worker's data check and raised inside
+#: ``load_arm`` instead -- and ``cohort_power`` scores all seven text arms in one
+#: process, so that lost the six arms that were fine along with the one that was
+#: not. Checking ``${!variable}/<relative>`` turns it back into a logged skip.
+#:
+#: Derived from ``ArmSpec.path``, never a restated leaf name, and classified through
+#: :func:`model_variable` so there is exactly one place that decides which constant
+#: an arm's path is built from. Re-pointing any of the three environment variables
+#: moves the constant and the arm's path together, so this is as host-independent as
+#: the variable mapping it accompanies.
+def model_relative_path(arm: str) -> str:
+    if model_variable(arm) == "TRANSFER_TEXT_MODEL_DIR":
+        return "."
+    return PANEL[arm].path.name
 
 
 #: Corpus variables a cohort covering this arm needs, from the arm's declared
@@ -691,6 +766,7 @@ def corpus_variables(arm: str) -> tuple[str, ...]:
 def _check_data_locations() -> None:
     for arm in CAMPAIGN_PANEL:
         model_variable(arm)
+        model_relative_path(arm)
         corpus_variables(arm)
 
 
@@ -743,6 +819,7 @@ def contract_payload() -> dict[str, Any]:
             arm: {
                 "modality": PANEL[arm].modality,
                 "model_variable": model_variable(arm),
+                "model_relative_path": model_relative_path(arm),
                 "corpus_variables": list(corpus_variables(arm)),
             }
             for arm in CAMPAIGN_PANEL
@@ -794,6 +871,7 @@ def render_shell() -> str:
         "declare -A TRANSFER_STAGE_REFUSAL=()",
         "declare -A TRANSFER_ARM_MODALITY=()",
         "declare -A TRANSFER_ARM_MODEL_VAR=()",
+        "declare -A TRANSFER_ARM_MODEL_REL=()",
         "declare -A TRANSFER_ARM_CORPUS_VARS=()",
         "declare -A TRANSFER_COHORT_ITEM_ARMS=()",
         "declare -A TRANSFER_COHORT_ITEM_ARGS=()",
@@ -804,6 +882,7 @@ def render_shell() -> str:
         key = _quote(arm)
         lines.append(f"TRANSFER_ARM_MODALITY[{key}]={_quote(record['modality'])}")
         lines.append(f"TRANSFER_ARM_MODEL_VAR[{key}]={_quote(record['model_variable'])}")
+        lines.append(f"TRANSFER_ARM_MODEL_REL[{key}]={_quote(record['model_relative_path'])}")
         lines.append(
             f"TRANSFER_ARM_CORPUS_VARS[{key}]={_quote(' '.join(record['corpus_variables']))}"
         )

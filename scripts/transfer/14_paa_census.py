@@ -38,6 +38,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.transfer.io import write_json  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
+    DEFAULT_CORPUS_DRAW_SEED,
     PANEL,
     REPO,
     Cohort,
@@ -87,17 +88,22 @@ def gate0(args: argparse.Namespace) -> dict[str, Any]:
     """Context-derived information on each arm's native cohort."""
 
     rows: list[dict[str, Any]] = []
+    draw_seed = args.cohort_draw_seed or None
     for name in args.gate0_arms:
         spec = PANEL[name]
         if spec.modality == "text":
             cohort = text_cohort(
-                args.gate0_sequences, min_chars=args.text_min_chars, skip=args.cohort_skip
+                args.gate0_sequences,
+                min_chars=args.text_min_chars,
+                skip=args.cohort_skip,
+                seed=draw_seed,
             )
             reference = text_cohort(
                 args.reference_sequences,
                 min_chars=args.text_min_chars,
                 skip=args.cohort_skip + args.gate0_sequences,
                 name="openwebtext_reference",
+                seed=draw_seed,
             )
             max_len = args.text_max_len
         else:
@@ -113,6 +119,7 @@ def gate0(args: argparse.Namespace) -> dict[str, Any]:
                 args.protein_max_len,
                 skip=args.cohort_skip,
                 with_ec=with_ec,
+                seed=draw_seed,
             )
             reference = protein_cohort(
                 args.reference_sequences,
@@ -121,6 +128,7 @@ def gate0(args: argparse.Namespace) -> dict[str, Any]:
                 skip=args.cohort_skip + args.gate0_sequences,
                 name="swissprot_reference",
                 with_ec=with_ec,
+                seed=draw_seed,
             )
             max_len = args.protein_max_len + 32
         reference, overlap = held_out_cohort(reference, cohort)
@@ -173,15 +181,20 @@ def gate0(args: argparse.Namespace) -> dict[str, Any]:
 
 def build_cohorts(args: argparse.Namespace, name: str) -> tuple[Cohort, Cohort]:
     spec = PANEL[name]
+    draw_seed = args.cohort_draw_seed or None
     if spec.modality == "text":
         cohort = text_cohort(
-            args.census_sequences * 3, min_chars=args.census_text_min_chars, name="paa_text"
+            args.census_sequences * 3,
+            min_chars=args.census_text_min_chars,
+            name="paa_text",
+            seed=draw_seed,
         )
         reference = text_cohort(
             args.reference_sequences,
             min_chars=args.census_text_min_chars,
             skip=args.census_sequences * 3,
             name="paa_text_reference",
+            seed=draw_seed,
         )
     else:
         with_ec = spec.input_format == "ec_conditioned"
@@ -191,6 +204,7 @@ def build_cohorts(args: argparse.Namespace, name: str) -> tuple[Cohort, Cohort]:
             args.protein_max_len,
             name="paa_protein",
             with_ec=with_ec,
+            seed=draw_seed,
         )
         reference = protein_cohort(
             args.reference_sequences,
@@ -199,6 +213,7 @@ def build_cohorts(args: argparse.Namespace, name: str) -> tuple[Cohort, Cohort]:
             skip=args.census_sequences * 2,
             name="paa_protein_reference",
             with_ec=with_ec,
+            seed=draw_seed,
         )
     reference, _ = held_out_cohort(reference, cohort)
     return cohort, reference
@@ -918,6 +933,16 @@ def main() -> None:
     parser.add_argument("--text-max-len", type=int, default=512)
     parser.add_argument("--protein-source", choices=("plain", "ec"), default="plain")
     parser.add_argument("--gate0-label", default="gate0")
+    parser.add_argument(
+        "--cohort-draw-seed",
+        type=int,
+        default=DEFAULT_CORPUS_DRAW_SEED,
+        help="seed for the permutation every cohort in this gate is drawn under; "
+        "0 selects the historical file-order prefix, which is a declared choice "
+        "and not a default (transfer audit, Appendix B rule 1). Under a seed "
+        "--cohort-skip indexes a disjoint window of the same permutation rather "
+        "than a later prefix of the same file",
+    )
     parser.add_argument(
         "--cohort-skip",
         type=int,

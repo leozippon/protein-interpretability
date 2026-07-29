@@ -61,6 +61,19 @@ def _atomic_write(path: Path, payload: bytes) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         temporary.replace(destination)
+        # The rename is the atomic step, and it is a change to the *directory*.
+        # fsync on the file commits its contents; nothing commits the entry that
+        # points at them, so a host that loses power between the two can come
+        # back with a directory that still names the temporary, or names
+        # neither. The "Atomic" claim in this module's headline is about crash
+        # behaviour and was only two thirds implemented. Costs one syscall per
+        # artefact, against campaigns that run for days on a cluster this
+        # programme does not administer.
+        directory = os.open(destination.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
     finally:
         if temporary.exists():
             temporary.unlink()

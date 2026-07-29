@@ -41,11 +41,13 @@ import numpy as np
 import torch
 
 from .arms import Arm, Cohort, tokenize_batch
+from .budget import MIN_CONTEXT_INFORMATION_NATS
 from .scoring import (
     aggregate_variant,
     per_sequence_scores,
     source_layers_for_target,
 )
+from .statistics import MINIMUM_FINITE_DRAW_FRACTION
 
 #: Submodule outputs this module knows how to intercept. ``block`` is the whole
 #: transformer block output and is the reference scope against which a single
@@ -81,10 +83,41 @@ P0_2B_MINIMUM_KL_NATS = 0.01
 UNIGRAM_ESTIMATORS = ("disjoint", "plugin")
 
 #: Additive smoothing for the held-out unigram model, over the declared
-#: vocabulary. Laplace rather than a tuned constant: it is the standard choice,
-#: it needs no justification from the data, and it errs upwards, which makes the
-#: resulting share conservative.
+#: vocabulary. Laplace rather than a tuned constant: it is the standard choice
+#: and it needs no justification from the data.
+#:
+#: **The "errs upwards, so the share is conservative" defence this constant used
+#: to carry is true for one arm and false for the panel, which is the quantity
+#: the panel exists to produce.** The smoothing puts ``s*V`` pseudo-counts into a
+#: reference of ``N`` tokens, so it raises the cross-entropy by up to
+#: ``log(1 + s*V/N)`` -- with *vocabulary size against reference size*, which is
+#: exactly the axis Appendix B rule 3 was written about. Measured on matched
+#: Dirichlet distributions with a 100k-token reference: ``s = 1`` inflates the
+#: cross-entropy by +0.224 nats at ``V = 50257`` and by +0.0001 nats at
+#: ``V = 32``. That differential lands in the *denominator* of every
+#: ``share_of_context_information`` and in
+#: ``prediction_addressed.cohort_power_held_out``'s headline, so it inflates
+#: the residue-level arms' shares relative to the BPE arms' by construction.
+#: This is the held-out estimator carrying a smaller version of the disease it
+#: was introduced to cure.
+#:
+#: The default is *not* changed, for two reasons. Every campaign artefact was
+#: produced at ``s = 1`` and moving the constant would move published numbers
+#: without adding information. And a smaller constant is not uniformly better:
+#: the total bias is a trade between the normaliser inflation, which grows with
+#: ``s``, and the penalty on target tokens the reference never saw, which grows
+#: as ``s`` shrinks. At ``V = 50257, N = 100k`` the measured total inflation is
+#: +0.224 nats at ``s = 1``, +0.176 at ``s = 0.5``, +0.194 at ``s = 0.1`` and
+#: +0.770 at ``s = 1/V``. There is no free default, so the constant is swept and
+#: reported instead of being tuned (Appendix B rule 8): see
+#: :func:`smoothing_diagnostics`.
 LAPLACE_SMOOTHING = 1.0
+
+#: Smoothing constants :func:`smoothing_diagnostics` scores every held-out
+#: baseline at. The ladder exists so that an ordering across arms can be shown
+#: to be invariant to the constant rather than asserted to be, which is what a
+#: threshold-free reading of a constant that cannot be eliminated requires.
+SMOOTHING_SWEEP: tuple[float, ...] = (1.0, 0.5, 0.1, 0.01)
 
 SCHEMA_VERSION_MEASUREMENT = "r2_transfer_pathway_measurement_v1"
 SCHEMA_VERSION_BOOTSTRAP = "r2_transfer_pathway_cluster_bootstrap_v1"
@@ -341,18 +374,32 @@ def cohort_composition(cohort: Cohort, *, source: str) -> dict[str, Any]:
         "sequences": len(cohort.records),
         "distinct_conditioning_labels": None if labels is None else len(set(labels)),
         "symbols_min": lengths[0],
-        "symbols_median": lengths[len(lengths) // 2],
+        # ``lengths[n // 2]`` is the upper-middle order statistic, which is the
+        # median only for odd ``n``. Every campaign cohort is drawn at an even
+        # size, so this field has never actually been a median. Corrected rather
+        # than renamed: the key is quoted in artefacts and a reader comparing
+        # two runs needs the same quantity under the same name.
+        "symbols_median": float(np.median(lengths)),
         "symbols_max": lengths[-1],
     }
 
 
 def subsample_cohort(cohort: Cohort, size: int, seed: int) -> Cohort:
-    """A seeded sub-cohort, carrying its conditioning metadata with it.
+    """A seeded sub-cohort, carrying its conditioning metadata and its parent's draw.
 
     A seed is meaningful here because the ``cohort_mean`` baseline is estimated
     on the evaluation cohort itself, so resampling the cohort resamples both the
     intervention and the thing it is scored on. The returned cohort has its own
     content digest, which is what makes two seeds distinguishable in the record.
+
+    **The parent's sampling record travels with the child.** It used to be
+    dropped, which meant ``Cohort.sampling`` on every subsampled cohort answered
+    ``"unrecorded"`` -- so an artefact could not say whether the pool this was
+    drawn from was a seeded draw over the corpus or the head of a file. Losing
+    that is losing the one fact the sampling record exists to carry: a seeded
+    subsample of a file-order prefix is still a file-order prefix, and it is the
+    pool's mode, not the subsample's seed, that decides whether Appendix B rule 1
+    was honoured.
     """
 
     if size < 1 or size > len(cohort):
@@ -365,6 +412,14 @@ def subsample_cohort(cohort: Cohort, size: int, seed: int) -> Cohort:
         if len(labels) != len(cohort.records):
             raise ValueError(f"cohort {cohort.name!r}: EC labels do not align with records")
         metadata["ec_labels"] = [labels[i] for i in indices]
+    metadata["sampling"] = {
+        **cohort.sampling,
+        "subsample_of": cohort.name,
+        "subsample_seed": int(seed),
+        "subsample_size": int(size),
+        "subsample_parent_size": len(cohort),
+        "subsample_parent_digest": cohort.digest,
+    }
     return Cohort(
         name=f"{cohort.name}_n{size}_seed{seed}",
         kind=cohort.kind,
@@ -583,10 +638,22 @@ def measure_pathways(
 ) -> PathwayRun:
     """Score every scope against one clean forward pass per batch.
 
-    The clean reference is computed once per batch and shared by all scopes so
-    that ``ce_clean`` cannot drift between them; that invariant is checked
-    rather than assumed, because a drifting clean reference would silently
-    corrupt every delta.
+    The clean reference is computed once per batch and shared by all scopes, so
+    ``ce_clean`` cannot drift between them. **That is structural, not checked.**
+
+    This function used to compare each scope's ``clean_nll_sum`` against the
+    first scope's and raise on a difference, and the docstring advertised the
+    comparison as a live invariant. It could not fail. ``per_sequence_scores``
+    derives ``clean_nll_sum`` from ``clean_logits``, ``input_ids`` and
+    ``target_mask`` alone; the first is computed once above the scope loop and
+    the other two are the batch's own fields, so nothing inside the loop is an
+    input to it. The ablation hook returns a freshly materialised replacement
+    rather than writing through its argument, so it cannot reach the earlier
+    tensor either. The comparison was therefore ``x != x`` dressed as a guard,
+    and a guard that cannot fail is worse than no guard: it is read as evidence
+    that the property was tested. Removed rather than elaborated -- the property
+    holds by the shape of the loop, and the way to keep it holding is to keep
+    the clean forward outside the loop, which is visible in four lines of code.
     """
 
     if not batches:
@@ -617,7 +684,6 @@ def measure_pathways(
         counts += torch.bincount(targets_in_batch, minlength=vocab)
         scored_tokens += int(targets_in_batch.numel())
         scored_sequences += len(batch.sequence_indices)
-        reference: list[float] | None = None
         for scope in scopes:
             with _PathwayAblation(arm, targets_by_scope[scope.name], bank) as ablation:
                 variant_logits = arm.model(
@@ -638,13 +704,6 @@ def measure_pathways(
                 clean_logits, variant_logits, batch.input_ids, batch.target_mask
             )
             del variant_logits
-            clean_sums = [float(row["clean_nll_sum"]) for row in rows]
-            if reference is None:
-                reference = clean_sums
-            elif clean_sums != reference:
-                raise RuntimeError(
-                    f"{arm.name}: clean reference changed between scopes at scope {scope.name!r}"
-                )
             for index, row in zip(batch.sequence_indices, rows):
                 rows_by_scope[scope.name].append({"sequence_index": index, **row})
         del clean_logits
@@ -719,8 +778,15 @@ def disjoint_unigram_cross_entropy_nats(
     way the model itself is scored: a predictor fitted on data it will not be
     evaluated on, then evaluated on the scored targets. Because the reference
     corpus is disjoint, the estimate carries none of the downward bias the
-    in-cohort plug-in has, and the additive smoothing biases it upwards, so any
-    share computed against it is conservative rather than inflated.
+    in-cohort plug-in has.
+
+    It does carry a smaller bias of its own, in the opposite direction and on
+    the same axis: the additive smoothing raises the cross-entropy by an amount
+    that scales with vocabulary size against reference size. Upwards bias is
+    conservative for *one* arm's share and is not conservative for an ordering
+    across arms, which is what this panel reports. :func:`smoothing_diagnostics`
+    measures it and every caller that publishes a baseline is expected to carry
+    that record beside the number; see :data:`LAPLACE_SMOOTHING`.
     """
 
     reference = np.asarray(reference_counts, dtype=np.float64)
@@ -737,6 +803,87 @@ def disjoint_unigram_cross_entropy_nats(
         raise ValueError("reference and target count vectors must both be non-empty")
     probabilities = (reference + smoothing) / (reference_total + smoothing * reference.size)
     return float(-(targets * np.log(probabilities)).sum() / target_total)
+
+
+def smoothing_diagnostics(
+    reference_counts: np.ndarray,
+    target_counts: np.ndarray,
+    *,
+    smoothing: float = LAPLACE_SMOOTHING,
+    sweep: Sequence[float] = SMOOTHING_SWEEP,
+) -> dict[str, Any]:
+    """How much of a held-out baseline is the smoothing constant, not the corpus.
+
+    Three numbers, because the smoothing bias has three distinguishable parts
+    and a reader who is handed only the baseline can reconstruct none of them.
+
+    ``smoothing_mass_fraction``
+        ``s*V / (N + s*V)``: the share of the fitted distribution that is
+        pseudo-count rather than observation. It is the whole story in one
+        number and it is a function of vocabulary size, which is why it differs
+        by three orders of magnitude between a 32-symbol arm and a 50257-piece
+        one on the same reference corpus.
+    ``normaliser_inflation_nats``
+        ``log(1 + s*V/N)``: the exact amount the smoothing adds to the
+        normaliser, and therefore an upper bound on the per-token inflation of
+        every target token the reference actually saw. This is the term that
+        tracks vocabulary size.
+    ``target_mass_unseen_in_reference``
+        the share of scored targets the reference never saw. Those tokens are
+        the reason a smaller constant is not automatically better: their
+        contribution is ``-log(s / (N + s*V))``, which *grows* as ``s`` shrinks.
+
+    ``cross_entropy_by_smoothing`` is the same baseline recomputed across
+    :data:`SMOOTHING_SWEEP`. The constant cannot be eliminated -- an unsmoothed
+    held-out unigram is infinite the moment a target token is unseen -- so
+    Appendix B rule 8's remedy for an unavoidable threshold applies: sweep it
+    and show the ordering does not turn on it. Recomputation is a handful of
+    vector operations over count vectors already in memory, so the sweep costs
+    nothing measurable next to the forward passes that produced the counts.
+    """
+
+    reference = np.asarray(reference_counts, dtype=np.float64)
+    targets = np.asarray(target_counts, dtype=np.float64)
+    if reference.ndim != 1 or reference.shape != targets.shape or reference.size < 2:
+        raise ValueError("reference and target counts must be vectors over one vocabulary")
+    if not smoothing > 0:
+        raise ValueError("additive smoothing must be positive")
+    if not sweep or any(not value > 0 for value in sweep):
+        raise ValueError("every swept smoothing constant must be positive")
+    vocabulary = int(reference.size)
+    reference_total = float(reference.sum())
+    target_total = float(targets.sum())
+    if reference_total < 1 or target_total < 1:
+        raise ValueError("reference and target count vectors must both be non-empty")
+    pseudo = smoothing * vocabulary
+    by_smoothing = {
+        f"{value:g}": disjoint_unigram_cross_entropy_nats(
+            reference, targets, smoothing=float(value)
+        )
+        for value in sweep
+    }
+    scored = list(by_smoothing.values())
+    return {
+        "smoothing": float(smoothing),
+        "vocabulary_size": vocabulary,
+        "reference_tokens": int(reference_total),
+        "target_tokens": int(target_total),
+        "smoothing_mass_fraction": float(pseudo / (reference_total + pseudo)),
+        "normaliser_inflation_nats": float(math.log1p(pseudo / reference_total)),
+        "target_mass_unseen_in_reference": float(
+            targets[reference <= 0].sum() / target_total
+        ),
+        "sweep": [float(value) for value in sweep],
+        "cross_entropy_by_smoothing": by_smoothing,
+        "cross_entropy_sweep_range_nats": float(max(scored) - min(scored)),
+        "note": (
+            "normaliser_inflation_nats scales with vocabulary size against "
+            "reference size, so it biases the large-vocabulary arms' baselines "
+            "upwards relative to the residue-level arms' and therefore biases "
+            "their context-information denominators in the same direction. It is "
+            "conservative within an arm and not conservative across the panel"
+        ),
+    }
 
 
 def held_out_cohort(candidate: Cohort, scored: Cohort) -> tuple[Cohort, dict[str, int]]:
@@ -822,7 +969,25 @@ def unigram_baseline(
     if override_nats is not None:
         if not math.isfinite(override_nats) or override_nats <= 0:
             raise ValueError(f"{arm.name}: supplied unigram entropy must be finite and positive")
-        return {**record, "nats": float(override_nats), "source": "external_override"}
+        # ``estimator`` describes how the returned number was produced, and an
+        # externally supplied number was not produced by any estimator in this
+        # module. The record used to answer ``"disjoint"`` beside
+        # ``source: "external_override"``, so an artefact could claim a held-out
+        # cross-entropy for a value that arrived on the command line and whose
+        # provenance nothing here can check. The requested estimator is kept
+        # under its own key, because which estimator the caller *asked* for is
+        # also a fact worth having.
+        return {
+            **record,
+            "estimator": "external_override",
+            "requested_estimator": estimator,
+            "nats": float(override_nats),
+            "source": "external_override",
+            "provenance_note": (
+                "supplied by the caller; this module did not estimate it and cannot "
+                "attest to the corpus, the window or the smoothing behind it"
+            ),
+        }
     if estimator == "plugin":
         return {**record, "nats": plug_in, "source": "cohort_scored_target_plug_in"}
     if reference_counts is None or reference is None:
@@ -838,6 +1003,13 @@ def unigram_baseline(
         "nats": nats,
         "source": "disjoint_reference_cross_entropy",
         "smoothing": float(smoothing),
+        # The smoothing constant is part of the estimate, not part of the
+        # configuration: it contributes a vocabulary-tracking upward bias to
+        # this baseline and therefore to every share divided by it. It travels
+        # with the number rather than being recoverable only from the source.
+        "smoothing_diagnostics": smoothing_diagnostics(
+            reference_counts, target_counts, smoothing=smoothing
+        ),
         "reference": {
             **dict(reference),
             "tokens": int(np.asarray(reference_counts).sum()),
@@ -852,6 +1024,7 @@ def pathway_metrics(
     unigram_entropy_nats: float,
     minimum_ce_delta_nats: float = P0_2B_MINIMUM_CE_DELTA_NATS,
     minimum_kl_nats: float = P0_2B_MINIMUM_KL_NATS,
+    minimum_context_information_nats: float = MIN_CONTEXT_INFORMATION_NATS,
 ) -> dict[str, Any]:
     """Footprint of one scope in nats/token, normalised and guard-checked.
 
@@ -867,19 +1040,36 @@ def pathway_metrics(
     ``pathway_metrics``' own recovery reporting. It is not an error --
     a matched panel will contain arms that are off-distribution on some cohort,
     and that fact is part of the result.
+
+    **The denominator is guarded on magnitude, not on sign.** It used to be
+    ``context_information > 0``, which admits a denominator of a hundredth of a
+    nat and divides a perfectly ordinary numerator by it: on a cohort whose
+    context information landed near zero the resulting share had a median of
+    3.57 and a 97.5th percentile of 85.4 -- finite, well formed, and a statement
+    about nothing. ``budget.MIN_CONTEXT_INFORMATION_NATS`` exists for exactly
+    this and was not applied here, so the same 0.30-nat floor that decides
+    whether an arm is measurable at all decided nothing about whether its share
+    was. The two flags are now separate: ``context_information_positive`` is the
+    old sign test, kept because "off distribution" and "measurable" are
+    different findings, and ``context_information_valid`` is the floor.
+    No published number moves -- across all 3864 ``pathway_metrics`` records in
+    ``results/``, none has a context information between 0 and 0.30 nats.
     """
 
     if not math.isfinite(unigram_entropy_nats):
         raise ValueError("unigram entropy must be finite")
     if minimum_ce_delta_nats < 0 or minimum_kl_nats < 0:
         raise ValueError("denominator guards must be non-negative")
+    if minimum_context_information_nats <= 0:
+        raise ValueError("the context-information floor must be positive")
     aggregate = aggregate_variant(rows)
     ce_clean = aggregate["clean_ce_nats"]
     ce_ablated = aggregate["variant_ce_nats"]
     ce_delta = ce_ablated - ce_clean
     kl = aggregate["clean_to_variant_kl_nats"]
     context_information = unigram_entropy_nats - ce_clean
-    context_valid = context_information > 0
+    context_positive = context_information > 0
+    context_valid = context_information >= minimum_context_information_nats
     passes_ce = ce_delta >= minimum_ce_delta_nats
     passes_kl = kl >= minimum_kl_nats
     return {
@@ -891,7 +1081,9 @@ def pathway_metrics(
         "argmax_agreement": aggregate["argmax_agreement"],
         "unigram_entropy_nats": float(unigram_entropy_nats),
         "context_information_nats": context_information,
+        "context_information_positive": bool(context_positive),
         "context_information_valid": bool(context_valid),
+        "minimum_context_information_nats": float(minimum_context_information_nats),
         "share_of_context_information": (
             ce_delta / context_information if context_valid else None
         ),
@@ -924,6 +1116,8 @@ def pathway_cluster_bootstrap(
     unigram_entropy_nats: float,
     minimum_ce_delta_nats: float = P0_2B_MINIMUM_CE_DELTA_NATS,
     minimum_kl_nats: float = P0_2B_MINIMUM_KL_NATS,
+    minimum_context_information_nats: float = MIN_CONTEXT_INFORMATION_NATS,
+    minimum_finite_draw_fraction: float = MINIMUM_FINITE_DRAW_FRACTION,
 ) -> dict[str, Any]:
     """Sequence-cluster bootstrap of one scope's footprint.
 
@@ -932,12 +1126,32 @@ def pathway_cluster_bootstrap(
     resampled quantities differ. The cohort's context-free baseline is held at its full-cohort
     value across draws, so the interval reflects uncertainty in the ablation
     effect only.
+
+    **The share interval is refused when too many draws had no usable
+    denominator, rather than published conditioned on the ones that did.** A
+    draw whose context information falls below the floor contributes no share
+    and used to be silently dropped from the percentile calculation while the
+    interval kept the plain name ``share_of_context_information``. The dropping
+    is not neutral: a draw is discarded precisely when its clean cross-entropy
+    came out high, so the surviving draws are the ones with the *largest*
+    denominators and therefore the *smallest* shares. The published interval was
+    then a percentile of the share distribution conditioned on the denominator
+    being large, biased low, under the name of the unconditional one.
+    ``statistics.MINIMUM_FINITE_DRAW_FRACTION`` exists for this exact hazard --
+    ``paired_group_bootstrap`` refuses on it -- and was not reached from here.
+
+    An interval over 1360 surviving draws of a requested 2000 is not the
+    requested bootstrap distribution, so it is not returned under its name. The
+    counts are returned either way, so a reader can see how close a published
+    interval came to the floor.
     """
 
     if not rows:
         raise ValueError("bootstrap needs at least one sequence row")
     if samples < 1:
         raise ValueError("bootstrap sample count must be positive")
+    if not 0.0 < minimum_finite_draw_fraction <= 1.0:
+        raise ValueError("the minimum finite-draw fraction must lie in (0, 1]")
     generator = np.random.default_rng(seed)
     n = len(rows)
     ce_delta: list[float] = []
@@ -953,6 +1167,7 @@ def pathway_cluster_bootstrap(
             unigram_entropy_nats=unigram_entropy_nats,
             minimum_ce_delta_nats=minimum_ce_delta_nats,
             minimum_kl_nats=minimum_kl_nats,
+            minimum_context_information_nats=minimum_context_information_nats,
         )
         ce_delta.append(metrics["ce_delta_nats"])
         kl.append(metrics["kl_clean_to_ablated_nats"])
@@ -962,6 +1177,8 @@ def pathway_cluster_bootstrap(
             context_invalid += 1
         ce_guard_passes += int(metrics["passes_ce_guard"])
         kl_guard_passes += int(metrics["passes_kl_guard"])
+    required = int(math.ceil(minimum_finite_draw_fraction * samples))
+    share_publishable = len(share) >= required
     return {
         "schema_version": SCHEMA_VERSION_BOOTSTRAP,
         "cluster_unit": "sequence",
@@ -970,7 +1187,22 @@ def pathway_cluster_bootstrap(
         "clusters": n,
         "ce_delta_nats": _interval(ce_delta),
         "kl_clean_to_ablated_nats": _interval(kl),
-        "share_of_context_information": _interval(share),
+        "share_of_context_information": _interval(share) if share_publishable else None,
+        "share_valid_samples": len(share),
+        "share_required_samples": required,
+        "share_minimum_valid_fraction": float(minimum_finite_draw_fraction),
+        "share_interval_refused_reason": (
+            None
+            if share_publishable
+            else (
+                f"only {len(share)} of {samples} draws had a context-information "
+                f"denominator at or above {minimum_context_information_nats} nats, "
+                f"below the {minimum_finite_draw_fraction:.0%} floor. A percentile "
+                "over what survives is conditioned on the denominator being large, "
+                "which selects the smallest shares, and is not the requested "
+                "bootstrap distribution"
+            )
+        ),
         "context_invalid_samples": context_invalid,
         "ce_guard_pass_fraction": ce_guard_passes / samples,
         "kl_guard_pass_fraction": kl_guard_passes / samples,

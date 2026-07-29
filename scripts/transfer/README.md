@@ -32,9 +32,11 @@ The contract declares 11 stages in this order:
 | 8 | `lens_family` | `08_lens_family.py` | per arm | `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium` |
 | 9 | `probe_and_erasure` | `09_probe_and_erasure.py` | per arm | all 11 |
 | 10 | `homology_control` | `10_homology_control.py` | panel-wide | `protgpt2`, `zymctrl`, `progen2-medium` |
-| 11 | `induction_path_patching` | `11_induction_path_patching.py` | panel-wide | `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `protgpt2`, `zymctrl` |
+| 11 | `induction_path_patching` | `11_induction_path_patching.py` | panel-wide | `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium` |
 
 Eligibility is not uniform. Contract refusals are deliberate and include architecture, tokenization, modality, and stage-interface limits. Inspect them with `python scripts/transfer/panel_contract.py --json`; do not route around them.
+
+This table is a hand-maintained copy of a generated declaration, which is the failure class `panel_contract.py` exists to end, so it is checked rather than trusted: `tests/test_h200_orchestration.py::ReadmeStageTableMatchesTheContract` parses it and fails if any row disagrees with the contract. It had already drifted — `induction_path_patching` was listed with seven eligible arms against the contract's nine, omitting both ProGen2 arms, whose `progen` layout `src.transfer.path_patching.SUPPORTED_ARCHITECTURES` declares.
 
 ## Controller And Worker
 

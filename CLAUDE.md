@@ -2,7 +2,7 @@
 
 ## Research Objective
 
-Study how and under what conditions mechanistic-interpretability methods developed on text decoders transfer to protein generative models. Follow three directions in order:
+Study how and under what conditions mechanistic-interpretability methods developed on text decoders transfer to protein generative models. Meanwhile, analyses can also be performed from the interpretability perspective to examine the differences between protein‑generative models and language‑generative models, as well as whether protein‑generative models can truly acquire knowledge and generate novel proteins. Follow three directions in order:
 
 1. **Compare model families.** Identify meaningful differences between text and protein generative models.
 2. **Evaluate method transfer.** Determine where existing methods transfer, where they fail, and whether each limitation belongs to the method, model, data, or evaluation interface.

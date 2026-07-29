@@ -151,6 +151,11 @@ from .circuits import (
     natural_repeat_probes,
     summarise_head_matrix,
 )
+from .statistics import (
+    MINIMUM_BOOTSTRAP_UNITS,
+    MINIMUM_FINITE_DRAW_FRACTION,
+    bootstrap_unit_floor,
+)
 
 SCHEMA_VERSION = "r2_transfer_homology_control_v1"
 
@@ -366,6 +371,24 @@ def count_fasta_records(path: Path, *, chunk: int = 1 << 24) -> tuple[int, int]:
     24 GB corpus that boundary case happens a handful of times, which is small
     enough to look like a rounding difference and large enough to make the
     coverage fraction wrong.
+
+    That invariant was *claimed* here and not delivered until EXP-R2-068. The
+    inner scan ran ``while position <= len(block)``, so a block ending exactly
+    on a newline took one extra iteration over an empty trailing segment, found
+    no newline in it, and cleared ``at_line_start``. The next block's ``>`` then
+    read as a continuation line: its record went uncounted and its header bytes
+    were added to ``residues``. On ``'>r0\\nAAAA\\n>r1\\nCCCC\\n>r2\\nGGGG\\n'``
+    -- true answer ``(3, 12)`` -- chunk 6 returned ``(2, 15)``, chunk 9 ``(1, 18)``
+    and chunk 18 ``(2, 15)``. Read the loop bound as the invariant it enforces:
+    a block is a sequence of complete lines plus at most one partial tail, and
+    only a partial tail may clear ``at_line_start``.
+
+    **No published number moved.** The shipped
+    ``homology_control_unmasked/homology_assignment.json`` records
+    ``source_fasta_records == indexed_sequences == 60315044`` at
+    ``coverage_fraction 1.0``, so the 16 MiB default chunk never landed on a
+    newline in the real UniRef50 file and EXP-R2-064's stratification stands.
+    The defect was reachable, not reached.
     """
 
     path = Path(path)
@@ -381,7 +404,7 @@ def count_fasta_records(path: Path, *, chunk: int = 1 << 24) -> tuple[int, int]:
             if not block:
                 break
             position = 0
-            while position <= len(block):
+            while position < len(block):
                 newline = block.find(b"\n", position)
                 segment = block[position:newline] if newline != -1 else block[position:]
                 if at_line_start and segment[:1] == b">":
@@ -733,15 +756,6 @@ class HomologyAssignment:
 #: it through.
 PER_RECORD_METADATA_KEYS = ("repeats", "repeat_stats", "ec_labels")
 
-#: Smallest number of resampling units at which :func:`bootstrap_stratum` will
-#: return a percentile interval. Below it the resample distribution has so few
-#: distinct atoms that the 2.5% tails trim genuine mass, and the interval comes
-#: out *narrower* than one computed on hundreds of units -- so a small stratum
-#: reads as the precise one. Eight is the point at which the probability of an
-#: all-identical resample falls below the discarded tail mass for these
-#: statistics.
-MINIMUM_BOOTSTRAP_UNITS = 8
-
 #: Query coverage below which an alignment is treated as truncated when it is
 #: otherwise a perfect, length-matched match. A genuine partial homologue whose
 #: subject is the same length as the query and which is 100% identical over the
@@ -867,25 +881,40 @@ def assign_homology(
                 best_qend=best.qend,
                 best_hit_spans_repeat=bool(spans_repeat),
                 best_hit_looks_truncated=truncated_alignment(best),
-                # ``n_hits`` counts reported HSP rows. DIAMOND ranks by bitscore
-                # and stops at ``--max-target-seqs``, so a saturated list means
-                # the "closest relative in the corpus" is the closest of the ones
-                # it chose to report. Nothing downstream could tell.
+                # ``n_hits`` counts reported HSP rows and ``--max-target-seqs``
+                # caps *subject sequences*, so comparing one against the other
+                # compares two different things: a subject reported under three
+                # HSPs contributes three rows and one sequence, and the list then
+                # reads as saturated at a third of the cap. Counted over distinct
+                # subjects, which is the unit the cap is expressed in. On the
+                # 2026-07-29 unmasked run every saturated record has exactly one
+                # HSP per subject, so the two agree there and no published
+                # saturation flag moves; the fix is for the search that does not.
                 hit_list_saturated=(
-                    None if max_target_seqs is None else len(found) >= max_target_seqs
+                    None
+                    if max_target_seqs is None
+                    else len({hit.subject for hit in found}) >= max_target_seqs
                 ),
                 stratum=assign_stratum(best.identity_over_query),
             )
         )
+    # Every hit, not only the best one. A truncated near-duplicate is a hit whose
+    # alignment stopped at a masked region, and masking is exactly what can push
+    # it *below* an untruncated but genuinely more distant relative -- so the
+    # record whose stratification is wrong is precisely the record whose best hit
+    # is not the truncated one. Inspecting only the best hit therefore looked
+    # hardest at the cases that need it least. The 2026-07-29 unmasked run has no
+    # truncated alignment at any rank, so no published stratification moves.
     truncated = [
-        (a.query_id, a.best_subject, a.max_identity_over_query)
-        for a in assignments
-        if a.best_hit_looks_truncated
+        (identifier, hit.subject, hit.identity_over_query)
+        for identifier in identifiers
+        for hit in by_query[identifier]
+        if truncated_alignment(hit)
     ]
     if truncated:
         raise RuntimeError(
-            f"{len(truncated)} of {len(assignments)} records have a best hit that is "
-            f"exact over a length-matched subject yet covers under "
+            f"{len(truncated)} alignments over {len(assignments)} records are "
+            f"exact over a length-matched subject yet cover under "
             f"{TRUNCATION_COVERAGE_LIMIT}% of the query, e.g. {truncated[:3]}. That is "
             "a truncated alignment, not a partial homologue, and it under-bins a "
             "verbatim corpus member. Re-run the search with --masking 0: DIAMOND masks "
@@ -1094,7 +1123,14 @@ def score_probe(arm: Arm, probe: RepeatProbe, record_index: int) -> ProbeScore:
         scored_positions=scored,
         uniform_sum=float(result["uniform_baseline"]) * scored,
         coverage=float(result["mean_coverage"]),
-        repeat_symbols=int(result["mean_repeat_symbols"]),
+        # Rounded, not truncated. ``int()`` floors, so a 39.9-residue repeat was
+        # recorded as 39 and a 39.1-residue one also as 39, which is a
+        # half-symbol downward bias on the covariate ``covariate_analysis``
+        # partials induction strength against. It is a rank statistic, so the
+        # bias matters only where it changes an ordering -- and truncation
+        # changes orderings only by collapsing neighbours, which is precisely
+        # where a partial correlation is decided.
+        repeat_symbols=int(round(float(result["mean_repeat_symbols"]))),
         sums={key: np.asarray(value, dtype=np.float64) * scored
               for key, value in result["scores"].items()},
     )
@@ -1186,7 +1222,20 @@ def ov_over_heads(
     """
 
     if not heads:
-        return {"n_heads": 0, "diagonal_fraction_mean": None, "mean_normalised_rank_mean": None}
+        # The same keys as the populated branch, all null. The empty branch used
+        # to emit three keys where the populated one emits five, so a consumer
+        # reading ``diagonal_fraction_max`` got a ``KeyError`` for exactly the
+        # arms that select no head -- ZymCTRL selects none at threshold 0.10 --
+        # and a consumer using ``.get`` silently read ``None`` as a value rather
+        # than as an absent column. A schema that changes shape with the result
+        # is not a schema.
+        return {
+            "n_heads": 0,
+            "diagonal_fraction_mean": None,
+            "diagonal_fraction_max": None,
+            "mean_normalised_rank_mean": None,
+            "mean_normalised_rank_max": None,
+        }
     rows = np.asarray([layer for layer, _ in heads], dtype=np.int64)
     columns = np.asarray([head for _, head in heads], dtype=np.int64)
     out: dict[str, Any] = {"n_heads": len(heads)}
@@ -1239,16 +1288,17 @@ def bootstrap_stratum(
     **A percentile interval is refused below ``minimum_units``, and it used to be
     the opposite of wide.**  The docstring previously claimed that a handful of
     sequences gives an interval that is "wide and honest rather than
-    informative".  That is not what a percentile bootstrap does at small ``n``.
-    With four units the resample distribution has at most 35 atoms and the
-    probability that every draw is identical is 1.6%, below the 2.5% the
-    percentile rule discards at each tail, so the extreme atoms are trimmed and
-    the interval is *pinched inward*: measured relative widths of 9-15% at four
-    units against 27% at four hundred, in the same artefact.  Two
-    ``consistent_with_memorisation`` verdicts in the 2026-07-28 run were decided
-    by non-overlap of a four-unit interval against a four-hundred-unit one.
-    A degenerate stratum is now reported as degenerate, with its unit count,
-    instead of publishing a number that reads as precision.
+    informative".  That is not what a percentile bootstrap does at small ``n``:
+    measured relative widths of 9-15% at four units against 27% at four hundred,
+    in the same artefact, and two ``consistent_with_memorisation`` verdicts in
+    the 2026-07-28 run were decided by non-overlap of a four-unit interval
+    against a four-hundred-unit one.  A degenerate stratum is now reported as
+    degenerate, with its unit count, instead of publishing a number that reads
+    as precision.
+
+    The floor itself, and the coverage measurement that fixes it at eight, live
+    in :data:`~src.transfer.statistics.MINIMUM_BOOTSTRAP_UNITS`.  The derivation
+    once stated here selected four rather than eight and is corrected there.
     """
 
     if resamples < 1 or n_heads < 1 or not 0 < alpha < 1:
@@ -1258,19 +1308,16 @@ def bootstrap_stratum(
     if not scores:
         raise ValueError("cannot bootstrap an empty stratum")
     count = len(scores)
-    if count < minimum_units:
+    # One declaration of the floor and of the words that go with it, in
+    # ``statistics``. This module held the only copy of both while two sibling
+    # bootstraps guarded nothing but ``n < 2``.
+    floor = bootstrap_unit_floor(count, minimum_units=minimum_units)
+    if floor["degenerate"]:
         return {
             "resamples": int(resamples),
             "alpha": float(alpha),
             "unit": "probe",
-            "n_units": count,
-            "minimum_units": int(minimum_units),
-            "degenerate": True,
-            "degenerate_reason": (
-                f"{count} units is below the {minimum_units}-unit floor; a percentile "
-                "interval over so few atoms is narrower than one over many and must "
-                "not be compared against another stratum's"
-            ),
+            **floor,
             "peak_over_uniform_ci": None,
             "fraction_above_threshold_ci": None,
         }
@@ -1301,10 +1348,7 @@ def bootstrap_stratum(
         "resamples": int(resamples),
         "alpha": float(alpha),
         "unit": "probe",
-        "n_units": count,
-        "minimum_units": int(minimum_units),
-        "degenerate": False,
-        "degenerate_reason": None,
+        **floor,
         "peak_over_uniform_ci": [
             _finite(float(np.percentile(peaks, low)), "peak CI low"),
             _finite(float(np.percentile(peaks, high)), "peak CI high"),
@@ -1396,6 +1440,9 @@ def covariate_analysis(
     layer: int,
     head: int,
     minimum_n: int = 8,
+    resamples: int = 2000,
+    seed: int = 20260729,
+    alpha: float = 0.05,
 ) -> dict[str, Any]:
     """Separate homology from repeat length as explanations of induction strength.
 
@@ -1413,6 +1460,19 @@ def covariate_analysis(
     at its rank, and whether repeat length still does once identity is.  If the
     identity term survives and the length term does not, memorisation is the
     better explanation; if the reverse, the stratum gradient is a length artefact.
+
+    **Those two partials are the module's adjudicating statistic and they used
+    to be published as bare point estimates.**  ``minimum_n`` is eight, and this
+    file refuses a percentile interval below eight units on the grounds that one
+    computed there would mislead -- so the same file was willing to decide
+    between memorisation and a length artefact on two correlations over eight
+    probes with no interval, no p-value and no resampling of any kind.
+    "Survives" and "does not" are comparisons, and a comparison of two point
+    estimates at n = 8 is not one.  A probe-level bootstrap now accompanies both
+    partials, along with the fraction of resamples in which the identity term is
+    the larger of the two, which is the quantity the verdict actually rests on.
+    The bootstrap resamples probes, the same unit :func:`bootstrap_stratum` uses
+    and the only independent one here.
     """
 
     if minimum_n < 4:
@@ -1453,15 +1513,6 @@ def covariate_analysis(
             ),
             "constant_covariates": constant,
         }
-    ranks = {
-        "response": _average_ranks(response),
-        "length": _average_ranks(lengths),
-        "identity": _average_ranks(identity),
-    }
-    r_ry = _correlation(ranks["response"], ranks["identity"])
-    r_rl = _correlation(ranks["response"], ranks["length"])
-    r_yl = _correlation(ranks["identity"], ranks["length"])
-
     def partial(primary: float, secondary: float, between: float) -> float | None:
         denominator = math.sqrt(max(1.0 - secondary**2, 0.0) * max(1.0 - between**2, 0.0))
         if denominator <= 0:
@@ -1469,6 +1520,60 @@ def covariate_analysis(
         return _finite(
             (primary - secondary * between) / denominator, "partial correlation"
         )
+
+    def partials(
+        block_response: np.ndarray, block_lengths: np.ndarray, block_identity: np.ndarray
+    ) -> tuple[float, float, float, float | None, float | None]:
+        rank_response = _average_ranks(block_response)
+        rank_length = _average_ranks(block_lengths)
+        rank_identity = _average_ranks(block_identity)
+        ry = _correlation(rank_response, rank_identity)
+        rl = _correlation(rank_response, rank_length)
+        yl = _correlation(rank_identity, rank_length)
+        return ry, rl, yl, partial(ry, rl, yl), partial(rl, ry, yl)
+
+    r_ry, r_rl, r_yl, partial_identity, partial_length = partials(
+        response, lengths, identity
+    )
+
+    if resamples < 100 or not 0 < alpha < 1:
+        raise ValueError("invalid bootstrap parameters for the covariate analysis")
+    generator = np.random.default_rng(seed)
+    identity_draws: list[float] = []
+    length_draws: list[float] = []
+    identity_larger = 0
+    degenerate_draws = 0
+    for _ in range(resamples):
+        index = generator.integers(0, response.size, size=response.size)
+        block = (response[index], lengths[index], identity[index])
+        # A resample can have no variance in a covariate, which is a fact about
+        # this cohort rather than a glitch: at eight probes an all-identical
+        # draw is not rare. Counted, not skipped silently, and the interval is
+        # withheld if too many of them occur -- the same rule
+        # ``statistics.MINIMUM_FINITE_DRAW_FRACTION`` states for every other
+        # bootstrap in this package.
+        if any(float(values.std()) <= 0.0 for values in block):
+            degenerate_draws += 1
+            continue
+        _, _, _, draw_identity, draw_length = partials(*block)
+        if draw_identity is None or draw_length is None:
+            degenerate_draws += 1
+            continue
+        identity_draws.append(draw_identity)
+        length_draws.append(draw_length)
+        identity_larger += int(abs(draw_identity) > abs(draw_length))
+
+    required = int(math.ceil(MINIMUM_FINITE_DRAW_FRACTION * resamples))
+    usable = len(identity_draws) >= required
+    low, high = 100 * alpha / 2, 100 * (1 - alpha / 2)
+
+    def interval(draws: list[float]) -> list[float] | None:
+        if not usable:
+            return None
+        return [
+            _finite(float(np.percentile(draws, low)), "partial CI low"),
+            _finite(float(np.percentile(draws, high)), "partial CI high"),
+        ]
 
     return {
         "measured": True,
@@ -1478,8 +1583,37 @@ def covariate_analysis(
         "spearman_identity_vs_induction": _finite(r_ry, "identity correlation"),
         "spearman_repeat_length_vs_induction": _finite(r_rl, "length correlation"),
         "spearman_identity_vs_repeat_length": _finite(r_yl, "identity/length correlation"),
-        "partial_identity_given_repeat_length": partial(r_ry, r_rl, r_yl),
-        "partial_repeat_length_given_identity": partial(r_rl, r_ry, r_yl),
+        "partial_identity_given_repeat_length": partial_identity,
+        "partial_repeat_length_given_identity": partial_length,
+        "bootstrap": {
+            "unit": "probe",
+            "resamples": int(resamples),
+            "seed": int(seed),
+            "alpha": float(alpha),
+            "usable_draws": len(identity_draws),
+            "degenerate_draws": degenerate_draws,
+            "required_draws": required,
+            "partial_identity_given_repeat_length_ci": interval(identity_draws),
+            "partial_repeat_length_given_identity_ci": interval(length_draws),
+            # The verdict this analysis exists to reach is "the identity term
+            # survives and the length term does not", which is a comparison of
+            # two magnitudes. This is that comparison's own sampling fraction,
+            # rather than two intervals a reader has to eyeball against each
+            # other -- overlapping intervals do not settle a paired comparison.
+            "fraction_identity_term_larger": (
+                identity_larger / len(identity_draws) if usable else None
+            ),
+            "refused_reason": (
+                None
+                if usable
+                else (
+                    f"only {len(identity_draws)} of {resamples} resamples admitted a "
+                    "partial correlation; the rest had a covariate with no variance, "
+                    "so an interval over the survivors is conditioned on the cohort "
+                    "being well conditioned and is not the requested distribution"
+                )
+            ),
+        },
     }
 
 

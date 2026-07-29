@@ -51,7 +51,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.transfer.io import write_json  # noqa: E402
-from src.transfer.arms import PANEL, Arm, load_arm, protein_cohort, text_cohort  # noqa: E402
+from src.transfer.arms import (  # noqa: E402
+    DEFAULT_CORPUS_DRAW_SEED,
+    PANEL,
+    Arm,
+    load_arm,
+    protein_cohort,
+    text_cohort,
+)
 from src.transfer.circuits import (  # noqa: E402
     INDUCTION_THRESHOLDS,
     RepeatProbe,
@@ -189,10 +196,19 @@ def build_cohort(modality: str, args: argparse.Namespace):
     arguments here match its defaults exactly, which is what makes the
     recomputed census reproduce the stored one; ``compare_with_stored`` checks
     that it does rather than trusting this comment.
+
+    ``--cohort-draw-seed`` is one of those defaults and it is the one that moved.
+    ``04`` now draws its analysis cohort under a seeded permutation of the whole
+    corpus (EXP-R2-068), so this stage's default follows it. A census stored
+    *before* that change was measured on a file-order prefix, and re-analysing it
+    here requires ``--cohort-draw-seed 0``. The mismatch is not silent: the two
+    cohorts have different digests, the recomputed census does not reproduce the
+    stored one, and ``compare_with_stored`` raises.
     """
 
+    draw_seed = args.cohort_draw_seed or None
     if modality == "text":
-        return text_cohort(args.cohort_size, min_chars=args.text_min_chars)
+        return text_cohort(args.cohort_size, min_chars=args.text_min_chars, seed=draw_seed)
     if modality == "protein":
         return protein_cohort(
             args.cohort_size,
@@ -200,6 +216,7 @@ def build_cohort(modality: str, args: argparse.Namespace):
             args.protein_max_len,
             with_ec=True,
             name="swissprot_ec_long",
+            seed=draw_seed,
         )
     raise ValueError(f"unsupported modality {modality!r}")
 
@@ -352,6 +369,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dtype", default="bfloat16")
     parser.add_argument("--seed", type=int, default=20260728)
     parser.add_argument("--cohort-size", type=int, default=24)
+    parser.add_argument(
+        "--cohort-draw-seed",
+        type=int,
+        default=DEFAULT_CORPUS_DRAW_SEED,
+        help="must match the draw the stored census was measured on; 0 selects "
+        "the file-order prefix that every census stored before EXP-R2-068 used. "
+        "A mismatch is caught by compare_with_stored, not tolerated",
+    )
     parser.add_argument("--protein-min-len", type=int, default=600)
     parser.add_argument("--protein-max-len", type=int, default=1000)
     parser.add_argument("--text-min-chars", type=int, default=3000)

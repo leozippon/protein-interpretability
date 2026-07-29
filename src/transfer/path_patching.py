@@ -100,6 +100,7 @@ import torch
 
 from .arms import Arm
 from .circuits import RepeatProbe, Unigram, head_dim, head_ov_weights, n_head
+from .statistics import MINIMUM_BOOTSTRAP_UNITS, bootstrap_unit_floor
 
 SCHEMA_VERSION = "r2_transfer_path_patching_v1"
 
@@ -138,6 +139,25 @@ DEFAULT_MIN_HEAD_EFFECT = 0.01
 #: of these floors as well as at the declared one, so that the sensitivity is in
 #: the artefact rather than in whichever floor happened to be chosen.
 MIN_HEAD_EFFECT_LADDER: tuple[float, ...] = (0.001, 0.002, 0.005, 0.01, 0.02, 0.05)
+
+#: How small a case's head write may be, as a fraction of the batch's median
+#: head write, before its *relative* linearity error stops meaning anything.
+#:
+#: Relative to the batch rather than absolute, because the quantity it bounds
+#: has no scale of its own: residual norms differ by orders of magnitude between
+#: a 768-wide and a 2560-wide arm, and between bfloat16 and float32, so any
+#: absolute norm that admits every case on one arm excludes every case on
+#: another. The floor that was here before -- ``max(scale, 1e-6)`` applied to
+#: the *denominator* rather than to the row -- did the opposite of excluding: it
+#: rescued a vanishing denominator by replacing it, so an arm whose sender
+#: writes almost nothing had every absolute discrepancy divided by 1e-6 and
+#: reported as a small relative error.
+#:
+#: A row a thousand times below its batch's median write is scored against its
+#: peers' arithmetic noise, not against its own signal, so it is excluded from
+#: the maximum and counted. It cannot exclude a whole batch: the median row
+#: always clears a fraction of the median.
+_HEAD_WRITE_RELATIVE_FLOOR = 1e-3
 
 
 def _finite(value: float, label: str) -> float:
@@ -540,11 +560,26 @@ class _Batch:
 def _probe_clustered_sem(
     values: torch.Tensor, probes: torch.Tensor, pathway: str
 ) -> dict[str, Any]:
-    """Standard error over probe records rather than over cases.
+    """Standard error over probe records rather than over cases, with its own centre.
 
     Averages within probe first, then takes the standard error over probe means.
     ``None`` when fewer than two probes contributed, because a single record
     supports no interval and a fabricated zero reads as perfect precision.
+
+    ``mean_probe_clustered`` is returned because it is **the estimator this
+    standard error belongs to**, and it is not the ``mean`` published beside it.
+    That ``mean`` is ``values.mean()``, weighted by how many cases each probe
+    contributed; this one weights every probe equally. The two coincide only
+    when every probe contributes the same number of eligible cases, which the
+    eligibility filter specifically prevents -- a probe whose corrupted token
+    barely moves the metric contributes one case, a strong one contributes
+    ``cases_per_probe``. On a constructed but entirely ordinary example -- three
+    probes contributing 20, 2 and 2 cases at recoveries 0.9, 0.1 and 0.05 -- the
+    case-weighted mean is 0.7625 and the clustered standard error is 0.2754
+    around a centre of 0.35, so the published mean sits one and a half standard
+    errors outside its own interval. Both centres are reported rather than one
+    being silently replaced: the case-weighted mean is what several artefacts
+    quote, and the clustered pair is the one to read.
     """
 
     if values.numel() != probes.numel():
@@ -552,11 +587,19 @@ def _probe_clustered_sem(
     unique = torch.unique(probes)
     if unique.numel() < 2:
         return {
+            "mean_probe_clustered": (
+                _finite(float(values.mean()), f"{pathway} clustered mean")
+                if values.numel() > 0
+                else None
+            ),
             "sem_probe_clustered": None,
             "n_probes": int(unique.numel()),
         }
     means = torch.stack([values[probes == probe].mean() for probe in unique])
     return {
+        "mean_probe_clustered": _finite(
+            float(means.mean()), f"{pathway} clustered mean"
+        ),
         "sem_probe_clustered": _finite(
             float(means.std() / math.sqrt(means.numel())), f"{pathway} clustered sem"
         ),
@@ -974,8 +1017,15 @@ class PathPatcher:
             # cases-per-probe ratio. The record is the sampling unit, so the
             # clustered figure is the one to read; the case-level one is kept
             # beside it because several artefacts quote it.
+            #
+            # ``mean`` and ``sem_probe_clustered`` are not a point estimate and
+            # its standard error: ``mean`` weights probes by their case count and
+            # the clustered standard error does not. ``mean_probe_clustered``,
+            # supplied by ``_probe_clustered_sem``, is the centre that standard
+            # error actually describes.
             result[pathway] = {
                 "mean": _finite(float(values.mean()), f"{pathway} recovery"),
+                "mean_cluster_unit": "case",
                 "sem": _finite(
                     float(values.std() / math.sqrt(values.numel()))
                     if values.numel() > 1
@@ -1106,8 +1156,9 @@ def structural_invariants(
 
     ``null_patch``            no hook at all recovers exactly 0;
     ``identity_patch``        re-writing the sender's own corrupted value recovers 0;
-    ``freeze_only``           pinning every sublayer with no sender patch recovers 0,
-                              which is the check that the freezing hooks are exact;
+    ``freeze_only``           pinning every sublayer with no sender patch recovers 0;
+    ``freeze_only_perturbed`` pinning every sublayer to a *wrong* value moves the
+                              metric, which is what gives ``freeze_only`` force;
     ``resid_final_at_q``      restoring the last block's output at the read-out
                               position recovers exactly 1;
     ``resid_final_all_positions``  the same restoration applied at every position
@@ -1123,6 +1174,8 @@ def structural_invariants(
                               final LayerNorm moves by exactly the patched head's
                               own write, ``(z_clean - z_base) @ W_O[head]``, which
                               is what makes the sender a head and not a layer.
+                              Read per case and reported as the worst case, not
+                              as a ratio of batch norms -- see below.
 
     Raised, never returned as a warning: a failure here invalidates every number
     the run would otherwise produce.
@@ -1176,6 +1229,66 @@ def structural_invariants(
 
     metric, _ = patcher._run(batch, sender=None, freeze_attn_from=0, freeze_mlp_from=0)
     record("freeze_only", mean_recovery(metric), 0.0, tolerance)
+
+    # ``freeze_only`` on its own passes whether the freezing hooks are exact or
+    # do nothing at all, and the docstring used to claim it as "the check that
+    # the freezing hooks are exact". It is not. ``_run`` pins every sublayer to
+    # ``base_attn``/``base_mlp``, which were captured on the corrupted input --
+    # the same input this pass runs on -- so the hook writes each module's own
+    # deterministic output back into it. A hook that failed to bind, bound to
+    # the wrong module, or wrote into a detached copy would leave the forward
+    # pass unchanged and recover exactly 0, which is the number the invariant
+    # demands. The failure that hides behind it is not hypothetical: a freeze
+    # that silently does not bind makes ``direct``, ``via_mlp``, ``via_attn``
+    # and ``total`` the same condition, and the arm then reports 100% direct
+    # effect with every invariant green.
+    #
+    # The positive control pins the same sublayers to zero instead. Zeroing
+    # every attention and MLP write into the read-out column from layer 0
+    # upwards cannot leave the metric where it was, so a recovery still inside
+    # ``tolerance`` means the hooks are not writing where they claim. Requiring
+    # movement of at least the same tolerance the null conditions must stay
+    # within keeps one number for both directions rather than inventing a
+    # second threshold.
+    zero_handles = []
+    for layer in range(arm.n_layer):
+        zero_handles.append(
+            arm.attention(layer).register_forward_hook(
+                patcher._freeze_hook(
+                    torch.zeros_like(batch.base_attn[layer]), batch, all_positions=False
+                )
+            )
+        )
+        zero_handles.append(
+            arm.mlp(layer).register_forward_hook(
+                patcher._freeze_hook(
+                    torch.zeros_like(batch.base_mlp[layer]), batch, all_positions=False
+                )
+            )
+        )
+    try:
+        perturbed_read = patcher._readout(batch.corrupt_ids, batch.mask, batch)
+    finally:
+        for handle in zero_handles:
+            handle.remove()
+    perturbed = mean_recovery(patcher._metric(perturbed_read, batch))
+    report["freeze_only_perturbed"] = {
+        "observed": _finite(perturbed, "freeze_only_perturbed"),
+        "required_absolute_movement": float(tolerance),
+        "frozen_value": "zero",
+        "role": (
+            "positive control for freeze_only: the freezing hooks are pinned to a "
+            "value that is not the module's own output, so a recovery of zero here "
+            "means they are not writing at all"
+        ),
+    }
+    if abs(perturbed) <= tolerance:
+        failures.append(
+            f"freeze_only_perturbed: {perturbed:.6f} did not move by more than "
+            f"{tolerance}; zeroing every sublayer write at the read-out column left "
+            "the metric where it was, so the freezing hooks are inert and "
+            "freeze_only's pass carries no information"
+        )
 
     final_block = arm.blocks()[arm.n_layer - 1]
     handle = final_block.register_forward_hook(
@@ -1270,10 +1383,56 @@ def structural_invariants(
         - batch.base_z[sender.layer][:, low : low + patcher.head_dim]
     ).float()
     predicted = batch.base_final_residual.float() + delta_z @ output_heads[sender.head]
-    scale = max(float((predicted - batch.base_final_residual.float()).norm()), 1e-6)
+    write = predicted - batch.base_final_residual.float()
+    error = (residual_q.float() - predicted).norm(dim=-1)
+    write_norm = write.norm(dim=-1)
+    # Per row, not over the batch. The check used to divide one Frobenius norm by
+    # another, which is a case-weighted average error in disguise: one row whose
+    # head write is large sets the denominator for every row, so a handful of
+    # rows can be entirely wrong and vanish into it. Worked through at tolerance
+    # 0.02 over eight rows, seven rows wrong by 100% still passes if the eighth
+    # row's write is an order of magnitude larger than theirs. The identity being
+    # checked -- that the final residual moves by exactly the patched head's own
+    # write -- is a per-case identity, so it is checked per case and the worst
+    # case is what has to clear the tolerance.
+    #
+    # The old ``max(scale, 1e-6)`` floor was the second hole: an arm whose sender
+    # genuinely writes almost nothing had its relative error divided by 1e-6, so
+    # any absolute discrepancy at all was rescaled to something small. Each row
+    # is now divided by its own write, and a row far below its batch's median
+    # write is excluded from the maximum and counted rather than being given a
+    # denominator it does not have. A sender that writes nothing anywhere is not
+    # a sender, and that is a refusal rather than a pass.
+    median_write = float(write_norm.median())
+    if not median_write > 0.0:
+        raise RuntimeError(
+            f"{arm.name}: sender {sender.as_dict()} writes nothing into the final "
+            "residual on at least half the cases in the batch, so the linearity "
+            "identity has no scale to be relative to and the head is not a sender "
+            "on these cases"
+        )
+    usable = write_norm >= _HEAD_WRITE_RELATIVE_FLOOR * median_write
+    relative = (error[usable] / write_norm[usable]).float()
+    report["head_write_linearity_rows"] = {
+        "n_rows": int(write_norm.numel()),
+        "n_rows_scored": int(usable.sum()),
+        "n_rows_below_write_floor": int(write_norm.numel()) - int(usable.sum()),
+        "relative_write_floor": float(_HEAD_WRITE_RELATIVE_FLOOR),
+        "median_head_write_norm": _finite(median_write, "median head write"),
+        "median_relative_error": _finite(
+            float(relative.median()), "head write linearity median"
+        ),
+        # The statistic this check used to publish, kept so that a run can be
+        # compared against the artefacts that quote it and the difference
+        # between the two readings is visible rather than inferred.
+        "batch_aggregate_relative_error": _finite(
+            float(error.norm() / float(write.norm())) if float(write.norm()) > 0 else 0.0,
+            "head write linearity aggregate",
+        ),
+    }
     record(
         "head_write_linearity",
-        float((residual_q.float() - predicted).norm()) / scale,
+        float(relative.max()),
         0.0,
         linearity_tolerance,
     )
@@ -1509,7 +1668,12 @@ def summarise_senders(
 
 
 def bootstrap_difference(
-    left: Sequence[float], right: Sequence[float], *, resamples: int, seed: int
+    left: Sequence[float],
+    right: Sequence[float],
+    *,
+    resamples: int,
+    seed: int,
+    minimum_units: int = MINIMUM_BOOTSTRAP_UNITS,
 ) -> dict[str, Any]:
     """Percentile spread of ``mean(left) - mean(right)`` across sender heads.
 
@@ -1533,6 +1697,22 @@ def bootstrap_difference(
     ``separated_across_heads`` rather than ``excludes_zero``. A two-sided
     bootstrap p-value is returned so that a caller running many of these
     comparisons can apply a multiplicity correction, which nothing here does.
+
+    **The unit floor applies here too, and this function had none.** It guarded
+    ``n < 2`` while ``homology.bootstrap_stratum`` refused anything below eight
+    for the same statistic and the same reason, and the 2026-07-28 panel summary
+    published spreads at ``n_left`` of 3, 4, 5 and 6 -- three of them with
+    ``excludes_zero: true``, on the protein side of the controlled pair. A
+    percentile spread over four heads trims its own extreme atoms; whether that
+    is called a confidence interval or a heterogeneity spread does not change
+    what the percentile rule does to it.
+
+    Degenerate is *returned*, not raised, because the head count is a measured
+    property of the arm: ProGen2-medium has four induction heads under the
+    approximate criterion and that is the finding, not a configuration error.
+    The point difference survives -- a mean of four numbers is a mean of four
+    numbers -- and only the spread, its separation verdict and its p-value are
+    withheld.
     """
 
     a = np.asarray(left, dtype=np.float64)
@@ -1541,6 +1721,27 @@ def bootstrap_difference(
         raise ValueError("a bootstrap needs at least two heads per side")
     if resamples < 100:
         raise ValueError("too few bootstrap resamples to read a percentile interval")
+    floor = bootstrap_unit_floor(int(min(a.size, b.size)), minimum_units=minimum_units)
+    if floor["degenerate"]:
+        return {
+            "difference": _finite(float(a.mean() - b.mean()), "bootstrap difference"),
+            "spread_low": None,
+            "spread_high": None,
+            "separated_across_heads": None,
+            "p_two_sided_uncorrected": None,
+            "resampling_unit": "sender_head",
+            "is_a_sampling_confidence_interval": False,
+            "interval_caveat": (
+                "no spread is published: "
+                f"{floor['degenerate_reason']}"
+            ),
+            "multiplicity": "no interval was produced, so there is nothing to correct",
+            **floor,
+            "n_left": int(a.size),
+            "n_right": int(b.size),
+            "resamples": int(resamples),
+            "seed": int(seed),
+        }
     rng = np.random.default_rng(seed)
     draws = np.empty(resamples, dtype=np.float64)
     for index in range(resamples):
@@ -1568,6 +1769,7 @@ def bootstrap_difference(
             "quantity per criterion per arm pair and must record the comparison "
             "count if it is to be corrected"
         ),
+        **floor,
         "n_left": int(a.size),
         "n_right": int(b.size),
         "resamples": int(resamples),

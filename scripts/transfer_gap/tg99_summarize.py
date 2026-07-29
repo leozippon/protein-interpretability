@@ -5,9 +5,21 @@ Strict mode is the default. It writes nothing unless every non-summary stage in
 ``--allow-partial`` is an exploratory escape hatch, not a silent fallback: its
 JSON output records the complete expected, present, and missing matrices.
 
+**Strict mode is now attainable.** It was not: the expected matrix fell back to
+the whole four-arm TG panel wherever a stage declared no arms, and two stages
+that declared none nonetheless refused arms inside their own bodies -- TG-05 can
+produce one artefact of four and TG-06 three. A fully executed campaign could
+therefore never satisfy the default mode, which made ``--allow-partial``
+mandatory and the default decorative. The eligibility is declared in
+``tg_contract`` now, derived from ``ArmSpec`` fields, and the matrix follows it.
+
 TG-03 artefacts carry configuration in their filenames and payloads. A single
 candidate per arm remains backward compatible. Multiple candidates are refused
 unless each ambiguous arm is selected explicitly by a stable semantic identity.
+
+Two quantities are combined across stages, and both now check that the stages
+measured one population first; see :func:`band_refusal`. TG-00's two control
+deltas are surfaced, which they never were.
 """
 
 from __future__ import annotations
@@ -22,6 +34,7 @@ from typing import Any
 from tg_common import REPO, TG_PANEL, write_json
 from tg_contract import SCHEMA_VERSION as CONTRACT_SCHEMA_VERSION
 from tg_contract import TG_STAGES
+from src.transfer.arms import PANEL
 
 DEFAULT_ROOT = REPO / "results/transfer_gap_20260729_corrected"
 SUMMARY_SCHEMA_VERSION = "transfer_gap_summary_v2"
@@ -250,6 +263,35 @@ def _loaded(paths: dict[str, Path], stage: str, artefact: str) -> dict[str, Any]
     return None if path is None else load_json(path)
 
 
+def band_refusal(arm: str, *stages: str) -> str | None:
+    """Why two stages' numbers may not be divided, or ``None`` if they may.
+
+    Combining a numerator from one stage with a denominator from another asserts
+    that the two measured one population. TG-01 draws protein cohorts on 400-1000
+    residues at ``max_len`` 384 and TG-03 on 120-1000 at 256: they share no
+    protein below 400 residues, and EXP-R2-060 prices protein cohort-block
+    sensitivity at 0.16-0.60 nats -- larger than the 0.5-nat floor the guard
+    beside this division applies. The bands are already declared in
+    ``tg_contract``; nothing was reading them.
+
+    Text arms are unaffected, because a protein residue band does not select
+    their cohort. That is exactly the asymmetry that let this pass inspection:
+    the number was well formed on the control arm.
+    """
+
+    if PANEL[arm].modality != "protein":
+        return None
+    bands = {stage: TG_STAGES[stage].protein_band for stage in stages}
+    if len(set(bands.values())) == 1 and None not in bands.values():
+        return None
+    described = ", ".join(f"{stage} {band}" for stage, band in bands.items())
+    return (
+        f"incommensurate protein cohort bands ({described}); a ratio across them "
+        "would attribute one population's information to another's. EXP-R2-060 "
+        "prices protein cohort-block sensitivity at 0.16-0.60 nats"
+    )
+
+
 def build_rows(paths: dict[str, Path]) -> dict[str, dict[str, Any]]:
     """Build the legacy metric rows after the campaign contract has been checked."""
 
@@ -257,6 +299,34 @@ def build_rows(paths: dict[str, Path]) -> dict[str, dict[str, Any]]:
     try:
         for arm in TG_PANEL:
             row: dict[str, Any] = {}
+
+            # TG-00 is the positive-control stage `tg_contract` calls "the stage
+            # the audit's plan item B1 names; it must be run before any TG number
+            # is quoted", and this summary read every other stage and not it: no
+            # SUMMARY.json has ever carried a rendering or cohort delta. The two
+            # controls price the two defects that were each worth more than most
+            # of the effects measured on top of them.
+            d0 = _loaded(paths, "tg00", arm)
+            if d0 is not None:
+                rendering, cohort_control = d0["rendering_control"], d0["cohort_control"]
+                row |= {
+                    "rendering_delta_nats": (
+                        rendering["rendering_delta_nats"]
+                        if rendering["applicable"]
+                        else None
+                    ),
+                    "rendering_control_applicable": rendering["applicable"],
+                    "wrong_control_token_delta_nats": rendering.get(
+                        "wrong_control_token_delta_nats"
+                    ),
+                    "cohort_delta_nats": (
+                        cohort_control["cohort_delta_nats"]
+                        if cohort_control["applicable"]
+                        else None
+                    ),
+                    "cohort_control_applicable": cohort_control["applicable"],
+                }
+
             d1 = _loaded(paths, "tg01", arm)
             if d1 is not None:
                 row |= {
@@ -302,11 +372,17 @@ def build_rows(paths: dict[str, Path]) -> dict[str, dict[str, Any]]:
                     "sae_denominator_valid": d3.get("denominator_valid"),
                 }
                 if d1 is not None:
+                    refusal = band_refusal(arm, "tg01", "tg03")
                     information = d1["unigram_entropy_nats"] - d3["ce_clean_nats"]
                     row["sae_frac_information_lost"] = (
-                        d3["ce_delta_nats"] / information
+                        None
+                        if refusal is not None or information < 0.5
+                        else d3["ce_delta_nats"] / information
+                    )
+                    row["sae_frac_information_lost_refusal"] = refusal or (
+                        None
                         if information >= 0.5
-                        else None
+                        else "denominator below the 0.5-nat floor"
                     )
 
             d5 = _loaded(paths, "tg05", arm)
@@ -323,11 +399,17 @@ def build_rows(paths: dict[str, Path]) -> dict[str, dict[str, Any]]:
                     "uniform_cost_bits": d6["uniform_cost_bits"],
                 }
                 if d1 is not None:
+                    refusal = band_refusal(arm, "tg01", "tg06")
                     information = d1["unigram_entropy_nats"] - d6["ce_nats"]["clean"]
                     row["frac_information_from_attention_pattern"] = (
-                        d6["transplant_cost_nats"] / information
+                        None
+                        if refusal is not None or information < 0.5
+                        else d6["transplant_cost_nats"] / information
+                    )
+                    row["frac_information_from_attention_pattern_refusal"] = refusal or (
+                        None
                         if information >= 0.5
-                        else None
+                        else "denominator below the 0.5-nat floor"
                     )
             rows[arm] = row
     except (KeyError, TypeError, ZeroDivisionError) as error:
@@ -339,6 +421,8 @@ def print_table(rows: dict[str, dict[str, Any]]) -> None:
     """Print the existing compact comparison table."""
 
     keys = [
+        "rendering_delta_nats",
+        "cohort_delta_nats",
         "gain_bits_per_token",
         "gain_bits_per_symbol",
         "frac_uncertainty_resolved",

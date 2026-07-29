@@ -1,6 +1,6 @@
 # Interpretability transfer audit: text to protein generative models
 
-**Status:** active; canonical analysis document **Supersedes:** repository-root `check.md`, which is frozen and no longer maintained **Updated:** 2026-07-29
+**Status:** active; canonical analysis document **Supersedes:** repository-root `check.md`, which is frozen and no longer maintained **Updated:** 2026-07-30
 
 ---
 
@@ -37,7 +37,20 @@ Re-run is `--stages search` only, **no GPU**. Note that `assign_homology` now ra
 
 And one interval is renamed rather than deleted: the **path-patching matched-pair result** (+0.020, CI [−0.121, +0.166]) resampled an arm's induction *heads* — its entire population, selected by a threshold — while the probe records, the only real sampling unit, contributed nothing. It measures heterogeneity, not sampling error. The point estimate stands; the interval does not mean what it said.
 
+> **Extended by EXP-R2-068.** A unit floor now applies to that head resampling, at the eight units `homology.py` has enforced since EXP-R2-061. The headline above is unaffected — it resamples 14 heads. But **eight further `excludes_zero: true` separation verdicts in the same artefact rest on three to six heads** and are withdrawn: ProGen2-medium's exact direct effect, mediated effect and mediated fraction (n = 6, 6, 6), its approximate mediated effect and mediated fraction (n = 4, 3), and the matched pair's *approximate* direct effect, mediated effect and mediated fraction (n = 6, 6, 5). Measured coverage of a nominal 95% interval at these counts is 0.74–0.86, not 0.95. On re-run those rows publish a point difference and no separation verdict. `results/transfer_20260728/path_patching/panel_summary.json` is retained unmodified as the record.
+
 ## 0.15 TG-01 is not quotable (EXP-R2-066)
+
+> **CLOSED 2026-07-30 (EXP-R2-068).** Two corrections. The stated cause was stale — `tg01_information_budget.py` registers `--seed` once and `--help` exits 0, so it was *runnable, not dead*. And it has now been **run**, on all four TG arms, under a seeded permutation of the whole corpus consumed in seeded record order, with the held-out unigram estimator. Artefacts: `results/transfer_gap_20260729_corrected/tg01/`.
+>
+> | arm | unigram (nats) | clean NLL | gain (bits/symbol) | top-1 | information range (nats) | long-range fraction beyond 8 |
+> |---|---:|---:|---:|---:|---:|---:|
+> | gpt2-large | 7.587 | 2.632 | 1.615 | 0.472 | 4.884 | 0.254 |
+> | protgpt2 | 8.821 | 4.846 | 2.012 | 0.266 | 3.916 | 0.630 |
+> | progen2-medium | 2.894 | 1.459 | 2.075 | 0.545 | 1.427 | 0.945 |
+> | zymctrl | 2.974 | 0.891 | 3.076 | 0.727 | 0.202 | refused |
+>
+> **The retracted figures moved a long way, and in the direction the rendering defect predicts.** ProtGPT2's clean NLL falls **7.296 → 4.846** (−2.45 nats), its information gain rises **2.636 → 5.735 bits**, and its top-1 rises **0.102 → 0.266**. None of the 2026-07-24 TG-01 numbers should ever have been read as a property of the model. ZymCTRL's long-range shares are **refused, not reported**: its information range is 0.202 nats, below the 0.5-nat denominator floor, so the shares are not defined. That refusal is the guard working, and it means ZymCTRL contributes no long-range statistic to this stage.
 
 `tg01_information_budget.py` **could not run at all**: `--seed` was registered twice, so argparse raised at parser construction. Verified directly, and consistent with the corrected results tree, which holds `tg00`, `tg03`, `tg07` and `tg09` and **no `tg01/`**.
 
@@ -189,6 +202,8 @@ Eleven autoregressive decoders under one code path, each fed in the format it wa
 | L17 | An intervention that moves everything needs a control for moving everything; raw A6 numbers read −0.82 vs −0.83 (indistinguishable), against a matched random-direction control −0.441 vs −0.208 | activation patching, steering, path patching | EXP-R2-059 | **method** |
 | L18 | An environment default silently narrowed a nine-stage campaign's text side to **one model** while every downstream number remained well-formed | any multi-arm pipeline | EXP-R2-057 | **method** |
 | L19 | RMSNorm-on-LayerNorm algebra passes a reconstruction gate at 0.49% error while producing systematically wrong attribution; the loud failure (omitted bias, 0.518) is safer than the quiet one | OV/QK circuit analysis on modern architectures | EXP-R2-055 | **method** |
+| L20 | **No remote predicate the campaign controller relied on could return false.** The access layer returns 0 whatever the remote command exits with — measured, `h200_pod_exec.sh -- bash -c "exit 7"` and `h200_pod_bash.sh "exit 5"` both return **0**. Three consequences, each verified on the cluster: a worker that refused a campaign at preflight and scheduled no GPU was reported as `campaign complete`, exit 0; the remote half of the code-freeze guarantee was never actually checked; and the append-only invocation manifest was **never pushed at all** — every run directory on GPFS holds `INVOCATIONS=0` while the controller logged "already present and verified". A campaign's verdict, its frozen code and its provenance record all travelled on a channel that cannot say no | any remote-execution pipeline | EXP-R2-068 | **method** — the L18 shape, one layer above the ledger built to prevent it |
+| L21 | A generated contract can verify on the host that generated it and disagree on the host that runs it. The arm-to-environment-variable map was *inferred* by comparing resolved paths; the pod sets `TRANSFER_TEXT_MODEL_BASE_DIR="${TRANSFER_MODEL_BASE_DIR}"` because all checkpoints share one GPFS directory, so the comparison aliased and six of seven text arms classified as protein-root arms **on the pod only** | any host-portable declaration derived from resolved paths | EXP-R2-068 | **method** |
 
 ### 5.05 Instrument-transfer campaign, 11 arms, 4x H200 (EXP-R2-060)
 
@@ -236,7 +251,7 @@ Matched pair 1.50 against 1.12. **It survives replacing GPT-2-large with a Qwen2
 
 Two rotary arms were **not** scored and the skip was logged with its reason: `lens_head` requires `nn.LayerNorm` at `transformer.ln_f`, which an RMSNorm decoder lacks.
 
-**Qualification from EXP-R2-063:** the lens stage measures on residues **64–120** while `cohort_power` qualifies arms on **64–246**. The cohort that was certified measurable is not the cohort that was scored. Not retracted — the tuned-lens-beats-logit-lens result is within-arm and within-band — but **the cross-band reading is weaker than it appears**, and the band is now declared in every artefact.
+*(The EXP-R2-063 cohort-band qualification appeared twice in this section and read as two findings; the duplicate was removed on 2026-07-30, EXP-R2-068. It is stated once, in (e) above.)*
 
 **Two failures were caught by the stage scripts' own guards** rather than by producing a wrong number, and both are instructive: a Markov "held-out" block offset by *record count*, which is not disjointness because Swiss-Prot carries the same sequence under several accessions; and a control-anchored aggregation receiving all seven text arms. Both fixed.
 
@@ -250,7 +265,16 @@ The figures that carry the most weight, with their provenance, so the catalogue 
 
 **L8 — the aperture is algebraically forced.** Numerical rank of `∂logits/∂h_l` is exactly **31** for ProGen2-medium and **457** for ZymCTRL, at every layer and probe, against 1150–1278 for the 50k-vocab arms. Validated against central finite differences at 2.2e-4–2.5e-3 relative error. **Vocabulary-conditional, not modality-conditional** — ProtGPT2's interface is near-full-rank. The honest label is *protein-typical, not protein-necessary*.
 
-**L9 — explanation closure, measured.** Bits/symbol within a protein: text token identity **7.32**, residue identity 4.11, structural-oracle attributes **3.61** at coverage 1.00, **Pfam domain label 0.74** at coverage 0.56. *Caveat: this is single-run with declared source-order bias and must be re-derived before it is quoted. As of EXP-R2-063 the structural channel is drawn under a seeded permutation (`--structure-seed`), so **3.61** is now re-derivable; the Pfam and text channels are still corpus-prefix draws and the artefact records that per channel, so **7.32** and **0.74** still carry the bias.*
+**L9 — explanation closure, measured; re-derived under seeded permutation (EXP-R2-068, plan item B3).** Bits/symbol within one 300-symbol window, every channel now drawn under a seeded permutation of its **whole** corpus and every unit list visited in seeded order, with grouped intervals:
+
+| channel | file-order draw | seeded draw, 95% interval | second draw seed |
+|---|---:|---|---:|
+| text token identity | 7.32 | **7.326** [7.316, 7.336] | 7.331 |
+| residue identity | 4.11 | **4.094** [4.089, 4.098] | 4.097 |
+| structural-oracle attributes | 3.61 | **3.792** [3.746, 3.837] | 3.783 |
+| Pfam domain label | 0.74 | **0.860** [0.837, 0.883] | 0.889 |
+
+Drawn from all **574,627** eligible Swiss-Prot entries and all **23,586** AlphaFold models rather than from a prefix; Pfam residue coverage 0.601 over 18,251 of 20,000 sampled proteins. The fourth column is an independent draw at seed 20260801 (`results/transfer_20260730/explanation_channel_seed2/`), reported because evidence-discipline rule 4 does not admit a single-draw point estimate: every channel reproduces, and both Pfam figures sit far above the file-order 0.74. **The contrast survives and the closure argument stands.** The two channels that had been prefix draws moved **in the predicted direction and by a material amount** — Pfam **+0.12 bits (+16%)**, structural **+0.18 bits (+5%)** — because a family-grouped prefix is more uniform in its labels than the corpus, so it *understates* a label channel's entropy. The text control moved **+0.006 bits**, confirming that shard order is not family order and that the effect is protein-specific (extends L13). The text-to-Pfam ratio is **8.5x**, against 9.9x under the biased draws: the closure gap is real and slightly smaller than recorded. Artefact: `results/transfer_20260730/explanation_channel/explanation_channel.json`.
 
 **L2 — the event-selection ceiling.** `I(E;L) ≤ h(m/N)`. The gate demanded 0.1 nats from a top-100-of-122,671 design whose ceiling is **0.0066 nats** — 15.1x above attainable. The reported `0/38 FAIL` carries no biological content.
 
@@ -264,7 +288,17 @@ The figures that carry the most weight, with their provenance, so the catalogue 
 
 **New — protein dictionaries are data-limited where text ones are saturated.** gpt2-large 0.958 → 0.962 across 16x data; ZymCTRL 0.610 → 0.716 → **0.843** and still climbing at ~+0.12 per 4x. That is convergence of the **instrument**, not of the model — a distinction this programme has been blurring.
 
-**New — the one surviving pathway difference.** Non-local propagation under activation patching: 9% (gpt2-large) against 34% (ProtGPT2) and 50% (ProGen2-medium) in the 33–64 band. It has survived every methodological correction and is denominator-free, but rests on 2–16 eligible far-band cases. **Not yet a claim.**
+**New — the one surviving pathway difference. Measured at production scale (EXP-R2-068, plan item B6).** Non-local propagation under activation patching: the share of single-token corruptions whose effect at a read-out position 33–64 tokens away clears the minimum-effect floor. Cohorts are seeded draws of 256 records; the interval resamples the **source sequence**, not the case, because cases are many corruptions of the same few sequences.
+
+| arm | eligible / total | fraction | 95% interval | source sequences |
+|---|---:|---:|---|---:|
+| gpt2-large | 48 / 288 | **0.167** | [0.122, 0.215] | 168 |
+| protgpt2 | 65 / 256 | **0.254** | [0.202, 0.307] | 162 |
+| progen2-medium | 58 / 128 | **0.453** | [0.369, 0.538] | 100 |
+
+**The gate is met and the ordering survives, but the modality separation does not.** All three arms clear the pre-registered ≥30 far-band cases (against 2–16 before), and every interval excludes zero. ProGen2-medium is disjoint from both other arms. **gpt2-large and ProtGPT2 overlap** on [0.202, 0.215] — so at production scale the text control and the matched protein arm are *not* separated, and what separates is ProGen2-medium from everything else. That is an architecture-and-tokenisation contrast as much as a modality one, and the matched pair is the only modality-identifying comparison the panel has (§2). **Still not a claim, and now for a sharper reason than sample size.**
+
+**Two further corrections this run forces.** First, **the previously recorded trio 9% / 34% / 50% is not reproducible from the retained artefacts.** Their far-band eligible fractions are 0.250 (gpt2-large), 0.219 (ProtGPT2), 0.500 (ProGen2-medium) and 0.062 (ZymCTRL); only ProGen2-medium's matches, and the accompanying "2–16 eligible far-band cases" matches the counts 8 / 7 / 16 / 2 exactly. The figures should be read as superseded rather than confirmed. Second, **ZymCTRL cannot enter this measurement at all.** `build_patch_cases` cuts every row to the patching window, and a conditioned rendering puts the `<end>` marker that delimits scored content hundreds of tokens beyond a 128-token window, so no valid content span exists and `content_bounds` refuses. Reaching it needs an ~816-token window at roughly 2.5 GPU-h, or a short protein band incommensurable with the other three. This is the conditioning prompt (L15) removing an arm from a window-based estimand — recorded, not worked around. Artefacts: `results/transfer_20260730/b6_nonlocal_propagation/`.
 
 ### 5.2 A fifth cause the evidence demands
 
@@ -343,10 +377,10 @@ This is the deliverable.
 |---|---|---|
 | **B1** Input-contract certification, retro-applied to every quoted number | must reproduce the 1.42-nat rendering delta and the +1.01-nat file-order delta as positive controls | ≤10 GPU-h |
 | ~~**B2**~~ TG-03/TG-07 re-run under corrected rendering + seeded cohort | binary: does the variance–behaviour dissociation reproduce? **DONE, EXP-R2-062 — NO. Retracted, and C4 with it.** | ~~2~~ 1.8 GPU-h, spent |
-| **B3** Explanation-channel re-derivation under seeded permutation | the 7.32 / 3.61 / 0.74 bits/symbol contrast survives, or closure stands as definitional only | CPU |
+| ~~**B3**~~ Explanation-channel re-derivation under seeded permutation | the 7.32 / 3.61 / 0.74 bits/symbol contrast survives, or closure stands as definitional only. **DONE, EXP-R2-068 — SURVIVES**, at 7.326 / 3.792 / 0.860 with separated intervals; see §5.1 L9 | CPU, spent |
 | **B4** Causal effect-size distributions on induction, 4 arms | top-20 Jaccard ≥ 0.8 against the census, else the new statistic is less sensitive and is not adopted | ~12 GPU-h |
 | **B5** Same on copy-suppression | does effect-size separate arms where prevalence cannot? Directly answers §1's measurability question | ~13 GPU-h |
-| **B6** Non-local propagation at production scale | far-band cases ≥ 30 per arm (currently 2–16); 9% vs 34–50% survives with intervals excluding zero | ~5 GPU-h |
+| ~~**B6**~~ Non-local propagation at production scale | far-band cases ≥ 30 per arm (currently 2–16); 9% vs 34–50% survives with intervals excluding zero. **DONE, EXP-R2-068 — gate met, claim not earned.** 48 / 65 / 58 far-band cases, all intervals exclude zero, but gpt2-large and ProtGPT2 **overlap**; the separation is ProGen2-medium against the rest, and ZymCTRL is structurally unmeasurable here. See §5.1 | ~1.5 GPU-h, spent |
 
 ~~**B2 first** — it is 2 GPU-h and it decides whether an entire method line has a motivation.~~ **Run, EXP-R2-062: the method line does not have one.** B1 is partly discharged with it — the rendering positive control reproduces at 1.78 nats/token (larger than 1.42, because the seeded cohort also removes the file-order effect the original control carried), and the file-order control reproduces at +0.240 nats/token on ProGen2-medium at n = 200 against the +1.01 recorded at n = 48. `scripts/transfer_gap/tg00_input_contract.py` is that certification stage and should be run before any TG number is quoted.
 
@@ -372,9 +406,9 @@ This is the deliverable.
 8. **Steering re-runs before a dense readout exists** — without one, a steering run is not a test.
 9. **Further investment in the induction modality claim.**
 
-### 9.2 One unresolved question worth 5 GPU-hours
+### 9.2 ~~One unresolved question worth 5 GPU-hours~~ — answered (EXP-R2-068)
 
-- **Does non-local propagation survive at production scale?** The one finding that has survived every correction, and denominator-free — but far bands rest on 2–16 cases. ~5 GPU-h. If it holds it is the strongest substrate claim the programme has.
+- ~~**Does non-local propagation survive at production scale?**~~ **Run at 1.5 GPU-h. It survives as an ordering and fails as a modality claim.** Every arm clears the case gate and every interval excludes zero, but the matched pair — the only modality-identifying comparison the panel has — overlaps at [0.202, 0.215]. What separates is ProGen2-medium from both other arms, which is an architecture and tokenisation contrast, and ZymCTRL cannot enter the estimand at all because its conditioning prompt puts the scored span outside the patching window. The strongest available substrate claim is therefore **not** a modality claim. Detail in §5.1.
 
 ---
 
@@ -464,3 +498,5 @@ Each earned by a failure in this programme.
 12. **A single declaration, imported, never reimplemented.** The rendering defect of §0.1 survived a withdrawal that fixed `src/transfer/arms.py` because `scripts/transfer_gap/tg_common.py` carried a second copy. Any module that decides what string a model is fed must import that decision from the panel declaration. (EXP-R2-028, EXP-R2-062.) The same holds one step earlier, for *which records exist* and *which arms a stage measures*: EXP-R2-063 found the latter maintained by hand in five places, two of which disagreed with `PANEL` — one stage's panel silently narrowed by an arm, another silently widened by one. Use `scripts/transfer/panel_contract.py::arm_can_run`.
 13. **Declare a stage's cohort band against the band the arms were qualified on.** Four stages of one campaign draw protein cohorts on three different bands (64–246, 64–120, 600–2000), and the cohort `cohort_power` qualifies is not the cohort `lens_family` scores. A per-stage band is a legitimate compute choice; an undeclared one lets a PASS verdict be read as covering a population it was never measured on. (EXP-R2-063.)
 14. **A scheduler must obey what a module can deliver, not what the panel intends.** `ArmSpec.capabilities` is an intent and a module's architecture declaration is a deliverable; they are allowed to disagree, and exactly one predicate should consult both. Handing a stage an arm it cannot serve does not fail cheaply — it fails after the checkpoint is on the GPU. (EXP-R2-060, EXP-R2-063.)
+15. **A remote runner's success is not the transport's exit code.** Verify the channel carries failure before trusting a green campaign: this one does not, and returned 0 for a command that exited 7. A campaign's verdict must be decidable from the campaign's own output. (EXP-R2-068, L20.)
+16. **A declaration derived by comparing resolved paths is not host-portable.** Two environment variables that are distinct on the authoring host can alias on the running host, and then the comparison silently picks whichever branch is written first. Declare the choice where it is made. (EXP-R2-068, L21.)

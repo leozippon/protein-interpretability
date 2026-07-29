@@ -55,9 +55,11 @@ from tg_common import (
     cohort_for,
     cohort_provenance,
     load_arm,
+    symbol_position_mask,
     tokenize_batch,
     write_json,
 )
+from tg_contract import stage_contract_record
 
 CE_GUARD = 0.05   # P0-2b minimum mean-ablation CE delta, nats/token
 KL_GUARD = 0.01   # P0-2b minimum mean-ablation KL, nats/token
@@ -105,7 +107,18 @@ def mlp_output_means(arm, texts, max_len, batch, cap_batches=None):
 
 @torch.no_grad()
 def scored_pass(arm, texts, max_len, batch, ablate_layers, means, resid_layer=None):
-    """CE and KL against a clean reference under a given ablation scope."""
+    """CE and KL against a clean reference under a given ablation scope.
+
+    Cross-entropy is returned over all scored positions **and** over the
+    alphabet-bearing ones. The stage reported the all-position mean alone, and
+    ``single_mlp_headroom_nats`` -- the number the P0-2b attainability argument
+    turns on, against a 0.05-nat guard -- was therefore averaged over a stream in
+    which ProtGPT2's FASTA newlines occupy roughly one position in seventeen and
+    ZymCTRL's EC tag and markers occupy the head of every sequence. The guard
+    flags stay on the all-position quantity, which is what P0-2b specified; the
+    residue-position delta is reported beside them so a reader can see whether
+    the two agree.
+    """
     handles = []
     if resid_layer is not None:
         mean = means["resid"][resid_layer].to(arm.device)
@@ -127,18 +140,22 @@ def scored_pass(arm, texts, max_len, batch, ablate_layers, means, resid_layer=No
         handles.append(arm.blocks()[layer].mlp.register_forward_hook(mlp_hook))
 
     ce_total, kl_total, n = 0.0, 0.0, 0
+    ce_symbol_total, n_symbol = 0.0, 0
     try:
         for start in range(0, len(texts), batch):
             ids, mask = tokenize_batch(arm, texts[start : start + batch], max_len)
             ids, mask = ids.to(arm.device), mask.to(arm.device)
             valid = (mask[:, 1:] * mask[:, :-1]).bool()
+            symbol = symbol_position_mask(arm, ids[:, 1:]) & valid
             logp = F.log_softmax(
                 arm.model(input_ids=ids, attention_mask=mask).logits[:, :-1].float(),
                 dim=-1,
             )
-            nll = -logp.gather(-1, ids[:, 1:].unsqueeze(-1)).squeeze(-1)[valid]
-            ce_total += float(nll.sum())
+            per_position = -logp.gather(-1, ids[:, 1:].unsqueeze(-1)).squeeze(-1)
+            ce_total += float(per_position[valid].sum())
             n += int(valid.sum())
+            ce_symbol_total += float(per_position[symbol].sum())
+            n_symbol += int(symbol.sum())
             if handles:
                 ref = REFERENCE["logp"][start]
                 kl = (ref.exp() * (ref - logp.cpu())).sum(-1)[valid.cpu()]
@@ -148,7 +165,15 @@ def scored_pass(arm, texts, max_len, batch, ablate_layers, means, resid_layer=No
     finally:
         for h in handles:
             h.remove()
-    return ce_total / n, (kl_total / n if handles else 0.0)
+    if n_symbol == 0:
+        raise RuntimeError(f"{arm.name}: no alphabet-bearing scored positions")
+    return {
+        "ce": ce_total / n,
+        "ce_symbol": ce_symbol_total / n_symbol,
+        "kl": kl_total / n if handles else 0.0,
+        "n_scored": n,
+        "n_scored_symbol": n_symbol,
+    }
 
 
 REFERENCE: dict = {"logp": {}}
@@ -199,8 +224,15 @@ def main() -> None:
         h.remove()
     means["resid"] = [(s / count).float() for s in sums]
 
-    ce_clean, _ = scored_pass(arm, texts, args.max_len, args.batch, [], means)
-    print(f"[{arm.name}] clean CE {ce_clean:.4f} nats/token", flush=True)
+    clean = scored_pass(arm, texts, args.max_len, args.batch, [], means)
+    ce_clean = clean["ce"]
+    symbol_share = clean["n_scored_symbol"] / clean["n_scored"]
+    print(
+        f"[{arm.name}] clean CE {ce_clean:.4f} nats/token "
+        f"(alphabet-bearing positions {clean['ce_symbol']:.4f}, "
+        f"{symbol_share:.3f} of stream)",
+        flush=True,
+    )
 
     mid = analysis_layer(arm.n_layer, 0.5)
     scopes = []
@@ -214,33 +246,49 @@ def main() -> None:
 
     rows = []
     for name, layers, resid in scopes:
-        ce, kl = scored_pass(arm, texts, args.max_len, args.batch, layers, means, resid)
+        scored = scored_pass(arm, texts, args.max_len, args.batch, layers, means, resid)
         row = dict(
             scope=name,
             n_layers_ablated=len(layers) if resid is None else 1,
-            ce_delta_nats=ce - ce_clean,
-            kl_nats=kl,
-            passes_p0_2b_ce_guard=(ce - ce_clean) >= CE_GUARD,
-            passes_p0_2b_kl_guard=kl >= KL_GUARD,
+            ce_delta_nats=scored["ce"] - ce_clean,
+            ce_delta_nats_symbol_positions=scored["ce_symbol"] - clean["ce_symbol"],
+            kl_nats=scored["kl"],
+            # The guards are P0-2b's, and P0-2b specified the all-position mean.
+            # The symbol-position delta above is reported, not gated on: changing
+            # what a published gate is applied to would silently redefine it.
+            passes_p0_2b_ce_guard=(scored["ce"] - ce_clean) >= CE_GUARD,
+            passes_p0_2b_kl_guard=scored["kl"] >= KL_GUARD,
         )
         rows.append(row)
         flag = "OK " if row["passes_p0_2b_ce_guard"] else "GUARD-FAIL"
-        print(f"  {name:26s} dCE={row['ce_delta_nats']:+.4f}  KL={kl:.4f}  {flag}",
-              flush=True)
+        print(
+            f"  {name:26s} dCE={row['ce_delta_nats']:+.4f} "
+            f"(alphabet {row['ce_delta_nats_symbol_positions']:+.4f})  "
+            f"KL={scored['kl']:.4f}  {flag}",
+            flush=True,
+        )
 
     single = next(r for r in rows if r["scope"] == "mlp_single_d0.50")
     payload = dict(
         arm=arm.name,
         modality=arm.modality,
+        contract=stage_contract_record("tg10", [arm.name]),
         n_layer=arm.n_layer,
         layer_depth_half=mid,
         n_sequences=len(texts),
         seed=args.seed,
         cohort=cohort_provenance(cohort, arm),
         ce_clean_nats=ce_clean,
+        ce_clean_nats_symbol_positions=clean["ce_symbol"],
+        n_scored_positions=clean["n_scored"],
+        n_scored_symbol_positions=clean["n_scored_symbol"],
+        symbol_position_share=symbol_share,
         p0_2b_ce_guard=CE_GUARD,
         p0_2b_kl_guard=KL_GUARD,
         single_mlp_headroom_nats=single["ce_delta_nats"],
+        single_mlp_headroom_nats_symbol_positions=single[
+            "ce_delta_nats_symbol_positions"
+        ],
         single_mlp_passes_guard=single["passes_p0_2b_ce_guard"],
         scopes=rows,
     )

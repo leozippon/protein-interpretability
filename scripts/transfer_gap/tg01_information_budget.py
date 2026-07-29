@@ -38,6 +38,19 @@ EC-conditioned arm, so its short-context points are not that model's behaviour
 under short context, they are that model unconditioned. ZymCTRL read 21.3
 nats/token at context 1 for this reason. The curve is still reported, flagged,
 and the fractions derived from it are refused.
+
+*Query positions.* `information_range` -- the denominator of every long-range
+share -- subtracted the longest-context curve point, averaged over sampled query
+positions `q >= 128`, from a baseline averaged over every scored position
+1..383. The comment beside the shares said the two "use different query-position
+distributions and are not comparable" while the line computing them did exactly
+that. The baseline is now evaluated on the curve's own query positions, and the
+full-pass value is kept beside it as
+`unigram_entropy_at_query_positions_nats`'s counterpart so the offset is visible.
+
+*Slices.* The symbol-level Markov ladder trains on half of the baseline cohort.
+That half is now a sample of it rather than the corpus-earliest half; see
+`tg_common.in_seeded_record_order`.
 """
 
 from __future__ import annotations
@@ -58,9 +71,11 @@ from tg_common import (
     cohort_for,
     cohort_provenance,
     load_arm,
+    symbols_per_token,
     tokenize_batch,
     write_json,
 )
+from tg_contract import stage_contract_record
 from src.transfer.arms import PANEL
 
 LN2 = math.log(2.0)
@@ -116,7 +131,21 @@ def full_context_pass(arm: Arm, texts: list[str], max_len: int, batch: int):
 @torch.no_grad()
 def truncation_curve(arm: Arm, texts: list[str], max_len: int, n_query: int,
                      batch: int, seed: int):
-    """NLL at sampled query positions as a function of visible context length."""
+    """NLL at sampled query positions as a function of visible context length.
+
+    Returns the curve, the window count, and **the target token at every query
+    position**. The targets are returned because every quantity derived from
+    this curve is a difference against a context-free baseline, and that baseline
+    has to be evaluated on the same positions. It was not: ``information_range``
+    subtracted ``curve[128]`` -- averaged over sampled query positions ``q >=
+    128`` -- from a unigram cross-entropy averaged over *every* scored position
+    1..383, which includes the leading control token and the first FASTA line.
+    Two different query-position distributions, and the difference between them
+    is the denominator of every long-range share, with ``local_fraction_within_8``
+    carrying the same mixture in its numerator and the result compared against a
+    0.5-nat floor. The comment eight lines from the payload said the two "are not
+    comparable"; the code above it did exactly that.
+    """
     rng = np.random.default_rng(seed)
     windows = []  # (token id list up to and including query, target)
     for text in texts:
@@ -154,7 +183,8 @@ def truncation_curve(arm: Arm, texts: list[str], max_len: int, n_query: int,
             logp = F.log_softmax(logits[:, -1].float(), dim=-1)
             nlls.append(-logp.gather(-1, block[:, -1:]).squeeze(-1).cpu().numpy())
         out[ctx] = float(np.concatenate(nlls).mean())
-    return out, len(windows)
+    targets = np.asarray([ids[q] for ids, q in windows], dtype=np.int64)
+    return out, len(windows), targets
 
 
 def unigram_model(token_ids: np.ndarray, vocab: int) -> np.ndarray:
@@ -276,22 +306,20 @@ def main() -> None:
     h_uni_plug_in = plug_in_entropy(base_tokens, vocab)  # reported for its bias only
     gain = (-logp_uni) - nll  # nats, positive = model beats unigram
 
-    curve, n_windows = truncation_curve(
+    curve, n_windows, query_targets = truncation_curve(
         arm, texts, args.max_len, args.n_query, args.trunc_batch, args.seed
     )
+    # The same unigram model, scored on exactly the positions the curve is
+    # averaged over. Without this the curve's denominator mixed two query-position
+    # distributions; see `truncation_curve`.
+    h_uni_query = float(-np.log(p_uni[query_targets]).mean())
 
-    # Tokenizer expansion, measured over exactly the scored window: symbols are
-    # counted after truncation, otherwise long sequences inflate the ratio.
-    n_tokens, n_symbols = 0, 0
-    for text in texts:
-        ids = arm.tokenizer(text, return_tensors=None)["input_ids"][: args.max_len]
-        decoded = arm.tokenizer.decode(ids)
-        n_tokens += len(ids)
-        if arm.modality == "protein":
-            n_symbols += sum(1 for c in decoded if c in AA20)
-        else:
-            n_symbols += len(decoded)
-    symbols_per_token = n_symbols / n_tokens
+    # Tokenizer expansion, measured over exactly the scored window. This was a
+    # byte-for-byte second copy of `arms.symbols_per_token`, which `tg_common`
+    # already re-exports -- and it divides three headline payload fields, so it
+    # is the axis on which a BPE arm and a residue-level arm are compared at all.
+    # EXP-R2-062 is the same shape with one copy fixed and one not.
+    expansion = symbols_per_token(arm, texts, args.max_len)
 
     order = np.argsort(-gain)
     top10 = order[: max(1, int(0.1 * gain.size))]
@@ -300,10 +328,16 @@ def main() -> None:
     # Symbol-level (tokenizer-independent) reference ladder. For proteins this
     # is the 20-letter residue alphabet, which is the axis on which BPE and
     # residue-level protein models can be compared to each other at all.
+    #
+    # The half-cohort slice is a genuine positional slice of a cohort, and it is
+    # only a sample because `cohort_for` now returns its draw in seeded record
+    # order. In corpus order these 4000 were the 4000 earliest-in-Swiss-Prot of
+    # an 8000-record cohort -- an accession block, which is a family block.
+    markov_train = args.n_unigram // 2
     if arm.modality == "protein":
         markov = {
             f"order{k}_bits_per_residue": markov_bits_per_symbol(
-                base_raw[:4000], raw, k, AA20
+                base_raw[:markov_train], raw, k, AA20
             )
             for k in (0, 1, 2)
         }
@@ -315,7 +349,11 @@ def main() -> None:
     # guard it once, and refuse every derived share together when it is too small
     # -- reporting three of them separately would let a reader take the one that
     # happened to look sane.
-    information_range = h_uni - curve[CONTEXTS[-1]]
+    #
+    # The baseline here is `h_uni_query`, the same unigram model scored on the
+    # curve's own query positions, not `h_uni`, which averages over every scored
+    # position including the control-token region and the first FASTA line.
+    information_range = h_uni_query - curve[CONTEXTS[-1]]
     conditioned = PANEL[arm.name].input_format in _CONDITIONED_FORMATS
     range_valid = information_range >= MIN_INFORMATION_RANGE_NATS and not conditioned
 
@@ -327,12 +365,13 @@ def main() -> None:
     payload = dict(
         arm=arm.name,
         modality=arm.modality,
+        contract=stage_contract_record("tg01", [arm.name]),
         symbol=symbol_name,
         seed=args.seed,
         n_sequences=len(texts),
         n_scored_tokens=int(gain.size),
         vocab_size=int(vocab),
-        symbols_per_token=symbols_per_token,
+        symbols_per_token=expansion,
         max_len=args.max_len,
         # Read from the panel, not from an argument. This used to be
         # `args.protein_source`, whose default was the literal "swissprot" and
@@ -349,8 +388,15 @@ def main() -> None:
         baseline_cohort=cohort_provenance(base_cohort, arm),
         # --- core budget, nats/token unless noted
         symbol_level_markov_baselines=markov,
+        markov_train_sequences=markov_train if arm.modality == "protein" else None,
         unigram_entropy_nats=h_uni,
         unigram_estimator="held_out_cross_entropy",
+        # The same held-out unigram model evaluated on the truncation curve's own
+        # query positions. Every long-range share below is referenced to this,
+        # not to `unigram_entropy_nats`, which averages over a different set of
+        # positions; the gap between the two is the size of the defect this fixes.
+        unigram_entropy_at_query_positions_nats=h_uni_query,
+        unigram_query_position_offset_nats=h_uni - h_uni_query,
         unigram_plug_in_entropy_nats=h_uni_plug_in,
         unigram_plug_in_bias_nats=h_uni - h_uni_plug_in,
         model_nll_nats=float(nll.mean()),
@@ -358,9 +404,9 @@ def main() -> None:
         top1_accuracy=float(hit.mean()),
         info_gain_over_unigram_nats=float(gain.mean()),
         info_gain_over_unigram_bits=float(gain.mean() / LN2),
-        info_gain_bits_per_symbol=float(gain.mean() / LN2 / symbols_per_token),
-        unigram_entropy_bits_per_symbol=float(h_uni / LN2 / symbols_per_token),
-        model_nll_bits_per_symbol=float(nll.mean() / LN2 / symbols_per_token),
+        info_gain_bits_per_symbol=float(gain.mean() / LN2 / expansion),
+        unigram_entropy_bits_per_symbol=float(h_uni / LN2 / expansion),
+        model_nll_bits_per_symbol=float(nll.mean() / LN2 / expansion),
         fraction_of_unigram_entropy_explained=float(gain.mean() / h_uni),
         # --- concentration of that information
         gain_gini=gini(gain),
@@ -384,6 +430,7 @@ def main() -> None:
         n_truncation_windows=n_windows,
         truncation_strips_conditioning=conditioned,
         information_range_nats=information_range,
+        information_range_baseline="unigram_entropy_at_query_positions_nats",
         information_range_valid=range_valid,
         information_range_floor_nats=MIN_INFORMATION_RANGE_NATS,
         information_range_refusal=(
@@ -396,10 +443,13 @@ def main() -> None:
                 else "baseline minus longest-context NLL is below the floor"
             )
         ),
-        # referenced to the longest truncation, not to the full pass: the two
-        # use different query-position distributions and are not comparable
+        # Every one of these is referenced to the longest truncation and to a
+        # baseline evaluated on the same query positions the curve uses. It used
+        # to be `h_uni`, the full-pass baseline, which is a different
+        # query-position distribution -- the mixture the comment here warned
+        # against while the line below it committed it.
         long_range_fraction_beyond_8=share(curve[8] - curve[CONTEXTS[-1]]),
-        local_fraction_within_8=share(h_uni - curve[8]),
+        local_fraction_within_8=share(h_uni_query - curve[8]),
         long_range_fraction_beyond_32=share(curve[32] - curve[CONTEXTS[-1]]),
         long_range_bits_beyond_8=float((curve[8] - curve[CONTEXTS[-1]]) / LN2),
         markov_order2_bits_per_symbol=markov.get("order2_bits_per_residue"),
@@ -411,6 +461,7 @@ def main() -> None:
     write_json(out / f"{arm.name}.json", payload)
     for key in (
         "unigram_entropy_nats",
+        "unigram_entropy_at_query_positions_nats",
         "unigram_plug_in_entropy_nats",
         "unigram_plug_in_bias_nats",
         "model_nll_nats",

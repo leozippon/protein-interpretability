@@ -29,6 +29,8 @@ if str(REPO_ROOT) not in sys.path:
 
 from transformers import AutoTokenizer  # noqa: E402
 
+import numpy as np  # noqa: E402
+
 from src.transfer.io import write_json  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
     PANEL,
@@ -36,6 +38,9 @@ from src.transfer.arms import (  # noqa: E402
     SWISSPROT_FASTA,
     Cohort,
     iter_fasta,
+    require_input_path,
+    sampling_record,
+    selected_positions,
     text_cohort,
 )
 from src.transfer.channels import (  # noqa: E402
@@ -62,21 +67,55 @@ def swissprot_accession(header: str) -> str:
     return header.split("|")[1] if "|" in header else header.split()[0]
 
 
-def swissprot_records(limit: int) -> dict[str, str]:
-    """The first ``limit`` Swiss-Prot entries in deterministic file order."""
+def swissprot_records(limit: int, *, seed: int) -> tuple[dict[str, str], dict[str, Any]]:
+    """``limit`` Swiss-Prot entries drawn under a seeded permutation.
 
+    This used to take the file-order prefix. Swiss-Prot is grouped by family, so
+    a prefix is a set of near-clonal homologues rather than a sample, and the
+    Pfam bits/symbol figure this feeds (0.74 at coverage 0.56) is an entropy of a
+    label channel measured over whichever proteins were read -- exactly the
+    quantity a clustered draw understates. Appendix B rule 1; the draw itself is
+    :func:`src.transfer.arms.selected_positions` rather than a second selection
+    layer, so this channel and every cohort in the package agree on what a seeded
+    draw means.
+    """
+
+    eligible = sum(1 for _ in iter_fasta(SWISSPROT_FASTA))
+    wanted = set(
+        selected_positions(eligible, n=limit, skip=0, seed=seed, label="swissprot_pfam")
+    )
     records: dict[str, str] = {}
-    for header, sequence in iter_fasta(SWISSPROT_FASTA):
-        records[swissprot_accession(header)] = sequence
-        if len(records) >= limit:
-            break
+    for position, (header, sequence) in enumerate(iter_fasta(SWISSPROT_FASTA)):
+        if position in wanted:
+            records[swissprot_accession(header)] = sequence
     if len(records) < limit:
-        raise RuntimeError(f"only {len(records)}/{limit} Swiss-Prot entries available")
-    return records
+        # Swiss-Prot carries the same accession only once, so a shortfall means
+        # the corpus changed between the counting and the collecting pass rather
+        # than that the draw collided.
+        raise RuntimeError(
+            f"drew {len(records)}/{limit} Swiss-Prot entries; the corpus changed "
+            "between the counting and the collecting pass"
+        )
+    return records, sampling_record(
+        seed=seed, skip=0, requested=limit, eligible=eligible, corpus="plain_swissprot"
+    )
+
+
+def draw_order(count: int, *, seed: int) -> list[int]:
+    """A seeded permutation of ``range(count)``.
+
+    Every channel below caps its unit list at ``--max-units``. The draws arrive
+    in ascending corpus order, so taking the first ``max_units`` that reach the
+    window would select the lowest-positioned members of an otherwise random
+    sample -- a file-order prefix reintroduced one step later. Units are
+    therefore visited in this order instead.
+    """
+
+    return [int(index) for index in np.random.default_rng(seed).permutation(count)]
 
 
 def curated_channel(
-    records: dict[str, str], *, window: int, max_units: int
+    records: dict[str, str], *, window: int, max_units: int, seed: int
 ) -> tuple[dict[str, Any], list[list[str]], list[list[str]], Cohort]:
     """Marginal Pfam statistics plus matched Pfam and residue-identity units."""
 
@@ -98,7 +137,9 @@ def curated_channel(
     residue_units: list[list[str]] = []
     unit_sequences: list[str] = []
     overlap_residues = 0
-    for accession in sorted(spans):
+    annotated_accessions = sorted(spans)
+    for index in draw_order(len(annotated_accessions), seed=seed):
+        accession = annotated_accessions[index]
         sequence = records[accession]
         if len(sequence) < window:
             continue
@@ -156,7 +197,12 @@ def structural_channel(
     selection, sampling = alphafold_model_sample(
         ALPHAFOLD_ROOT, limit=n_structures, seed=seed
     )
-    for path in selection:
+    # ``alphafold_model_sample`` returns its draw in ascending catalogue order,
+    # and catalogue order is accession order. Visiting it in that order and
+    # stopping at ``max_units`` would make the unit list a taxonomic prefix of an
+    # otherwise unbiased draw, which is the same defect one step later.
+    for index in draw_order(len(selection), seed=seed):
+        path = selection[index]
         structure = read_alphafold_model(path)
         if structure.n_non_canonical_residues > 0:
             excluded_non_canonical += 1
@@ -201,15 +247,32 @@ def structural_channel(
 
 
 def text_channel(
-    *, n_documents: int, min_chars: int, window: int, max_units: int
+    *, n_documents: int, min_chars: int, window: int, max_units: int, seed: int
 ) -> tuple[list[list[int]], Cohort]:
-    """GPT-2 token-identity units, the closed-vocabulary reference case."""
+    """GPT-2 token-identity units, the closed-vocabulary reference case.
 
-    cohort = text_cohort(n_documents, min_chars=min_chars, name="openwebtext_units")
-    tokenizer = AutoTokenizer.from_pretrained(str(PANEL["gpt2-large"].path))
+    Drawn under a seed for the same reason the protein channels are: this is the
+    control the protein channels are read against, and a control drawn under a
+    different sampling rule from the arms it controls is not a control. Shard
+    order is not family order, so the expected movement is small -- but "small"
+    was the expectation for the ProGen2 file-order effect that turned out to be
+    worth 1.01 nats, and it is cheaper to measure than to assume.
+    """
+
+    cohort = text_cohort(
+        n_documents, min_chars=min_chars, name="openwebtext_units", seed=seed
+    )
+    # Through require_input_path rather than straight into transformers: an
+    # absent local directory is treated by transformers as a Hub repository id,
+    # so an unset TRANSFER_TEXT_MODEL_DIR surfaces as an HFValidationError about
+    # a malformed repo id instead of naming the variable that relocates the
+    # checkpoint. This is the one place in the stage that loads a checkpoint.
+    tokenizer = AutoTokenizer.from_pretrained(
+        str(require_input_path(PANEL["gpt2-large"].path, "TRANSFER_TEXT_MODEL_DIR"))
+    )
     units: list[list[int]] = []
-    for document in cohort.records:
-        ids = tokenizer(document, return_tensors=None)["input_ids"][: 2 * window]
+    for index in draw_order(len(cohort.records), seed=seed):
+        ids = tokenizer(cohort.records[index], return_tensors=None)["input_ids"][: 2 * window]
         if len(ids) >= window:
             units.append(ids)
         if len(units) >= max_units:
@@ -231,6 +294,22 @@ def main() -> None:
         help="seed for the permutation the AlphaFold structures are drawn under; "
         "filename order is accession order and a prefix is a taxonomic "
         "neighbourhood rather than a sample (transfer audit, Appendix B rule 1)",
+    )
+    parser.add_argument(
+        "--pfam-seed",
+        type=int,
+        default=20260729,
+        help="seed for the permutation the Swiss-Prot proteins behind the Pfam "
+        "channel are drawn under; the file-order prefix this replaces is what "
+        "the audit records as the declared source-order bias on the 0.74 "
+        "bits/symbol figure",
+    )
+    parser.add_argument(
+        "--text-seed",
+        type=int,
+        default=20260729,
+        help="seed for the permutation the OpenWebText documents are drawn under; "
+        "the control has to be drawn the same way as the arms it controls",
     )
     parser.add_argument("--structure-min-residues", type=int, default=30)
     parser.add_argument("--n-text-documents", type=int, default=3000)
@@ -255,10 +334,11 @@ def main() -> None:
         realised_gate_nats=args.realised_gate_nats,
     )
 
-    records = swissprot_records(args.n_pfam_proteins)
+    records, pfam_sampling = swissprot_records(args.n_pfam_proteins, seed=args.pfam_seed)
     curated, pfam_units, residue_units, pfam_cohort = curated_channel(
-        records, window=args.window, max_units=args.max_units
+        records, window=args.window, max_units=args.max_units, seed=args.pfam_seed
     )
+    curated["sampling"] = pfam_sampling
     structural, structural_units, structural_cohort = structural_channel(
         n_structures=args.n_structures,
         window=args.window,
@@ -271,6 +351,7 @@ def main() -> None:
         min_chars=args.text_min_chars,
         window=args.window,
         max_units=args.max_units,
+        seed=args.text_seed,
     )
 
     def measure(units) -> dict[str, Any]:
@@ -306,21 +387,20 @@ def main() -> None:
                 "swissprot_fasta": str(SWISSPROT_FASTA),
             },
         },
-        # Two channels are still drawn in corpus file order and say so: the Pfam
-        # channel takes the first --n-pfam-proteins Swiss-Prot entries and the
-        # text channel takes arms.text_cohort's file-order draw. Only the
-        # structural channel is permuted, because it is the one whose selection
-        # was measured to matter (see structural_channel). Recorded per channel
-        # rather than as one blanket statement, which is what previously made the
-        # difference invisible.
+        # Every channel is now drawn under a seeded permutation of its whole
+        # corpus, and every channel's unit list is visited in a seeded order so
+        # that the --max-units cut is not a prefix of the draw. Recorded per
+        # channel rather than as one blanket statement, because they carried
+        # different modes until 2026-07-30 and an artefact that does not say
+        # which one produced it cannot be compared with one that does.
         "seeds": {
             "structural_channel_permutation": int(args.structure_seed),
-            "curated_pfam_channel": "swissprot_file_order_prefix",
-            "text_channel": "arms.text_cohort file order",
-            "hazard": (
-                "a file-order prefix of a biological corpus is a set of near-clonal "
-                "homologues rather than a sample; the two channels above are not yet "
-                "permuted and their bits/symbol carry that bias"
+            "curated_pfam_channel_permutation": int(args.pfam_seed),
+            "text_channel_permutation": int(args.text_seed),
+            "unit_visit_order": (
+                "each channel's units are taken in a seeded permutation of its draw, "
+                "so the --max-units cut selects a random subset rather than the "
+                "lowest-positioned members of the draw"
             ),
         },
         "thresholds": {

@@ -43,6 +43,7 @@ from tg_common import (
     tokenize_batch,
     write_json,
 )
+from tg_contract import stage_contract_record
 
 
 class TopKSAE(torch.nn.Module):
@@ -122,19 +123,25 @@ def train_sae(acts, d_sae, k, steps, batch, lr, device, seed):
     opt = torch.optim.Adam(sae.parameters(), lr=lr, betas=(0.9, 0.999))
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=steps)
     g = torch.Generator(device="cpu").manual_seed(seed)
-    fires = torch.zeros(d_sae, device=device)
     for step in range(steps):
         idx = torch.randint(0, norm.shape[0], (batch,), generator=g)
         x = norm[idx].to(device, non_blocking=True).float()
-        recon, z = sae(x)
+        recon, _ = sae(x)
         loss = (recon - x).pow(2).sum(-1).mean()
         opt.zero_grad(set_to_none=True)
         loss.backward()
-        with torch.no_grad():  # unit-norm decoder columns, standard for TopK SAEs
-            sae.decoder.weight.data /= sae.decoder.weight.data.norm(dim=0, keepdim=True)
         opt.step()
+        # Unit-norm decoder columns, standard for TopK SAEs -- and applied
+        # *after* the step, which is the only order in which the comment is
+        # true. Renormalising before `opt.step()` left the constraint violated at
+        # every point a forward pass is ever taken from these weights: the
+        # optimiser's update is the last thing to touch them. With a pure MSE
+        # objective and no norm penalty, encoder and decoder magnitudes then
+        # trade off freely, which makes the `z` magnitudes fed to
+        # `local_explainability` non-comparable across features and across arms.
+        with torch.no_grad():
+            sae.decoder.weight.data /= sae.decoder.weight.data.norm(dim=0, keepdim=True)
         sched.step()
-        fires += (z > 0).float().sum(0)
         if step % 500 == 0:
             print(f"    step {step:5d} mse {loss.item():.4f}", flush=True)
     return sae, mean.to(device), scale.to(device)
@@ -307,6 +314,10 @@ def main() -> None:
         del centre, z_rows
     torch.cuda.empty_cache()
 
+    # A positional slice of the evaluation cohort, and a sample of it only
+    # because `cohort_for` returns its draw in seeded record order: sorted back
+    # into corpus order these 100 were the 100 earliest-in-Swiss-Prot of the
+    # eval draw.
     ce = splice_eval(
         arm, eval_texts[: args.splice_seqs], layer, sae, mean, scale,
         args.max_len, args.fwd_batch,
@@ -323,6 +334,7 @@ def main() -> None:
     payload = dict(
         arm=arm.name,
         modality=arm.modality,
+        contract=stage_contract_record("tg03", [arm.name]),
         layer=layer,
         n_layer=arm.n_layer,
         d_model=arm.d_model,

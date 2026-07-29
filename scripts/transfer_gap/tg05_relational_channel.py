@@ -61,7 +61,7 @@ from tg_common import (
     protein_input,
     write_json,
 )
-from src.transfer.arms import PANEL
+from tg_contract import refuse_unless_eligible, stage_contract_record
 
 ALPHAFOLD = REPO / "data/alphafold"
 THREE_TO_ONE = {
@@ -188,8 +188,13 @@ def main() -> None:
     ap.add_argument("--arm", required=True)
     ap.add_argument("--device", default="cuda:0")
     ap.add_argument("--n-proteins", type=int, default=140)
-    ap.add_argument("--min-len", type=int, default=110)
-    ap.add_argument("--max-len", type=int, default=320)
+    # Spelled like every other residue band in the series. It was --min-len
+    # /--max-len, which is the same spelling eight stages use for a *token*
+    # truncation, and tg_contract's band check looked for --res-min/--res-max by
+    # name -- so a live 110-320 residue band read as no band at all, under a
+    # contract note asserting this stage "has no residue band".
+    ap.add_argument("--res-min", type=int, default=110)
+    ap.add_argument("--res-max", type=int, default=320)
     ap.add_argument("--min-plddt", type=float, default=75.0)
     ap.add_argument("--pairs-per-protein", type=int, default=240)
     ap.add_argument("--contact-angstrom", type=float, default=8.0)
@@ -198,21 +203,18 @@ def main() -> None:
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
+    # Before the model load, and from the contract rather than from arm names.
+    # This block used to be two hand-written refusals *after* `load_arm`: one on
+    # the literal string "protgpt2", two lines above a correctly written
+    # `input_format` check, and none at all for gpt2-large, which instead died
+    # inside `encode` on a negative token offset. Because none of it was declared
+    # in tg_contract, tg99 expected four arms from a stage that can produce one.
+    # The properties are ArmSpec fields -- residue-level tokenisation, and an
+    # input format that is not ec_conditioned -- so an arm outside TG_PANEL with
+    # the same properties is admitted for the same reason progen2-medium is.
+    refuse_unless_eligible("tg05", args.arm)
+
     arm = load_arm(args.arm, device=args.device, attn_implementation="eager")
-    if arm.name == "protgpt2":
-        raise SystemExit(
-            "protgpt2 uses multi-residue BPE: there is no residue-to-token map, "
-            "which is itself part of the finding. Run progen2-medium."
-        )
-    if PANEL[arm.name].input_format == "ec_conditioned":
-        raise SystemExit(
-            f"{arm.name} is EC-conditioned and this script has no per-structure EC "
-            "label, so it can only score the arm off its own training distribution "
-            "-- which is what it silently did before. Its conditioning tag is "
-            "separately measured at 1.73 nats of leak (EXP-R2-034). Use "
-            "scripts/transfer/05_relational_channel.py, which carries the label "
-            "with the cohort."
-        )
     # Through the panel's one depth convention. This line carried a *third*
     # convention -- bare truncation, `int(r * (n_layer - 1))` -- which survived
     # the EXP-R2-066 unification of `int(round(...))` and `floor(... + 0.5)`.
@@ -234,7 +236,7 @@ def main() -> None:
     for index in order:
         path = available[index]
         ca, plddt, seq = read_structure(path)
-        if not (args.min_len <= len(seq) <= args.max_len):
+        if not (args.res_min <= len(seq) <= args.res_max):
             continue
         if len(ca) != len(seq) or plddt.mean() < args.min_plddt:
             continue
@@ -301,6 +303,8 @@ def main() -> None:
 
     payload = dict(
         arm=arm.name,
+        contract=stage_contract_record("tg05", [arm.name]),
+        residue_band=[args.res_min, args.res_max],
         layers=layers,
         n_proteins=len(records),
         n_train_proteins=len(train),

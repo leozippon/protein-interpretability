@@ -51,6 +51,7 @@ from tg_common import (
     load_arm,
     write_json,
 )
+from tg_contract import refuse_unless_eligible, stage_contract_record
 
 LN2 = math.log(2.0)
 _ORIGINAL_EAGER = modeling_gpt2.eager_attention_forward
@@ -101,11 +102,23 @@ def main() -> None:
     ap.add_argument("--out", default=None)
     args = ap.parse_args()
 
+    # Declared eligibility, checked before the checkpoint is read. The capture
+    # assertion below is the last line of defence and stays; it fires only after
+    # a model load and a forward pass, which is an expensive way to learn that an
+    # arm's attention was never going to route through the patched function.
+    # `architecture == "gpt2"` is the property, and it is an ArmSpec field.
+    refuse_unless_eligible("tg06", args.arm)
+
     arm = load_arm(args.arm, device=args.device, attn_implementation="eager")
     if not hasattr(arm.model, "transformer"):
         raise SystemExit(f"{arm.name}: unsupported attention implementation")
     modeling_gpt2.eager_attention_forward = _patched_eager
 
+    # Ten times the sequences are drawn and the first 2 x n_seq long enough ones
+    # are kept, which is a positional consumption of a cohort. That is safe only
+    # because `cohort_for` now returns its draw in seeded record order; while it
+    # returned ascending corpus order, "the first 400 usable windows" meant the
+    # 400 corpus-earliest, which on an accession-sorted FASTA is a family block.
     cohort = cohort_for(arm, args.n_seq * 10, args.res_min, args.res_max, seed=args.seed)
     texts = cohort.input_strings(arm)
     blocks = []
@@ -172,6 +185,7 @@ def main() -> None:
     payload = dict(
         arm=arm.name,
         modality=arm.modality,
+        contract=stage_contract_record("tg06", [arm.name]),
         seed=args.seed,
         n_sequences=args.n_seq,
         window=args.window,

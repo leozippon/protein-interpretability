@@ -1,4 +1,17 @@
-"""End-to-end contracts for strict TG-99 campaign summarization."""
+"""End-to-end contracts for strict TG-99 campaign summarization.
+
+Three of these encode corrections rather than the original behaviour:
+
+* the expected matrix is 35 artefacts, not 39. TG-05 can produce one artefact of
+  four and TG-06 three, and the contract now declares that instead of asking for
+  four apiece from stages that refuse them -- strict mode was previously
+  unsatisfiable by a *fully executed* campaign;
+* TG-00's rendering and cohort deltas reach the summary. ``build_rows`` read
+  TG-01, 02, 03, 05 and 06 and never the positive-control stage, so no
+  ``SUMMARY.json`` has ever carried either delta;
+* quantities combining two stages are refused when the stages drew on different
+  protein residue bands.
+"""
 
 from __future__ import annotations
 
@@ -52,6 +65,20 @@ def tg03_payload(arm: str, *, layer: int = 18, k: int = 32) -> dict[str, Any]:
 
 
 def stage_payload(stage: str, arm: str) -> dict[str, Any]:
+    if stage == "tg00":
+        # TG-00 is the positive-control stage; the summary read every other
+        # stage and not it, so no SUMMARY.json ever carried a rendering or
+        # cohort delta. A tg00 artefact missing these keys is a schema failure,
+        # not a reason to skip the row.
+        return {
+            "arm": arm,
+            "rendering_control": {
+                "applicable": True,
+                "rendering_delta_nats": 1.5,
+                "wrong_control_token_delta_nats": 0.2,
+            },
+            "cohort_control": {"applicable": True, "cohort_delta_nats": 0.3},
+        }
     if stage == "tg01":
         return {
             "arm": arm,
@@ -157,7 +184,10 @@ def test_partial_campaign_requires_opt_in_and_records_missing_matrix(
         "progen2-medium",
     ]
     assert completeness["present_artifact_count"] == 1
-    assert completeness["required_artifact_count"] == 39
+    # 35, not 39: TG-05 can produce one artefact and TG-06 three, and the
+    # contract now says so instead of asking for four apiece from stages that
+    # refuse them. Strict mode was unsatisfiable by a fully executed campaign.
+    assert completeness["required_artifact_count"] == 35
 
 
 def test_ambiguous_tg03_requires_stable_identity_selection(tmp_path: Path) -> None:
@@ -202,7 +232,7 @@ def test_complete_campaign_is_accepted_with_contract_derived_matrix(
     assert completeness["complete"] is True
     assert completeness["mode"] == "strict"
     assert completeness["missing_matrix"] == {}
-    assert completeness["present_artifact_count"] == 39
+    assert completeness["present_artifact_count"] == 35
     assert (
         completeness["present_artifact_count"]
         == completeness["required_artifact_count"]
@@ -211,9 +241,79 @@ def test_complete_campaign_is_accepted_with_contract_derived_matrix(
         "protgpt2",
         "progen2-medium",
     ]
+    # The stages that refuse arms declare which ones, so a fully executed
+    # campaign can satisfy strict mode. It could not before: these two expected
+    # the whole four-arm panel from stages that raise on three and one of it.
+    assert completeness["expected_matrix"]["tg05"] == ["progen2-medium"]
+    assert completeness["expected_matrix"]["tg06"] == [
+        "gpt2-large",
+        "protgpt2",
+        "zymctrl",
+    ]
     assert set(completeness["expected_matrix"]) == {
         stage for stage, contract in TG_STAGES.items() if contract.scope != "summary"
     }
     assert set(summary["arms"]) == set(TG_PANEL)
     assert summary["arms"]["gpt2-large"]["sae_fvu"] == 0.25
     assert summary["explanation_channel"] == {"stage": "tg04"}
+
+
+def test_the_positive_control_deltas_reach_the_summary(tmp_path: Path) -> None:
+    """TG-00 prices the two defects that were each worth more than most of the
+    effects measured on top of them, and ``build_rows`` read every stage but it."""
+
+    root = tmp_path / "controls"
+    write_complete_campaign(root)
+
+    assert run_tg99(root).returncode == 0
+    summary = json.loads((root / "SUMMARY.json").read_text(encoding="utf-8"))
+
+    for arm in ("protgpt2", "progen2-medium"):
+        row = summary["arms"][arm]
+        assert row["rendering_delta_nats"] == 1.5
+        assert row["cohort_delta_nats"] == 0.3
+        assert row["wrong_control_token_delta_nats"] == 0.2
+    # TG-00 is declared on two arms only, so the other two carry no control row
+    # rather than a zero.
+    assert "rendering_delta_nats" not in summary["arms"]["gpt2-large"]
+
+
+def test_a_tg00_artefact_missing_its_controls_is_a_schema_failure(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "broken"
+    write_complete_campaign(root)
+    write_json(root / "tg00" / "protgpt2.json", {"arm": "protgpt2"})
+
+    result = run_tg99(root)
+    assert result.returncode == 2
+    assert "incompatible stage artefact schema" in result.stderr
+    assert not (root / "SUMMARY.json").exists()
+
+
+def test_information_shares_are_refused_across_incommensurate_bands(
+    tmp_path: Path,
+) -> None:
+    """TG-01 draws 400-1000 residues and TG-03 draws 120-1000: they share no
+    protein below 400, and EXP-R2-060 prices protein cohort-block sensitivity at
+    0.16-0.60 nats, larger than the 0.5-nat floor beside this division."""
+
+    root = tmp_path / "bands"
+    write_complete_campaign(root)
+
+    assert run_tg99(root).returncode == 0
+    summary = json.loads((root / "SUMMARY.json").read_text(encoding="utf-8"))
+
+    for arm in ("protgpt2", "zymctrl", "progen2-medium"):
+        row = summary["arms"][arm]
+        assert row["sae_frac_information_lost"] is None
+        assert "incommensurate protein cohort bands" in (
+            row["sae_frac_information_lost_refusal"]
+        )
+    # The text arm draws no protein band at all, so nothing is incommensurate
+    # for it -- which is exactly why the defect survived inspection.
+    text = summary["arms"]["gpt2-large"]
+    assert text["sae_frac_information_lost"] is not None
+    assert text["sae_frac_information_lost_refusal"] is None
+    # TG-01 and TG-06 share the 400-1000 band, so that ratio is not refused.
+    assert summary["arms"]["protgpt2"]["frac_information_from_attention_pattern"] is not None

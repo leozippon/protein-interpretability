@@ -61,6 +61,7 @@ if str(REPO_ROOT) not in sys.path:
 from src.transfer.scoring import aggregate_variant  # noqa: E402
 from src.transfer.io import sha256_file, write_json  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
+    DEFAULT_CORPUS_DRAW_SEED,
     Arm,
     Cohort,
     load_arm,
@@ -199,7 +200,9 @@ def resolve_ladder(table_path: Path) -> tuple[tuple[LadderMember, ...], dict[str
     }
 
 
-def build_pool(key: tuple[str, int, int], pool_size: int, *, skip: int = 0) -> Cohort:
+def build_pool(
+    key: tuple[str, int, int], pool_size: int, *, skip: int = 0, seed: int | None
+) -> Cohort:
     """The evaluation pool named by one ``(corpus, min symbols, max symbols)`` key.
 
     Pools are keyed rather than derived from modality because an arm is scored on
@@ -214,17 +217,20 @@ def build_pool(key: tuple[str, int, int], pool_size: int, *, skip: int = 0) -> C
     suffix = "" if skip == 0 else f"_skip{skip}"
     if corpus == TEXT_COHORT_SOURCE:
         return text_cohort(
-            pool_size, min_chars=low, skip=skip, name=f"openwebtext_screen{suffix}"
+            pool_size, min_chars=low, skip=skip, name=f"openwebtext_screen{suffix}",
+            seed=seed,
         )
     if corpus == "ec_labelled_swissprot":
         return protein_cohort(
             pool_size, low, high, skip=skip, with_ec=True,
             name=f"swissprot_ec_{low}_{high}{suffix}",
+            seed=seed,
         )
     if corpus == "plain_swissprot":
         return protein_cohort(
             pool_size, low, high, skip=skip, with_ec=False,
             name=f"swissprot_{low}_{high}{suffix}",
+            seed=seed,
         )
     raise ValueError(f"unsupported cohort corpus {corpus!r}")
 
@@ -317,6 +323,7 @@ def build_repeat_cohort(modality: str, args: argparse.Namespace) -> Cohort:
                 TEXT_EXACT_CRITERION, min_unit=args.text_repeat_unit
             ),
             scan_documents=args.text_repeat_scan,
+            seed=args.cohort_draw_seed or None,
         )
     if modality == "protein":
         # circuits.py now takes a RepeatCriterion value rather than loose
@@ -330,6 +337,7 @@ def build_repeat_cohort(modality: str, args: argparse.Namespace) -> Cohort:
             criterion=dataclass_replace(
                 PROTEIN_EXACT_CRITERION, min_unit=args.protein_repeat_unit
             ),
+            seed=args.cohort_draw_seed or None,
         )
     raise ValueError(f"unsupported modality {modality!r}")
 
@@ -872,6 +880,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=20260728)
 
     parser.add_argument("--pool-size", type=int, default=2000)
+    parser.add_argument(
+        "--cohort-draw-seed",
+        type=int,
+        default=DEFAULT_CORPUS_DRAW_SEED,
+        help="seed for the permutation every ladder pool is drawn under; 0 "
+        "selects the historical file-order prefix, which is a declared choice "
+        "and not a default (transfer audit, Appendix B rule 1)",
+    )
     parser.add_argument("--n-seq", type=int, default=32)
     # 512 rather than 256: ProtGPT2's context information keeps rising with the
     # scored window on full-length proteins (+0.61 nats at 256 tokens against
@@ -974,16 +990,20 @@ def main() -> None:
     if not available:
         raise RuntimeError("no configured ladder member is available on this host")
 
+    draw_seed = args.cohort_draw_seed or None
     pools = {
-        key: build_pool(key, args.pool_size)
+        key: build_pool(key, args.pool_size, seed=draw_seed)
         for key in sorted({member.cohort_key for member in available})
     }
-    # The reference corpus starts past the measurement pool in file order, and
+    # The reference starts one whole pool past the measurement draw, and
     # held_out_cohort then removes anything still shared by content: Swiss-Prot
     # and the EC corpus both carry the same sequence under several accessions, so
-    # skipping by position alone leaves a real leak.
+    # skipping by position alone leaves a real leak. Under a seed the two are
+    # disjoint windows of one permutation rather than adjacent blocks of the
+    # file, which is what makes the reference a sample of the corpus rather than
+    # of whichever families happen to follow the measurement block.
     references = {
-        key: build_pool(key, args.unigram_reference_size, skip=args.pool_size)
+        key: build_pool(key, args.unigram_reference_size, skip=args.pool_size, seed=draw_seed)
         for key in sorted(pools)
     }
     for key, pool in sorted(pools.items()):

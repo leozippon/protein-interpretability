@@ -52,6 +52,7 @@ from panel_contract import arm_can_run, stage_arms, stage_contract_record  # noq
 from src.transfer.scoring import analysis_layer  # noqa: E402
 from src.transfer.io import sha256_file, write_json  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
+    DEFAULT_CORPUS_DRAW_SEED,
     PANEL,
     Arm,
     Cohort,
@@ -170,9 +171,13 @@ def cohort_pool(arm_names: list[str], args: argparse.Namespace) -> dict[str, Coh
         raise ValueError(f"unknown protein cohort source {args.protein_source!r}")
     modalities = {PANEL[name].modality for name in arm_names}
     pools: dict[str, Cohort] = {}
+    seed = args.cohort_draw_seed or None
     if "text" in modalities:
         pools["text"] = text_cohort(
-            args.pool_size, min_chars=args.text_min_chars, name=TEXT_COHORT_SOURCE
+            args.pool_size,
+            min_chars=args.text_min_chars,
+            name=TEXT_COHORT_SOURCE,
+            seed=seed,
         )
     if "protein" in modalities:
         pools["protein"] = protein_cohort(
@@ -181,6 +186,7 @@ def cohort_pool(arm_names: list[str], args: argparse.Namespace) -> dict[str, Coh
             args.res_max,
             name=args.protein_source,
             with_ec=args.protein_source == "ec_labelled_swissprot",
+            seed=seed,
         )
     return pools
 
@@ -207,12 +213,20 @@ def reference_pool(
     if args.unigram_reference_size < 1:
         raise ValueError("--unigram-reference-size must be positive")
     references: dict[str, Cohort] = {}
+    # The reference is drawn at the same seed and a skip of one whole pool, so
+    # under a seeded draw the two are disjoint *windows of one permutation*
+    # rather than two adjacent blocks of the file. That matters here more than
+    # anywhere else: a file-order reference block is the next stretch of the same
+    # family-grouped corpus, which is the case `held_out_cohort` then has to
+    # rescue by removing shared content after the fact.
+    seed = args.cohort_draw_seed or None
     if "text" in pools:
         references["text"] = text_cohort(
             args.unigram_reference_size,
             min_chars=args.text_min_chars,
             skip=args.pool_size,
             name=f"{TEXT_COHORT_SOURCE}_reference",
+            seed=seed,
         )
     if "protein" in pools:
         references["protein"] = protein_cohort(
@@ -222,6 +236,7 @@ def reference_pool(
             skip=args.pool_size,
             name=f"{args.protein_source}_reference",
             with_ec=args.protein_source == "ec_labelled_swissprot",
+            seed=seed,
         )
     deduplicated: dict[str, tuple[Cohort, dict[str, int]]] = {}
     for modality, reference in references.items():
@@ -491,6 +506,14 @@ def main() -> None:
     # must be far larger than the per-seed draw or every seed sees the same few
     # families; see pathways.cohort_composition.
     parser.add_argument("--pool-size", type=int, default=4000)
+    parser.add_argument(
+        "--cohort-draw-seed",
+        type=int,
+        default=DEFAULT_CORPUS_DRAW_SEED,
+        help="seed for the permutation the corpus pool is drawn under; 0 selects "
+        "the historical file-order prefix, which is a declared choice and not a "
+        "default (transfer audit, Appendix B rule 1)",
+    )
     parser.add_argument("--max-len", type=int, default=256)
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--seeds", nargs="+", type=int, default=list(DEFAULT_SEEDS))

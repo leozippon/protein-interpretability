@@ -50,7 +50,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.transfer.io import write_json  # noqa: E402
-from src.transfer.arms import PANEL, Arm, Cohort, env_path, load_arm  # noqa: E402
+from src.transfer.arms import (  # noqa: E402
+    DEFAULT_CORPUS_DRAW_SEED,
+    PANEL,
+    Arm,
+    Cohort,
+    env_path,
+    load_arm,
+)
 from src.transfer.circuits import (  # noqa: E402
     INDUCTION_THRESHOLDS,
     PROTEIN_APPROXIMATE_CRITERION,
@@ -139,11 +146,18 @@ CRITERIA = {
 def build_cohort(args: argparse.Namespace) -> Cohort:
     """The natural-repeat cohort exactly as the induction census builds it.
 
-    Same constructor, same criterion, same deterministic file order, so under
-    ``--repeat-criterion exact`` the cohort stratified here is the cohort the
-    headline was measured on rather than a re-derivation of it.  The digest is
-    carried into every artifact and checked when the two stages are run
-    separately.
+    Same constructor, same criterion, same draw, so under ``--repeat-criterion
+    exact`` the cohort stratified here is the cohort the headline was measured on
+    rather than a re-derivation of it.  The digest is carried into every artifact
+    and checked when the two stages are run separately.
+
+    ``--cohort-draw-seed`` is part of "same draw" and it is the part that moved.
+    The census used to take the first ``n`` matching records in corpus file order
+    -- which for the approximate criterion is 32 of 817 matching proteins, a four
+    per cent head-of-file prefix -- and now draws them under a seeded permutation
+    (EXP-R2-068).  This stage follows that default so the two agree; stratifying a
+    census stored before the change requires ``--cohort-draw-seed 0``, and a
+    mismatch is caught by the digest comparison rather than tolerated.
     """
 
     return protein_repeat_cohort(
@@ -152,6 +166,7 @@ def build_cohort(args: argparse.Namespace) -> Cohort:
         max_len=args.repeat_max_len,
         criterion=CRITERIA[args.repeat_criterion],
         workers=args.cohort_workers,
+        seed=args.cohort_draw_seed or None,
     )
 
 
@@ -833,6 +848,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--repeat-min-len", type=int, default=200)
     parser.add_argument("--repeat-max-len", type=int, default=800)
     parser.add_argument("--repeat-criterion", default="exact", choices=sorted(CRITERIA))
+    parser.add_argument(
+        "--cohort-draw-seed",
+        type=int,
+        default=DEFAULT_CORPUS_DRAW_SEED,
+        help="must match the draw the census being stratified was built under; "
+        "0 selects the file-order prefix every census stored before EXP-R2-068 "
+        "used. A mismatch is caught by the cohort digest comparison",
+    )
     parser.add_argument("--cohort-workers", type=int, default=8)
 
     # Host-specific locations. These are environment-backed rather than
@@ -915,9 +938,72 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def recorded_criterion(payload: dict[str, Any]) -> str | None:
+    """The repeat criterion an assignment artefact was produced under.
+
+    Read from the constructor string the artefact already records, so this adds
+    no field and works on the artefacts EXP-R2-064 produced.
+    """
+
+    constructor = str(payload.get("cohort", {}).get("constructor", ""))
+    for name in sorted(CRITERIA):
+        if f"criterion=PROTEIN_{name.upper()}_CRITERION" in constructor:
+            return name
+    return None
+
+
+def refuse_criterion_collision(args: argparse.Namespace) -> None:
+    """An output directory holds one criterion's artefacts, or the run stops.
+
+    Every filename this stage writes is fixed -- ``homology_assignment.json``,
+    ``diamond_hits.tsv``, ``cohort_query.faa``, ``<arm>.json``,
+    ``panel_summary.json`` -- and none carries the criterion. So an
+    ``--repeat-criterion approximate`` run into a directory holding an ``exact``
+    run silently replaced every one of them, and the replacement verified
+    cleanly against its own schema check. The exact and approximate criteria are
+    the paired comparison this stage exists to draw, and the pair is what the
+    collision destroys.
+
+    Refusing rather than renaming: the artefacts EXP-R2-064 wrote are cited in
+    the audit under these names, and moving them would break those citations to
+    fix a hazard that a refusal closes. Standing rule 11 -- never delete a result
+    artefact -- points the same way.
+    """
+
+    existing = args.output_dir / ASSIGNMENT_FILE
+    if not existing.is_file():
+        return
+    try:
+        payload = json.loads(existing.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        # Not this guard's business. read_json refuses an artefact it cannot
+        # parse or whose schema it does not know, with a message about that;
+        # reporting it here as a criterion collision would name the wrong cause.
+        return
+    previous = recorded_criterion(payload)
+    if previous is None or previous == args.repeat_criterion:
+        return
+    raise RuntimeError(
+        f"{existing} was produced under --repeat-criterion {previous!r} and this "
+        f"run requests {args.repeat_criterion!r}. Every filename this stage writes "
+        "is fixed, so continuing would overwrite that run's assignment, hits, "
+        "per-arm and panel artefacts with a different criterion's, and the result "
+        "would pass its own schema check. Pass a separate --output-dir per "
+        "criterion; the two are a paired comparison, not two versions of one run"
+    )
+
+
 def main() -> None:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    refuse_criterion_collision(args)
+
+    # Before the search, not after it: a CUDA request that no device can serve is
+    # decidable from the arguments alone, and the search stage that follows is a
+    # multi-process scan of the whole corpus. This check used to sit after both
+    # that scan and the cohort rebuild.
+    if _is_cuda(args.device) and not torch.cuda.is_available():
+        raise RuntimeError(f"--device {args.device} requested but no CUDA device is available")
 
     if "search" in args.stages:
         search = run_search(args)
@@ -967,8 +1053,6 @@ def main() -> None:
     if [a.record_index for a in assignments] != list(range(len(cohort.records))):
         raise RuntimeError("recorded assignments are not a complete, ordered cover of the cohort")
 
-    if _is_cuda(args.device) and not torch.cuda.is_available():
-        raise RuntimeError(f"--device {args.device} requested but no CUDA device is available")
     torch.manual_seed(args.seed)
 
     results: dict[str, dict[str, Any]] = {}

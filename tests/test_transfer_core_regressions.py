@@ -64,6 +64,7 @@ def _progen_arm() -> Arm:
         input_format="n_to_c_control",
         evaluation_cohort_source="test",
         architecture="progen",
+        path_variable=PANEL["progen2-medium"].path_variable,
     )
     return Arm(
         spec=spec,

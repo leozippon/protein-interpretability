@@ -92,10 +92,26 @@ def default_arms(kind: str, with_ec: bool) -> list[str]:
 
 
 def draw_records(args: argparse.Namespace, size: int, skip: int, name: str) -> Cohort:
-    """``size`` records from the corpus, starting ``skip`` records in."""
+    """``size`` records from the corpus, starting ``skip`` records in.
 
+    ``--cohort-draw-seed`` reaches the corpus constructors, so ``size`` records
+    are a window of a seeded permutation of the **whole** corpus rather than a
+    prefix of the file. That distinction is the open qualification on EXP-R2-060:
+    the campaign's "seeded" draw was seeded *within a head-of-file pool of 4000
+    records*, so the 0.16-0.60 nat cohort-block sensitivity it reported bounds
+    within-pool selection uncertainty and not corpus-wide selection uncertainty,
+    and the audit records that the true figure is plausibly larger. It also makes
+    ``--cohort-skip`` mean what it claims: at one seed, two skips index disjoint
+    windows of the same permutation, so a skip-offset sensitivity is a
+    sensitivity rather than two overlapping prefixes.
+
+    ``--cohort-draw-seed 0`` still reproduces the historical file-order draw, and
+    the mode reaches every artefact through ``Cohort.sampling``.
+    """
+
+    seed = args.cohort_draw_seed or None
     if args.kind == "text":
-        return text_cohort(size, min_chars=args.min_chars, skip=skip, name=name)
+        return text_cohort(size, min_chars=args.min_chars, skip=skip, name=name, seed=seed)
     return protein_cohort(
         size,
         args.res_min,
@@ -103,6 +119,7 @@ def draw_records(args: argparse.Namespace, size: int, skip: int, name: str) -> C
         skip=skip,
         name=name,
         with_ec=args.with_ec,
+        seed=seed,
     )
 
 
@@ -114,12 +131,19 @@ def build_cohort(args: argparse.Namespace) -> tuple[Cohort, dict[str, Any]]:
     ProGen2-medium's 0.099-nat context information, which moved by +1.01 nats
     simply by reading past the first 48 Swiss-Prot records. File order is not a
     random order: Swiss-Prot's leading block is atypical in length, organism and
-    annotation depth. So a seeded permutation over a larger pool is the default
-    here, and the file-order draw remains reachable only by explicitly asking
-    for it with ``--cohort-draw-seed 0``, which is a declared choice rather than
-    a default that nobody notices. ``--cohort-skip`` moves the pool's origin so
-    that the same measurement can be repeated on a disjoint block of the corpus,
-    which is the sensitivity this hazard is detected by.
+    annotation depth. So a seeded permutation is the default here, and the
+    file-order draw remains reachable only by explicitly asking for it with
+    ``--cohort-draw-seed 0``, which is a declared choice rather than a default
+    that nobody notices. ``--cohort-skip`` moves the draw's origin so that the
+    same measurement can be repeated on a disjoint block of the corpus, which is
+    the sensitivity this hazard is detected by.
+
+    **The seed reaches the corpus, not only the pool.** Until 2026-07-30 the pool
+    itself was a file-order prefix of ``--cohort-pool-size`` and only the
+    ``n_seq`` draw from it was seeded, so a "seeded" cohort was a seeded sample of
+    a head-of-file block. The pool is now a window of a permutation of the whole
+    corpus (see :func:`draw_records`), which is what makes the recorded
+    cohort-block sensitivity a corpus-wide quantity.
     """
 
     if args.cohort_draw_seed == 0:
@@ -351,6 +375,7 @@ def main() -> None:
             skip=markov_skip,
             name=f"{cohort.name}_markov_train",
             with_ec=args.with_ec,
+            seed=args.cohort_draw_seed or None,
         )
         # A record-count offset is not disjointness. Swiss-Prot carries the same
         # sequence under several accessions and the EC-labelled corpus carries

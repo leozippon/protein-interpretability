@@ -2867,3 +2867,72 @@ The 241 retired tests are named by group in the archive README. The one test *re
 6. **Checkpoint verification wording.** EXP-R2-058's general prose and addendum 4 assert full source-to-GPFS SHA-256 verification, including Qwen2.5-0.5B, but the contemporaneous Qwen extraction record and validation table preserve only exact byte-size checks for its seven files. No retained digest manifest supplies the claimed Qwen hashes. The canonical wording is therefore evidence-based: all eleven checkpoints were staged and load-checked; ten have retained full SHA-256 verification statements tied to named weight files, while Qwen2.5-0.5B has byte-size-only retained evidence.
 
 7. **Stable aliases.** The append-only log reused EXP-R2-025 through EXP-R2-032. Historical ids remain unchanged; the canonical audit now uses `TR-025` for EXP-R2-025 (2026-07-24), `TR-026` for EXP-R2-026 (2026-07-27), and `TR-027` through `TR-032` for the corresponding 2026-07-28 transfer entries. EXP-R2-060 through EXP-R2-066 are explicitly indexed because they carry the current instrument, retraction, qualification, homology and stage-contract evidence.
+
+---
+
+## 2026-07-30 — EXP-R2-068: repository-wide audit; the campaign channel could not report failure; plan items B3 and B6 run
+
+**Note on the identifier.** `EXP-R2-067` is referenced by comments in committed code (`src/transfer/probes.py`, `scripts/transfer/08_lens_family.py`, `13_induction_probe_bootstrap.py`, `h200_worker.sh`, `tg05_relational_channel.py`) but has no entry in this log. That work is in `HEAD` and unlogged; this entry does not claim it. This session takes **068** to avoid the collision that renumbered EXP-R2-050.
+
+**Scope.** Full audit of the live code under the five Development Principles, then the two plan items the audit's Phase B could reach. Four regions were audited in parallel by Opus sub-agents — the H200 controller and worker, `src/transfer`, `scripts/transfer`, `scripts/transfer_gap` — and every finding acted on was verified independently before any change. Two reported findings were **overstated and were corrected rather than acted on**: the plug-in measurability gate is a bad library default, not a corrupted campaign number, because `01_cohort_power.py` recomputes the verdict from the held-out estimator; and the FASTA chunk-boundary off-by-one is real but did not fire on the corpus in use, verified from the shipped artefact (`source_fasta_records == indexed_sequences == 60315044`, coverage 1.0), so EXP-R2-064 stands.
+
+### The finding that matters most: no remote predicate could return false
+
+Measured directly: `h200_pod_exec.sh -- bash -c "exit 7"` returns **0**, and `h200_pod_bash.sh "exit 5"` returns **0**. The access layer does not propagate a remote exit status. Three controller call sites depended on it:
+
+1. **the worker invocation** — a worker that refused a campaign at preflight and scheduled no GPU was reported as `campaign complete`, exit 0;
+2. **`verify_remote_snapshot`** — the remote half of the code-freeze guarantee could not fail, so it was never actually checked;
+3. **`push_run_manifest`** — always took its "already present and verified" branch. **No invocation manifest had ever been pushed.** Every run directory on GPFS holds `INVOCATIONS=0` while the controller logged that the manifest was present and verified.
+
+A campaign's verdict, its frozen code and its provenance record all travelled on a channel that cannot say no. Repaired inside the repository, because the access layer is external and shared: the worker states its own status on its last line (`TRANSFER_WORKER_EXIT=`, declared once in the worker and read out of that source by the controller), and every remote predicate answers on stdout through one `pod_predicate` helper that refuses an unrecognised reply. A missing sentinel is itself a failure, which covers a killed worker and a dropped tunnel.
+
+**Verified live, in both directions, three times unplanned.** A zero-eligible-arm campaign now exits 1 and logs `worker reported exit status 1 (access layer said 0)`. During B6 the SSH tunnel dropped mid-run: the worker never reached its exit handler, no sentinel was emitted, and the controller refused to report completion (exit 90) — which is how I learned B6 had not finished rather than believing it had. ZymCTRL's two genuine stage failures were caught the same way. Catalogued as **L20**.
+
+A second live defect surfaced with it. The panel contract's arm-to-variable map was *inferred* by comparing resolved paths, and the pod sets `TRANSFER_TEXT_MODEL_BASE_DIR="${TRANSFER_MODEL_BASE_DIR}"` because all checkpoints share one GPFS directory. The comparison aliased and six of seven text arms classified as protein-root arms **inside the pod only**, so the contract verified on B and disagreed in the pod. The worker's own re-derivation refused the campaign before any GPU was scheduled — the check earned its keep. `ArmSpec.path_variable` now declares the choice where the path is made. Catalogued as **L21**.
+
+### Cohort draws
+
+Nine campaign stages called `protein_cohort`/`text_cohort` without a seed, so the corpus-level pool was a head-of-file prefix and only the within-pool subsample was seeded. This is the open qualification on EXP-R2-060 §5.05(b) and EXP-R2-061's deferred item 4. One declaration (`arms.DEFAULT_CORPUS_DRAW_SEED`) now reaches every stage; `0` selects the historical draw. Measured exposure on the qualifying band, CPU only: a 400-record file-order draw holds **342 distinct sequences against 398** under a seeded draw, top EC-1 class share 0.458 against 0.370, mean length 169.4 against 186.4 residues, and the two draws share **3 of 400** records. A file-order cohort is 14.5% repeated sequences, which is the mechanism behind the +1.01 nat incident, now measured. A new `tests/test_cohort_draw_contract.py` caught one call site I had missed.
+
+### Plan item B3 — explanation channel under seeded permutation. CPU. **Contrast survives.**
+
+Every channel now draws under a seeded permutation of its whole corpus, and each unit list is visited in seeded order so the `--max-units` cut is not a prefix of the draw. Bits/symbol in one 300-symbol window, with grouped intervals and an independent second draw seed:
+
+| channel | file order | seeded, 95% CI | second seed |
+|---|---:|---|---:|
+| text token identity | 7.32 | **7.326** [7.316, 7.336] | 7.331 |
+| residue identity | 4.11 | **4.094** [4.089, 4.098] | 4.097 |
+| structural attributes | 3.61 | **3.792** [3.746, 3.837] | 3.783 |
+| Pfam domain label | 0.74 | **0.860** [0.837, 0.883] | 0.889 |
+
+Drawn from all 574,627 eligible Swiss-Prot entries and all 23,586 AlphaFold models. The two channels that had been prefix draws moved **in the predicted direction** — Pfam +16%, structural +5% — because a family-grouped prefix is more uniform in its labels than the corpus and so understates a label channel's entropy. The text control moved +0.006 bits, which is what shows the effect is protein-specific. Text-to-Pfam ratio 8.5x against 9.9x before: closure stands, slightly smaller than recorded.
+
+### TG-01 — run for the first time, closing audit §0.15
+
+The recorded cause was stale: `--seed` is registered once and `--help` exits 0. The stage had simply never run. It has now run on all four TG arms under seeded draws consumed in seeded record order, with the held-out estimator. **The retracted 2026-07-24 figures moved a long way**: ProtGPT2's clean NLL falls 7.296 → **4.846** nats, its information gain rises 2.636 → **5.735** bits, top-1 rises 0.102 → **0.266**. ZymCTRL's long-range shares are **refused, not reported** — information range 0.202 nats is below the 0.5-nat denominator floor.
+
+### Plan item B6 — non-local propagation at production scale. ~1.5 H200 GPU-h. **Gate met, claim not earned.**
+
+`activation_patching` was made to run chunked forward passes (verified numerically identical to the single-batch form: 0 integer mismatches, max float delta 1e-4) so case counts could rise ~16x, and the per-band eligible fraction gained an interval that **resamples the source sequence rather than the case**, because cases are many corruptions of the same few sequences.
+
+| arm | eligible / total | fraction | 95% interval | source sequences |
+|---|---:|---:|---|---:|
+| gpt2-large | 48 / 288 | 0.167 | [0.122, 0.215] | 168 |
+| protgpt2 | 65 / 256 | 0.254 | [0.202, 0.307] | 162 |
+| progen2-medium | 58 / 128 | 0.453 | [0.369, 0.538] | 100 |
+
+All three clear the pre-registered ≥30 far-band cases (against 2–16) and every interval excludes zero. But **gpt2-large and ProtGPT2 overlap** on [0.202, 0.215]: at production scale the matched pair — the only modality-identifying comparison the panel has — is not separated, and what separates is ProGen2-medium from everything else, which is architecture and tokenisation as much as modality. gpt2-large was first run at 224 cases/band and returned 29 eligible, one short of the gate; rather than reinterpret a gate narrowly missed, it was re-run at 288. The two agree within interval.
+
+Two corrections fall out. **The recorded trio 9% / 34% / 50% is not reproducible from the retained artefacts** (their far-band eligible fractions are 0.250 / 0.219 / 0.500 / 0.062; the "2–16 eligible cases" caveat matches 8 / 7 / 16 / 2 exactly). And **ZymCTRL cannot enter the estimand**: `build_patch_cases` cuts rows to the patching window and a conditioned rendering puts the `<end>` marker delimiting scored content hundreds of tokens beyond it, so no valid span exists. Reaching it costs an ~816-token window (~2.5 GPU-h) or an incommensurable short band. Recorded, not worked around — the conditioning prompt (L15) removing an arm from a window-based estimand. Two prior failures of this run were caught by the guard rather than producing a number, and its `--unigram-max-tokens` default of 256 is mutually inconsistent with its own 600–1000 residue protein band for that arm.
+
+### Other repairs
+
+Bootstrap unit floors unified and applied where missing; **eight `excludes_zero: true` separation verdicts in the path-patching panel summary rest on 3–6 heads and are withdrawn** (the audit's headline matched-pair interval resamples 14 and is unaffected). Three interventions that had a negative control and no positive control were given one or had the unfalsifiable guard deleted with the reason stated. The held-out unigram baseline's Laplace smoothing was found to carry a vocabulary-tracking bias — reproduced independently at **+0.303 nats at V=50257 against +0.0003 at V=32** — now measured, reported and swept rather than asserted to be conservative; the default is unchanged because no constant is uniformly better. In the TG series the retracted all-position residual spectrum is no longer the default-named field, seeded cohorts are consumed in seeded order, a hard-coded host path and a stale constant imported from a retracted run are gone, and stage eligibility moved from arm-name literals into the contract. `10_homology_control.py` now refuses to overwrite one repeat criterion's artefacts with another's.
+
+### Verification
+
+**303 tests plus 34 subtests** (from 205 plus 9), Ruff over `src`, `scripts` and `tests`, generated-panel verification including under aliased environment variables, the TG stage contract, shell syntax on both orchestration scripts, and live cluster checks of the worker-status and remote-predicate paths in both directions. B6's frozen snapshot was verified on GPFS with the corrected predicate.
+
+### Left open, with reasons
+
+**Corrected after review.** An earlier draft of this entry said B6's invocation manifest was absent. That was true of the *aborted* four-arm attempt, which launched under the pre-fix controller; it is **false of the three runs the result comes from**. Each of `20260730023608_…` (gpt2-large), `20260730022334_…` (ProtGPT2) and `20260730022555_…` (ProGen2-medium) holds exactly one manifest under `INVOCATIONS/`, each filename equals the SHA-256 of its own contents, and each run's frozen snapshot verifies against `CODE_CONTENT_SHA256SUMS` on GPFS. B6's provenance is complete; only the aborted attempt lacks a manifest, and it produced no result. The `cohort_power` text item still skips all seven text arms if one checkpoint is missing. Panel-wide stages still write fixed filenames into a shared results root, so a narrowed re-run overwrites a full-panel artefact; B6 used run-scoped roots. Four TG stages still report cross-entropy over all scored positions only, and the README now names the four that hold the alphabet-bearing accounting instead of claiming all of them do.

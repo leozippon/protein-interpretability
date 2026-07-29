@@ -45,16 +45,30 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from src.transfer.arms import (
+# Relative, like every other module in this package. These five were the only
+# absolute ``src.transfer.*`` imports left inside ``src/transfer``, and an
+# absolute import here resolves through whatever ``src`` happens to be on
+# ``sys.path``: a caller that puts the repository root on the path and a caller
+# that puts ``src`` on the path get two distinct module objects for the same
+# file, with two copies of every module constant. Constants such as
+# ``LAPLACE_SMOOTHING`` and ``KNOCKOUT_LOGIT`` are compared and monkeypatched by
+# identity, so that duplication is not cosmetic.
+from .arms import (
     Arm,
     Cohort,
     conditioning_boundary_ids,
     symbols_per_token,
 )
-from src.transfer.budget import scored_tokens
-from src.transfer.circuits import RepeatProbe, content_bounds, n_head
-from src.transfer.pathways import assert_disjoint, disjoint_unigram_cross_entropy_nats
-from src.transfer.scoring import target_rule
+from .budget import scored_tokens
+from .circuits import RepeatProbe, content_bounds, n_head
+from .pathways import (
+    LAPLACE_SMOOTHING,
+    assert_disjoint,
+    disjoint_unigram_cross_entropy_nats,
+    smoothing_diagnostics,
+)
+from .scoring import target_rule
+from .statistics import MINIMUM_BOOTSTRAP_UNITS, bootstrap_unit_floor
 
 #: Distance bins, in tokens, used both to draw decoys and to coarsen the
 #: matching covariate.  Doubling bins because dependency distance is read on a
@@ -84,6 +98,22 @@ CONFIDENCE_BIN_EDGES: tuple[float, ...] = (0.0, 0.05, 0.10, 0.20, 0.40, 0.70, 1.
 #: Pre-softmax score added to a knocked-out key.  Large enough to zero the
 #: softmax weight in bfloat16, small enough not to produce ``-inf - inf``.
 KNOCKOUT_LOGIT = -1.0e30
+
+#: Largest attention mass a knocked-out head may still place on the antecedent
+#: keys it was supposed to stop reading.
+#:
+#: The zero-mask control below establishes that the injection path is additive.
+#: It says nothing about whether the *non*-zero mask lands on the right head or
+#: the right keys, and nothing in the causal statistic reveals that either: a
+#: mask that broadcasts across heads, or one whose head index is off by one,
+#: produces a well-formed ``delta_m_gap`` of approximately zero for every head,
+#: and the module then reports no causally confirmable suppressive head
+#: population -- which this module's own docstring calls "a complete answer".
+#: A negative result that an inert instrument produces identically is not a
+#: result. Adding ``KNOCKOUT_LOGIT`` pre-softmax drives the surviving weight to
+#: exactly zero in every dtype the panel runs, so the residual mass is a
+#: manipulation check with no tolerance budget to spend; 1e-6 is float noise.
+KNOCKOUT_RESIDUAL_MASS = 1.0e-6
 
 #: Largest logit movement an *all-zero* knockout mask may produce before the
 #: causal statistic is refused, in logits.
@@ -178,12 +208,23 @@ def cohort_power_held_out(
     max_len: int,
     batch_size: int,
     threshold_nats: float,
+    smoothing: float = LAPLACE_SMOOTHING,
 ) -> dict[str, Any]:
     """Context-derived information with a held-out unigram baseline.
 
     The plug-in estimator this replaces is biased downwards by up to 1.02 nats
     on a 50k-vocabulary arm and by 0.01 on a residue-level one, so it inflates
     exactly the arms whose relative position a modality reading depends on.
+
+    The held-out estimator carries a smaller bias of its own, upwards and on the
+    same vocabulary axis, from its additive smoothing: +0.224 nats at
+    ``V = 50257`` against +0.0001 at ``V = 32`` on a 100k-token reference. It is
+    not removed -- there is no unsmoothed held-out unigram, since one unseen
+    target token makes the estimate infinite -- so it is measured and published
+    beside the headline, together with the same baseline recomputed over a
+    sweep of the constant. ``smoothing`` is exposed for that sweep;
+    :data:`~src.transfer.pathways.LAPLACE_SMOOTHING` records why the default is
+    unchanged.
     """
 
     if threshold_nats <= 0:
@@ -194,7 +235,9 @@ def cohort_power_held_out(
     vocab = int(arm.model.config.vocab_size)
     target_counts = np.bincount(scored.target_ids, minlength=vocab).astype(np.int64)
     reference_counts = scored_target_counts(arm, reference.input_strings(arm), max_len=max_len)
-    held_out = disjoint_unigram_cross_entropy_nats(reference_counts, target_counts)
+    held_out = disjoint_unigram_cross_entropy_nats(
+        reference_counts, target_counts, smoothing=smoothing
+    )
     plug_in_probabilities = target_counts[target_counts > 0] / target_counts.sum()
     plug_in = float(-(plug_in_probabilities * np.log(plug_in_probabilities)).sum())
     clean_ce = float(scored.nll_nats.mean())
@@ -221,6 +264,13 @@ def cohort_power_held_out(
         "unigram_held_out_nats": _finite(held_out, "held-out unigram"),
         "unigram_plug_in_nats": _finite(plug_in, "plug-in unigram"),
         "plug_in_bias_nats": _finite(held_out - plug_in, "plug-in bias"),
+        # The smoothing constant is a second, opposite bias on the same
+        # vocabulary axis as the plug-in bias reported above it. Reporting one
+        # and not the other is how a corrected estimator inherits the shape of
+        # the error it corrected.
+        "unigram_smoothing": smoothing_diagnostics(
+            reference_counts, target_counts, smoothing=smoothing
+        ),
         "clean_ce_nats": _finite(clean_ce, "clean CE"),
         "context_information_nats": _finite(context, "context information"),
         "per_sequence_context_information_sd": _finite(
@@ -286,6 +336,19 @@ class InstancePool:
     clean_logit_target: np.ndarray
     clean_logit_runner_up: np.ndarray
     cascade: dict[str, int]
+    #: First token index that carries modality content; everything below it is
+    #: format scaffolding. Carried on the pool rather than passed alongside it
+    #: because :func:`antecedent_sets` -- which decides which keys the causal
+    #: knockout removes -- takes only ``rows`` and a pool, and searched from
+    #: index 0. ``tokenised_rows`` has always computed this bound and used it to
+    #: exclude scaffolding from the *queries*, and nothing excluded it from the
+    #: antecedents or the decoys, so ``k*`` could land on ProtGPT2's
+    #: end-of-text/newline wrapping or ZymCTRL's EC tag, ``<sep>`` and
+    #: ``<start>``. Those tokens recur in every row by construction, so the
+    #: protein-side instance population could be dominated by FASTA formatting
+    #: while the text side had no equivalent. Defaults to zero so that a pool
+    #: built by hand is unchanged.
+    content_low: int = 0
 
     def __post_init__(self) -> None:
         n = self.sequence.size
@@ -407,6 +470,25 @@ def build_instance_pool(
     if pad is None:
         raise ValueError(f"{arm.name}: tokenizer has no pad token")
 
+    # Derived here from the same declaration ``tokenised_rows`` uses, rather
+    # than accepted as an argument, so that every existing caller gets the
+    # scaffolding exclusion without having to remember to pass it. The rows
+    # arrive equal-length and from one arm, so one bound serves them all; that
+    # they agree is checked rather than assumed, because a row whose scaffolding
+    # is a different length is a rendering fault and not something to average
+    # over. Position 0 is excluded on top of it: it is the attention sink, which
+    # this module measures separately and must not draw keys from.
+    bounds = {content_bounds(arm, row, width)[0] for row in rows}
+    if len(bounds) != 1:
+        raise ValueError(f"{arm.name}: inconsistent content offsets {sorted(bounds)}")
+    content_low = int(bounds.pop())
+    key_floor = max(1, content_low)
+    if query_min < key_floor:
+        raise ValueError(
+            f"{arm.name}: query_min={query_min} reaches into the {content_low}-token "
+            "format scaffolding, which carries no repeatable content"
+        )
+
     sequences: list[int] = []
     queries: list[int] = []
     antecedents: list[int] = []
@@ -425,8 +507,19 @@ def build_instance_pool(
         "candidates_discarded_by_distance_range": 0,
         "candidates_discarded_by_empty_decoy_pool": 0,
         "instances_retained": 0,
+        "instances_dropped_by_per_sequence_cap": 0,
         "decoys_drawn_with_replacement": 0,
         "ban_depth": int(ban),
+        "per_sequence_cap": max_per_sequence,
+        "per_sequence_cap_selection": "seeded uniform draw over the row's eligible queries",
+        "content_low": content_low,
+        "key_floor": key_floor,
+        "key_floor_reason": (
+            "antecedents and decoys are drawn at or above max(1, content_low): "
+            "position 0 is the attention sink, and positions below content_low are "
+            "format scaffolding whose repetition is a property of the rendering "
+            "rather than of the sequence"
+        ),
     }
 
     for begin in range(0, len(rows), batch_size):
@@ -439,11 +532,22 @@ def build_instance_pool(
         for row_index, row in enumerate(chunk):
             sequence_index = begin + row_index
             tokens = np.asarray(row, dtype=np.int64)
-            kept_here = 0
+            # Every eligible query in the row is built first and the cap is
+            # applied afterwards, by a seeded draw. Taking the first
+            # ``max_per_sequence`` was a "first N" selection inside a function
+            # that already holds an ``rng``, and it is not a neutral one:
+            # earlier queries have less context, so capping from the front
+            # shifts both the query-position distribution and the
+            # antecedent-distance distribution -- and distance is one of the
+            # matching covariates the CEM gate balances on. Appendix B rule 1 is
+            # about corpora, but the mechanism is the same and this programme
+            # has manufactured an effect with it three times. The cap is unused
+            # by the campaign today, which is why this is a latent defect rather
+            # than a correction; with the cap unset the draw order and the RNG
+            # stream are byte-for-byte what they were.
+            row_instances: list[dict[str, Any]] = []
             for q in range(query_min, width):
                 cascade["positions_scored"] += 1
-                if max_per_sequence is not None and kept_here >= max_per_sequence:
-                    continue
                 banned = set(int(value) for value in top_ids[row_index, q, :ban])
                 chosen: tuple[int, int, float] | None = None
                 induction_blocked = False
@@ -453,7 +557,10 @@ def build_instance_pool(
                     probability = float(top_probabilities[row_index, q, depth])
                     if probability < min_confidence:
                         break
-                    matches = np.flatnonzero(tokens[:q] == token)
+                    # Searched from the content floor, not from index 0: an
+                    # antecedent inside the format scaffolding is a repetition
+                    # of the rendering, not of the sequence.
+                    matches = np.flatnonzero(tokens[key_floor:q] == token) + key_floor
                     if matches.size == 0:
                         continue
                     star = int(matches[-1])
@@ -476,7 +583,20 @@ def build_instance_pool(
                 token, star, probability = chosen
                 span = q - star
                 low, high = DISTANCE_BIN_EDGES[distance_bin(span)]
-                lowest = max(0, q - high)
+                # Position 0 is the attention sink and is not a key like any
+                # other. This module measures ``non_sink_mass = 1 - A[q, 0]``
+                # twenty lines away, so it already knows that; the decoy window
+                # started at ``max(0, q - high)`` anyway and therefore admitted
+                # the sink as a decoy for every instance whose distance bin
+                # reached back to the start of the row. Appendix B rule 9 is the
+                # same point on the other axis. The consequence is not a wash:
+                # the sink carries far more mass than an ordinary key, so an
+                # instance whose decoys include it gets a large subtrahend and
+                # its ``paa_specific`` can change sign -- and *which* instances
+                # those are is decided by the distance bin, which is a matching
+                # covariate. Sink-inclusive decoys therefore put a covariate
+                # into the statistic the covariate is supposed to balance.
+                lowest = max(key_floor, q - high)
                 highest = q - low
                 if highest < lowest:
                     cascade["candidates_discarded_by_empty_decoy_pool"] += 1
@@ -505,18 +625,42 @@ def build_instance_pool(
                 masked[token] = float("-inf")
                 runner_up = float(masked.max())
 
+                row_instances.append(
+                    {
+                        "query": q,
+                        "antecedent": star,
+                        "predicted": token,
+                        "confidence": probability,
+                        "distance": span,
+                        "percentile": float(percentile[token]),
+                        "decoys": np.sort(draw.astype(np.int64)),
+                        "target_logit": target_logit,
+                        "runner_up": runner_up,
+                    }
+                )
+            if max_per_sequence is not None and len(row_instances) > max_per_sequence:
+                keep = sorted(
+                    int(index)
+                    for index in rng.choice(
+                        len(row_instances), size=max_per_sequence, replace=False
+                    )
+                )
+                cascade["instances_dropped_by_per_sequence_cap"] += (
+                    len(row_instances) - max_per_sequence
+                )
+                row_instances = [row_instances[index] for index in keep]
+            for instance in row_instances:
                 sequences.append(sequence_index)
-                queries.append(q)
-                antecedents.append(star)
-                predicted.append(token)
-                confidences.append(probability)
-                distances.append(span)
-                percentiles.append(float(percentile[token]))
-                decoy_rows.append(np.sort(draw.astype(np.int64)))
-                target_logits.append(target_logit)
-                runner_up_logits.append(runner_up)
+                queries.append(instance["query"])
+                antecedents.append(instance["antecedent"])
+                predicted.append(instance["predicted"])
+                confidences.append(instance["confidence"])
+                distances.append(instance["distance"])
+                percentiles.append(instance["percentile"])
+                decoy_rows.append(instance["decoys"])
+                target_logits.append(instance["target_logit"])
+                runner_up_logits.append(instance["runner_up"])
                 cascade["instances_retained"] += 1
-                kept_here += 1
         del logits
         torch.cuda.empty_cache()
 
@@ -530,6 +674,7 @@ def build_instance_pool(
         distance=np.asarray(distances, dtype=np.int64),
         unigram_percentile=np.asarray(percentiles, dtype=np.float64),
         decoys=np.stack(decoy_rows) if decoy_rows else np.zeros((0, n_decoys), dtype=np.int64),
+        content_low=content_low,
         clean_logit_target=np.asarray(target_logits, dtype=np.float64),
         clean_logit_runner_up=np.asarray(runner_up_logits, dtype=np.float64),
         cascade=cascade,
@@ -736,14 +881,23 @@ def build_knockout_mask(
 def antecedent_sets(
     rows: Sequence[Sequence[int]], pool: InstancePool, selected: np.ndarray
 ) -> list[list[int]]:
-    """All earlier occurrences of ``X`` for each selected instance."""
+    """All earlier occurrences of ``X`` for each selected instance.
 
+    Searched from ``pool.content_low``, and never below position 0's successor.
+    This function decides which keys the causal knockout removes, so a key it
+    returns from inside the format scaffolding is a key the intervention
+    silently adds: the head would be stopped from reading ProtGPT2's newline or
+    ZymCTRL's ``<sep>`` as well as the antecedent, and the resulting
+    ``delta_m_gap`` would be attributed to the antecedent.
+    """
+
+    floor = max(1, int(pool.content_low))
     sets: list[list[int]] = []
     for index in selected:
         tokens = np.asarray(rows[int(pool.sequence[index])], dtype=np.int64)
         q = int(pool.query[index])
         token = int(pool.predicted_token[index])
-        positions = np.flatnonzero(tokens[:q] == token)
+        positions = np.flatnonzero(tokens[floor:q] == token) + floor
         if positions.size == 0:
             raise RuntimeError("instance has no antecedent; pool construction is inconsistent")
         sets.append([int(value) for value in positions])
@@ -760,6 +914,7 @@ def knockout_effects(
     *,
     batch_size: int,
     zero_mask_tolerance: float = ZERO_MASK_TOLERANCE_LOGITS,
+    residual_mass_tolerance: float = KNOCKOUT_RESIDUAL_MASS,
 ) -> dict[str, np.ndarray]:
     """Change in M-gap and in ``p(X)`` when a head stops reading the antecedents.
 
@@ -767,18 +922,35 @@ def knockout_effects(
     read of the antecedent raised the margin between ``X`` and its strongest
     competitor.
 
-    An all-zero mask is injected first and its effect on the logits is required
-    to be below ``zero_mask_tolerance``. That pass establishes that the injection
-    path is additive and inert when it carries nothing; without it, a build whose
-    attention module receives no additive mask would have its causal masking
-    *replaced* by the injected tensor, and every knockout effect would be a
-    difference between two non-causal forward passes.
+    Two controls, pointing in opposite directions, because the two failures they
+    catch are opposite.
+
+    *Negative.* An all-zero mask is injected first and its effect on the logits
+    is required to be below ``zero_mask_tolerance``. That pass establishes that
+    the injection path is additive and inert when it carries nothing; without
+    it, a build whose attention module receives no additive mask would have its
+    causal masking *replaced* by the injected tensor, and every knockout effect
+    would be a difference between two non-causal forward passes.
+
+    *Positive.* The knocked head's own attention onto the antecedent keys is
+    re-read **during** each knockout pass and required to have collapsed below
+    ``residual_mass_tolerance``. Until this existed the only antecedent mass the
+    module measured came from the clean pass -- the taps are removed before any
+    knockout runs -- so nothing in the run showed the intervention taking
+    effect. A mask that broadcast over heads, or a head index off by one, would
+    knock out nothing, return ``delta_m_gap`` near zero for every head, and be
+    reported as the absence of a causally confirmable suppressive head
+    population, which this module states up front is "a complete answer". Both
+    masses are returned, so the collapse lands in the artefact rather than only
+    in an assertion.
     """
 
     arm.require("circuits")
     arm.require_eager_attention("the antecedent-knockout causal statistic")
     if zero_mask_tolerance <= 0:
         raise ValueError("the zero-mask tolerance must be positive")
+    if residual_mass_tolerance <= 0:
+        raise ValueError("the residual-mass tolerance must be positive")
     if selected.size == 0:
         raise ValueError("no instances selected for the causal statistic")
     width = len(rows[0])
@@ -787,6 +959,7 @@ def knockout_effects(
     delta_gap = np.zeros((len(heads), selected.size), dtype=np.float64)
     delta_probability = np.zeros_like(delta_gap)
     antecedent_mass = np.zeros_like(delta_gap)
+    knocked_mass = np.zeros_like(delta_gap)
     exactness = 0.0
     layers_needed = sorted({layer for layer, _ in heads})
 
@@ -872,15 +1045,49 @@ def knockout_effects(
                 device=arm.device,
                 dtype=dtype,
             )
-            handle = attention_module(arm, layer).register_forward_pre_hook(
-                _AntecedentKnockout(head, knock), with_kwargs=True
-            )
+            # The tap rides the knockout pass itself, so what it reports is the
+            # head's antecedent mass *after* the intervention rather than
+            # before it. Reading it on the clean pass, which is what this
+            # function used to do, describes the instance and not the
+            # intervention.
+            residual: dict[str, torch.Tensor] = {}
+
+            def consume_knocked(
+                _layer: int,
+                weights: torch.Tensor,
+                _store=residual,
+                _mask=key_mask,
+                _head=head,
+                _queries=queries,
+            ) -> None:
+                row_attention = weights.float()[
+                    torch.arange(weights.shape[0], device=weights.device), :, _queries
+                ]
+                _store["mass"] = (row_attention * _mask.unsqueeze(1)).sum(dim=-1)[:, _head]
+
+            handles = [
+                attention_module(arm, layer).register_forward_pre_hook(
+                    _AntecedentKnockout(head, knock), with_kwargs=True
+                ),
+                attention_module(arm, layer).register_forward_hook(
+                    _WeightTap(consume_knocked, layer)
+                ),
+            ]
             try:
                 logits = arm.model(input_ids=ids, attention_mask=mask).logits[
                     rows_index, queries
                 ].float()
             finally:
-                handle.remove()
+                for handle in handles:
+                    handle.remove()
+            if "mass" not in residual:
+                raise RuntimeError(
+                    f"{arm.name}: layer {layer} was never entered under knockout, so "
+                    "the intervention cannot be confirmed to have run"
+                )
+            knocked_mass[position, begin : begin + block.size] = (
+                residual["mass"].cpu().numpy()
+            )
             gap, probability = _margin_and_probability(logits, targets)
             delta_gap[position, begin : begin + block.size] = (
                 (gap - clean_gap).cpu().numpy()
@@ -891,10 +1098,29 @@ def knockout_effects(
             del knock, logits
         torch.cuda.empty_cache()
 
+    residual_max = float(knocked_mass.max())
+    if residual_max > residual_mass_tolerance:
+        worst = int(np.unravel_index(int(knocked_mass.argmax()), knocked_mass.shape)[0])
+        layer, head = heads[worst]
+        raise RuntimeError(
+            f"{arm.name}: after knocking out L{layer}H{head} it still places "
+            f"{residual_max:.4g} attention mass on the antecedent keys, above the "
+            f"{residual_mass_tolerance:.4g} tolerance. Adding {KNOCKOUT_LOGIT:.1e} "
+            "pre-softmax drives the surviving weight to exactly zero, so a residual "
+            "mass means the mask reached the wrong head or the wrong keys and every "
+            "delta below is the effect of an intervention that did not happen"
+        )
     return {
         "delta_m_gap": delta_gap,
         "delta_probability": delta_probability,
         "antecedent_attention_mass": antecedent_mass,
+        # Named for when it was measured, because the pair is the control: the
+        # clean mass says the head reads the antecedent, the knocked mass says
+        # the knockout stopped it. Either alone is consistent with an inert
+        # instrument.
+        "knocked_antecedent_attention_mass": knocked_mass,
+        "knockout_residual_mass_max": residual_max,
+        "knockout_residual_mass_tolerance": float(residual_mass_tolerance),
         "zero_mask_max_logit_difference": exactness,
         "zero_mask_tolerance_logits": float(zero_mask_tolerance),
     }
@@ -913,6 +1139,53 @@ def _margin_and_probability(
 
 
 # ------------------------------------------------------ query-source intervention
+
+
+#: Why a per-head interval is absent when it is absent. Stated once, so that a
+#: null interval is never a null a reader has to explain to themselves.
+_CLUSTER_REFUSAL = (
+    "fewer sequences contributed instances than the shared percentile-bootstrap "
+    "unit floor admits, so no interval is published; the point estimates above "
+    "are still means over every instance"
+)
+
+
+def _cluster_interval(
+    per_instance: np.ndarray,
+    clusters: np.ndarray,
+    *,
+    replicates: int,
+    seed: int,
+) -> dict[str, Any] | None:
+    """Sequence-clustered percentile intervals for a per-instance statistic matrix.
+
+    ``per_instance`` is ``(n_instances, n_statistics)`` and ``clusters`` names the
+    sequence each instance came from. Instances are averaged within sequence and
+    the sequences are resampled, which is the same unit every other interval in
+    this module uses. ``None`` when there are too few sequences to bootstrap:
+    refusing the interval is the right answer there and aborting the stage is
+    not, since the point estimates remain valid.
+    """
+
+    if per_instance.ndim != 2 or clusters.shape != (per_instance.shape[0],):
+        raise ValueError("per-instance statistics do not align with their clusters")
+    unique = np.unique(clusters)
+    means = np.stack(
+        [per_instance[clusters == cluster].mean(axis=0) for cluster in unique]
+    )
+    weights = np.asarray(
+        [float((clusters == cluster).sum()) for cluster in unique], dtype=np.float64
+    )
+    if bootstrap_unit_floor(int(unique.size))["degenerate"]:
+        return None
+    booted = cluster_bootstrap(means, weights, replicates=replicates, seed=seed)
+    return {
+        "n_clusters": int(unique.size),
+        "intervals": [
+            [_finite(float(low), "cluster CI low"), _finite(float(high), "cluster CI high")]
+            for low, high in zip(booted["q_low"], booted["q_high"])
+        ],
+    }
 
 
 class _ResidualNudge:
@@ -957,6 +1230,7 @@ def query_source_intervention(
     alphas: Sequence[float],
     batch_size: int,
     seed: int,
+    bootstrap_replicates: int = 1000,
 ) -> dict[str, Any]:
     """Attention onto ``A_q(X)`` as the *predicted* token is steered away from X.
 
@@ -970,6 +1244,16 @@ def query_source_intervention(
     prediction" from "a perturbation of this size disrupts attention from ``q``
     however it is pointed", and at ``alpha = 2`` the perturbation is twice the
     residual norm, which disrupts a great deal.
+
+    **Every number here is accompanied by a sequence-clustered interval.** The
+    per-instance axis used to be collapsed with ``.mean()`` at the point of
+    reporting, so the artefact held one number per head per alpha and could not
+    be re-analysed at all -- the rule ``paa_attention_scores``' own docstring
+    states, four hundred lines up, is that "a census that emits only pooled
+    means is not re-analysable, which is a failure this programme has already
+    recorded once", and ``cluster_bootstrap`` sits unused in the same file. The
+    resampling unit is the sequence, because two instances from one document are
+    not independent draws.
     """
 
     arm.require("circuits")
@@ -996,6 +1280,18 @@ def query_source_intervention(
             control_mass = np.zeros_like(per_alpha_mass)
             per_alpha_target = np.zeros((len(alphas), selected.size))
             per_alpha_substitute = np.zeros((len(alphas), selected.size))
+            # The random control needs its own manipulation check. Recording
+            # p(X) only under the prediction nudge means the artefact can say
+            # that the prediction direction moved the head's antecedent mass and
+            # that a random direction of identical norm moved it too, without
+            # being able to say whether the random direction moved p(X) as well
+            # -- and at alpha = 2 the perturbation is twice the residual norm,
+            # which disrupts a great deal. Appendix B rule 5: an intervention
+            # that moves everything needs a control for moving everything, and
+            # the control has to be measured on the same axis as the treatment
+            # or the comparison is not a comparison.
+            control_target = np.zeros_like(per_alpha_target)
+            control_substitute = np.zeros_like(per_alpha_substitute)
             for begin in range(0, selected.size, batch_size):
                 block = selected[begin : begin + batch_size]
                 sequence_ids = pool.sequence[block]
@@ -1059,22 +1355,37 @@ def query_source_intervention(
                             destination[
                                 alpha_index, head_index, begin : begin + block.size
                             ] = mass[:, head].cpu().numpy()
-                        if label == "prediction":
-                            probabilities = F.softmax(
-                                logits[rows_index, queries].float(), dim=-1
-                            )
-                            per_alpha_target[alpha_index, begin : begin + block.size] = (
-                                probabilities[rows_index, targets].cpu().numpy()
-                            )
-                            per_alpha_substitute[
-                                alpha_index, begin : begin + block.size
-                            ] = probabilities[rows_index, replacements].cpu().numpy()
-                        del logits, pattern
+                        probabilities = F.softmax(
+                            logits[rows_index, queries].float(), dim=-1
+                        )
+                        target_store, substitute_store = (
+                            (per_alpha_target, per_alpha_substitute)
+                            if label == "prediction"
+                            else (control_target, control_substitute)
+                        )
+                        target_store[alpha_index, begin : begin + block.size] = (
+                            probabilities[rows_index, targets].cpu().numpy()
+                        )
+                        substitute_store[alpha_index, begin : begin + block.size] = (
+                            probabilities[rows_index, replacements].cpu().numpy()
+                        )
+                        del logits, pattern, probabilities
                 torch.cuda.empty_cache()
         finally:
             tap.remove()
 
+        clusters = pool.sequence[selected]
         for head_index, head in enumerate(by_layer[layer]):
+            # One bootstrap per head over a matrix whose columns are the alpha
+            # sweep under both conditions, so the prediction column and its
+            # control column are resampled on the same sequences and their
+            # difference is a paired quantity rather than two marginals.
+            columns = np.vstack(
+                [per_alpha_mass[:, head_index, :], control_mass[:, head_index, :]]
+            ).T
+            booted = _cluster_interval(
+                columns, clusters, replicates=bootstrap_replicates, seed=seed + layer
+            )
             results["heads"][f"L{layer}H{head}"] = {
                 "layer": int(layer),
                 "head": int(head),
@@ -1086,6 +1397,22 @@ def query_source_intervention(
                     _finite(float(control_mass[index, head_index].mean()), "control mass")
                     for index in range(len(alphas))
                 ],
+                "antecedent_mass_ci_by_alpha": (
+                    None if booted is None else booted["intervals"][: len(alphas)]
+                ),
+                "antecedent_mass_ci_by_alpha_random_control": (
+                    None if booted is None else booted["intervals"][len(alphas) :]
+                ),
+                "cluster_bootstrap": (
+                    {"available": False, "reason": _CLUSTER_REFUSAL}
+                    if booted is None
+                    else {
+                        "available": True,
+                        "unit": "sequence",
+                        "n_clusters": booted["n_clusters"],
+                        "replicates": int(bootstrap_replicates),
+                    }
+                ),
             }
         manipulation[f"layer_{layer}"] = {
             "p_target_by_alpha": [
@@ -1096,6 +1423,19 @@ def query_source_intervention(
                 _finite(float(per_alpha_substitute[index].mean()), "p substitute")
                 for index in range(len(alphas))
             ],
+            "p_target_by_alpha_random_control": [
+                _finite(float(control_target[index].mean()), "control p target")
+                for index in range(len(alphas))
+            ],
+            "p_substitute_by_alpha_random_control": [
+                _finite(float(control_substitute[index].mean()), "control p substitute")
+                for index in range(len(alphas))
+            ],
+            "reading": (
+                "the prediction nudge is specific only if it moves p(X) further "
+                "than a random direction of identical norm does; the control rows "
+                "are what make that comparison possible"
+            ),
         }
     results["manipulation_check"] = manipulation
     return results
@@ -1200,7 +1540,11 @@ def decoy_corrected_prefix_matching(
                 for query, key in zip(probe.query_positions, probe.key_positions):
                     span = query - key
                     low, high = DISTANCE_BIN_EDGES[distance_bin(span)]
-                    window = np.arange(max(0, query - high), query - low + 1)
+                    # Same sink exclusion as ``build_instance_pool``: the two
+                    # decoy draws have to select from the same key population or
+                    # the "same correction applied to both censuses" claim in
+                    # this function's docstring is not true.
+                    window = np.arange(max(1, query - high), query - low + 1)
                     if window.size == 0:
                         continue
                     predecessor_ok = np.ones(window.size, dtype=bool)
@@ -1255,6 +1599,7 @@ def cluster_bootstrap(
     seed: int,
     alpha: float = 0.05,
     chunk: int = 100,
+    minimum_clusters: int = MINIMUM_BOOTSTRAP_UNITS,
 ) -> dict[str, np.ndarray]:
     """Weighted mean over clusters with a percentile interval over cluster draws.
 
@@ -1262,6 +1607,18 @@ def cluster_bootstrap(
     sequences -- rather than instances is the whole point: instances inside one
     document are not independent, and an instance-level interval would be
     narrow for the wrong reason.
+
+    The unit floor is the same one ``homology.bootstrap_stratum`` applies and is
+    declared once, in ``statistics``.  This function guarded only ``n < 2``,
+    which admits the entire range where the interval is anti-conservative: at
+    three non-empty clusters a nominal 95% percentile interval realises 74%
+    coverage and at four it realises 82%.  Refused rather than flagged, unlike
+    the stratum bootstrap, because this function returns bare arrays with no
+    room to carry a verdict -- every caller reads ``q_low``/``q_high`` straight
+    into a report, so a degenerate marker beside them would be optional to
+    notice.  The PAA census resamples hundreds of sequences and is nowhere near
+    this floor; what the floor stops is a future caller narrowing a cohort until
+    it is.
     """
 
     if per_cluster.ndim != 2 or weights.ndim != 1:
@@ -1273,8 +1630,9 @@ def cluster_bootstrap(
     keep = weights > 0
     values = per_cluster[keep]
     mass = weights[keep].astype(np.float64)
-    if values.shape[0] < 2:
-        raise ValueError("cluster bootstrap needs at least two non-empty clusters")
+    floor = bootstrap_unit_floor(values.shape[0], minimum_units=minimum_clusters)
+    if floor["degenerate"]:
+        raise ValueError(f"cluster bootstrap refused: {floor['degenerate_reason']}")
     rng = np.random.default_rng(seed)
     point = (values * mass[:, None]).sum(axis=0) / mass.sum()
     draws = np.empty((replicates, values.shape[1]), dtype=np.float64)
@@ -1416,12 +1774,30 @@ def corruption_effects(
     batch_size: int,
     seed: int,
 ) -> np.ndarray:
-    """Change in ``log p(X)`` at ``q`` when the antecedent token is replaced.
+    """Change in ``log p(X)`` at ``q`` when the antecedent tokens are replaced.
 
     The replacement is drawn from the arm's own unigram distribution, so the
     corrupted context stays inside the model's token distribution and the effect
-    measured is the loss of that particular antecedent rather than the arrival
-    of an impossible symbol.
+    measured is the loss of the antecedent rather than the arrival of an
+    impossible symbol.
+
+    **Every earlier occurrence is replaced, not just the nearest one, because
+    the statistic this gate matches removes every earlier occurrence.**
+    ``knockout_effects`` stops a head reading the keys ``antecedent_sets``
+    returns, which is all of them; ``coarsened_cells`` then bins instances on
+    the corruption effect and calls the result a matched cell. Replacing one
+    occurrence out of many measures almost nothing whenever the token recurs,
+    and how often it recurs is a property of the *alphabet*: over twenty amino
+    acids, X occurs dozens of times in a 512-token protein row, while in English
+    X is often a once-occurring content word. So the single-token gate assigned
+    nearly every protein instance to the "no effect" bin and spread the text
+    instances across the range, and the matching then reported that the arms
+    cannot be matched -- a conclusion the estimator manufactured out of
+    alphabet size rather than one it measured. This lands directly on the L5
+    deliverable, so it is corrected rather than caveated.
+
+    Each occurrence draws its own replacement, so the corrupted row is not a run
+    of one repeated symbol -- which would itself be a pattern the model can read.
     """
 
     if selected.size == 0:
@@ -1446,15 +1822,17 @@ def corruption_effects(
         )[rows_index, targets]
 
         corrupted = base.copy()
+        key_sets = antecedent_sets(rows, pool, block)
         for row, index in enumerate(block):
             original = int(pool.predicted_token[index])
-            for _ in range(64):
-                candidate = int(support[rng.choice(support.size, p=probabilities)])
-                if candidate != original:
-                    corrupted[row, int(pool.antecedent[index])] = candidate
-                    break
-            else:
-                raise RuntimeError("could not draw a replacement token")
+            for position in key_sets[row]:
+                for _ in range(64):
+                    candidate = int(support[rng.choice(support.size, p=probabilities)])
+                    if candidate != original:
+                        corrupted[row, position] = candidate
+                        break
+                else:
+                    raise RuntimeError("could not draw a replacement token")
         corrupted_ids = torch.tensor(corrupted, dtype=torch.long, device=arm.device)
         dirty = F.log_softmax(
             arm.model(input_ids=corrupted_ids, attention_mask=mask)
