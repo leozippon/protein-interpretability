@@ -967,20 +967,23 @@ class WorkerStatusDoesNotTravelOnTheTransport(unittest.TestCase):
             result = self._run_controller(tmp, access)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_a_sentinel_that_is_not_the_last_line_is_not_believed(self):
-        # A stage's own output quoting the constant must not be able to decide a
-        # campaign's verdict. The worker emits it from its EXIT trap, so a genuine
-        # sentinel is structurally last.
+    def test_a_transport_trailer_after_the_sentinel_is_tolerated(self):
+        # kubectl exec appends "command terminated with exit code N" after the
+        # remote process's output, so on every failing run the sentinel is
+        # second-to-last. Requiring last-line position was tried and it turned a
+        # correctly reported failure into "no sentinel" -- a true status traded for
+        # a false one. Uniqueness is the invariant, not position.
         with tempfile.TemporaryDirectory() as tmp:
             access = self._controller_env(
                 tmp,
                 "#!/usr/bin/env bash\n"
-                "echo 'TRANSFER_WORKER_EXIT=0'\n"
-                "echo 'Traceback (most recent call last): stage died after that line'\n"
+                "echo 'TRANSFER_WORKER_EXIT=3'\n"
+                "echo 'command terminated with exit code 3'\n"
                 "exit 0\n",
             )
             result = self._run_controller(tmp, access)
-            self.assertEqual(result.returncode, 90, result.stdout + result.stderr)
+            self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
+            self.assertIn("worker reported exit status 3", result.stdout + result.stderr)
 
     def test_two_sentinels_are_refused_rather_than_resolved(self):
         with tempfile.TemporaryDirectory() as tmp:

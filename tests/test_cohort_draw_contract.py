@@ -50,10 +50,40 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "catalogue, not sequences from a FASTA corpus"
     ),
     "09_probe_and_erasure.py": (
-        "draws through src.transfer.probes, whose record_order is seeded by default"
+        "draws through src.transfer.probes: record_order is seeded by default and "
+        "probes.text_units now passes its seed to the corpus draw as well. The "
+        "second half of that was untrue when this exemption was written, and the "
+        "exemption is what hid it -- probes.text_units took a seed and applied it "
+        "only to positions, over a 150-of-396,000 file-order prefix"
     ),
     "12_induction_robustness.py": "reads artefacts from disk; loads no corpus",
     "panel_contract.py": "a declaration, not a measurement",
+}
+
+
+#: Every directory that can construct a cohort. `src/transfer` is included
+#: because `probes.text_units` drew a 150-document file-order prefix of ~396,000
+#: eligible documents while taking a `seed` it applied only to positions, and a
+#: scan restricted to `scripts/transfer` could not see it.
+SEARCH_DIRS = (
+    REPO_ROOT / "scripts" / "transfer",
+    REPO_ROOT / "scripts" / "transfer_gap",
+    REPO_ROOT / "src" / "transfer",
+)
+
+#: Call sites that draw in file order ON PURPOSE, with the reason. Declared as a
+#: prefix list rather than silently excluded from the scan, so that adding one is
+#: a visible decision and the reason is checkable.
+DELIBERATE_FILE_ORDER: dict[str, str] = {
+    "src/transfer/arms.py": (
+        "the declaration itself; its constructors are what every caller must pass "
+        "a seed to, and seed=None is the mode they offer"
+    ),
+    "scripts/transfer_gap/tg00_input_contract.py": (
+        "TG-00 is the positive control that PRICES a file-order draw. It has to "
+        "make one: its cohort_delta_nats is the difference between a file-order "
+        "cohort and a seeded one, and a seeded control would measure nothing"
+    ),
 }
 
 
@@ -65,27 +95,92 @@ def stage_sources() -> dict[str, ast.Module]:
 
 
 def corpus_calls(tree: ast.Module) -> list[ast.Call]:
+    """Calls to a corpus constructor, however it was named at the call site.
+
+    Both ``text_cohort(...)`` and ``arms.text_cohort(...)`` count: matching only
+    ``ast.Name`` let an attribute-style call reintroduce the defect invisibly.
+    """
+
     found: list[ast.Call] = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            if node.func.id in CORPUS_CONSTRUCTORS:
-                found.append(node)
+        if not isinstance(node, ast.Call):
+            continue
+        name = None
+        if isinstance(node.func, ast.Name):
+            name = node.func.id
+        elif isinstance(node.func, ast.Attribute):
+            name = node.func.attr
+        if name in CORPUS_CONSTRUCTORS:
+            found.append(node)
     return found
 
 
+def seed_keyword(call: ast.Call) -> ast.keyword | None:
+    for keyword in call.keywords:
+        if keyword.arg == "seed":
+            return keyword
+    return None
+
+
+def is_literal_none(node: ast.AST) -> bool:
+    return isinstance(node, ast.Constant) and node.value is None
+
+
+def argparse_default(tree: ast.Module, option: str) -> ast.AST | None:
+    """The ``default=`` expression of one ``add_argument`` call, or None.
+
+    Read from the call rather than by splitting the source on the option string:
+    three stages mention ``--cohort-draw-seed`` in a docstring *before* they
+    define it, so a text split inspected prose and the literal check it guarded
+    was blind for those three -- and passed over a live defect in the one stage
+    that qualifies every other stage's cohort.
+    """
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        attr = func.attr if isinstance(func, ast.Attribute) else None
+        if attr != "add_argument":
+            continue
+        if not node.args or not isinstance(node.args[0], ast.Constant):
+            continue
+        if node.args[0].value != option:
+            continue
+        for keyword in node.keywords:
+            if keyword.arg == "default":
+                return keyword.value
+        return None
+    return None
+
+
 class EveryCorpusDrawDeclaresItsSeed(unittest.TestCase):
-    def test_every_call_site_passes_seed(self):
+    def test_every_call_site_in_every_live_directory_passes_seed(self):
+        # Scoped over every directory that can build a cohort, not just the stage
+        # scripts, and rejecting `seed=None` as well as an absent keyword: passing
+        # the keyword with a literal None is the same file-order prefix with the
+        # test satisfied.
         offenders: list[str] = []
-        for name, tree in stage_sources().items():
-            for call in corpus_calls(tree):
-                keywords = {kw.arg for kw in call.keywords}
-                if "seed" not in keywords:
-                    offenders.append(f"{name}:{call.lineno} {call.func.id}(...) has no seed=")
+        for directory in SEARCH_DIRS:
+            for path in sorted(directory.glob("*.py")):
+                tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+                for call in corpus_calls(tree):
+                    where = f"{path.relative_to(REPO_ROOT)}:{call.lineno}"
+                    keyword = seed_keyword(call)
+                    if keyword is None:
+                        offenders.append(f"{where} has no seed=")
+                    elif is_literal_none(keyword.value):
+                        offenders.append(f"{where} passes seed=None")
+        offenders = [
+            entry
+            for entry in offenders
+            if not any(entry.startswith(prefix) for prefix in DELIBERATE_FILE_ORDER)
+        ]
         self.assertEqual(
             offenders,
             [],
-            "a corpus draw without an explicit seed= is a file-order prefix; "
-            "Appendix B rule 1. Offenders:\n  " + "\n  ".join(offenders),
+            "a corpus draw without an explicit non-None seed= is a file-order "
+            "prefix; Appendix B rule 1. Offenders:\n  " + "\n  ".join(offenders),
         )
 
     def test_a_stage_that_draws_nothing_is_declared(self):
@@ -152,38 +247,54 @@ class TheDrawSeedHasOneDeclaration(unittest.TestCase):
     def test_no_stage_restates_the_seed_as_a_literal(self):
         # Appendix B rule 12: a single declaration, imported, never reimplemented.
         # A stage that hard-codes the integer would silently stop tracking the
-        # panel the day the declaration moves.
-        from src.transfer.arms import DEFAULT_CORPUS_DRAW_SEED
-
-        literal = str(DEFAULT_CORPUS_DRAW_SEED)
+        # panel the day the declaration moves -- and one did, in the stage that
+        # qualifies the cohorts every other stage is told to match.
         offenders: list[str] = []
-        for path in sorted(STAGE_DIR.glob("*.py")):
-            source = path.read_text(encoding="utf-8")
-            if "--cohort-draw-seed" not in source:
+        for name, tree in stage_sources().items():
+            default = argparse_default(tree, "--cohort-draw-seed")
+            if default is None:
                 continue
-            block = source.split("--cohort-draw-seed", 1)[1].split(")", 1)[0]
-            if literal in block:
-                offenders.append(path.name)
+            if isinstance(default, ast.Constant):
+                offenders.append(f"{name} hard-codes {default.value!r}")
+            elif not (isinstance(default, ast.Name) and default.id == "DEFAULT_CORPUS_DRAW_SEED"):
+                offenders.append(f"{name} defaults to {ast.dump(default)[:60]}")
         self.assertEqual(
             offenders,
             [],
-            f"these stages hard-code {literal} instead of importing "
-            f"DEFAULT_CORPUS_DRAW_SEED: {offenders}",
+            "these stages do not default to the imported DEFAULT_CORPUS_DRAW_SEED: "
+            + "; ".join(offenders),
         )
 
-    def test_every_drawing_stage_offers_the_flag(self):
-        expected = {
-            name for name, tree in stage_sources().items() if corpus_calls(tree)
-        } - {"06_explanation_channel.py"}  # per-channel seeds; see its own contract test
+    def test_every_drawing_stage_defines_the_flag(self):
+        # Defined as an argparse option, not merely mentioned: an `assertIn` over
+        # the raw source passed for a stage that only named the flag in prose.
+        sources = stage_sources()
+        expected = {name for name, tree in sources.items() if corpus_calls(tree)} - {
+            "06_explanation_channel.py"  # per-channel seeds; see its own contract test
+        }
         for name in sorted(expected):
-            source = (STAGE_DIR / name).read_text(encoding="utf-8")
-            self.assertIn(
-                "--cohort-draw-seed",
-                source,
-                f"{name} draws a corpus but the draw cannot be selected from the "
-                "command line, so the file-order variant is unreachable and the "
-                "seeded one is undeclared",
+            self.assertIsNotNone(
+                argparse_default(sources[name], "--cohort-draw-seed"),
+                f"{name} draws a corpus but defines no --cohort-draw-seed option, so "
+                "the file-order variant is unreachable and the seeded one is undeclared",
             )
+
+    def test_the_repeat_constructors_honour_the_seed_they_accept(self):
+        # Behavioural, not signature-only: a constructor that accepted `seed` and
+        # ignored it in the body satisfied the signature check.
+        from src.transfer.circuits import _select_matching
+
+        found = [object() for _ in range(40)]
+        def pick(seed):
+            return _select_matching(found, n=8, skip=0, seed=seed, name="probe")
+
+        file_order = pick(None)
+        seeded = pick(20260728)
+        other = pick(99)
+        self.assertEqual(file_order, list(range(8)))
+        self.assertNotEqual(seeded, file_order)
+        self.assertNotEqual(seeded, other)
+        self.assertEqual(seeded, pick(20260728))
 
 
 class ASubsampleCarriesItsParentsDraw(unittest.TestCase):

@@ -50,6 +50,7 @@ from typing import Any
 import numpy as np
 import torch
 
+from .statistics import MINIMUM_BOOTSTRAP_UNITS
 from .arms import (
     AA20,
     Arm,
@@ -2207,13 +2208,23 @@ def direct_logit_attribution(
 # ---------------------------------------------------------- activation patching
 
 
-#: Below this many cases a percentile interval on a fraction is pinched inward
-#: rather than merely wide -- the resample distribution has too few distinct
-#: atoms for its tails to mean anything. The same floor and the same reasoning
-#: are in ``homology.MINIMUM_BOOTSTRAP_UNITS``; the constant is restated here
-#: only because importing it would make the circuit census depend on the
-#: homology module, and the two are declared to agree by test.
-MINIMUM_ELIGIBILITY_CASES = 8
+#: Below this many resampling CLUSTERS a percentile interval on a fraction is
+#: pinched inward rather than merely wide -- the resample distribution has too few
+#: distinct atoms for its tails to mean anything. Measured coverage of a nominal
+#: 95% interval is 0.74 / 0.82 / 0.89 / 0.94 at 3 / 4 / 8 / 400 units, so eight is
+#: where the interval starts meaning roughly what it says.
+#:
+#: Named for clusters, not cases, because that is what it gates: a band with
+#: twenty cases drawn from six sequences is refused. An earlier name said "cases"
+#: and invited exactly the confusion the floor exists to prevent.
+#:
+#: This is the same number as ``statistics.MINIMUM_BOOTSTRAP_UNITS`` and is
+#: imported from it rather than restated. An earlier version declared it locally
+#: and justified that by "importing it would make the circuit census depend on the
+#: homology module" -- which was wrong twice: the constant lives in ``statistics``,
+#: which this module can depend on freely, and the claim that "the two are
+#: declared to agree by test" named a test that did not exist.
+MINIMUM_ELIGIBILITY_CLUSTERS = MINIMUM_BOOTSTRAP_UNITS
 
 #: Minimum-effect thresholds the eligible fraction is reported at, beside the one
 #: the run was scored on.
@@ -2227,6 +2238,27 @@ MINIMUM_ELIGIBILITY_CASES = 8
 #: `absolute_effect_quantiles` below is the threshold-free companion: the
 #: distribution the fraction is a single slice of.
 ELIGIBILITY_THRESHOLD_LADDER: tuple[float, ...] = (0.05, 0.10, 0.25, 0.50, 1.00, 2.00)
+
+
+def _threshold_row(
+    absolute: np.ndarray,
+    sources: np.ndarray,
+    threshold: float,
+    seed: int,
+    resamples: int,
+) -> dict[str, Any]:
+    """One row of the eligibility sweep: the fraction above ``threshold`` and its interval.
+
+    Computed on the same float64 array the headline fraction uses, and from a
+    generator seeded per threshold rather than one stream shared across the sweep,
+    so the row at the run's own cut is bit-identical to
+    ``eligible_fraction_interval`` instead of being a second estimate of it.
+    """
+
+    flags = absolute >= threshold
+    return _case_resampled_interval(
+        flags, sources, np.random.default_rng(seed), resamples
+    ) | {"threshold": float(threshold), "fraction": float(flags.mean())}
 
 
 def _case_resampled_interval(
@@ -2254,14 +2286,14 @@ def _case_resampled_interval(
 
     n = int(flags.size)
     clusters = np.unique(sources)
-    if clusters.size < MINIMUM_ELIGIBILITY_CASES:
+    if clusters.size < MINIMUM_ELIGIBILITY_CLUSTERS:
         return {
             "n_cases": n,
             "n_source_sequences": int(clusters.size),
             "degenerate": True,
             "reason": (
                 f"{clusters.size} source sequences is below the "
-                f"{MINIMUM_ELIGIBILITY_CASES}-cluster floor; a percentile interval "
+                f"{MINIMUM_ELIGIBILITY_CLUSTERS}-cluster floor; a percentile interval "
                 "here is pinched inward rather than wide, so none is reported"
             ),
         }
@@ -2563,12 +2595,17 @@ def activation_patching(
         for band in bands
     }
 
-    generator = np.random.default_rng(eligibility_seed)
     case_sources = np.asarray([case.source for case in cases], dtype=np.int64)
     corruption: dict[str, Any] = {}
     for band, index in band_index.items():
         effects = denominator.index_select(0, index)
-        flags = eligible.index_select(0, index).detach().cpu().numpy()
+        # float64 on the host, once, and everything downstream reads it: the
+        # headline fraction, its interval and every row of the sweep. Computing
+        # the headline from a numpy bool array and the sweep from a float32 torch
+        # reduction made the two disagree in the eighth decimal for any
+        # non-dyadic fraction, which reads as a defect to anyone diffing them.
+        absolute = effects.abs().detach().cpu().numpy().astype(np.float64)
+        flags = absolute >= float(minimum_effect)
         sources = case_sources[index.detach().cpu().numpy()]
         corruption[band] = {
             "n_cases": int(index.numel()),
@@ -2585,26 +2622,36 @@ def activation_patching(
             # arms had fewer than ten eligible far-band cases when that result was
             # first reported.
             "eligible_fraction_interval": _case_resampled_interval(
-                flags, sources, generator, eligibility_resamples
+                flags, sources, np.random.default_rng(eligibility_seed), eligibility_resamples
             ),
             # Appendix B rule 8. The fraction at one cut cannot show that an
             # ordering across arms is a property of the arms rather than of the
             # cut, and an aggregate-only artefact cannot be re-cut afterwards.
+            #
+            # Three consistency properties are enforced rather than hoped for.
+            # The run's own `minimum_effect` is *in* the ladder, so the swept
+            # curve always contains the number reported beside it -- the ladder
+            # is a fixed tuple and `minimum_effect` is a free float, so without
+            # this the two could not be compared at all. The fractions are
+            # computed on the same float64 numpy array as `eligible_fraction`,
+            # not a float32 torch reduction, so the shared entry is bit-equal
+            # rather than equal to eight decimals. And every threshold draws
+            # from one generator seeded per threshold, so the interval at the
+            # run's cut is the same interval as `eligible_fraction_interval`
+            # rather than a second one computed off a diverged stream.
             "eligible_fraction_by_threshold": {
-                f"{threshold:g}": _case_resampled_interval(
-                    (effects.abs() >= threshold).detach().cpu().numpy(),
-                    sources,
-                    np.random.default_rng(eligibility_seed),
-                    eligibility_resamples,
+                f"{threshold:g}": _threshold_row(
+                    absolute, sources, threshold, eligibility_seed, eligibility_resamples
                 )
-                | {"fraction": float((effects.abs() >= threshold).float().mean())}
-                for threshold in ELIGIBILITY_THRESHOLD_LADDER
+                for threshold in sorted(
+                    set(ELIGIBILITY_THRESHOLD_LADDER) | {float(minimum_effect)}
+                )
             },
             # The threshold-free companion: the distribution every fraction above
             # is one slice of, so a reader can re-cut at any value without a re-run.
             "absolute_effect_quantiles": {
                 f"q{int(q * 1000):03d}": _finite(
-                    float(effects.abs().quantile(q)), f"|effect| quantile {q} {band}"
+                    float(np.quantile(absolute, q)), f"|effect| quantile {q} {band}"
                 )
                 for q in (0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95)
             },

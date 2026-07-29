@@ -1495,7 +1495,14 @@ def text_units(
 
     if arm.modality != "text":
         raise ValueError(f"{arm.name} is a {arm.modality} arm; this cohort is text")
-    cohort = text_cohort(n_documents, min_chars=min_chars, name="openwebtext_probe")
+    # ``seed`` reaches the corpus draw, not only the position sampler below. It
+    # used to govern only which positions were taken from a *file-order prefix*
+    # of the corpus: at the stage's 150 documents against roughly 396,000
+    # eligible ones, a 0.04% head-of-file slice. The signature said the draw was
+    # seeded and the draw was not, which is the shape Appendix B rule 1 is about.
+    cohort = text_cohort(
+        n_documents, min_chars=min_chars, name="openwebtext_probe", seed=seed
+    )
     generator = np.random.default_rng(seed)
     tokenised: list[list[int]] = []
     for document in cohort.records:

@@ -37,7 +37,7 @@ Re-run is `--stages search` only, **no GPU**. Note that `assign_homology` now ra
 
 And one interval is renamed rather than deleted: the **path-patching matched-pair result** (+0.020, CI [−0.121, +0.166]) resampled an arm's induction *heads* — its entire population, selected by a threshold — while the probe records, the only real sampling unit, contributed nothing. It measures heterogeneity, not sampling error. The point estimate stands; the interval does not mean what it said.
 
-> **Extended by EXP-R2-068.** A unit floor now applies to that head resampling, at the eight units `homology.py` has enforced since EXP-R2-061. The headline above is unaffected — it resamples 14 heads. But **eight further `excludes_zero: true` separation verdicts in the same artefact rest on three to six heads** and are withdrawn: ProGen2-medium's exact direct effect, mediated effect and mediated fraction (n = 6, 6, 6), its approximate mediated effect and mediated fraction (n = 4, 3), and the matched pair's *approximate* direct effect, mediated effect and mediated fraction (n = 6, 6, 5). Measured coverage of a nominal 95% interval at these counts is 0.74–0.86, not 0.95. On re-run those rows publish a point difference and no separation verdict. `results/transfer_20260728/path_patching/panel_summary.json` is retained unmodified as the record.
+> **Extended by EXP-R2-068.** A unit floor now applies to that head resampling, at the eight units `homology.py` has enforced since EXP-R2-061. The headline above is unaffected, though not for the reason first written: its two-sample bootstrap resamples **38** heads (14 against 24), 14 being only the smaller side, and it carries `excludes_zero: false` — it was never a separation verdict, so there was nothing for the floor to withdraw. The two nodes that *are* separation verdicts at that count (`exact/direct_effect`, `exact/mediated_effect`) survive the floor. But **eight further `excludes_zero: true` separation verdicts in the same artefact rest on three to six heads** and are withdrawn: ProGen2-medium's exact direct effect, mediated effect and mediated fraction (n = 6, 6, 6), its approximate mediated effect and mediated fraction (n = 4, 3), and the matched pair's *approximate* direct effect, mediated effect and mediated fraction (n = 6, 6, 5). Measured coverage of a nominal 95% interval at these counts is 0.74–0.86, not 0.95 — a simulation recorded in `statistics.py`'s own docstring and not, as yet, in any artefact or test. On re-run those rows publish a point difference and no separation verdict. `results/transfer_20260728/path_patching/panel_summary.json` is retained unmodified as the record.
 
 ## 0.15 TG-01 is not quotable (EXP-R2-066)
 
@@ -159,6 +159,18 @@ Eleven autoregressive decoders under one code path, each fed in the format it wa
 
 `circuits.py` records the natural probe as the one to trust for wrapped arms and `scaling.py` declares it primary; the headline table used the synthetic probe. The natural approximate criterion is the one Pomerants et al. showed subsumes exact detection.
 
+> **The inversion at 0.10 was an artefact of the repeat cohort's draw, and does not reproduce (EXP-R2-068).** The census's *repeat* cohorts were never seeded: under the approximate criterion the stage took **32 of 817** matching proteins and **32 of 968** matching documents in corpus file order — a four per cent head-of-file prefix on the cohort that carries this entire result. Re-run on a seeded draw at the whole matching population (**817 of 817** protein, so on the protein side it is a census and order cannot matter; 817 of 1022 text), on all eleven arms:
+>
+> | probe | t = 0.05 | t = 0.10 | t = 0.20 | t = 0.30 |
+> |---|---|---|---|---|
+> | synthetic | holds | holds | holds | holds |
+> | natural exact | holds | holds | holds | **inverts** |
+> | natural approximate | holds | **holds** | **inverts** | **inverts** |
+>
+> At the headline threshold the ordering now holds on **all three probes**. `dialogpt-small`'s natural-approximate fraction, the 0.0000 that produced the recorded inversion, reads **0.0278** on the seeded cohort; the worst text arm (llama-3.2-3b, 0.0268) sits above the best protein arm (ProtGPT2, 0.0181). Matched pair at 0.10: **5.46x** synthetic (against the recorded 5.38x), 4.07x natural exact, 2.92x natural approximate.
+>
+> **The probe-dependence problem is reduced, not removed.** It moves to the permissive-tail thresholds: natural approximate inverts at 0.20 and 0.30, natural exact at 0.30. Both inversions are driven by the worst text arm reaching *exactly zero* while a protein arm retains one or two heads out of 720–1728 — a small-count tail effect, not a distributional statement, and the same reason the distributional separation fails. Nothing here converts the result into a modality claim: the structural n = 1 limit of §2 and the corpus-repeat confound of the closing paragraph are untouched. Artefacts: `results/transfer_20260730/induction_seeded/`.
+
 **Scale — real, and does not explain the descriptive shortfall.** The within-lineage ladder falls monotonically: 0.1597, 0.1380, 0.0972, 0.0833; slope **−0.272/decade [−0.455, −0.088]** with head *count* rising 23 → 100. This explains llama-3.2-3b's low value. Restated against the ladder's scale-matched prediction, the shortfall is **2.34x descriptively**; the artifact does not report a scale-adjusted inferential test. Its reported **p = 0.0286** belongs instead to the unadjusted, one-sided exact permutation test over four text and three protein models for `fraction_above_0.10`, where complete separation reaches the minimum attainable p-value. Variance decomposition: scale adds **+0.003** given modality and lineage; modality +0.220; lineage +0.061 — but only **25.4%** of the modality indicator survives projection.
 
 **Corpus — roughly half the modality contrast in log terms.**
@@ -265,7 +277,7 @@ The figures that carry the most weight, with their provenance, so the catalogue 
 
 **L8 — the aperture is algebraically forced.** Numerical rank of `∂logits/∂h_l` is exactly **31** for ProGen2-medium and **457** for ZymCTRL, at every layer and probe, against 1150–1278 for the 50k-vocab arms. Validated against central finite differences at 2.2e-4–2.5e-3 relative error. **Vocabulary-conditional, not modality-conditional** — ProtGPT2's interface is near-full-rank. The honest label is *protein-typical, not protein-necessary*.
 
-**L9 — explanation closure, measured; re-derived under seeded permutation (EXP-R2-068, plan item B3).** Bits/symbol within one 300-symbol window, every channel now drawn under a seeded permutation of its **whole** corpus and every unit list visited in seeded order, with grouped intervals:
+**L9 — explanation closure, measured; re-derived under seeded permutation (EXP-R2-068, plan item B3).** Bits/symbol within one 300-symbol window, every channel now drawn under a seeded permutation of its **whole** corpus and every unit list visited in seeded order, with Student-t intervals over per-unit values (not clustered):
 
 | channel | file-order draw | seeded draw, 95% interval | second draw seed |
 |---|---:|---|---:|
@@ -274,7 +286,7 @@ The figures that carry the most weight, with their provenance, so the catalogue 
 | structural-oracle attributes | 3.61 | **3.792** [3.746, 3.837] | 3.783 |
 | Pfam domain label | 0.74 | **0.860** [0.837, 0.883] | 0.889 |
 
-Drawn from all **574,627** eligible Swiss-Prot entries and all **23,586** AlphaFold models rather than from a prefix; Pfam residue coverage 0.601 over 18,251 of 20,000 sampled proteins. The fourth column is an independent draw at seed 20260801 (`results/transfer_20260730/explanation_channel_seed2/`), reported because evidence-discipline rule 4 does not admit a single-draw point estimate: every channel reproduces, and both Pfam figures sit far above the file-order 0.74. **The contrast survives and the closure argument stands.** The two channels that had been prefix draws moved **in the predicted direction and by a material amount** — Pfam **+0.12 bits (+16%)**, structural **+0.18 bits (+5%)** — because a family-grouped prefix is more uniform in its labels than the corpus, so it *understates* a label channel's entropy. The text control moved **+0.006 bits**, confirming that shard order is not family order and that the effect is protein-specific (extends L13). The text-to-Pfam ratio is **8.5x**, against 9.9x under the biased draws: the closure gap is real and slightly smaller than recorded. Artefact: `results/transfer_20260730/explanation_channel/explanation_channel.json`.
+Drawn from all **574,627** eligible Swiss-Prot entries and all **23,586** AlphaFold models rather than from a prefix; Pfam residue coverage 0.601 over 18,251 of 20,000 sampled proteins. The fourth column is an independent draw at seed 20260801 (`results/transfer_20260730/explanation_channel_seed2/`), reported because evidence-discipline rule 4 does not admit a single-draw point estimate: every channel reproduces, and both Pfam figures sit far above the file-order 0.74. **The contrast survives and the closure argument stands.** The two channels that had been prefix draws moved **in the predicted direction and by a material amount** — Pfam **+0.12 bits (+16%)**, structural **+0.18 bits (+5%)** — because a family-grouped prefix is more uniform in its labels than the corpus, so it *understates* a label channel's entropy. The text control moved **+0.0036 bits**, confirming that shard order is not family order and that the effect is protein-specific (extends L13). The text-to-Pfam ratio is **8.5x**, against 9.9x under the biased draws: the closure gap is real and slightly smaller than recorded. Artefact: `results/transfer_20260730/explanation_channel/explanation_channel.json`.
 
 **L2 — the event-selection ceiling.** `I(E;L) ≤ h(m/N)`. The gate demanded 0.1 nats from a top-100-of-122,671 design whose ceiling is **0.0066 nats** — 15.1x above attainable. The reported `0/38 FAIL` carries no biological content.
 
@@ -288,7 +300,7 @@ Drawn from all **574,627** eligible Swiss-Prot entries and all **23,586** AlphaF
 
 **New — protein dictionaries are data-limited where text ones are saturated.** gpt2-large 0.958 → 0.962 across 16x data; ZymCTRL 0.610 → 0.716 → **0.843** and still climbing at ~+0.12 per 4x. That is convergence of the **instrument**, not of the model — a distinction this programme has been blurring.
 
-**New — the one surviving pathway difference. Measured at production scale (EXP-R2-068, plan item B6).** Non-local propagation under activation patching: the share of single-token corruptions whose effect at a read-out position 33–64 tokens away clears the minimum-effect floor. Cohorts are seeded draws of 256 records; the interval resamples the **source sequence**, not the case, because cases are many corruptions of the same few sequences.
+**New — the one surviving pathway difference. Measured at production scale (EXP-R2-068, plan item B6).** Non-local propagation under activation patching: the share of single-token corruptions whose effect at a read-out position 33–64 tokens away clears the minimum-effect floor. Cohorts are seeded draws of 256 records; the interval resamples the **source sequence**, not the case. At these counts that is 1.3–1.7 cases per sequence rather than "many of a few" — the clustering is the conservative choice, not a large correction.
 
 | arm | eligible / total | fraction | 95% interval | source sequences |
 |---|---:|---:|---|---:|
@@ -297,6 +309,24 @@ Drawn from all **574,627** eligible Swiss-Prot entries and all **23,586** AlphaF
 | progen2-medium | 58 / 128 | **0.453** | [0.369, 0.538] | 100 |
 
 **The gate is met and the ordering survives, but the modality separation does not.** All three arms clear the pre-registered ≥30 far-band cases (against 2–16 before), and every interval excludes zero. ProGen2-medium is disjoint from both other arms. **gpt2-large and ProtGPT2 overlap** on [0.202, 0.215] — so at production scale the text control and the matched protein arm are *not* separated, and what separates is ProGen2-medium from everything else. That is an architecture-and-tokenisation contrast as much as a modality one, and the matched pair is the only modality-identifying comparison the panel has (§2). **Still not a claim, and now for a sharper reason than sample size.**
+
+> **Two sensitivity checks were then run, and the second withdraws the numbers above (EXP-R2-068).**
+>
+> *Sampling.* A disjoint second window of the same permutation (`--cohort-skip 256`) moves the far-band fraction by **−0.021 / −0.020 / +0.016** for gpt2-large / ProtGPT2 / ProGen2-medium, every interval overlaps its partner, and all three still clear the case gate (42 / 60 / 60). The draw is not driving the result.
+>
+> *Threshold.* It is not threshold-invariant, and Appendix B rule 8 is the reason to have looked. Swept over the eligibility cut:
+>
+> | cut | gpt2-large | ProtGPT2 | ProGen2-medium |
+> |---:|---:|---:|---:|
+> | 0.05 | **0.771** | 0.715 | 0.484 |
+> | 0.10 | 0.455 | **0.563** | 0.477 |
+> | 0.25 | 0.146 | 0.234 | **0.469** |
+> | 0.50 | 0.052 | 0.078 | **0.461** |
+> | 1.00 | 0.017 | 0.023 | **0.258** |
+>
+> **At the two most permissive cuts the ordering reverses or scrambles: at 0.05 the text control propagates *more* than either protein arm.** The recorded ordering exists only from 0.25 upward. So the honest statement is not that protein propagates further, but that the far-band effect *distributions have different shapes* — text has many small effects, ProGen2-medium has fewer and much larger ones.
+>
+> *And the measurement is not yet trustworthy at this magnitude.* The run was in **bfloat16**, and the far-band `|effect|` quantiles come back at exact multiples of 1/16 (0.0625, 0.1250, 1.0000) — the quantisation step is the size of the quantity being measured. This is the hazard `14_paa_census.py` already carries a `--census-dtype float32` default for, on the same reasoning. **The B6 numbers above are therefore withdrawn pending a float32 re-run**, which is under way; the gate-attainment result (≥30 far-band cases is reachable) and the sampling insensitivity stand, because neither depends on the effect magnitudes being resolved.
 
 **Two further corrections this run forces.** First, **the previously recorded trio 9% / 34% / 50% is not reproducible from the retained artefacts.** Their far-band eligible fractions are 0.250 (gpt2-large), 0.219 (ProtGPT2), 0.500 (ProGen2-medium) and 0.062 (ZymCTRL); only ProGen2-medium's matches, and the accompanying "2–16 eligible far-band cases" matches the counts 8 / 7 / 16 / 2 exactly. The figures should be read as superseded rather than confirmed. Second, **ZymCTRL cannot enter this measurement at all.** `build_patch_cases` cuts every row to the patching window, and a conditioned rendering puts the `<end>` marker that delimits scored content hundreds of tokens beyond a 128-token window, so no valid content span exists and `content_bounds` refuses. Reaching it needs an ~816-token window at roughly 2.5 GPU-h, or a short protein band incommensurable with the other three. This is the conditioning prompt (L15) removing an arm from a window-based estimand — recorded, not worked around. Artefacts: `results/transfer_20260730/b6_nonlocal_propagation/`.
 
@@ -361,38 +391,85 @@ Any method that is built is benchmarked against SAE, CLT, probes, dense low-rank
 
 ---
 
-## 9. The plan
+## 9. The plan, organised by the three directions
 
-Total **~90–140 H200 GPU-hours**, comfortably inside a 4-card pod over a few weeks, plus L20s for CPU-adjacent work.
+Restructured 2026-07-30 (EXP-R2-068). The previous Phase A/B/C scheme had drifted
+from the objective it served: items were numbered by the order they were thought
+of, and two of them turned out to belong to different directions. This version is
+organised by the three directions themselves, with one-letter identifiers, and
+each direction states what it has established before what it still owes. Retired
+item names are kept in §9.1 so nothing is lost.
 
-### Phase A — close part 1. No new measurement. ~0 GPU-h.
+Remaining budget **~55–95 H200 GPU-hours**. The programme has spent about 8 to
+date, which is the main reason the estimate has fallen: measurements that were
+costed as campaigns turned out to be minutes once the case counts were sized to
+the gate rather than to the panel.
 
-Write the differences section as *instrumental*: one table of every measured text-vs-protein difference with its post-control status — aperture rank (survives, vocabulary-conditional), non-local propagation (survives, validation scale), induction prevalence (probe-conditional; the scale-matched 2.34x shortfall is descriptive and has no artifact-backed scale-adjusted p-value), corpus repeat statistics, and the dissolved effects. The former gpt2 / dialogpt-small 2.30x corpus contrast is retracted because DialoGPT-small is off-distribution. **Exit condition: no further part-1 measurement is authorised.**
+### D1 — Differences between the model families
 
-### Phase B — build part 2 as measured evidence. ~35–45 H200 GPU-h.
+**Established.** One difference survives as a bounded, reproducible statement: on
+repeat probes drawn from the whole matching population, protein decoders put a
+smaller fraction of heads in the upper tail of the prefix-matching distribution
+than text decoders. As of EXP-R2-068 that ordering holds at the headline
+threshold on **all three** probe constructions, matched pair 5.46x — the recorded
+inversion on the best probe was an artefact of the repeat cohort's file-order
+draw. It remains **not a modality claim**: five text arms against one protein arm
+in the only family spanning both (§2), and an eightyfold corpus repeat-prevalence
+confound that no experiment can remove.
 
-This is the deliverable.
+Two further differences are open rather than closed:
+
+| item | question | status | cost |
+|---|---|---|---|
+| **D1.a** | Do the far-band propagation *magnitudes* differ, once resolved? | bfloat16 quantised the effect to the size of the effect; float32 re-run under way | ~1 GPU-h |
+| **D1.b** | Is the tail statement a *distribution* statement at full population? | the census now runs on 817 of 817 matching proteins; the AUC / dominance battery has not been re-run on it | ~2 GPU-h, CPU-adjacent |
+
+**Exit condition unchanged in spirit:** D1 exists to explain transfer failures, not
+for its own sake. No new D1 measurement is authorised beyond these two.
+
+### D2 — Where the methods transfer, and whose fault it is when they do not
+
+The deliverable. Twenty-one limitations are catalogued in §5, each scoped as
+method, model, data or interface. What remains:
 
 | item | pre-registered gate | cost |
 |---|---|---|
-| **B1** Input-contract certification, retro-applied to every quoted number | must reproduce the 1.42-nat rendering delta and the +1.01-nat file-order delta as positive controls | ≤10 GPU-h |
-| ~~**B2**~~ TG-03/TG-07 re-run under corrected rendering + seeded cohort | binary: does the variance–behaviour dissociation reproduce? **DONE, EXP-R2-062 — NO. Retracted, and C4 with it.** | ~~2~~ 1.8 GPU-h, spent |
-| ~~**B3**~~ Explanation-channel re-derivation under seeded permutation | the 7.32 / 3.61 / 0.74 bits/symbol contrast survives, or closure stands as definitional only. **DONE, EXP-R2-068 — SURVIVES**, at 7.326 / 3.792 / 0.860 with separated intervals; see §5.1 L9 | CPU, spent |
-| **B4** Causal effect-size distributions on induction, 4 arms | top-20 Jaccard ≥ 0.8 against the census, else the new statistic is less sensitive and is not adopted | ~12 GPU-h |
-| **B5** Same on copy-suppression | does effect-size separate arms where prevalence cannot? Directly answers §1's measurability question | ~13 GPU-h |
-| ~~**B6**~~ Non-local propagation at production scale | far-band cases ≥ 30 per arm (currently 2–16); 9% vs 34–50% survives with intervals excluding zero. **DONE, EXP-R2-068 — gate met, claim not earned.** 48 / 65 / 58 far-band cases, all intervals exclude zero, but gpt2-large and ProtGPT2 **overlap**; the separation is ProGen2-medium against the rest, and ZymCTRL is structurally unmeasurable here. See §5.1 | ~1.5 GPU-h, spent |
+| **D2.a** | Input-contract certification retro-applied to every quoted number; must reproduce the 1.78-nat rendering delta and the file-order delta as positive controls. TG-00 now does both and TG-01 has run, so this is partly discharged | ≤4 GPU-h |
+| **D2.b** | Causal effect-size distributions on induction: top-20 Jaccard ≥ 0.8 against the census, else the cheap census is the less sensitive instrument and is not adopted | ~4 GPU-h |
+| **D2.c** | Same on copy suppression — does effect size separate arms where prevalence cannot? Directly answers the measurability question §1 leaves open | ~13 GPU-h |
+| **D2.d** | Complete the TG campaign: seven of twelve stages have no artefact in the corrected tree, so `SUMMARY.json` can only be produced in partial mode | ~6 GPU-h |
 
-~~**B2 first** — it is 2 GPU-h and it decides whether an entire method line has a motivation.~~ **Run, EXP-R2-062: the method line does not have one.** B1 is partly discharged with it — the rendering positive control reproduces at 1.78 nats/token (larger than 1.42, because the seeded cohort also removes the file-order effect the original control carried), and the file-order control reproduces at +0.240 nats/token on ProGen2-medium at n = 200 against the +1.01 recorded at n = 48. `scripts/transfer_gap/tg00_input_contract.py` is that certification stage and should be run before any TG number is quoted.
+### D3 — Adapted methods, hard-gated
 
-### Phase C — part 3, construction. Hard-gated. ~50–90 H200 GPU-h.
+Not earned. No proposal is advanced that is not traceable to a catalogued
+limitation, and the two standing rejections of §7 are unchanged.
 
 | item | gate | cost |
 |---|---|---|
-| **C1 — exploratory calibration** | powered-estimand re-qualification at `mlp_window8@d0.50@cohort_mean`, plus the matched gpt2-large windowed CLT that P0-2b never had; calibrate on the text control, and freeze any resulting threshold before protein-arm evaluation to support a later confirmatory gate | 17–50 GPU-h |
-| **C2** Aperture-functional attribution (§8.3) | after B1; within-arm descriptive only, no cross-arm coefficient | 3–5 GPU-h |
-| **C3** Oracle-grounded explanation, normalised by measured channel capacity | after B3; attainability shown on gpt2-large first | 4–8 GPU-h |
-| ~~**C4** Reliance-weighted dictionaries~~ | ~~only if B2 reproduces~~ — **B2 returned NO (EXP-R2-062); dropped** | ~~20–40 GPU-h~~ |
-| **C5** DMS-grounded causal gates | only on features surviving C3; internal positive control mandatory, since **no text analogue of a DMS assay exists** and this gate cannot be attainability-checked on a text control | 10–20 GPU-h |
+| **D3.a** | Dictionary evaluation whose estimand is power-checked on the text control first, reporting loss recovered and KL rather than FVU; threshold frozen before any protein arm is scored | 17–50 GPU-h |
+| **D3.b** | Aperture-functional attribution: after D2.a, within-arm descriptive only, no cross-arm coefficient | 3–5 GPU-h |
+| **D3.c** | Oracle-grounded explanation normalised by measured channel capacity: after the L9 re-derivation, attainability shown on gpt2-large first | 4–8 GPU-h |
+| **D3.d** | DMS-grounded causal gates, only on features surviving D3.c. **No text analogue of a DMS assay exists**, so this gate cannot be attainability-checked on a text control and needs an internal positive control instead | 10–20 GPU-h |
+
+### 9.0 Retired item names, so citations still resolve
+
+The Phase A/B/C identifiers are referenced in the experiment log and in code
+comments, and those records are not rewritten. The mapping:
+
+| old | new | note |
+|---|---|---|
+| Phase A | D1 | closed to open-ended measurement; two bounded items remain |
+| B1 | D2.a | input-contract certification |
+| B2 | — | completed, returned NO (EXP-R2-062); the dissociation and C4 are retracted |
+| B3 | — | completed, contrast survives (EXP-R2-068); see §5.1 L9 |
+| B4 | D2.b | causal effect-size on induction |
+| B5 | D2.c | same on copy suppression |
+| B6 | — | completed (EXP-R2-068): gate met, magnitudes withdrawn for bfloat16 quantisation, re-run tracked as D1.a |
+| C1 | D3.a | dictionary evaluation with a power-checked estimand |
+| C2 | D3.b | aperture-functional attribution |
+| C3 | D3.c | oracle-grounded explanation |
+| C4 | — | dropped; B2 removed its motivation |
+| C5 | D3.d | DMS-grounded causal gates |
 
 ### 9.1 Abandoned, with reasons
 

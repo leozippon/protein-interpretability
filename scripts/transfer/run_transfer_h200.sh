@@ -800,18 +800,21 @@ invoke_worker() {
   # reached its EXIT trap, which covers a killed process, a dropped connection
   # and a pod exec that never started -- none of which the access layer
   # distinguishes from success either.
-  # Matched as the last NON-EMPTY line of the log and required to be unique and
-  # numeric in 0-255, not merely present somewhere. The worker emits it from its
-  # EXIT trap, so it is structurally last; accepting it anywhere would let a
-  # stage's own output -- a Python traceback quoting the constant, a log line a
-  # future stage prints -- decide a campaign's verdict.
+  # Required to be UNIQUE and numeric in 0-255. Uniqueness is the invariant that
+  # matters and it is the one that holds: if a stage's own output ever quoted the
+  # constant -- a traceback, a future log line -- there would be two matches and
+  # this refuses rather than picking one.
+  #
+  # It is deliberately NOT required to be the last line of the log. That was tried
+  # and it is wrong for this transport: `kubectl exec` appends its own trailer
+  # ("command terminated with exit code N") after the remote process's output, so
+  # a genuine sentinel is second-to-last on every failing run. Requiring last-line
+  # position turned a correctly reported failure into "no sentinel", i.e. traded a
+  # true status for a false one. Uniqueness gives the same guarantee without
+  # depending on what the transport appends.
   local sentinel matches
   matches="$(grep -ac "^${WORKER_EXIT_SENTINEL}" "${controller_log}" || true)"
-  sentinel="$(grep -av '^[[:space:]]*$' "${controller_log}" | tail -1 || true)"
-  case "${sentinel}" in
-    "${WORKER_EXIT_SENTINEL}"*) ;;
-    *) sentinel="" ;;
-  esac
+  sentinel="$(grep -a "^${WORKER_EXIT_SENTINEL}" "${controller_log}" | tail -1 || true)"
   if [ -n "${sentinel}" ] && [ "${matches}" != "1" ]; then
     echo "the worker's log carries ${matches} ${WORKER_EXIT_SENTINEL} lines (run_id=${RUN_ID});" >&2
     echo "exactly one is expected, so which one states the campaign's status is not" >&2

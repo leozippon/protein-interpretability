@@ -32,6 +32,7 @@ if _STAGE_DIR not in sys.path:
 from panel_contract import CAMPAIGN_PANEL, arm_can_run, stage_contract_record  # noqa: E402
 from src.transfer.io import write_json  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
+    DEFAULT_CORPUS_DRAW_SEED,
     PANEL,
     REPO,
     Cohort,
@@ -285,7 +286,7 @@ def main() -> None:
     parser.add_argument(
         "--cohort-draw-seed",
         type=int,
-        default=20260728,
+        default=DEFAULT_CORPUS_DRAW_SEED,
         help="seed for the permutation that draws --n-seq records from the pool; "
         "0 selects the corpus file order instead, which is a declared choice "
         "and not a default (see build_cohort)",
