@@ -56,7 +56,7 @@ from src.transfer.pathways import (  # noqa: E402
 from src.transfer.prediction_addressed import scored_target_counts  # noqa: E402
 
 SCHEMA_VERSION = "r2_transfer_cohort_power_v1"
-DEFAULT_OUT = REPO / "results/transfer_20260728/cohort_power"
+DEFAULT_OUT = REPO / "results/transfer/cohort_power"
 
 
 def default_arms(kind: str, with_ec: bool) -> list[str]:

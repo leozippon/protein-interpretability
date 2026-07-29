@@ -1,0 +1,1 @@
+code_hash=c7503e1da439 command=/opt/ac2/bin/python3 /gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/transfer_package/20260729033029_c7503e1da439/scripts/transfer/01_cohort_power.py --kind protein --arms progen2-medium progen2-base --device <normalized> --dtype float32 --cohort-name swissprot_progen2_f32 --out <normalized> --cohort-skip 4000

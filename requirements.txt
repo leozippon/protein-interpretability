@@ -1,0 +1,13 @@
+# Direct dependencies for the active transfer package, validated on Python 3.11.
+# Install the CUDA-enabled PyTorch build appropriate to the execution host.
+numpy==1.26.4
+pyarrow==22.0.0
+scipy==1.17.0
+scikit-learn==1.8.0
+tokenizers==0.22.2
+torch==2.9.1
+transformers==4.57.3
+
+# Validation and linting
+pytest==9.0.2
+ruff==0.14.11

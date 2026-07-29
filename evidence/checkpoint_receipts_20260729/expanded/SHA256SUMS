@@ -1,0 +1,3 @@
+910a7dda3ab307e733763803061a8584c8402f021e5c07d531c66bbef2383821  /oss-pvc/zhk_zip/outputs/research2/clt_weights/r2_clt_expand_retrain_20260606_2gpu/protgpt2/step_300000/clt.pt
+64b9fdd7ac6c57f317f3847cb7a28e3e1b60f8a596f8dd3cc87d5c3e0b154e4b  /oss-pvc/zhk_zip/outputs/research2/clt_weights/r2_clt_expand_retrain_20260606_2gpu/zymctrl/step_300000/clt.pt
+0ce2683830b34125bc0e40fbfa2a0f8e7cfdfea6ba6642cf0a190034a93f1bfe  /oss-pvc/zhk_zip/outputs/research2/clt_weights/r2_clt_expand_retrain_20260606_2gpu/progen2-medium/step_300000/clt.pt

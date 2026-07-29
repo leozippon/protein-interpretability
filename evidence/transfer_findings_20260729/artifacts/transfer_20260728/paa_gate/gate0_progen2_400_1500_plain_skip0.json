@@ -1,0 +1,41 @@
+{
+  "arms": [
+    {
+      "arm": "progen2-medium",
+      "clean_ce_nats": 1.6379126307820455,
+      "cohort": "swissprot",
+      "cohort_band": [
+        400,
+        1500
+      ],
+      "cohort_digest": "8a48351ee9c9ce5aec0cd470a09a9fe45407eac542efbb87b88ac865ea657d68",
+      "cohort_skip": 0,
+      "context_information_nats": 1.2707409823406823,
+      "input_format": "n_to_c_control",
+      "max_len": 1024,
+      "modality": "protein",
+      "n_scored_tokens": 115617,
+      "n_sequences": 200,
+      "per_sequence_context_information_sd": 0.9042408532836919,
+      "plug_in_bias_nats": 0.004894616943292629,
+      "protein_source": "plain",
+      "reference_digest": "96d65e6e318bd711d7f57ef9c66d8024539fffbf2700764bfe064b576ca85256",
+      "reference_overlap": {
+        "dropped_sequences_shared_with_cohort": 1,
+        "requested_sequences": 4000,
+        "retained_sequences": 3999
+      },
+      "reference_sequences": 3999,
+      "symbols_per_token": 0.9982731377949696,
+      "threshold_nats": 0.5,
+      "tokenisation": "residue",
+      "unigram_held_out_nats": 2.908653613122728,
+      "unigram_plug_in_nats": 2.9037589961794352,
+      "verdict": "PASS",
+      "vocab_size": 32
+    }
+  ],
+  "sequences": 200,
+  "threshold_nats": 0.5,
+  "verdict": "PASS"
+}

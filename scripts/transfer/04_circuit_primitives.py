@@ -88,7 +88,7 @@ from src.transfer.circuits import (  # noqa: E402
     verify_head_decomposition,
 )
 
-DEFAULT_OUTPUT = REPO_ROOT / "results/transfer_20260728/circuit_primitives"
+DEFAULT_OUTPUT = REPO_ROOT / "results/transfer/circuit_primitives"
 SECTIONS = ("induction", "attribution", "patching")
 
 #: The two natural-repeat probes, in the order they are reported.  ``exact`` is

@@ -152,7 +152,7 @@ from src.transfer.scaling import (  # noqa: E402
     tokenisation_contrast,
 )
 
-DEFAULT_OUTPUT = REPO_ROOT / "results/transfer_20260728/convergence_control"
+DEFAULT_OUTPUT = REPO_ROOT / "results/transfer/convergence_control"
 DEFAULT_BACKUP = REPO_ROOT / "logs/convergence_control_backup"
 DEFAULT_LADDER_TABLE = REPO_ROOT / "docs/analysis/MODEL_LADDER_20260728.md"
 
@@ -864,7 +864,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dtype", default="float32")
     parser.add_argument("--attn-implementation", default="eager")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
-    # A concurrent process has twice deleted results/transfer_20260728 between a
+    # A concurrent process has twice deleted results/transfer between a
     # run finishing and its output being read. Nothing under scripts/transfer or
     # src/transfer removes it, so the second copy is written under logs/, which is
     # local-only, until the culprit is found.

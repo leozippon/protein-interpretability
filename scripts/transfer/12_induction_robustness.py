@@ -67,7 +67,7 @@ from src.transfer.induction_robustness import (  # noqa: E402
     verify_against_stored_counts,
 )
 
-TRANSFER_RESULTS = REPO_ROOT / "results/transfer_20260728"
+TRANSFER_RESULTS = REPO_ROOT / "results/transfer"
 
 #: Which artefact each arm's census is read from.  The four text arms were
 #: measured in the ``circuit_primitives_text_control`` run and the three protein

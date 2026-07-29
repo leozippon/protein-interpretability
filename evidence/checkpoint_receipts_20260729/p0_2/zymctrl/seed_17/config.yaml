@@ -1,0 +1,38 @@
+checkpoint:
+  analysis_every_steps: 25000
+  keep_last: 2
+  require_sha256_manifest: true
+  required_path_prefix: /gpfs/
+  save_dir: /gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/dictionaries_topk_bf16_r2/zymctrl/topk_clt/seed_17/clt_weights/zymctrl
+  save_every_steps: 5000
+clt:
+  d_clt: 8192
+  dead_feature_threshold: 5000
+  k: 128
+  max_resample_fraction: 0.05
+  resample_every: 2500
+  window: 8
+data:
+  fasta_path: /gpfs/jiaotongdamoxing/zhk_zip/data/zymctrl/ec_labeled.fasta
+  manifest_path: /gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/cohorts/zymctrl/train.jsonl
+  manifest_sha256: f9727a374209f7329bed910624430fcf747b735314895215d1eff313b0d3f755
+  max_seq_len: 256
+  model_input_format: zymctrl_ec
+  num_sequences: 44000
+  split: train
+logging:
+  log_every_steps: 50
+  wandb_entity: null
+  wandb_project: null
+model:
+  inference_dtype: bfloat16
+  inference_dtype_verification: all_floating_model_parameters_exactly_declared_before_first_activation
+  name: zymctrl
+training:
+  batch_size: 2
+  gpu: 0
+  grad_clip_norm: 1.0
+  lr: 0.0003
+  lr_warmup_steps: 3000
+  seed: 17
+  total_steps: 200000

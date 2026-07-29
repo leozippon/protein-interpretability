@@ -1,0 +1,174 @@
+{
+  "arm_specs": {
+    "zymctrl": {
+      "d_model": 1280,
+      "input_format": "ec_conditioned",
+      "modality": "protein",
+      "n_layer": 36,
+      "path": "/gpfs/jiaotongdamoxing/zhk_zip/models/ZymCTRL",
+      "source": "zymctrl_ec",
+      "tokenisation": "residue"
+    }
+  },
+  "arms": {
+    "zymctrl": {
+      "arm": "zymctrl",
+      "clean_ce_bits_per_symbol": 1.293124694278313,
+      "clean_ce_nats": 0.850590164160891,
+      "context_information_bits_per_symbol": 3.084124123463132,
+      "context_information_miller_madow_nats": 2.027172175613489,
+      "context_information_nats": 2.028671833487129,
+      "context_information_plug_in_nats": 2.026916771806628,
+      "input_format": "ec_conditioned",
+      "max_len": 384,
+      "measurability": "measurable",
+      "minimum_context_information_nats": 0.3,
+      "modality": "protein",
+      "n_distinct_scored_tokens": 20,
+      "n_scored_tokens": 37196,
+      "n_sequences": 200,
+      "per_sequence_clean_ce_interval": {
+        "confidence": 0.95,
+        "interval": [
+          0.7787055837158301,
+          1.0142936716682491
+        ],
+        "mean": 0.8964996276920396,
+        "n": 200,
+        "standard_error": 0.059734604355111014
+      },
+      "per_sequence_context_information_interval": {
+        "confidence": 0.95,
+        "interval": [
+          1.864968325979771,
+          2.10055641393219
+        ],
+        "mean": 1.9827623699559804,
+        "n": 200,
+        "standard_error": 0.059734604355111014
+      },
+      "plug_in_bias_nats": 0.0017550616805013242,
+      "power_verdict": "PASS",
+      "reference_digest": "7f3163f959379fa8d81aa4a9bd4cdb0564a7cfa7950220b270d4ee0d898c14b6",
+      "reference_sequences": 3998,
+      "symbols_per_token": 0.9489743851413409,
+      "tokenisation": "residue",
+      "truncation_curve": {
+        "context_lengths": [
+          1,
+          2,
+          4,
+          8,
+          16,
+          32,
+          64,
+          128
+        ],
+        "fraction_of_reduction_beyond_context_32": 0.011294633799618087,
+        "fraction_of_reduction_beyond_context_8": 0.021736950755498932,
+        "logits_to_keep_used": false,
+        "n_windows": 738,
+        "nll_nats_by_context": {
+          "1": 21.224438253780043,
+          "128": 2.6265220955666955,
+          "16": 2.930770176051432,
+          "2": 12.215161558735339,
+          "32": 2.8365787480097153,
+          "4": 10.88819290451241,
+          "64": 2.769664289065552,
+          "8": 3.030784083252677
+        },
+        "nll_reduction_shortest_to_longest_nats": 18.597916158213348,
+        "seed": 20260727,
+        "transformers_version": "4.52.4"
+      },
+      "unigram_entropy_bits_per_symbol": 4.377248817741445,
+      "unigram_entropy_held_out_nats": 2.8792619976480203,
+      "unigram_entropy_miller_madow_nats": 2.87776233977438,
+      "unigram_entropy_on_cohort_nats": 2.877506935967519,
+      "unigram_estimator": "disjoint",
+      "vocab_size": 458
+    }
+  },
+  "artifact": "cohort_power_report",
+  "cohort": {
+    "kind": "protein",
+    "max_symbols": 246,
+    "min_symbols": 64,
+    "n_records": 200,
+    "name": "swissprot_small_vocab",
+    "with_ec_labels": true
+  },
+  "cohort_digest": "22653eef12bfe65e85b67a37bb537085e47eadc1aea7d002485f03302701f1c5",
+  "cohort_level": {
+    "residue_markov_baselines": {
+      "alphabet_size": 20,
+      "cross_entropy_bits_per_residue": {
+        "order0": 4.1530718785337735,
+        "order1": 4.141959140287241,
+        "order2": 4.189420737914478
+      },
+      "maximum_bits_per_residue": 4.321928094887363,
+      "n_test_sequences": 200,
+      "n_train_sequences": 1998
+    },
+    "residue_markov_train_digest": "32495e357c2362e0e00bff5335b77da746ed7ae0195fe397f2f43001a816e683",
+    "residue_markov_train_overlap_removed": {
+      "dropped_sequences_shared_with_cohort": 2,
+      "requested_sequences": 2000,
+      "retained_sequences": 1998
+    },
+    "residue_markov_train_skip": 8000
+  },
+  "cohort_sampling": {
+    "cohort_skip": 0,
+    "draw_seed": 20260728,
+    "pool_digest": "0986f9a20ffe16a578b71d5b072b612055597cc63deefd173f368fcef0426086",
+    "pool_size": 4000,
+    "records_consumed": 4000,
+    "sampling": "seeded_permutation_over_pool"
+  },
+  "created_utc": "2026-07-28T19:05:41.035863+00:00",
+  "measurable_arms": [
+    "zymctrl"
+  ],
+  "schema_version": "r2_transfer_cohort_power_v1",
+  "seeds": {
+    "cohort_draw": 20260728,
+    "truncation_curve": 20260727
+  },
+  "settings": {
+    "batch_size": 8,
+    "device": "cuda:2",
+    "dtype": "bfloat16",
+    "markov_train_sequences": 2000,
+    "max_len": 384,
+    "truncation_evaluated": true,
+    "truncation_queries_per_sequence": 4
+  },
+  "thresholds": {
+    "minimum_context_information_nats": 0.3
+  },
+  "truncation_context_lengths": [
+    1,
+    2,
+    4,
+    8,
+    16,
+    32,
+    64,
+    128
+  ],
+  "unigram_baseline": {
+    "estimator": "disjoint",
+    "reference_digest": "7f3163f959379fa8d81aa4a9bd4cdb0564a7cfa7950220b270d4ee0d898c14b6",
+    "reference_overlap_removed": {
+      "dropped_sequences_shared_with_cohort": 2,
+      "requested_sequences": 4000,
+      "retained_sequences": 3998
+    },
+    "reference_sequences_used": 3998,
+    "reference_size_requested": 4000
+  },
+  "unmeasurable_arms": []
+}

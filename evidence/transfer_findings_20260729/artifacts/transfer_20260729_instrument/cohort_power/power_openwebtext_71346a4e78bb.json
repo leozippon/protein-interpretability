@@ -1,0 +1,481 @@
+{
+  "arm_specs": {
+    "dialogpt-small": {
+      "d_model": 768,
+      "input_format": "raw",
+      "modality": "text",
+      "n_layer": 12,
+      "path": "/gpfs/jiaotongdamoxing/zhk_zip/models/DialoGPT-small",
+      "source": "openwebtext",
+      "tokenisation": "bpe"
+    },
+    "gpt2": {
+      "d_model": 768,
+      "input_format": "raw",
+      "modality": "text",
+      "n_layer": 12,
+      "path": "/gpfs/jiaotongdamoxing/zhk_zip/models/gpt2",
+      "source": "openwebtext",
+      "tokenisation": "bpe"
+    },
+    "gpt2-large": {
+      "d_model": 1280,
+      "input_format": "raw",
+      "modality": "text",
+      "n_layer": 36,
+      "path": "/gpfs/jiaotongdamoxing/zhk_zip/models/gpt2-large",
+      "source": "openwebtext",
+      "tokenisation": "bpe"
+    },
+    "gpt2-medium": {
+      "d_model": 1024,
+      "input_format": "raw",
+      "modality": "text",
+      "n_layer": 24,
+      "path": "/gpfs/jiaotongdamoxing/zhk_zip/models/gpt2-medium",
+      "source": "openwebtext",
+      "tokenisation": "bpe"
+    },
+    "gpt2-xl": {
+      "d_model": 1600,
+      "input_format": "raw",
+      "modality": "text",
+      "n_layer": 48,
+      "path": "/gpfs/jiaotongdamoxing/zhk_zip/models/gpt2-xl",
+      "source": "openwebtext",
+      "tokenisation": "bpe"
+    },
+    "llama-3.2-3b": {
+      "d_model": 3072,
+      "input_format": "raw",
+      "modality": "text",
+      "n_layer": 28,
+      "path": "/gpfs/jiaotongdamoxing/zhk_zip/models/Llama-3.2-3B",
+      "source": "openwebtext",
+      "tokenisation": "bpe"
+    },
+    "qwen2.5-0.5b": {
+      "d_model": 896,
+      "input_format": "raw",
+      "modality": "text",
+      "n_layer": 24,
+      "path": "/gpfs/jiaotongdamoxing/zhk_zip/models/Qwen2.5-0.5B",
+      "source": "openwebtext",
+      "tokenisation": "bpe"
+    }
+  },
+  "arms": {
+    "dialogpt-small": {
+      "arm": "dialogpt-small",
+      "clean_ce_bits_per_symbol": 3.7560198836894547,
+      "clean_ce_nats": 11.621524646683513,
+      "context_information_bits_per_symbol": -1.3195564451801505,
+      "context_information_miller_madow_nats": -4.328484823731757,
+      "context_information_nats": -4.082847861627324,
+      "context_information_plug_in_nats": -4.411933538840308,
+      "input_format": "raw",
+      "max_len": 384,
+      "measurability": "unmeasurable_on_this_cohort",
+      "minimum_context_information_nats": 0.3,
+      "modality": "text",
+      "n_distinct_scored_tokens": 12055,
+      "n_scored_tokens": 72224,
+      "n_sequences": 200,
+      "per_sequence_clean_ce_interval": {
+        "confidence": 0.95,
+        "interval": [
+          11.405341375196143,
+          11.76978637324485
+        ],
+        "mean": 11.587563874220496,
+        "n": 200,
+        "standard_error": 0.09240695468454888
+      },
+      "per_sequence_context_information_interval": {
+        "confidence": 0.95,
+        "interval": [
+          -4.2311095881886605,
+          -3.866664590139953
+        ],
+        "mean": -4.048887089164307,
+        "n": 200,
+        "standard_error": 0.09240695468454888
+      },
+      "plug_in_bias_nats": 0.32908567721298354,
+      "power_verdict": "FAIL",
+      "reference_digest": "4677b65995afe60dd19b3056e37a404432d10c35d847667db22518e31ea3f6f1",
+      "reference_sequences": 4000,
+      "symbols_per_token": 4.463851761846902,
+      "tokenisation": "bpe",
+      "unigram_entropy_bits_per_symbol": 2.436463438509304,
+      "unigram_entropy_held_out_nats": 7.538676785056189,
+      "unigram_entropy_miller_madow_nats": 7.293039822951756,
+      "unigram_entropy_on_cohort_nats": 7.209591107843205,
+      "unigram_estimator": "disjoint",
+      "vocab_size": 50257
+    },
+    "gpt2": {
+      "arm": "gpt2",
+      "clean_ce_bits_per_symbol": 1.0138703552335788,
+      "clean_ce_nats": 3.137352532859145,
+      "context_information_bits_per_symbol": 1.4223368704461512,
+      "context_information_miller_madow_nats": 4.155687290092611,
+      "context_information_nats": 4.4013242521970435,
+      "context_information_plug_in_nats": 4.07223857498406,
+      "input_format": "raw",
+      "max_len": 384,
+      "measurability": "measurable",
+      "minimum_context_information_nats": 0.3,
+      "modality": "text",
+      "n_distinct_scored_tokens": 12055,
+      "n_scored_tokens": 72224,
+      "n_sequences": 200,
+      "per_sequence_clean_ce_interval": {
+        "confidence": 0.95,
+        "interval": [
+          3.0785010467447957,
+          3.203955267159148
+        ],
+        "mean": 3.1412281569519718,
+        "n": 200,
+        "standard_error": 0.031809580383553845
+      },
+      "per_sequence_context_information_interval": {
+        "confidence": 0.95,
+        "interval": [
+          4.334721517897041,
+          4.460175738311394
+        ],
+        "mean": 4.397448628104217,
+        "n": 200,
+        "standard_error": 0.031809580383553845
+      },
+      "plug_in_bias_nats": 0.32908567721298354,
+      "power_verdict": "PASS",
+      "reference_digest": "4677b65995afe60dd19b3056e37a404432d10c35d847667db22518e31ea3f6f1",
+      "reference_sequences": 4000,
+      "symbols_per_token": 4.464321219485253,
+      "tokenisation": "bpe",
+      "unigram_entropy_bits_per_symbol": 2.43620722567973,
+      "unigram_entropy_held_out_nats": 7.538676785056189,
+      "unigram_entropy_miller_madow_nats": 7.293039822951756,
+      "unigram_entropy_on_cohort_nats": 7.209591107843205,
+      "unigram_estimator": "disjoint",
+      "vocab_size": 50257
+    },
+    "gpt2-large": {
+      "arm": "gpt2-large",
+      "clean_ce_bits_per_symbol": 0.8620046752183029,
+      "clean_ce_nats": 2.6674145635804845,
+      "context_information_bits_per_symbol": 1.5742025504614272,
+      "context_information_miller_madow_nats": 4.6256252593712714,
+      "context_information_nats": 4.871262221475704,
+      "context_information_plug_in_nats": 4.542176544262721,
+      "input_format": "raw",
+      "max_len": 384,
+      "measurability": "measurable",
+      "minimum_context_information_nats": 0.3,
+      "modality": "text",
+      "n_distinct_scored_tokens": 12055,
+      "n_scored_tokens": 72224,
+      "n_sequences": 200,
+      "per_sequence_clean_ce_interval": {
+        "confidence": 0.95,
+        "interval": [
+          2.6105563655816724,
+          2.7327932418910015
+        ],
+        "mean": 2.671674803736337,
+        "n": 200,
+        "standard_error": 0.030993805787910444
+      },
+      "per_sequence_context_information_interval": {
+        "confidence": 0.95,
+        "interval": [
+          4.805883543165186,
+          4.928120419474516
+        ],
+        "mean": 4.867001981319851,
+        "n": 200,
+        "standard_error": 0.030993805787910444
+      },
+      "plug_in_bias_nats": 0.32908567721298354,
+      "power_verdict": "PASS",
+      "reference_digest": "4677b65995afe60dd19b3056e37a404432d10c35d847667db22518e31ea3f6f1",
+      "reference_sequences": 4000,
+      "symbols_per_token": 4.464321219485253,
+      "tokenisation": "bpe",
+      "unigram_entropy_bits_per_symbol": 2.43620722567973,
+      "unigram_entropy_held_out_nats": 7.538676785056189,
+      "unigram_entropy_miller_madow_nats": 7.293039822951756,
+      "unigram_entropy_on_cohort_nats": 7.209591107843205,
+      "unigram_estimator": "disjoint",
+      "vocab_size": 50257
+    },
+    "gpt2-medium": {
+      "arm": "gpt2-medium",
+      "clean_ce_bits_per_symbol": 0.9139154510739731,
+      "clean_ce_nats": 2.82804891221567,
+      "context_information_bits_per_symbol": 1.522291774605757,
+      "context_information_miller_madow_nats": 4.464990910736086,
+      "context_information_nats": 4.710627872840519,
+      "context_information_plug_in_nats": 4.381542195627535,
+      "input_format": "raw",
+      "max_len": 384,
+      "measurability": "measurable",
+      "minimum_context_information_nats": 0.3,
+      "modality": "text",
+      "n_distinct_scored_tokens": 12055,
+      "n_scored_tokens": 72224,
+      "n_sequences": 200,
+      "per_sequence_clean_ce_interval": {
+        "confidence": 0.95,
+        "interval": [
+          2.770283870772637,
+          2.894135636007017
+        ],
+        "mean": 2.832209753389827,
+        "n": 200,
+        "standard_error": 0.03140326940660937
+      },
+      "per_sequence_context_information_interval": {
+        "confidence": 0.95,
+        "interval": [
+          4.644541149049171,
+          4.7683929142835515
+        ],
+        "mean": 4.706467031666361,
+        "n": 200,
+        "standard_error": 0.03140326940660936
+      },
+      "plug_in_bias_nats": 0.32908567721298354,
+      "power_verdict": "PASS",
+      "reference_digest": "4677b65995afe60dd19b3056e37a404432d10c35d847667db22518e31ea3f6f1",
+      "reference_sequences": 4000,
+      "symbols_per_token": 4.464321219485253,
+      "tokenisation": "bpe",
+      "unigram_entropy_bits_per_symbol": 2.43620722567973,
+      "unigram_entropy_held_out_nats": 7.538676785056189,
+      "unigram_entropy_miller_madow_nats": 7.293039822951756,
+      "unigram_entropy_on_cohort_nats": 7.209591107843205,
+      "unigram_estimator": "disjoint",
+      "vocab_size": 50257
+    },
+    "gpt2-xl": {
+      "arm": "gpt2-xl",
+      "clean_ce_bits_per_symbol": 0.8262790426112907,
+      "clean_ce_nats": 2.5568640347391685,
+      "context_information_bits_per_symbol": 1.6099281830684393,
+      "context_information_miller_madow_nats": 4.736175788212588,
+      "context_information_nats": 4.981812750317021,
+      "context_information_plug_in_nats": 4.652727073104037,
+      "input_format": "raw",
+      "max_len": 384,
+      "measurability": "measurable",
+      "minimum_context_information_nats": 0.3,
+      "modality": "text",
+      "n_distinct_scored_tokens": 12055,
+      "n_scored_tokens": 72224,
+      "n_sequences": 200,
+      "per_sequence_clean_ce_interval": {
+        "confidence": 0.95,
+        "interval": [
+          2.498119375740187,
+          2.622411502365359
+        ],
+        "mean": 2.560265439052773,
+        "n": 200,
+        "standard_error": 0.03151492536375409
+      },
+      "per_sequence_context_information_interval": {
+        "confidence": 0.95,
+        "interval": [
+          4.916265282690829,
+          5.040557409316002
+        ],
+        "mean": 4.978411346003416,
+        "n": 200,
+        "standard_error": 0.03151492536375409
+      },
+      "plug_in_bias_nats": 0.32908567721298354,
+      "power_verdict": "PASS",
+      "reference_digest": "4677b65995afe60dd19b3056e37a404432d10c35d847667db22518e31ea3f6f1",
+      "reference_sequences": 4000,
+      "symbols_per_token": 4.464321219485253,
+      "tokenisation": "bpe",
+      "unigram_entropy_bits_per_symbol": 2.43620722567973,
+      "unigram_entropy_held_out_nats": 7.538676785056189,
+      "unigram_entropy_miller_madow_nats": 7.293039822951756,
+      "unigram_entropy_on_cohort_nats": 7.209591107843205,
+      "unigram_estimator": "disjoint",
+      "vocab_size": 50257
+    },
+    "llama-3.2-3b": {
+      "arm": "llama-3.2-3b",
+      "clean_ce_bits_per_symbol": 0.7265539049511681,
+      "clean_ce_nats": 2.389825117763096,
+      "context_information_bits_per_symbol": 1.6518521285756727,
+      "context_information_miller_madow_nats": 5.119513738830955,
+      "context_information_nats": 5.433372088153458,
+      "context_information_plug_in_nats": 5.031565174654723,
+      "input_format": "raw",
+      "max_len": 384,
+      "measurability": "measurable",
+      "minimum_context_information_nats": 0.3,
+      "modality": "text",
+      "n_distinct_scored_tokens": 12613,
+      "n_scored_tokens": 71701,
+      "n_sequences": 200,
+      "per_sequence_clean_ce_interval": {
+        "confidence": 0.95,
+        "interval": [
+          2.3368651705376764,
+          2.453857783257409
+        ],
+        "mean": 2.3953614768975426,
+        "n": 200,
+        "standard_error": 0.02966409504836837
+      },
+      "per_sequence_context_information_interval": {
+        "confidence": 0.95,
+        "interval": [
+          5.369339422659146,
+          5.4863320353788785
+        ],
+        "mean": 5.427835729019012,
+        "n": 200,
+        "standard_error": 0.02966409504836837
+      },
+      "plug_in_bias_nats": 0.4018069134987359,
+      "power_verdict": "PASS",
+      "reference_digest": "4677b65995afe60dd19b3056e37a404432d10c35d847667db22518e31ea3f6f1",
+      "reference_sequences": 4000,
+      "symbols_per_token": 4.745399924896733,
+      "tokenisation": "bpe",
+      "unigram_entropy_bits_per_symbol": 2.378406033526841,
+      "unigram_entropy_held_out_nats": 7.823197205916554,
+      "unigram_entropy_miller_madow_nats": 7.50933885659405,
+      "unigram_entropy_on_cohort_nats": 7.421390292417819,
+      "unigram_estimator": "disjoint",
+      "vocab_size": 128256
+    },
+    "qwen2.5-0.5b": {
+      "arm": "qwen2.5-0.5b",
+      "clean_ce_bits_per_symbol": 0.907158841712287,
+      "clean_ce_nats": 2.9005435905064463,
+      "context_information_bits_per_symbol": 1.5097969441626762,
+      "context_information_miller_madow_nats": 4.506667769080975,
+      "context_information_nats": 4.8274146136208635,
+      "context_information_plug_in_nats": 4.421645950798088,
+      "input_format": "raw",
+      "max_len": 384,
+      "measurability": "measurable",
+      "minimum_context_information_nats": 0.3,
+      "modality": "text",
+      "n_distinct_scored_tokens": 12237,
+      "n_scored_tokens": 71958,
+      "n_sequences": 200,
+      "per_sequence_clean_ce_interval": {
+        "confidence": 0.95,
+        "interval": [
+          2.848466260498007,
+          2.971238472962528
+        ],
+        "mean": 2.9098523667302674,
+        "n": 200,
+        "standard_error": 0.03112954309833756
+      },
+      "per_sequence_context_information_interval": {
+        "confidence": 0.95,
+        "interval": [
+          4.756719731164782,
+          4.8794919436293025
+        ],
+        "mean": 4.8181058373970425,
+        "n": 200,
+        "standard_error": 0.03112954309833756
+      },
+      "plug_in_bias_nats": 0.40576866282277546,
+      "power_verdict": "PASS",
+      "reference_digest": "4677b65995afe60dd19b3056e37a404432d10c35d847667db22518e31ea3f6f1",
+      "reference_sequences": 4000,
+      "symbols_per_token": 4.612863438565371,
+      "tokenisation": "bpe",
+      "unigram_entropy_bits_per_symbol": 2.416955785874963,
+      "unigram_entropy_held_out_nats": 7.72795820412731,
+      "unigram_entropy_miller_madow_nats": 7.407211359587421,
+      "unigram_entropy_on_cohort_nats": 7.322189541304534,
+      "unigram_estimator": "disjoint",
+      "vocab_size": 151936
+    }
+  },
+  "artifact": "cohort_power_report",
+  "cohort": {
+    "kind": "text",
+    "max_symbols": 0,
+    "min_symbols": 800,
+    "n_records": 200,
+    "name": "openwebtext",
+    "with_ec_labels": false
+  },
+  "cohort_digest": "71346a4e78bbfd682ccc700f4e3ba9aa396ec2f81bb9319bbec3dcdcda888ef2",
+  "cohort_level": {},
+  "cohort_sampling": {
+    "cohort_skip": 0,
+    "draw_seed": 20260728,
+    "pool_digest": "c67ac320784518ad4e3d278f2e7a3db89edcf1e777fb74413574146478189812",
+    "pool_size": 4000,
+    "records_consumed": 4000,
+    "sampling": "seeded_permutation_over_pool"
+  },
+  "created_utc": "2026-07-28T19:07:02.070050+00:00",
+  "measurable_arms": [
+    "gpt2",
+    "gpt2-large",
+    "gpt2-medium",
+    "gpt2-xl",
+    "llama-3.2-3b",
+    "qwen2.5-0.5b"
+  ],
+  "schema_version": "r2_transfer_cohort_power_v1",
+  "seeds": {
+    "cohort_draw": 20260728,
+    "truncation_curve": 20260727
+  },
+  "settings": {
+    "batch_size": 8,
+    "device": "cuda:0",
+    "dtype": "bfloat16",
+    "markov_train_sequences": 2000,
+    "max_len": 384,
+    "truncation_evaluated": false,
+    "truncation_queries_per_sequence": 4
+  },
+  "thresholds": {
+    "minimum_context_information_nats": 0.3
+  },
+  "truncation_context_lengths": [
+    1,
+    2,
+    4,
+    8,
+    16,
+    32,
+    64,
+    128
+  ],
+  "unigram_baseline": {
+    "estimator": "disjoint",
+    "reference_digest": "4677b65995afe60dd19b3056e37a404432d10c35d847667db22518e31ea3f6f1",
+    "reference_overlap_removed": {
+      "dropped_sequences_shared_with_cohort": 0,
+      "requested_sequences": 4000,
+      "retained_sequences": 4000
+    },
+    "reference_sequences_used": 4000,
+    "reference_size_requested": 4000
+  },
+  "unmeasurable_arms": [
+    "dialogpt-small"
+  ]
+}

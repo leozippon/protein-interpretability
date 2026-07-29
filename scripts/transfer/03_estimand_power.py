@@ -26,7 +26,7 @@ off-distribution on that corpus has no context information for an intervention
 to remove; it is named and excluded from the panel verdict rather than scored.
 
 ``measure`` writes one JSON per arm; ``recommend`` turns those into the panel
-attainability verdict. Both live under ``results/transfer_20260728/estimand_power/``.
+attainability verdict. Both live under ``results/transfer/estimand_power/``.
 """
 
 from __future__ import annotations
@@ -792,7 +792,7 @@ def recommend(args: argparse.Namespace) -> None:
 
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description=__doc__)
-    default_root = REPO_ROOT / "results" / "transfer_20260728" / "estimand_power"
+    default_root = REPO_ROOT / "results" / "transfer" / "estimand_power"
     subparsers = root.add_subparsers(dest="command", required=True)
 
     sweep = subparsers.add_parser("measure")

@@ -63,27 +63,27 @@ def require_input_path(path: Path, variable: str) -> Path:
 #: Repository root. It is only a default for the corpora below, each of which
 #: carries its own variable, so a host that mounts data outside its checkout
 #: does not have to pretend that the two live together.
-REPO = env_path("R2_REPO_ROOT", Path("/Data/lzp/BioInterpretebility-CC"))
-MODEL_ROOT = env_path("R2_MODEL_BASE_DIR", Path("/Data/public/models_R2"))
-TEXT_MODEL_ROOT = env_path("R2_TEXT_MODEL_DIR", Path("/Data/public/gpt2-large"))
+REPO = env_path("TRANSFER_REPO_ROOT", Path(__file__).resolve().parents[2])
+MODEL_ROOT = env_path("TRANSFER_MODEL_BASE_DIR", REPO.parent / "models")
 #: Parent of the text checkpoints that are addressed by name rather than
 #: declared one by one: the ByGPT5 rungs below and the GPT-2 ladder in
 #: :mod:`src.transfer.scaling`.
-TEXT_MODEL_BASE = env_path("R2_TEXT_MODEL_BASE_DIR", Path("/Data/public"))
+TEXT_MODEL_BASE = env_path("TRANSFER_TEXT_MODEL_BASE_DIR", REPO.parent / "text_models")
+TEXT_MODEL_ROOT = env_path("TRANSFER_TEXT_MODEL_DIR", TEXT_MODEL_BASE / "gpt2-large")
 OPENWEBTEXT = env_path(
-    "R2_OPENWEBTEXT_DIR", Path("/Data/public/datasets/openwebtext-screen/plain_text")
+    "TRANSFER_OPENWEBTEXT_DIR", Path("/Data/public/datasets/openwebtext-screen/plain_text")
 )
 SWISSPROT_FASTA = env_path(
-    "R2_SWISSPROT_FASTA", REPO / "data/swissprot/uniprot_sprot.fasta.gz"
+    "TRANSFER_SWISSPROT_FASTA", REPO / "data/swissprot/uniprot_sprot.fasta.gz"
 )
 ZYMCTRL_FASTA = env_path(
-    "R2_ZYMCTRL_FASTA", REPO / "data/zymctrl/ec_labeled_swissprot.fasta"
+    "TRANSFER_ZYMCTRL_FASTA", REPO / "data/zymctrl/ec_labeled_swissprot.fasta"
 )
 
 #: Named in the failure message when an arm's checkpoint is absent. Which of the
 #: three applies depends on the arm, and an operator needs the candidate list
 #: rather than the one this module happened to resolve.
-_MODEL_PATH_VARIABLES = "R2_MODEL_BASE_DIR, R2_TEXT_MODEL_DIR or R2_TEXT_MODEL_BASE_DIR"
+_MODEL_PATH_VARIABLES = "TRANSFER_MODEL_BASE_DIR, TRANSFER_TEXT_MODEL_DIR or TRANSFER_TEXT_MODEL_BASE_DIR"
 
 AA20 = "ACDEFGHIKLMNPQRSTVWY"
 
@@ -197,8 +197,8 @@ class ArmSpec:
     tokenisation: str
     input_format: str
     evaluation_cohort_source: str
+    architecture: str
     pretraining_corpus: str = PRETRAINING_UNDECLARED
-    architecture: str = "gpt2"
     capabilities: frozenset[str] = CAPABILITIES
 
     @property
@@ -222,6 +222,7 @@ PANEL: dict[str, ArmSpec] = {
         tokenisation="bpe",
         input_format="raw",
         evaluation_cohort_source="openwebtext",
+        architecture="gpt2",
         pretraining_corpus="webtext",
     ),
     "protgpt2": ArmSpec(
@@ -233,6 +234,7 @@ PANEL: dict[str, ArmSpec] = {
         tokenisation="multi_residue_bpe",
         input_format="fasta_wrapped",
         evaluation_cohort_source="swissprot",
+        architecture="gpt2",
         pretraining_corpus="uniref50",
     ),
     "zymctrl": ArmSpec(
@@ -244,6 +246,7 @@ PANEL: dict[str, ArmSpec] = {
         tokenisation="residue",
         input_format="ec_conditioned",
         evaluation_cohort_source="zymctrl_ec",
+        architecture="gpt2",
         pretraining_corpus="uniprot_ec_annotated",
     ),
     "progen2-medium": ArmSpec(
@@ -255,6 +258,7 @@ PANEL: dict[str, ArmSpec] = {
         tokenisation="residue",
         input_format="n_to_c_control",
         evaluation_cohort_source="swissprot",
+        architecture="progen",
         pretraining_corpus="uniref90_bfd30",
     ),
     # Architecturally identical to progen2-medium down to the parameter count
@@ -271,6 +275,7 @@ PANEL: dict[str, ArmSpec] = {
         tokenisation="residue",
         input_format="n_to_c_control",
         evaluation_cohort_source="swissprot",
+        architecture="progen",
         pretraining_corpus="progen2_base_mixture",
     ),
 }
@@ -294,6 +299,7 @@ PANEL["dialogpt-small"] = ArmSpec(
     tokenisation="bpe",
     input_format="raw",
     evaluation_cohort_source="openwebtext",
+    architecture="gpt2",
     pretraining_corpus="reddit_dialogue",
 )
 
@@ -336,6 +342,7 @@ for _name, _dir, _n_layer, _d_model in (
         tokenisation="bpe",
         input_format="raw",
         evaluation_cohort_source="openwebtext",
+        architecture="gpt2",
         pretraining_corpus="webtext",
     )
 del _name, _dir, _n_layer, _d_model
@@ -806,14 +813,14 @@ def load_arm(
 #: without going through :func:`protein_cohort`, so the existence check belongs
 #: here rather than at each call site.
 _FASTA_VARIABLE: dict[Path, str] = {
-    SWISSPROT_FASTA: "R2_SWISSPROT_FASTA",
-    ZYMCTRL_FASTA: "R2_ZYMCTRL_FASTA",
+    SWISSPROT_FASTA: "TRANSFER_SWISSPROT_FASTA",
+    ZYMCTRL_FASTA: "TRANSFER_ZYMCTRL_FASTA",
 }
 
 
 def iter_fasta(path: Path):
     path = Path(path)
-    require_input_path(path, _FASTA_VARIABLE.get(path, "the R2_* variable naming it"))
+    require_input_path(path, _FASTA_VARIABLE.get(path, "the TRANSFER_* variable naming it"))
     opener = gzip.open if str(path).endswith(".gz") else open
     header, chunks = None, []
     with opener(path, "rt") as handle:
@@ -1098,7 +1105,7 @@ def _eligible_text_documents(min_chars: int):
 
     import pyarrow.parquet as pq
 
-    require_input_path(OPENWEBTEXT, "R2_OPENWEBTEXT_DIR")
+    require_input_path(OPENWEBTEXT, "TRANSFER_OPENWEBTEXT_DIR")
     shards = sorted(OPENWEBTEXT.glob("*.parquet"))
     if not shards:
         raise RuntimeError(f"no parquet shards under {OPENWEBTEXT}")

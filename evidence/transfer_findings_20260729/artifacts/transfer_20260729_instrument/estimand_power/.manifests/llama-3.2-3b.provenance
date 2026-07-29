@@ -1,0 +1,1 @@
+code_hash=d3646e37488d command=/opt/ac2/bin/python3 /gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/transfer_package/20260729030034_d3646e37488d/scripts/transfer/03_estimand_power.py measure --arms llama-3.2-3b --device <normalized> --output-root <normalized>

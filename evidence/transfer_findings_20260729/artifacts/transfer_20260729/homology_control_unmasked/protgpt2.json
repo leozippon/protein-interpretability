@@ -1,0 +1,2076 @@
+{
+  "adjudication": {
+    "bootstrap_unit_floor": 8,
+    "min_distinct_sequences_for_comparison": 3,
+    "reason": "only 1 stratum has at least 3 distinct sequences and a non-degenerate bootstrap, so no across-stratum comparison is available; the synthetic control is reported and is the only evidence this arm contributes.",
+    "rule": "consistent_with_memorisation if the lowest-homology usable stratum's peak-over-uniform bootstrap interval lies strictly below the highest-homology usable stratum's; consistent_with_general_mechanism if those intervals overlap AND the synthetic-repeat interval overlaps the lowest-homology stratum's; indeterminate otherwise.",
+    "strata_separated": null,
+    "synthetic_matches_low_homology": null,
+    "underpowered_strata": {
+      "id30_to_70_remote_homology": {
+        "bootstrap_degenerate": true,
+        "n_above_threshold": {
+          "0.05": 44,
+          "0.10": 16,
+          "0.20": 13,
+          "0.30": 9
+        },
+        "n_distinct_sequences": 3,
+        "n_records": 3,
+        "peak_over_uniform": 19.35277296983251,
+        "reason": "3 units is below the 8-unit floor; a percentile interval over so few atoms is narrower than one over many and must not be compared against another stratum's"
+      },
+      "id70_to_95_close_homology": {
+        "bootstrap_degenerate": true,
+        "n_above_threshold": {
+          "0.05": 15,
+          "0.10": 13,
+          "0.20": 10,
+          "0.30": 7
+        },
+        "n_distinct_sequences": 6,
+        "n_records": 11,
+        "peak_over_uniform": 67.18097764960325,
+        "reason": "6 units is below the 8-unit floor; a percentile interval over so few atoms is narrower than one over many and must not be compared against another stratum's"
+      }
+    },
+    "usable_strata": [
+      "ge95_near_duplicate"
+    ],
+    "verdict": "indeterminate"
+  },
+  "arm": {
+    "attn_implementation": "eager",
+    "d_model": 1280,
+    "device": "cpu",
+    "dtype": "float32",
+    "input_format": "fasta_wrapped",
+    "modality": "protein",
+    "n_head": 20,
+    "n_layer": 36,
+    "name": "protgpt2",
+    "source": "swissprot",
+    "tokenisation": "multi_residue_bpe"
+  },
+  "by_stratum": {
+    "ge95_near_duplicate": {
+      "bootstrap": {
+        "alpha": 0.05,
+        "degenerate": false,
+        "degenerate_reason": null,
+        "fraction_above_threshold_ci": [
+          0.018055555555555554,
+          0.019444444444444445
+        ],
+        "minimum_units": 8,
+        "n_units": 26,
+        "peak_over_uniform_ci": [
+          27.21748543229825,
+          50.81628770243838
+        ],
+        "resamples": 2000,
+        "unit": "probe"
+      },
+      "census": {
+        "count_above_data_driven": 13,
+        "count_above_threshold": {
+          "0.05": 15,
+          "0.10": 14,
+          "0.20": 10,
+          "0.30": 7
+        },
+        "data_driven_layer_fractions": [
+          0.4857142857142857,
+          0.5428571428571428,
+          0.5428571428571428,
+          0.5428571428571428,
+          0.6,
+          0.6285714285714286,
+          0.6857142857142857,
+          0.6857142857142857,
+          0.7428571428571429,
+          0.7428571428571429,
+          0.7428571428571429,
+          0.7714285714285715,
+          0.8285714285714286
+        ],
+        "data_driven_sigma": 3.0,
+        "data_driven_threshold": 0.15926890265670823,
+        "distribution": {
+          "max": 0.617521984236581,
+          "mean": 0.015419062040407392,
+          "median": 0.008694961051233583,
+          "n_heads": 720,
+          "q90": 0.018984103802309818,
+          "q99": 0.24283023040746363,
+          "sd": 0.04794994687210029
+        }
+      },
+      "distinct_record_indices": [
+        0,
+        2,
+        3,
+        5,
+        7,
+        8,
+        10,
+        12,
+        14,
+        15,
+        16,
+        20,
+        21,
+        28,
+        29,
+        30,
+        32,
+        33,
+        34,
+        35,
+        37,
+        40,
+        44,
+        45,
+        46,
+        47
+      ],
+      "duplicate_weighted": {
+        "census": {
+          "count_above_data_driven": 13,
+          "count_above_threshold": {
+            "0.05": 14,
+            "0.10": 14,
+            "0.20": 11,
+            "0.30": 7
+          },
+          "data_driven_layer_fractions": [
+            0.4857142857142857,
+            0.5428571428571428,
+            0.5428571428571428,
+            0.5428571428571428,
+            0.6,
+            0.6285714285714286,
+            0.6857142857142857,
+            0.6857142857142857,
+            0.7428571428571429,
+            0.7428571428571429,
+            0.7428571428571429,
+            0.7714285714285715,
+            0.8285714285714286
+          ],
+          "data_driven_sigma": 3.0,
+          "data_driven_threshold": 0.17069275605647152,
+          "distribution": {
+            "max": 0.6542897216316794,
+            "mean": 0.016092456251723897,
+            "median": 0.008457026786494012,
+            "n_heads": 720,
+            "q90": 0.019264251178092495,
+            "q99": 0.28277344614600497,
+            "sd": 0.05153343326824921
+          }
+        },
+        "fraction_above_threshold": {
+          "0.05": 0.019444444444444445,
+          "0.10": 0.019444444444444445,
+          "0.20": 0.015277777777777777,
+          "0.30": 0.009722222222222222
+        },
+        "induction_head_set": [
+          [
+            17,
+            16
+          ],
+          [
+            19,
+            2
+          ],
+          [
+            19,
+            4
+          ],
+          [
+            19,
+            10
+          ],
+          [
+            21,
+            8
+          ],
+          [
+            22,
+            13
+          ],
+          [
+            24,
+            3
+          ],
+          [
+            24,
+            16
+          ],
+          [
+            26,
+            5
+          ],
+          [
+            26,
+            14
+          ],
+          [
+            26,
+            16
+          ],
+          [
+            27,
+            2
+          ],
+          [
+            27,
+            17
+          ],
+          [
+            29,
+            12
+          ]
+        ],
+        "mean_coverage": 0.6840161302611897,
+        "mean_repeat_symbols": 38.515151515151516,
+        "n_heads": 720,
+        "n_probes": 33,
+        "offset_two_distribution": {
+          "max": 0.4299561083570224,
+          "mean": 0.011767849756737232,
+          "median": 0.009308388116826537,
+          "n_heads": 720,
+          "q90": 0.019043877212723503,
+          "q99": 0.04120503571492181,
+          "sd": 0.024320801996367183
+        },
+        "ov_over_induction_heads": {
+          "diagonal_fraction_max": 0.4125000014901161,
+          "diagonal_fraction_mean": 0.10937500166307602,
+          "mean_normalised_rank_max": 0.8914473950862885,
+          "mean_normalised_rank_mean": 0.5316259426389089,
+          "n_heads": 14
+        },
+        "peak_over_uniform": 40.212814104573084,
+        "peak_prefix_matching": 0.6542897216316794,
+        "same_token_distribution": {
+          "max": 0.33763183258017715,
+          "mean": 0.010082596410886217,
+          "median": 0.007970427230260254,
+          "n_heads": 720,
+          "q90": 0.018018966743431127,
+          "q99": 0.04416443688985823,
+          "sd": 0.016036495127670265
+        },
+        "scored_query_positions": 294,
+        "uniform_baseline": 0.016270677300280565
+      },
+      "fraction_above_threshold": {
+        "0.05": 0.020833333333333332,
+        "0.10": 0.019444444444444445,
+        "0.20": 0.013888888888888888,
+        "0.30": 0.009722222222222222
+      },
+      "induction_head_set": [
+        [
+          17,
+          16
+        ],
+        [
+          19,
+          2
+        ],
+        [
+          19,
+          4
+        ],
+        [
+          19,
+          10
+        ],
+        [
+          21,
+          8
+        ],
+        [
+          22,
+          13
+        ],
+        [
+          24,
+          3
+        ],
+        [
+          24,
+          16
+        ],
+        [
+          26,
+          5
+        ],
+        [
+          26,
+          14
+        ],
+        [
+          26,
+          16
+        ],
+        [
+          27,
+          2
+        ],
+        [
+          27,
+          17
+        ],
+        [
+          29,
+          12
+        ]
+      ],
+      "mean_coverage": 0.6822768832802277,
+      "mean_repeat_symbols": 39.84615384615385,
+      "measured": true,
+      "n_distinct_sequences": 26,
+      "n_heads": 720,
+      "n_probes": 26,
+      "n_probes_all_records": 33,
+      "n_records": 34,
+      "offset_two_distribution": {
+        "max": 0.37115489312705874,
+        "mean": 0.011612725563247814,
+        "median": 0.00951305147088128,
+        "n_heads": 720,
+        "q90": 0.019404162065822537,
+        "q99": 0.04047897328246907,
+        "sd": 0.021877388352362456
+      },
+      "ov_over_induction_heads": {
+        "diagonal_fraction_max": 0.4125000014901161,
+        "diagonal_fraction_mean": 0.10937500166307602,
+        "mean_normalised_rank_max": 0.8914473950862885,
+        "mean_normalised_rank_mean": 0.5316259426389089,
+        "n_heads": 14
+      },
+      "peak_over_uniform": 38.262310278365156,
+      "peak_prefix_matching": 0.617521984236581,
+      "record_indices": [
+        0,
+        2,
+        3,
+        5,
+        7,
+        8,
+        10,
+        12,
+        14,
+        15,
+        16,
+        17,
+        20,
+        21,
+        28,
+        29,
+        30,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47
+      ],
+      "same_token_distribution": {
+        "max": 0.31913250233946727,
+        "mean": 0.009936244424683539,
+        "median": 0.007815798693199587,
+        "n_heads": 720,
+        "q90": 0.017946093324415324,
+        "q99": 0.04328176174229657,
+        "sd": 0.015426680357647587
+      },
+      "scored_query_positions": 238,
+      "uniform_baseline": 0.016139171412912552
+    },
+    "id30_to_70_remote_homology": {
+      "bootstrap": {
+        "alpha": 0.05,
+        "degenerate": true,
+        "degenerate_reason": "3 units is below the 8-unit floor; a percentile interval over so few atoms is narrower than one over many and must not be compared against another stratum's",
+        "fraction_above_threshold_ci": null,
+        "minimum_units": 8,
+        "n_units": 3,
+        "peak_over_uniform_ci": null,
+        "resamples": 2000,
+        "unit": "probe"
+      },
+      "census": {
+        "count_above_data_driven": 13,
+        "count_above_threshold": {
+          "0.05": 44,
+          "0.10": 16,
+          "0.20": 13,
+          "0.30": 9
+        },
+        "data_driven_layer_fractions": [
+          0.4857142857142857,
+          0.5428571428571428,
+          0.5428571428571428,
+          0.5428571428571428,
+          0.6,
+          0.6285714285714286,
+          0.6857142857142857,
+          0.6857142857142857,
+          0.7428571428571429,
+          0.7428571428571429,
+          0.7714285714285715,
+          0.7714285714285715,
+          0.8285714285714286
+        ],
+        "data_driven_sigma": 3.0,
+        "data_driven_threshold": 0.18389540537901378,
+        "distribution": {
+          "max": 0.7175192981958389,
+          "mean": 0.024509190376191193,
+          "median": 0.01301372452871874,
+          "n_heads": 720,
+          "q90": 0.04367305636405945,
+          "q99": 0.31828047208487986,
+          "sd": 0.053128738334274186
+        }
+      },
+      "distinct_record_indices": [
+        1,
+        11,
+        19
+      ],
+      "duplicate_weighted": {
+        "census": {
+          "count_above_data_driven": 13,
+          "count_above_threshold": {
+            "0.05": 44,
+            "0.10": 16,
+            "0.20": 13,
+            "0.30": 9
+          },
+          "data_driven_layer_fractions": [
+            0.4857142857142857,
+            0.5428571428571428,
+            0.5428571428571428,
+            0.5428571428571428,
+            0.6,
+            0.6285714285714286,
+            0.6857142857142857,
+            0.6857142857142857,
+            0.7428571428571429,
+            0.7428571428571429,
+            0.7714285714285715,
+            0.7714285714285715,
+            0.8285714285714286
+          ],
+          "data_driven_sigma": 3.0,
+          "data_driven_threshold": 0.18389540537901378,
+          "distribution": {
+            "max": 0.7175192981958389,
+            "mean": 0.024509190376191193,
+            "median": 0.01301372452871874,
+            "n_heads": 720,
+            "q90": 0.04367305636405945,
+            "q99": 0.31828047208487986,
+            "sd": 0.053128738334274186
+          }
+        },
+        "fraction_above_threshold": {
+          "0.05": 0.06111111111111111,
+          "0.10": 0.022222222222222223,
+          "0.20": 0.018055555555555554,
+          "0.30": 0.0125
+        },
+        "induction_head_set": [
+          [
+            13,
+            11
+          ],
+          [
+            17,
+            16
+          ],
+          [
+            19,
+            2
+          ],
+          [
+            19,
+            4
+          ],
+          [
+            19,
+            10
+          ],
+          [
+            21,
+            8
+          ],
+          [
+            22,
+            13
+          ],
+          [
+            24,
+            3
+          ],
+          [
+            24,
+            16
+          ],
+          [
+            26,
+            5
+          ],
+          [
+            26,
+            16
+          ],
+          [
+            27,
+            2
+          ],
+          [
+            27,
+            17
+          ],
+          [
+            29,
+            12
+          ],
+          [
+            33,
+            16
+          ],
+          [
+            35,
+            6
+          ]
+        ],
+        "mean_coverage": 0.7261904761904763,
+        "mean_repeat_symbols": 22.333333333333332,
+        "n_heads": 720,
+        "n_probes": 3,
+        "offset_two_distribution": {
+          "max": 0.4324670843780041,
+          "mean": 0.02057239320789839,
+          "median": 0.01194384996779263,
+          "n_heads": 720,
+          "q90": 0.04466459816321732,
+          "q99": 0.10768424622714513,
+          "sd": 0.031090498148592806
+        },
+        "ov_over_induction_heads": {
+          "diagonal_fraction_max": 0.4125000014901161,
+          "diagonal_fraction_mean": 0.12265625162399374,
+          "mean_normalised_rank_max": 0.8914473950862885,
+          "mean_normalised_rank_mean": 0.5368009875928692,
+          "n_heads": 16
+        },
+        "peak_over_uniform": 19.35277296983251,
+        "peak_prefix_matching": 0.7175192981958389,
+        "same_token_distribution": {
+          "max": 0.2943754196166992,
+          "mean": 0.017206779753504247,
+          "median": 0.010745393487013644,
+          "n_heads": 720,
+          "q90": 0.03989915912970901,
+          "q99": 0.07533320035785428,
+          "sd": 0.02014445028021052
+        },
+        "scored_query_positions": 16,
+        "uniform_baseline": 0.03707578750158039
+      },
+      "fraction_above_threshold": {
+        "0.05": 0.06111111111111111,
+        "0.10": 0.022222222222222223,
+        "0.20": 0.018055555555555554,
+        "0.30": 0.0125
+      },
+      "induction_head_set": [
+        [
+          13,
+          11
+        ],
+        [
+          17,
+          16
+        ],
+        [
+          19,
+          2
+        ],
+        [
+          19,
+          4
+        ],
+        [
+          19,
+          10
+        ],
+        [
+          21,
+          8
+        ],
+        [
+          22,
+          13
+        ],
+        [
+          24,
+          3
+        ],
+        [
+          24,
+          16
+        ],
+        [
+          26,
+          5
+        ],
+        [
+          26,
+          16
+        ],
+        [
+          27,
+          2
+        ],
+        [
+          27,
+          17
+        ],
+        [
+          29,
+          12
+        ],
+        [
+          33,
+          16
+        ],
+        [
+          35,
+          6
+        ]
+      ],
+      "mean_coverage": 0.7261904761904763,
+      "mean_repeat_symbols": 22.333333333333332,
+      "measured": true,
+      "n_distinct_sequences": 3,
+      "n_heads": 720,
+      "n_probes": 3,
+      "n_probes_all_records": 3,
+      "n_records": 3,
+      "offset_two_distribution": {
+        "max": 0.4324670843780041,
+        "mean": 0.02057239320789839,
+        "median": 0.01194384996779263,
+        "n_heads": 720,
+        "q90": 0.04466459816321732,
+        "q99": 0.10768424622714513,
+        "sd": 0.031090498148592806
+      },
+      "ov_over_induction_heads": {
+        "diagonal_fraction_max": 0.4125000014901161,
+        "diagonal_fraction_mean": 0.12265625162399374,
+        "mean_normalised_rank_max": 0.8914473950862885,
+        "mean_normalised_rank_mean": 0.5368009875928692,
+        "n_heads": 16
+      },
+      "peak_over_uniform": 19.35277296983251,
+      "peak_prefix_matching": 0.7175192981958389,
+      "record_indices": [
+        1,
+        11,
+        19
+      ],
+      "same_token_distribution": {
+        "max": 0.2943754196166992,
+        "mean": 0.017206779753504247,
+        "median": 0.010745393487013644,
+        "n_heads": 720,
+        "q90": 0.03989915912970901,
+        "q99": 0.07533320035785428,
+        "sd": 0.02014445028021052
+      },
+      "scored_query_positions": 16,
+      "uniform_baseline": 0.03707578750158039
+    },
+    "id70_to_95_close_homology": {
+      "bootstrap": {
+        "alpha": 0.05,
+        "degenerate": true,
+        "degenerate_reason": "6 units is below the 8-unit floor; a percentile interval over so few atoms is narrower than one over many and must not be compared against another stratum's",
+        "fraction_above_threshold_ci": null,
+        "minimum_units": 8,
+        "n_units": 6,
+        "peak_over_uniform_ci": null,
+        "resamples": 2000,
+        "unit": "probe"
+      },
+      "census": {
+        "count_above_data_driven": 11,
+        "count_above_threshold": {
+          "0.05": 15,
+          "0.10": 13,
+          "0.20": 10,
+          "0.30": 7
+        },
+        "data_driven_layer_fractions": [
+          0.4857142857142857,
+          0.5428571428571428,
+          0.5428571428571428,
+          0.5428571428571428,
+          0.6,
+          0.6285714285714286,
+          0.6857142857142857,
+          0.7428571428571429,
+          0.7428571428571429,
+          0.7714285714285715,
+          0.8285714285714286
+        ],
+        "data_driven_sigma": 3.0,
+        "data_driven_threshold": 0.16734750205603532,
+        "distribution": {
+          "max": 0.5970119519667192,
+          "mean": 0.01643434684073464,
+          "median": 0.007715003768151457,
+          "n_heads": 720,
+          "q90": 0.024098867916248063,
+          "q99": 0.28748431596972474,
+          "sd": 0.0503043850717669
+        }
+      },
+      "distinct_record_indices": [
+        9,
+        13,
+        18,
+        22,
+        23,
+        31
+      ],
+      "duplicate_weighted": {
+        "census": {
+          "count_above_data_driven": 12,
+          "count_above_threshold": {
+            "0.05": 15,
+            "0.10": 13,
+            "0.20": 8,
+            "0.30": 6
+          },
+          "data_driven_layer_fractions": [
+            0.4857142857142857,
+            0.5428571428571428,
+            0.5428571428571428,
+            0.5428571428571428,
+            0.6,
+            0.6285714285714286,
+            0.6857142857142857,
+            0.6857142857142857,
+            0.7428571428571429,
+            0.7428571428571429,
+            0.7714285714285715,
+            0.8285714285714286
+          ],
+          "data_driven_sigma": 3.0,
+          "data_driven_threshold": 0.13564227236746368,
+          "distribution": {
+            "max": 0.4987724790669451,
+            "mean": 0.014548589956775847,
+            "median": 0.006355867749362281,
+            "n_heads": 720,
+            "q90": 0.023058129967463138,
+            "q99": 0.2189592707397939,
+            "sd": 0.040364560803562606
+          }
+        },
+        "fraction_above_threshold": {
+          "0.05": 0.020833333333333332,
+          "0.10": 0.018055555555555554,
+          "0.20": 0.011111111111111112,
+          "0.30": 0.008333333333333333
+        },
+        "induction_head_set": [
+          [
+            17,
+            16
+          ],
+          [
+            19,
+            2
+          ],
+          [
+            19,
+            4
+          ],
+          [
+            19,
+            10
+          ],
+          [
+            21,
+            8
+          ],
+          [
+            22,
+            13
+          ],
+          [
+            24,
+            3
+          ],
+          [
+            24,
+            16
+          ],
+          [
+            26,
+            5
+          ],
+          [
+            26,
+            14
+          ],
+          [
+            26,
+            16
+          ],
+          [
+            27,
+            17
+          ],
+          [
+            29,
+            12
+          ]
+        ],
+        "mean_coverage": 0.7907936507936506,
+        "mean_repeat_symbols": 38.9,
+        "n_heads": 720,
+        "n_probes": 10,
+        "offset_two_distribution": {
+          "max": 0.31660302419855135,
+          "mean": 0.011457527309810095,
+          "median": 0.006500880963009114,
+          "n_heads": 720,
+          "q90": 0.023874279239563027,
+          "q99": 0.05780333039580082,
+          "sd": 0.018941864537373232
+        },
+        "ov_over_induction_heads": {
+          "diagonal_fraction_max": 0.4125000014901161,
+          "diagonal_fraction_mean": 0.09951923235964316,
+          "mean_normalised_rank_max": 0.8914473950862885,
+          "mean_normalised_rank_mean": 0.5164473712077149,
+          "n_heads": 13
+        },
+        "peak_over_uniform": 72.7617394079221,
+        "peak_prefix_matching": 0.4987724790669451,
+        "same_token_distribution": {
+          "max": 0.2761496907532817,
+          "mean": 0.010818368296948471,
+          "median": 0.005767935219060893,
+          "n_heads": 720,
+          "q90": 0.02117092098606835,
+          "q99": 0.09402547797846668,
+          "sd": 0.018795909987378838
+        },
+        "scored_query_positions": 99,
+        "uniform_baseline": 0.006854872947314948
+      },
+      "fraction_above_threshold": {
+        "0.05": 0.020833333333333332,
+        "0.10": 0.018055555555555554,
+        "0.20": 0.013888888888888888,
+        "0.30": 0.009722222222222222
+      },
+      "induction_head_set": [
+        [
+          17,
+          16
+        ],
+        [
+          19,
+          2
+        ],
+        [
+          19,
+          4
+        ],
+        [
+          19,
+          10
+        ],
+        [
+          21,
+          8
+        ],
+        [
+          22,
+          13
+        ],
+        [
+          24,
+          3
+        ],
+        [
+          24,
+          16
+        ],
+        [
+          26,
+          5
+        ],
+        [
+          26,
+          14
+        ],
+        [
+          26,
+          16
+        ],
+        [
+          27,
+          17
+        ],
+        [
+          29,
+          12
+        ]
+      ],
+      "mean_coverage": 0.794179894179894,
+      "mean_repeat_symbols": 34.833333333333336,
+      "measured": true,
+      "n_distinct_sequences": 6,
+      "n_heads": 720,
+      "n_probes": 6,
+      "n_probes_all_records": 10,
+      "n_records": 11,
+      "offset_two_distribution": {
+        "max": 0.5054044062441045,
+        "mean": 0.012885513801502244,
+        "median": 0.007847621583972465,
+        "n_heads": 720,
+        "q90": 0.025911333493211054,
+        "q99": 0.047420888905497977,
+        "sd": 0.02630989871310506
+      },
+      "ov_over_induction_heads": {
+        "diagonal_fraction_max": 0.4125000014901161,
+        "diagonal_fraction_mean": 0.09951923235964316,
+        "mean_normalised_rank_max": 0.8914473950862885,
+        "mean_normalised_rank_mean": 0.5164473712077149,
+        "n_heads": 13
+      },
+      "peak_over_uniform": 67.18097764960325,
+      "peak_prefix_matching": 0.5970119519667192,
+      "record_indices": [
+        9,
+        13,
+        18,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        31
+      ],
+      "same_token_distribution": {
+        "max": 0.3158707683736628,
+        "mean": 0.010929413624075774,
+        "median": 0.006914672471413558,
+        "n_heads": 720,
+        "q90": 0.02258796559138732,
+        "q99": 0.06827529653669694,
+        "sd": 0.017703180488216223
+      },
+      "scored_query_positions": 55,
+      "uniform_baseline": 0.00888662197029288
+    },
+    "lt30_no_detectable_homology": {
+      "measured": false,
+      "n_distinct_sequences": 0,
+      "n_probes": 0,
+      "n_records": 0,
+      "reason": "no natural-repeat probe survives token alignment in this stratum"
+    }
+  },
+  "cohort": {
+    "criterion": {
+      "indels": false,
+      "kind": "exact",
+      "max_gap_ratio": 2.0,
+      "max_substitution_rate": 0.0,
+      "min_distinct": 8,
+      "min_unit": 16,
+      "occurrences": 2,
+      "similarity": "identity"
+    },
+    "digest": "3ea68a87c593c532faf191ec5ea26f0dc5f5b6839d1b36580c80a0b94b3d4424",
+    "n_records": 48,
+    "name": "swissprot_tandem_repeat"
+  },
+  "copying_matrix": {
+    "diagonal_fraction": {
+      "max": 1.0,
+      "mean": 0.0793836811182296,
+      "median": 0.012500000186264515,
+      "n_heads": 720,
+      "q90": 0.21875000121071936,
+      "q99": 0.8964374976605167,
+      "sd": 0.17414990704877378
+    },
+    "matched_repeats": 8,
+    "matched_support_size": 20,
+    "mean_normalised_rank": {
+      "max": 1.0,
+      "mean": 0.331936679271813,
+      "median": 0.2782894680276513,
+      "n_heads": 720,
+      "q90": 0.756447395682335,
+      "q99": 0.9893651645630597,
+      "sd": 0.28512116729292125
+    },
+    "note": "the OV copying matrices are a function of the weights and the sampled token support alone and therefore do NOT vary by stratum; what varies per stratum is which heads that stratum's prefix-matching selects"
+  },
+  "covariate_analysis": {
+    "head": [
+      17,
+      16
+    ],
+    "measured": true,
+    "n": 35,
+    "partial_identity_given_repeat_length": -0.07821730170680015,
+    "partial_repeat_length_given_identity": -0.5131334573282155,
+    "response": "mean attention of the arm's strongest induction head, per probe",
+    "spearman_identity_vs_induction": -0.039172092299713065,
+    "spearman_identity_vs_repeat_length": -0.054952499393148384,
+    "spearman_repeat_length_vs_induction": -0.5098122472243717
+  },
+  "generated_utc": "2026-07-28T21:47:14.830015+00:00",
+  "headline_threshold": 0.1,
+  "no_text_arm": "GPT-2's training corpus (WebText) was never released. OpenWebText is a reconstruction of the collection procedure, not the corpus GPT-2 saw, so a miss against it cannot distinguish 'GPT-2 never saw this document' from 'the reconstruction happens not to contain it'. No text-side homology stratification is constructed here. This control therefore speaks to whether the PROTEIN induction signal is general or retrieved; it cannot support a matched cross-modal memorisation claim.",
+  "peak_gpu_bytes": null,
+  "per_probe": [
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 0,
+      "repeat_symbols": 21,
+      "scored_positions": 4,
+      "sequence_group": 0,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.594989538192749
+    },
+    {
+      "max_identity_over_query": 69.10039113428944,
+      "record_index": 1,
+      "repeat_symbols": 23,
+      "scored_positions": 6,
+      "sequence_group": 1,
+      "stratum": "id30_to_70_remote_homology",
+      "top_head_prefix_matching": 0.3707447449366252
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 2,
+      "repeat_symbols": 26,
+      "scored_positions": 6,
+      "sequence_group": 2,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.8769700527191162
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 3,
+      "repeat_symbols": 16,
+      "scored_positions": 4,
+      "sequence_group": 3,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.820785403251648
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 5,
+      "repeat_symbols": 30,
+      "scored_positions": 9,
+      "sequence_group": 5,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.19445525275336373
+    },
+    {
+      "max_identity_over_query": 99.54407294832826,
+      "record_index": 7,
+      "repeat_symbols": 44,
+      "scored_positions": 10,
+      "sequence_group": 7,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.530757999420166
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 8,
+      "repeat_symbols": 35,
+      "scored_positions": 10,
+      "sequence_group": 8,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.3462941884994507
+    },
+    {
+      "max_identity_over_query": 91.22055674518201,
+      "record_index": 9,
+      "repeat_symbols": 34,
+      "scored_positions": 12,
+      "sequence_group": 9,
+      "stratum": "id70_to_95_close_homology",
+      "top_head_prefix_matching": 0.3403155406316121
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 10,
+      "repeat_symbols": 29,
+      "scored_positions": 5,
+      "sequence_group": 10,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.8557451248168946
+    },
+    {
+      "max_identity_over_query": 66.0574412532637,
+      "record_index": 11,
+      "repeat_symbols": 22,
+      "scored_positions": 5,
+      "sequence_group": 11,
+      "stratum": "id30_to_70_remote_homology",
+      "top_head_prefix_matching": 0.9255840301513671
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 12,
+      "repeat_symbols": 33,
+      "scored_positions": 9,
+      "sequence_group": 12,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.5717222425672743
+    },
+    {
+      "max_identity_over_query": 93.00970873786407,
+      "record_index": 13,
+      "repeat_symbols": 18,
+      "scored_positions": 5,
+      "sequence_group": 13,
+      "stratum": "id70_to_95_close_homology",
+      "top_head_prefix_matching": 0.9264196395874024
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 14,
+      "repeat_symbols": 24,
+      "scored_positions": 6,
+      "sequence_group": 14,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.9357446034749349
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 15,
+      "repeat_symbols": 40,
+      "scored_positions": 8,
+      "sequence_group": 15,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.18643075227737427
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 16,
+      "repeat_symbols": 19,
+      "scored_positions": 2,
+      "sequence_group": 16,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.8393032550811768
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 17,
+      "repeat_symbols": 19,
+      "scored_positions": 2,
+      "sequence_group": 16,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.8393032550811768
+    },
+    {
+      "max_identity_over_query": 89.14285714285714,
+      "record_index": 18,
+      "repeat_symbols": 16,
+      "scored_positions": 3,
+      "sequence_group": 17,
+      "stratum": "id70_to_95_close_homology",
+      "top_head_prefix_matching": 0.9129022757212321
+    },
+    {
+      "max_identity_over_query": 65.27415143603133,
+      "record_index": 19,
+      "repeat_symbols": 22,
+      "scored_positions": 5,
+      "sequence_group": 18,
+      "stratum": "id30_to_70_remote_homology",
+      "top_head_prefix_matching": 0.9255840301513671
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 20,
+      "repeat_symbols": 24,
+      "scored_positions": 5,
+      "sequence_group": 19,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.7301350593566894
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 21,
+      "repeat_symbols": 48,
+      "scored_positions": 13,
+      "sequence_group": 20,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.7202397126417893
+    },
+    {
+      "max_identity_over_query": 86.39455782312925,
+      "record_index": 22,
+      "repeat_symbols": 37,
+      "scored_positions": 8,
+      "sequence_group": 21,
+      "stratum": "id70_to_95_close_homology",
+      "top_head_prefix_matching": 0.7359647750854492
+    },
+    {
+      "max_identity_over_query": 89.19597989949749,
+      "record_index": 23,
+      "repeat_symbols": 45,
+      "scored_positions": 11,
+      "sequence_group": 22,
+      "stratum": "id70_to_95_close_homology",
+      "top_head_prefix_matching": 0.3759731379422275
+    },
+    {
+      "max_identity_over_query": 89.19597989949749,
+      "record_index": 24,
+      "repeat_symbols": 45,
+      "scored_positions": 11,
+      "sequence_group": 22,
+      "stratum": "id70_to_95_close_homology",
+      "top_head_prefix_matching": 0.3759731379422275
+    },
+    {
+      "max_identity_over_query": 89.19597989949749,
+      "record_index": 25,
+      "repeat_symbols": 45,
+      "scored_positions": 11,
+      "sequence_group": 22,
+      "stratum": "id70_to_95_close_homology",
+      "top_head_prefix_matching": 0.3759731379422275
+    },
+    {
+      "max_identity_over_query": 89.19597989949749,
+      "record_index": 26,
+      "repeat_symbols": 45,
+      "scored_positions": 11,
+      "sequence_group": 22,
+      "stratum": "id70_to_95_close_homology",
+      "top_head_prefix_matching": 0.3759731379422275
+    },
+    {
+      "max_identity_over_query": 89.19597989949749,
+      "record_index": 27,
+      "repeat_symbols": 45,
+      "scored_positions": 11,
+      "sequence_group": 22,
+      "stratum": "id70_to_95_close_homology",
+      "top_head_prefix_matching": 0.3759731379422275
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 28,
+      "repeat_symbols": 21,
+      "scored_positions": 2,
+      "sequence_group": 23,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.7821418046951294
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 29,
+      "repeat_symbols": 18,
+      "scored_positions": 3,
+      "sequence_group": 24,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.9811047712961832
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 30,
+      "repeat_symbols": 16,
+      "scored_positions": 5,
+      "sequence_group": 25,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.3744568109512329
+    },
+    {
+      "max_identity_over_query": 87.15415019762845,
+      "record_index": 31,
+      "repeat_symbols": 59,
+      "scored_positions": 16,
+      "sequence_group": 26,
+      "stratum": "id70_to_95_close_homology",
+      "top_head_prefix_matching": 0.7098526954650879
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 32,
+      "repeat_symbols": 25,
+      "scored_positions": 4,
+      "sequence_group": 27,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.8849087953567505
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 33,
+      "repeat_symbols": 116,
+      "scored_positions": 32,
+      "sequence_group": 28,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.728131115436554
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 34,
+      "repeat_symbols": 117,
+      "scored_positions": 36,
+      "sequence_group": 29,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.8391910129123263
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 35,
+      "repeat_symbols": 36,
+      "scored_positions": 9,
+      "sequence_group": 30,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.8094877666897244
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 36,
+      "repeat_symbols": 36,
+      "scored_positions": 9,
+      "sequence_group": 30,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.8094877666897244
+    },
+    {
+      "max_identity_over_query": 99.1044776119403,
+      "record_index": 37,
+      "repeat_symbols": 36,
+      "scored_positions": 9,
+      "sequence_group": 31,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.8094877666897244
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 38,
+      "repeat_symbols": 36,
+      "scored_positions": 9,
+      "sequence_group": 30,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.8094877666897244
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 39,
+      "repeat_symbols": 36,
+      "scored_positions": 9,
+      "sequence_group": 30,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.8094877666897244
+    },
+    {
+      "max_identity_over_query": 97.90419161676647,
+      "record_index": 40,
+      "repeat_symbols": 46,
+      "scored_positions": 7,
+      "sequence_group": 32,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.7140445709228516
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 41,
+      "repeat_symbols": 36,
+      "scored_positions": 9,
+      "sequence_group": 30,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.8094877666897244
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 42,
+      "repeat_symbols": 36,
+      "scored_positions": 9,
+      "sequence_group": 30,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.8094877666897244
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 43,
+      "repeat_symbols": 36,
+      "scored_positions": 9,
+      "sequence_group": 30,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.8094877666897244
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 44,
+      "repeat_symbols": 30,
+      "scored_positions": 7,
+      "sequence_group": 33,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.6827594893319267
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 45,
+      "repeat_symbols": 91,
+      "scored_positions": 16,
+      "sequence_group": 34,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.08935078978538513
+    },
+    {
+      "max_identity_over_query": 99.375,
+      "record_index": 46,
+      "repeat_symbols": 78,
+      "scored_positions": 13,
+      "sequence_group": 35,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.11222524826343243
+    },
+    {
+      "max_identity_over_query": 100.0,
+      "record_index": 47,
+      "repeat_symbols": 17,
+      "scored_positions": 4,
+      "sequence_group": 36,
+      "stratum": "ge95_near_duplicate",
+      "top_head_prefix_matching": 0.9086542725563049
+    }
+  ],
+  "pooled_all_strata": {
+    "bootstrap": {
+      "alpha": 0.05,
+      "degenerate": false,
+      "degenerate_reason": null,
+      "fraction_above_threshold_ci": [
+        0.018055555555555554,
+        0.019444444444444445
+      ],
+      "minimum_units": 8,
+      "n_units": 35,
+      "peak_over_uniform_ci": [
+        29.455073150420233,
+        49.59188467043331
+      ],
+      "resamples": 2000,
+      "unit": "probe"
+    },
+    "census": {
+      "count_above_data_driven": 13,
+      "count_above_threshold": {
+        "0.05": 16,
+        "0.10": 14,
+        "0.20": 10,
+        "0.30": 7
+      },
+      "data_driven_layer_fractions": [
+        0.4857142857142857,
+        0.5428571428571428,
+        0.5428571428571428,
+        0.5428571428571428,
+        0.6,
+        0.6285714285714286,
+        0.6857142857142857,
+        0.6857142857142857,
+        0.7428571428571429,
+        0.7428571428571429,
+        0.7428571428571429,
+        0.7714285714285715,
+        0.8285714285714286
+      ],
+      "data_driven_sigma": 3.0,
+      "data_driven_threshold": 0.1611610425759523,
+      "distribution": {
+        "max": 0.6190491856880558,
+        "mean": 0.01607046242031205,
+        "median": 0.009165742985744475,
+        "n_heads": 720,
+        "q90": 0.020839806125291346,
+        "q99": 0.24508274183744017,
+        "sd": 0.04836352671854675
+      }
+    },
+    "distinct_record_indices": [
+      0,
+      1,
+      2,
+      3,
+      5,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      37,
+      40,
+      44,
+      45,
+      46,
+      47
+    ],
+    "duplicate_weighted": {
+      "census": {
+        "count_above_data_driven": 13,
+        "count_above_threshold": {
+          "0.05": 14,
+          "0.10": 14,
+          "0.20": 11,
+          "0.30": 7
+        },
+        "data_driven_layer_fractions": [
+          0.4857142857142857,
+          0.5428571428571428,
+          0.5428571428571428,
+          0.5428571428571428,
+          0.6,
+          0.6285714285714286,
+          0.6857142857142857,
+          0.6857142857142857,
+          0.7428571428571429,
+          0.7428571428571429,
+          0.7428571428571429,
+          0.7714285714285715,
+          0.8285714285714286
+        ],
+        "data_driven_sigma": 3.0,
+        "data_driven_threshold": 0.16190599386629476,
+        "distribution": {
+          "max": 0.6191197123679089,
+          "mean": 0.016048018556837882,
+          "median": 0.008692191788840762,
+          "n_heads": 720,
+          "q90": 0.02057528597960809,
+          "q99": 0.26035920800857876,
+          "sd": 0.0486193251031523
+        }
+      },
+      "fraction_above_threshold": {
+        "0.05": 0.019444444444444445,
+        "0.10": 0.019444444444444445,
+        "0.20": 0.015277777777777777,
+        "0.30": 0.009722222222222222
+      },
+      "induction_head_set": [
+        [
+          17,
+          16
+        ],
+        [
+          19,
+          2
+        ],
+        [
+          19,
+          4
+        ],
+        [
+          19,
+          10
+        ],
+        [
+          21,
+          8
+        ],
+        [
+          22,
+          13
+        ],
+        [
+          24,
+          3
+        ],
+        [
+          24,
+          16
+        ],
+        [
+          26,
+          5
+        ],
+        [
+          26,
+          14
+        ],
+        [
+          26,
+          16
+        ],
+        [
+          27,
+          2
+        ],
+        [
+          27,
+          17
+        ],
+        [
+          29,
+          12
+        ]
+      ],
+      "mean_coverage": 0.7099791355462434,
+      "mean_repeat_symbols": 37.54347826086956,
+      "n_heads": 720,
+      "n_probes": 46,
+      "offset_two_distribution": {
+        "max": 0.4019674798860818,
+        "mean": 0.01203716705006924,
+        "median": 0.009305675163373241,
+        "n_heads": 720,
+        "q90": 0.020928672025968438,
+        "q99": 0.042343644754917385,
+        "sd": 0.022782945211626538
+      },
+      "ov_over_induction_heads": {
+        "diagonal_fraction_max": 0.4125000014901161,
+        "diagonal_fraction_mean": 0.10937500166307602,
+        "mean_normalised_rank_max": 0.8914473950862885,
+        "mean_normalised_rank_mean": 0.5316259426389089,
+        "n_heads": 14
+      },
+      "peak_over_uniform": 41.81704801607725,
+      "peak_prefix_matching": 0.6191197123679089,
+      "same_token_distribution": {
+        "max": 0.32105766473597597,
+        "mean": 0.010539389443165072,
+        "median": 0.007626294254427514,
+        "n_heads": 720,
+        "q90": 0.019195091462247803,
+        "q99": 0.05270749852820669,
+        "sd": 0.01621978031719588
+      },
+      "scored_query_positions": 409,
+      "uniform_baseline": 0.014805438014894742
+    },
+    "fraction_above_threshold": {
+      "0.05": 0.022222222222222223,
+      "0.10": 0.019444444444444445,
+      "0.20": 0.013888888888888888,
+      "0.30": 0.009722222222222222
+    },
+    "induction_head_set": [
+      [
+        17,
+        16
+      ],
+      [
+        19,
+        2
+      ],
+      [
+        19,
+        4
+      ],
+      [
+        19,
+        10
+      ],
+      [
+        21,
+        8
+      ],
+      [
+        22,
+        13
+      ],
+      [
+        24,
+        3
+      ],
+      [
+        24,
+        16
+      ],
+      [
+        26,
+        5
+      ],
+      [
+        26,
+        14
+      ],
+      [
+        26,
+        16
+      ],
+      [
+        27,
+        2
+      ],
+      [
+        27,
+        17
+      ],
+      [
+        29,
+        12
+      ]
+    ],
+    "mean_coverage": 0.7052242788267634,
+    "mean_repeat_symbols": 37.48571428571429,
+    "measured": true,
+    "n_distinct_sequences": 35,
+    "n_heads": 720,
+    "n_probes": 35,
+    "n_probes_all_records": 46,
+    "n_records": 48,
+    "offset_two_distribution": {
+      "max": 0.39736573116003887,
+      "mean": 0.012303204642271772,
+      "median": 0.009689092581856597,
+      "n_heads": 720,
+      "q90": 0.021422872731528427,
+      "q99": 0.042315224069889544,
+      "sd": 0.02282857779361949
+    },
+    "ov_over_induction_heads": {
+      "diagonal_fraction_max": 0.4125000014901161,
+      "diagonal_fraction_mean": 0.10937500166307602,
+      "mean_normalised_rank_max": 0.8914473950862885,
+      "mean_normalised_rank_mean": 0.5316259426389089,
+      "n_heads": 14
+    },
+    "peak_over_uniform": 38.85483003357635,
+    "peak_prefix_matching": 0.6190491856880558,
+    "record_indices": [
+      0,
+      1,
+      2,
+      3,
+      5,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47
+    ],
+    "same_token_distribution": {
+      "max": 0.31727001466411603,
+      "mean": 0.010489489962637273,
+      "median": 0.00800495630357669,
+      "n_heads": 720,
+      "q90": 0.019757112527935255,
+      "q99": 0.04605086258941849,
+      "sd": 0.01572374183167366
+    },
+    "scored_query_positions": 309,
+    "uniform_baseline": 0.015932361180144277
+  },
+  "probe_yield": {
+    "n_probes": 46,
+    "n_records": 48,
+    "note": "a record without a probe is one whose two repeat copies tokenise differently on this arm; it is excluded from every stratum and listed here rather than silently dropped",
+    "records_without_probe": [
+      4,
+      6
+    ]
+  },
+  "runtime_seconds": 188.69,
+  "schema_version": "r2_transfer_homology_control_v1",
+  "stage": "induction",
+  "strata": {
+    "bands": {
+      "ge95_near_duplicate": {
+        "high_exclusive": 100.000001,
+        "low_inclusive": 95.0
+      },
+      "id30_to_70_remote_homology": {
+        "high_exclusive": 70.0,
+        "low_inclusive": 30.0
+      },
+      "id70_to_95_close_homology": {
+        "high_exclusive": 95.0,
+        "low_inclusive": 70.0
+      },
+      "lt30_no_detectable_homology": {
+        "high_exclusive": 30.0,
+        "low_inclusive": 0.0
+      }
+    },
+    "edges_percent_identity": [
+      0.0,
+      30.0,
+      70.0,
+      95.0,
+      100.000001
+    ],
+    "fixed_before_results": true,
+    "identity_definition": "100 * nident / qlen for the best DIAMOND HSP, i.e. the percent of the QUERY that is identically matched. Not pident, which is identity within the aligned region and would call a corpus fragment a near-duplicate of a longer query.",
+    "names": [
+      "lt30_no_detectable_homology",
+      "id30_to_70_remote_homology",
+      "id70_to_95_close_homology",
+      "ge95_near_duplicate"
+    ]
+  },
+  "stratum_distinct_sequence_counts": {
+    "ge95_near_duplicate": 27,
+    "id30_to_70_remote_homology": 3,
+    "id70_to_95_close_homology": 7,
+    "lt30_no_detectable_homology": 0
+  },
+  "stratum_record_counts": {
+    "ge95_near_duplicate": 34,
+    "id30_to_70_remote_homology": 3,
+    "id70_to_95_close_homology": 11,
+    "lt30_no_detectable_homology": 0
+  },
+  "synthetic_repeat_control": {
+    "bootstrap": {
+      "alpha": 0.05,
+      "degenerate": false,
+      "degenerate_reason": null,
+      "fraction_above_threshold_ci": [
+        0.018055555555555554,
+        0.018055555555555554
+      ],
+      "minimum_units": 8,
+      "n_units": 16,
+      "peak_over_uniform_ci": [
+        60.83472291295942,
+        65.94096311482717
+      ],
+      "resamples": 2000,
+      "unit": "probe"
+    },
+    "census": {
+      "count_above_data_driven": 13,
+      "count_above_threshold": {
+        "0.05": 15,
+        "0.10": 13,
+        "0.20": 12,
+        "0.30": 7
+      },
+      "data_driven_layer_fractions": [
+        0.4857142857142857,
+        0.5428571428571428,
+        0.5428571428571428,
+        0.5428571428571428,
+        0.6,
+        0.6285714285714286,
+        0.6857142857142857,
+        0.6857142857142857,
+        0.7428571428571429,
+        0.7428571428571429,
+        0.7428571428571429,
+        0.7714285714285715,
+        0.8285714285714286
+      ],
+      "data_driven_sigma": 3.0,
+      "data_driven_threshold": 0.167991420321269,
+      "distribution": {
+        "max": 0.6773728567456442,
+        "mean": 0.010948802501778371,
+        "median": 0.0028454665767235886,
+        "n_heads": 720,
+        "q90": 0.011086854249948546,
+        "q99": 0.2702064344428818,
+        "sd": 0.052347539273163546
+      }
+    },
+    "copy_len_tokens": 64,
+    "fraction_above_threshold": {
+      "0.05": 0.020833333333333332,
+      "0.10": 0.018055555555555554,
+      "0.20": 0.016666666666666666,
+      "0.30": 0.009722222222222222
+    },
+    "induction_head_set": [
+      [
+        17,
+        16
+      ],
+      [
+        19,
+        2
+      ],
+      [
+        19,
+        4
+      ],
+      [
+        19,
+        10
+      ],
+      [
+        21,
+        8
+      ],
+      [
+        22,
+        13
+      ],
+      [
+        24,
+        3
+      ],
+      [
+        24,
+        16
+      ],
+      [
+        26,
+        5
+      ],
+      [
+        26,
+        14
+      ],
+      [
+        26,
+        16
+      ],
+      [
+        27,
+        17
+      ],
+      [
+        29,
+        12
+      ]
+    ],
+    "mean_coverage": 1.0,
+    "mean_repeat_symbols": 64.0,
+    "measured": true,
+    "n_heads": 720,
+    "n_probes": 16,
+    "offset_two_distribution": {
+      "max": 0.4422525091776772,
+      "mean": 0.006498565293543991,
+      "median": 0.002794037443689174,
+      "n_heads": 720,
+      "q90": 0.010719783621884528,
+      "q99": 0.044069131124350465,
+      "sd": 0.025721471349064173
+    },
+    "ov_over_induction_heads": {
+      "diagonal_fraction_max": 0.4125000014901161,
+      "diagonal_fraction_mean": 0.09951923235964316,
+      "mean_normalised_rank_max": 0.8914473950862885,
+      "mean_normalised_rank_mean": 0.5164473712077149,
+      "n_heads": 13
+    },
+    "peak_over_uniform": 63.327333654106624,
+    "peak_prefix_matching": 0.6773728567456442,
+    "same_token_distribution": {
+      "max": 0.32287584410773384,
+      "mean": 0.005073036697334374,
+      "median": 0.002674354550739129,
+      "n_heads": 720,
+      "q90": 0.01120371102458901,
+      "q99": 0.019242460839450345,
+      "sd": 0.015086027530331628
+    },
+    "scored_query_positions": 1008,
+    "uniform_baseline": 0.010696374182520445
+  },
+  "verification": {
+    "per_probe_pooling_relative_error": 0.0,
+    "pooling_check_probes": 6,
+    "pooling_tolerance": 1e-06
+  }
+}

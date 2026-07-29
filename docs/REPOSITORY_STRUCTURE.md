@@ -1,73 +1,71 @@
 # Repository Structure and Naming
 
-## Canonical research-root format
+## Live Root
 
-Every live research or shared-framework root uses:
+InterpretabilityTransfer has one Git repository and one live research root: the repository root (`.`). Do not create nested Git repositories or nested `r<ID>_*` live roots.
 
-```text
-r<research ID>_<lower_snake_case_research_content>/
-```
+Historical R0, R1, and R2 identifiers remain valid only as provenance labels in experiment IDs and frozen records. They do not define current directory boundaries.
 
-Current assignments:
+| Path | Role |
+|---|---|
+| `src/transfer/` | Importable measurement library. |
+| `scripts/transfer/` | Executable validation and campaign entry points. |
+| `tests/` | Contract, invariant, negative-path, and end-to-end tests. |
+| `docs/` | Live research and repository documentation. |
+| `evidence/` | Compact, cited, reproducible receipts. |
+| `external_resources/` | Tracked metadata and setup helpers; untracked payloads. |
+| `data/`, `results/`, `logs/`, `wandb/` | Host-local inputs and generated state. |
 
-| ID | Canonical root | Status |
-|----|----------------|--------|
-| R2 | `` | **the only live research root** — text-to-protein interpretability transfer |
-| R0 | `archive/retired_research_roots/r0_shared_interpretability_framework/` | retired 2026-07-29 |
-| R1 | `archive/retired_research_roots/r1_encoder_interpretability_benchmark/` | retired 2026-07-29 |
-| R3 | reserved | not assigned |
+Frozen historical provenance is external at `/Data2/lzp/bio_archive`; see `docs/ARCHIVE.md`.
 
-IDs are stable and are **not reused** — a retired root keeps its ID inside `archive/` so that historical references remain resolvable. A directory name describes scientific scope and must not embed a journal, paper letter, transient method version, or result claim. Live research roots remain one level below the repository root because path-sensitive scripts derive the repository root from that depth; retired roots sit two levels deeper and their scripts are not expected to run.
+Create only directories with an active consumer. Archive retired scope instead of retaining empty placeholders or compatibility aliases.
 
-Operational roots are exempt from research IDs: `data/`, `external_resources/`, `ops/`, `logs/`, `docs/`, and `archive/`.
+## Version Control
 
-## Version control
+The root `.git/` is the only active Git database. The remote repository is named InterpretabilityTransfer; repository documentation and package metadata must use that name.
 
-**One git repository, at the repository root.** Until 2026-07-29 there were two nested repositories (`r1_.../.git` and `r2_.../.git`), which fragmented history and meant the root could not manage the roots it contained. Both were archived to `archive/legacy/nested_git_history_20260729/` with their histories and remote configuration intact; only the `.git` metadata moved, no working-tree file was touched. Do not create a nested repository below the root again.
+`.gitignore` protects host-local datasets, results, logs, credentials, environments, model files, and large binary artifacts. Generic `*.npz` files are ignored, with one narrow exception for compact receipts under `evidence/**/*.npz`.
 
-The root `.gitignore` carries a warning that must not be removed: results trees are ignored, so `git clean -fdx` from the root deletes every experiment result in the repository — currently ~47 GB under R2, ~3.5 GB under `archive/retired_research_roots/` and ~230 MB under `archive/legacy/`. This has already destroyed completed artefacts three times.
+Ignored files are not backups. Never run `git clean -fdx` or `git clean -fdX`; use `git clean -fd` or an explicit disposable path. A new tracked artifact must be small, cited, and placed under a documented boundary.
 
-The ignore file names each canonical root explicitly beside the generic `results/`, `logs/` and `wandb/` rules, so that a root rename shows up as a stale line rather than as silently un-ignored data. Retired live-root names are quarantined there to prevent accidental resurrection; that block must contain directory patterns only. A bare filename in it will match a live document at any depth — `DOCUMENT_INDEX.md` sat there from 2026-07-16 to 2026-07-29 and silently excluded `docs/DOCUMENT_INDEX.md` from version control.
+`.mutagenignore` is tracked and generic. It contains no endpoint, username, pod, secret, or machine-specific path. Synchronization policy excludes generated and private state while keeping source, documentation, metadata, and compact evidence portable.
 
-## Standard research layout
+## Storage Boundaries
 
-Use only the folders a direction actually needs, chosen from this vocabulary. A folder that exists but is empty, or that holds material for a scope that has been retired, is a navigation defect — archive it rather than keeping it as a placeholder.
+| Content | Location | Policy |
+|---|---|---|
+| Source, tests, configuration, and docs | repository root | tracked |
+| Compact evidence and checksums | `evidence/` | tracked |
+| Resource descriptions and setup helpers | `external_resources/` | tracked |
+| Downloaded models and tools | host storage or ignored `external_resources/` payload directories | untracked |
+| Datasets | `data/` or external storage | untracked |
+| Generated results | `results/` | untracked; publish separately when required |
+| Runtime logs | `logs/` | untracked |
+| Credentials | `.env.local` or external mode-600 configuration | untracked |
+| Frozen history | `/Data2/lzp/bio_archive` | external, checksummed, never rewritten |
 
-```text
-rN_research_content/
-├── README.md
-├── configs/
-├── docs/
-│   ├── README.md
-│   ├── RESEARCH_PLAN.md
-│   ├── EXPERIMENT_LOG.md
-│   ├── methods/
-│   └── analysis/
-├── evidence/          # compact synchronized receipts only
-├── scripts/
-├── src/
-├── tests/
-├── results/           # generated/B-only, ignored by sync and by git
-└── logs/              # runtime/B-only, ignored by sync and by git
-```
+Do not place irreplaceable evidence under `results/` or `logs/`. Promote a compact receipt into `evidence/` with provenance to its generating command and source result.
 
-Additional folders are legitimate when a direction needs them — `manuscript/`, `literature/`, `preregistration/`, `external/` — but each must have a live consumer. R2 carried all three of the first until 2026-07-29, when they were archived with the scope they served.
+## Naming
 
-Keep generic output names `results/`, `logs/`, and `wandb/` at any depth; sync and ignore policies depend on them. Do not put irreplaceable synchronized evidence under `results/`; use `evidence/` with a provenance manifest.
-
-`logs/` holds runtime output and is not evidence. A log is kept only while a receipt or document cites it; otherwise it is archived or removed. Never store a copy of a result tree under `logs/` — it will be read as a measurement.
-
-## Naming rules
-
-- Folders use lowercase snake case, except untouched upstream vendor/package directories.
+- Directories use lowercase snake case except untouched upstream package names.
 - Canonical control documents use conventional uppercase names such as `README.md`, `RESEARCH_PLAN.md`, `EXPERIMENT_LOG.md`, `MANIFEST.tsv`, and `SHA256SUMS`.
 - Dated documents use `<TOPIC>_YYYYMMDD.md`; dated runs use `<experiment_slug>_YYYYMMDD[_HHMM]/`.
-- Python analysis scripts use a unique `NN_action_object.py` prefix within one project. Operational entry points may use descriptive unnumbered names such as `submit_h200_sae.sh`.
-- Submission figures use `figure_NN_subject.{pdf,png}` and source-data folders use zero-padded identifiers such as `table_s01_model_quality/`.
+- Python stage scripts use a unique `NN_action_object.py` prefix within `scripts/transfer/`.
+- Operational entry points use descriptive names such as `run_transfer_h200.sh`.
+- Generated figures use `figure_NN_subject.{pdf,png}` when they are part of a manuscript package.
 
-## Path and provenance rules
+Names describe stable purpose, not a journal target, temporary version, host, pod, result claim, or implementation incident.
 
-- New code uses repository-relative paths derived from `Path(__file__)` where practical; do not introduce old root aliases or compatibility symlinks.
-- External H200/GPFS/OSS paths may retain historical names until the external store is explicitly migrated. Parameterize them and label them as external.
-- Generated result metadata and frozen `archive/` snapshots retain their original execution paths. The live migration map belongs in a dated audit, not in rewritten historical artifacts.
-- A root rename must be coordinated on both Mutagen endpoints because `.git/`, large results, and logs are not synchronized.
+## Paths And Provenance
+
+- Live code derives the repository root at runtime and uses repository-relative paths where practical.
+- Operator documents refer to the repository root as `.` or "the repository root"; they do not embed checkout locations.
+- Machine, GPFS, OSS, model, and dataset paths are passed through environment variables and resolved at runtime.
+- Pod names are disposable runtime values and must never be persisted in repository files, manifests, or durable logs.
+- Generated metadata and frozen archive snapshots retain original execution paths because rewriting provenance is corruption.
+- External access details belong in `~/hangzhou-remote`, whose README is authoritative for current connectivity and recovery.
+
+## Clone Validation
+
+A source clone is structurally valid when tracked files are present, `CLAUDE.md` and `AGENTS.md` are byte-identical, the JSON resource manifest parses, `.env.local` remains ignored, compact evidence NPZ files are allowed only under `evidence/`, and `python scripts/transfer/panel_contract.py --verify` passes in the declared environment.

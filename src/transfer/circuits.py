@@ -414,11 +414,27 @@ def content_bounds(arm: Arm, ids: Sequence[int], n_valid: int) -> tuple[int, int
         if start is not None and n_valid > 1 and int(ids[0]) == int(start):
             return 1, n_valid
         return 0, n_valid
-    if fmt in {"n_to_c_control", "fasta_wrapped"}:
-        # Both renderings open with exactly one scaffolding token: ProGen2's
-        # N-to-C control token, and the end-of-text marker that ProtGPT2's FASTA
-        # rendering uses as a record separator.
+    if fmt == "n_to_c_control":
+        # ProGen2's N-to-C control marker is one token.
         return 1, n_valid
+    if fmt == "fasta_wrapped":
+        eos = arm.tokenizer.eos_token_id
+        if eos is None or int(ids[0]) != int(eos):
+            raise ValueError(f"{arm.name}: FASTA rendering does not start with end-of-text")
+        low = 1
+        saw_line_break = False
+        while low < n_valid:
+            decoded = arm.tokenizer.decode([int(ids[low])])
+            if decoded and all(character in "\r\n" for character in decoded):
+                saw_line_break = True
+                low += 1
+                continue
+            break
+        if not saw_line_break:
+            raise ValueError(f"{arm.name}: FASTA rendering has no line break after end-of-text")
+        if low >= n_valid:
+            raise ValueError(f"{arm.name}: FASTA rendering contains no sequence content")
+        return low, n_valid
     if fmt == "ec_conditioned":
         vocabulary = arm.tokenizer.get_vocab()
         for marker in ("<start>", "<end>"):

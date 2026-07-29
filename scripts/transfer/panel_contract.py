@@ -23,7 +23,7 @@ remained well-formed.
 
 **The predicate.** :func:`arm_can_run` answers, for one (stage, arm) pair,
 whether the stage's entry point can produce a commensurate number for that arm,
-and when it cannot, *which* declaration refuses it. It composes four sources,
+and when it cannot, *which* declaration refuses it. It composes three sources,
 none of which is restated here:
 
 1. ``ArmSpec.capabilities`` -- what the panel intends the arm for.
@@ -35,10 +35,6 @@ none of which is restated here:
    the second, not the first.
 3. ``ArmSpec.modality`` and ``ArmSpec.tokenisation``, where the stage's design
    needs them -- ``05_relational_channel.py`` needs a residue-to-token map.
-4. :data:`STAGE_EXCLUSIONS` -- arms a stage cannot serve for a reason that is
-   *not* expressible in the three above, each carrying the reason and the
-   condition under which the exclusion becomes stale.
-
 **Why a generated shell file.** The controller and the worker are bash and the
 declaration is Python that imports torch. Rather than let bash carry a third
 copy, ``--emit`` renders the resolved contract into ``panel_contract.sh``, which
@@ -135,54 +131,6 @@ def _check_campaign_panel() -> None:
 
 
 _check_campaign_panel()
-
-
-# ----------------------------------------------------------------- exclusions
-
-
-@dataclass(frozen=True)
-class Exclusion:
-    """One arm a stage cannot serve, for a reason no declaration expresses.
-
-    ``stale_when`` states the condition under which this entry becomes wrong, so
-    that the test suite can fail when the underlying defect is fixed rather than
-    leaving a permanent exclusion nobody revisits.
-    """
-
-    reason: str
-    stale_when: str
-
-
-#: ``11_induction_path_patching.py`` resolves an attention head's write through
-#: ``path_patching.attention_output_projection``, which dispatches on
-#: ``ArmSpec.architecture``. The ProGen2 arms declare ``"gpt2"`` -- the field's
-#: default, never set for them -- while the checkpoints are GPT-J-style, with
-#: ``qkv_proj``/``out_proj`` where GPT-2 has ``c_attn``/``c_proj``. The dispatch
-#: therefore looks for ``c_proj``, does not find it, and raises partway through a
-#: scheduled run.
-#:
-#: This is a declaration defect in ``src/transfer/arms.py``, not in this file,
-#: and it is left there deliberately: correcting ``architecture`` to ``"progen"``
-#: would move path patching on two panel arms from a loud refusal to a live code
-#: path that has never produced a validated number, which is a measurement
-#: decision and not an audit repair. Recorded here so the scheduler skips the two
-#: arms with the reason instead of losing a run to the exception.
-_PROGEN2_PATH_PATCHING = Exclusion(
-    reason=(
-        "src.transfer.arms.PANEL declares architecture='gpt2' for this ProGen2 "
-        "checkpoint, but its attention keeps qkv_proj/out_proj where GPT-2 keeps "
-        "c_attn/c_proj, so path_patching.attention_output_projection raises. The "
-        "declaration, not this stage, is what has to change"
-    ),
-    stale_when="src.transfer.arms.PANEL[arm].architecture stops being 'gpt2'",
-)
-
-STAGE_EXCLUSIONS: dict[str, dict[str, Exclusion]] = {
-    "induction_path_patching": {
-        "progen2-base": _PROGEN2_PATH_PATCHING,
-        "progen2-medium": _PROGEN2_PATH_PATCHING,
-    },
-}
 
 
 # ------------------------------------------------------------- stage contracts
@@ -382,14 +330,6 @@ def _check_stage_contracts() -> None:
             unknown = [a for a in contract.declared_arms if a not in PANEL]
             if unknown:
                 raise AssertionError(f"stage {stage!r} declares unknown arms {unknown}")
-    for stage in STAGE_EXCLUSIONS:
-        if stage not in STAGE_CONTRACTS:
-            raise AssertionError(f"STAGE_EXCLUSIONS names unknown stage {stage!r}")
-        for arm in STAGE_EXCLUSIONS[stage]:
-            if arm not in PANEL:
-                raise AssertionError(f"STAGE_EXCLUSIONS names unknown arm {arm!r}")
-
-
 _check_stage_contracts()
 
 
@@ -439,10 +379,6 @@ def arm_can_run(stage: str, arm: str) -> Eligibility:
             False,
             f"{contract.entry_point} takes no arm argument; it is not dispatched per arm",
         )
-
-    excluded = STAGE_EXCLUSIONS.get(stage, {}).get(arm)
-    if excluded is not None:
-        return Eligibility(stage, arm, False, excluded.reason)
 
     if contract.declared_arms is not None and arm not in contract.declared_arms:
         return Eligibility(
@@ -618,8 +554,13 @@ COHORT_POWER_ITEM_RULES: tuple[tuple[str, str], ...] = (
         "computable so it must NOT be skipped",
     ),
     (
-        "protein_progen2",
-        "residue-level arms isolated at --dtype float32: progen2-medium's "
+        "protein_progen2_base",
+        "ProGen2-base uses the script's declared default dtype; no precision override "
+        "is inferred from a different checkpoint",
+    ),
+    (
+        "protein_progen2_medium",
+        "ProGen2-medium is isolated at --dtype float32: its "
         "nll_reduction_shortest_to_longest_nats moved 0.6266 -> 0.7293 (+16%) under "
         "bfloat16 in the L20-vs-H200 cross-check and collapsed to 2.6e-7 in float32; "
         "--dtype governs model loading so it cannot be set per arm within one process",
@@ -647,20 +588,24 @@ def cohort_power_items(requested: list[str] | tuple[str, ...] | None = None) -> 
             buckets["protein_small_vocab"].append(arm)
         elif _vocab_regime(arm) == "large":
             buckets["protein_large_vocab"].append(arm)
+        elif arm == "progen2-medium":
+            buckets["protein_progen2_medium"].append(arm)
         else:
-            buckets["protein_progen2"].append(arm)
+            buckets["protein_progen2_base"].append(arm)
 
     extra = {
         "text": ("--skip-truncation",),
         "protein_large_vocab": ("--skip-truncation",),
         "protein_small_vocab": ("--with-ec",),
-        "protein_progen2": ("--dtype", "float32"),
+        "protein_progen2_base": (),
+        "protein_progen2_medium": ("--dtype", "float32"),
     }
     cohort_names = {
         "text": None,
         "protein_large_vocab": "swissprot_large_vocab",
         "protein_small_vocab": "swissprot_small_vocab",
-        "protein_progen2": "swissprot_progen2_f32",
+        "protein_progen2_base": "swissprot_progen2_base",
+        "protein_progen2_medium": "swissprot_progen2_medium_f32",
     }
     items: list[CohortPowerItem] = []
     for item, reason in COHORT_POWER_ITEM_RULES:
@@ -696,8 +641,8 @@ def _vocab_regime(arm: str) -> str:
 #:
 #: The worker used to answer this with ``case "$1" in gpt2-large) ...`` and a
 #: modality fallback, and got it wrong for six of seven text arms until
-#: 2026-07-29: an arm addressed beneath ``R2_TEXT_MODEL_BASE_DIR`` had its
-#: preflight check ``R2_MODEL_BASE_DIR`` instead, so a genuinely missing
+#: 2026-07-29: an arm addressed beneath ``TRANSFER_TEXT_MODEL_BASE_DIR`` had its
+#: preflight check ``TRANSFER_MODEL_BASE_DIR`` instead, so a genuinely missing
 #: checkpoint reached ``load_arm`` rather than being reported as a skip.
 #:
 #: The comparison below is invariant to which host it runs on, because every
@@ -710,14 +655,14 @@ def _vocab_regime(arm: str) -> str:
 def model_variable(arm: str) -> str:
     path = PANEL[arm].path
     if path == TEXT_MODEL_ROOT:
-        return "R2_TEXT_MODEL_DIR"
+        return "TRANSFER_TEXT_MODEL_DIR"
     if path.parent == MODEL_ROOT:
-        return "R2_MODEL_BASE_DIR"
+        return "TRANSFER_MODEL_BASE_DIR"
     if path.parent == TEXT_MODEL_BASE:
-        return "R2_TEXT_MODEL_BASE_DIR"
+        return "TRANSFER_TEXT_MODEL_BASE_DIR"
     raise AssertionError(
-        f"{arm}: ArmSpec.path {path} is built from none of R2_TEXT_MODEL_DIR, "
-        "R2_MODEL_BASE_DIR or R2_TEXT_MODEL_BASE_DIR, so no environment variable "
+        f"{arm}: ArmSpec.path {path} is built from none of TRANSFER_TEXT_MODEL_DIR, "
+        "TRANSFER_MODEL_BASE_DIR or TRANSFER_TEXT_MODEL_BASE_DIR, so no environment variable "
         "relocates it and the worker cannot preflight it"
     )
 
@@ -727,9 +672,9 @@ def model_variable(arm: str) -> str:
 #: EC-labelled FASTA *and* nothing else: its records carry the conditioning tag
 #: that ``Cohort.input_strings`` rebuilds the native prompt from.
 _CORPUS_VARIABLES: dict[str, tuple[str, ...]] = {
-    "openwebtext": ("R2_OPENWEBTEXT_DIR",),
-    "swissprot": ("R2_SWISSPROT_FASTA",),
-    "zymctrl_ec": ("R2_ZYMCTRL_FASTA",),
+    "openwebtext": ("TRANSFER_OPENWEBTEXT_DIR",),
+    "swissprot": ("TRANSFER_SWISSPROT_FASTA",),
+    "zymctrl_ec": ("TRANSFER_ZYMCTRL_FASTA",),
 }
 
 
@@ -840,46 +785,46 @@ def render_shell() -> str:
         "# one place. h200_worker.sh re-derives this file from src/transfer/arms.py in",
         "# its preflight (panel_contract.py --verify) and refuses to schedule a GPU if",
         "# the two disagree, so a stale copy cannot reach a measurement.",
-        f"R2_CONTRACT_SCHEMA={_quote(SCHEMA_VERSION)}",
-        f"R2_CAMPAIGN_PANEL={_quote(' '.join(payload['campaign_panel']))}",
-        f"R2_STAGE_ORDER={_quote(' '.join(payload['stage_order']))}",
-        "declare -A R2_STAGE_SCOPE=()",
-        "declare -A R2_STAGE_ENTRY=()",
-        "declare -A R2_STAGE_ARMS=()",
-        "declare -A R2_STAGE_REFUSAL=()",
-        "declare -A R2_ARM_MODALITY=()",
-        "declare -A R2_ARM_MODEL_VAR=()",
-        "declare -A R2_ARM_CORPUS_VARS=()",
-        "declare -A R2_COHORT_ITEM_ARMS=()",
-        "declare -A R2_COHORT_ITEM_ARGS=()",
-        "declare -A R2_COHORT_ITEM_COHORT_NAME=()",
+        f"TRANSFER_CONTRACT_SCHEMA={_quote(SCHEMA_VERSION)}",
+        f"TRANSFER_CAMPAIGN_PANEL={_quote(' '.join(payload['campaign_panel']))}",
+        f"TRANSFER_STAGE_ORDER={_quote(' '.join(payload['stage_order']))}",
+        "declare -A TRANSFER_STAGE_SCOPE=()",
+        "declare -A TRANSFER_STAGE_ENTRY=()",
+        "declare -A TRANSFER_STAGE_ARMS=()",
+        "declare -A TRANSFER_STAGE_REFUSAL=()",
+        "declare -A TRANSFER_ARM_MODALITY=()",
+        "declare -A TRANSFER_ARM_MODEL_VAR=()",
+        "declare -A TRANSFER_ARM_CORPUS_VARS=()",
+        "declare -A TRANSFER_COHORT_ITEM_ARMS=()",
+        "declare -A TRANSFER_COHORT_ITEM_ARGS=()",
+        "declare -A TRANSFER_COHORT_ITEM_COHORT_NAME=()",
     ]
     for arm in payload["campaign_panel"]:
         record = payload["arms"][arm]
         key = _quote(arm)
-        lines.append(f"R2_ARM_MODALITY[{key}]={_quote(record['modality'])}")
-        lines.append(f"R2_ARM_MODEL_VAR[{key}]={_quote(record['model_variable'])}")
+        lines.append(f"TRANSFER_ARM_MODALITY[{key}]={_quote(record['modality'])}")
+        lines.append(f"TRANSFER_ARM_MODEL_VAR[{key}]={_quote(record['model_variable'])}")
         lines.append(
-            f"R2_ARM_CORPUS_VARS[{key}]={_quote(' '.join(record['corpus_variables']))}"
+            f"TRANSFER_ARM_CORPUS_VARS[{key}]={_quote(' '.join(record['corpus_variables']))}"
         )
     for stage in payload["stage_order"]:
         record = payload["stages"][stage]
-        lines.append(f"R2_STAGE_SCOPE[{_quote(stage)}]={_quote(record['scope'])}")
-        lines.append(f"R2_STAGE_ENTRY[{_quote(stage)}]={_quote(record['entry_point'])}")
+        lines.append(f"TRANSFER_STAGE_SCOPE[{_quote(stage)}]={_quote(record['scope'])}")
+        lines.append(f"TRANSFER_STAGE_ENTRY[{_quote(stage)}]={_quote(record['entry_point'])}")
         lines.append(
-            f"R2_STAGE_ARMS[{_quote(stage)}]={_quote(' '.join(record['eligible_arms']))}"
+            f"TRANSFER_STAGE_ARMS[{_quote(stage)}]={_quote(' '.join(record['eligible_arms']))}"
         )
         for arm, reason in sorted(record["refused_arms"].items()):
             key = f"{stage}/{arm}"
-            lines.append(f"R2_STAGE_REFUSAL[{_quote(key)}]={_quote(reason)}")
+            lines.append(f"TRANSFER_STAGE_REFUSAL[{_quote(key)}]={_quote(reason)}")
     cohort_items = [item["item"] for item in payload["cohort_power_items"]]
-    lines.append(f"R2_COHORT_ITEMS={_quote(' '.join(cohort_items))}")
+    lines.append(f"TRANSFER_COHORT_ITEMS={_quote(' '.join(cohort_items))}")
     for item in payload["cohort_power_items"]:
         key = _quote(item["item"])
-        lines.append(f"R2_COHORT_ITEM_ARMS[{key}]={_quote(' '.join(item['arms']))}")
-        lines.append(f"R2_COHORT_ITEM_ARGS[{key}]={_quote(' '.join(item['extra_args']))}")
+        lines.append(f"TRANSFER_COHORT_ITEM_ARMS[{key}]={_quote(' '.join(item['arms']))}")
+        lines.append(f"TRANSFER_COHORT_ITEM_ARGS[{key}]={_quote(' '.join(item['extra_args']))}")
         lines.append(
-            f"R2_COHORT_ITEM_COHORT_NAME[{key}]="
+            f"TRANSFER_COHORT_ITEM_COHORT_NAME[{key}]="
             f"{_quote(item['cohort_name'] or '')}"
         )
     return "\n".join(lines) + "\n"

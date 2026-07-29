@@ -323,14 +323,17 @@ def unigram_percentiles(counts: np.ndarray) -> np.ndarray:
     """
 
     array = np.asarray(counts, dtype=np.float64)
-    if array.ndim != 1 or array.sum() <= 0:
+    if (
+        array.ndim != 1
+        or not np.isfinite(array).all()
+        or (array < 0).any()
+        or array.sum() <= 0
+    ):
         raise ValueError("unigram counts must be a non-empty vector")
-    probabilities = array / array.sum()
-    order = np.argsort(probabilities, kind="mergesort")
-    cumulative = np.cumsum(probabilities[order])
-    percentile = np.empty_like(probabilities)
-    percentile[order] = cumulative
-    return percentile
+    unique_counts, inverse = np.unique(array, return_inverse=True)
+    mass_by_count = unique_counts * np.bincount(inverse, minlength=unique_counts.size)
+    cumulative_mass = np.cumsum(mass_by_count) / array.sum()
+    return cumulative_mass[inverse]
 
 
 @torch.no_grad()

@@ -1,0 +1,38 @@
+checkpoint:
+  analysis_every_steps: 25000
+  keep_last: 2
+  require_sha256_manifest: true
+  required_path_prefix: /gpfs/
+  save_dir: /gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/dictionaries_topk_bf16_r2/progen2-medium/topk_clt/seed_29/clt_weights/progen2-medium
+  save_every_steps: 5000
+clt:
+  d_clt: 8192
+  dead_feature_threshold: 5000
+  k: 128
+  max_resample_fraction: 0.05
+  resample_every: 2500
+  window: 8
+data:
+  fasta_path: /gpfs/jiaotongdamoxing/zhk_zip/data/uniref50/uniref50.fasta
+  manifest_path: /gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/cohorts/uniref50/train.jsonl
+  manifest_sha256: f4270143c1c22904d4f548de9837572040d2b10b87d9c64363fdb811422525bb
+  max_seq_len: 256
+  model_input_format: sequence
+  num_sequences: 300000
+  split: train
+logging:
+  log_every_steps: 50
+  wandb_entity: null
+  wandb_project: null
+model:
+  inference_dtype: bfloat16
+  inference_dtype_verification: all_floating_model_parameters_exactly_declared_before_first_activation
+  name: progen2-medium
+training:
+  batch_size: 2
+  gpu: 0
+  grad_clip_norm: 1.0
+  lr: 0.0003
+  lr_warmup_steps: 3000
+  seed: 29
+  total_steps: 200000

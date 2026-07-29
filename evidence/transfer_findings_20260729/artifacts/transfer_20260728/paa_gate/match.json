@@ -1,0 +1,166 @@
+{
+  "a2_matching_feasibility": {
+    "as_specified_ban_depth": 20,
+    "by_ban_depth": {
+      "ban20": {
+        "projected_surviving_full_pool": 26764,
+        "retention_all_gates": 0.37466666666666665,
+        "surviving_in_measured_subset": 562,
+        "verdict": "PASS"
+      },
+      "ban3": {
+        "projected_surviving_full_pool": 33050,
+        "retention_all_gates": 0.46266666666666667,
+        "surviving_in_measured_subset": 694,
+        "verdict": "PASS"
+      }
+    },
+    "gate_minimum": 2000,
+    "projected_surviving_full_pool": 26764,
+    "retention_all_gates": 0.37466666666666665,
+    "surviving_in_measured_subset": 562,
+    "verdict": "PASS"
+  },
+  "protein": {
+    "progen2-medium@ban20": {
+      "cascade": {
+        "ban_depth": 20,
+        "candidates_discarded_by_distance_range": 748,
+        "candidates_discarded_by_empty_decoy_pool": 87427,
+        "candidates_discarded_by_induction_target": 1084,
+        "decoys_drawn_with_replacement": 5787,
+        "instances_retained": 6581,
+        "positions_scored": 96000,
+        "positions_with_eligible_candidate": 94008
+      },
+      "instance_yield": 0.06855208333333333,
+      "instances": 6581,
+      "matched_subset": 1500,
+      "median_confidence": 0.9553331732749939,
+      "median_corruption_effect": -0.0031490931287407875,
+      "median_distance": 34.0,
+      "median_unigram_percentile": 0.4405711007231303,
+      "positions_scored": 96000
+    },
+    "progen2-medium@ban3": {
+      "cascade": {
+        "ban_depth": 3,
+        "candidates_discarded_by_distance_range": 748,
+        "candidates_discarded_by_empty_decoy_pool": 2486,
+        "candidates_discarded_by_induction_target": 1084,
+        "decoys_drawn_with_replacement": 38559,
+        "instances_retained": 91522,
+        "positions_scored": 96000,
+        "positions_with_eligible_candidate": 94008
+      },
+      "instance_yield": 0.9533541666666666,
+      "instances": 91522,
+      "matched_subset": 1500,
+      "median_confidence": 0.38721856474876404,
+      "median_corruption_effect": -0.028567763045430183,
+      "median_distance": 11.0,
+      "median_unigram_percentile": 0.614351232324741,
+      "positions_scored": 96000
+    }
+  },
+  "protein_arms": [
+    "progen2-medium"
+  ],
+  "retention_cascades": {
+    "ban20": [
+      {
+        "gates": [
+          "distance"
+        ],
+        "retained": 1500,
+        "retention": 1.0,
+        "scaled_to_full_pool": 71434,
+        "text_instances": 1500
+      },
+      {
+        "gates": [
+          "distance",
+          "unigram_percentile"
+        ],
+        "retained": 1325,
+        "retention": 0.8833333333333333,
+        "scaled_to_full_pool": 63100,
+        "text_instances": 1500
+      },
+      {
+        "gates": [
+          "distance",
+          "unigram_percentile",
+          "confidence"
+        ],
+        "retained": 859,
+        "retention": 0.5726666666666667,
+        "scaled_to_full_pool": 40908,
+        "text_instances": 1500
+      },
+      {
+        "gates": [
+          "distance",
+          "unigram_percentile",
+          "confidence",
+          "corruption"
+        ],
+        "retained": 562,
+        "retention": 0.37466666666666665,
+        "scaled_to_full_pool": 26764,
+        "text_instances": 1500
+      }
+    ],
+    "ban3": [
+      {
+        "gates": [
+          "distance"
+        ],
+        "retained": 1443,
+        "retention": 0.962,
+        "scaled_to_full_pool": 68720,
+        "text_instances": 1500
+      },
+      {
+        "gates": [
+          "distance",
+          "unigram_percentile"
+        ],
+        "retained": 1295,
+        "retention": 0.8633333333333333,
+        "scaled_to_full_pool": 61671,
+        "text_instances": 1500
+      },
+      {
+        "gates": [
+          "distance",
+          "unigram_percentile",
+          "confidence"
+        ],
+        "retained": 942,
+        "retention": 0.628,
+        "scaled_to_full_pool": 44861,
+        "text_instances": 1500
+      },
+      {
+        "gates": [
+          "distance",
+          "unigram_percentile",
+          "confidence",
+          "corruption"
+        ],
+        "retained": 694,
+        "retention": 0.46266666666666667,
+        "scaled_to_full_pool": 33050,
+        "text_instances": 1500
+      }
+    ]
+  },
+  "text_arm": "gpt2-large",
+  "text_matched_subset": 1500,
+  "text_median_confidence": 0.267969012260437,
+  "text_median_corruption_effect": -0.02722799777984619,
+  "text_median_distance": 35.5,
+  "text_median_unigram_percentile": 0.7677270802822237,
+  "text_pool_size": 71434
+}

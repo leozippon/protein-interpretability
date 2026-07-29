@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# CONTROLLER for the H200 transfer-measurement campaign (R2). Runs on the
+# Controller for the H200 transfer-measurement campaign. Runs on the
 # local L20 host, where the git checkout lives. It does not run any
 # experiment itself -- it freezes a code snapshot, ships it to GPFS, and
 # hands off to the WORKER (h200_worker.sh), which runs inside an H200 pod
@@ -64,7 +64,8 @@ H200_GPFS_PUSH="${H200_GPFS_PUSH:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_gpfs_push.
 H200_POD_BASH="${H200_POD_BASH:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_pod_bash.sh}"
 H200_POD_EXEC="${H200_POD_EXEC:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_pod_exec.sh}"
 
-REPO_ROOT="${REPO_ROOT:-/Data/lzp/BioInterpretebility-CC}"
+CONTROLLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="${REPO_ROOT:-$(cd "${CONTROLLER_DIR}/../.." && pwd)}"
 PROJECT_ROOT="${PROJECT_ROOT:-${REPO_ROOT}}"
 
 # The campaign panel, the stage list and each stage's eligible arms, generated
@@ -75,7 +76,7 @@ PROJECT_ROOT="${PROJECT_ROOT:-${REPO_ROOT}}"
 # declaration directly -- the freeze step is required to work on a host without
 # torch importable -- so the worker re-verifies the generated file against the
 # live panel inside the pod, before any GPU is scheduled.
-CONTRACT_SH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/panel_contract.sh"
+CONTRACT_SH="${CONTROLLER_DIR}/panel_contract.sh"
 if [ ! -f "${CONTRACT_SH}" ]; then
   echo "missing ${CONTRACT_SH}; run: python scripts/transfer/panel_contract.py --emit" >&2
   exit 2
@@ -85,24 +86,21 @@ source "${CONTRACT_SH}"
 
 # GPFS is only reachable through the access-layer tools above; every path
 # below is a remote path passed to them, never touched directly by this
-# script. /gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2 is the existing R2
-# GPFS project root already used by scripts/run_recoverability_audit_h200.sh
-# and scripts/run_three_model_expand_retrain_h200.sh -- reused here, not
-# invented.
-GPFS_PROJECT_ROOT="${GPFS_PROJECT_ROOT:-/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2}"
-GPFS_PACKAGE_ROOT="${GPFS_PACKAGE_ROOT:-${GPFS_PROJECT_ROOT}/transfer_package}"
-GPFS_RESULTS_ROOT="${GPFS_RESULTS_ROOT:-${GPFS_PROJECT_ROOT}/results/transfer_20260728}"
+# script.
+GPFS_PROJECT_ROOT="${GPFS_PROJECT_ROOT:-/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer}"
+GPFS_PACKAGE_ROOT="${GPFS_PACKAGE_ROOT:-${GPFS_PROJECT_ROOT}/packages}"
+GPFS_RESULTS_ROOT="${GPFS_RESULTS_ROOT:-${GPFS_PROJECT_ROOT}/results}"
 GPFS_LOGS_ROOT="${GPFS_LOGS_ROOT:-${GPFS_PROJECT_ROOT}/logs}"
 
 # The campaign panel, not a hand-written subset of it. This line used to read
 # ARMS="${ARMS:-gpt2-large,protgpt2,zymctrl,progen2-medium}" -- four of the
-# eleven arms R2_CAMPAIGN_PANEL declares -- so a default campaign measured a
+# eleven arms TRANSFER_CAMPAIGN_PANEL declares -- so a default campaign measured a
 # four-arm panel through every stage while each stage's arm list was, correctly,
 # intersected with it. That is the L18 failure verbatim, and it is the failure
 # panel_contract.py was built to end: the contract removed the duplicated arm
 # lists but left the default that narrowed them. Narrowing is still available,
 # it just has to be asked for: ARMS=gpt2-large,protgpt2 bash run_transfer_h200.sh
-ARMS="${ARMS:-${R2_CAMPAIGN_PANEL// /,}}"
+ARMS="${ARMS:-${TRANSFER_CAMPAIGN_PANEL// /,}}"
 GPUS="${GPUS:-0,1,2,3}"
 TEXT_ARM="${TEXT_ARM:-gpt2-large}"
 # Empty means "derive from nvidia-smi inside the pod, no fixed assertion" --
@@ -126,7 +124,7 @@ FORCE="${FORCE:-0}"
 #
 # ARGS_<STAGE>__<ITEM> is the same thing scoped to one item of one stage, with
 # the item name upper-cased and every non-alphanumeric character replaced by an
-# underscore -- e.g. ARGS_COHORT_POWER__PROTEIN_PROGEN2="--n-seq 100", or
+# underscore -- e.g. ARGS_COHORT_POWER__PROTEIN_PROGEN2_MEDIUM="--n-seq 100", or
 # ARGS_LENS_FAMILY__PROGEN2_MEDIUM="--n-seq 64". It exists because ARGS_<STAGE>
 # reaches every item of a stage at once, and cohort_power's four items differ in
 # exactly the ways that make one scale knob wrong for the others. The worker
@@ -135,7 +133,7 @@ FORCE="${FORCE:-0}"
 #
 # The panel contract supplies the stage list, so a new stage is picked up here
 # without this file being edited.
-IFS=' ' read -r -a STAGE_NAMES <<< "${R2_STAGE_ORDER}"
+IFS=' ' read -r -a STAGE_NAMES <<< "${TRANSFER_STAGE_ORDER}"
 
 # Which stages actually run this campaign, comma-separated. Default is every
 # stage the contract declares; staging is often partial (some data or model rungs
@@ -161,7 +159,7 @@ GPFS_RESULTS_ROOT, GPFS_LOGS_ROOT, ARMS (comma-separated), GPUS
 default every stage the panel contract declares -- scope a campaign to what
 is staged today), ARGS_<STAGE> (raw extra CLI args per stage, e.g.
 ARGS_PATHWAY_BUDGET="--n-seq 500"), ARGS_<STAGE>__<ITEM> (the same for one
-item, e.g. ARGS_COHORT_POWER__PROTEIN_PROGEN2="--n-seq 100"),
+item, e.g. ARGS_COHORT_POWER__PROTEIN_PROGEN2_MEDIUM="--n-seq 100"),
 EXPECTED_GPU_COUNT (optional extra minimum-count assertion; empty means the
 worker trusts nvidia-smi alone), MIN_FREE_MEM_MIB (soft warning only in the
 worker), FORCE (0/1), RUN_ID (reuse an existing frozen snapshot instead of
@@ -175,7 +173,8 @@ EOF
 
 # Pod-name redaction, applied to everything this script emits.
 #
-# Standing rule: no pod name in any file, log, commit or manifest. It used to be
+# Standing rule: never persist pod names in repository files or durable run
+# records. It used to be
 # printed outright by the startup banner and could also reach a log through any
 # path or message that happened to embed it -- a subprocess error, an access-layer
 # tool's own diagnostic, a GPFS path an operator had named after a pod. Relying on
@@ -222,7 +221,27 @@ collect_stage_args() {
   # (homology_control, induction_path_patching) could be passed to the worker and
   # not recorded, and a stage added to STAGE_NAMES would silently join them.
   STAGE_ARGS_RECORDS=""
-  local stage item var value b64 item_var
+  local stage item var value b64 item_var supplied
+  declare -A allowed_vars=()
+  for stage in "${STAGE_NAMES[@]}"; do
+    var="ARGS_$(printf '%s' "${stage}" | tr '[:lower:]' '[:upper:]')"
+    allowed_vars["${var}"]=1
+    for item in $(items_for_stage "${stage}"); do
+      item_var="${var}__$(printf '%s' "${item}" | tr '[:lower:]' '[:upper:]' | tr -c '[:alnum:]' '_')"
+      allowed_vars["${item_var%_}"]=1
+    done
+  done
+  while IFS= read -r supplied; do
+    case "${supplied}" in
+      ARGS_*)
+        if [ -z "${allowed_vars[${supplied}]+x}" ]; then
+          echo "unknown stage-argument environment variable: ${supplied}" >&2
+          exit 2
+        fi
+        ;;
+    esac
+  done < <(compgen -e)
+
   for stage in "${STAGE_NAMES[@]}"; do
     var="ARGS_$(printf '%s' "${stage}" | tr '[:lower:]' '[:upper:]')"
     value="${!var:-}"
@@ -254,17 +273,31 @@ collect_stage_args() {
 # The item labels one stage dispatches over, from the panel contract.
 items_for_stage() {
   local stage="$1"
-  case "${R2_STAGE_SCOPE[${stage}]:-}" in
+  case "${TRANSFER_STAGE_SCOPE[${stage}]:-}" in
     armless) : ;;
     panel_wide)
       if [ "${stage}" = cohort_power ]; then
-        printf '%s\n' ${R2_COHORT_ITEMS}
+        printf '%s\n' ${TRANSFER_COHORT_ITEMS}
       else
         printf 'panel\n'
       fi
       ;;
-    per_arm|control_anchored) printf '%s\n' ${R2_STAGE_ARMS[${stage}]} ;;
+    per_arm|control_anchored) printf '%s\n' ${TRANSFER_STAGE_ARMS[${stage}]} ;;
   esac
+}
+
+reject_duplicate_values() {
+  local label="$1"
+  shift
+  local value
+  declare -A seen=()
+  for value in "$@"; do
+    if [ -n "${seen[${value}]+x}" ]; then
+      echo "${label} contains duplicate value: ${value}" >&2
+      exit 2
+    fi
+    seen["${value}"]=1
+  done
 }
 
 # --------------------------------------------------------------- preflight
@@ -285,8 +318,8 @@ verify_h200_cluster() {
 
 # ------------------------------------------------------------ code freeze
 
-# Populates FILE_LIST (repo-relative paths, sorted), MANIFEST (local path to
-# a `sha256sum`-format file), and CODE_HASH (sha256 of MANIFEST's content).
+# Populates FILE_LIST with every repo-relative runtime file to stage. The
+# checksum manifest is intentionally created from the staged copy afterwards.
 #
 # The frozen set is src/transfer/ and scripts/transfer/ (the baseline,
 # unconditional) PLUS the transitive closure of every `src.*` import found
@@ -315,7 +348,6 @@ verify_h200_cluster() {
 freeze_manifest() {
   local scratch="$1"
   FILE_LIST="${scratch}/file_list.txt"
-  MANIFEST="${scratch}/CODE_CONTENT_SHA256SUMS"
   local baseline_list="${scratch}/baseline_list.txt"
   local closure_extra="${scratch}/closure_extra.txt"
 
@@ -445,7 +477,10 @@ for path in extra:
     print(path)
 PY
 
-  cat "${baseline_list}" "${closure_extra}" | LC_ALL=C sort -u > "${FILE_LIST}"
+  {
+    cat "${baseline_list}" "${closure_extra}"
+    printf '%s\n' docs/analysis/MODEL_LADDER_20260728.md
+  } | LC_ALL=C sort -u > "${FILE_LIST}"
   if [ -s "${closure_extra}" ]; then
     log "import closure added $(wc -l < "${closure_extra}") file(s) outside src/transfer and scripts/transfer:"
     while IFS= read -r extra_path; do
@@ -453,15 +488,10 @@ PY
     done < "${closure_extra}"
   fi
 
-  ( cd "${PROJECT_ROOT}" && xargs -a "${FILE_LIST}" -d '\n' sha256sum ) > "${MANIFEST}"
-  CODE_HASH="$(sha256sum "${MANIFEST}" | awk '{print $1}')"
 }
 
-# Copies exactly FILE_LIST (the baseline directories plus the closure
-# freeze_manifest derived from their imports) into a clean local staging
-# directory that mirrors each file's real repo-relative path (so a
-# src/__init__.py in the closure lands at staging/src/__init__.py), ready
-# to push.
+# Copies exactly FILE_LIST into a clean local staging directory, then creates
+# and verifies the checksum manifest from those staged bytes.
 stage_snapshot() {
   local scratch="$1"
   STAGING_DIR="${scratch}/staging"
@@ -471,20 +501,21 @@ stage_snapshot() {
     mkdir -p "${STAGING_DIR}/$(dirname "${rel}")"
     cp -p "${PROJECT_ROOT}/${rel}" "${STAGING_DIR}/${rel}"
   done < "${FILE_LIST}"
-  cp -p "${MANIFEST}" "${STAGING_DIR}/CODE_CONTENT_SHA256SUMS"
-  # 07_convergence_control.py's --ladder-table default points outside
-  # src/transfer and scripts/transfer (docs/analysis/MODEL_LADDER_20260728.md).
-  # It is the only such reference found across all nine entry points at the
-  # time this was written (grep for R2_ROOT / "..." outside those two
-  # directories and outside results/logs output defaults). It is copied into
-  # the snapshot for 07 to work at all, but is NOT part of CODE_HASH, which
-  # stays scoped to exactly the two directories the task specified -- if the
-  # ladder table changes without the code changing, the run-id will not
-  # reflect that. Re-run this grep if new entry points are added.
-  for extra in docs/analysis/MODEL_LADDER_20260728.md; do
-    mkdir -p "${STAGING_DIR}/$(dirname "${extra}")"
-    cp -p "${PROJECT_ROOT}/${extra}" "${STAGING_DIR}/${extra}"
-  done
+  MANIFEST="${STAGING_DIR}/CODE_CONTENT_SHA256SUMS"
+  ( cd "${STAGING_DIR}" && xargs -a "${FILE_LIST}" -d '\n' sha256sum ) > "${MANIFEST}"
+  CODE_HASH="$(sha256sum "${MANIFEST}" | awk '{print $1}')"
+  verify_local_snapshot
+}
+
+verify_local_snapshot() {
+  if ! (
+    cd "${STAGING_DIR}"
+    printf '%s  %s\n' "${CODE_HASH}" CODE_CONTENT_SHA256SUMS | sha256sum -c - >/dev/null
+    sha256sum -c -- CODE_CONTENT_SHA256SUMS >/dev/null
+  ); then
+    echo "local staged snapshot failed checksum verification" >&2
+    exit 2
+  fi
 }
 
 # Resolves RUN_ID and SNAPSHOT_DIR. If the operator supplied RUN_ID, its
@@ -507,16 +538,19 @@ resolve_run_id() {
   SNAPSHOT_DIR="${GPFS_PACKAGE_ROOT}/${RUN_ID}"
 }
 
-# Refuses to reuse a run-id directory unless it is empty/absent. A resumed
-# RUN_ID whose snapshot already exists is allowed to skip the push (the
-# hash match already checked in resolve_run_id guarantees it is the same
-# code), everything else must be a fresh, previously-unused path.
+# Reuse requires the existing GPFS tree to match the locally staged manifest.
+# Accepted unresolved defect: snapshot check/push has no GPFS lease, so two
+# controllers targeting one run-id can race. A correct lock needs a broader
+# owner/expiry contract; this change deliberately does not add a partial lock.
 check_snapshot_absence() {
   local reply
   reply="$("${H200_POD_BASH}" "test -e '${SNAPSHOT_DIR}' && echo EXISTS || echo ABSENT")"
   case "${reply}" in
     ABSENT) SNAPSHOT_EXISTS=0 ;;
-    EXISTS) SNAPSHOT_EXISTS=1 ;;
+    EXISTS)
+      SNAPSHOT_EXISTS=1
+      verify_remote_snapshot
+      ;;
     *)
       echo "could not determine whether ${SNAPSHOT_DIR} exists on GPFS (got: ${reply})" >&2
       exit 2
@@ -524,9 +558,20 @@ check_snapshot_absence() {
   esac
 }
 
+verify_remote_snapshot() {
+  local snapshot_q
+  printf -v snapshot_q '%q' "${SNAPSHOT_DIR}"
+  if ! "${H200_POD_BASH}" \
+      "cd -- ${snapshot_q} && printf '%s  %s\n' '${CODE_HASH}' CODE_CONTENT_SHA256SUMS | sha256sum -c - >/dev/null && sha256sum -c -- CODE_CONTENT_SHA256SUMS >/dev/null"; then
+    echo "snapshot checksum verification failed on GPFS: ${SNAPSHOT_DIR}" >&2
+    exit 2
+  fi
+}
+
 push_snapshot() {
   log "pushing code snapshot: ${STAGING_DIR} -> ${SNAPSHOT_DIR}"
   "${H200_SYNC}" push "${STAGING_DIR}" "${SNAPSHOT_DIR}"
+  verify_remote_snapshot
   log "snapshot pushed: run_id=${RUN_ID} code_hash=${CODE_HASH}"
 }
 
@@ -571,7 +616,7 @@ for line in manifest_path.read_text(encoding="utf-8").splitlines():
     per_file.append({"sha256": digest, "path": path})
 
 payload = {
-    "schema_version": "r2_transfer_h200_run_manifest_v1",
+    "schema_version": "interpretability_transfer_h200_invocation_v1",
     "run_id": os.environ["RUN_ID"],
     "created_utc": datetime.now(timezone.utc).isoformat(),
     "code_hash": os.environ["CODE_HASH"],
@@ -626,8 +671,26 @@ PY
 }
 
 push_run_manifest() {
-  log "pushing run manifest -> ${SNAPSHOT_DIR}/RUN_MANIFEST.json"
-  "${H200_GPFS_PUSH}" "${RUN_MANIFEST}" "${SNAPSHOT_DIR}/RUN_MANIFEST.json"
+  local digest destination snapshot_q destination_q
+  digest="$(sha256sum "${RUN_MANIFEST}" | awk '{print $1}')"
+  destination="${SNAPSHOT_DIR}/INVOCATIONS/${digest}.json"
+  printf -v snapshot_q '%q' "${SNAPSHOT_DIR}"
+  printf -v destination_q '%q' "${destination}"
+  "${H200_POD_BASH}" "mkdir -p -- ${snapshot_q}/INVOCATIONS"
+  if "${H200_POD_BASH}" "test -e ${destination_q}"; then
+    if ! "${H200_POD_BASH}" "printf '%s  %s\n' '${digest}' ${destination_q} | sha256sum -c - >/dev/null"; then
+      echo "existing invocation manifest failed checksum verification: ${destination}" >&2
+      exit 2
+    fi
+    log "invocation manifest already present and verified: ${destination}"
+    return
+  fi
+  log "pushing append-only invocation manifest -> ${destination}"
+  "${H200_GPFS_PUSH}" "${RUN_MANIFEST}" "${destination}"
+  if ! "${H200_POD_BASH}" "printf '%s  %s\n' '${digest}' ${destination_q} | sha256sum -c - >/dev/null"; then
+    echo "invocation manifest failed checksum verification after transfer: ${destination}" >&2
+    exit 2
+  fi
 }
 
 # ------------------------------------------------------------- worker call
@@ -706,7 +769,7 @@ done
 # other. The worker re-derives the file from the live panel in its preflight, so
 # a stale copy cannot reach a measurement; this script only reads it, because the
 # freeze step is required to work without torch importable.
-KNOWN_ARMS="${R2_CAMPAIGN_PANEL}"
+KNOWN_ARMS="${TRANSFER_CAMPAIGN_PANEL}"
 IFS=',' read -r -a ARM_LIST <<< "${ARMS}"
 if [ "${#ARM_LIST[@]}" -eq 0 ]; then
   echo "ARMS must not be empty" >&2
@@ -718,10 +781,13 @@ for arm in "${ARM_LIST[@]}"; do
     *) echo "unknown arm: ${arm} (panel is: ${KNOWN_ARMS})" >&2; exit 2 ;;
   esac
 done
+reject_duplicate_values ARMS "${ARM_LIST[@]}"
 if ! [[ "${GPUS}" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
   echo "GPUS must be a comma-separated list of integers, got: ${GPUS}" >&2
   exit 2
 fi
+IFS=',' read -r -a GPU_LIST <<< "${GPUS}"
+reject_duplicate_values GPUS "${GPU_LIST[@]}"
 
 STAGE_ORDER_CSV="$(IFS=,; echo "${STAGE_NAMES[*]}")"
 IFS=',' read -r -a REQUESTED_STAGES <<< "${STAGES}"
@@ -738,12 +804,13 @@ for stage in "${REQUESTED_STAGES[@]}"; do
       ;;
   esac
 done
+reject_duplicate_values STAGES "${REQUESTED_STAGES[@]}"
 collect_stage_args
 
 SCRATCH="$(mktemp -d)"
 trap 'rm -rf -- "${SCRATCH}"' EXIT
 
-log "transfer_20260728 H200 controller"
+log "InterpretabilityTransfer H200 controller"
 # The pod name is deliberately absent from this banner and from every other line
 # this script writes; see `redact` above. Cluster identity is established by the
 # health check, which is the thing that actually needs to be true.
@@ -760,8 +827,9 @@ log "STAGE_ARGS:        ${STAGE_ARGS_SUMMARY:-(none -- every stage runs at its o
 log "FORCE:             ${FORCE}"
 log "DRY_RUN:           ${DRY_RUN}"
 
-log "computing code-content hash over src/transfer/ and scripts/transfer/"
+log "staging and hashing the complete runtime snapshot"
 freeze_manifest "${SCRATCH}"
+stage_snapshot "${SCRATCH}"
 resolve_run_id
 log "run_id=${RUN_ID} code_hash=${CODE_HASH} snapshot_dir=${SNAPSHOT_DIR}"
 
@@ -781,7 +849,7 @@ if [ "${DRY_RUN}" = "1" ]; then
   log "[dry-run] would push code snapshot ($( wc -l < "${FILE_LIST}" ) files) via:"
   log "[dry-run]   ${H200_SYNC} push <local-staging> ${SNAPSHOT_DIR}"
   log "[dry-run] would push run manifest via:"
-  log "[dry-run]   ${H200_GPFS_PUSH} <local-run-manifest> ${SNAPSHOT_DIR}/RUN_MANIFEST.json"
+  log "[dry-run]   ${H200_GPFS_PUSH} <local-run-manifest> ${SNAPSHOT_DIR}/INVOCATIONS/<manifest-sha256>.json"
   log "[dry-run] would invoke worker:"
   log "[dry-run]   ${POD_COMMAND[*]}"
   log "dry run complete; nothing was transferred or executed"
@@ -792,9 +860,8 @@ verify_h200_cluster
 check_snapshot_absence
 
 if [ "${SNAPSHOT_EXISTS}" -eq 1 ]; then
-  log "run_id ${RUN_ID} already has a matching-hash snapshot on GPFS; reusing it without re-pushing"
+  log "run_id ${RUN_ID} has a checksum-verified snapshot on GPFS; reusing it without re-pushing"
 else
-  stage_snapshot "${SCRATCH}"
   push_snapshot
 fi
 

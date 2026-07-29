@@ -1003,18 +1003,25 @@ def test_path_patching_refuses_an_architecture_it_cannot_address():
 def _arm_with_projection(name: str, attribute: str) -> Arm:
     """An ``Arm`` whose blocks carry their attention output projection at ``attribute``.
 
-    Enough module structure for ``Arm.blocks()``/``Arm.attention()`` and
-    ``path_patching.attention_output_projection`` to resolve, and nothing else.
+    Includes the complete trunk, final norm and unembedding contract checked by
+    ``path_patching.require_supported_layout``.
     """
 
-    block = torch.nn.Module()
-    attention = torch.nn.Module()
-    attention.add_module(attribute, torch.nn.Linear(4, 4))
-    block.add_module("attn", attention)
+    def make_block() -> torch.nn.Module:
+        block = torch.nn.Module()
+        attention = torch.nn.Module()
+        attention.add_module(attribute, torch.nn.Linear(4, 4))
+        block.add_module("attn", attention)
+        return block
+
     transformer = torch.nn.Module()
-    transformer.add_module("h", torch.nn.ModuleList([block]))
+    transformer.add_module(
+        "h", torch.nn.ModuleList([make_block() for _ in range(PANEL[name].n_layer)])
+    )
+    transformer.add_module("ln_f", torch.nn.LayerNorm(4))
     model = torch.nn.Module()
     model.add_module("transformer", transformer)
+    model.add_module("lm_head", torch.nn.Linear(4, 7))
     return Arm(
         spec=PANEL[name],
         model=model,
@@ -1028,15 +1035,9 @@ def _arm_with_projection(name: str, attribute: str) -> Arm:
 def test_require_supported_layout_admits_exactly_what_it_can_resolve():
     """The guard's admission must mean the projection resolves, not that a field matches.
 
-    This is the invariant behind the guard, and it did not hold. Until
-    EXP-R2-067 ``require_supported_layout`` compared ``ArmSpec.architecture``
-    against ``SUPPORTED_ARCHITECTURES`` and stopped, so it admitted the two
-    ProGen2 arms -- which declare ``architecture='gpt2'`` by never setting the
-    field, while their checkpoints keep ``out_proj`` where GPT-2 keeps
-    ``c_proj``. ``attention_output_projection`` then raised partway through a
-    scheduled GPU run, which is the failure this guard exists to replace.
-
-    The previous test asserted the admission, so it defended the defect.
+    GPT-2 and ProGen share the trunk this module addresses but use different
+    output-projection names. Admission requires both the declared projection and
+    the complete trunk contract used by the patcher.
     """
 
     for name in ("gpt2-large", "progen2-medium"):
@@ -1046,8 +1047,6 @@ def test_require_supported_layout_admits_exactly_what_it_can_resolve():
         path_patching.require_supported_layout(resolvable)
         assert path_patching.attention_output_projection(resolvable, 0) is not None
 
-        # The ProGen2 checkpoints' real layout. The guard must refuse it rather
-        # than leave the refusal to a call made after the weights are resident.
         unresolvable = _arm_with_projection(name, "some_other_projection")
         with pytest.raises(TypeError, match="has no"):
             path_patching.attention_output_projection(unresolvable, 0)

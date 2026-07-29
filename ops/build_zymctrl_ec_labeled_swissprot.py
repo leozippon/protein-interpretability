@@ -22,6 +22,7 @@ from xml.etree.ElementTree import iterparse
 
 
 FULL_EC_RE = re.compile(r"^\d+\.\d+\.\d+\.\d+$")
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def iter_entries(xml_path: str) -> Iterable[tuple[str, str, list[str]]]:
@@ -83,11 +84,11 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--xml",
-        default="/Data/lzp/BioInterpretebility-CC/data/swissprot/uniprot_sprot.xml.gz",
+        default=str(REPO_ROOT / "data/swissprot/uniprot_sprot.xml.gz"),
     )
     ap.add_argument(
         "--out",
-        default="/Data/lzp/BioInterpretebility-CC/data/zymctrl/ec_labeled_swissprot.fasta",
+        default=str(REPO_ROOT / "data/zymctrl/ec_labeled_swissprot.fasta"),
     )
     ap.add_argument("--max-seq-len", type=int, default=1022)
     args = ap.parse_args()
@@ -98,7 +99,7 @@ def main() -> None:
     # Written beside the destination and renamed only once the record count has
     # been checked. Streaming straight into `out_path` left an interrupted run
     # holding a partial FASTA that is indistinguishable from a complete one, and
-    # ops/sync_required_assets_to_h200.sh would then stage it.
+    # a later staging command could then treat it as complete.
     temporary = out_path.with_name(f".{out_path.name}.partial")
     n_entries = 0
     n_records = 0

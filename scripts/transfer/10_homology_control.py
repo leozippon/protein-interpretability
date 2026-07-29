@@ -92,7 +92,7 @@ from src.transfer.homology import (  # noqa: E402
     write_query_fasta,
 )
 
-DEFAULT_OUTPUT = REPO_ROOT / "results/transfer_20260728/homology_control"
+DEFAULT_OUTPUT = REPO_ROOT / "results/transfer/homology_control"
 STAGES = ("search", "induction")
 ASSIGNMENT_FILE = "homology_assignment.json"
 
@@ -844,37 +844,42 @@ def parse_args() -> argparse.Namespace:
         "--corpus-fasta",
         type=Path,
         default=env_path(
-            "R2_UNIREF50_FASTA",
+            "TRANSFER_UNIREF50_FASTA",
             REPO_ROOT / "data/uniref50/uniref50.fasta",
         ),
     )
     parser.add_argument(
         "--diamond-tarball",
         type=Path,
-        default=REPO_ROOT / "external_resources/tools/diamond-linux64-v2.1.24.tar.gz",
+        default=env_path(
+            "TRANSFER_DIAMOND_TARBALL",
+            REPO_ROOT / "external_resources/tools/diamond-linux64-v2.1.24.tar.gz",
+        ),
     )
     parser.add_argument(
         "--diamond-checksum",
         type=Path,
-        default=REPO_ROOT.parent
-        / "external_resources/tools/diamond-linux64-v2.1.24.tar.gz.sha256",
+        default=env_path(
+            "TRANSFER_DIAMOND_CHECKSUM",
+            REPO_ROOT / "external_resources/tools/diamond-linux64-v2.1.24.tar.gz.sha256",
+        ),
     )
     parser.add_argument(
         "--diamond-dir",
         type=Path,
-        default=env_path("R2_DIAMOND_DIR", Path("/Data/lzp/tools/diamond-2.1.24")),
+        default=env_path("TRANSFER_DIAMOND_DIR", Path("/Data/lzp/tools/diamond-2.1.24")),
     )
     parser.add_argument(
         "--diamond-db",
         type=Path,
         default=env_path(
-            "R2_DIAMOND_DB", Path("/Data/lzp/homology_db/uniref50_full.dmnd")
+            "TRANSFER_DIAMOND_DB", Path("/Data/lzp/homology_db/uniref50_full.dmnd")
         ),
     )
     parser.add_argument(
         "--diamond-tmpdir",
         type=Path,
-        default=env_path("R2_DIAMOND_TMPDIR", Path("/Data/lzp/homology_db/tmp")),
+        default=env_path("TRANSFER_DIAMOND_TMPDIR", Path("/Data/lzp/homology_db/tmp")),
     )
     parser.add_argument("--rebuild-db", action="store_true")
     parser.add_argument("--threads", type=int, default=48)

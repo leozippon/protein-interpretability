@@ -1,0 +1,43 @@
+{
+  "arm": "protgpt2",
+  "cohort_control": {
+    "applicable": true,
+    "ce_file_order_nats": 4.750271161412428,
+    "ce_seeded_permutation_nats": 4.829744202017547,
+    "cohort_delta_nats": -0.0794730406051194,
+    "file_order_digest": "667a1b092de18de9507c3e82d379903186597139cdd653b819b09114373c040e",
+    "reference": "EXP-R2-059, ProGen2-medium context information, n=48 skip=0 vs skip=400",
+    "reference_delta_nats": 1.01,
+    "seeded_digest": "a1bba1c71cb70c49161650a53a664984de7ffc5556ed4c325443162324f96973"
+  },
+  "input_format": "fasta_wrapped",
+  "modality": "protein",
+  "rendering_cohort": {
+    "digest": "a0e37cf908a6d26a0830a208718a8674fee80d6ec9c81f3cbb01663325e8543e",
+    "eligible_records": 70647,
+    "input_format": "fasta_wrapped",
+    "kind": "protein",
+    "name": "swissprot_n80_skip0_seed20260729",
+    "seed": 20260729,
+    "selection": "seeded_permutation_of_all_eligible_records",
+    "sequences": 80,
+    "skip": 0,
+    "symbols_max": 1957,
+    "symbols_median": 798,
+    "symbols_min": 600,
+    "tokenisation": "multi_residue_bpe"
+  },
+  "rendering_control": {
+    "applicable": true,
+    "ce_nats_by_rendering": {
+      "eot_plus_raw": 7.318282783303022,
+      "native_eot_plus_wrapped": 5.43945439055253,
+      "raw_single_line": 7.218060775039661,
+      "wrapped_60": 5.458109611423394
+    },
+    "native_rendering": "native_eot_plus_wrapped",
+    "reference": "EXP-R2-028, 80 Swiss-Prot sequences 600-2000 aa, file-order cohort",
+    "reference_delta_nats": 1.42,
+    "rendering_delta_nats": 1.778606384487131
+  }
+}

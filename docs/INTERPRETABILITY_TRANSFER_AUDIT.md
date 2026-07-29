@@ -45,7 +45,7 @@ So TG-01's only outputs sit in the retracted 2026-07-24 tree, produced under the
 
 ## 0.1 CLOSED — TG-series rendering contamination repaired; the dissociation is retracted (EXP-R2-062)
 
-**Resolved 2026-07-29.** The defect described below is fixed, its blast radius is measured, and B2 has been run. `tg_common.py` no longer renders anything: it is an adapter over `src/transfer/arms.py`, and every TG cohort is now a seeded permutation of the complete eligible set. Corrected artefacts are under `results/transfer_gap_20260729_corrected/`; the 2026-07-24 tree is retained unmodified because it is cited here; pre-correction sources and a per-number status table are at `archive/legacy/r2_transfer_gap_precorrection_20260729/`.
+**Resolved 2026-07-29.** The defect described below is fixed, its blast radius is measured, and B2 has been run. `tg_common.py` no longer renders anything: it is an adapter over `src/transfer/arms.py`, and every TG cohort is now a seeded permutation of the complete eligible set. Corrected artefacts are under `results/transfer_gap_20260729_corrected/`; the 2026-07-24 tree is retained unmodified because it is cited here; pre-correction sources and a per-number status table are frozen under `/Data2/lzp/bio_archive/legacy/r2_transfer_gap_precorrection_20260729/`.
 
 **B2's binary gate returns NO.** The variance–behaviour dissociation does not reproduce. ProtGPT2's rank-512 loss recovered moves **−0.105 → +0.879** and its alignment gap at rank 512 falls **+1.102 → +0.118**, below ProGen2-medium's +0.326. GPT-2-large is unchanged to three decimals, which is what establishes that the movement is the rendering and not the cohort. On the maximum gap over rank, **ZymCTRL (+0.289) sits 2.4x below the text control (+0.708)**: the decoupling is not modality-conditional. **C4 (reliance-weighted dictionaries, 20–40 GPU-h) loses its stated motivation and must not be started on this basis.**
 
@@ -81,7 +81,7 @@ If the work stopped now, the defensible claims are:
 
 **On part 3 (adapted methods).** Not yet earned. Two candidate directions carry standing rejections (§6.1) and no proposal is currently traceable to a measured limitation with adequate evidence.
 
-**The strongest single claim available** is a part-2 claim: the head-prevalence census — a standard text-interpretability instrument — has a **narrow and previously unmeasured domain of applicability**. It works for induction and fails on the text control for the next mechanism tried. Measurability, not modality, may be generating the apparent gap.
+**The strongest directly measured part-2 result available** is narrower: `paa_specific` does not provide a valid cheap ranking screen for copy-suppression on GPT-2-large, despite the causal mechanism itself being detectable. This result does not establish that head-prevalence censuses generally have a narrow domain, nor does it rule out another screen or an exhaustive causal effect-size census. Measurability remains a candidate contributor to an apparent transfer gap, not an established general explanation.
 
 ---
 
@@ -89,7 +89,7 @@ If the work stopped now, the defensible claims are:
 
 ### 2. The panel
 
-Eleven autoregressive decoders under one code path, each fed in the format it was trained on. All verified byte-for-byte on GPFS (EXP-R2-058).
+Eleven autoregressive decoders under one code path, each fed in the format it was trained on. All were staged and load-checked on GPFS in EXP-R2-058; ten checkpoints received full source-to-GPFS SHA-256 verification, while Qwen2.5-0.5B was recorded as byte-size checked only.
 
 | arm | modality | layers x width | tokenisation | corpus / conditioning |
 |---|---|---|---|---|
@@ -126,7 +126,7 @@ Eleven autoregressive decoders under one code path, each fed in the format it wa
 | Tokenisation explains the modality gap | **retracted** | plug-in unigram estimator biased shares by up to +1.02 nats |
 | Aperture / J-Lens axis separates modalities | **null** | data contrast exceeds modality effect; instrument too noisy to resolve anything |
 | MLP-share modality coefficient | **underpowered** | collapses under tokenisation adjustment at n=9 |
-| Induction deficit is memorisation | **refuted** | full-UniRef50 DIAMOND control; ZymCTRL has most memorisation opportunity and least induction |
+| Induction head-count deficit is explained by within-protein homology | **not supported within the measured protein cohorts; cross-modal contribution unresolved** | corrected full-UniRef50 control finds overlapping head-count strata and a synthetic negative control, but no genuine low-homology stratum or symmetric GPT-2 corpus comparison |
 | Induction deficit is exact-repeat artefact | **refuted** | survives approximate-repeat criterion |
 | ProtGPT2 is off-distribution | **retracted (own defect)** | input-rendering bug; EOT + 60-col wrap worth 1.42 nats/token |
 
@@ -146,7 +146,7 @@ Eleven autoregressive decoders under one code path, each fed in the format it wa
 
 `circuits.py` records the natural probe as the one to trust for wrapped arms and `scaling.py` declares it primary; the headline table used the synthetic probe. The natural approximate criterion is the one Pomerants et al. showed subsumes exact detection.
 
-**Scale — real, and does not explain the gap.** The within-lineage ladder falls monotonically: 0.1597, 0.1380, 0.0972, 0.0833; slope **−0.272/decade [−0.455, −0.088]** with head *count* rising 23 → 100. This explains llama-3.2-3b's low value. Restated against the ladder's scale-matched prediction the gap persists at **2.34x, p = 0.0286**. Variance decomposition: scale adds **+0.003** given modality and lineage; modality +0.220; lineage +0.061 — but only **25.4%** of the modality indicator survives projection.
+**Scale — real, and does not explain the descriptive shortfall.** The within-lineage ladder falls monotonically: 0.1597, 0.1380, 0.0972, 0.0833; slope **−0.272/decade [−0.455, −0.088]** with head *count* rising 23 → 100. This explains llama-3.2-3b's low value. Restated against the ladder's scale-matched prediction, the shortfall is **2.34x descriptively**; the artifact does not report a scale-adjusted inferential test. Its reported **p = 0.0286** belongs instead to the unadjusted, one-sided exact permutation test over four text and three protein models for `fraction_above_0.10`, where complete separation reaches the minimum attainable p-value. Variance decomposition: scale adds **+0.003** given modality and lineage; modality +0.220; lineage +0.061 — but only **25.4%** of the modality indicator survives projection.
 
 **Corpus — roughly half the modality contrast in log terms.**
 
@@ -174,10 +174,10 @@ Eleven autoregressive decoders under one code path, each fed in the format it wa
 | L2 | A 0.1-nat mutual-information gate applied to a design with a 0.0066-nat analytic ceiling | attribution / explanation channel | explanation-channel analysis | **method** |
 | L3 | FVU is not comparable across models; ranking by FVU does not track behavioural fidelity | SAE / CLT | TG-03, TG-08 budget sweep | **method** |
 | L4 | Loss-recovered denominators are arm-specific; ablation-baseline choice moves the measured denominator substantially | SAE / CLT, activation patching | denominator-guard work | **method** |
-| L5 | Head-prevalence census requires a cheap per-head statistic that ranks by causal effect; for copy-suppression this ranks at **chance** (Spearman −0.062, p = 0.71) with no dynamic range (5/56 heads vs induction 70/720) | circuit census / induction-head methodology | EXP-R2-059 | **method** — failed on gpt2-large before any protein arm |
+| L5 | The tested `paa_specific` proxy does not rank copy-suppression heads by measured causal effect on GPT-2-large (Spearman −0.062, p = 0.71), and the screened positive control has little dynamic range (5/56 heads vs induction 70/720) | this PAA screen for a copy-suppression prevalence census | EXP-R2-059 | **method-screen limitation on one text model** — no protein arm was scored; other screens and exhaustive causal censuses remain open |
 | L6 | Positional baseline dominates the *body* of per-head attention statistics; decoy correction drops head median sixfold (0.0083 → 0.0013) while leaving the tail count intact (70 → 69, Jaccard 1.000) | attention-pattern analysis, circuit census | EXP-R2-059 | **method** |
 | L7 | Attribution graphs hold attention patterns fixed and do not explain how they are computed; the price is measurable | attribution graph | TG-06 frozen attention | **method** |
-| L8 | Output aperture is rank-(V−1); lens-family readouts are bounded by vocabulary size, which differs 1600-fold across the panel (32 to 151936) | logit lens, tuned lens, DLA, J-Lens | EXP-R2-031, EXP-R2-045 | **transfer** — algebraic, protein-specific |
+| L8 | Output aperture is rank-(V−1); lens-family readouts are bounded by vocabulary size, which differs 1600-fold across the panel (32 to 151936) | logit lens, tuned lens, DLA, J-Lens | EXP-R2-031, EXP-R2-045 | **transfer** — algebraic and vocabulary-conditional, not modality-specific |
 | L9 | Explanation closure: an explanation drawn from an annotation channel cannot exceed that channel's information content | natural-language autoencoder, automated interpretability | analytic | **transfer** |
 | L10 | J-Space / property-conditioned Jacobian is not defined for properties that are not functionals of the next-token distribution; directions come from a probe, making the object the Jacobian of the probe | J-Lens / J-Space | analytic, three independent reviews | **method**, fatal |
 | L11 | Input rendering is load-bearing and silently wrong by default; ProtGPT2 moved **1.42 nats/token** between raw sequence and EOT + 60-column FASTA wrapping | every method that scores sequences | EXP-R2-028 | **transfer** |
@@ -244,9 +244,9 @@ Two rotary arms were **not** scored and the skip was logged with its reason: `le
 
 The figures that carry the most weight, with their provenance, so the catalogue can be cited without re-deriving them.
 
-**L1 — the gate is unattainable on its own text control.** `mlp_single@d0.50@cohort_mean` costs gpt2-large **0.0225 nats/token** (bootstrap q025 0.0178, guard pass fraction **0.0** across 300 resamples of every seed) against a 0.05-nat guard — while ProGen2-medium (0.0772) and ProtGPT2 (0.0895) clear it. The artefact records `attainable_on_text_control = false`. **P0-2b's null on protein dictionaries is therefore uninterpretable**, not negative. 32 of 48 alternative estimands are panel-wide powered.
+**L1 — the original single-submodule gate is depth-dependent and unattainable on its matched text control.** In the latest EXP-R2-060 sweep, `mlp_single@d0.50@cohort_mean` costs gpt2-large **0.0193 nats/token** (bootstrap q025 0.0171) against a 0.05-nat guard, while ProtGPT2 (0.1115), ProGen2-base (0.0656) and ProGen2-medium (0.0622) clear it and ZymCTRL (0.0152) does not; **52 of 76** alternatives are attainable on gpt2-large and 50 are powered panel-wide. This makes the matched-panel or cross-domain interpretation of P0-2b inconclusive: P0-2b had no matched text dictionary, and the original ProtGPT2 and ZymCTRL recovered ratios were denominator-invalid. It does **not** erase the valid within-arm negative for ProGen2-medium under P0-2b's original estimand and frozen 0.80 gate: all nine ProGen2-medium runs had valid denominators, and the best bootstrap upper bounds were 0.411 for loss recovered and 0.282 for KL recovered.
 
-**L5 — no valid screen.** `paa_specific` rank against measured ΔM-gap: Spearman **−0.062 (p = 0.71)** over 40 heads; 5 of 56 heads clear the control band against induction's 70 of 720.
+**L5 — no valid `paa_specific` screen for copy-suppression on GPT-2-large.** `paa_specific` rank against measured ΔM-gap: Spearman **−0.062 (p = 0.71)** over 40 heads; 5 of 56 heads clear the control band against induction's 70 of 720. This does not test another proxy or an exhaustive causal effect-size census.
 
 **L8 — the aperture is algebraically forced.** Numerical rank of `∂logits/∂h_l` is exactly **31** for ProGen2-medium and **457** for ZymCTRL, at every layer and probe, against 1150–1278 for the 50k-vocab arms. Validated against central finite differences at 2.2e-4–2.5e-3 relative error. **Vocabulary-conditional, not modality-conditional** — ProtGPT2's interface is near-full-rank. The honest label is *protein-typical, not protein-necessary*.
 
@@ -302,7 +302,7 @@ Against the fourteen families enumerated for this programme:
 | Contrastive / concept vectors | no | untested | — |
 | Training-data attribution | partial | homology control done; full influence functions not attempted | — |
 | Steering / clamping | historical | calibrated negative in prior R2 work | causal |
-| *(circuit census — not on the original list)* | yes | **L5, the strongest part-2 result** | substrate |
+| *(circuit census — not on the original list)* | yes | **L5: `paa_specific` screen failure for copy-suppression on GPT-2-large** | substrate |
 
 ---
 
@@ -321,7 +321,7 @@ No proposal is advanced here that is not traceable to a catalogued limitation. T
 
 1. **From L5** — a causal-effect-based mechanism comparison over a fixed budget of exhaustively tested heads, requiring no valid cheap screen. Trades coverage for validity. Per-instance ΔM-gap matrices were retained, so its feasibility is answerable without a rerun.
 2. **From L1/L3/L4** — a dictionary-evaluation protocol whose estimand is power-checked on the text control before any protein arm is scored, reporting loss recovered and KL rather than FVU.
-3. **From L8** — a readout that does not route through the unembedding, since the rank-(V−1) aperture is the one hard protein-specific algebraic constraint in the catalogue.
+3. **From L8** — a readout that does not route through the unembedding, since the rank-(V−1) aperture is a hard vocabulary-conditional algebraic constraint and small residue vocabularies make it especially restrictive.
 
 Any method that is built is benchmarked against SAE, CLT, probes, dense low-rank and random controls, on fidelity, causal selectivity, cross-seed stability and generalisation to disjoint protein families.
 
@@ -333,7 +333,7 @@ Total **~90–140 H200 GPU-hours**, comfortably inside a 4-card pod over a few w
 
 ### Phase A — close part 1. No new measurement. ~0 GPU-h.
 
-Write the differences section as *instrumental*: one table of every measured text-vs-protein difference with its post-control status — aperture rank (survives, vocabulary-conditional), non-local propagation (survives, validation scale), induction prevalence (survives only as probe-conditional, scale-adjusted 2.34x against a within-text corpus contrast of 2.30x), corpus repeat statistics, and the dissolved effects. **Exit condition: no further part-1 measurement is authorised.**
+Write the differences section as *instrumental*: one table of every measured text-vs-protein difference with its post-control status — aperture rank (survives, vocabulary-conditional), non-local propagation (survives, validation scale), induction prevalence (probe-conditional; the scale-matched 2.34x shortfall is descriptive and has no artifact-backed scale-adjusted p-value), corpus repeat statistics, and the dissolved effects. The former gpt2 / dialogpt-small 2.30x corpus contrast is retracted because DialoGPT-small is off-distribution. **Exit condition: no further part-1 measurement is authorised.**
 
 ### Phase B — build part 2 as measured evidence. ~35–45 H200 GPU-h.
 
@@ -354,7 +354,7 @@ This is the deliverable.
 
 | item | gate | cost |
 |---|---|---|
-| **C1** Powered-estimand re-qualification at `mlp_window8@d0.50@cohort_mean`, plus the matched gpt2-large windowed CLT that P0-2b never had | text control must land in the ~0.6 replacement-score range; threshold set **after** observing it | 17–50 GPU-h |
+| **C1 — exploratory calibration** | powered-estimand re-qualification at `mlp_window8@d0.50@cohort_mean`, plus the matched gpt2-large windowed CLT that P0-2b never had; calibrate on the text control, and freeze any resulting threshold before protein-arm evaluation to support a later confirmatory gate | 17–50 GPU-h |
 | **C2** Aperture-functional attribution (§8.3) | after B1; within-arm descriptive only, no cross-arm coefficient | 3–5 GPU-h |
 | **C3** Oracle-grounded explanation, normalised by measured channel capacity | after B3; attainability shown on gpt2-large first | 4–8 GPU-h |
 | ~~**C4** Reliance-weighted dictionaries~~ | ~~only if B2 reproduces~~ — **B2 returned NO (EXP-R2-062); dropped** | ~~20–40 GPU-h~~ |
@@ -362,7 +362,7 @@ This is the deliverable.
 
 ### 9.1 Abandoned, with reasons
 
-1. **Prevalence-census expansion to further mechanisms** — closed by its own text control (L5).
+1. **Expansion of the present `paa_specific` screen to further mechanisms** — closed by its GPT-2-large copy-suppression control (L5). A different screen or an exhaustive causal effect-size census requires a new, independently gated design.
 2. **Normalised MLP/attention share as a modality instrument** — moved four times on a quantity of magnitude ~0.4. More seeds will not fix a fragile denominator. Keep the unnormalised per-scope ΔCE values.
 3. **J-Lens as a fitted cross-arm coefficient** — keep the algebraic rank, drop the regression.
 4. **Pair / residue-pair transcoders** — standing rejection, motivation retracted at ~0.03 AUC over control.
@@ -372,9 +372,8 @@ This is the deliverable.
 8. **Steering re-runs before a dense readout exists** — without one, a steering run is not a test.
 9. **Further investment in the induction modality claim.**
 
-### 9.2 Two unresolved questions worth 7 GPU-hours
+### 9.2 One unresolved question worth 5 GPU-hours
 
-- **Does the variance–behaviour dissociation survive the rendering fix?** It is recorded as solid and motivates a whole method line, but its largest contrast comes from a contaminated arm. ~2 GPU-h.
 - **Does non-local propagation survive at production scale?** The one finding that has survived every correction, and denominator-free — but far bands rest on 2–16 cases. ~5 GPU-h. If it holds it is the strongest substrate claim the programme has.
 
 ---
@@ -383,18 +382,20 @@ This is the deliverable.
 
 Organised by the objective each experiment serves. "Stands" means the result is currently defensible; "retracted" means withdrawn on evidence; "superseded" means replaced by a better-controlled measurement.
 
+**Stable aliases for reused transfer-series ids.** The append-only log reused EXP-R2-025 through EXP-R2-032. This audit therefore uses `TR-025` = EXP-R2-025 (2026-07-24), `TR-026` = EXP-R2-026 (2026-07-27), and `TR-027` through `TR-032` = EXP-R2-027 through EXP-R2-032 (2026-07-28). These aliases do not renumber or rewrite history.
+
 ### A.1 Part 1 — differences
 
 | id | subject | status |
 |---|---|---|
-| EXP-R2-025 (TG-01..07) | transfer screen: budget, order/composition, matched SAE, frozen attention | superseded in part; **TG-01 not re-run — no TG-01 number is currently quotable** (see below) |
-| EXP-R2-026 (TG-08..10) | dictionary budget sweep; P0-2b follow-up | stands (L3) |
-| EXP-R2-027 | estimand power and pathway budget under cohort parity | stands (L1) |
-| EXP-R2-028 | ProtGPT2 input-rendering defect; shared-cohort design manufactured the gap | stands (L11) |
-| EXP-R2-029 | circuit primitives: induction, DLA, activation patching | superseded by 057 |
-| EXP-R2-030 | apparent modality gap absorbed by tokenisation | **retracted** by 033 |
-| EXP-R2-031 | lens family; output-interface rank; unigram estimator defect | stands (L8, L12) |
-| EXP-R2-032 | induction dissociation survives; DLA/ablation divergence explained | partly retracted |
+| TR-025 / EXP-R2-025 (2026-07-24; TG-01..07) | transfer screen: budget, order/composition, matched SAE, frozen attention | superseded in part; **TG-01 not re-run — no TG-01 number is currently quotable** (see below) |
+| TR-026 / EXP-R2-026 (2026-07-27; TG-08..10) | dictionary budget sweep; P0-2b follow-up | stands (L3) |
+| TR-027 / EXP-R2-027 (2026-07-28) | estimand power and pathway budget under cohort parity | superseded quantitatively by EXP-R2-060; historical 48-estimand result |
+| TR-028 / EXP-R2-028 (2026-07-28) | ProtGPT2 input-rendering defect; shared-cohort design manufactured the gap | stands (L11) |
+| TR-029 / EXP-R2-029 (2026-07-28) | circuit primitives: induction, DLA, activation patching | superseded by 057 |
+| TR-030 / EXP-R2-030 (2026-07-28) | apparent modality gap absorbed by tokenisation | **retracted** by 033 |
+| TR-031 / EXP-R2-031 (2026-07-28) | lens family; output-interface rank; unigram estimator defect | stands (L8, L12) |
+| TR-032 / EXP-R2-032 (2026-07-28) | induction dissociation survives; DLA/ablation divergence explained | partly retracted |
 | EXP-R2-033 | tokenisation conclusion retracted; data variation eliminated | stands |
 | EXP-R2-034 | ZymCTRL prompt-leak confound | stands (L15) |
 | EXP-R2-036 | design cells; ProtGPT2 is the only subword protein LM | stands |
@@ -403,38 +404,45 @@ Organised by the objective each experiment serves. "Stands" means the result is 
 | EXP-R2-045 | aperture axis reads null | stands (L8) |
 | EXP-R2-046 | first production H200 campaign | superseded |
 | EXP-R2-048 | approximate-repeat probe; deficit survives | superseded by 057 |
-| EXP-R2-050 | homology control — head count is not memorisation | **re-run and reinstated** (EXP-R2-064, §0.05) |
+| EXP-R2-050 | homology control — no head-count separation across measured protein homology strata | **re-run and qualified** (EXP-R2-064, §0.05); no genuine low-homology stratum or symmetric text-corpus control, so no matched cross-modal memorisation claim |
 | EXP-R2-050 | homology control — peak prefix-matching strength | **reverses to memorisation-consistent** on all three arms once masking is off (EXP-R2-064); already unreportable via EXP-R2-049 |
 | EXP-R2-053 | induction path patching — mediation refuted | stands |
 | EXP-R2-054 | nine-stage campaign; text side found to be n=1 | stands (L18) |
 | EXP-R2-055 | text-side diversification | stands (L19) |
 | EXP-R2-056 | text-side generalisation; deficit survives, magnitude overstated | superseded by 057 |
 | **EXP-R2-057** | **threshold robustness and scale separation** | **stands — terminal for part 1** |
+| **EXP-R2-060** | eleven-arm instrument-transfer campaign | current estimand-power and pathway-budget results; qualified by EXP-R2-063 |
+| **EXP-R2-062** | corrected TG rendering and seeded cohorts | B2 completed NO; variance–behaviour dissociation and C4 motivation retracted |
+| **EXP-R2-064** | masking-free homology control | within-protein head-count result qualified; peak-strength result reverses toward memorisation |
 
 ### A.2 Part 2 — limitations
 
 | id | subject | limitation |
 |---|---|---|
-| EXP-R2-026 (TG-08) | dictionary budget sweep | L3 |
-| EXP-R2-027 | estimand power | L1 |
-| EXP-R2-028 | input rendering | L11 |
-| EXP-R2-031 | aperture rank; estimator bias | L8, L12 |
+| TR-026 / EXP-R2-026 (2026-07-27; TG-08) | dictionary budget sweep | L3 |
+| TR-027 / EXP-R2-027 (2026-07-28) | historical 48-estimand power sweep | L1; superseded quantitatively by EXP-R2-060 |
+| TR-028 / EXP-R2-028 (2026-07-28) | input rendering | L11 |
+| TR-031 / EXP-R2-031 (2026-07-28) | aperture rank; estimator bias | L8, L12 |
 | EXP-R2-040 | probes and concept erasure; decodability is not reliance | L16 |
 | EXP-R2-045 | denominator-free is not enough | L4 |
 | EXP-R2-048 | aligned-pair coverage collapse | L14 |
 | EXP-R2-055 | normalisation-form silent failure | L19 |
 | EXP-R2-057 | environment default narrowed the panel | L18 |
-| **EXP-R2-059** | **PAA gate: census methodology has no valid screen** | **L5, L6, L13, L17** |
+| **EXP-R2-059** | **`paa_specific` fails as a copy-suppression ranking screen on GPT-2-large** | **L5, L6, L13, L17; no general census failure or protein-arm result** |
+| **EXP-R2-060** | **eleven-arm instrument-transfer campaign** | **current L1 estimand sweep; cohort sensitivity and qualified pathway/lens results** |
+| **EXP-R2-061** | **transfer-code audit and DIAMOND masking defect** | **retracted the original homology control pending EXP-R2-064** |
+| **EXP-R2-062** | **corrected rendering and TG re-run** | **B2 returned NO; strengthens L3/L11 and retracts C4's motivation** |
+| **EXP-R2-064** | **masking-free homology re-run** | **qualifies the head-count result and reverses peak strength; cross-modal memorisation unresolved** |
 
 ### A.3 Infrastructure and provenance
 
-EXP-R2-035 (results-wipe diagnosis), EXP-R2-037 (H200 migration), EXP-R2-041/042/043/044 (controller/worker refactor, contract reconciliation, port validation, dispatch split), EXP-R2-049 (cohort ceiling), EXP-R2-051/052 (staging; code-freeze scope), EXP-R2-058 (GPFS staging with byte-level validation of all eleven checkpoints), EXP-R2-063 (`scripts/transfer/` audit: one panel contract replaces five hand-maintained arm lists; nine argument guards hoisted out of post-model-load positions), EXP-R2-065 (documents, logs and results reorganised against this document's objective; the retired conserved-readout / npj scope frozen at `archive/legacy/r2_retired_scope_20260729/` with a provenance README).
+EXP-R2-035 (results-wipe diagnosis), EXP-R2-037 (H200 migration), EXP-R2-041/042/043/044 (controller/worker refactor, contract reconciliation, port validation, dispatch split), EXP-R2-049 (cohort ceiling), EXP-R2-051/052 (staging; code-freeze scope), EXP-R2-058 (GPFS staging and load checks for all eleven checkpoints; full SHA-256 for ten, byte-size-only evidence for Qwen2.5-0.5B), EXP-R2-063 (`scripts/transfer/` audit: one panel contract replaces five hand-maintained arm lists; cohort-band and panel qualifications), EXP-R2-065 (documents, logs and results reorganised against this document's objective), EXP-R2-066 (live import closure, scoring/TG contracts, TG-01 non-runnability and corrected-stage status).
 
-**Where the retired scope went.** The conserved sparse-readout atlas, EC steering, enzyme design, the npj manuscript package, the P0 protocol set, the npj literature corpus and the recoverability preregistration are at `archive/legacy/r2_retired_scope_20260729/`. Four things were kept live because this programme depends on them: `results/final_checkpoints/` (the only protein dictionaries held locally, an input to C1), `results/transfer_gap_20260724/` (cited in §0.1), the `evidence/p0_2*` receipt chain (the evidence behind L1 and the baseline C1 re-qualifies), and the April CLT training logs. Note that the 27 P0-2 dictionaries are **not** in `results/final_checkpoints/` — they are on GPFS, and their paths and SHA-256 digests are in `evidence/p0_2b_fidelity_20260727/p0_2b_fidelity_spec.executed.json`.
+**Where the retired scope went.** The conserved sparse-readout atlas, EC steering, enzyme design, the npj manuscript package, the P0 protocol set, the npj literature corpus and the recoverability preregistration are at `/Data2/lzp/bio_archive/legacy/r2_retired_scope_20260729/`. Four things were kept live because this programme depends on them: `results/final_checkpoints/` (the only protein dictionaries held locally, an input to C1), `results/transfer_gap_20260724/` (cited in §0.1), the `evidence/p0_2*` receipt chain (the evidence behind L1 and the baseline C1 re-qualifies), and the April CLT training logs. Note that the 27 P0-2 dictionaries are **not** in `results/final_checkpoints/` — they are on GPFS, and their paths and SHA-256 digests are in `evidence/p0_2b_fidelity_20260727/p0_2b_fidelity_spec.executed.json`.
 
 ### A.4 Provenance hazard
 
-**Experiment ids EXP-R2-026 through EXP-R2-032 are each used twice** in `EXPERIMENT_LOG.md` — once by the July 17–22 npj-revision series and once by the July 27–28 transfer series. Cite these by date as well as id. Ids from EXP-R2-033 onward are unique.
+**Experiment ids EXP-R2-025 through EXP-R2-032 are each used twice** in `EXPERIMENT_LOG.md` — once by the July 17–27 npj-revision series and once by the July 24–28 transfer series. Historical entries remain unchanged. Current transfer-series citations must use the `TR-025` through `TR-032` aliases defined above or include both date and original id. Ids from EXP-R2-033 onward are unique.
 
 ---
 

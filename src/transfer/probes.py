@@ -142,7 +142,7 @@ from .statistics import make_group_splits, paired_group_bootstrap
 SCHEMA_VERSION = "r2_transfer_probe_erasure_v1"
 
 PROTEINGYM_ROOT = env_path(
-    "R2_PROTEINGYM_DIR", REPO / "data/proteingym/DMS_ProteinGym_substitutions"
+    "TRANSFER_PROTEINGYM_DIR", REPO / "data/proteingym/DMS_ProteinGym_substitutions"
 )
 
 #: Relative depths, so a 36-layer and a 27-layer arm are read at comparable
@@ -1329,7 +1329,7 @@ def fitness_units(
     refused = refusal_reason("fitness", arm, ec_conditioning=ec_conditioning)
     if refused is not None:
         raise ValueError(f"{arm.name}: {refused}")
-    require_input_path(PROTEINGYM_ROOT, "R2_PROTEINGYM_DIR")
+    require_input_path(PROTEINGYM_ROOT, "TRANSFER_PROTEINGYM_DIR")
     catalogue = sorted(PROTEINGYM_ROOT.glob("*.csv"))
     if not catalogue:
         raise RuntimeError(f"no ProteinGym assay files under {PROTEINGYM_ROOT}")
@@ -2003,6 +2003,18 @@ def skill_block(
 ) -> dict[str, Any]:
     """Chance-corrected skill with a grouped paired bootstrap interval."""
 
+    chance_score = float(metric(y, chance_predictions))
+    if 1.0 - chance_score <= 1e-6:
+        raise RuntimeError(
+            "the chance model already scores one; the skill normalisation is undefined"
+        )
+
+    def chance_corrected_skill(probe_score: float, baseline_score: float) -> float:
+        headroom = 1.0 - baseline_score
+        if headroom <= 1e-6:
+            return float("nan")
+        return (probe_score - baseline_score) / headroom
+
     paired = paired_group_bootstrap(
         y,
         probe_predictions,
@@ -2011,17 +2023,13 @@ def skill_block(
         metric,
         seed=seed,
         n_bootstrap=n_bootstrap,
+        derived_statistic=chance_corrected_skill,
     )
-    headroom = 1.0 - paired["right_score"]
-    if headroom <= 1e-6:
-        raise RuntimeError(
-            "the chance model already scores one; the skill normalisation is undefined"
-        )
     return {
         "score": paired["left_score"],
         "chance_score": paired["right_score"],
-        "skill": paired["difference"] / headroom,
-        "skill_ci95": [value / headroom for value in paired["difference_ci95"]],
+        "skill": paired["derived_score"],
+        "skill_ci95": paired["derived_ci95"],
         "raw_difference": paired["difference"],
         "raw_difference_ci95": paired["difference_ci95"],
         "n_groups": paired["n_groups"],

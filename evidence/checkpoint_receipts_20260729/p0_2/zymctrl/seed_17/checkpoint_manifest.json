@@ -1,0 +1,30 @@
+{
+  "complete": true,
+  "files": {
+    "clt.pt": {
+      "bytes": 12418875728,
+      "sha256": "32a828250bd1f2a13e0e9c811a3fd69567b4c1eee84513dcc6282e716b61dbe0"
+    },
+    "config.yaml": {
+      "bytes": 1125,
+      "sha256": "61701046e2664d7ef919af91491527b48670c7fa3bdab56c854241d4b6825f58"
+    },
+    "optimizer.pt": {
+      "bytes": 24833043059,
+      "sha256": "5dac1cd146158144df9274a659943e8b38cf2d71b1148ed94a10f01e86b20042"
+    },
+    "scheduler.pt": {
+      "bytes": 1721,
+      "sha256": "dbde8b77a025d3ecc54b60801038c2d5f2e69eabb02ffad301b60c3d8990869c"
+    },
+    "trainer_state.pt": {
+      "bytes": 147093,
+      "sha256": "f5d065be68d3ba74089951a12ce45c0d3505f5355c22225025ea49a9b88123ee"
+    }
+  },
+  "kind": "resumable",
+  "schema_version": 2,
+  "step": 200000,
+  "trainer_source_sha256": "c215ad7dcac96f837f4a69c451ffc6ae9e6ce1f4c46a61b45884e08824be5e8d",
+  "world_size": 1
+}

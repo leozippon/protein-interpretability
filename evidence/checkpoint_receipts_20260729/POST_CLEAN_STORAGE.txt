@@ -1,0 +1,5 @@
+2.1T	/oss-pvc/zhk_zip
+1.2T	/gpfs/jiaotongdamoxing/zhk_zip
+90G	/oss-pvc/zhk_zip/outputs/research2/clt_weights
+100G	/gpfs/jiaotongdamoxing/zhk_zip/biocc/npj_revision_20260717/dictionaries_topk_bf16_r2
+24G	/gpfs/jiaotongdamoxing/zhk_zip/biocc/Research2/results/clt_weights

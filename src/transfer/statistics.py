@@ -97,12 +97,15 @@ def paired_group_bootstrap(
     *,
     seed: int,
     n_bootstrap: int = 1000,
+    derived_statistic: Callable[[float, float], float] | None = None,
 ) -> dict:
-    """Paired group bootstrap for a metric difference and ratio.
+    """Paired group bootstrap for a metric difference, ratio and optional transform.
 
     Groups are sampled with replacement and all observations in a sampled group
     are retained. The same sampled rows score both prediction vectors, so the
     pairing that makes the difference meaningful is preserved draw by draw.
+    ``derived_statistic`` receives the two scores from each draw, which keeps
+    composite statistics such as chance-corrected skill inside the bootstrap.
     """
 
     truth = np.asarray(y)
@@ -123,9 +126,12 @@ def paired_group_bootstrap(
 
     left_score = float(metric(truth, left))
     right_score = float(metric(truth, right))
+    if not np.isfinite(left_score) or not np.isfinite(right_score):
+        raise ValueError("the metric is non-finite on the full sample")
     rng = np.random.default_rng(seed)
     differences: list[float] = []
     ratios: list[float] = []
+    derived_draws: list[float] = []
     for _ in range(n_bootstrap):
         sampled_groups = rng.choice(
             unique_groups, size=unique_groups.size, replace=True
@@ -139,17 +145,27 @@ def paired_group_bootstrap(
             continue
         differences.append(left_boot - right_boot)
         if abs(right_boot) > 1e-12:
-            ratios.append(left_boot / right_boot)
+            ratio = left_boot / right_boot
+            if np.isfinite(ratio):
+                ratios.append(ratio)
+        if derived_statistic is not None:
+            derived = float(derived_statistic(left_boot, right_boot))
+            if np.isfinite(derived):
+                derived_draws.append(derived)
     if not differences:
         raise RuntimeError("no finite paired bootstrap draws were produced")
-    if len(differences) < MINIMUM_FINITE_DRAW_FRACTION * n_bootstrap:
+    minimum_draws = int(np.ceil(MINIMUM_FINITE_DRAW_FRACTION * n_bootstrap))
+    if len(differences) < minimum_draws:
         raise RuntimeError(
             f"only {len(differences)} of {n_bootstrap} paired bootstrap draws were "
             f"finite, below the {MINIMUM_FINITE_DRAW_FRACTION:.0%} floor; the "
             "percentile interval over what survives is conditioned on finiteness "
             "and is not the requested bootstrap distribution"
         )
-    return {
+    point_ratio = left_score / right_score if abs(right_score) > 1e-12 else None
+    if point_ratio is not None and not np.isfinite(point_ratio):
+        point_ratio = None
+    result = {
         "left_score": left_score,
         "right_score": right_score,
         "difference": left_score - right_score,
@@ -157,10 +173,10 @@ def paired_group_bootstrap(
             float(np.percentile(differences, 2.5)),
             float(np.percentile(differences, 97.5)),
         ],
-        "ratio": left_score / right_score if abs(right_score) > 1e-12 else None,
+        "ratio": point_ratio,
         "ratio_ci95": (
             [float(np.percentile(ratios, 2.5)), float(np.percentile(ratios, 97.5))]
-            if ratios
+            if len(ratios) >= minimum_draws
             else None
         ),
         "n_bootstrap": int(n_bootstrap),
@@ -175,6 +191,26 @@ def paired_group_bootstrap(
         "n_ratio_draws": len(ratios),
         "n_groups": int(unique_groups.size),
     }
+    if derived_statistic is not None:
+        derived_score = float(derived_statistic(left_score, right_score))
+        if not np.isfinite(derived_score):
+            raise RuntimeError("the requested derived statistic is undefined on the full sample")
+        if len(derived_draws) < minimum_draws:
+            raise RuntimeError(
+                f"only {len(derived_draws)} of {n_bootstrap} derived-statistic bootstrap "
+                f"draws were finite, below the {MINIMUM_FINITE_DRAW_FRACTION:.0%} floor"
+            )
+        result.update(
+            {
+                "derived_score": derived_score,
+                "derived_ci95": [
+                    float(np.percentile(derived_draws, 2.5)),
+                    float(np.percentile(derived_draws, 97.5)),
+                ],
+                "n_derived_draws": len(derived_draws),
+            }
+        )
+    return result
 
 
 def make_group_splits(

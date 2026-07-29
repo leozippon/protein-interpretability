@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# WORKER for the H200 transfer-measurement campaign (R2). Runs INSIDE an
+# Worker for the H200 transfer-measurement campaign. Runs inside an
 # H200 pod, invoked by ../run_transfer_h200.sh (the controller) via
 # ~/hangzhou-remote/ssh_tunnel/h200_pod_exec.sh against the frozen code
 # snapshot this file ships inside of. Do not invoke this script directly
@@ -36,7 +36,7 @@ set -euo pipefail
 # not as an error, and the item is simply redone.
 #
 # Import preflight. Before any GPU is touched, verify_entry_points_importable
-# imports each of the nine entry points inside this snapshot (as a module,
+# imports each selected entry point inside this snapshot (as a module,
 # so main() never runs) and fails loudly, listing every failure, if any of
 # them cannot be imported. This exists because a code-freeze scope that
 # missed src/revision/ once shipped a snapshot that scheduled four GPUs and
@@ -57,12 +57,13 @@ set -euo pipefail
 #       --skip-truncation --dtype --cohort-name --out DIR. Scores every arm
 #       passed to one invocation together in one process and writes one
 #       combined report, so this worker cannot dispatch it purely per arm.
-#       It is split into up to four items instead of the two (text,
+#       It is split into up to five items instead of the two (text,
 #       protein) an by-kind-alone split would give:
 #         text                gpt2-large
 #         protein_large_vocab protgpt2
 #         protein_small_vocab zymctrl (--with-ec; EC-conditioned)
-#         protein_progen2     progen2-medium (--dtype float32)
+#         protein_progen2_base    progen2-base (default dtype)
+#         protein_progen2_medium  progen2-medium (--dtype float32)
 #       Two independent reasons force this, both from the port agent's
 #       L20-vs-H200 cross-check:
 #       (a) `truncation_curve` (src/transfer/budget.py) raises a hard,
@@ -73,8 +74,8 @@ set -euo pipefail
 #           combined report only after its whole per-arm loop finishes, one
 #           arm raising loses every other arm already computed in that same
 #           invocation -- so gpt2-large and ProtGPT2 (vocab > 1024) MUST run
-#           with --skip-truncation, and zymctrl/progen2-medium (vocab 458
-#           and 32) MUST NOT, since they can compute the curve and it is
+#           with --skip-truncation, and zymctrl/progen2-base/progen2-medium
+#           MUST NOT, since they can compute the curve and it is
 #           part of the measurement. The guard itself is deliberately not
 #           relaxed upstream: trimming is numerically non-inert (up to 0.25
 #           in a logit, 0.12 nats in one token's NLL), so a curve computed
@@ -125,7 +126,7 @@ set -euo pipefail
 #       everything configured" default, since the member-name space is not
 #       verified to line up with ARMS) and points --backup-dir at pod-local
 #       scratch, matching the script's own stated reason for that flag:
-#       "results/transfer_20260728 has twice been deleted by a concurrent
+#       "results/transfer has twice been deleted by a concurrent
 #       process ... the second copy is written under logs/, which is
 #       local-only". --ladder-table defaults to
 #       docs/analysis/MODEL_LADDER_20260728.md, which lives outside
@@ -157,7 +158,7 @@ set -euo pipefail
 # bfloat16 rounding is comparable to the effect being measured -- the
 # script's own tolerance guard correctly refused to emit a wrong Jacobian
 # rather than silently return one. The one remaining override
-# (cohort_power's protein_progen2 item, --dtype float32) is exactly the
+# (cohort_power's protein_progen2_medium item, --dtype float32) is exactly the
 # shape an override should take: narrow, applies to one arm/item only, and
 # justified by a specific measured divergence (see that case in
 # build_command). Every other stage now runs with no --dtype flag at all,
@@ -182,14 +183,7 @@ TRANSFER_SCRIPTS="${WORKER_DIR}"
 # without a single downstream number looking wrong -- which is the shape of L18.
 # verify_panel_contract below re-derives this file from the live panel before any
 # GPU is scheduled, so a stale copy cannot reach a measurement.
-if [ ! -f "${WORKER_DIR}/panel_contract.sh" ]; then
-  echo "missing ${WORKER_DIR}/panel_contract.sh -- run" >&2
-  echo "  python scripts/transfer/panel_contract.py --emit" >&2
-  echo "and re-freeze; the worker will not schedule without the panel contract" >&2
-  exit 2
-fi
-# shellcheck source=/dev/null
-source "${WORKER_DIR}/panel_contract.sh"
+PANEL_CONTRACT_SH="${WORKER_DIR}/panel_contract.sh"
 
 TEXT_ARM=""
 ARMS=""
@@ -202,7 +196,7 @@ LOGS_ROOT=""
 EXPECTED_GPU_COUNT=""
 MIN_FREE_MEM_MIB="${MIN_FREE_MEM_MIB:-16000}"
 FORCE=0
-LOCAL_SCRATCH_ROOT="${LOCAL_SCRATCH_ROOT:-/tmp/r2_transfer_worker}"
+LOCAL_SCRATCH_ROOT="${LOCAL_SCRATCH_ROOT:-/tmp/interpretability_transfer_worker}"
 
 #: Failures that must not stop the campaign but must still fail it. Exactly one
 #: kind qualifies: an item that produces no input any later stage reads, so
@@ -215,12 +209,11 @@ DEFERRED_FAILURES=()
 #: campaign that skipped a stage has not measured it, and until EXP-R2-067 the
 #: worker logged one SKIP-DATA line and then ended with "campaign complete" and
 #: exit 0. That is a false success, and it was not hypothetical:
-#: h200_env.sh exports none of R2_UNIREF50_FASTA, R2_DIAMOND_DIR or
-#: R2_DIAMOND_DB, which extra_vars_for_stage requires for homology_control, so
-#: every default campaign skipped the memorisation control and reported
-#: complete. These are listed at the end and the worker exits non-zero, exactly
-#: like DEFERRED_FAILURES; rerunning the same command still retries them.
+#: A previous environment omitted the homology inputs, so the default campaign
+#: skipped the memorisation control and still reported success. These are listed
+#: at the end and the worker exits non-zero, exactly like DEFERRED_FAILURES.
 SKIPPED_FOR_DATA=()
+SKIP_DATA_STATUS=75
 
 # Per-stage scale-parameter passthrough (--n-seq, --pool-size, --seeds and so
 # on). Populated from repeated --stage-args STAGE BASE64 flags below and
@@ -260,6 +253,20 @@ log() {
   printf '[%s] %s\n' "$(date --iso-8601=seconds)" "$*"
 }
 
+reject_duplicate_values() {
+  local label="$1"
+  shift
+  local value
+  declare -A seen=()
+  for value in "$@"; do
+    if [ -n "${seen[${value}]+x}" ]; then
+      echo "${label} contains duplicate value: ${value}" >&2
+      exit 2
+    fi
+    seen["${value}"]=1
+  done
+}
+
 # ----------------------------------------------------------------- arguments
 
 while [ $# -gt 0 ]; do
@@ -279,6 +286,10 @@ while [ $# -gt 0 ]; do
         echo "failed to base64-decode --stage-args for stage $2" >&2
         exit 2
       }
+      if [ -n "${STAGE_EXTRA_ARGS[$2]+x}" ]; then
+        echo "duplicate --stage-args scope: $2" >&2
+        exit 2
+      fi
       STAGE_EXTRA_ARGS["$2"]="${decoded}"
       shift 3
       ;;
@@ -287,6 +298,10 @@ while [ $# -gt 0 ]; do
         echo "failed to base64-decode --item-args for stage $2 item $3" >&2
         exit 2
       }
+      if [ -n "${ITEM_EXTRA_ARGS[$2/$3]+x}" ]; then
+        echo "duplicate --item-args scope: $2/$3" >&2
+        exit 2
+      fi
       ITEM_EXTRA_ARGS["$2/$3"]="${decoded}"
       shift 4
       ;;
@@ -311,20 +326,48 @@ done
 # this".
 CODE_HASH_SHORT="${RUN_ID##*_}"
 
+verify_snapshot_manifest() {
+  local manifest="${SNAPSHOT_DIR}/CODE_CONTENT_SHA256SUMS"
+  local manifest_hash
+  if [ ! -f "${manifest}" ]; then
+    echo "snapshot manifest is missing: ${manifest}" >&2
+    exit 2
+  fi
+  manifest_hash="$(sha256sum "${manifest}" | awk '{print $1}')"
+  if [ "${manifest_hash:0:12}" != "${CODE_HASH_SHORT}" ]; then
+    echo "snapshot manifest hash does not match run-id ${RUN_ID}" >&2
+    exit 2
+  fi
+  if ! (cd "${SNAPSHOT_DIR}" && sha256sum -c -- CODE_CONTENT_SHA256SUMS >/dev/null); then
+    echo "snapshot content checksum verification failed: ${SNAPSHOT_DIR}" >&2
+    exit 2
+  fi
+}
+
+verify_snapshot_manifest
+
+if [ ! -f "${PANEL_CONTRACT_SH}" ]; then
+  echo "missing ${PANEL_CONTRACT_SH} -- run" >&2
+  echo "  python scripts/transfer/panel_contract.py --emit" >&2
+  echo "and re-freeze; the worker will not schedule without the panel contract" >&2
+  exit 2
+fi
+# shellcheck source=/dev/null
+source "${PANEL_CONTRACT_SH}"
+
 # ------------------------------------------------------------- pod environment
 
 # scripts/transfer/h200_env.sh: GPFS path overrides for this pod, written by
 # the port agent, sourced here rather than duplicated. It exports (among
-# other things) R2_REPO_ROOT, R2_MODEL_BASE_DIR, R2_TEXT_MODEL_DIR,
-# R2_TEXT_MODEL_BASE_DIR, R2_OPENWEBTEXT_DIR, R2_SWISSPROT_FASTA,
-# R2_ZYMCTRL_FASTA, R2_PFAM_RESIDUE_TSV, R2_PROTEINGYM_DIR, R2_ALPHAFOLD_DIR
+# other things) TRANSFER_REPO_ROOT, TRANSFER_MODEL_BASE_DIR, TRANSFER_TEXT_MODEL_DIR,
+# TRANSFER_TEXT_MODEL_BASE_DIR, TRANSFER_OPENWEBTEXT_DIR, TRANSFER_SWISSPROT_FASTA,
+# TRANSFER_ZYMCTRL_FASTA, TRANSFER_PFAM_RESIDUE_TSV, TRANSFER_PROTEINGYM_DIR, TRANSFER_ALPHAFOLD_DIR
 # (the variables src/transfer/*.py actually reads via env_path/
-# require_input_path), plus R2_PYTHON (the pod's interpreter -- there is no
-# conda env here) and R2_PACKAGE_ROOT (feeds PYTHONPATH so `import
-# src.transfer...` resolves). R2_GPFS_ROOT and R2_TRANSFER_GAP are
-# h200_env.sh's own internal composition variables; nothing here reads them
-# directly. R2_PACKAGE_ROOT is exported *before* sourcing so h200_env.sh's
-# own `${R2_PACKAGE_ROOT:-default}` picks up this run's own immutable
+# require_input_path), plus TRANSFER_PYTHON (the pod's interpreter -- there is no
+# conda env here) and TRANSFER_PACKAGE_ROOT (feeds PYTHONPATH so `import
+# src.transfer...` resolves). h200_env.sh's internal roots are not read here
+# directly. TRANSFER_PACKAGE_ROOT is exported *before* sourcing so h200_env.sh's
+# own `${TRANSFER_PACKAGE_ROOT:-default}` picks up this run's own immutable
 # snapshot rather than its generic, run-id-less default -- otherwise
 # `import src.transfer` could resolve to a different run's code.
 if [ ! -f "${WORKER_DIR}/h200_env.sh" ]; then
@@ -332,12 +375,12 @@ if [ ! -f "${WORKER_DIR}/h200_env.sh" ]; then
   echo "depends on has not been added to the snapshot yet" >&2
   exit 2
 fi
-export R2_PACKAGE_ROOT="${SNAPSHOT_DIR}"
+export TRANSFER_PACKAGE_ROOT="${SNAPSHOT_DIR}"
 # shellcheck source=/dev/null
 source "${WORKER_DIR}/h200_env.sh"
 
-if [ -z "${R2_PYTHON:-}" ] || [ ! -x "${R2_PYTHON}" ]; then
-  echo "h200_env.sh did not export a usable R2_PYTHON interpreter (got: '${R2_PYTHON:-}')" >&2
+if [ -z "${TRANSFER_PYTHON:-}" ] || [ ! -x "${TRANSFER_PYTHON}" ]; then
+  echo "h200_env.sh did not export a usable TRANSFER_PYTHON interpreter (got: '${TRANSFER_PYTHON:-}')" >&2
   exit 2
 fi
 
@@ -355,7 +398,7 @@ fi
 # because of) or a syntax error in a file still being edited (which is a
 # real defect and must fail here too, not be worked around).
 #
-# Each entry point gets its OWN short-lived interpreter (one `R2_PYTHON -c`
+# Each entry point gets its OWN short-lived interpreter (one `TRANSFER_PYTHON -c`
 # subprocess per file), not one shared interpreter for all nine. Run
 # 20260728152900_02f91a55c9e7 hit a false positive from the shared-
 # interpreter version: `03_estimand_power.py` failed with
@@ -375,7 +418,7 @@ fi
 # scheduled against a false negative.
 import_one_entry_point() {
   local path="$1"
-  "${R2_PYTHON}" -c '
+  "${TRANSFER_PYTHON}" -c '
 import importlib.util
 import sys
 
@@ -398,12 +441,12 @@ spec.loader.exec_module(module)
 # stages: 10_homology_control.py and 11_induction_path_patching.py were dispatched
 # without ever being import-checked, which is exactly the class of failure this
 # preflight exists to stop -- a code-freeze scope gap that loses four GPUs two
-# seconds in. Deriving it from R2_STAGE_ENTRY means a new stage is covered by
+# seconds in. Deriving it from TRANSFER_STAGE_ENTRY means a new stage is covered by
 # construction.
 requested_entry_points() {
   local stage
   for stage in "${REQUESTED_STAGES[@]}"; do
-    printf '%s\n' "${R2_STAGE_ENTRY[${stage}]}"
+    printf '%s\n' "${TRANSFER_STAGE_ENTRY[${stage}]}"
   done | LC_ALL=C sort -u
 }
 
@@ -474,9 +517,9 @@ verify_entry_points_parse_args() {
       label="${path}${sub:+ ${sub}} --help"
       status=0
       if [ -n "${sub}" ]; then
-        output="$("${R2_PYTHON}" "${path}" "${sub}" --help 2>&1)" || status=$?
+        output="$("${TRANSFER_PYTHON}" "${path}" "${sub}" --help 2>&1)" || status=$?
       else
-        output="$("${R2_PYTHON}" "${path}" --help 2>&1)" || status=$?
+        output="$("${TRANSFER_PYTHON}" "${path}" --help 2>&1)" || status=$?
       fi
       if [ "${status}" -ne 0 ]; then
         failures+=("${label}: exit ${status}: ${output}")
@@ -533,16 +576,16 @@ verify_gpfs_read_write() {
 # associative-array lookup instead of falling through to a default, which is the
 # property that was missing.
 arm_modality() {
-  local value="${R2_ARM_MODALITY[$1]:-}"
+  local value="${TRANSFER_ARM_MODALITY[$1]:-}"
   if [ -z "${value}" ]; then
-    echo "arm_modality: $1 is not in the panel contract (R2_CAMPAIGN_PANEL=${R2_CAMPAIGN_PANEL})" >&2
+    echo "arm_modality: $1 is not in the panel contract (TRANSFER_CAMPAIGN_PANEL=${TRANSFER_CAMPAIGN_PANEL})" >&2
     exit 2
   fi
   printf '%s\n' "${value}"
 }
 
 model_var_for_arm() {
-  local value="${R2_ARM_MODEL_VAR[$1]:-}"
+  local value="${TRANSFER_ARM_MODEL_VAR[$1]:-}"
   if [ -z "${value}" ]; then
     echo "model_var_for_arm: $1 is not in the panel contract" >&2
     exit 2
@@ -554,11 +597,11 @@ model_var_for_arm() {
 corpus_vars_for_arms() {
   local arm var
   for arm in "$@"; do
-    if [ -z "${R2_ARM_CORPUS_VARS[${arm}]+set}" ]; then
+    if [ -z "${TRANSFER_ARM_CORPUS_VARS[${arm}]+set}" ]; then
       echo "corpus_vars_for_arms: ${arm} is not in the panel contract" >&2
       exit 2
     fi
-    for var in ${R2_ARM_CORPUS_VARS[${arm}]}; do
+    for var in ${TRANSFER_ARM_CORPUS_VARS[${arm}]}; do
       printf '%s\n' "${var}"
     done
   done
@@ -578,16 +621,16 @@ stage_eligible_arms() {
   local -a requested=("$@")
   local arm allowed reason
   STAGE_ARMS_OUT=()
-  if [ -z "${R2_STAGE_ARMS[${stage}]+set}" ]; then
+  if [ -z "${TRANSFER_STAGE_ARMS[${stage}]+set}" ]; then
     echo "stage_eligible_arms: ${stage} is not in the panel contract" >&2
     exit 2
   fi
-  allowed=" ${R2_STAGE_ARMS[${stage}]} "
+  allowed=" ${TRANSFER_STAGE_ARMS[${stage}]} "
   for arm in "${requested[@]}"; do
     case "${allowed}" in
       *" ${arm} "*) STAGE_ARMS_OUT+=("${arm}") ;;
       *)
-        reason="${R2_STAGE_REFUSAL[${stage}/${arm}]:-not eligible (no reason recorded)}"
+        reason="${TRANSFER_STAGE_REFUSAL[${stage}/${arm}]:-not eligible (no reason recorded)}"
         log "SKIP-ARM   stage=${stage} arm=${arm} (${reason})"
         ;;
     esac
@@ -621,27 +664,25 @@ arms_for_item() {
 # need the missing path at all.
 extra_vars_for_stage() {
   case "$1" in
-    relational_channel) echo R2_ALPHAFOLD_DIR; echo R2_PFAM_RESIDUE_TSV ;;
+    relational_channel) echo TRANSFER_ALPHAFOLD_DIR; echo TRANSFER_PFAM_RESIDUE_TSV ;;
     explanation_channel)
-      echo R2_TEXT_MODEL_DIR
-      echo R2_OPENWEBTEXT_DIR
-      echo R2_SWISSPROT_FASTA
-      echo R2_ALPHAFOLD_DIR
-      echo R2_PFAM_RESIDUE_TSV
+      echo TRANSFER_TEXT_MODEL_DIR
+      echo TRANSFER_OPENWEBTEXT_DIR
+      echo TRANSFER_SWISSPROT_FASTA
+      echo TRANSFER_ALPHAFOLD_DIR
+      echo TRANSFER_PFAM_RESIDUE_TSV
       ;;
     convergence_control)
-      echo R2_MODEL_BASE_DIR
-      echo R2_TEXT_MODEL_DIR
-      echo R2_TEXT_MODEL_BASE_DIR
+      echo TRANSFER_MODEL_BASE_DIR
+      echo TRANSFER_TEXT_MODEL_DIR
+      echo TRANSFER_TEXT_MODEL_BASE_DIR
       ;;
-    probe_and_erasure) echo R2_PROTEINGYM_DIR ;;
+    probe_and_erasure) echo TRANSFER_PROTEINGYM_DIR ;;
     homology_control)
-      # The DIAMOND database and its UniRef50 source are the expensive
-      # prerequisites -- a missing one costs a full rebuild, so both are
-      # checked up front rather than at first use.
-      echo R2_UNIREF50_FASTA
-      echo R2_DIAMOND_DIR
-      echo R2_DIAMOND_DB
+      # Database, extraction and scratch paths are outputs created by the stage.
+      echo TRANSFER_UNIREF50_FASTA
+      echo TRANSFER_DIAMOND_TARBALL
+      echo TRANSFER_DIAMOND_CHECKSUM
       ;;
   esac
 }
@@ -747,8 +788,8 @@ verify_gpus() {
     verify_gpu_idle "${gpu}"
     log "GPU ${gpu} idle and ready"
   done
-  if ! "${R2_PYTHON}" -c 'import torch, transformers' >/dev/null 2>&1; then
-    echo "${R2_PYTHON} cannot import torch/transformers; h200_env.sh did not fully set up the pod's python environment" >&2
+  if ! "${TRANSFER_PYTHON}" -c 'import torch, transformers' >/dev/null 2>&1; then
+    echo "${TRANSFER_PYTHON} cannot import torch/transformers; h200_env.sh did not fully set up the pod's python environment" >&2
     exit 2
   fi
   log "GPU visibility/idle and python environment verified"
@@ -772,6 +813,10 @@ stage_final_dir() {
 # normalized out, since neither bears on what was measured -- and a skip
 # requires that record to match the current run's, not just a clean
 # checksum.
+#
+# Accepted unresolved defect: model and corpus trees are still identified by
+# mutable paths rather than content digests. Input-tree identity needs a
+# broader data/checkpoint manifest contract; path hashing would be false safety.
 
 # Prints CMD (as passed in "$@") with the value following --device, --out,
 # --output-root, --output-dir, --backup-dir, --results-root or --output
@@ -847,7 +892,7 @@ explain_incomplete() {
 # ignore it and read ARM_LIST/config directly.
 build_command() {
   local stage="$1" item="$2" gpu="$3" out_dir="$4"
-  CMD=("${R2_PYTHON}")
+  CMD=("${TRANSFER_PYTHON}")
   case "${stage}" in
     cohort_power)
       # See the "01" entry in the header comment for why this is four items,
@@ -869,17 +914,17 @@ build_command() {
       fi
       local -a item_arms=() item_extra=()
       read -r -a item_arms <<< "${COHORT_ITEM_ARMS_FOR[${item}]}"
-      read -r -a item_extra <<< "${R2_COHORT_ITEM_ARGS[${item}]}"
+      read -r -a item_extra <<< "${TRANSFER_COHORT_ITEM_ARGS[${item}]}"
       CMD+=("${TRANSFER_SCRIPTS}/01_cohort_power.py"
             --kind "$(arm_modality "${item_arms[0]}")"
             --arms "${item_arms[@]}"
             --device "cuda:${gpu}")
       [ "${#item_extra[@]}" -gt 0 ] && CMD+=("${item_extra[@]}")
-      if [ -n "${R2_COHORT_ITEM_COHORT_NAME[${item}]}" ]; then
+      if [ -n "${TRANSFER_COHORT_ITEM_COHORT_NAME[${item}]}" ]; then
         # Each protein sub-item needs its own --cohort-name: two non-EC protein
         # items produce byte-identical cohorts, hence identical digests, and
         # would collide on the same output filename under the shared default.
-        CMD+=(--cohort-name "${R2_COHORT_ITEM_COHORT_NAME[${item}]}")
+        CMD+=(--cohort-name "${TRANSFER_COHORT_ITEM_COHORT_NAME[${item}]}")
       fi
       CMD+=(--out "${out_dir}")
       ;;
@@ -988,20 +1033,21 @@ build_command() {
 assert_no_duplicate_options() {
   local stage="$1" item="$2"
   shift 2
-  local arg seen=" "
+  local arg option seen=" "
   for arg in "$@"; do
     case "${arg}" in
       --*)
+        option="${arg%%=*}"
         case "${seen}" in
-          *" ${arg} "*)
-            echo "stage-args for ${stage}/${item} repeat ${arg}, which this worker" >&2
+          *" ${option} "*)
+            echo "stage-args for ${stage}/${item} repeat ${option}, which this worker" >&2
             echo "already sets for this item. argparse would take the last one" >&2
             echo "silently. Change the flag in build_command, with its reason." >&2
             echo "  resolved command: $*" >&2
             exit 2
             ;;
         esac
-        seen="${seen}${arg} "
+        seen="${seen}${option} "
         ;;
     esac
   done
@@ -1047,7 +1093,7 @@ verify_commands_buildable() {
       *)
         # Panel-wide and armless stages. A panel-wide stage whose arm list is
         # empty is skipped at dispatch (run_panel_stage), so it is not built here.
-        case "${R2_STAGE_SCOPE[${stage}]}" in
+        case "${TRANSFER_STAGE_SCOPE[${stage}]}" in
           armless) build_command "${stage}" panel 0 "<pending>" ;;
           *)
             [ -n "${STAGE_ARMS_FOR[${stage}]:-}" ] \
@@ -1060,6 +1106,29 @@ verify_commands_buildable() {
   log "command preflight passed"
 }
 
+finish_campaign() {
+  local failed=0 failure skipped
+  if [ "${#DEFERRED_FAILURES[@]}" -gt 0 ]; then
+    failed=1
+    echo "campaign FAILED: run_id=${RUN_ID}; ${#DEFERRED_FAILURES[@]} deferred failure(s):" >&2
+    for failure in "${DEFERRED_FAILURES[@]}"; do
+      echo "  FAIL: ${failure}" >&2
+    done
+  fi
+  if [ "${#SKIPPED_FOR_DATA[@]}" -gt 0 ]; then
+    failed=1
+    echo "campaign INCOMPLETE: run_id=${RUN_ID}; ${#SKIPPED_FOR_DATA[@]} item(s) never ran:" >&2
+    for skipped in "${SKIPPED_FOR_DATA[@]}"; do
+      echo "  SKIP-DATA: ${skipped}" >&2
+    done
+  fi
+  if [ "${failed}" -ne 0 ]; then
+    echo "Completed items are retained. Re-run the same command after fixing the reported failures." >&2
+    exit 1
+  fi
+  log "campaign complete: run_id=${RUN_ID} results=${RESULTS_ROOT} logs=${LOGS_ROOT}"
+}
+
 # Re-derives panel_contract.sh from the live src/transfer/arms.py and refuses if
 # the sourced copy disagrees. This is what makes the generated file a cache of
 # the declaration rather than a second declaration: a panel edit that was not
@@ -1067,7 +1136,7 @@ verify_commands_buildable() {
 # scheduled, instead of running a stale arm list.
 verify_panel_contract() {
   log "panel contract: re-deriving ${WORKER_DIR}/panel_contract.sh from src/transfer/arms.py"
-  if ! "${R2_PYTHON}" "${TRANSFER_SCRIPTS}/panel_contract.py" --verify \
+  if ! "${TRANSFER_PYTHON}" "${TRANSFER_SCRIPTS}/panel_contract.py" --verify \
       --path "${WORKER_DIR}/panel_contract.sh"; then
     echo "panel_contract.sh does not match src/transfer/arms.py in this snapshot." >&2
     echo "Run: python scripts/transfer/panel_contract.py --emit, then re-freeze." >&2
@@ -1110,8 +1179,7 @@ run_item_atomic() {
   # invocation below) remains a hard failure, unchanged.
   if ! verify_item_data_paths "${stage}" "${item}"; then
     log "SKIP-DATA  stage=${stage} item=${item} (${MISSING_DATA_REASON})"
-    SKIPPED_FOR_DATA+=("${stage}/${item} (${MISSING_DATA_REASON})")
-    return 0
+    return "${SKIP_DATA_STATUS}"
   fi
 
   mkdir -p "${final_dir}/.manifests"
@@ -1126,7 +1194,7 @@ run_item_atomic() {
   if [ "${status}" -ne 0 ]; then
     log "FAIL  stage=${stage} item=${item} gpu=${gpu:-none} status=${status} see ${log_file}"
     rm -rf -- "${tmp_dir}"
-    return "${status}"
+    return 1
   fi
 
   while IFS= read -r -d '' f; do
@@ -1163,7 +1231,7 @@ run_stage_wave() {
   shift
   local -a items=("$@")
   local -a pids=() pid_items=()
-  local i gpu item fail=0 n_gpu="${#GPU_LIST[@]}"
+  local i j gpu item status fail=0 skipped=0 n_gpu="${#GPU_LIST[@]}"
 
   if [ "${#items[@]}" -eq 0 ]; then
     log "stage ${stage}: nothing to run for the configured arms; skipping"
@@ -1177,10 +1245,19 @@ run_stage_wave() {
     pid_items+=("${item}")
     if [ $(( (i + 1) % n_gpu )) -eq 0 ] || [ "${i}" -eq $(( ${#items[@]} - 1 )) ]; then
       for j in "${!pids[@]}"; do
-        if ! wait "${pids[$j]}"; then
-          echo "stage ${stage} failed for item ${pid_items[$j]}" >&2
-          fail=1
-        fi
+        status=0
+        wait "${pids[$j]}" || status=$?
+        case "${status}" in
+          0) ;;
+          "${SKIP_DATA_STATUS}")
+            SKIPPED_FOR_DATA+=("${stage}/${pid_items[$j]} (required data not staged; see SKIP-DATA log)")
+            skipped=1
+            ;;
+          *)
+            echo "stage ${stage} failed for item ${pid_items[$j]}" >&2
+            fail=1
+            ;;
+        esac
       done
       pids=()
       pid_items=()
@@ -1190,7 +1267,21 @@ run_stage_wave() {
     echo "stage ${stage} had at least one failing item; stopping the campaign" >&2
     exit 1
   fi
-  log "stage ${stage} complete for items: ${items[*]}"
+  if [ "${skipped}" -ne 0 ]; then
+    log "stage ${stage} incomplete: at least one item was skipped for missing data"
+  else
+    log "stage ${stage} complete for items: ${items[*]}"
+  fi
+}
+
+run_item_serial() {
+  local stage="$1" item="$2" gpu="$3" status=0
+  run_item_atomic "${stage}" "${item}" "${gpu}" || status=$?
+  if [ "${status}" -eq "${SKIP_DATA_STATUS}" ]; then
+    SKIPPED_FOR_DATA+=("${stage}/${item} (required data not staged; see SKIP-DATA log)")
+    return 0
+  fi
+  return "${status}"
 }
 
 # 03 measure: text arm alone first, then the protein arms (evidence
@@ -1279,7 +1370,7 @@ run_estimand_power() {
   tmp_dir="$(mktemp -d "${out_dir}/.tmp.estimand_power.recommend.XXXXXX")"
   log_file="${LOGS_ROOT}/estimand_power__recommend.log"
   log "start stage=estimand_power item=recommend (CPU-only aggregation, no GPU) log=${log_file}"
-  "${R2_PYTHON}" "${TRANSFER_SCRIPTS}/03_estimand_power.py" recommend \
+  "${TRANSFER_PYTHON}" "${TRANSFER_SCRIPTS}/03_estimand_power.py" recommend \
       --arms "${recommend_arms[@]}" \
       --results-root "${out_dir}" \
       --output "${tmp_dir}/recommendation.json" \
@@ -1312,7 +1403,7 @@ run_estimand_power() {
 
 # 06: no --arm/--arms, no --device, CPU-only, single job for the panel.
 run_explanation_channel() {
-  run_item_atomic explanation_channel panel ""
+  run_item_serial explanation_channel panel ""
 }
 
 # A panel-wide stage with no eligible arm must not be dispatched: its `--arms`
@@ -1326,7 +1417,7 @@ run_panel_stage() {
     log "stage ${stage}: no eligible arm in ARMS; skipping rather than falling back to the script default"
     return 0
   fi
-  run_item_atomic "${stage}" panel "${gpu}"
+  run_item_serial "${stage}" panel "${gpu}"
 }
 
 # 04 and 07 also run once, covering the whole arm list (04) or the whole
@@ -1337,7 +1428,7 @@ run_circuit_primitives() {
 }
 
 run_convergence_control() {
-  run_item_atomic convergence_control panel "${GPU_LIST[0]}"
+  run_item_serial convergence_control panel "${GPU_LIST[0]}"
 }
 
 # 10 and 11 are panel-scoped like circuit_primitives: each builds its own
@@ -1353,7 +1444,7 @@ run_induction_path_patching() {
 
 # ----------------------------------------------------------------- main
 
-KNOWN_STAGES="${R2_STAGE_ORDER}"
+KNOWN_STAGES="${TRANSFER_STAGE_ORDER}"
 IFS=',' read -r -a REQUESTED_STAGES <<< "${STAGES}"
 if [ "${#REQUESTED_STAGES[@]}" -eq 0 ]; then
   echo "STAGES must not be empty" >&2
@@ -1365,6 +1456,7 @@ for stage in "${REQUESTED_STAGES[@]}"; do
     *) echo "unknown stage: ${stage} (known stages: ${KNOWN_STAGES})" >&2; exit 2 ;;
   esac
 done
+reject_duplicate_values STAGES "${REQUESTED_STAGES[@]}"
 
 # Whether a given stage is part of this run, for gating the tier-execution
 # calls in main below.
@@ -1375,7 +1467,7 @@ stage_requested() {
   esac
 }
 
-KNOWN_ARMS="${R2_CAMPAIGN_PANEL}"
+KNOWN_ARMS="${TRANSFER_CAMPAIGN_PANEL}"
 IFS=',' read -r -a ARM_LIST <<< "${ARMS}"
 if [ "${#ARM_LIST[@]}" -eq 0 ]; then
   echo "ARMS must not be empty" >&2
@@ -1387,6 +1479,7 @@ for arm in "${ARM_LIST[@]}"; do
     *) echo "unknown arm: ${arm} (panel is: ${KNOWN_ARMS})" >&2; exit 2 ;;
   esac
 done
+reject_duplicate_values ARMS "${ARM_LIST[@]}"
 if stage_requested estimand_power; then
   case " ${ARM_LIST[*]} " in
     *" ${TEXT_ARM} "*) ;;
@@ -1402,6 +1495,7 @@ if ! [[ "${GPUS}" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
   exit 2
 fi
 IFS=',' read -r -a GPU_LIST <<< "${GPUS}"
+reject_duplicate_values GPUS "${GPU_LIST[@]}"
 
 TEXT_ARMS=()
 PROTEIN_ARMS=()
@@ -1427,8 +1521,8 @@ done
 # passed its own four-arm protein list to a script whose own --arms default names
 # three, so a campaign run and a direct run measured different panels.
 declare -A STAGE_ARMS_FOR=()
-for stage in ${R2_STAGE_ORDER}; do
-  case "${R2_STAGE_SCOPE[${stage}]}" in
+for stage in ${TRANSFER_STAGE_ORDER}; do
+  case "${TRANSFER_STAGE_SCOPE[${stage}]}" in
     armless) continue ;;
   esac
   stage_eligible_arms "${stage}" "${ARM_LIST[@]}"
@@ -1450,9 +1544,9 @@ read -r -a PATH_PATCHING_ARMS <<< "${STAGE_ARMS_FOR[induction_path_patching]:-}"
 declare -A COHORT_ITEM_ARMS_FOR=()
 COHORT_ITEMS=()
 read -r -a COHORT_ELIGIBLE <<< "${STAGE_ARMS_FOR[cohort_power]:-}"
-for item in ${R2_COHORT_ITEMS}; do
+for item in ${TRANSFER_COHORT_ITEMS}; do
   item_arms=()
-  for arm in ${R2_COHORT_ITEM_ARMS[${item}]}; do
+  for arm in ${TRANSFER_COHORT_ITEM_ARMS[${item}]}; do
     case " ${COHORT_ELIGIBLE[*]} " in
       *" ${arm} "*) item_arms+=("${arm}") ;;
     esac
@@ -1464,7 +1558,7 @@ for item in ${R2_COHORT_ITEMS}; do
 done
 unset item item_arms arm
 
-log "transfer_20260728 H200 worker"
+log "InterpretabilityTransfer H200 worker"
 log "run_id:             ${RUN_ID}"
 log "snapshot_dir:        ${SNAPSHOT_DIR}"
 log "results_root:        ${RESULTS_ROOT}"
@@ -1476,15 +1570,15 @@ log "stages:              ${REQUESTED_STAGES[*]}"
 log "text_arms:           ${TEXT_ARMS[*]:-(none)}"
 log "protein_arms:        ${PROTEIN_ARMS[*]:-(none)}"
 log "cohort_power_items:  ${COHORT_ITEMS[*]:-(none)}"
-log "panel_contract:      ${R2_CONTRACT_SCHEMA}"
-for stage in ${R2_STAGE_ORDER}; do
-  [ "${R2_STAGE_SCOPE[${stage}]}" = armless ] && continue
+log "panel_contract:      ${TRANSFER_CONTRACT_SCHEMA}"
+for stage in ${TRANSFER_STAGE_ORDER}; do
+  [ "${TRANSFER_STAGE_SCOPE[${stage}]}" = armless ] && continue
   stage_requested "${stage}" || continue
   log "  ${stage} arms:      ${STAGE_ARMS_FOR[${stage}]:-(none)}"
 done
 log "expected_gpu_count:  ${EXPECTED_GPU_COUNT:-(auto, from nvidia-smi)}"
 log "min_free_mem_mib:    ${MIN_FREE_MEM_MIB} (soft warning only)"
-log "r2_python:           ${R2_PYTHON}"
+log "transfer_python:     ${TRANSFER_PYTHON}"
 log "force:               ${FORCE}"
 
 mkdir -p "${LOGS_ROOT}"
@@ -1571,22 +1665,4 @@ fi
 
 nvidia-smi --query-gpu=index,memory.used,utilization.gpu --format=csv || true
 
-if [ "${#DEFERRED_FAILURES[@]}" -gt 0 ]; then
-  echo "campaign FAILED: run_id=${RUN_ID}; ${#DEFERRED_FAILURES[@]} deferred failure(s):" >&2
-  for failure in "${DEFERRED_FAILURES[@]}"; do
-    echo "  FAIL: ${failure}" >&2
-  done
-  echo "Every other stage ran; these items wrote no manifest and will be retried" >&2
-  echo "by re-running the same command." >&2
-  exit 1
-fi
-if [ "${#SKIPPED_FOR_DATA[@]}" -gt 0 ]; then
-  echo "campaign INCOMPLETE: run_id=${RUN_ID}; ${#SKIPPED_FOR_DATA[@]} item(s) never ran:" >&2
-  for skipped in "${SKIPPED_FOR_DATA[@]}"; do
-    echo "  SKIP-DATA: ${skipped}" >&2
-  done
-  echo "These stages were scheduled and not measured. Stage the inputs above and" >&2
-  echo "re-run the same command to pick them up; the items that did run are kept." >&2
-  exit 1
-fi
-log "campaign complete: run_id=${RUN_ID} results=${RESULTS_ROOT} logs=${LOGS_ROOT}"
+finish_campaign

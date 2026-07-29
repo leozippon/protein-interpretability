@@ -1,0 +1,34 @@
+{
+  "arm": "progen2-medium",
+  "cohort_control": {
+    "applicable": true,
+    "ce_file_order_nats": 1.7226235333338284,
+    "ce_seeded_permutation_nats": 1.4827869155957305,
+    "cohort_delta_nats": 0.23983661773809795,
+    "file_order_digest": "667a1b092de18de9507c3e82d379903186597139cdd653b819b09114373c040e",
+    "reference": "EXP-R2-059, ProGen2-medium context information, n=48 skip=0 vs skip=400",
+    "reference_delta_nats": 1.01,
+    "seeded_digest": "a1bba1c71cb70c49161650a53a664984de7ffc5556ed4c325443162324f96973"
+  },
+  "input_format": "n_to_c_control",
+  "modality": "protein",
+  "rendering_cohort": {
+    "digest": "a0e37cf908a6d26a0830a208718a8674fee80d6ec9c81f3cbb01663325e8543e",
+    "eligible_records": 70647,
+    "input_format": "n_to_c_control",
+    "kind": "protein",
+    "name": "swissprot_n80_skip0_seed20260729",
+    "seed": 20260729,
+    "selection": "seeded_permutation_of_all_eligible_records",
+    "sequences": 80,
+    "skip": 0,
+    "symbols_max": 1957,
+    "symbols_median": 798,
+    "symbols_min": 600,
+    "tokenisation": "residue"
+  },
+  "rendering_control": {
+    "applicable": false,
+    "reason": "input_format is 'n_to_c_control', not fasta_wrapped"
+  }
+}

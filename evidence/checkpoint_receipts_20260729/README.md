@@ -1,0 +1,5 @@
+# Checkpoint receipts
+
+This directory preserves the small manifests and configurations required before retired training-recovery state is removed from GPFS or OSS. `p0_2/` contains the original step-200000 checkpoint manifests and configurations for three models and three seeds; each manifest records the final `clt.pt` byte count and SHA-256 digest. `expanded/` contains the step-300000 configurations and SHA-256 digests computed directly from the three final OSS weights on 2026-07-29.
+
+The final weights remain outside Git because they total about 96 GB for the expanded dictionaries and about 107 GB for the nine P0-2 dictionaries. `PRE_CLEAN_INVENTORY.tsv`, `POST_CLEAN_INVENTORY.tsv`, and `POST_CLEAN_STORAGE.txt` record the verified remote cleanup boundary. Verify this package with `sha256sum -c RECEIPT_SHA256SUMS`. These receipts authorize removal of intermediate checkpoints and optimizer-only recovery state after the retained final paths have been rechecked; they do not authorize removal of any final `clt.pt`, the 27 dictionary controls, the exact cache, training logs, result artifacts, or frozen code snapshots.

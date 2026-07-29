@@ -1,0 +1,412 @@
+{
+  "a1_candidate_pool": {
+    "ban_depth": 20,
+    "candidates_discarded_by_distance_range": 425,
+    "candidates_discarded_by_empty_decoy_pool": 99,
+    "candidates_discarded_by_induction_target": 8506,
+    "decoys_drawn_with_replacement": 10346,
+    "gate_minimum": 20000,
+    "induction_target_discard_rate": 0.10627319181898824,
+    "instances": 71434,
+    "instances_retained": 71434,
+    "median_confidence": 0.2535721957683563,
+    "median_distance": 33.0,
+    "positions_scored": 96000,
+    "positions_with_eligible_candidate": 71533,
+    "verdict": "PASS"
+  },
+  "a5_dissociation": {
+    "n_heads": 720,
+    "partial_spearman": 0.3643958256246007,
+    "spearman": 0.3876216003503093,
+    "stop_rule_triggered": false,
+    "top_set_jaccard": {
+      "count": 20,
+      "intersection": 7,
+      "jaccard": 0.21212121212121213
+    },
+    "verdict": "PASS"
+  },
+  "arm": "gpt2-large",
+  "cohort_digest": "c8efcb67964f00ce2246717ad5c0c14016ea8f770d5462f8a3fdb24c8c73e8f2",
+  "induction_decoy_correction": {
+    "copy_len_tokens": 64,
+    "decoy_corrected": {
+      "max": 0.9548916928266002,
+      "mean": 0.03674170380218804,
+      "median": 0.0013376367148180543,
+      "n_heads": 720,
+      "q90": 0.08662447127684535,
+      "q99": 0.734937157410581,
+      "sd": 0.11894559365466632
+    },
+    "fraction_above_0.10_corrected": 0.09583333333333334,
+    "fraction_above_0.10_uncorrected": 0.09722222222222222,
+    "mean_decoy_attention_at_top_head": 0.0004308309834746282,
+    "n_above_0.10_corrected": 69,
+    "n_above_0.10_uncorrected": 70,
+    "n_probes": 16,
+    "spearman_uncorrected_vs_corrected": {
+      "n_heads": 720,
+      "partial_spearman": 0.7848619884673885,
+      "spearman": 0.8112472567784017
+    },
+    "top20_jaccard": {
+      "count": 20,
+      "intersection": 20,
+      "jaccard": 1.0
+    },
+    "uncorrected": {
+      "max": 0.9553225238100749,
+      "mean": 0.04207792898960294,
+      "median": 0.008320174021849067,
+      "n_heads": 720,
+      "q90": 0.09244999596497352,
+      "q99": 0.736421169075354,
+      "sd": 0.11883910508926648
+    }
+  },
+  "n_sequences": 200,
+  "paa_head_distribution": {
+    "max": 0.02121397837564206,
+    "mean": 0.0027287925687655332,
+    "median": 0.002079202492926693,
+    "n_heads": 720,
+    "q90": 0.0066025769718625815,
+    "q99": 0.01363423245805604,
+    "sd": 0.003337515054898754
+  },
+  "selected_heads": {
+    "causal_controls": [
+      [
+        23,
+        6
+      ],
+      [
+        11,
+        16
+      ],
+      [
+        34,
+        6
+      ],
+      [
+        23,
+        17
+      ],
+      [
+        16,
+        8
+      ],
+      [
+        20,
+        15
+      ],
+      [
+        33,
+        4
+      ],
+      [
+        16,
+        12
+      ]
+    ],
+    "causal_top_paa": [
+      [
+        26,
+        0
+      ],
+      [
+        27,
+        11
+      ],
+      [
+        34,
+        10
+      ],
+      [
+        23,
+        13
+      ],
+      [
+        22,
+        0
+      ],
+      [
+        8,
+        11
+      ],
+      [
+        4,
+        7
+      ],
+      [
+        26,
+        8
+      ],
+      [
+        7,
+        8
+      ],
+      [
+        17,
+        12
+      ],
+      [
+        10,
+        4
+      ],
+      [
+        23,
+        0
+      ],
+      [
+        20,
+        11
+      ],
+      [
+        8,
+        17
+      ],
+      [
+        23,
+        12
+      ],
+      [
+        6,
+        4
+      ]
+    ],
+    "query_source_induction": [
+      [
+        16,
+        0
+      ],
+      [
+        16,
+        9
+      ],
+      [
+        18,
+        7
+      ],
+      [
+        19,
+        4
+      ],
+      [
+        20,
+        1
+      ],
+      [
+        21,
+        8
+      ],
+      [
+        15,
+        4
+      ],
+      [
+        17,
+        4
+      ]
+    ],
+    "query_source_paa": [
+      [
+        26,
+        0
+      ],
+      [
+        27,
+        11
+      ],
+      [
+        34,
+        10
+      ],
+      [
+        23,
+        13
+      ],
+      [
+        22,
+        0
+      ],
+      [
+        8,
+        11
+      ],
+      [
+        4,
+        7
+      ],
+      [
+        26,
+        8
+      ]
+    ]
+  },
+  "top_paa_heads": [
+    {
+      "antecedent_attention": 0.025851685254993626,
+      "depth_fraction": 0.7428571428571429,
+      "head": 0,
+      "layer": 26,
+      "paa_specific": 0.02121397837564206,
+      "prefix_matching": 0.3304937090282086,
+      "q_high": 0.022365908730030023,
+      "q_low": 0.020179917345830495
+    },
+    {
+      "antecedent_attention": 0.025683792130246155,
+      "depth_fraction": 0.7714285714285715,
+      "head": 11,
+      "layer": 27,
+      "paa_specific": 0.018510196151756905,
+      "prefix_matching": 0.22055375892881468,
+      "q_high": 0.019323053935488454,
+      "q_low": 0.01768861323499218
+    },
+    {
+      "antecedent_attention": 0.02401755684263433,
+      "depth_fraction": 0.9714285714285714,
+      "head": 10,
+      "layer": 34,
+      "paa_specific": 0.01758450551556722,
+      "prefix_matching": 0.005150328689596213,
+      "q_high": 0.018597112961582726,
+      "q_low": 0.01667775967216992
+    },
+    {
+      "antecedent_attention": 0.020514066532780383,
+      "depth_fraction": 0.6571428571428571,
+      "head": 13,
+      "layer": 23,
+      "paa_specific": 0.015732283624433942,
+      "prefix_matching": 0.45804220677960006,
+      "q_high": 0.016983321501011464,
+      "q_low": 0.014664120722550364
+    },
+    {
+      "antecedent_attention": 0.02126491214830746,
+      "depth_fraction": 0.6285714285714286,
+      "head": 0,
+      "layer": 22,
+      "paa_specific": 0.015202548076511077,
+      "prefix_matching": 0.17180517865677208,
+      "q_high": 0.016427075549504313,
+      "q_low": 0.014016286040812205
+    },
+    {
+      "antecedent_attention": 0.027056140479962833,
+      "depth_fraction": 0.22857142857142856,
+      "head": 11,
+      "layer": 8,
+      "paa_specific": 0.014589127215219787,
+      "prefix_matching": 4.988664386396818e-05,
+      "q_high": 0.015601324599032908,
+      "q_low": 0.013676772432236792
+    },
+    {
+      "antecedent_attention": 0.024865543822623664,
+      "depth_fraction": 0.11428571428571428,
+      "head": 7,
+      "layer": 4,
+      "paa_specific": 0.013996127448247898,
+      "prefix_matching": 0.0017724223072246514,
+      "q_high": 0.014830205962233113,
+      "q_low": 0.013234434135239033
+    },
+    {
+      "antecedent_attention": 0.018595684583058117,
+      "depth_fraction": 0.7428571428571429,
+      "head": 8,
+      "layer": 26,
+      "paa_specific": 0.013701885095834775,
+      "prefix_matching": 0.02538399707553358,
+      "q_high": 0.014561388752426317,
+      "q_low": 0.012901170279245701
+    },
+    {
+      "antecedent_attention": 0.021778809880103705,
+      "depth_fraction": 0.2,
+      "head": 8,
+      "layer": 7,
+      "paa_specific": 0.013345818581209958,
+      "prefix_matching": 0.003233763081495941,
+      "q_high": 0.013952119975316203,
+      "q_low": 0.01280544683357353
+    },
+    {
+      "antecedent_attention": 0.01941029098275862,
+      "depth_fraction": 0.4857142857142857,
+      "head": 12,
+      "layer": 17,
+      "paa_specific": 0.013241896842941516,
+      "prefix_matching": 0.10015449604582731,
+      "q_high": 0.014079092467886944,
+      "q_low": 0.012511977394357849
+    },
+    {
+      "antecedent_attention": 0.021921100632974432,
+      "depth_fraction": 0.2857142857142857,
+      "head": 4,
+      "layer": 10,
+      "paa_specific": 0.012917556565774146,
+      "prefix_matching": 0.003582058828379493,
+      "q_high": 0.013630940443603457,
+      "q_low": 0.012173759712391185
+    },
+    {
+      "antecedent_attention": 0.016629283916099552,
+      "depth_fraction": 0.6571428571428571,
+      "head": 0,
+      "layer": 23,
+      "paa_specific": 0.012883266557670647,
+      "prefix_matching": 0.3828454851884003,
+      "q_high": 0.013893436932308302,
+      "q_low": 0.01200121020799087
+    },
+    {
+      "antecedent_attention": 0.01581980038311335,
+      "depth_fraction": 0.5714285714285714,
+      "head": 11,
+      "layer": 20,
+      "paa_specific": 0.012800707610235962,
+      "prefix_matching": 0.7264412518901129,
+      "q_high": 0.013774936299040535,
+      "q_low": 0.01187132902246377
+    },
+    {
+      "antecedent_attention": 0.01737323098810366,
+      "depth_fraction": 0.22857142857142856,
+      "head": 17,
+      "layer": 8,
+      "paa_specific": 0.012733557005868281,
+      "prefix_matching": 1.274840205666866e-05,
+      "q_high": 0.013472590453875435,
+      "q_low": 0.012037991655396407
+    },
+    {
+      "antecedent_attention": 0.016682541254079558,
+      "depth_fraction": 0.6571428571428571,
+      "head": 12,
+      "layer": 23,
+      "paa_specific": 0.012227164481544659,
+      "prefix_matching": 0.43873186434525313,
+      "q_high": 0.013282662828752631,
+      "q_low": 0.011145642777368911
+    },
+    {
+      "antecedent_attention": 0.01827686364874047,
+      "depth_fraction": 0.17142857142857143,
+      "head": 4,
+      "layer": 6,
+      "paa_specific": 0.011779469444502165,
+      "prefix_matching": 0.005676327298350958,
+      "q_high": 0.012245626113864153,
+      "q_low": 0.011318730418251113
+    }
+  ],
+  "width": 512
+}

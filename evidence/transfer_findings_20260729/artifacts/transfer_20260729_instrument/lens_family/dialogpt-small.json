@@ -1,0 +1,290 @@
+{
+  "arm": {
+    "d_model": 768,
+    "dtype": "float32",
+    "input_format": "raw",
+    "modality": "text",
+    "n_layer": 12,
+    "name": "dialogpt-small",
+    "path": "/gpfs/jiaotongdamoxing/zhk_zip/models/DialoGPT-small",
+    "source": "openwebtext",
+    "tokenisation": "bpe",
+    "vocab_size": 50257
+  },
+  "arms_module_sha256": "1ada4997d2f4521dcc8701c594b4514c511dd2a67366ae3ecd73eeda2ee4d3f0",
+  "bootstrap": {
+    "base_seed": 20260728,
+    "cluster_unit": "sequence",
+    "samples": 1000
+  },
+  "budget_module_sha256": "f0ec0fecba28aa24600e28e808f4dcfdbe27b04f26bcc4597b165e9689bc3440",
+  "cohort": {
+    "digest": "5e92db9ee5822803670db841c222f5c093db4d67bdccc70d263753d85949f6f1",
+    "evaluation_split": {
+      "digest": "5e92db9ee5822803670db841c222f5c093db4d67bdccc70d263753d85949f6f1",
+      "distinct_conditioning_labels": null,
+      "kind": "text",
+      "name": "openwebtext_screen_n128_seed20260728_eval32_seed20260729",
+      "sequences": 32,
+      "source": "openwebtext_screen",
+      "symbols_max": 32997,
+      "symbols_median": 4591,
+      "symbols_min": 893
+    },
+    "pool": {
+      "digest": "c67ac320784518ad4e3d278f2e7a3db89edcf1e777fb74413574146478189812",
+      "distinct_conditioning_labels": null,
+      "kind": "text",
+      "name": "openwebtext_screen",
+      "sequences": 4000,
+      "source": "openwebtext_screen",
+      "symbols_max": 100000,
+      "symbols_median": 3184,
+      "symbols_min": 800
+    },
+    "source": "openwebtext_screen",
+    "split_unit": "sequence",
+    "splits_disjoint": true,
+    "subsample": {
+      "digest": "f9bad1aded1db3c8fcda08a07ff405fd3512894cbf71f2086da537dc69fa31f3",
+      "distinct_conditioning_labels": null,
+      "kind": "text",
+      "name": "openwebtext_screen_n128_seed20260728",
+      "sequences": 128,
+      "source": "openwebtext_screen",
+      "symbols_max": 32997,
+      "symbols_median": 3379,
+      "symbols_min": 809
+    },
+    "train_split": {
+      "digest": "d86d22c6be0f33884ffd4c827dda7a7026cd25b1ffaa446fcfa12b75d2c71950",
+      "distinct_conditioning_labels": null,
+      "kind": "text",
+      "name": "openwebtext_screen_n128_seed20260728_train96_seed20260729",
+      "sequences": 96,
+      "source": "openwebtext_screen",
+      "symbols_max": 31927,
+      "symbols_median": 3303,
+      "symbols_min": 809
+    }
+  },
+  "cohort_source": "openwebtext_screen",
+  "configuration": {
+    "batch_size": 4,
+    "cohort_source": "openwebtext_screen",
+    "depth_fractions": [
+      0.0,
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      1.0
+    ],
+    "device": "cuda:0",
+    "dtype": "float32",
+    "max_len": 192,
+    "metric_chunk": 512,
+    "pool_size": 4000,
+    "protein_cohort_source": "ec_labelled_swissprot",
+    "residue_length_range": [
+      64,
+      120
+    ],
+    "sequences": 128,
+    "text_min_chars": 800,
+    "train_fraction": 0.75
+  },
+  "finished_at_utc": "2026-07-28T19:25:04.527406+00:00",
+  "layer_grid": [
+    {
+      "depth_fractions": [
+        0.0
+      ],
+      "layer": 0,
+      "n_layer": 12,
+      "relative_depth": 0.08333333333333333
+    },
+    {
+      "depth_fractions": [
+        0.1
+      ],
+      "layer": 1,
+      "n_layer": 12,
+      "relative_depth": 0.16666666666666666
+    },
+    {
+      "depth_fractions": [
+        0.2
+      ],
+      "layer": 2,
+      "n_layer": 12,
+      "relative_depth": 0.25
+    },
+    {
+      "depth_fractions": [
+        0.3
+      ],
+      "layer": 3,
+      "n_layer": 12,
+      "relative_depth": 0.3333333333333333
+    },
+    {
+      "depth_fractions": [
+        0.4
+      ],
+      "layer": 4,
+      "n_layer": 12,
+      "relative_depth": 0.4166666666666667
+    },
+    {
+      "depth_fractions": [
+        0.5
+      ],
+      "layer": 6,
+      "n_layer": 12,
+      "relative_depth": 0.5833333333333334
+    },
+    {
+      "depth_fractions": [
+        0.6
+      ],
+      "layer": 7,
+      "n_layer": 12,
+      "relative_depth": 0.6666666666666666
+    },
+    {
+      "depth_fractions": [
+        0.7
+      ],
+      "layer": 8,
+      "n_layer": 12,
+      "relative_depth": 0.75
+    },
+    {
+      "depth_fractions": [
+        0.8
+      ],
+      "layer": 9,
+      "n_layer": 12,
+      "relative_depth": 0.8333333333333334
+    },
+    {
+      "depth_fractions": [
+        0.9
+      ],
+      "layer": 10,
+      "n_layer": 12,
+      "relative_depth": 0.9166666666666666
+    },
+    {
+      "depth_fractions": [
+        1.0
+      ],
+      "layer": 11,
+      "n_layer": 12,
+      "relative_depth": 1.0
+    }
+  ],
+  "lenses_module_sha256": "7a63fd836f4e097c26a21ecf13906b7329a80050ca90cb74169fc201cfc5cf2b",
+  "matched_compute": {
+    "bootstrap_samples": 1000,
+    "depth_fractions": [
+      0.0,
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      1.0
+    ],
+    "jacobian_columns_per_probe": "d_model",
+    "jacobian_positions": 16,
+    "max_len": 192,
+    "sequences": 128,
+    "statement": "cohort size, relative-depth grid size, tuned-lens optimisation steps and batch size, Jacobian probe count and the number of reverse-mode columns per probe (exactly d_model) are identical across arms; wall-clock and FLOP cost differ because vocabulary size and width differ, and that difference is the object of study",
+    "tuned_batch_size": 256,
+    "tuned_steps": 2000
+  },
+  "measurability": {
+    "evaluated_on": "evaluation_split",
+    "off_distribution": true,
+    "off_distribution_rule": "clean cross-entropy exceeds the cohort unigram entropy",
+    "power": {
+      "arm": "dialogpt-small",
+      "clean_ce_bits_per_symbol": 3.377846586686886,
+      "clean_ce_nats": 10.574540675066725,
+      "context_information_bits_per_symbol": -1.288096996970507,
+      "context_information_miller_madow_nats": -3.8473332232509225,
+      "context_information_nats": -4.03246084105197,
+      "input_format": "raw",
+      "max_len": 192,
+      "measurability": "unmeasurable_on_this_cohort",
+      "minimum_context_information_nats": 0.3,
+      "modality": "text",
+      "n_distinct_scored_tokens": 2264,
+      "n_scored_tokens": 6112,
+      "n_sequences": 32,
+      "per_sequence_clean_ce_interval": {
+        "confidence": 0.95,
+        "interval": [
+          9.681601752960088,
+          11.467479597173362
+        ],
+        "mean": 10.574540675066725,
+        "n": 32,
+        "standard_error": 0.43781958078499544
+      },
+      "per_sequence_context_information_interval": {
+        "confidence": 0.95,
+        "interval": [
+          -4.925399763158606,
+          -3.1395219189453334
+        ],
+        "mean": -4.03246084105197,
+        "n": 32,
+        "standard_error": 0.43781958078499544
+      },
+      "power_verdict": "FAIL",
+      "symbols_per_token": 4.516438802083333,
+      "tokenisation": "bpe",
+      "unigram_entropy_bits_per_symbol": 2.089749589716379,
+      "unigram_entropy_miller_madow_nats": 6.7272074518158025,
+      "unigram_entropy_on_cohort_nats": 6.542079834014755,
+      "vocab_size": 50257
+    }
+  },
+  "resources": {
+    "peak_accelerator_memory_allocated_bytes": 1161996288,
+    "peak_accelerator_memory_reserved_bytes": 1289748480
+  },
+  "runner_sha256": "a8e7ba567613590a11ed181a41d6e54e06f73d99795c108174257a9d3b634fec",
+  "schema_version": "r2_transfer_lens_family_v1",
+  "scored": false,
+  "seeds": {
+    "bootstrap_base": 20260728,
+    "cohort_subsample": 20260728,
+    "jacobian_probes": 20260731,
+    "train_eval_split": 20260729,
+    "tuned_lens": 20260730
+  },
+  "skipped_reason": "off_distribution_on_this_cohort",
+  "started_at_utc": "2026-07-28T19:25:00.761381+00:00",
+  "thresholds": {
+    "jacobian_alignment_rank": 16,
+    "jacobian_finite_difference_tolerance": 0.02,
+    "jacobian_spectrum_floor_relative": 1e-06,
+    "lens_head_tolerance_nats": 0.001,
+    "minimum_context_information_nats": 0.3,
+    "minimum_context_information_provenance": "src.transfer.budget.MIN_CONTEXT_INFORMATION_NATS; recorded but not used to skip scoring, only the off-distribution rule skips an arm",
+    "tuned_improvement_tolerance_nats": 0.0001
+  }
+}

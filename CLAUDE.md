@@ -1,14 +1,14 @@
-# BioInterpretability
+# InterpretabilityTransfer
 
 ## Research Objective
 
-Study why mechanistic-interpretability methods developed on text decoders transfer poorly to protein generative models. Follow the three steps in order:
+Study how and under what conditions mechanistic-interpretability methods developed on text decoders transfer to protein generative models. Follow three directions in order:
 
 1. **Compare model families.** Identify meaningful differences between text and protein generative models.
-2. **Evaluate method transfer.** Determine how well existing interpretability methods transfer to protein models and where their limitations arise.
-3. **Develop adapted methods.** Design and validate protein-specific interpretability methods based on the preceding evidence.
+2. **Evaluate method transfer.** Determine where existing methods transfer, where they fail, and whether each limitation belongs to the method, model, data, or evaluation interface.
+3. **Develop adapted methods.** Design and validate protein-specific methods only when the preceding evidence identifies a concrete failure mode.
 
-Steps 2 and 3 are the main deliverables; step 1 provides their foundation. `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` is canonical for findings, limitations, retractions and the current plan.
+Steps 2 and 3 are the main deliverables; step 1 provides their foundation. `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` is canonical for findings, limitations, retractions, and the current plan.
 
 ## Development Principles
 
@@ -20,25 +20,33 @@ Steps 2 and 3 are the main deliverables; step 1 provides their foundation. `docs
 
 ## Environment
 
-Bash runs on the B workstation. Activate before using Python or GPU tools:
+Bash runs on the B workstation. Activate the validated environment before using Python or GPU tools:
 
 ```bash
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate ct
 ```
 
-Verified runtime: Python 3.11.14, PyTorch 2.9.1+cu128, Transformers 4.57.3, nnsight 0.5.15, wandb 0.24.0.
+Validated workstation runtime: Python 3.11.14, PyTorch 2.9.1+cu128, Transformers 4.57.3, nnsight 0.5.15, and wandb 0.24.0. `requirements.txt` declares the active transfer package's direct Python dependencies; CUDA runtimes remain host-provisioned.
 
 LaTeX: `source ~/miniconda3/etc/profile.d/conda.sh && conda activate latex && tectonic main.tex`.
 
+## Campaign Contract
+
+`scripts/transfer/panel_contract.py` is authoritative. The active campaign has 11 arms: `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `qwen2.5-0.5b`, `llama-3.2-3b`, `protgpt2`, `zymctrl`, `progen2-base`, and `progen2-medium`.
+
+The active campaign has 11 stages in order: `cohort_power`, `pathway_budget`, `estimand_power`, `circuit_primitives`, `relational_channel`, `explanation_channel`, `convergence_control`, `lens_family`, `probe_and_erasure`, `homology_control`, and `induction_path_patching`.
+
+Run `python scripts/transfer/panel_contract.py --verify` before scheduling. Do not restate arm eligibility in runtime code or bypass a contract refusal.
+
 ## Compute
 
-- **Local B workstation:** 8 NVIDIA L20 GPUs, 46068 MiB reported each. Use for validation, small cohorts and interface checks.
-- **Remote H200 cluster:** 16 GPUs in total. A selected pod exposes only its current allocation; each H200 reports 143771 MiB in-pod. Use for full-scale campaigns through `scripts/transfer/run_transfer_h200.sh`.
+- **Local B workstation:** 8 NVIDIA L20 GPUs, 46068 MiB reported each. Use for validation, small cohorts, and interface checks.
+- **Remote H200 cluster:** 16 GPUs in total. A selected pod exposes only its current allocation; each H200 reports 143771 MiB in-pod. Use `scripts/transfer/run_transfer_h200.sh` for full campaigns.
 
 ### H200 Access
 
-The cluster is offline and reached through `~/hangzhou-remote`. Check health, then select a disposable pod at runtime:
+The cluster is offline and reached through `~/hangzhou-remote`. Check health, inspect disposable pods, and select one only for the current shell:
 
 ```bash
 ~/hangzhou-remote/ssh_tunnel/h200_status.sh
@@ -47,22 +55,21 @@ export H200_POD=<running-pod-name>
 ~/hangzhou-remote/ssh_tunnel/h200_pod_exec.sh -- nvidia-smi
 ```
 
-Cluster allocation is not GPU utilization: `16/16` means all GPUs are assigned to pods, not necessarily computing. Inspect `nvidia-smi` inside the selected pod. Never hardcode or log a pod name, install dependencies in a pod, or read the mode-600 `~/hangzhou-remote/config.sh`. Stage code and dependencies from B. The external README is authoritative for access, transfer and recovery.
+Cluster allocation is not GPU utilization: `16/16` means all GPUs are assigned to pods, not necessarily computing. Inspect `nvidia-smi` inside the selected pod. Never persist pod names in repository files, manifests, or durable logs; status commands naturally display current names, and `H200_POD` is shell-local. Do not install dependencies in a pod or read the mode-600 `~/hangzhou-remote/config.sh`. Stage code and dependencies from B; the external README is authoritative for access, transfer, and recovery.
 
 ## Network And Downloads
 
-B has no direct route to `huggingface.co`. From the repository root, load the ignored local token file and use the mirror:
+B has no direct route to `huggingface.co`. Create the ignored local environment file from the placeholder, then use the mirror:
 
 ```bash
+cp .env.local.example .env.local
 source .env.local
-export HF_ENDPOINT=https://hf-mirror.com
-
-hf download model-name \
-  --local-dir /Data/public/model-name \
-  --token "$HF_TOKEN"
+MODEL_ID=organization/model-name
+MODEL_DIR="$HOME/models/model-name"
+hf download "$MODEL_ID" --local-dir "$MODEL_DIR" --token "$HF_TOKEN"
 ```
 
-Run `hf` from the `ct` environment; downloads resume automatically.
+Never commit `.env.local` or a token. Run `hf` from the `ct` environment; downloads resume automatically.
 
 ## Logging
 
@@ -72,15 +79,15 @@ Record each experiment's date, configuration or command, and result in `docs/EXP
 
 1. **Never take the first N records of a biological corpus.** Sample under a seeded permutation and report a skip-offset sensitivity. File-order iteration has manufactured an effect three times, once worth +1.01 nats.
 2. **Check gate attainability on the text control before applying it to a protein arm.** A gate the positive control cannot pass is a specification defect, not a negative result. Violated twice, at real cost.
-3. **Use held-out, never plug-in, estimators** for information decompositions — plug-in bias tracks vocabulary size and reached +1.02 nats.
-4. **Feed every arm the format it was trained on**, and verify the rendering against the model's own likelihood. Rendering has been worth 1.42–1.78 nats/token.
+3. **Use held-out, never plug-in, estimators** for information decompositions; plug-in bias tracks vocabulary size and reached +1.02 nats.
+4. **Feed every arm the format it was trained on**, and verify the rendering against the model's own likelihood. Rendering has been worth 1.42-1.78 nats/token.
 5. **An intervention that moves everything needs a control for moving everything.**
-6. **A reconstruction gate does not protect against wrong norm algebra** — RMSNorm-on-LayerNorm passes at 0.49% error while corrupting attribution.
+6. **A reconstruction gate does not protect against wrong norm algebra**; RMSNorm-on-LayerNorm passes at 0.49% error while corrupting attribution.
 7. **Verify environment defaults have not narrowed the panel;** print resolved paths before every campaign. One variable silently reduced a campaign's text side to a single model while every downstream number stayed well-formed.
 8. **Prefer threshold-free statistics.** Where a threshold is unavoidable, sweep it and show the ordering is invariant.
-9. **Report residual-stream spectra on interior, alphabet-bearing positions** — an all-position participation ratio measures the attention sink and the separators.
+9. **Report residual-stream spectra on interior, alphabet-bearing positions**; an all-position participation ratio measures the attention sink and separators.
 10. **Search the literature by mechanism name, not by domain**, before designing a track.
-11. Never delete a result artefact; move it. Never edit anything under `archive/`.
+11. Never delete a result artifact; move it. Frozen provenance is external at `/Data2/lzp/bio_archive`; never edit it in place.
 12. Never run `git clean -fdx` or `git clean -fdX`; ignored experiment results are not backed up. Use `git clean -fd` or an explicit path.
 13. Check `nvidia-smi` and `free -h` before and after GPU runs; on H200, run them inside the selected pod.
 14. Report failures rather than routing around them. A refutation is a valid result; state it plainly.

@@ -1,0 +1,693 @@
+{
+  "arms": {
+    "progen2-medium": {
+      "adjudication": {
+        "bootstrap_unit_floor": 8,
+        "min_distinct_sequences_for_comparison": 3,
+        "reason": "only 1 stratum has at least 3 distinct sequences and a non-degenerate bootstrap, so no across-stratum comparison is available; the synthetic control is reported and is the only evidence this arm contributes.",
+        "rule": "consistent_with_memorisation if the lowest-homology usable stratum's peak-over-uniform bootstrap interval lies strictly below the highest-homology usable stratum's; consistent_with_general_mechanism if those intervals overlap AND the synthetic-repeat interval overlaps the lowest-homology stratum's; indeterminate otherwise.",
+        "strata_separated": null,
+        "synthetic_matches_low_homology": null,
+        "underpowered_strata": {
+          "id30_to_70_remote_homology": {
+            "bootstrap_degenerate": true,
+            "n_above_threshold": {
+              "0.05": 8,
+              "0.10": 6,
+              "0.20": 6,
+              "0.30": 5
+            },
+            "n_distinct_sequences": 3,
+            "n_records": 3,
+            "peak_over_uniform": 43.460624906433125,
+            "reason": "3 units is below the 8-unit floor; a percentile interval over so few atoms is narrower than one over many and must not be compared against another stratum's"
+          },
+          "id70_to_95_close_homology": {
+            "bootstrap_degenerate": true,
+            "n_above_threshold": {
+              "0.05": 6,
+              "0.10": 5,
+              "0.20": 5,
+              "0.30": 4
+            },
+            "n_distinct_sequences": 7,
+            "n_records": 11,
+            "peak_over_uniform": 195.13382475043252,
+            "reason": "7 units is below the 8-unit floor; a percentile interval over so few atoms is narrower than one over many and must not be compared against another stratum's"
+          }
+        },
+        "usable_strata": [
+          "ge95_near_duplicate"
+        ],
+        "verdict": "indeterminate"
+      },
+      "rows": {
+        "ge95_near_duplicate": {
+          "bootstrap_degenerate": false,
+          "bootstrap_n_units": 27,
+          "fraction_above_0.10": 0.013888888888888888,
+          "fraction_above_0.10_ci": [
+            0.01383101851851852,
+            0.013888888888888888
+          ],
+          "measured": true,
+          "n_above_0.10": 6,
+          "n_distinct_sequences": 27,
+          "n_probes_all_records": 34,
+          "n_records": 34,
+          "ov_mean_normalised_rank_over_induction_heads": 1.0,
+          "peak_over_uniform": 107.14498242620968,
+          "peak_over_uniform_ci": [
+            73.84061655749971,
+            150.54237745498486
+          ]
+        },
+        "head_set_overlap_with_synthetic": {
+          "ge95_near_duplicate": {
+            "jaccard": 1.0,
+            "n_left": 6,
+            "n_right": 6,
+            "n_shared": 6
+          },
+          "id30_to_70_remote_homology": {
+            "jaccard": 1.0,
+            "n_left": 6,
+            "n_right": 6,
+            "n_shared": 6
+          },
+          "id70_to_95_close_homology": {
+            "jaccard": 0.8333333333333334,
+            "n_left": 5,
+            "n_right": 6,
+            "n_shared": 5
+          }
+        },
+        "id30_to_70_remote_homology": {
+          "bootstrap_degenerate": true,
+          "bootstrap_n_units": 3,
+          "fraction_above_0.10": 0.013888888888888888,
+          "fraction_above_0.10_ci": null,
+          "measured": true,
+          "n_above_0.10": 6,
+          "n_distinct_sequences": 3,
+          "n_probes_all_records": 3,
+          "n_records": 3,
+          "ov_mean_normalised_rank_over_induction_heads": 1.0,
+          "peak_over_uniform": 43.460624906433125,
+          "peak_over_uniform_ci": null
+        },
+        "id70_to_95_close_homology": {
+          "bootstrap_degenerate": true,
+          "bootstrap_n_units": 7,
+          "fraction_above_0.10": 0.011574074074074073,
+          "fraction_above_0.10_ci": null,
+          "measured": true,
+          "n_above_0.10": 5,
+          "n_distinct_sequences": 7,
+          "n_probes_all_records": 11,
+          "n_records": 11,
+          "ov_mean_normalised_rank_over_induction_heads": 1.0,
+          "peak_over_uniform": 195.13382475043252,
+          "peak_over_uniform_ci": null
+        },
+        "lt30_no_detectable_homology": {
+          "measured": false,
+          "n_distinct_sequences": 0,
+          "n_records": 0
+        },
+        "pooled_all_strata": {
+          "duplicate_weighted_n_above_0.10": 6,
+          "duplicate_weighted_peak_over_uniform": 115.75929870466678,
+          "fraction_above_0.10": 0.013888888888888888,
+          "measured": true,
+          "n_above_0.10": 6,
+          "n_distinct_sequences": 37,
+          "n_probes_all_records": 48,
+          "peak_over_uniform": 106.58813686764165
+        },
+        "synthetic_repeat_negative_control": {
+          "bootstrap_degenerate": false,
+          "bootstrap_n_units": 16,
+          "fraction_above_0.10": 0.013888888888888888,
+          "measured": true,
+          "n_above_0.10": 6,
+          "n_probes": 16,
+          "peak_over_uniform": 88.65705936980238,
+          "peak_over_uniform_ci": [
+            88.28086701914182,
+            88.9935250393035
+          ]
+        }
+      }
+    },
+    "protgpt2": {
+      "adjudication": {
+        "bootstrap_unit_floor": 8,
+        "min_distinct_sequences_for_comparison": 3,
+        "reason": "only 1 stratum has at least 3 distinct sequences and a non-degenerate bootstrap, so no across-stratum comparison is available; the synthetic control is reported and is the only evidence this arm contributes.",
+        "rule": "consistent_with_memorisation if the lowest-homology usable stratum's peak-over-uniform bootstrap interval lies strictly below the highest-homology usable stratum's; consistent_with_general_mechanism if those intervals overlap AND the synthetic-repeat interval overlaps the lowest-homology stratum's; indeterminate otherwise.",
+        "strata_separated": null,
+        "synthetic_matches_low_homology": null,
+        "underpowered_strata": {
+          "id30_to_70_remote_homology": {
+            "bootstrap_degenerate": true,
+            "n_above_threshold": {
+              "0.05": 44,
+              "0.10": 16,
+              "0.20": 13,
+              "0.30": 9
+            },
+            "n_distinct_sequences": 3,
+            "n_records": 3,
+            "peak_over_uniform": 19.35277296983251,
+            "reason": "3 units is below the 8-unit floor; a percentile interval over so few atoms is narrower than one over many and must not be compared against another stratum's"
+          },
+          "id70_to_95_close_homology": {
+            "bootstrap_degenerate": true,
+            "n_above_threshold": {
+              "0.05": 15,
+              "0.10": 13,
+              "0.20": 10,
+              "0.30": 7
+            },
+            "n_distinct_sequences": 6,
+            "n_records": 11,
+            "peak_over_uniform": 67.18097764960325,
+            "reason": "6 units is below the 8-unit floor; a percentile interval over so few atoms is narrower than one over many and must not be compared against another stratum's"
+          }
+        },
+        "usable_strata": [
+          "ge95_near_duplicate"
+        ],
+        "verdict": "indeterminate"
+      },
+      "rows": {
+        "ge95_near_duplicate": {
+          "bootstrap_degenerate": false,
+          "bootstrap_n_units": 26,
+          "fraction_above_0.10": 0.019444444444444445,
+          "fraction_above_0.10_ci": [
+            0.018055555555555554,
+            0.019444444444444445
+          ],
+          "measured": true,
+          "n_above_0.10": 14,
+          "n_distinct_sequences": 26,
+          "n_probes_all_records": 33,
+          "n_records": 34,
+          "ov_mean_normalised_rank_over_induction_heads": 0.5316259426389089,
+          "peak_over_uniform": 38.262310278365156,
+          "peak_over_uniform_ci": [
+            27.21748543229825,
+            50.81628770243838
+          ]
+        },
+        "head_set_overlap_with_synthetic": {
+          "ge95_near_duplicate": {
+            "jaccard": 0.9285714285714286,
+            "n_left": 14,
+            "n_right": 13,
+            "n_shared": 13
+          },
+          "id30_to_70_remote_homology": {
+            "jaccard": 0.7058823529411765,
+            "n_left": 16,
+            "n_right": 13,
+            "n_shared": 12
+          },
+          "id70_to_95_close_homology": {
+            "jaccard": 1.0,
+            "n_left": 13,
+            "n_right": 13,
+            "n_shared": 13
+          }
+        },
+        "id30_to_70_remote_homology": {
+          "bootstrap_degenerate": true,
+          "bootstrap_n_units": 3,
+          "fraction_above_0.10": 0.022222222222222223,
+          "fraction_above_0.10_ci": null,
+          "measured": true,
+          "n_above_0.10": 16,
+          "n_distinct_sequences": 3,
+          "n_probes_all_records": 3,
+          "n_records": 3,
+          "ov_mean_normalised_rank_over_induction_heads": 0.5368009875928692,
+          "peak_over_uniform": 19.35277296983251,
+          "peak_over_uniform_ci": null
+        },
+        "id70_to_95_close_homology": {
+          "bootstrap_degenerate": true,
+          "bootstrap_n_units": 6,
+          "fraction_above_0.10": 0.018055555555555554,
+          "fraction_above_0.10_ci": null,
+          "measured": true,
+          "n_above_0.10": 13,
+          "n_distinct_sequences": 6,
+          "n_probes_all_records": 10,
+          "n_records": 11,
+          "ov_mean_normalised_rank_over_induction_heads": 0.5164473712077149,
+          "peak_over_uniform": 67.18097764960325,
+          "peak_over_uniform_ci": null
+        },
+        "lt30_no_detectable_homology": {
+          "measured": false,
+          "n_distinct_sequences": 0,
+          "n_records": 0
+        },
+        "pooled_all_strata": {
+          "duplicate_weighted_n_above_0.10": 14,
+          "duplicate_weighted_peak_over_uniform": 41.81704801607725,
+          "fraction_above_0.10": 0.019444444444444445,
+          "measured": true,
+          "n_above_0.10": 14,
+          "n_distinct_sequences": 35,
+          "n_probes_all_records": 46,
+          "peak_over_uniform": 38.85483003357635
+        },
+        "synthetic_repeat_negative_control": {
+          "bootstrap_degenerate": false,
+          "bootstrap_n_units": 16,
+          "fraction_above_0.10": 0.018055555555555554,
+          "measured": true,
+          "n_above_0.10": 13,
+          "n_probes": 16,
+          "peak_over_uniform": 63.327333654106624,
+          "peak_over_uniform_ci": [
+            60.83472291295942,
+            65.94096311482717
+          ]
+        }
+      }
+    },
+    "zymctrl": {
+      "adjudication": {
+        "bootstrap_unit_floor": 8,
+        "min_distinct_sequences_for_comparison": 3,
+        "reason": "only 1 stratum has at least 3 distinct sequences and a non-degenerate bootstrap, so no across-stratum comparison is available; the synthetic control is reported and is the only evidence this arm contributes.",
+        "rule": "consistent_with_memorisation if the lowest-homology usable stratum's peak-over-uniform bootstrap interval lies strictly below the highest-homology usable stratum's; consistent_with_general_mechanism if those intervals overlap AND the synthetic-repeat interval overlaps the lowest-homology stratum's; indeterminate otherwise.",
+        "strata_separated": null,
+        "synthetic_matches_low_homology": null,
+        "underpowered_strata": {
+          "id30_to_70_remote_homology": {
+            "bootstrap_degenerate": true,
+            "n_above_threshold": {
+              "0.05": 1,
+              "0.10": 1,
+              "0.20": 0,
+              "0.30": 0
+            },
+            "n_distinct_sequences": 3,
+            "n_records": 3,
+            "peak_over_uniform": 8.15004660236597,
+            "reason": "3 units is below the 8-unit floor; a percentile interval over so few atoms is narrower than one over many and must not be compared against another stratum's"
+          },
+          "id70_to_95_close_homology": {
+            "bootstrap_degenerate": true,
+            "n_above_threshold": {
+              "0.05": 1,
+              "0.10": 0,
+              "0.20": 0,
+              "0.30": 0
+            },
+            "n_distinct_sequences": 7,
+            "n_records": 11,
+            "peak_over_uniform": 18.757550468798264,
+            "reason": "7 units is below the 8-unit floor; a percentile interval over so few atoms is narrower than one over many and must not be compared against another stratum's"
+          }
+        },
+        "usable_strata": [
+          "ge95_near_duplicate"
+        ],
+        "verdict": "indeterminate"
+      },
+      "rows": {
+        "ge95_near_duplicate": {
+          "bootstrap_degenerate": false,
+          "bootstrap_n_units": 27,
+          "fraction_above_0.10": 0.001388888888888889,
+          "fraction_above_0.10_ci": [
+            0.0,
+            0.001388888888888889
+          ],
+          "measured": true,
+          "n_above_0.10": 1,
+          "n_distinct_sequences": 27,
+          "n_probes_all_records": 34,
+          "n_records": 34,
+          "ov_mean_normalised_rank_over_induction_heads": 0.8868421167135239,
+          "peak_over_uniform": 19.533949130044352,
+          "peak_over_uniform_ci": [
+            13.942403944303003,
+            27.73002115639869
+          ]
+        },
+        "head_set_overlap_with_synthetic": {
+          "ge95_near_duplicate": {
+            "jaccard": 0.0,
+            "n_left": 1,
+            "n_right": 0,
+            "n_shared": 0
+          },
+          "id30_to_70_remote_homology": {
+            "jaccard": 0.0,
+            "n_left": 1,
+            "n_right": 0,
+            "n_shared": 0
+          },
+          "id70_to_95_close_homology": {
+            "jaccard": null,
+            "n_left": 0,
+            "n_right": 0,
+            "n_shared": 0
+          }
+        },
+        "id30_to_70_remote_homology": {
+          "bootstrap_degenerate": true,
+          "bootstrap_n_units": 3,
+          "fraction_above_0.10": 0.001388888888888889,
+          "fraction_above_0.10_ci": null,
+          "measured": true,
+          "n_above_0.10": 1,
+          "n_distinct_sequences": 3,
+          "n_probes_all_records": 3,
+          "n_records": 3,
+          "ov_mean_normalised_rank_over_induction_heads": 0.8868421167135239,
+          "peak_over_uniform": 8.15004660236597,
+          "peak_over_uniform_ci": null
+        },
+        "id70_to_95_close_homology": {
+          "bootstrap_degenerate": true,
+          "bootstrap_n_units": 7,
+          "fraction_above_0.10": 0.0,
+          "fraction_above_0.10_ci": null,
+          "measured": true,
+          "n_above_0.10": 0,
+          "n_distinct_sequences": 7,
+          "n_probes_all_records": 11,
+          "n_records": 11,
+          "ov_mean_normalised_rank_over_induction_heads": null,
+          "peak_over_uniform": 18.757550468798264,
+          "peak_over_uniform_ci": null
+        },
+        "lt30_no_detectable_homology": {
+          "measured": false,
+          "n_distinct_sequences": 0,
+          "n_records": 0
+        },
+        "pooled_all_strata": {
+          "duplicate_weighted_n_above_0.10": 0,
+          "duplicate_weighted_peak_over_uniform": 18.84883657976075,
+          "fraction_above_0.10": 0.0,
+          "measured": true,
+          "n_above_0.10": 0,
+          "n_distinct_sequences": 37,
+          "n_probes_all_records": 48,
+          "peak_over_uniform": 18.124531796883062
+        },
+        "synthetic_repeat_negative_control": {
+          "bootstrap_degenerate": false,
+          "bootstrap_n_units": 16,
+          "fraction_above_0.10": 0.0,
+          "measured": true,
+          "n_above_0.10": 0,
+          "n_probes": 16,
+          "peak_over_uniform": 4.465063112346458,
+          "peak_over_uniform_ci": [
+            3.7306192385586936,
+            5.309274874162561
+          ]
+        }
+      }
+    }
+  },
+  "cohort": {
+    "census": {
+      "match_rate": 0.000236379842708913,
+      "n_matching": 48,
+      "scanned_eligible": 203063
+    },
+    "constructor": "src.transfer.circuits.protein_repeat_cohort(n=48, min_len=200, max_len=800, criterion=PROTEIN_EXACT_CRITERION)",
+    "criterion": {
+      "indels": false,
+      "kind": "exact",
+      "max_gap_ratio": 2.0,
+      "max_substitution_rate": 0.0,
+      "min_distinct": 8,
+      "min_unit": 16,
+      "occurrences": 2,
+      "similarity": "identity"
+    },
+    "digest": "3ea68a87c593c532faf191ec5ea26f0dc5f5b6839d1b36580c80a0b94b3d4424",
+    "is_whole_population": true,
+    "kind": "protein",
+    "max_symbols": 800,
+    "min_symbols": 200,
+    "n_records": 48,
+    "name": "swissprot_tandem_repeat",
+    "requested_size": 48
+  },
+  "configuration": {
+    "arms": [
+      "protgpt2",
+      "zymctrl",
+      "progen2-medium"
+    ],
+    "attn_implementation": "eager",
+    "bootstrap_resamples": 2000,
+    "cohort_workers": 8,
+    "copy_matched_n": 20,
+    "copy_matched_repeats": 8,
+    "corpus_fasta": "/Data/lzp/BioInterpretebility-CC/data/uniref50/uniref50.fasta",
+    "device": "cpu",
+    "diamond_checksum": "/Data/lzp/BioInterpretebility-CC/external_resources/tools/diamond-linux64-v2.1.24.tar.gz.sha256",
+    "diamond_db": "/Data/lzp/homology_db/uniref50_full.dmnd",
+    "diamond_dir": "/Data/lzp/tools/diamond-2.1.24",
+    "diamond_tarball": "/Data/lzp/BioInterpretebility-CC/external_resources/tools/diamond-linux64-v2.1.24.tar.gz",
+    "diamond_tmpdir": "/Data/lzp/homology_db/tmp",
+    "dtype": "float32",
+    "evalue": 0.001,
+    "headline_threshold": 0.1,
+    "max_target_seqs": 100,
+    "min_stratum_probes": 3,
+    "natural_max_tokens": 840,
+    "output_dir": "/Data/lzp/BioInterpretebility-CC/r2_decoder_sparse_readout_audit/results/transfer_20260729/homology_control_unmasked",
+    "pooling_check_probes": 6,
+    "pooling_tolerance": 1e-06,
+    "rebuild_db": false,
+    "repeat_cohort_size": 48,
+    "repeat_criterion": "exact",
+    "repeat_max_len": 800,
+    "repeat_min_len": 200,
+    "seed": 20260728,
+    "sensitivity": "very-sensitive",
+    "stages": [
+      "induction"
+    ],
+    "synthetic_copy_len": 64,
+    "synthetic_probes": 16,
+    "threads": 48,
+    "unigram_max_tokens": 256
+  },
+  "database": {
+    "coverage_fraction": 1.0,
+    "database_path": "/Data/lzp/homology_db/uniref50_full.dmnd",
+    "indexed_letters": 17282055793,
+    "indexed_sequences": 60315044,
+    "is_complete": true,
+    "makedb_command": [
+      "/Data/lzp/tools/diamond-2.1.24/diamond",
+      "makedb",
+      "--in",
+      "/Data/lzp/BioInterpretebility-CC/data/uniref50/uniref50.fasta",
+      "--db",
+      "/Data/lzp/homology_db/uniref50_full.dmnd",
+      "--threads",
+      "64",
+      "--tmpdir",
+      "/Data/lzp/homology_db/tmp"
+    ],
+    "source_fasta": "/Data/lzp/BioInterpretebility-CC/data/uniref50/uniref50.fasta",
+    "source_fasta_bytes": 24637540125,
+    "source_fasta_records": 60315044
+  },
+  "diamond": {
+    "binary_sha256": "5d04a9ecbbceea5d1a6496070155012c2538788def552f85e0d65095a532a5f5",
+    "executable": "/Data/lzp/tools/diamond-2.1.24/diamond",
+    "tarball": "/Data/lzp/BioInterpretebility-CC/external_resources/tools/diamond-linux64-v2.1.24.tar.gz",
+    "tarball_sha256": "2c0c94dce4e2c75af881209ef824c7bc320bcba005ad02489111709590ae685d",
+    "version": "2.1.24"
+  },
+  "generated_utc": "2026-07-28T21:59:47.321781+00:00",
+  "identity_summary": {
+    "max": 100.0,
+    "mean": 95.28828598606685,
+    "median": 100.0,
+    "min": 65.27415143603133,
+    "n_at_100": 30,
+    "n_best_hit_spans_repeat": 46
+  },
+  "interpretation_fixed_in_advance": {
+    "general_mechanism": "induction stable across strata and present on synthetic repeats -> the finding survives",
+    "memorisation": "induction concentrated in high-homology strata and weak at low homology -> the head-count finding is confounded by training-set overlap",
+    "neither": "intermediate or non-monotone -> reported as such, no verdict forced"
+  },
+  "no_text_arm": "GPT-2's training corpus (WebText) was never released. OpenWebText is a reconstruction of the collection procedure, not the corpus GPT-2 saw, so a miss against it cannot distinguish 'GPT-2 never saw this document' from 'the reconstruction happens not to contain it'. No text-side homology stratification is constructed here. This control therefore speaks to whether the PROTEIN induction signal is general or retrieved; it cannot support a matched cross-modal memorisation claim.",
+  "schema_version": "r2_transfer_homology_control_v1",
+  "search_command": [
+    "/Data/lzp/tools/diamond-2.1.24/diamond",
+    "blastp",
+    "--db",
+    "/Data/lzp/homology_db/uniref50_full.dmnd",
+    "--query",
+    "results/transfer_20260729/homology_control_unmasked/cohort_query.faa",
+    "--out",
+    "results/transfer_20260729/homology_control_unmasked/diamond_hits.tsv",
+    "--outfmt",
+    "6",
+    "qseqid",
+    "sseqid",
+    "pident",
+    "length",
+    "nident",
+    "qstart",
+    "qend",
+    "qlen",
+    "slen",
+    "evalue",
+    "bitscore",
+    "--evalue",
+    "0.001",
+    "--max-target-seqs",
+    "100",
+    "--threads",
+    "64",
+    "--masking",
+    "0",
+    "--very-sensitive"
+  ],
+  "sequence_groups": {
+    "duplicate_groups": {
+      "16": [
+        16,
+        17
+      ],
+      "22": [
+        23,
+        24,
+        25,
+        26,
+        27
+      ],
+      "30": [
+        35,
+        36,
+        38,
+        39,
+        41,
+        42,
+        43
+      ]
+    },
+    "group_of_record": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      22,
+      22,
+      22,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      30,
+      31,
+      30,
+      30,
+      32,
+      30,
+      30,
+      30,
+      33,
+      34,
+      35,
+      36
+    ],
+    "n_distinct_sequences": 37,
+    "note": "the EC-labelled source carries one record per (protein, EC number) pair, so a protein with several EC numbers appears several times with a byte-identical sequence. Those records are one observation. Every interval in this control resamples distinct sequences, and the per-stratum headline numbers are computed over one probe per distinct sequence; the duplicate-weighted values the headline census used are reported alongside as `duplicate_weighted`."
+  },
+  "stage": "summary",
+  "strata": {
+    "bands": {
+      "ge95_near_duplicate": {
+        "high_exclusive": 100.000001,
+        "low_inclusive": 95.0
+      },
+      "id30_to_70_remote_homology": {
+        "high_exclusive": 70.0,
+        "low_inclusive": 30.0
+      },
+      "id70_to_95_close_homology": {
+        "high_exclusive": 95.0,
+        "low_inclusive": 70.0
+      },
+      "lt30_no_detectable_homology": {
+        "high_exclusive": 30.0,
+        "low_inclusive": 0.0
+      }
+    },
+    "edges_percent_identity": [
+      0.0,
+      30.0,
+      70.0,
+      95.0,
+      100.000001
+    ],
+    "fixed_before_results": true,
+    "identity_definition": "100 * nident / qlen for the best DIAMOND HSP, i.e. the percent of the QUERY that is identically matched. Not pident, which is identity within the aligned region and would call a corpus fragment a near-duplicate of a longer query.",
+    "names": [
+      "lt30_no_detectable_homology",
+      "id30_to_70_remote_homology",
+      "id70_to_95_close_homology",
+      "ge95_near_duplicate"
+    ]
+  },
+  "stratum_counts": {
+    "ge95_near_duplicate": 34,
+    "id30_to_70_remote_homology": 3,
+    "id70_to_95_close_homology": 11,
+    "lt30_no_detectable_homology": 0
+  },
+  "stratum_counts_distinct_sequences": {
+    "ge95_near_duplicate": 27,
+    "id30_to_70_remote_homology": 3,
+    "id70_to_95_close_homology": 7,
+    "lt30_no_detectable_homology": 0
+  }
+}

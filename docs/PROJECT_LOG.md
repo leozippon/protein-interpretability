@@ -889,3 +889,10 @@ Immediate operational consequence: add a loss-recovered splice metric to the P0-
 - Sizes: `results` 47,296 MB -> 47,170 MB; `logs` 105 MB -> 2.3 MB; root `logs` 6.0 MB -> 5.7 MB.
 - Documents rewritten to describe the single current objective: repository-root `README.md` (Paper A / Paper B framing, drug-design claim discipline and canonical pointers into retired trees all removed), `r2_.../README.md`, `r2_.../docs/README.md`, `r2_.../docs/RESEARCH_PLAN.md`, `r2_.../docs/methods/TRANSFER_MEASUREMENT_PROGRAMME.md`, `docs/DOCUMENT_INDEX.md`, `docs/README.md`. `docs/PROJECT_STATUS.md` gained a true current-state head; its dated snapshots are retained verbatim below it.
 - Two defects found and fixed in `.gitignore`: the R2 results, logs and wandb lines still named the pre-rename root `r2_decoder_sparse_readout_audit/`, so `logs/` was no longer ignored; and a bare `DOCUMENT_INDEX.md` line in the retired-root quarantine block had been excluding the live `docs/DOCUMENT_INDEX.md` from version control since 2026-07-16.
+
+## 2026-07-29 — Repository and remote operations audit
+
+- Audited the live code, contracts, statistics, H200 orchestration, evidence, documentation, and storage under the Development Principles. Repairs and accepted limitations are recorded in `docs/ENGINEERING_AUDIT.md`.
+- Moved frozen provenance and retired live configuration from the repository to `/Data2/lzp/bio_archive` using copy-then-verify semantics. The external `MIGRATION_SHA256SUMS` verifies 2,928 regular files; `docs/ARCHIVE.md` records the boundary.
+- Preserved final checkpoint hashes and before/after remote inventories under `evidence/checkpoint_receipts_20260729/`, then removed intermediate checkpoints and optimizer-only state. The idle four-GPU pod and temporary zero-GPU transfer pod were released; the cluster reported four schedulable H200s afterward.
+- Unified active runtime resource variables under `TRANSFER_*`, moved new remote outputs under the InterpretabilityTransfer GPFS root, and retained historical identifiers only in immutable records and artifact schemas.

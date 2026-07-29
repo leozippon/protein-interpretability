@@ -1,0 +1,139 @@
+{
+  "arms": [
+    {
+      "arm": "gpt2-large",
+      "clean_ce_nats": 2.6453985634714257,
+      "cohort": "openwebtext",
+      "cohort_band": [
+        800,
+        null
+      ],
+      "cohort_digest": "03135c29904ff0d3e4d1bb5e3791b5420cda1d0fa6665a6177356c2f2b30c658",
+      "context_information_nats": 4.905512212249201,
+      "input_format": "raw",
+      "max_len": 512,
+      "modality": "text",
+      "n_scored_tokens": 90823,
+      "n_sequences": 200,
+      "per_sequence_context_information_sd": 0.39625172386602187,
+      "plug_in_bias_nats": 0.3009053155480359,
+      "protein_source": "plain",
+      "reference_digest": "47396a676cd8697f9936c575445fe40df176b94a899867aed58285db2acf411d",
+      "reference_overlap": {
+        "dropped_sequences_shared_with_cohort": 0,
+        "requested_sequences": 4000,
+        "retained_sequences": 4000
+      },
+      "reference_sequences": 4000,
+      "symbols_per_token": 4.4275842369511,
+      "threshold_nats": 0.5,
+      "tokenisation": "bpe",
+      "unigram_held_out_nats": 7.550910775720626,
+      "unigram_plug_in_nats": 7.2500054601725905,
+      "verdict": "PASS",
+      "vocab_size": 50257
+    },
+    {
+      "arm": "protgpt2",
+      "clean_ce_nats": 4.7495554903529635,
+      "cohort": "swissprot",
+      "cohort_band": [
+        200,
+        800
+      ],
+      "cohort_digest": "667a1b092de18de9507c3e82d379903186597139cdd653b819b09114373c040e",
+      "context_information_nats": 4.047278342727858,
+      "input_format": "fasta_wrapped",
+      "max_len": 832,
+      "modality": "protein",
+      "n_scored_tokens": 21011,
+      "n_sequences": 200,
+      "per_sequence_context_information_sd": 2.627013614982153,
+      "plug_in_bias_nats": 1.2906675242831938,
+      "protein_source": "plain",
+      "reference_digest": "b28c9dc27a5582e0eea37a743036db7a48c27c466600dfe4af913be2779ddc41",
+      "reference_overlap": {
+        "dropped_sequences_shared_with_cohort": 1,
+        "requested_sequences": 4000,
+        "retained_sequences": 3999
+      },
+      "reference_sequences": 3999,
+      "symbols_per_token": 2.7931733534486822,
+      "threshold_nats": 0.5,
+      "tokenisation": "multi_residue_bpe",
+      "unigram_held_out_nats": 8.796833833080822,
+      "unigram_plug_in_nats": 7.506166308797628,
+      "verdict": "PASS",
+      "vocab_size": 50257
+    },
+    {
+      "arm": "zymctrl",
+      "clean_ce_nats": 1.7943951596581478,
+      "cohort": "swissprot",
+      "cohort_band": [
+        200,
+        800
+      ],
+      "cohort_digest": "b2b50042ec89b5fdab7ad0eaee9c974d7e57e9327b57e652fc0cce7d7cae85fc",
+      "context_information_nats": 1.109608214857694,
+      "input_format": "ec_conditioned",
+      "max_len": 832,
+      "modality": "protein",
+      "n_scored_tokens": 99317,
+      "n_sequences": 200,
+      "per_sequence_context_information_sd": 1.0410006568878252,
+      "plug_in_bias_nats": 0.006894485389415728,
+      "protein_source": "plain",
+      "reference_digest": "6a3f384b60fd270a2966804c1a24343fa3e3e82acde47281d9a095a078627f16",
+      "reference_overlap": {
+        "dropped_sequences_shared_with_cohort": 0,
+        "requested_sequences": 4000,
+        "retained_sequences": 4000
+      },
+      "reference_sequences": 4000,
+      "symbols_per_token": 0.980259976114571,
+      "threshold_nats": 0.5,
+      "tokenisation": "residue",
+      "unigram_held_out_nats": 2.904003374515842,
+      "unigram_plug_in_nats": 2.897108889126426,
+      "verdict": "PASS",
+      "vocab_size": 458
+    },
+    {
+      "arm": "progen2-medium",
+      "clean_ce_nats": 1.7258422650593932,
+      "cohort": "swissprot",
+      "cohort_band": [
+        200,
+        800
+      ],
+      "cohort_digest": "667a1b092de18de9507c3e82d379903186597139cdd653b819b09114373c040e",
+      "context_information_nats": 1.1759194463070695,
+      "input_format": "n_to_c_control",
+      "max_len": 832,
+      "modality": "protein",
+      "n_scored_tokens": 59246,
+      "n_sequences": 200,
+      "per_sequence_context_information_sd": 1.0007105532071707,
+      "plug_in_bias_nats": 0.013521071820731478,
+      "protein_source": "plain",
+      "reference_digest": "b28c9dc27a5582e0eea37a743036db7a48c27c466600dfe4af913be2779ddc41",
+      "reference_overlap": {
+        "dropped_sequences_shared_with_cohort": 1,
+        "requested_sequences": 4000,
+        "retained_sequences": 3999
+      },
+      "reference_sequences": 3999,
+      "symbols_per_token": 0.9966356020590116,
+      "threshold_nats": 0.5,
+      "tokenisation": "residue",
+      "unigram_held_out_nats": 2.9017617113664627,
+      "unigram_plug_in_nats": 2.888240639545731,
+      "verdict": "PASS",
+      "vocab_size": 32
+    }
+  ],
+  "sequences": 200,
+  "threshold_nats": 0.5,
+  "verdict": "PASS"
+}

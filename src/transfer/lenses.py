@@ -308,7 +308,20 @@ def split_cohort(
         ("train", sorted(int(i) for i in order[:n_train])),
         ("eval", sorted(int(i) for i in order[n_train:])),
     ):
-        metadata: dict[str, Any] = {}
+        metadata: dict[str, Any] = {
+            "sampling": {
+                "mode": "split",
+                "seed": int(seed),
+                "requested": len(indices),
+                "role": label,
+                "train_fraction": float(train_fraction),
+                "indices": indices,
+                "parent_name": cohort.name,
+                "parent_digest": cohort.digest,
+                "parent_provenance_digest": cohort.provenance_digest,
+                "parent_sampling": cohort.sampling,
+            }
+        }
         labels = cohort.metadata.get("ec_labels")
         if labels is not None:
             if len(labels) != total:

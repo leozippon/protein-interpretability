@@ -24,7 +24,7 @@ corpus by default. The in-cohort plug-in estimator is biased low, by roughly a
 nat per token on the 50k-vocabulary arms, which inflates the share it normalises;
 it remains available as an explicit opt-in and never as a fallback.
 
-One JSON per arm is written under ``results/transfer_20260728/pathway_budget/``.
+One JSON per arm is written under ``results/transfer/pathway_budget/``.
 """
 
 from __future__ import annotations
@@ -528,7 +528,7 @@ def main() -> None:
     parser.add_argument(
         "--output-root",
         type=Path,
-        default=REPO_ROOT / "results" / "transfer_20260728" / "pathway_budget",
+        default=REPO_ROOT / "results" / "transfer" / "pathway_budget",
     )
     args = parser.parse_args()
 

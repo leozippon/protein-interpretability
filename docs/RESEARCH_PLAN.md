@@ -14,7 +14,7 @@ Parts 2 and 3 are the deliverable. Part 1 is instrumental: a difference between 
 
 Autoregressive protein generators and matched text decoders. Encoder work is out of scope.
 
-The prior conserved sparse-readout programme in this directory — atlas, EC steering, enzyme design, npj manuscript — is **retired**, with its documents, results and receipts frozen at `../../archive/legacy/r2_retired_scope_20260729/` and catalogued in that directory's `README.md`. It is not an input to this programme. Two of its artefacts are exceptions and remain live because this programme depends on them:
+The prior conserved sparse-readout programme — atlas, EC steering, enzyme design, and npj manuscript — is **retired**, with its documents, results, and receipts frozen at `/Data2/lzp/bio_archive/legacy/r2_retired_scope_20260729/`. It is not an input to this programme. Two of its artefacts are exceptions and remain live because this programme depends on them:
 
 - `evidence/p0_2_adjudication_20260727/` and `evidence/p0_2b_fidelity_20260727/` are the evidence behind limitation **L1** and the baseline plan item **C1** re-qualifies. `docs/analysis/P0_2B_DICTIONARY_FIDELITY_RESULTS_20260727.md` is their prose form.
 - `results/final_checkpoints/` holds the four April 2026 CLT checkpoints, the only protein dictionaries held locally.
@@ -121,5 +121,5 @@ Total remaining budget, phased and costed, is the audit document §9: approximat
 - Methods, per-stage estimand and metric: `docs/methods/TRANSFER_MEASUREMENT_PROGRAMME.md`
 - Chronological record: `docs/EXPERIMENT_LOG.md`
 - Dictionary receipts behind L1 and C1: `docs/analysis/P0_2B_DICTIONARY_FIDELITY_RESULTS_20260727.md`, `evidence/p0_2_adjudication_20260727/`, `evidence/p0_2b_fidelity_20260727/`
-- Retired scope, frozen: `../../archive/legacy/r2_retired_scope_20260729/`
+- Retired scope, frozen: `/Data2/lzp/bio_archive/legacy/r2_retired_scope_20260729/`
 - Superseded and frozen, do not cite: repository-root `check.md`

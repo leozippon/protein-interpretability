@@ -76,7 +76,7 @@ from src.transfer.probes import (  # noqa: E402
 )
 
 DEFAULT_OUT = (
-    REPO / "results/transfer_20260728/probe_erasure"
+    REPO / "results/transfer/probe_erasure"
 )
 
 #: What each EC-conditioning mode buys and costs, recorded in every artifact.

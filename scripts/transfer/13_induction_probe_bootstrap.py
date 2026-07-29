@@ -66,7 +66,7 @@ from src.transfer.induction_robustness import (  # noqa: E402
     contrast_ratio_bootstrap,
 )
 
-DEFAULT_OUTPUT = REPO_ROOT / "results/transfer_20260728/induction_robustness"
+DEFAULT_OUTPUT = REPO_ROOT / "results/transfer/induction_robustness"
 
 #: The eleven arms with a census.  Ordered text first, and within text by
 #: lineage, so the printed table matches the manuscript's.

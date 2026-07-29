@@ -55,7 +55,7 @@ from src.transfer.channels import (  # noqa: E402
 )
 
 SCHEMA_VERSION = "r2_transfer_explanation_channel_v1"
-DEFAULT_OUT = REPO / "results/transfer_20260728/explanation_channel"
+DEFAULT_OUT = REPO / "results/transfer/explanation_channel"
 
 
 def swissprot_accession(header: str) -> str:

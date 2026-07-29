@@ -1,13 +1,15 @@
 # Repository Documentation
 
-Repository-wide documentation. Research-specific plans, methods, analyses and experiment logs live in the live research root's own `docs/` directory — currently `../docs/`.
+Repository-wide documentation for the single live InterpretabilityTransfer programme.
 
 ## Current documents
 
-- `PROJECT_STATUS.md` — current state, followed by superseded status snapshots retained as history.
+- `PROJECT_STATUS.md` — current operational state.
 - `PROJECT_LOG.md` — chronological repository and operations log. Append-only.
 - `DOCUMENT_INDEX.md` — map of live documents and frozen provenance.
 - `REPOSITORY_STRUCTURE.md` — canonical naming and layout rules, version-control policy.
+- `ENGINEERING_AUDIT.md` — current code, execution, provenance, and operations audit.
+- `ARCHIVE.md` — external frozen-provenance location and verification.
 - `audits/REPOSITORY_AUDIT_20260716.md` — repository/data/evidence/security audit taken immediately before the 2026-07-16 naming migration.
 - `audits/REORGANIZATION_20260716.md` — first-stage duplicate cleanup record.
 - `audits/STRUCTURE_STANDARDIZATION_20260716.md` — canonical root and document migration performed after those two snapshots.

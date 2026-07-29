@@ -54,27 +54,11 @@ class ArmCanRunPredicate(unittest.TestCase):
             self.assertFalse(verdict.can_run, arm)
             self.assertIn("SUPPORTED_ARCHITECTURES", verdict.reason)
 
-    def test_path_patching_refuses_progen2_because_the_declaration_is_wrong(self):
-        # ArmSpec.architecture defaults to "gpt2" for both ProGen2 arms while the
-        # checkpoints keep qkv_proj/out_proj, so attention_output_projection looks
-        # for c_proj and raises. Skipped with a reason instead of crashing a run.
+    def test_path_patching_admits_declared_progen_layouts(self):
         for arm in ("progen2-base", "progen2-medium"):
             verdict = pc.arm_can_run("induction_path_patching", arm)
-            self.assertFalse(verdict.can_run, arm)
-            self.assertIn("qkv_proj/out_proj", verdict.reason)
-
-    def test_the_progen2_exclusion_declares_when_it_becomes_stale(self):
-        # If arms.py is ever corrected to architecture="progen", this exclusion is
-        # wrong and must be removed. The test fails at that point rather than
-        # leaving a permanent skip nobody revisits.
-        for arm in ("progen2-base", "progen2-medium"):
-            self.assertEqual(
-                PANEL[arm].architecture,
-                "gpt2",
-                "PANEL now declares a different architecture for this ProGen2 arm; "
-                "drop its entry from STAGE_EXCLUSIONS['induction_path_patching'] and "
-                "validate path patching on it",
-            )
+            self.assertTrue(verdict.can_run, verdict.reason)
+            self.assertEqual(PANEL[arm].architecture, "progen")
 
     def test_lens_family_refuses_rmsnorm_arms_and_admits_every_other_campaign_arm(self):
         eligible, refused = pc.stage_arms("lens_family")
@@ -138,17 +122,17 @@ class StageDeclarationsMirrorTheirSource(unittest.TestCase):
         # gpt2-large is declared as TEXT_MODEL_ROOT itself; every other text arm
         # is addressed beneath TEXT_MODEL_BASE. The worker's `case` on the arm
         # name got this wrong for six of seven text arms until 2026-07-29.
-        self.assertEqual(pc.model_variable("gpt2-large"), "R2_TEXT_MODEL_DIR")
+        self.assertEqual(pc.model_variable("gpt2-large"), "TRANSFER_TEXT_MODEL_DIR")
         for arm in ("gpt2", "gpt2-medium", "gpt2-xl", "dialogpt-small",
                     "qwen2.5-0.5b", "llama-3.2-3b"):
-            self.assertEqual(pc.model_variable(arm), "R2_TEXT_MODEL_BASE_DIR", arm)
+            self.assertEqual(pc.model_variable(arm), "TRANSFER_TEXT_MODEL_BASE_DIR", arm)
         for arm in ("protgpt2", "zymctrl", "progen2-base", "progen2-medium"):
-            self.assertEqual(pc.model_variable(arm), "R2_MODEL_BASE_DIR", arm)
+            self.assertEqual(pc.model_variable(arm), "TRANSFER_MODEL_BASE_DIR", arm)
 
     def test_corpus_variables_follow_the_declared_evaluation_cohort(self):
-        self.assertEqual(pc.corpus_variables("zymctrl"), ("R2_ZYMCTRL_FASTA",))
-        self.assertEqual(pc.corpus_variables("protgpt2"), ("R2_SWISSPROT_FASTA",))
-        self.assertEqual(pc.corpus_variables("gpt2-large"), ("R2_OPENWEBTEXT_DIR",))
+        self.assertEqual(pc.corpus_variables("zymctrl"), ("TRANSFER_ZYMCTRL_FASTA",))
+        self.assertEqual(pc.corpus_variables("protgpt2"), ("TRANSFER_SWISSPROT_FASTA",))
+        self.assertEqual(pc.corpus_variables("gpt2-large"), ("TRANSFER_OPENWEBTEXT_DIR",))
 
 
 class CohortBandsAreDeclared(unittest.TestCase):
@@ -341,13 +325,13 @@ class ShellContractStaysInStepWithThePanel(unittest.TestCase):
         script = f"""
         set -euo pipefail
         source {pc.SHELL_CONTRACT}
-        printf 'panel=%s\\n' "$R2_CAMPAIGN_PANEL"
-        printf 'lens=%s\\n' "${{R2_STAGE_ARMS[lens_family]}}"
-        printf 'relational=%s\\n' "${{R2_STAGE_ARMS[relational_channel]}}"
-        printf 'pp=%s\\n' "${{R2_STAGE_ARMS[induction_path_patching]}}"
-        printf 'modality=%s\\n' "${{R2_ARM_MODALITY[protgpt2]}}"
-        printf 'modelvar=%s\\n' "${{R2_ARM_MODEL_VAR[qwen2.5-0.5b]}}"
-        printf 'items=%s\\n' "$R2_COHORT_ITEMS"
+        printf 'panel=%s\\n' "$TRANSFER_CAMPAIGN_PANEL"
+        printf 'lens=%s\\n' "${{TRANSFER_STAGE_ARMS[lens_family]}}"
+        printf 'relational=%s\\n' "${{TRANSFER_STAGE_ARMS[relational_channel]}}"
+        printf 'pp=%s\\n' "${{TRANSFER_STAGE_ARMS[induction_path_patching]}}"
+        printf 'modality=%s\\n' "${{TRANSFER_ARM_MODALITY[protgpt2]}}"
+        printf 'modelvar=%s\\n' "${{TRANSFER_ARM_MODEL_VAR[qwen2.5-0.5b]}}"
+        printf 'items=%s\\n' "$TRANSFER_COHORT_ITEMS"
         """
         out = subprocess.run(
             ["bash", "-c", script], capture_output=True, text=True, check=True
@@ -362,7 +346,7 @@ class ShellContractStaysInStepWithThePanel(unittest.TestCase):
             rendered["pp"].split(), pc.stage_arms("induction_path_patching")[0]
         )
         self.assertEqual(rendered["modality"], "protein")
-        self.assertEqual(rendered["modelvar"], "R2_TEXT_MODEL_BASE_DIR")
+        self.assertEqual(rendered["modelvar"], "TRANSFER_TEXT_MODEL_BASE_DIR")
         self.assertEqual(rendered["items"].split(), [i.item for i in pc.cohort_power_items()])
 
     def test_cohort_power_items_reproduce_the_campaign_dispatch(self):
@@ -371,10 +355,12 @@ class ShellContractStaysInStepWithThePanel(unittest.TestCase):
         self.assertIn("--with-ec", items["protein_small_vocab"].extra_args)
         self.assertEqual(items["protein_large_vocab"].arms, ("protgpt2",))
         self.assertIn("--skip-truncation", items["protein_large_vocab"].extra_args)
+        self.assertEqual(items["protein_progen2_base"].arms, ("progen2-base",))
+        self.assertEqual(items["protein_progen2_base"].extra_args, ())
+        self.assertEqual(items["protein_progen2_medium"].arms, ("progen2-medium",))
         self.assertEqual(
-            items["protein_progen2"].arms, ("progen2-base", "progen2-medium")
+            items["protein_progen2_medium"].extra_args, ("--dtype", "float32")
         )
-        self.assertEqual(items["protein_progen2"].extra_args, ("--dtype", "float32"))
         # Every protein item needs its own --cohort-name or two identical cohorts
         # collide on one output filename.
         protein_names = [
@@ -400,7 +386,7 @@ class WorkerAndControllerBehaviour(unittest.TestCase):
                 self.assertNotIn(
                     f"{arm}|", source, f"{name} still branches on the arm name {arm}"
                 )
-            self.assertIn("R2_CAMPAIGN_PANEL", source, name)
+            self.assertIn("TRANSFER_CAMPAIGN_PANEL", source, name)
 
     def test_controller_never_prints_the_pod_name(self):
         source = (STAGE_DIR / "run_transfer_h200.sh").read_text(encoding="utf-8")
@@ -433,7 +419,7 @@ class WorkerAndControllerBehaviour(unittest.TestCase):
         set -euo pipefail
         log() {{ :; }}
         {_extract_function(STAGE_DIR / 'h200_worker.sh', 'assert_no_duplicate_options')}
-        assert_no_duplicate_options cohort_power protein_progen2 \\
+        assert_no_duplicate_options cohort_power protein_progen2_medium \\
           python 01_cohort_power.py --dtype float32 --out /x --dtype bfloat16
         """
         result = subprocess.run(["bash", "-c", script], capture_output=True, text=True)
@@ -472,19 +458,19 @@ class WorkerAndControllerBehaviour(unittest.TestCase):
         script = f"""
         set -euo pipefail
         source {pc.SHELL_CONTRACT}
-        R2_PYTHON=/usr/bin/python3
+        TRANSFER_PYTHON=/usr/bin/python3
         TRANSFER_SCRIPTS=/snapshot/scripts/transfer
         RUN_ID=testrun
         LOCAL_SCRATCH_ROOT=/tmp/scratch
         declare -A STAGE_EXTRA_ARGS=()
         declare -A ITEM_EXTRA_ARGS=()
         declare -A COHORT_ITEM_ARMS_FOR=()
-        for i in $R2_COHORT_ITEMS; do
-          COHORT_ITEM_ARMS_FOR[$i]="${{R2_COHORT_ITEM_ARMS[$i]}}"
+        for i in $TRANSFER_COHORT_ITEMS; do
+          COHORT_ITEM_ARMS_FOR[$i]="${{TRANSFER_COHORT_ITEM_ARMS[$i]}}"
         done
-        read -r -a CIRCUIT_ARMS <<< "${{R2_STAGE_ARMS[circuit_primitives]}}"
-        read -r -a HOMOLOGY_ARMS <<< "${{R2_STAGE_ARMS[homology_control]}}"
-        read -r -a PATH_PATCHING_ARMS <<< "${{R2_STAGE_ARMS[induction_path_patching]}}"
+        read -r -a CIRCUIT_ARMS <<< "${{TRANSFER_STAGE_ARMS[circuit_primitives]}}"
+        read -r -a HOMOLOGY_ARMS <<< "${{TRANSFER_STAGE_ARMS[homology_control]}}"
+        read -r -a PATH_PATCHING_ARMS <<< "${{TRANSFER_STAGE_ARMS[induction_path_patching]}}"
         log() {{ :; }}
         {_extract_function(STAGE_DIR / 'h200_worker.sh', 'arm_modality')}
         {_extract_function(STAGE_DIR / 'h200_worker.sh', 'assert_no_duplicate_options')}
@@ -499,17 +485,28 @@ class WorkerAndControllerBehaviour(unittest.TestCase):
         return result.stdout.strip().splitlines()
 
     def test_cohort_power_items_are_built_from_the_contract(self):
-        progen = self._build_command("cohort_power", "protein_progen2")
-        self.assertIn("--kind", progen)
-        self.assertEqual(progen[progen.index("--kind") + 1], "protein")
+        progen_base = self._build_command("cohort_power", "protein_progen2_base")
+        self.assertIn("--kind", progen_base)
+        self.assertEqual(progen_base[progen_base.index("--kind") + 1], "protein")
         self.assertEqual(
-            progen[progen.index("--arms") + 1 : progen.index("--arms") + 3],
-            ["progen2-base", "progen2-medium"],
+            progen_base[progen_base.index("--arms") + 1],
+            "progen2-base",
         )
-        self.assertIn("--dtype", progen)
-        self.assertEqual(progen[progen.index("--dtype") + 1], "float32")
+        self.assertNotIn("--dtype", progen_base)
         self.assertEqual(
-            progen[progen.index("--cohort-name") + 1], "swissprot_progen2_f32"
+            progen_base[progen_base.index("--cohort-name") + 1],
+            "swissprot_progen2_base",
+        )
+        progen_medium = self._build_command("cohort_power", "protein_progen2_medium")
+        self.assertEqual(
+            progen_medium[progen_medium.index("--arms") + 1], "progen2-medium"
+        )
+        self.assertEqual(
+            progen_medium[progen_medium.index("--dtype") + 1], "float32"
+        )
+        self.assertEqual(
+            progen_medium[progen_medium.index("--cohort-name") + 1],
+            "swissprot_progen2_medium_f32",
         )
         text = self._build_command("cohort_power", "text")
         self.assertEqual(text[text.index("--kind") + 1], "text")
@@ -528,8 +525,8 @@ class WorkerAndControllerBehaviour(unittest.TestCase):
         self.assertEqual(arms, list(pc.STAGE_CONTRACTS["homology_control"].declared_arms))
 
     def test_item_scoped_args_reach_only_their_item(self):
-        override = 'ITEM_EXTRA_ARGS["cohort_power/protein_progen2"]="--cohort-pool-size 8000"'
-        progen = self._build_command("cohort_power", "protein_progen2", override)
+        override = 'ITEM_EXTRA_ARGS["cohort_power/protein_progen2_medium"]="--cohort-pool-size 8000"'
+        progen = self._build_command("cohort_power", "protein_progen2_medium", override)
         self.assertIn("--cohort-pool-size", progen)
         text = self._build_command("cohort_power", "text", override)
         self.assertNotIn("--cohort-pool-size", text)
@@ -538,7 +535,7 @@ class WorkerAndControllerBehaviour(unittest.TestCase):
         with self.assertRaises(AssertionError) as caught:
             self._build_command(
                 "cohort_power",
-                "protein_progen2",
+                "protein_progen2_medium",
                 'STAGE_EXTRA_ARGS["cohort_power"]="--dtype bfloat16"',
             )
         self.assertIn("--dtype", str(caught.exception))

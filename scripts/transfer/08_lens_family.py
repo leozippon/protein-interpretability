@@ -46,7 +46,7 @@ the context information; no quantity here is such a ratio, so a small
 denominator widens no interval and invalidates nothing. Arms in that band are
 reported with their power verdict attached.
 
-One JSON per arm is written under ``results/transfer_20260728/lens_family/``.
+One JSON per arm is written under ``results/transfer/lens_family/``.
 """
 
 from __future__ import annotations
@@ -714,7 +714,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-root",
         type=Path,
-        default=REPO_ROOT / "results" / "transfer_20260728" / "lens_family",
+        default=REPO_ROOT / "results" / "transfer" / "lens_family",
     )
     return parser
 

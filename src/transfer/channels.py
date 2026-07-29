@@ -44,9 +44,9 @@ from .arms import REPO, env_path, require_input_path
 from .statistics import mean_interval
 
 PFAM_RESIDUE_TSV = env_path(
-    "R2_PFAM_RESIDUE_TSV", REPO / "data/interpro/pfam_residue.tsv"
+    "TRANSFER_PFAM_RESIDUE_TSV", REPO / "data/interpro/pfam_residue.tsv"
 )
-ALPHAFOLD_ROOT = env_path("R2_ALPHAFOLD_DIR", REPO / "data/alphafold")
+ALPHAFOLD_ROOT = env_path("TRANSFER_ALPHAFOLD_DIR", REPO / "data/alphafold")
 PFAM_TSV_HEADER = ("uniprot", "start", "end", "pfam_id")
 
 #: Label assigned to residues with no Pfam coverage. Excluding them instead
@@ -275,7 +275,7 @@ def load_pfam_spans(
     """Residue-level Pfam spans, optionally restricted to given accessions."""
 
     spans: dict[str, list[tuple[int, int, str]]] = {}
-    require_input_path(Path(path), "R2_PFAM_RESIDUE_TSV")
+    require_input_path(Path(path), "TRANSFER_PFAM_RESIDUE_TSV")
     with Path(path).open(encoding="utf-8") as handle:
         header = tuple(next(handle).rstrip("\n").split("\t"))
         if header != PFAM_TSV_HEADER:
@@ -478,7 +478,7 @@ def alphafold_models(root: Path = ALPHAFOLD_ROOT, *, limit: int | None = None) -
     :func:`alphafold_model_sample` is what a *limited* selection should use.
     """
 
-    require_input_path(Path(root), "R2_ALPHAFOLD_DIR")
+    require_input_path(Path(root), "TRANSFER_ALPHAFOLD_DIR")
     paths = sorted(Path(root).glob("AF-*-model_v*.pdb.gz"))
     if not paths:
         raise RuntimeError(f"no AlphaFold PDB models under {root}")

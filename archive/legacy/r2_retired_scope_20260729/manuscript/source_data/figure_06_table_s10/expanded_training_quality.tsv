@@ -1,4 +1,0 @@
-model	checkpoint	d_clt	width_ratio	final_training_log_fvu	dead_fraction	dead_percent	l0	loss	fvu_gate_lt_0p15	dead_gate_lt_0p30	joint_quality_gate
-ProtGPT2	step_300000	16384	2.0	0.2782	0.334	33.4	128.0	7.1176	False	False	False
-ZymCTRL	step_300000	16384	2.0	0.3348	0.044	4.4	90.6	0.0201	False	True	False
-ProGen2-medium	step_300000	16384	4.0	0.3101	0.122	12.2	123.0	0.0138	False	True	False

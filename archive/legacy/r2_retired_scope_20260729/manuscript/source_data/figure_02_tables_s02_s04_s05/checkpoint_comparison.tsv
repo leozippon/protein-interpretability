@@ -1,3 +1,0 @@
-name	n_universal_triplets	threshold	n_sequences	top_feature_pairs	feature_pool_size	mean_layer_cka	mean_abs_match_corr	path
-v2_reference	38	0.9	200	300	4096	0.5558646001997247	0.8258568855678594	Research2/results/circuit_analysis/cross_model_conservation_3model_balanced200_wide_20260512.json
-early10k	16	0.9	200	300	4096	0.45035460063537514	0.6403491722654413	Research2/results/circuit_analysis/cross_model_conservation_3model_balanced200_early10k_20260516.json

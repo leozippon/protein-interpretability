@@ -1,0 +1,1850 @@
+{
+  "arms": {
+    "progen2-medium": {
+      "adjudication": {
+        "additional_tests": {
+          "fraction_above_threshold_ci": {
+            "ge95_near_duplicate": [
+              0.009259259259259259,
+              0.009259259259259259
+            ],
+            "id30_to_70_remote_homology": [
+              0.006944444444444444,
+              0.013888888888888888
+            ],
+            "synthetic_point": {
+              "0.05": 0.016203703703703703,
+              "0.10": 0.013888888888888888,
+              "0.20": 0.011574074074074073,
+              "0.30": 0.011574074074074073
+            }
+          },
+          "head_count_intervals_overlap": true,
+          "head_count_strata_separated": false,
+          "note": "reported alongside the verdict, not an input to it; the verdict rule was fixed on peak-over-uniform before any result was seen"
+        },
+        "bootstrap_unit_floor": 8,
+        "compared": {
+          "high_homology": "ge95_near_duplicate",
+          "low_homology": "id30_to_70_remote_homology"
+        },
+        "min_distinct_sequences_for_comparison": 3,
+        "peak_over_uniform_ci": {
+          "ge95_near_duplicate": [
+            99.37011105365745,
+            128.37255282954104
+          ],
+          "id30_to_70_remote_homology": [
+            53.38783840688424,
+            89.79052227545914
+          ],
+          "synthetic": [
+            87.194646961266,
+            88.47071306129547
+          ]
+        },
+        "resolution": {
+          "high_stratum_distinct_sequences": 472,
+          "high_stratum_peak_would_have_had_to_exceed": 89.79052227545914,
+          "low_stratum_distinct_sequences": 92,
+          "note": "the rule separates the strata only when the low bin's interval lies wholly below the high bin's, so these state how large a memorisation gradient would have had to be for this cohort to reveal one",
+          "observed_high_over_low_peak_ratio": 1.6488931232683064,
+          "separation_margin_peak_over_uniform": 9.579588778198314
+        },
+        "rule": "consistent_with_memorisation if the lowest-homology usable stratum's peak-over-uniform bootstrap interval lies strictly below the highest-homology usable stratum's; consistent_with_general_mechanism if those intervals overlap AND the synthetic-repeat interval overlaps the lowest-homology stratum's; indeterminate otherwise.",
+        "strata_separated": true,
+        "synthetic_matches_low_homology": true,
+        "underpowered_strata": {},
+        "usable_strata": [
+          "id30_to_70_remote_homology",
+          "id70_to_95_close_homology",
+          "ge95_near_duplicate"
+        ],
+        "verdict": "consistent_with_memorisation"
+      },
+      "rows": {
+        "ge95_near_duplicate": {
+          "bootstrap_degenerate": false,
+          "bootstrap_n_units": 472,
+          "fraction_above_0.10": 0.009259259259259259,
+          "fraction_above_0.10_ci": [
+            0.009259259259259259,
+            0.009259259259259259
+          ],
+          "measured": true,
+          "n_above_0.10": 4,
+          "n_distinct_sequences": 472,
+          "n_probes_all_records": 529,
+          "n_records": 529,
+          "ov_mean_normalised_rank_over_induction_heads": 1.0,
+          "peak_over_uniform": 113.26962760624787,
+          "peak_over_uniform_ci": [
+            99.37011105365745,
+            128.37255282954104
+          ]
+        },
+        "head_set_overlap_with_synthetic": {
+          "ge95_near_duplicate": {
+            "jaccard": 0.6666666666666666,
+            "n_left": 4,
+            "n_right": 6,
+            "n_shared": 4
+          },
+          "id30_to_70_remote_homology": {
+            "jaccard": 0.42857142857142855,
+            "n_left": 4,
+            "n_right": 6,
+            "n_shared": 3
+          },
+          "id70_to_95_close_homology": {
+            "jaccard": 0.6666666666666666,
+            "n_left": 4,
+            "n_right": 6,
+            "n_shared": 4
+          }
+        },
+        "id30_to_70_remote_homology": {
+          "bootstrap_degenerate": false,
+          "bootstrap_n_units": 92,
+          "fraction_above_0.10": 0.009259259259259259,
+          "fraction_above_0.10_ci": [
+            0.006944444444444444,
+            0.013888888888888888
+          ],
+          "measured": true,
+          "n_above_0.10": 4,
+          "n_distinct_sequences": 92,
+          "n_probes_all_records": 117,
+          "n_records": 117,
+          "ov_mean_normalised_rank_over_induction_heads": 0.9388157930225134,
+          "peak_over_uniform": 68.69434168160863,
+          "peak_over_uniform_ci": [
+            53.38783840688424,
+            89.79052227545914
+          ]
+        },
+        "id70_to_95_close_homology": {
+          "bootstrap_degenerate": false,
+          "bootstrap_n_units": 145,
+          "fraction_above_0.10": 0.009259259259259259,
+          "fraction_above_0.10_ci": [
+            0.006944444444444444,
+            0.009259259259259259
+          ],
+          "measured": true,
+          "n_above_0.10": 4,
+          "n_distinct_sequences": 145,
+          "n_probes_all_records": 171,
+          "n_records": 171,
+          "ov_mean_normalised_rank_over_induction_heads": 1.0,
+          "peak_over_uniform": 85.56139545376266,
+          "peak_over_uniform_ci": [
+            71.65101297057109,
+            107.38454562029517
+          ]
+        },
+        "lt30_no_detectable_homology": {
+          "measured": false,
+          "n_distinct_sequences": 0,
+          "n_records": 0
+        },
+        "pooled_all_strata": {
+          "duplicate_weighted_n_above_0.10": 4,
+          "duplicate_weighted_peak_over_uniform": 92.85899031453232,
+          "fraction_above_0.10": 0.009259259259259259,
+          "measured": true,
+          "n_above_0.10": 4,
+          "n_distinct_sequences": 709,
+          "n_probes_all_records": 817,
+          "peak_over_uniform": 97.99231317961019
+        },
+        "synthetic_repeat_negative_control": {
+          "bootstrap_degenerate": false,
+          "bootstrap_n_units": 16,
+          "fraction_above_0.10": 0.013888888888888888,
+          "measured": true,
+          "n_above_0.10": 6,
+          "n_probes": 16,
+          "peak_over_uniform": 87.84571704075492,
+          "peak_over_uniform_ci": [
+            87.194646961266,
+            88.47071306129547
+          ]
+        }
+      }
+    },
+    "protgpt2": {
+      "adjudication": {
+        "additional_tests": {
+          "fraction_above_threshold_ci": {
+            "ge95_near_duplicate": [
+              0.018055555555555554,
+              0.018055555555555554
+            ],
+            "id30_to_70_remote_homology": [
+              0.009722222222222222,
+              0.019444444444444445
+            ],
+            "synthetic_point": {
+              "0.05": 0.020833333333333332,
+              "0.10": 0.018055555555555554,
+              "0.20": 0.015277777777777777,
+              "0.30": 0.009722222222222222
+            }
+          },
+          "head_count_intervals_overlap": true,
+          "head_count_strata_separated": false,
+          "note": "reported alongside the verdict, not an input to it; the verdict rule was fixed on peak-over-uniform before any result was seen"
+        },
+        "bootstrap_unit_floor": 8,
+        "compared": {
+          "high_homology": "ge95_near_duplicate",
+          "low_homology": "id30_to_70_remote_homology"
+        },
+        "min_distinct_sequences_for_comparison": 3,
+        "peak_over_uniform_ci": {
+          "ge95_near_duplicate": [
+            29.537297036669887,
+            42.51066263677934
+          ],
+          "id30_to_70_remote_homology": [
+            9.30748534501246,
+            19.137504756918723
+          ],
+          "synthetic": [
+            57.39898002373928,
+            64.38405317454267
+          ]
+        },
+        "resolution": {
+          "high_stratum_distinct_sequences": 360,
+          "high_stratum_peak_would_have_had_to_exceed": 19.137504756918723,
+          "low_stratum_distinct_sequences": 59,
+          "note": "the rule separates the strata only when the low bin's interval lies wholly below the high bin's, so these state how large a memorisation gradient would have had to be for this cohort to reveal one",
+          "observed_high_over_low_peak_ratio": 2.62328278880928,
+          "separation_margin_peak_over_uniform": 10.399792279751164
+        },
+        "rule": "consistent_with_memorisation if the lowest-homology usable stratum's peak-over-uniform bootstrap interval lies strictly below the highest-homology usable stratum's; consistent_with_general_mechanism if those intervals overlap AND the synthetic-repeat interval overlaps the lowest-homology stratum's; indeterminate otherwise.",
+        "strata_separated": true,
+        "synthetic_matches_low_homology": false,
+        "underpowered_strata": {},
+        "usable_strata": [
+          "id30_to_70_remote_homology",
+          "id70_to_95_close_homology",
+          "ge95_near_duplicate"
+        ],
+        "verdict": "consistent_with_memorisation"
+      },
+      "rows": {
+        "ge95_near_duplicate": {
+          "bootstrap_degenerate": false,
+          "bootstrap_n_units": 360,
+          "fraction_above_0.10": 0.018055555555555554,
+          "fraction_above_0.10_ci": [
+            0.018055555555555554,
+            0.018055555555555554
+          ],
+          "measured": true,
+          "n_above_0.10": 13,
+          "n_distinct_sequences": 360,
+          "n_probes_all_records": 396,
+          "n_records": 529,
+          "ov_mean_normalised_rank_over_induction_heads": 0.4798836045486566,
+          "peak_over_uniform": 35.419790026364986,
+          "peak_over_uniform_ci": [
+            29.537297036669887,
+            42.51066263677934
+          ]
+        },
+        "head_set_overlap_with_synthetic": {
+          "ge95_near_duplicate": {
+            "jaccard": 1.0,
+            "n_left": 13,
+            "n_right": 13,
+            "n_shared": 13
+          },
+          "id30_to_70_remote_homology": {
+            "jaccard": 0.4666666666666667,
+            "n_left": 9,
+            "n_right": 13,
+            "n_shared": 7
+          },
+          "id70_to_95_close_homology": {
+            "jaccard": 0.7692307692307693,
+            "n_left": 10,
+            "n_right": 13,
+            "n_shared": 10
+          }
+        },
+        "id30_to_70_remote_homology": {
+          "bootstrap_degenerate": false,
+          "bootstrap_n_units": 59,
+          "fraction_above_0.10": 0.0125,
+          "fraction_above_0.10_ci": [
+            0.009722222222222222,
+            0.019444444444444445
+          ],
+          "measured": true,
+          "n_above_0.10": 9,
+          "n_distinct_sequences": 59,
+          "n_probes_all_records": 79,
+          "n_records": 117,
+          "ov_mean_normalised_rank_over_induction_heads": 0.5040935691859987,
+          "peak_over_uniform": 13.502086079877875,
+          "peak_over_uniform_ci": [
+            9.30748534501246,
+            19.137504756918723
+          ]
+        },
+        "id70_to_95_close_homology": {
+          "bootstrap_degenerate": false,
+          "bootstrap_n_units": 106,
+          "fraction_above_0.10": 0.013888888888888888,
+          "fraction_above_0.10_ci": [
+            0.008333333333333333,
+            0.016666666666666666
+          ],
+          "measured": true,
+          "n_above_0.10": 10,
+          "n_distinct_sequences": 106,
+          "n_probes_all_records": 122,
+          "n_records": 171,
+          "ov_mean_normalised_rank_over_induction_heads": 0.47463815837400036,
+          "peak_over_uniform": 24.410036120913443,
+          "peak_over_uniform_ci": [
+            17.604529078304356,
+            33.320788989889074
+          ]
+        },
+        "lt30_no_detectable_homology": {
+          "measured": false,
+          "n_distinct_sequences": 0,
+          "n_records": 0
+        },
+        "pooled_all_strata": {
+          "duplicate_weighted_n_above_0.10": 13,
+          "duplicate_weighted_peak_over_uniform": 30.235290098653337,
+          "fraction_above_0.10": 0.018055555555555554,
+          "measured": true,
+          "n_above_0.10": 13,
+          "n_distinct_sequences": 525,
+          "n_probes_all_records": 597,
+          "peak_over_uniform": 30.827342806567902
+        },
+        "synthetic_repeat_negative_control": {
+          "bootstrap_degenerate": false,
+          "bootstrap_n_units": 16,
+          "fraction_above_0.10": 0.018055555555555554,
+          "measured": true,
+          "n_above_0.10": 13,
+          "n_probes": 16,
+          "peak_over_uniform": 60.82282427496786,
+          "peak_over_uniform_ci": [
+            57.39898002373928,
+            64.38405317454267
+          ]
+        }
+      }
+    },
+    "zymctrl": {
+      "adjudication": {
+        "additional_tests": {
+          "fraction_above_threshold_ci": {
+            "ge95_near_duplicate": [
+              0.0,
+              0.0
+            ],
+            "id30_to_70_remote_homology": [
+              0.0,
+              0.0
+            ],
+            "synthetic_point": {
+              "0.05": 0.0,
+              "0.10": 0.0,
+              "0.20": 0.0,
+              "0.30": 0.0
+            }
+          },
+          "head_count_intervals_overlap": true,
+          "head_count_strata_separated": false,
+          "note": "reported alongside the verdict, not an input to it; the verdict rule was fixed on peak-over-uniform before any result was seen"
+        },
+        "bootstrap_unit_floor": 8,
+        "compared": {
+          "high_homology": "ge95_near_duplicate",
+          "low_homology": "id30_to_70_remote_homology"
+        },
+        "min_distinct_sequences_for_comparison": 3,
+        "peak_over_uniform_ci": {
+          "ge95_near_duplicate": [
+            7.939600448018,
+            10.175921587278891
+          ],
+          "id30_to_70_remote_homology": [
+            4.076491598945451,
+            6.460705368335277
+          ],
+          "synthetic": [
+            2.8703802449964217,
+            3.4179326334741016
+          ]
+        },
+        "resolution": {
+          "high_stratum_distinct_sequences": 472,
+          "high_stratum_peak_would_have_had_to_exceed": 6.460705368335277,
+          "low_stratum_distinct_sequences": 92,
+          "note": "the rule separates the strata only when the low bin's interval lies wholly below the high bin's, so these state how large a memorisation gradient would have had to be for this cohort to reveal one",
+          "observed_high_over_low_peak_ratio": 1.790836915328037,
+          "separation_margin_peak_over_uniform": 1.4788950796827232
+        },
+        "rule": "consistent_with_memorisation if the lowest-homology usable stratum's peak-over-uniform bootstrap interval lies strictly below the highest-homology usable stratum's; consistent_with_general_mechanism if those intervals overlap AND the synthetic-repeat interval overlaps the lowest-homology stratum's; indeterminate otherwise.",
+        "strata_separated": true,
+        "synthetic_matches_low_homology": false,
+        "underpowered_strata": {},
+        "usable_strata": [
+          "id30_to_70_remote_homology",
+          "id70_to_95_close_homology",
+          "ge95_near_duplicate"
+        ],
+        "verdict": "consistent_with_memorisation"
+      },
+      "rows": {
+        "ge95_near_duplicate": {
+          "bootstrap_degenerate": false,
+          "bootstrap_n_units": 472,
+          "fraction_above_0.10": 0.0,
+          "fraction_above_0.10_ci": [
+            0.0,
+            0.0
+          ],
+          "measured": true,
+          "n_above_0.10": 0,
+          "n_distinct_sequences": 472,
+          "n_probes_all_records": 529,
+          "n_records": 529,
+          "ov_mean_normalised_rank_over_induction_heads": null,
+          "peak_over_uniform": 9.021155411961155,
+          "peak_over_uniform_ci": [
+            7.939600448018,
+            10.175921587278891
+          ]
+        },
+        "head_set_overlap_with_synthetic": {
+          "ge95_near_duplicate": {
+            "jaccard": null,
+            "n_left": 0,
+            "n_right": 0,
+            "n_shared": 0
+          },
+          "id30_to_70_remote_homology": {
+            "jaccard": null,
+            "n_left": 0,
+            "n_right": 0,
+            "n_shared": 0
+          },
+          "id70_to_95_close_homology": {
+            "jaccard": null,
+            "n_left": 0,
+            "n_right": 0,
+            "n_shared": 0
+          }
+        },
+        "id30_to_70_remote_homology": {
+          "bootstrap_degenerate": false,
+          "bootstrap_n_units": 92,
+          "fraction_above_0.10": 0.0,
+          "fraction_above_0.10_ci": [
+            0.0,
+            0.0
+          ],
+          "measured": true,
+          "n_above_0.10": 0,
+          "n_distinct_sequences": 92,
+          "n_probes_all_records": 117,
+          "n_records": 117,
+          "ov_mean_normalised_rank_over_induction_heads": null,
+          "peak_over_uniform": 5.037396389781647,
+          "peak_over_uniform_ci": [
+            4.076491598945451,
+            6.460705368335277
+          ]
+        },
+        "id70_to_95_close_homology": {
+          "bootstrap_degenerate": false,
+          "bootstrap_n_units": 145,
+          "fraction_above_0.10": 0.0,
+          "fraction_above_0.10_ci": [
+            0.0,
+            0.0
+          ],
+          "measured": true,
+          "n_above_0.10": 0,
+          "n_distinct_sequences": 145,
+          "n_probes_all_records": 171,
+          "n_records": 171,
+          "ov_mean_normalised_rank_over_induction_heads": null,
+          "peak_over_uniform": 7.06536745818553,
+          "peak_over_uniform_ci": [
+            5.528989742373131,
+            9.150810115846813
+          ]
+        },
+        "lt30_no_detectable_homology": {
+          "measured": false,
+          "n_distinct_sequences": 0,
+          "n_records": 0
+        },
+        "pooled_all_strata": {
+          "duplicate_weighted_n_above_0.10": 0,
+          "duplicate_weighted_peak_over_uniform": 8.086064580535634,
+          "fraction_above_0.10": 0.0,
+          "measured": true,
+          "n_above_0.10": 0,
+          "n_distinct_sequences": 709,
+          "n_probes_all_records": 817,
+          "peak_over_uniform": 8.093851199909444
+        },
+        "synthetic_repeat_negative_control": {
+          "bootstrap_degenerate": false,
+          "bootstrap_n_units": 16,
+          "fraction_above_0.10": 0.0,
+          "measured": true,
+          "n_above_0.10": 0,
+          "n_probes": 16,
+          "peak_over_uniform": 3.1292972961732066,
+          "peak_over_uniform_ci": [
+            2.8703802449964217,
+            3.4179326334741016
+          ]
+        }
+      }
+    }
+  },
+  "cohort": {
+    "census": {
+      "match_rate": 0.004023381906107956,
+      "n_matching": 817,
+      "scanned_eligible": 203063
+    },
+    "constructor": "src.transfer.circuits.protein_repeat_cohort(n=817, min_len=200, max_len=800, criterion=PROTEIN_APPROXIMATE_CRITERION)",
+    "criterion": {
+      "indels": false,
+      "kind": "approximate",
+      "max_gap_ratio": 2.0,
+      "max_substitution_rate": 0.5,
+      "min_distinct": 8,
+      "min_unit": 16,
+      "occurrences": 2,
+      "similarity": "blosum62_nonadverse"
+    },
+    "digest": "3cb7bac9c5cd1648cf534c0362593e8ebd9f0b487d85f1242c345581be3292b0",
+    "is_whole_population": true,
+    "kind": "protein",
+    "max_symbols": 800,
+    "min_symbols": 200,
+    "n_records": 817,
+    "name": "swissprot_tandem_repeat",
+    "requested_size": 817
+  },
+  "configuration": {
+    "arms": [
+      "protgpt2",
+      "zymctrl",
+      "progen2-medium"
+    ],
+    "attn_implementation": "eager",
+    "bootstrap_resamples": 2000,
+    "cohort_workers": 8,
+    "copy_matched_n": 20,
+    "copy_matched_repeats": 8,
+    "corpus_fasta": "/Data/lzp/BioInterpretebility-CC/data/uniref50/uniref50.fasta",
+    "device": "cpu",
+    "diamond_checksum": "/Data/lzp/BioInterpretebility-CC/external_resources/tools/diamond-linux64-v2.1.24.tar.gz.sha256",
+    "diamond_db": "/Data/lzp/homology_db/uniref50_full.dmnd",
+    "diamond_dir": "/Data/lzp/tools/diamond-2.1.24",
+    "diamond_tarball": "/Data/lzp/BioInterpretebility-CC/external_resources/tools/diamond-linux64-v2.1.24.tar.gz",
+    "diamond_tmpdir": "/Data/lzp/homology_db/tmp",
+    "dtype": "float32",
+    "evalue": 0.001,
+    "headline_threshold": 0.1,
+    "max_target_seqs": 100,
+    "min_stratum_probes": 3,
+    "natural_max_tokens": 840,
+    "output_dir": "/Data/lzp/BioInterpretebility-CC/r2_decoder_sparse_readout_audit/results/transfer_20260729/homology_control_unmasked/approximate_criterion",
+    "pooling_check_probes": 6,
+    "pooling_tolerance": 1e-06,
+    "rebuild_db": false,
+    "repeat_cohort_size": 817,
+    "repeat_criterion": "approximate",
+    "repeat_max_len": 800,
+    "repeat_min_len": 200,
+    "seed": 20260728,
+    "sensitivity": "very-sensitive",
+    "stages": [
+      "induction"
+    ],
+    "synthetic_copy_len": 64,
+    "synthetic_probes": 16,
+    "threads": 48,
+    "unigram_max_tokens": 256
+  },
+  "database": {
+    "coverage_fraction": 1.0,
+    "database_path": "/Data/lzp/homology_db/uniref50_full.dmnd",
+    "indexed_letters": 17282055793,
+    "indexed_sequences": 60315044,
+    "is_complete": true,
+    "makedb_command": [
+      "/Data/lzp/tools/diamond-2.1.24/diamond",
+      "makedb",
+      "--in",
+      "/Data/lzp/BioInterpretebility-CC/data/uniref50/uniref50.fasta",
+      "--db",
+      "/Data/lzp/homology_db/uniref50_full.dmnd",
+      "--threads",
+      "64",
+      "--tmpdir",
+      "/Data/lzp/homology_db/tmp"
+    ],
+    "source_fasta": "/Data/lzp/BioInterpretebility-CC/data/uniref50/uniref50.fasta",
+    "source_fasta_bytes": 24637540125,
+    "source_fasta_records": 60315044
+  },
+  "diamond": {
+    "binary_sha256": "5d04a9ecbbceea5d1a6496070155012c2538788def552f85e0d65095a532a5f5",
+    "executable": "/Data/lzp/tools/diamond-2.1.24/diamond",
+    "tarball": "/Data/lzp/BioInterpretebility-CC/external_resources/tools/diamond-linux64-v2.1.24.tar.gz",
+    "tarball_sha256": "2c0c94dce4e2c75af881209ef824c7bc320bcba005ad02489111709590ae685d",
+    "version": "2.1.24"
+  },
+  "generated_utc": "2026-07-28T23:30:19.393373+00:00",
+  "identity_summary": {
+    "max": 100.0,
+    "mean": 90.8428792997895,
+    "median": 100.0,
+    "min": 49.44320712694878,
+    "n_at_100": 438,
+    "n_best_hit_spans_repeat": 799
+  },
+  "interpretation_fixed_in_advance": {
+    "general_mechanism": "induction stable across strata and present on synthetic repeats -> the finding survives",
+    "memorisation": "induction concentrated in high-homology strata and weak at low homology -> the head-count finding is confounded by training-set overlap",
+    "neither": "intermediate or non-monotone -> reported as such, no verdict forced"
+  },
+  "no_text_arm": "GPT-2's training corpus (WebText) was never released. OpenWebText is a reconstruction of the collection procedure, not the corpus GPT-2 saw, so a miss against it cannot distinguish 'GPT-2 never saw this document' from 'the reconstruction happens not to contain it'. No text-side homology stratification is constructed here. This control therefore speaks to whether the PROTEIN induction signal is general or retrieved; it cannot support a matched cross-modal memorisation claim.",
+  "schema_version": "r2_transfer_homology_control_v1",
+  "search_command": [
+    "/Data/lzp/tools/diamond-2.1.24/diamond",
+    "blastp",
+    "--db",
+    "/Data/lzp/homology_db/uniref50_full.dmnd",
+    "--query",
+    "results/transfer_20260729/homology_control_unmasked/approximate_criterion/cohort_query.faa",
+    "--out",
+    "results/transfer_20260729/homology_control_unmasked/approximate_criterion/diamond_hits.tsv",
+    "--outfmt",
+    "6",
+    "qseqid",
+    "sseqid",
+    "pident",
+    "length",
+    "nident",
+    "qstart",
+    "qend",
+    "qlen",
+    "slen",
+    "evalue",
+    "bitscore",
+    "--evalue",
+    "0.001",
+    "--max-target-seqs",
+    "100",
+    "--threads",
+    "64",
+    "--masking",
+    "0",
+    "--very-sensitive"
+  ],
+  "sequence_groups": {
+    "duplicate_groups": {
+      "114": [
+        147,
+        148,
+        149
+      ],
+      "125": [
+        160,
+        161
+      ],
+      "14": [
+        14,
+        15,
+        16
+      ],
+      "15": [
+        17,
+        18
+      ],
+      "16": [
+        19,
+        20
+      ],
+      "166": [
+        202,
+        203
+      ],
+      "17": [
+        21,
+        22
+      ],
+      "175": [
+        212,
+        213
+      ],
+      "18": [
+        23,
+        24
+      ],
+      "210": [
+        248,
+        249
+      ],
+      "217": [
+        256,
+        257
+      ],
+      "22": [
+        28,
+        29,
+        30,
+        31,
+        34
+      ],
+      "227": [
+        267,
+        268,
+        269
+      ],
+      "234": [
+        276,
+        277,
+        279,
+        282,
+        283
+      ],
+      "236": [
+        280,
+        281
+      ],
+      "24": [
+        33,
+        441
+      ],
+      "245": [
+        292,
+        293
+      ],
+      "249": [
+        297,
+        298
+      ],
+      "26": [
+        36,
+        37
+      ],
+      "282": [
+        331,
+        332
+      ],
+      "29": [
+        40,
+        41
+      ],
+      "293": [
+        343,
+        344
+      ],
+      "294": [
+        345,
+        346
+      ],
+      "295": [
+        347,
+        348
+      ],
+      "296": [
+        349,
+        350
+      ],
+      "297": [
+        351,
+        352
+      ],
+      "299": [
+        354,
+        355
+      ],
+      "301": [
+        357,
+        358
+      ],
+      "305": [
+        362,
+        363,
+        364,
+        365,
+        614
+      ],
+      "311": [
+        371,
+        372,
+        373
+      ],
+      "333": [
+        395,
+        396
+      ],
+      "336": [
+        399,
+        400
+      ],
+      "34": [
+        46,
+        48,
+        49,
+        117,
+        118,
+        119
+      ],
+      "35": [
+        47,
+        120
+      ],
+      "355": [
+        419,
+        420
+      ],
+      "361": [
+        426,
+        427
+      ],
+      "362": [
+        428,
+        429
+      ],
+      "37": [
+        51,
+        52
+      ],
+      "393": [
+        461,
+        462,
+        463,
+        464,
+        465
+      ],
+      "399": [
+        471,
+        473
+      ],
+      "416": [
+        489,
+        490,
+        491
+      ],
+      "431": [
+        506,
+        507
+      ],
+      "432": [
+        508,
+        509
+      ],
+      "433": [
+        510,
+        511
+      ],
+      "434": [
+        512,
+        513
+      ],
+      "436": [
+        515,
+        516
+      ],
+      "475": [
+        555,
+        556
+      ],
+      "484": [
+        565,
+        566
+      ],
+      "495": [
+        577,
+        578
+      ],
+      "510": [
+        593,
+        594
+      ],
+      "511": [
+        595,
+        596
+      ],
+      "517": [
+        602,
+        603
+      ],
+      "518": [
+        604,
+        605
+      ],
+      "519": [
+        606,
+        607
+      ],
+      "599": [
+        688,
+        691
+      ],
+      "610": [
+        700,
+        701
+      ],
+      "639": [
+        730,
+        731,
+        733,
+        734,
+        736,
+        737,
+        738
+      ],
+      "642": [
+        739,
+        740
+      ],
+      "655": [
+        753,
+        754
+      ],
+      "660": [
+        759,
+        760
+      ],
+      "676": [
+        776,
+        777,
+        778,
+        783,
+        784,
+        785
+      ],
+      "682": [
+        787,
+        788
+      ],
+      "690": [
+        796,
+        800,
+        801
+      ],
+      "80": [
+        95,
+        96,
+        97,
+        98,
+        99,
+        100
+      ],
+      "81": [
+        101,
+        102,
+        107,
+        108,
+        109,
+        110
+      ],
+      "82": [
+        103,
+        104,
+        105,
+        106
+      ],
+      "83": [
+        111,
+        112
+      ]
+    },
+    "group_of_record": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      14,
+      14,
+      15,
+      15,
+      16,
+      16,
+      17,
+      17,
+      18,
+      18,
+      19,
+      20,
+      21,
+      22,
+      22,
+      22,
+      22,
+      23,
+      24,
+      22,
+      25,
+      26,
+      26,
+      27,
+      28,
+      29,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      34,
+      34,
+      36,
+      37,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      71,
+      72,
+      73,
+      74,
+      75,
+      76,
+      77,
+      78,
+      79,
+      80,
+      80,
+      80,
+      80,
+      80,
+      80,
+      81,
+      81,
+      82,
+      82,
+      82,
+      82,
+      81,
+      81,
+      81,
+      81,
+      83,
+      83,
+      84,
+      85,
+      86,
+      87,
+      34,
+      34,
+      34,
+      35,
+      88,
+      89,
+      90,
+      91,
+      92,
+      93,
+      94,
+      95,
+      96,
+      97,
+      98,
+      99,
+      100,
+      101,
+      102,
+      103,
+      104,
+      105,
+      106,
+      107,
+      108,
+      109,
+      110,
+      111,
+      112,
+      113,
+      114,
+      114,
+      114,
+      115,
+      116,
+      117,
+      118,
+      119,
+      120,
+      121,
+      122,
+      123,
+      124,
+      125,
+      125,
+      126,
+      127,
+      128,
+      129,
+      130,
+      131,
+      132,
+      133,
+      134,
+      135,
+      136,
+      137,
+      138,
+      139,
+      140,
+      141,
+      142,
+      143,
+      144,
+      145,
+      146,
+      147,
+      148,
+      149,
+      150,
+      151,
+      152,
+      153,
+      154,
+      155,
+      156,
+      157,
+      158,
+      159,
+      160,
+      161,
+      162,
+      163,
+      164,
+      165,
+      166,
+      166,
+      167,
+      168,
+      169,
+      170,
+      171,
+      172,
+      173,
+      174,
+      175,
+      175,
+      176,
+      177,
+      178,
+      179,
+      180,
+      181,
+      182,
+      183,
+      184,
+      185,
+      186,
+      187,
+      188,
+      189,
+      190,
+      191,
+      192,
+      193,
+      194,
+      195,
+      196,
+      197,
+      198,
+      199,
+      200,
+      201,
+      202,
+      203,
+      204,
+      205,
+      206,
+      207,
+      208,
+      209,
+      210,
+      210,
+      211,
+      212,
+      213,
+      214,
+      215,
+      216,
+      217,
+      217,
+      218,
+      219,
+      220,
+      221,
+      222,
+      223,
+      224,
+      225,
+      226,
+      227,
+      227,
+      227,
+      228,
+      229,
+      230,
+      231,
+      232,
+      233,
+      234,
+      234,
+      235,
+      234,
+      236,
+      236,
+      234,
+      234,
+      237,
+      238,
+      239,
+      240,
+      241,
+      242,
+      243,
+      244,
+      245,
+      245,
+      246,
+      247,
+      248,
+      249,
+      249,
+      250,
+      251,
+      252,
+      253,
+      254,
+      255,
+      256,
+      257,
+      258,
+      259,
+      260,
+      261,
+      262,
+      263,
+      264,
+      265,
+      266,
+      267,
+      268,
+      269,
+      270,
+      271,
+      272,
+      273,
+      274,
+      275,
+      276,
+      277,
+      278,
+      279,
+      280,
+      281,
+      282,
+      282,
+      283,
+      284,
+      285,
+      286,
+      287,
+      288,
+      289,
+      290,
+      291,
+      292,
+      293,
+      293,
+      294,
+      294,
+      295,
+      295,
+      296,
+      296,
+      297,
+      297,
+      298,
+      299,
+      299,
+      300,
+      301,
+      301,
+      302,
+      303,
+      304,
+      305,
+      305,
+      305,
+      305,
+      306,
+      307,
+      308,
+      309,
+      310,
+      311,
+      311,
+      311,
+      312,
+      313,
+      314,
+      315,
+      316,
+      317,
+      318,
+      319,
+      320,
+      321,
+      322,
+      323,
+      324,
+      325,
+      326,
+      327,
+      328,
+      329,
+      330,
+      331,
+      332,
+      333,
+      333,
+      334,
+      335,
+      336,
+      336,
+      337,
+      338,
+      339,
+      340,
+      341,
+      342,
+      343,
+      344,
+      345,
+      346,
+      347,
+      348,
+      349,
+      350,
+      351,
+      352,
+      353,
+      354,
+      355,
+      355,
+      356,
+      357,
+      358,
+      359,
+      360,
+      361,
+      361,
+      362,
+      362,
+      363,
+      364,
+      365,
+      366,
+      367,
+      368,
+      369,
+      370,
+      371,
+      372,
+      373,
+      24,
+      374,
+      375,
+      376,
+      377,
+      378,
+      379,
+      380,
+      381,
+      382,
+      383,
+      384,
+      385,
+      386,
+      387,
+      388,
+      389,
+      390,
+      391,
+      392,
+      393,
+      393,
+      393,
+      393,
+      393,
+      394,
+      395,
+      396,
+      397,
+      398,
+      399,
+      400,
+      399,
+      401,
+      402,
+      403,
+      404,
+      405,
+      406,
+      407,
+      408,
+      409,
+      410,
+      411,
+      412,
+      413,
+      414,
+      415,
+      416,
+      416,
+      416,
+      417,
+      418,
+      419,
+      420,
+      421,
+      422,
+      423,
+      424,
+      425,
+      426,
+      427,
+      428,
+      429,
+      430,
+      431,
+      431,
+      432,
+      432,
+      433,
+      433,
+      434,
+      434,
+      435,
+      436,
+      436,
+      437,
+      438,
+      439,
+      440,
+      441,
+      442,
+      443,
+      444,
+      445,
+      446,
+      447,
+      448,
+      449,
+      450,
+      451,
+      452,
+      453,
+      454,
+      455,
+      456,
+      457,
+      458,
+      459,
+      460,
+      461,
+      462,
+      463,
+      464,
+      465,
+      466,
+      467,
+      468,
+      469,
+      470,
+      471,
+      472,
+      473,
+      474,
+      475,
+      475,
+      476,
+      477,
+      478,
+      479,
+      480,
+      481,
+      482,
+      483,
+      484,
+      484,
+      485,
+      486,
+      487,
+      488,
+      489,
+      490,
+      491,
+      492,
+      493,
+      494,
+      495,
+      495,
+      496,
+      497,
+      498,
+      499,
+      500,
+      501,
+      502,
+      503,
+      504,
+      505,
+      506,
+      507,
+      508,
+      509,
+      510,
+      510,
+      511,
+      511,
+      512,
+      513,
+      514,
+      515,
+      516,
+      517,
+      517,
+      518,
+      518,
+      519,
+      519,
+      520,
+      521,
+      522,
+      523,
+      524,
+      525,
+      305,
+      526,
+      527,
+      528,
+      529,
+      530,
+      531,
+      532,
+      533,
+      534,
+      535,
+      536,
+      537,
+      538,
+      539,
+      540,
+      541,
+      542,
+      543,
+      544,
+      545,
+      546,
+      547,
+      548,
+      549,
+      550,
+      551,
+      552,
+      553,
+      554,
+      555,
+      556,
+      557,
+      558,
+      559,
+      560,
+      561,
+      562,
+      563,
+      564,
+      565,
+      566,
+      567,
+      568,
+      569,
+      570,
+      571,
+      572,
+      573,
+      574,
+      575,
+      576,
+      577,
+      578,
+      579,
+      580,
+      581,
+      582,
+      583,
+      584,
+      585,
+      586,
+      587,
+      588,
+      589,
+      590,
+      591,
+      592,
+      593,
+      594,
+      595,
+      596,
+      597,
+      598,
+      599,
+      600,
+      601,
+      599,
+      602,
+      603,
+      604,
+      605,
+      606,
+      607,
+      608,
+      609,
+      610,
+      610,
+      611,
+      612,
+      613,
+      614,
+      615,
+      616,
+      617,
+      618,
+      619,
+      620,
+      621,
+      622,
+      623,
+      624,
+      625,
+      626,
+      627,
+      628,
+      629,
+      630,
+      631,
+      632,
+      633,
+      634,
+      635,
+      636,
+      637,
+      638,
+      639,
+      639,
+      640,
+      639,
+      639,
+      641,
+      639,
+      639,
+      639,
+      642,
+      642,
+      643,
+      644,
+      645,
+      646,
+      647,
+      648,
+      649,
+      650,
+      651,
+      652,
+      653,
+      654,
+      655,
+      655,
+      656,
+      657,
+      658,
+      659,
+      660,
+      660,
+      661,
+      662,
+      663,
+      664,
+      665,
+      666,
+      667,
+      668,
+      669,
+      670,
+      671,
+      672,
+      673,
+      674,
+      675,
+      676,
+      676,
+      676,
+      677,
+      678,
+      679,
+      680,
+      676,
+      676,
+      676,
+      681,
+      682,
+      682,
+      683,
+      684,
+      685,
+      686,
+      687,
+      688,
+      689,
+      690,
+      691,
+      692,
+      693,
+      690,
+      690,
+      694,
+      695,
+      696,
+      697,
+      698,
+      699,
+      700,
+      701,
+      702,
+      703,
+      704,
+      705,
+      706,
+      707,
+      708
+    ],
+    "n_distinct_sequences": 709,
+    "note": "the EC-labelled source carries one record per (protein, EC number) pair, so a protein with several EC numbers appears several times with a byte-identical sequence. Those records are one observation. Every interval in this control resamples distinct sequences, and the per-stratum headline numbers are computed over one probe per distinct sequence; the duplicate-weighted values the headline census used are reported alongside as `duplicate_weighted`."
+  },
+  "stage": "summary",
+  "strata": {
+    "bands": {
+      "ge95_near_duplicate": {
+        "high_exclusive": 100.000001,
+        "low_inclusive": 95.0
+      },
+      "id30_to_70_remote_homology": {
+        "high_exclusive": 70.0,
+        "low_inclusive": 30.0
+      },
+      "id70_to_95_close_homology": {
+        "high_exclusive": 95.0,
+        "low_inclusive": 70.0
+      },
+      "lt30_no_detectable_homology": {
+        "high_exclusive": 30.0,
+        "low_inclusive": 0.0
+      }
+    },
+    "edges_percent_identity": [
+      0.0,
+      30.0,
+      70.0,
+      95.0,
+      100.000001
+    ],
+    "fixed_before_results": true,
+    "identity_definition": "100 * nident / qlen for the best DIAMOND HSP, i.e. the percent of the QUERY that is identically matched. Not pident, which is identity within the aligned region and would call a corpus fragment a near-duplicate of a longer query.",
+    "names": [
+      "lt30_no_detectable_homology",
+      "id30_to_70_remote_homology",
+      "id70_to_95_close_homology",
+      "ge95_near_duplicate"
+    ]
+  },
+  "stratum_counts": {
+    "ge95_near_duplicate": 529,
+    "id30_to_70_remote_homology": 117,
+    "id70_to_95_close_homology": 171,
+    "lt30_no_detectable_homology": 0
+  },
+  "stratum_counts_distinct_sequences": {
+    "ge95_near_duplicate": 472,
+    "id30_to_70_remote_homology": 92,
+    "id70_to_95_close_homology": 145,
+    "lt30_no_detectable_homology": 0
+  }
+}

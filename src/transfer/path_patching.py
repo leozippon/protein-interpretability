@@ -445,24 +445,15 @@ def require_supported_layout(arm: Arm) -> None:
     convention: an exception at an arbitrary depth of a GPU run is the failure
     mode capability declarations exist to replace.
 
-    **The declared architecture is checked, then verified.** Until EXP-R2-067
-    this function tested ``ArmSpec.architecture`` against
-    :data:`SUPPORTED_ARCHITECTURES` and stopped there, which made it agree with
-    :func:`attention_output_projection` only as long as every arm's declaration
-    described its checkpoint. Two do not: ``progen2-base`` and
-    ``progen2-medium`` carry ``architecture='gpt2'`` -- the field default, never
-    set -- while their attention keeps ``out_proj`` where GPT-2 keeps
-    ``c_proj``. The guard admitted them and
-    :func:`attention_output_projection` then raised, at an arbitrary depth of a
-    GPU run, which is precisely what this function exists to prevent. Resolving
-    the projection on layer 0 makes the guard's admission mean what its name
-    says: this arm can be addressed end to end.
+    **The declared architecture is checked, then verified.** GPT-2 and ProGen
+    share the ``transformer.h``/``transformer.ln_f`` trunk used throughout this
+    module, but keep the attention output projection under different names.
+    Resolving both the trunk and the projection on layer zero makes admission
+    mean that the path patcher can address the declared layout end to end.
 
     A spec-only ``Arm`` (``model=None``, built by a scheduler to ask the
     question without a checkpoint) cannot be verified, so the declaration is all
-    there is and the resolution step is skipped. That is why
-    ``scripts/transfer/panel_contract.py`` still carries the ProGen2 exclusion:
-    the scheduler decides before anything is loaded.
+    there is and the resolution step is skipped.
     """
 
     if arm.spec.architecture not in SUPPORTED_ARCHITECTURES:
@@ -472,8 +463,22 @@ def require_supported_layout(arm: Arm) -> None:
             "its trunk at model.model and its attention output projection at o_proj, "
             "neither of which this module resolves"
         )
-    if arm.model is not None:
-        attention_output_projection(arm, 0)
+    if arm.model is None:
+        return
+    transformer = getattr(arm.model, "transformer", None)
+    if transformer is None or not hasattr(transformer, "h") or not hasattr(transformer, "ln_f"):
+        raise TypeError(
+            f"{arm.name}: declared {arm.spec.architecture} but path patching requires "
+            "model.transformer.h and model.transformer.ln_f"
+        )
+    if len(transformer.h) != arm.n_layer:
+        raise TypeError(
+            f"{arm.name}: declared {arm.n_layer} layers but model.transformer.h has "
+            f"{len(transformer.h)}"
+        )
+    if not hasattr(arm.model, "lm_head"):
+        raise TypeError(f"{arm.name}: path patching requires model.lm_head")
+    attention_output_projection(arm, 0)
 
 
 def attention_output_projection(arm: Arm, layer: int) -> torch.nn.Module:

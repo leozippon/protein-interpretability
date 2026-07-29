@@ -110,7 +110,7 @@ from src.transfer.path_patching import (  # noqa: E402
     summarise_senders,
 )
 
-DEFAULT_OUTPUT = REPO_ROOT / "results/transfer_20260728/path_patching"
+DEFAULT_OUTPUT = REPO_ROOT / "results/transfer/path_patching"
 
 #: The two repeat criteria, in the order they are reported.  ``exact`` is first
 #: because it is the baseline the approximate probe has to be read against.

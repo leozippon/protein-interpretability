@@ -63,7 +63,7 @@ from src.transfer.relational import (  # noqa: E402
 from src.transfer.scoring import analysis_layers  # noqa: E402
 
 SCHEMA_VERSION = "r2_transfer_relational_channel_v1"
-DEFAULT_OUT = REPO / "results/transfer_20260728/relational_channel"
+DEFAULT_OUT = REPO / "results/transfer/relational_channel"
 LAYER_FRACTIONS = (0.33, 0.5, 0.67)
 
 

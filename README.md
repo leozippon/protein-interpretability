@@ -1,84 +1,73 @@
-# BioInterpretebility-CC
+# InterpretabilityTransfer
 
-Mechanistic interpretability of protein generative models, measured against matched text decoders.
+InterpretabilityTransfer studies how mechanistic-interpretability methods transfer from text decoders to protein generative models.
 
-## Objective
+## Research Objective
 
-One objective, three parts:
+The programme follows three ordered directions:
 
-1. **Differences.** Compare language-generative and protein-generative models.
-2. **Transferability.** Analyse how well existing interpretability methods — those developed on text decoders — transfer to protein generative models.
-3. **Adapted methods.** Design and validate interpretability methods suited to protein generative models.
+1. **Compare model families.** Identify meaningful differences between text and protein generative models.
+2. **Evaluate method transfer.** Determine how and under what conditions existing interpretability methods transfer, and separate method limitations from model or data limitations.
+3. **Develop adapted methods.** Design and validate protein-specific methods only when the preceding evidence identifies a concrete failure mode.
 
-Parts 2 and 3 are the deliverable. Part 1 is instrumental: a difference between model families matters here only insofar as it explains why a method transfers badly.
+Steps 2 and 3 are the main deliverables; step 1 provides their foundation. `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` is canonical for findings, limitations, retractions, and the current scientific plan.
 
-Nothing else is in scope. There is no drug-design line, no enzyme-design line and no second paper.
+## Repository Layout
 
-## Canonical document
+The repository root (`.`) is the only live research root.
 
-`docs/INTERPRETABILITY_TRANSFER_AUDIT.md` is the canonical findings, limitations catalogue and plan. **Where any other document disagrees with it, it wins.** It carries the programme's retractions (§0.05, §0.1) and qualifications (§5.05); a claim it has withdrawn must not be asserted as true anywhere else in this repository.
+| Path | Purpose | Git policy |
+|---|---|---|
+| `src/transfer/` | Shared measurement library | tracked |
+| `scripts/transfer/` | Local validation and H200 campaign entry points | tracked |
+| `tests/` | Contract and behavior tests | tracked |
+| `docs/` | Scientific plan, logs, methods, analyses, and navigation | tracked |
+| `evidence/` | Compact receipts and provenance artifacts | tracked |
+| `external_resources/` | Metadata and setup helpers for third-party resources | metadata tracked; payloads ignored |
+| `data/` | Local datasets | ignored |
+| `results/` | Generated experiment outputs | ignored |
+| `logs/` | Runtime output | ignored except `logs/README.md` |
 
-## Research roots
+Frozen historical provenance, retired R0/R1 roots, old manuscripts, and retired configurations are stored outside the repository at `/Data2/lzp/bio_archive`. See `docs/ARCHIVE.md`; nothing in that tree is a live interface.
 
-| ID | Scope | Home | Status |
-|----|-------|------|--------|
-| **R2** | Text-to-protein interpretability transfer | `` | **active — the only live root** |
-| R0 | ProteinInterpret evaluation framework | `archive/retired_research_roots/` | retired 2026-07-29 |
-| R1 | Encoder benchmark (ESM-2 SAE + IndelMissense) | `archive/retired_research_roots/` | retired 2026-07-29 |
-| R3 | reserved | — | not assigned |
+## Campaign Contract
 
-Retired roots keep their IDs and their full results trees so historical references stay resolvable. They are frozen provenance: do not build on, repair or resume them.
+The current contract contains 11 active model arms and 11 active stages. `scripts/transfer/panel_contract.py` is the source of truth; generated shell declarations and operator documentation must agree with it.
 
-## Directory map
+Active arms: `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `qwen2.5-0.5b`, `llama-3.2-3b`, `protgpt2`, `zymctrl`, `progen2-base`, and `progen2-medium`.
 
-| Path | Purpose |
-|------|---------|
-| `` | **R2, the live research root.** Measurement library, campaign runners, results, evidence. |
-| `data/` | Staged local datasets (Swiss-Prot, ProteinGym, AlphaFold, …). B-only, not synced. |
-| `external_resources/` | Downloaded third-party baselines and tools. B-only. |
-| `ops/` | Cluster, staging and operational helper scripts. |
-| `docs/` | Repository-wide status, chronological log, navigation, naming conventions, dated audits. |
-| `logs/` | Runtime logs for shared and cross-root operations. B-only. |
-| `archive/` | Frozen provenance. Retired research roots, retired scope, superseded proposals and snapshots. |
+Active stages: `cohort_power`, `pathway_budget`, `estimand_power`, `circuit_primitives`, `relational_channel`, `explanation_channel`, `convergence_control`, `lens_family`, `probe_and_erasure`, `homology_control`, and `induction_path_patching`.
 
-## Read first
+Validate the generated contract before scheduling:
 
-1. `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` — canonical findings, limitations catalogue, plan.
-2. `docs/RESEARCH_PLAN.md` — scope, evidence discipline, compute policy.
-3. `docs/REPOSITORY_STRUCTURE.md` — naming rules, version-control policy, standard layout.
-4. `CLAUDE.md` / `AGENTS.md` — environment and operational rules.
-5. `docs/EXPERIMENT_LOG.md` — chronological experiment record (`EXP-R2-NNN`).
-6. `docs/DOCUMENT_INDEX.md` — navigation, including frozen material.
+```bash
+source ~/miniconda3/etc/profile.d/conda.sh
+conda activate ct
+python scripts/transfer/panel_contract.py --verify
+```
 
-Repository-root `check.md` is **frozen and superseded** by (1). Its amendment sections remain a useful record of how individual conclusions were reached and withdrawn, but its body asserts claims that have since been retracted. Do not cite it.
+See `scripts/transfer/README.md` for stage eligibility, local validation, and H200 operation.
 
-## Where the evidence is
+## Environment
 
-Result trees live under `results/` and are B-only. The trees that carry current numbers:
+The validated workstation uses Python 3.11. Direct Python dependencies are declared in `requirements.txt`; the correct CUDA-enabled PyTorch build must be selected for the host. Copy `.env.local.example` to the ignored `.env.local` only when local download credentials are needed.
 
-| Tree | What it holds |
-|---|---|
-| `transfer_20260728/` | The 2026-07-28 campaign: pathway budget, estimand power, circuit primitives (synthetic / approximate / text control / text ladder), convergence control, lens family, probes and erasure, homology control, path patching, induction robustness, PAA census. |
-| `transfer_20260729/` | Homology / memorisation control, re-run without repeat masking (EXP-R2-064). |
-| `transfer_20260729_instrument/`, `…_instrument_skip4000/` | Eleven-arm instrument-transfer campaign and its cohort-skip sensitivity arm. |
-| `transfer_gap_20260724/` | The TG series. Retained unmodified because the audit document cites it. |
-| `transfer_gap_20260729_corrected/` | The TG series re-run after the rendering and cohort corrections (EXP-R2-062). |
-| `final_checkpoints/` | Four CLT checkpoints (2026-04-03) — the only protein dictionaries held locally; an input to plan item C1. |
+The resource interface is recorded in `external_resources/manifests/interpretability_transfer_resources.json`. It records environment-variable contracts, not machine-specific paths, credentials, pod names, or claims about current availability.
 
-Compact synchronized receipts are under `evidence/`.
+## Documents
 
-## Naming convention
+1. `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` - canonical scientific findings, limitations, and plan.
+2. `docs/RESEARCH_PLAN.md` - research scope and evidence discipline.
+3. `docs/EXPERIMENT_LOG.md` - chronological experiment record.
+4. `docs/PROJECT_LOG.md` - repository and operations chronology.
+5. `docs/REPOSITORY_STRUCTURE.md` - repository, naming, storage, and provenance rules.
+6. `docs/DOCUMENT_INDEX.md` - navigation for live and frozen material.
+7. `CLAUDE.md` and `AGENTS.md` - identical agent and operator instructions.
 
-- Research roots: `r<integer>_<research_content>`, lowercase snake case.
-- Shared infrastructure reserves `r0`; future work reserves `r3`.
-- Standard project folders keep conventional names: `docs/`, `scripts/`, `src/`, `results/`, `logs/`, `evidence/`, `configs/`.
-- Root operational folders (`data/`, `external_resources/`, `ops/`, `logs/`, `docs/`, `archive/`) are not research directions and carry no `r<ID>` prefix.
+`check.md` is frozen and superseded by the canonical audit. Do not use it as the current claim source.
 
-## Claim discipline
+## Storage Safety
 
-The audit document's §1 states the defensible position and §3 the status of every claim that has been made. Two standing rules follow from it:
+Ignored data, results, logs, models, and caches are not protected by Git. Never run `git clean -fdx` or `git clean -fdX`; use `git clean -fd` or an explicit disposable path. Keep compact, cited evidence under `evidence/`, where small causal receipt matrices are explicitly permitted even though generic `*.npz` files remain ignored elsewhere.
 
-- A limitation demonstrated **on the text control** is a property of the method, not of protein models. Most of this programme's yield is of that kind.
-- A modality coefficient in this panel is carried by ProtGPT2 alone. Do not present a single-model contrast as a modality finding.
-
-Cluster access and the latest verified resource note are tracked outside the repository at `/home/lzp/hangzhou-remote/README.md`. Live capacity must be queried before scheduling because that note can become stale.
+Cluster access and recovery are documented outside the repository in `~/hangzhou-remote/README.md`. Query live status before scheduling; never persist disposable pod names in repository files or durable logs.

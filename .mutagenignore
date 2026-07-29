@@ -1,0 +1,86 @@
+# Generic synchronization policy for InterpretabilityTransfer.
+# Do not add endpoints, usernames, pod names, secrets, or machine-specific paths.
+
+# Version-control internals and private configuration
+.git/
+.env
+.env.*
+.claude/agent-memory/
+.claude/settings.local.json
+.claude/*.local.json
+
+# Host-local data, results, logs, and experiment tracking
+data/
+results/
+logs/
+wandb/
+mlruns/
+next_phase_artifacts/
+
+# Downloaded third-party payloads; metadata under external_resources remains synchronized
+external_resources/baselines/
+external_resources/ec_metrics/
+external_resources/scripts/
+external_resources/tools/
+
+# Frozen bulk exports retained independently on each host
+archive/analysis_exports/
+
+# Caches and environments
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.venv/
+venv/
+env/
+.conda/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Large model, array, archive, and bioinformatics payloads
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.npy
+*.npz
+*.parquet
+*.feather
+*.arrow
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.vcf.gz
+*.vcf.bgz
+*.dat.gz
+*.tsv.gz
+*.bam
+*.bai
+*.fasta
+*.fastq
+*.fasta.gz
+*.fastq.gz
+*.fa.gz
+*.fq.gz
+
+# Build, editor, and system noise
+*.aux
+*.blg
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.out
+*.log
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~

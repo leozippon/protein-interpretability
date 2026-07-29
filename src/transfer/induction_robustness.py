@@ -68,6 +68,8 @@ from typing import Any
 import numpy as np
 from scipy import stats
 
+from .statistics import MINIMUM_FINITE_DRAW_FRACTION
+
 SCHEMA_VERSION = "r2_transfer_induction_robustness_v1"
 
 #: Probe whose census the headline table is read from.  The synthetic probe is
@@ -1346,8 +1348,12 @@ def contrast_ratio_bootstrap(
             continue
         ratios.append(numerator / denominator)
     tail = (1.0 - confidence) / 2.0
+    minimum_finite = math.ceil(MINIMUM_FINITE_DRAW_FRACTION * resamples)
+    interval_defined = len(ratios) >= minimum_finite
     interval = (
-        [float(v) for v in np.quantile(ratios, [tail, 1.0 - tail])] if ratios else None
+        [float(v) for v in np.quantile(ratios, [tail, 1.0 - tail])]
+        if interval_defined
+        else None
     )
     return {
         "threshold": float(threshold),
@@ -1359,6 +1365,13 @@ def contrast_ratio_bootstrap(
         "resamples": int(resamples),
         "undefined_resamples": undefined,
         "undefined_share": undefined / resamples,
+        "finite_resamples": len(ratios),
+        "minimum_finite_resamples": minimum_finite,
+        "interval_status": (
+            "ok"
+            if interval_defined
+            else "undefined_denominator_in_more_than_5_percent_of_resamples"
+        ),
         "resampling_unit": "probe",
     }
 

@@ -1,0 +1,6849 @@
+{
+  "arm": {
+    "d_model": 768,
+    "dtype": "bfloat16",
+    "input_format": "raw",
+    "modality": "text",
+    "n_layer": 12,
+    "name": "dialogpt-small",
+    "path": "/gpfs/jiaotongdamoxing/zhk_zip/models/DialoGPT-small",
+    "source": "openwebtext",
+    "tokenisation": "bpe",
+    "vocab_size": 50257
+  },
+  "arms_module_sha256": "1ada4997d2f4521dcc8701c594b4514c511dd2a67366ae3ecd73eeda2ee4d3f0",
+  "baseline_provenance": {
+    "cohort_mean": {
+      "accumulation_dtype": "float64",
+      "cohort_digest": "71346a4e78bbfd682ccc700f4e3ba9aa396ec2f81bb9319bbec3dcdcda888ef2",
+      "definition": "mean of the submodule output over every attention-mask-valid position of the evaluation cohort, accumulated in float64",
+      "estimated_on_cohort": true,
+      "positions": "attention_mask_valid",
+      "sequences": 200,
+      "tokens": 50761
+    },
+    "zero": {
+      "cohort_digest": "71346a4e78bbfd682ccc700f4e3ba9aa396ec2f81bb9319bbec3dcdcda888ef2",
+      "definition": "exact zero vector; removes the submodule's constant bias direction as well",
+      "estimated_on_cohort": false
+    }
+  },
+  "bootstrap": {
+    "cluster_unit": "sequence",
+    "samples": 1000,
+    "seed": 20260728
+  },
+  "cohort": {
+    "digest": "71346a4e78bbfd682ccc700f4e3ba9aa396ec2f81bb9319bbec3dcdcda888ef2",
+    "distinct_conditioning_labels": null,
+    "kind": "text",
+    "name": "openwebtext_screen_n200_seed20260728",
+    "scored_tokens": 50561,
+    "sequences": 200,
+    "source": "openwebtext_screen",
+    "symbols_max": 73911,
+    "symbols_median": 3406,
+    "symbols_min": 834
+  },
+  "cohort_pool": {
+    "digest": "c67ac320784518ad4e3d278f2e7a3db89edcf1e777fb74413574146478189812",
+    "distinct_conditioning_labels": null,
+    "kind": "text",
+    "name": "openwebtext_screen",
+    "sequences": 4000,
+    "source": "openwebtext_screen",
+    "symbols_max": 100000,
+    "symbols_median": 3184,
+    "symbols_min": 800
+  },
+  "configuration": {
+    "ablation_baselines": [
+      "cohort_mean",
+      "zero"
+    ],
+    "batch_size": 4,
+    "cohort_source": "openwebtext_screen",
+    "depth_fractions": [
+      0.15,
+      0.33,
+      0.5,
+      0.67,
+      0.85
+    ],
+    "device": "cuda:1",
+    "dtype": "bfloat16",
+    "max_len": 256,
+    "pool_size": 4000,
+    "protein_cohort_source": "ec_labelled_swissprot",
+    "residue_length_range": [
+      64,
+      246
+    ],
+    "scored_positions": "attention_mask_valid_and_next_token_valid_no_modality_filter",
+    "seed": 20260728,
+    "sequences": 200,
+    "text_min_chars": 800,
+    "unigram_estimator": "disjoint",
+    "unigram_reference_size": 4000,
+    "window_widths": [
+      4,
+      8
+    ]
+  },
+  "estimands": [
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 0.6620704544852236,
+          "q025": 0.5981479766455438,
+          "q975": 0.7244784227228306
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 1.0248696340322494,
+          "q025": 0.9972137326472262,
+          "q975": 1.053701205606268
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.15,
+      "estimand_id": "mlp_single@d0.15@cohort_mean",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.5063784339708471,
+        "ce_ablated_nats": 11.647911499866034,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 0.6612402713623453,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 1.0249680059459427,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 2,
+        "family": "single",
+        "layers": [
+          2
+        ],
+        "n_targets": 1,
+        "name": "mlp_single_l2",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            2
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 0.7044580268200509,
+          "q025": 0.6409506391551758,
+          "q975": 0.7721332533393115
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 0.8395112840697732,
+          "q025": 0.8127069732650838,
+          "q975": 0.865691703928067
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.15,
+      "estimand_id": "attn_single@d0.15@cohort_mean",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.5566938945036688,
+        "ce_ablated_nats": 11.690761820344484,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 0.7040905918407958,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 0.8389798341273026,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 2,
+        "family": "single",
+        "layers": [
+          2
+        ],
+        "n_targets": 1,
+        "name": "attn_single_l2",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            2
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 5.060275000938075,
+          "q025": 4.947152138150033,
+          "q975": 5.1634235366739265
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 5.828631617335591,
+          "q025": 5.733136677587511,
+          "q975": 5.9240740389829725
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.15,
+      "estimand_id": "block_single@d0.15@cohort_mean",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.22602401060105615,
+        "ce_ablated_nats": 16.04614176208565,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 5.059470533581962,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 5.827467155188705,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "block",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 2,
+        "family": "single",
+        "layers": [
+          2
+        ],
+        "n_targets": 1,
+        "name": "resid_block_l2",
+        "submodules": [
+          "block"
+        ],
+        "targets": [
+          [
+            "block",
+            2
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 4.042764569264873,
+          "q025": 3.8982521549333384,
+          "q975": 4.1676217516605405
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 4.946684562648281,
+          "q025": 4.853653939996264,
+          "q975": 5.038734029269935
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.15,
+      "estimand_id": "mlp_window4@d0.15@cohort_mean",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.22606356678072032,
+        "ce_ablated_nats": 15.027978870046825,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 4.041307641543137,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 4.9464335050866,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 2,
+        "family": "window",
+        "layers": [
+          0,
+          1,
+          2
+        ],
+        "n_targets": 3,
+        "name": "mlp_window4_l0_2",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            0
+          ],
+          [
+            "mlp",
+            1
+          ],
+          [
+            "mlp",
+            2
+          ]
+        ],
+        "width": 4
+      },
+      "width": 4
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 1.0869780296480203,
+          "q025": 0.9639671340096065,
+          "q975": 1.2092264559299226
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 2.3533039963247444,
+          "q025": 2.3095593026025933,
+          "q975": 2.3951819863938493
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.15,
+      "estimand_id": "attn_window4@d0.15@cohort_mean",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.34904372935661876,
+        "ce_ablated_nats": 12.074426815891325,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 1.0877555873876368,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 2.353534632318936,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 2,
+        "family": "window",
+        "layers": [
+          0,
+          1,
+          2
+        ],
+        "n_targets": 3,
+        "name": "attn_window4_l0_2",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            0
+          ],
+          [
+            "attn",
+            1
+          ],
+          [
+            "attn",
+            2
+          ]
+        ],
+        "width": 4
+      },
+      "width": 4
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 4.042764569264873,
+          "q025": 3.8982521549333384,
+          "q975": 4.1676217516605405
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 4.946684562648281,
+          "q025": 4.853653939996264,
+          "q975": 5.038734029269935
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.15,
+      "estimand_id": "mlp_window8@d0.15@cohort_mean",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.22606356678072032,
+        "ce_ablated_nats": 15.027978870046825,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 4.041307641543137,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 4.9464335050866,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 2,
+        "family": "window",
+        "layers": [
+          0,
+          1,
+          2
+        ],
+        "n_targets": 3,
+        "name": "mlp_window8_l0_2",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            0
+          ],
+          [
+            "mlp",
+            1
+          ],
+          [
+            "mlp",
+            2
+          ]
+        ],
+        "width": 8
+      },
+      "width": 8
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 1.0869780296480203,
+          "q025": 0.9639671340096065,
+          "q975": 1.2092264559299226
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 2.3533039963247444,
+          "q025": 2.3095593026025933,
+          "q975": 2.3951819863938493
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.15,
+      "estimand_id": "attn_window8@d0.15@cohort_mean",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.34904372935661876,
+        "ce_ablated_nats": 12.074426815891325,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 1.0877555873876368,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 2.353534632318936,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 2,
+        "family": "window",
+        "layers": [
+          0,
+          1,
+          2
+        ],
+        "n_targets": 3,
+        "name": "attn_window8_l0_2",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            0
+          ],
+          [
+            "attn",
+            1
+          ],
+          [
+            "attn",
+            2
+          ]
+        ],
+        "width": 8
+      },
+      "width": 8
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 0.1412577427942887,
+          "q025": 0.11332490179081697,
+          "q975": 0.1697243437551832
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 0.519438092751322,
+          "q025": 0.5107972740230605,
+          "q975": 0.5291301716122638
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.33,
+      "estimand_id": "mlp_single@d0.33@cohort_mean",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.6240382903819149,
+        "ce_ablated_nats": 11.127803725307519,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 0.14113249680383078,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 0.5194922987577911,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 4,
+        "family": "single",
+        "layers": [
+          4
+        ],
+        "n_targets": 1,
+        "name": "mlp_single_l4",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            4
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.057855226454207376,
+          "q025": -0.08382157890294221,
+          "q975": -0.03058081076154011
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 0.42673003025703354,
+          "q025": 0.4199072788268907,
+          "q975": 0.43349935458704675
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.33,
+      "estimand_id": "attn_single@d0.33@cohort_mean",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.6576808211862898,
+        "ce_ablated_nats": 10.928709829328218,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.05796139917547016,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 0.4265683886111791,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 4,
+        "family": "single",
+        "layers": [
+          4
+        ],
+        "n_targets": 1,
+        "name": "attn_single_l4",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            4
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 9.006658115437556,
+          "q025": 8.869205545871624,
+          "q975": 9.134367481739899
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 8.104617799897873,
+          "q025": 7.9698047668593,
+          "q975": 8.23184147982717
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.33,
+      "estimand_id": "block_single@d0.33@cohort_mean",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.22602401060105615,
+        "ce_ablated_nats": 19.99370403911859,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 9.007032810614902,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 8.102057473738405,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "block",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 4,
+        "family": "single",
+        "layers": [
+          4
+        ],
+        "n_targets": 1,
+        "name": "resid_block_l4",
+        "submodules": [
+          "block"
+        ],
+        "targets": [
+          [
+            "block",
+            4
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 4.268860943257988,
+          "q025": 4.09382121462069,
+          "q975": 4.450654740080083
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 4.767604872283344,
+          "q025": 4.622590138819552,
+          "q975": 4.911561882388788
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.33,
+      "estimand_id": "mlp_window4@d0.33@cohort_mean",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.2313838729455509,
+        "ce_ablated_nats": 15.25784097446185,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 4.2711697459581615,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 4.767752803293145,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 4,
+        "family": "window",
+        "layers": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "n_targets": 4,
+        "name": "mlp_window4_l1_4",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            1
+          ],
+          [
+            "mlp",
+            2
+          ],
+          [
+            "mlp",
+            3
+          ],
+          [
+            "mlp",
+            4
+          ]
+        ],
+        "width": 4
+      },
+      "width": 4
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 1.904341929826181,
+          "q025": 1.8083658441298163,
+          "q975": 2.001111134737078
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 2.1461957495500563,
+          "q025": 2.0936051807990435,
+          "q975": 2.1992218382244353
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.33,
+      "estimand_id": "attn_window4@d0.33@cohort_mean",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.33624730523526036,
+        "ce_ablated_nats": 12.89073014353176,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 1.904058915028072,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 2.145017394578918,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 4,
+        "family": "window",
+        "layers": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "n_targets": 4,
+        "name": "attn_window4_l1_4",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            1
+          ],
+          [
+            "attn",
+            2
+          ],
+          [
+            "attn",
+            3
+          ],
+          [
+            "attn",
+            4
+          ]
+        ],
+        "width": 4
+      },
+      "width": 4
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 5.843498249455825,
+          "q025": 5.656876802184727,
+          "q975": 6.0358999802165805
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 6.288865332049804,
+          "q025": 6.176664899286708,
+          "q975": 6.400861046846197
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.33,
+      "estimand_id": "mlp_window8@d0.33@cohort_mean",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.2122386819880936,
+        "ce_ablated_nats": 16.83223229988436,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 5.845561071380672,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 6.289617222063371,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 4,
+        "family": "window",
+        "layers": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "n_targets": 5,
+        "name": "mlp_window8_l0_4",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            0
+          ],
+          [
+            "mlp",
+            1
+          ],
+          [
+            "mlp",
+            2
+          ],
+          [
+            "mlp",
+            3
+          ],
+          [
+            "mlp",
+            4
+          ]
+        ],
+        "width": 8
+      },
+      "width": 8
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 0.9558277403532518,
+          "q025": 0.8257565231593598,
+          "q975": 1.0822128146828338
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 2.4895879662727447,
+          "q025": 2.44495892872149,
+          "q975": 2.5320605024216887
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.33,
+      "estimand_id": "attn_window8@d0.33@cohort_mean",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.30076541207650165,
+        "ce_ablated_nats": 11.944593933893744,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 0.9579227053900556,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 2.4903851539631585,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 4,
+        "family": "window",
+        "layers": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "n_targets": 5,
+        "name": "attn_window8_l0_4",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            0
+          ],
+          [
+            "attn",
+            1
+          ],
+          [
+            "attn",
+            2
+          ],
+          [
+            "attn",
+            3
+          ],
+          [
+            "attn",
+            4
+          ]
+        ],
+        "width": 8
+      },
+      "width": 8
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.04125547836531762,
+          "q025": -0.09089097287515316,
+          "q975": 0.009213513698491922
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 0.5894993119340457,
+          "q025": 0.5802293122623915,
+          "q975": 0.5998537436728577
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.5,
+      "estimand_id": "mlp_single@d0.50@cohort_mean",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.6155930460236151,
+        "ce_ablated_nats": 10.947033512505316,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.039637715998372514,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 0.5894481654182359,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 6,
+        "family": "single",
+        "layers": [
+          6
+        ],
+        "n_targets": 1,
+        "name": "mlp_single_l6",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            6
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.017981976944405176,
+          "q025": -0.06308311996756681,
+          "q975": 0.02315639165550882
+        },
+        "ce_guard_pass_fraction": 0.002,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 0.4851635628116747,
+          "q025": 0.4780420453107876,
+          "q975": 0.493099115247958
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.5,
+      "estimand_id": "attn_single@d0.50@cohort_mean",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.6388718577559779,
+        "ce_ablated_nats": 10.968837589028444,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.017833639475243857,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 0.4852227004102833,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 6,
+        "family": "single",
+        "layers": [
+          6
+        ],
+        "n_targets": 1,
+        "name": "attn_single_l6",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            6
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 4.507504538736791,
+          "q025": 4.391372340163569,
+          "q975": 4.617277582635308
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 4.976087518358312,
+          "q025": 4.891035460703988,
+          "q975": 5.053529331159174
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.5,
+      "estimand_id": "block_single@d0.50@cohort_mean",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.22602401060105615,
+        "ce_ablated_nats": 15.494973839806434,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 4.508302611302746,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 4.9752514181025616,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "block",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 6,
+        "family": "single",
+        "layers": [
+          6
+        ],
+        "n_targets": 1,
+        "name": "resid_block_l6",
+        "submodules": [
+          "block"
+        ],
+        "targets": [
+          [
+            "block",
+            6
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 0.5852815312854434,
+          "q025": 0.4961811387002281,
+          "q975": 0.6758206238019558
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 1.7051911759224665,
+          "q025": 1.671729682941005,
+          "q975": 1.7383202910976574
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.5,
+      "estimand_id": "mlp_window4@d0.50@cohort_mean",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.4389747038231048,
+        "ce_ablated_nats": 11.571896079889886,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 0.5852248513861973,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 1.7057822903053135,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 6,
+        "family": "window",
+        "layers": [
+          3,
+          4,
+          5,
+          6
+        ],
+        "n_targets": 4,
+        "name": "mlp_window4_l3_6",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            3
+          ],
+          [
+            "mlp",
+            4
+          ],
+          [
+            "mlp",
+            5
+          ],
+          [
+            "mlp",
+            6
+          ]
+        ],
+        "width": 4
+      },
+      "width": 4
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 0.32388967626073306,
+          "q025": 0.25797955440742465,
+          "q975": 0.3876423301903003
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 1.2199129385650376,
+          "q025": 1.2005572744436142,
+          "q975": 1.2392235576703048
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.5,
+      "estimand_id": "attn_window4@d0.50@cohort_mean",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.46832538913391747,
+        "ce_ablated_nats": 11.310555501356808,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 0.32388427285311927,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 1.219526979313586,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 6,
+        "family": "window",
+        "layers": [
+          3,
+          4,
+          5,
+          6
+        ],
+        "n_targets": 4,
+        "name": "attn_window4_l3_6",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            3
+          ],
+          [
+            "attn",
+            4
+          ],
+          [
+            "attn",
+            5
+          ],
+          [
+            "attn",
+            6
+          ]
+        ],
+        "width": 4
+      },
+      "width": 4
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 5.661189152270414,
+          "q025": 5.482094835736642,
+          "q975": 5.835217664919934
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 6.575451778118278,
+          "q025": 6.449023030936466,
+          "q975": 6.687942858372927
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.5,
+      "estimand_id": "mlp_window8@d0.50@cohort_mean",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.2002333814600186,
+        "ce_ablated_nats": 16.651301353887508,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 5.66463012538382,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 6.575939373800181,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 6,
+        "family": "window",
+        "layers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "n_targets": 7,
+        "name": "mlp_window8_l0_6",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            0
+          ],
+          [
+            "mlp",
+            1
+          ],
+          [
+            "mlp",
+            2
+          ],
+          [
+            "mlp",
+            3
+          ],
+          [
+            "mlp",
+            4
+          ],
+          [
+            "mlp",
+            5
+          ],
+          [
+            "mlp",
+            6
+          ]
+        ],
+        "width": 8
+      },
+      "width": 8
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 1.132318460874144,
+          "q025": 1.0149922080039355,
+          "q975": 1.249921382532161
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 2.3909983713371608,
+          "q025": 2.3447975068067537,
+          "q975": 2.4339388896364555
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.5,
+      "estimand_id": "attn_window8@d0.50@cohort_mean",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.3548387096774194,
+        "ce_ablated_nats": 12.120750151561202,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 1.1340789230575137,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 2.3905745805982654,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 6,
+        "family": "window",
+        "layers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "n_targets": 7,
+        "name": "attn_window8_l0_6",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            0
+          ],
+          [
+            "attn",
+            1
+          ],
+          [
+            "attn",
+            2
+          ],
+          [
+            "attn",
+            3
+          ],
+          [
+            "attn",
+            4
+          ],
+          [
+            "attn",
+            5
+          ],
+          [
+            "attn",
+            6
+          ]
+        ],
+        "width": 8
+      },
+      "width": 8
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 0.1035429403679915,
+          "q025": 0.08646896698668276,
+          "q975": 0.12138417591687424
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 0.45857919453004403,
+          "q025": 0.45217869727344195,
+          "q975": 0.4649362014427299
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.67,
+      "estimand_id": "mlp_single@d0.67@cohort_mean",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.6522616245722989,
+        "ce_ablated_nats": 11.09003728411365,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 0.10336605560996226,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 0.4585311085982464,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 7,
+        "family": "single",
+        "layers": [
+          7
+        ],
+        "n_targets": 1,
+        "name": "mlp_single_l7",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            7
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.02415585866842651,
+          "q025": -0.04242184461274201,
+          "q975": -0.0051313138610388906
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 0.43067255901002444,
+          "q025": 0.4255960965950028,
+          "q975": 0.43595731817057315
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.67,
+      "estimand_id": "attn_single@d0.67@cohort_mean",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.6495322481754712,
+        "ce_ablated_nats": 10.962563019001028,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.02410820950266057,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 0.4307278677839137,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 7,
+        "family": "single",
+        "layers": [
+          7
+        ],
+        "n_targets": 1,
+        "name": "attn_single_l7",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            7
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 4.235632497532765,
+          "q025": 4.110395132300094,
+          "q975": 4.348308818835725
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 4.768522869863583,
+          "q025": 4.677070756323608,
+          "q975": 4.852996158610561
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.67,
+      "estimand_id": "block_single@d0.67@cohort_mean",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.3001720693815391,
+        "ce_ablated_nats": 15.223424089914287,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 4.236752861410599,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 4.768529643783468,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "block",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 7,
+        "family": "single",
+        "layers": [
+          7
+        ],
+        "n_targets": 1,
+        "name": "resid_block_l7",
+        "submodules": [
+          "block"
+        ],
+        "targets": [
+          [
+            "block",
+            7
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 0.5089135414969537,
+          "q025": 0.4231523395362332,
+          "q975": 0.594448100810066
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 1.6773653716184587,
+          "q025": 1.6484859819991748,
+          "q975": 1.7049099963060406
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.67,
+      "estimand_id": "mlp_window4@d0.67@cohort_mean",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.3969858191095904,
+        "ce_ablated_nats": 11.496503049263822,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 0.5098318207601338,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 1.6778361541801765,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 7,
+        "family": "window",
+        "layers": [
+          4,
+          5,
+          6,
+          7
+        ],
+        "n_targets": 4,
+        "name": "mlp_window4_l4_7",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            4
+          ],
+          [
+            "mlp",
+            5
+          ],
+          [
+            "mlp",
+            6
+          ],
+          [
+            "mlp",
+            7
+          ]
+        ],
+        "width": 4
+      },
+      "width": 4
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 0.09939651344489597,
+          "q025": 0.041406633038014506,
+          "q975": 0.15912921259165252
+        },
+        "ce_guard_pass_fraction": 0.945,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 1.139912050339185,
+          "q025": 1.1209133970172884,
+          "q975": 1.1585922533096473
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.67,
+      "estimand_id": "attn_window4@d0.67@cohort_mean",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.46585312790490696,
+        "ce_ablated_nats": 11.086491018526043,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 0.09981979002235519,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 1.1396982578491783,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 7,
+        "family": "window",
+        "layers": [
+          4,
+          5,
+          6,
+          7
+        ],
+        "n_targets": 4,
+        "name": "attn_window4_l4_7",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            4
+          ],
+          [
+            "attn",
+            5
+          ],
+          [
+            "attn",
+            6
+          ],
+          [
+            "attn",
+            7
+          ]
+        ],
+        "width": 4
+      },
+      "width": 4
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 5.523450671789334,
+          "q025": 5.337798038104625,
+          "q975": 5.697894201604252
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 7.3840494539085615,
+          "q025": 7.254462555160178,
+          "q975": 7.525482479370846
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.67,
+      "estimand_id": "mlp_window8@d0.67@cohort_mean",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.09485571883467495,
+        "ce_ablated_nats": 16.510771791862492,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 5.524100563358804,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 7.387291411650345,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 7,
+        "family": "window",
+        "layers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "n_targets": 8,
+        "name": "mlp_window8_l0_7",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            0
+          ],
+          [
+            "mlp",
+            1
+          ],
+          [
+            "mlp",
+            2
+          ],
+          [
+            "mlp",
+            3
+          ],
+          [
+            "mlp",
+            4
+          ],
+          [
+            "mlp",
+            5
+          ],
+          [
+            "mlp",
+            6
+          ],
+          [
+            "mlp",
+            7
+          ]
+        ],
+        "width": 8
+      },
+      "width": 8
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 1.0042679553257159,
+          "q025": 0.8844310949405279,
+          "q975": 1.125320747229484
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 2.3388613377441887,
+          "q025": 2.296610866674574,
+          "q975": 2.3785618267486455
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.67,
+      "estimand_id": "attn_window8@d0.67@cohort_mean",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.32479579122248375,
+        "ce_ablated_nats": 11.993404808594445,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 1.0067335800907564,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 2.3389022192484696,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 7,
+        "family": "window",
+        "layers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "n_targets": 8,
+        "name": "attn_window8_l0_7",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            0
+          ],
+          [
+            "attn",
+            1
+          ],
+          [
+            "attn",
+            2
+          ],
+          [
+            "attn",
+            3
+          ],
+          [
+            "attn",
+            4
+          ],
+          [
+            "attn",
+            5
+          ],
+          [
+            "attn",
+            6
+          ],
+          [
+            "attn",
+            7
+          ]
+        ],
+        "width": 8
+      },
+      "width": 8
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 0.20800079495766788,
+          "q025": 0.1878213182934177,
+          "q975": 0.22916407606649156
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 0.4303137997871105,
+          "q025": 0.4246718677720699,
+          "q975": 0.43580318213029695
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.85,
+      "estimand_id": "mlp_single@d0.85@cohort_mean",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.66290223690196,
+        "ce_ablated_nats": 11.194437206052003,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 0.2077659775483145,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 0.4304474699933639,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 9,
+        "family": "single",
+        "layers": [
+          9
+        ],
+        "n_targets": 1,
+        "name": "mlp_single_l9",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            9
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.08992899522099052,
+          "q025": -0.11067969745188688,
+          "q975": -0.06832038394480895
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 0.32455836835677815,
+          "q025": 0.3208357170690761,
+          "q975": 0.3283802817084496
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.85,
+      "estimand_id": "attn_single@d0.85@cohort_mean",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.6972567789402899,
+        "ce_ablated_nats": 10.897131631821432,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.08953959668225586,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 0.3245069533548189,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 9,
+        "family": "single",
+        "layers": [
+          9
+        ],
+        "n_targets": 1,
+        "name": "attn_single_l9",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            9
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 2.9936672108592415,
+          "q025": 2.8796030185726473,
+          "q975": 3.101340598123075
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 3.9395353906993273,
+          "q025": 3.866973948618425,
+          "q975": 4.006909826407293
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.85,
+      "estimand_id": "block_single@d0.85@cohort_mean",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.3001720693815391,
+        "ce_ablated_nats": 13.980446958369285,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 2.9937757298655967,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 3.938509511899534,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "block",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 9,
+        "family": "single",
+        "layers": [
+          9
+        ],
+        "n_targets": 1,
+        "name": "resid_block_l9",
+        "submodules": [
+          "block"
+        ],
+        "targets": [
+          [
+            "block",
+            9
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 0.6650438390298312,
+          "q025": 0.6086345717393165,
+          "q975": 0.7250302889014524
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 1.5895874134938301,
+          "q025": 1.5631422399261103,
+          "q975": 1.6139389531726518
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.85,
+      "estimand_id": "mlp_window4@d0.85@cohort_mean",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.4387571448349518,
+        "ce_ablated_nats": 11.650893751888962,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 0.6642225233852734,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 1.5896323282072027,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 9,
+        "family": "window",
+        "layers": [
+          6,
+          7,
+          8,
+          9
+        ],
+        "n_targets": 4,
+        "name": "mlp_window4_l6_9",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            6
+          ],
+          [
+            "mlp",
+            7
+          ],
+          [
+            "mlp",
+            8
+          ],
+          [
+            "mlp",
+            9
+          ]
+        ],
+        "width": 4
+      },
+      "width": 4
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 0.04656948251541149,
+          "q025": -0.014939777930596818,
+          "q975": 0.10962612393108342
+        },
+        "ce_guard_pass_fraction": 0.465,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 1.0211739345199176,
+          "q025": 1.0049264094814105,
+          "q975": 1.0363271147759667
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.85,
+      "estimand_id": "attn_window4@d0.85@cohort_mean",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.4963509424259805,
+        "ce_ablated_nats": 11.03413435868694,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 0.04746313018325132,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 1.0207056431936214,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 9,
+        "family": "window",
+        "layers": [
+          6,
+          7,
+          8,
+          9
+        ],
+        "n_targets": 4,
+        "name": "attn_window4_l6_9",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            6
+          ],
+          [
+            "attn",
+            7
+          ],
+          [
+            "attn",
+            8
+          ],
+          [
+            "attn",
+            9
+          ]
+        ],
+        "width": 4
+      },
+      "width": 4
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 1.327031743497776,
+          "q025": 1.20032206883804,
+          "q975": 1.434303424766045
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 3.194530362479291,
+          "q025": 3.1421873711790282,
+          "q975": 3.244693599182966
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.85,
+      "estimand_id": "mlp_window8@d0.85@cohort_mean",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.25054884199284033,
+        "ce_ablated_nats": 12.312523590297333,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 1.325852361793645,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 3.1945718217623655,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 9,
+        "family": "window",
+        "layers": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "n_targets": 8,
+        "name": "mlp_window8_l2_9",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            2
+          ],
+          [
+            "mlp",
+            3
+          ],
+          [
+            "mlp",
+            4
+          ],
+          [
+            "mlp",
+            5
+          ],
+          [
+            "mlp",
+            6
+          ],
+          [
+            "mlp",
+            7
+          ],
+          [
+            "mlp",
+            8
+          ],
+          [
+            "mlp",
+            9
+          ]
+        ],
+        "width": 8
+      },
+      "width": 8
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 0.6756497559331853,
+          "q025": 0.5793780827299574,
+          "q975": 0.7713113215610976
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 1.8098586635173177,
+          "q025": 1.7764377919917034,
+          "q975": 1.8414502380663769
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.85,
+      "estimand_id": "attn_window8@d0.85@cohort_mean",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.3854947489171496,
+        "ce_ablated_nats": 11.662438007083956,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 0.6757667785802681,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 1.8086291511390635,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 9,
+        "family": "window",
+        "layers": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "n_targets": 8,
+        "name": "attn_window8_l2_9",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            2
+          ],
+          [
+            "attn",
+            3
+          ],
+          [
+            "attn",
+            4
+          ],
+          [
+            "attn",
+            5
+          ],
+          [
+            "attn",
+            6
+          ],
+          [
+            "attn",
+            7
+          ],
+          [
+            "attn",
+            8
+          ],
+          [
+            "attn",
+            9
+          ]
+        ],
+        "width": 8
+      },
+      "width": 8
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 16.150016438127878,
+          "q025": 15.694711181111739,
+          "q975": 16.631450384707648
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 17.409784108786628,
+          "q025": 16.826081940345862,
+          "q975": 17.997613998922272
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": null,
+      "estimand_id": "mlp_all@global@cohort_mean",
+      "family": "all",
+      "metrics": {
+        "argmax_agreement": 0.008425466268467791,
+        "ce_ablated_nats": 27.134971402118232,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 16.148300173614544,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 17.401286240259292,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": null,
+        "family": "all",
+        "layers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "n_targets": 12,
+        "name": "mlp_all",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            0
+          ],
+          [
+            "mlp",
+            1
+          ],
+          [
+            "mlp",
+            2
+          ],
+          [
+            "mlp",
+            3
+          ],
+          [
+            "mlp",
+            4
+          ],
+          [
+            "mlp",
+            5
+          ],
+          [
+            "mlp",
+            6
+          ],
+          [
+            "mlp",
+            7
+          ],
+          [
+            "mlp",
+            8
+          ],
+          [
+            "mlp",
+            9
+          ],
+          [
+            "mlp",
+            10
+          ],
+          [
+            "mlp",
+            11
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 1.133778017250922,
+          "q025": 1.018440389653379,
+          "q975": 1.248489646400736
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 2.442371872779189,
+          "q025": 2.401566604487692,
+          "q975": 2.4782022321414723
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": null,
+      "estimand_id": "attn_all@global@cohort_mean",
+      "family": "all",
+      "metrics": {
+        "argmax_agreement": 0.33800755523031584,
+        "ce_ablated_nats": 12.121557033405503,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 1.1348858049018151,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 2.4411255566064383,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": null,
+        "family": "all",
+        "layers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "n_targets": 12,
+        "name": "attn_all",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            0
+          ],
+          [
+            "attn",
+            1
+          ],
+          [
+            "attn",
+            2
+          ],
+          [
+            "attn",
+            3
+          ],
+          [
+            "attn",
+            4
+          ],
+          [
+            "attn",
+            5
+          ],
+          [
+            "attn",
+            6
+          ],
+          [
+            "attn",
+            7
+          ],
+          [
+            "attn",
+            8
+          ],
+          [
+            "attn",
+            9
+          ],
+          [
+            "attn",
+            10
+          ],
+          [
+            "attn",
+            11
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "cohort_mean",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 3.0120432353036364,
+          "q025": 2.8911575316210905,
+          "q975": 3.1237546675266534
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 3.883460212873762,
+          "q025": 3.815125267258454,
+          "q975": 3.9491481886429445
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": null,
+      "estimand_id": "mlp_and_attn_all@global@cohort_mean",
+      "family": "all",
+      "metrics": {
+        "argmax_agreement": 0.30104230533415083,
+        "ce_ablated_nats": 13.999013533969178,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 3.0123423054654896,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 3.881943921476425,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp_and_attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": null,
+        "family": "all",
+        "layers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "n_targets": 24,
+        "name": "mlp_and_attn_all",
+        "submodules": [
+          "attn",
+          "mlp"
+        ],
+        "targets": [
+          [
+            "attn",
+            0
+          ],
+          [
+            "attn",
+            1
+          ],
+          [
+            "attn",
+            2
+          ],
+          [
+            "attn",
+            3
+          ],
+          [
+            "attn",
+            4
+          ],
+          [
+            "attn",
+            5
+          ],
+          [
+            "attn",
+            6
+          ],
+          [
+            "attn",
+            7
+          ],
+          [
+            "attn",
+            8
+          ],
+          [
+            "attn",
+            9
+          ],
+          [
+            "attn",
+            10
+          ],
+          [
+            "attn",
+            11
+          ],
+          [
+            "mlp",
+            0
+          ],
+          [
+            "mlp",
+            1
+          ],
+          [
+            "mlp",
+            2
+          ],
+          [
+            "mlp",
+            3
+          ],
+          [
+            "mlp",
+            4
+          ],
+          [
+            "mlp",
+            5
+          ],
+          [
+            "mlp",
+            6
+          ],
+          [
+            "mlp",
+            7
+          ],
+          [
+            "mlp",
+            8
+          ],
+          [
+            "mlp",
+            9
+          ],
+          [
+            "mlp",
+            10
+          ],
+          [
+            "mlp",
+            11
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 0.23751525457634326,
+          "q025": 0.1894977229742263,
+          "q975": 0.28828312628375286
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 0.6800936304495036,
+          "q025": 0.6667005308946322,
+          "q975": 0.6946413077765446
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.15,
+      "estimand_id": "mlp_single@d0.15@zero",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.5874488241925595,
+        "ce_ablated_nats": 11.225270992182555,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 0.2385997636788666,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 0.680349267021142,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 2,
+        "family": "single",
+        "layers": [
+          2
+        ],
+        "n_targets": 1,
+        "name": "mlp_single_l2",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            2
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 0.0067501500584432605,
+          "q025": -0.07607105928042927,
+          "q975": 0.08766478899525727
+        },
+        "ce_guard_pass_fraction": 0.143,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 0.9134820677344706,
+          "q025": 0.885364108504591,
+          "q975": 0.9430433694723988
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.15,
+      "estimand_id": "attn_single@d0.15@zero",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.5132414311425803,
+        "ce_ablated_nats": 10.992905708787251,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 0.006234480283563215,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 0.9132358046055774,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 2,
+        "family": "single",
+        "layers": [
+          2
+        ],
+        "n_targets": 1,
+        "name": "attn_single_l2",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            2
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 3.2873481889248604,
+          "q025": 3.1555601245423026,
+          "q975": 3.4045369579337876
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 5.218081822100957,
+          "q025": 5.155427352590218,
+          "q975": 5.28189580420048
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.15,
+      "estimand_id": "block_single@d0.15@zero",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.003223828642629695,
+        "ce_ablated_nats": 14.273801125203343,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 3.287129896699655,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 5.218169786364181,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "block",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 2,
+        "family": "single",
+        "layers": [
+          2
+        ],
+        "n_targets": 1,
+        "name": "resid_block_l2",
+        "submodules": [
+          "block"
+        ],
+        "targets": [
+          [
+            "block",
+            2
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 7.64152002497739,
+          "q025": 7.414238207757355,
+          "q975": 7.856221197127882
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 7.125804582978112,
+          "q025": 6.958902569809995,
+          "q975": 7.29069050190645
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.15,
+      "estimand_id": "mlp_window4@d0.15@zero",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.209746642669251,
+        "ce_ablated_nats": 18.63019646132889,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 7.643525232825201,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 7.127094654712408,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 2,
+        "family": "window",
+        "layers": [
+          0,
+          1,
+          2
+        ],
+        "n_targets": 3,
+        "name": "mlp_window4_l0_2",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            0
+          ],
+          [
+            "mlp",
+            1
+          ],
+          [
+            "mlp",
+            2
+          ]
+        ],
+        "width": 4
+      },
+      "width": 4
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.6634564144892741,
+          "q025": -0.8537763854165948,
+          "q975": -0.48719748131234786
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 5.980104576279951,
+          "q025": 5.932128963923127,
+          "q975": 6.030707734730317
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.15,
+      "estimand_id": "attn_window4@d0.15@zero",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.014062221870611737,
+        "ce_ablated_nats": 10.319786550566704,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.6668846779369844,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 5.979878002696465,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 2,
+        "family": "window",
+        "layers": [
+          0,
+          1,
+          2
+        ],
+        "n_targets": 3,
+        "name": "attn_window4_l0_2",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            0
+          ],
+          [
+            "attn",
+            1
+          ],
+          [
+            "attn",
+            2
+          ]
+        ],
+        "width": 4
+      },
+      "width": 4
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 7.64152002497739,
+          "q025": 7.414238207757355,
+          "q975": 7.856221197127882
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 7.125804582978112,
+          "q025": 6.958902569809995,
+          "q975": 7.29069050190645
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.15,
+      "estimand_id": "mlp_window8@d0.15@zero",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.209746642669251,
+        "ce_ablated_nats": 18.63019646132889,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 7.643525232825201,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 7.127094654712408,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 2,
+        "family": "window",
+        "layers": [
+          0,
+          1,
+          2
+        ],
+        "n_targets": 3,
+        "name": "mlp_window8_l0_2",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            0
+          ],
+          [
+            "mlp",
+            1
+          ],
+          [
+            "mlp",
+            2
+          ]
+        ],
+        "width": 8
+      },
+      "width": 8
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.6634564144892741,
+          "q025": -0.8537763854165948,
+          "q975": -0.48719748131234786
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 5.980104576279951,
+          "q025": 5.932128963923127,
+          "q975": 6.030707734730317
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.15,
+      "estimand_id": "attn_window8@d0.15@zero",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.014062221870611737,
+        "ce_ablated_nats": 10.319786550566704,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.6668846779369844,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 5.979878002696465,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 2,
+        "family": "window",
+        "layers": [
+          0,
+          1,
+          2
+        ],
+        "n_targets": 3,
+        "name": "attn_window8_l0_2",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            0
+          ],
+          [
+            "attn",
+            1
+          ],
+          [
+            "attn",
+            2
+          ]
+        ],
+        "width": 8
+      },
+      "width": 8
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 0.36628410153779356,
+          "q025": 0.3385927546177035,
+          "q975": 0.3945912947822956
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 0.577865984861405,
+          "q025": 0.5676643013839217,
+          "q975": 0.5892276392818646
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.33,
+      "estimand_id": "mlp_single@d0.33@zero",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.6010561499970333,
+        "ce_ablated_nats": 11.352948883256426,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 0.36627765475273755,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 0.5780221226071022,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 4,
+        "family": "single",
+        "layers": [
+          4
+        ],
+        "n_targets": 1,
+        "name": "mlp_single_l4",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            4
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.12782490684746328,
+          "q025": -0.15650307240549136,
+          "q975": -0.09726257061789875
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 0.45076804771258416,
+          "q025": 0.4435049855014947,
+          "q975": 0.45841767171026515
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.33,
+      "estimand_id": "attn_single@d0.33@zero",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.6474555487431024,
+        "ce_ablated_nats": 10.858435828036772,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.12823540046691662,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 0.4506300516547839,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 4,
+        "family": "single",
+        "layers": [
+          4
+        ],
+        "n_targets": 1,
+        "name": "attn_single_l4",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            4
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 4.294523788131467,
+          "q025": 4.168461784412753,
+          "q975": 4.406615185629141
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 5.851130950488025,
+          "q025": 5.781729875325872,
+          "q975": 5.921055430129583
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.33,
+      "estimand_id": "block_single@d0.33@zero",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 1.9778089832084018e-05,
+        "ce_ablated_nats": 15.281065782737992,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 4.294394554234303,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 5.851290152902404,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "block",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 4,
+        "family": "single",
+        "layers": [
+          4
+        ],
+        "n_targets": 1,
+        "name": "resid_block_l4",
+        "submodules": [
+          "block"
+        ],
+        "targets": [
+          [
+            "block",
+            4
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 3.6268963278171373,
+          "q025": 3.413916276142435,
+          "q975": 3.839836703298153
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 5.254738302222101,
+          "q025": 5.068632980632472,
+          "q975": 5.44870804197864
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.33,
+      "estimand_id": "mlp_window4@d0.33@zero",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.2007278337058207,
+        "ce_ablated_nats": 14.612926919919442,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 3.6262556914157535,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 5.254172290900009,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 4,
+        "family": "window",
+        "layers": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "n_targets": 4,
+        "name": "mlp_window4_l1_4",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            1
+          ],
+          [
+            "mlp",
+            2
+          ],
+          [
+            "mlp",
+            3
+          ],
+          [
+            "mlp",
+            4
+          ]
+        ],
+        "width": 4
+      },
+      "width": 4
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 1.0199628700256893,
+          "q025": 0.9181804112651181,
+          "q975": 1.1264600913432798
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 2.2460397092312947,
+          "q025": 2.2074021299461477,
+          "q975": 2.283681935018146
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.33,
+      "estimand_id": "attn_window4@d0.33@zero",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.31733945135578806,
+        "ce_ablated_nats": 12.007273172832846,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 1.020601944329158,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 2.245639843200501,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 4,
+        "family": "window",
+        "layers": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "n_targets": 4,
+        "name": "attn_window4_l1_4",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            1
+          ],
+          [
+            "attn",
+            2
+          ],
+          [
+            "attn",
+            3
+          ],
+          [
+            "attn",
+            4
+          ]
+        ],
+        "width": 4
+      },
+      "width": 4
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 4.814533831966702,
+          "q025": 4.673477827322442,
+          "q975": 4.9531835221063805
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 7.063239694813042,
+          "q025": 6.954318424230296,
+          "q975": 7.178964130823806
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.33,
+      "estimand_id": "mlp_window8@d0.33@zero",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.03293051957041989,
+        "ce_ablated_nats": 15.802542557466166,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 4.815871328962478,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 7.065320987678405,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 4,
+        "family": "window",
+        "layers": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "n_targets": 5,
+        "name": "mlp_window8_l0_4",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            0
+          ],
+          [
+            "mlp",
+            1
+          ],
+          [
+            "mlp",
+            2
+          ],
+          [
+            "mlp",
+            3
+          ],
+          [
+            "mlp",
+            4
+          ]
+        ],
+        "width": 8
+      },
+      "width": 8
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.6550054510440662,
+          "q025": -0.8456109139359689,
+          "q975": -0.47938072426771416
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 5.982572093732676,
+          "q025": 5.934667287096815,
+          "q975": 6.033035145877309
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.33,
+      "estimand_id": "attn_window8@d0.33@zero",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.014220446589268408,
+        "ce_ablated_nats": 10.328018741053505,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.6586524874501833,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 5.9822657966096955,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 4,
+        "family": "window",
+        "layers": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "n_targets": 5,
+        "name": "attn_window8_l0_4",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            0
+          ],
+          [
+            "attn",
+            1
+          ],
+          [
+            "attn",
+            2
+          ],
+          [
+            "attn",
+            3
+          ],
+          [
+            "attn",
+            4
+          ]
+        ],
+        "width": 8
+      },
+      "width": 8
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.7045177852645086,
+          "q025": -0.7665573147063323,
+          "q975": -0.6412804854412589
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 0.7361410488755933,
+          "q025": 0.719189927762895,
+          "q975": 0.7530408715092539
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.5,
+      "estimand_id": "mlp_single@d0.50@zero",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.566404936611222,
+        "ce_ablated_nats": 10.282794059924985,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.7038771685787033,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 0.7363883862165623,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 6,
+        "family": "single",
+        "layers": [
+          6
+        ],
+        "n_targets": 1,
+        "name": "mlp_single_l6",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            6
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.34355607245436204,
+          "q025": -0.39309871832921833,
+          "q975": -0.29489257094195903
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 0.5131524153026717,
+          "q025": 0.5007213649903958,
+          "q975": 0.5286306090688996
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.5,
+      "estimand_id": "attn_single@d0.50@zero",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.6357469195625086,
+        "ce_ablated_nats": 10.643005859993066,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.34366536851062257,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 0.5134067806633884,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 6,
+        "family": "single",
+        "layers": [
+          6
+        ],
+        "n_targets": 1,
+        "name": "attn_single_l6",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            6
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 4.532427029739661,
+          "q025": 4.404036799769419,
+          "q975": 4.649160756730947
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 6.5466532404894995,
+          "q025": 6.483097392806349,
+          "q975": 6.613361165783325
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.5,
+      "estimand_id": "block_single@d0.50@zero",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.01176796345008999,
+        "ce_ablated_nats": 15.5155739613258,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 4.528902732822111,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 6.547378730468363,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "block",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 6,
+        "family": "single",
+        "layers": [
+          6
+        ],
+        "n_targets": 1,
+        "name": "resid_block_l6",
+        "submodules": [
+          "block"
+        ],
+        "targets": [
+          [
+            "block",
+            6
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.18697786396858085,
+          "q025": -0.299509855625587,
+          "q975": -0.06697918460151278
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 3.5214716954634415,
+          "q025": 3.4553870640885247,
+          "q975": 3.5884366931418463
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.5,
+      "estimand_id": "mlp_window4@d0.50@zero",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.15775004450070212,
+        "ce_ablated_nats": 10.802811430360727,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.1838597981429615,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 3.521623716133498,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 6,
+        "family": "window",
+        "layers": [
+          3,
+          4,
+          5,
+          6
+        ],
+        "n_targets": 4,
+        "name": "mlp_window4_l3_6",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            3
+          ],
+          [
+            "mlp",
+            4
+          ],
+          [
+            "mlp",
+            5
+          ],
+          [
+            "mlp",
+            6
+          ]
+        ],
+        "width": 4
+      },
+      "width": 4
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.2981327845292423,
+          "q025": -0.3864190388059727,
+          "q975": -0.20834177828056216
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 1.3418783361174045,
+          "q025": 1.3219816969866038,
+          "q975": 1.3605442723180408
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.5,
+      "estimand_id": "attn_window4@d0.50@zero",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.42847253812226815,
+        "ce_ablated_nats": 10.689706114099028,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.2969651144046601,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 1.341714631270736,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 6,
+        "family": "window",
+        "layers": [
+          3,
+          4,
+          5,
+          6
+        ],
+        "n_targets": 4,
+        "name": "attn_window4_l3_6",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            3
+          ],
+          [
+            "attn",
+            4
+          ],
+          [
+            "attn",
+            5
+          ],
+          [
+            "attn",
+            6
+          ]
+        ],
+        "width": 4
+      },
+      "width": 4
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 4.302920254159058,
+          "q025": 4.142002096456957,
+          "q975": 4.4487728153561275
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 9.531371130493312,
+          "q025": 9.407690277453641,
+          "q975": 9.653133499661202
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.5,
+      "estimand_id": "mlp_window8@d0.50@zero",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.003995174146080972,
+        "ce_ablated_nats": 15.290380876758087,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 4.303709648254399,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 9.534237090315411,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 6,
+        "family": "window",
+        "layers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "n_targets": 7,
+        "name": "mlp_window8_l0_6",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            0
+          ],
+          [
+            "mlp",
+            1
+          ],
+          [
+            "mlp",
+            2
+          ],
+          [
+            "mlp",
+            3
+          ],
+          [
+            "mlp",
+            4
+          ],
+          [
+            "mlp",
+            5
+          ],
+          [
+            "mlp",
+            6
+          ]
+        ],
+        "width": 8
+      },
+      "width": 8
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.6546624845636106,
+          "q025": -0.8451445122812666,
+          "q975": -0.4781678252873771
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 5.946890940285741,
+          "q025": 5.899541450874197,
+          "q975": 5.996179156450529
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.5,
+      "estimand_id": "attn_window8@d0.50@zero",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.014774233104566761,
+        "ce_ablated_nats": 10.329096881138161,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.6575743473655269,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 5.946469865916912,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 6,
+        "family": "window",
+        "layers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "n_targets": 7,
+        "name": "attn_window8_l0_6",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            0
+          ],
+          [
+            "attn",
+            1
+          ],
+          [
+            "attn",
+            2
+          ],
+          [
+            "attn",
+            3
+          ],
+          [
+            "attn",
+            4
+          ],
+          [
+            "attn",
+            5
+          ],
+          [
+            "attn",
+            6
+          ]
+        ],
+        "width": 8
+      },
+      "width": 8
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.06171546460979194,
+          "q025": -0.08171801705714347,
+          "q975": -0.042468763531054915
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 0.4821501118723281,
+          "q025": 0.47484449107924065,
+          "q975": 0.4898645750413674
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.67,
+      "estimand_id": "mlp_single@d0.67@zero",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.6453788493107335,
+        "ce_ablated_nats": 10.924902868139784,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.06176836036390476,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 0.4821787791709442,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 7,
+        "family": "single",
+        "layers": [
+          7
+        ],
+        "n_targets": 1,
+        "name": "mlp_single_l7",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            7
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 0.024994540615165484,
+          "q025": 0.006313470174264247,
+          "q975": 0.044221784514025496
+        },
+        "ce_guard_pass_fraction": 0.005,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 0.4622139262722309,
+          "q025": 0.4540780124769934,
+          "q975": 0.4710373793164105
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.67,
+      "estimand_id": "attn_single@d0.67@zero",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.6437966021241669,
+        "ce_ablated_nats": 11.011379062755724,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 0.02470783425203571,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 0.46229418292481017,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 7,
+        "family": "single",
+        "layers": [
+          7
+        ],
+        "n_targets": 1,
+        "name": "attn_single_l7",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            7
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 8.42522102632343,
+          "q025": 8.223031682383553,
+          "q975": 8.59940752063167
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 10.977843352270455,
+          "q025": 10.867766532456319,
+          "q975": 11.086718938251861
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.67,
+      "estimand_id": "block_single@d0.67@zero",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.0,
+        "ce_ablated_nats": 19.406965912771206,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 8.420294684267517,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 10.978070492434263,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "block",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 7,
+        "family": "single",
+        "layers": [
+          7
+        ],
+        "n_targets": 1,
+        "name": "resid_block_l7",
+        "submodules": [
+          "block"
+        ],
+        "targets": [
+          [
+            "block",
+            7
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.14695836143576635,
+          "q025": -0.2534945988362857,
+          "q975": -0.03853919044959588
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 3.324556536402217,
+          "q025": 3.2692115453127983,
+          "q975": 3.382561981881197
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.67,
+      "estimand_id": "mlp_window4@d0.67@zero",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.14473606139119083,
+        "ce_ablated_nats": 10.841409222507837,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.1452620059958516,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 3.324805047716187,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 7,
+        "family": "window",
+        "layers": [
+          4,
+          5,
+          6,
+          7
+        ],
+        "n_targets": 4,
+        "name": "mlp_window4_l4_7",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            4
+          ],
+          [
+            "mlp",
+            5
+          ],
+          [
+            "mlp",
+            6
+          ],
+          [
+            "mlp",
+            7
+          ]
+        ],
+        "width": 4
+      },
+      "width": 4
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.3148644020655551,
+          "q025": -0.38923773683549023,
+          "q975": -0.23866765631362546
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 1.261378017590495,
+          "q025": 1.2433913666963472,
+          "q975": 1.278865018939106
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.67,
+      "estimand_id": "attn_window4@d0.67@zero",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.41547833310258897,
+        "ce_ablated_nats": 10.67233402937788,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.3143371991258075,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 1.2609584002042977,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 7,
+        "family": "window",
+        "layers": [
+          4,
+          5,
+          6,
+          7
+        ],
+        "n_targets": 4,
+        "name": "attn_window4_l4_7",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            4
+          ],
+          [
+            "attn",
+            5
+          ],
+          [
+            "attn",
+            6
+          ],
+          [
+            "attn",
+            7
+          ]
+        ],
+        "width": 4
+      },
+      "width": 4
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 4.729152445826231,
+          "q025": 4.56245563762124,
+          "q975": 4.880824648791852
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 11.330722328159236,
+          "q025": 11.186470804504955,
+          "q975": 11.47804276461638
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.67,
+      "estimand_id": "mlp_window8@d0.67@zero",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.0007515674136191927,
+        "ce_ablated_nats": 15.7140368271123,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 4.727365598608612,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 11.331545023334282,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 7,
+        "family": "window",
+        "layers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "n_targets": 8,
+        "name": "mlp_window8_l0_7",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            0
+          ],
+          [
+            "mlp",
+            1
+          ],
+          [
+            "mlp",
+            2
+          ],
+          [
+            "mlp",
+            3
+          ],
+          [
+            "mlp",
+            4
+          ],
+          [
+            "mlp",
+            5
+          ],
+          [
+            "mlp",
+            6
+          ],
+          [
+            "mlp",
+            7
+          ]
+        ],
+        "width": 8
+      },
+      "width": 8
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.6605010733301651,
+          "q025": -0.850791401361352,
+          "q975": -0.48426670242302156
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 5.917278447759938,
+          "q025": 5.870550924361534,
+          "q975": 5.966157874145678
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.67,
+      "estimand_id": "attn_window8@d0.67@zero",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.015229129170704693,
+        "ce_ablated_nats": 10.323434710014574,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.6632365184891142,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 5.9169471870341335,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 7,
+        "family": "window",
+        "layers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "n_targets": 8,
+        "name": "attn_window8_l0_7",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            0
+          ],
+          [
+            "attn",
+            1
+          ],
+          [
+            "attn",
+            2
+          ],
+          [
+            "attn",
+            3
+          ],
+          [
+            "attn",
+            4
+          ],
+          [
+            "attn",
+            5
+          ],
+          [
+            "attn",
+            6
+          ],
+          [
+            "attn",
+            7
+          ]
+        ],
+        "width": 8
+      },
+      "width": 8
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 0.05913424426410252,
+          "q025": 0.040420803697733466,
+          "q975": 0.07852548772963858
+        },
+        "ce_guard_pass_fraction": 0.833,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 0.42835594859223686,
+          "q025": 0.4226261341604573,
+          "q975": 0.43362869905555623
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.85,
+      "estimand_id": "mlp_single@d0.85@zero",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.6605684223017741,
+        "ce_ablated_nats": 11.045622106778353,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 0.05895087827466483,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 0.42821304107923747,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 9,
+        "family": "single",
+        "layers": [
+          9
+        ],
+        "n_targets": 1,
+        "name": "mlp_single_l9",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            9
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.08782481486490212,
+          "q025": -0.11101776933072705,
+          "q975": -0.06531658261213087
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 0.3509471142091285,
+          "q025": 0.3467965655635429,
+          "q975": 0.35478850989398314
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.85,
+      "estimand_id": "attn_single@d0.85@zero",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.6814936413441189,
+        "ce_ablated_nats": 10.899163673621034,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.08750755488265405,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 0.3508724859155471,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 9,
+        "family": "single",
+        "layers": [
+          9
+        ],
+        "n_targets": 1,
+        "name": "attn_single_l9",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            9
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 1.4976404458818564,
+          "q025": 1.3132444581511864,
+          "q975": 1.6685300187185168
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 8.899158048161105,
+          "q025": 8.821396277424451,
+          "q975": 8.97071546985065
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.85,
+      "estimand_id": "block_single@d0.85@zero",
+      "family": "single",
+      "metrics": {
+        "argmax_agreement": 0.0,
+        "ce_ablated_nats": 12.48251607684437,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 1.4958448483406812,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 8.89949162969606,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "block",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 9,
+        "family": "single",
+        "layers": [
+          9
+        ],
+        "n_targets": 1,
+        "name": "resid_block_l9",
+        "submodules": [
+          "block"
+        ],
+        "targets": [
+          [
+            "block",
+            9
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.46170256159890233,
+          "q025": -0.5423900340740035,
+          "q975": -0.38671459620121057
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 2.4896452336788943,
+          "q025": 2.436084352324736,
+          "q975": 2.544535318444885
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.85,
+      "estimand_id": "mlp_window4@d0.85@zero",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.22177172128715808,
+        "ce_ablated_nats": 10.524959703107694,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.46171152539599447,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 2.491639477667987,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 9,
+        "family": "window",
+        "layers": [
+          6,
+          7,
+          8,
+          9
+        ],
+        "n_targets": 4,
+        "name": "mlp_window4_l6_9",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            6
+          ],
+          [
+            "mlp",
+            7
+          ],
+          [
+            "mlp",
+            8
+          ],
+          [
+            "mlp",
+            9
+          ]
+        ],
+        "width": 4
+      },
+      "width": 4
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.36336686604165624,
+          "q025": -0.4263239574385477,
+          "q975": -0.2968916357865119
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 1.182815807611614,
+          "q025": 1.16708991162644,
+          "q975": 1.1993026577536825
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.85,
+      "estimand_id": "attn_window4@d0.85@zero",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.4517711279444631,
+        "ce_ablated_nats": 10.623094528800916,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.3635766997027723,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 1.1827428469974117,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 9,
+        "family": "window",
+        "layers": [
+          6,
+          7,
+          8,
+          9
+        ],
+        "n_targets": 4,
+        "name": "attn_window4_l6_9",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            6
+          ],
+          [
+            "attn",
+            7
+          ],
+          [
+            "attn",
+            8
+          ],
+          [
+            "attn",
+            9
+          ]
+        ],
+        "width": 4
+      },
+      "width": 4
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 1.42194050445178,
+          "q025": 1.2870602180097497,
+          "q975": 1.5465464178222423
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 8.249916585726346,
+          "q025": 8.158376913220819,
+          "q975": 8.351689750915204
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.85,
+      "estimand_id": "mlp_window8@d0.85@zero",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.03753881450129547,
+        "ce_ablated_nats": 12.408972698394328,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 1.4223014698906393,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 8.251758217139631,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 9,
+        "family": "window",
+        "layers": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "n_targets": 8,
+        "name": "mlp_window8_l2_9",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            2
+          ],
+          [
+            "mlp",
+            3
+          ],
+          [
+            "mlp",
+            4
+          ],
+          [
+            "mlp",
+            5
+          ],
+          [
+            "mlp",
+            6
+          ],
+          [
+            "mlp",
+            7
+          ],
+          [
+            "mlp",
+            8
+          ],
+          [
+            "mlp",
+            9
+          ]
+        ],
+        "width": 8
+      },
+      "width": 8
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 0.19213689513097698,
+          "q025": 0.08317360469040613,
+          "q975": 0.2970794252657406
+        },
+        "ce_guard_pass_fraction": 0.997,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 2.3026325813916575,
+          "q025": 2.2693044279768766,
+          "q975": 2.340775241397606
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": 0.85,
+      "estimand_id": "attn_window8@d0.85@zero",
+      "family": "window",
+      "metrics": {
+        "argmax_agreement": 0.2835980301022527,
+        "ce_ablated_nats": 11.177429393571318,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 0.19075816506762955,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 2.302198969288219,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": 9,
+        "family": "window",
+        "layers": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "n_targets": 8,
+        "name": "attn_window8_l2_9",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            2
+          ],
+          [
+            "attn",
+            3
+          ],
+          [
+            "attn",
+            4
+          ],
+          [
+            "attn",
+            5
+          ],
+          [
+            "attn",
+            6
+          ],
+          [
+            "attn",
+            7
+          ],
+          [
+            "attn",
+            8
+          ],
+          [
+            "attn",
+            9
+          ]
+        ],
+        "width": 8
+      },
+      "width": 8
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 25.892509407309745,
+          "q025": 25.574832815449724,
+          "q975": 26.19065199881282
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 37.511918966821845,
+          "q025": 37.21375076020524,
+          "q975": 37.79074562875048
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": null,
+      "estimand_id": "mlp_all@global@zero",
+      "family": "all",
+      "metrics": {
+        "argmax_agreement": 0.0,
+        "ce_ablated_nats": 36.87322073483948,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 25.88654950633579,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 37.50852202931546,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp",
+      "powered": false,
+      "scope": {
+        "anchor_layer": null,
+        "family": "all",
+        "layers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "n_targets": 12,
+        "name": "mlp_all",
+        "submodules": [
+          "mlp"
+        ],
+        "targets": [
+          [
+            "mlp",
+            0
+          ],
+          [
+            "mlp",
+            1
+          ],
+          [
+            "mlp",
+            2
+          ],
+          [
+            "mlp",
+            3
+          ],
+          [
+            "mlp",
+            4
+          ],
+          [
+            "mlp",
+            5
+          ],
+          [
+            "mlp",
+            6
+          ],
+          [
+            "mlp",
+            7
+          ],
+          [
+            "mlp",
+            8
+          ],
+          [
+            "mlp",
+            9
+          ],
+          [
+            "mlp",
+            10
+          ],
+          [
+            "mlp",
+            11
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": -0.3823625553997827,
+          "q025": -0.5869676284037675,
+          "q975": -0.19647249754749183
+        },
+        "ce_guard_pass_fraction": 0.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 6.490232296937752,
+          "q025": 6.442145541480619,
+          "q975": 6.54156077772551
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": null,
+      "estimand_id": "attn_all@global@zero",
+      "family": "all",
+      "metrics": {
+        "argmax_agreement": 0.010897727497478294,
+        "ce_ablated_nats": 10.598574212183056,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": -0.3880970163206321,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 6.49058164320156,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": false,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": false,
+      "passes_kl_guard": true,
+      "pathway": "attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": null,
+        "family": "all",
+        "layers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "n_targets": 12,
+        "name": "attn_all",
+        "submodules": [
+          "attn"
+        ],
+        "targets": [
+          [
+            "attn",
+            0
+          ],
+          [
+            "attn",
+            1
+          ],
+          [
+            "attn",
+            2
+          ],
+          [
+            "attn",
+            3
+          ],
+          [
+            "attn",
+            4
+          ],
+          [
+            "attn",
+            5
+          ],
+          [
+            "attn",
+            6
+          ],
+          [
+            "attn",
+            7
+          ],
+          [
+            "attn",
+            8
+          ],
+          [
+            "attn",
+            9
+          ],
+          [
+            "attn",
+            10
+          ],
+          [
+            "attn",
+            11
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    },
+    {
+      "ablation_baseline": "zero",
+      "clears_both_guards": false,
+      "cluster_bootstrap": {
+        "ce_delta_nats": {
+          "median": 69.6885035901883,
+          "q025": 69.22551693492498,
+          "q975": 70.12684434468517
+        },
+        "ce_guard_pass_fraction": 1.0,
+        "cluster_unit": "sequence",
+        "clusters": 200,
+        "context_invalid_samples": 1000,
+        "kl_clean_to_ablated_nats": {
+          "median": 76.30950311604886,
+          "q025": 75.92162410297517,
+          "q975": 76.70595866201307
+        },
+        "kl_guard_pass_fraction": 1.0,
+        "samples": 1000,
+        "schema_version": "r2_transfer_pathway_cluster_bootstrap_v1",
+        "seed": 20260728,
+        "share_of_context_information": null
+      },
+      "context_information_valid": false,
+      "depth_fraction": null,
+      "estimand_id": "mlp_and_attn_all@global@zero",
+      "family": "all",
+      "metrics": {
+        "argmax_agreement": 0.0005340084254662684,
+        "ce_ablated_nats": 80.68403122435029,
+        "ce_clean_nats": 10.986671228503688,
+        "ce_delta_nats": 69.6973599958466,
+        "context_information_nats": -3.4226732691132247,
+        "context_information_valid": false,
+        "kl_clean_to_ablated_nats": 76.3162653117954,
+        "measurable": false,
+        "minimum_ce_delta_nats": 0.05,
+        "minimum_kl_nats": 0.01,
+        "passes_ce_guard": true,
+        "passes_kl_guard": true,
+        "schema_version": "r2_transfer_pathway_measurement_v1",
+        "scored_tokens": 50561,
+        "sequences": 200,
+        "share_of_context_information": null,
+        "unigram_entropy_nats": 7.563997959390464
+      },
+      "passes_ce_guard": true,
+      "passes_kl_guard": true,
+      "pathway": "mlp_and_attn",
+      "powered": false,
+      "scope": {
+        "anchor_layer": null,
+        "family": "all",
+        "layers": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11
+        ],
+        "n_targets": 24,
+        "name": "mlp_and_attn_all",
+        "submodules": [
+          "attn",
+          "mlp"
+        ],
+        "targets": [
+          [
+            "attn",
+            0
+          ],
+          [
+            "attn",
+            1
+          ],
+          [
+            "attn",
+            2
+          ],
+          [
+            "attn",
+            3
+          ],
+          [
+            "attn",
+            4
+          ],
+          [
+            "attn",
+            5
+          ],
+          [
+            "attn",
+            6
+          ],
+          [
+            "attn",
+            7
+          ],
+          [
+            "attn",
+            8
+          ],
+          [
+            "attn",
+            9
+          ],
+          [
+            "attn",
+            10
+          ],
+          [
+            "attn",
+            11
+          ],
+          [
+            "mlp",
+            0
+          ],
+          [
+            "mlp",
+            1
+          ],
+          [
+            "mlp",
+            2
+          ],
+          [
+            "mlp",
+            3
+          ],
+          [
+            "mlp",
+            4
+          ],
+          [
+            "mlp",
+            5
+          ],
+          [
+            "mlp",
+            6
+          ],
+          [
+            "mlp",
+            7
+          ],
+          [
+            "mlp",
+            8
+          ],
+          [
+            "mlp",
+            9
+          ],
+          [
+            "mlp",
+            10
+          ],
+          [
+            "mlp",
+            11
+          ]
+        ],
+        "width": null
+      },
+      "width": null
+    }
+  ],
+  "finished_at_utc": "2026-07-28T19:18:09.285124+00:00",
+  "pathways_module_sha256": "6e0e9dae84da6c2611c3026df384ef1a68e8057c770e15f0997cd243dc9b31b9",
+  "resources": {
+    "peak_accelerator_memory_allocated_bytes": 1530258432,
+    "peak_accelerator_memory_reserved_bytes": 1895825408
+  },
+  "runner_sha256": "d163381b4a4a6dfcbabd004d7a07a3d29dd9d8a2205f86ca83d4c1c582533aec",
+  "schema_version": "r2_transfer_estimand_power_v1",
+  "started_at_utc": "2026-07-28T19:17:21.880149+00:00",
+  "thresholds": {
+    "minimum_ce_delta_nats": 0.05,
+    "minimum_kl_nats": 0.01,
+    "powered_rule": "point_estimate_clears_both_guards_and_bootstrap_q025_of_ce_delta_and_kl_also_clear_them",
+    "provenance": "production_P0_2b_denominator_guards"
+  },
+  "unigram_baseline": {
+    "cohort_plug_in_entropy_nats": 7.170273844323542,
+    "estimator": "disjoint",
+    "nats": 7.563997959390464,
+    "reference": {
+      "digest": "4677b65995afe60dd19b3056e37a404432d10c35d847667db22518e31ea3f6f1",
+      "distinct_conditioning_labels": null,
+      "distinct_tokens": 39188,
+      "dropped_sequences_shared_with_cohort": 0,
+      "kind": "text",
+      "name": "openwebtext_screen_reference",
+      "requested_sequences": 4000,
+      "retained_sequences": 4000,
+      "sequences": 4000,
+      "source": "openwebtext_screen",
+      "symbols_max": 100000,
+      "symbols_median": 3210,
+      "symbols_min": 800,
+      "tokens": 1008346
+    },
+    "smoothing": 1.0,
+    "source": "disjoint_reference_cross_entropy"
+  },
+  "unigram_entropy_nats": 7.563997959390464,
+  "unigram_entropy_source": "disjoint_reference_cross_entropy",
+  "unigram_reference_cohort": {
+    "digest": "4677b65995afe60dd19b3056e37a404432d10c35d847667db22518e31ea3f6f1",
+    "distinct_conditioning_labels": null,
+    "dropped_sequences_shared_with_cohort": 0,
+    "kind": "text",
+    "name": "openwebtext_screen_reference",
+    "requested_sequences": 4000,
+    "retained_sequences": 4000,
+    "sequences": 4000,
+    "source": "openwebtext_screen",
+    "symbols_max": 100000,
+    "symbols_median": 3210,
+    "symbols_min": 800
+  }
+}

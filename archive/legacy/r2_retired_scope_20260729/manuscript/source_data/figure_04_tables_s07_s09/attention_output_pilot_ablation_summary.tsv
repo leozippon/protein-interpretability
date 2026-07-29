@@ -1,5 +1,0 @@
-condition	kind	n_sequences	delta_nll_all	delta_nll_first2	delta_nll_pos2_10	delta_nll_pos11_plus
-random1_L23	random	80	0.00013937563	0.015795898	0.0041417052	-1.5434856e-05
-random2_L23	random	80	0	0	0	0
-random3_L23	random	80	0	0	0	0
-target_L23	target	80	-0.0020216817	-0.35770569	-0.05080609	-0.00016519095

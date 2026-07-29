@@ -72,7 +72,7 @@ from src.transfer.prediction_addressed import (  # noqa: E402
 )
 
 SCHEMA_VERSION = "r2_transfer_paa_gate_v1"
-DEFAULT_OUT = REPO / "results/transfer_20260728/paa_gate"
+DEFAULT_OUT = REPO / "results/transfer/paa_gate"
 
 #: Gate 0 floor, in nats/token of context-derived information.
 GATE0_MIN_NATS = 0.5
