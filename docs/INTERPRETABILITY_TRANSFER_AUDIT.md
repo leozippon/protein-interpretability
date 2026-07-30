@@ -363,11 +363,28 @@ Drawn from all **574,627** eligible Swiss-Prot entries and all **23,586** AlphaF
 > | progen2-medium | 765M | 35/128 | 0.2734 | [0.2015, 0.3548] | disjoint |
 > | progen2-base | 765M | 40/128 | 0.3125 | [0.2326, 0.3984] | disjoint |
 >
-> **All four protein arms sit above the text control by point estimate**, and three of the four are interval-disjoint from it on this window. ProGen2-small is *not* a gated result: 23 eligible far-band cases against the pre-registered floor of 30, so it is reported as underpowered rather than as an overlap, and it needs roughly 176 cases per band.
+> **All four protein arms sit above the text control by point estimate**, and three of the four are interval-disjoint from it on this window — but read the disjoint-window block below before using this row: a second draw removes ProtGPT2 from it, and ProGen2-medium is the only arm that survives draw and threshold together. ProGen2-small is *not* a gated result: 23 eligible far-band cases against the pre-registered floor of 30, so it is reported as underpowered rather than as an overlap, and it needs roughly 176 cases per band.
 >
 > **The propagation slope is positive where the head-count slope is negative.** On the same ProGen2-small / ProGen2-medium pair, with corpus, architecture and tokeniser held: far-band propagation rises **+0.1330/decade** while the induction head fraction falls **−0.0172/decade**. A larger protein decoder in this lineage propagates a single-token perturbation *further* while allocating *fewer* heads to prefix-matching. Those are opposite-signed scale effects in one lineage on two statistics that a "more induction machinery" account would move together, and neither is a modality claim.
 >
-> **Every interval separation in this table is provisional on one cohort window.** The disjoint-window check above moved ProtGPT2 by −0.051 and dissolved its separation from the text control; the equivalent check for the three ProGen2 arms is running. Until it lands, read the column as a point ordering with one window's intervals, which is exactly the precision overstatement the paragraph above warns about.
+> **Every interval separation in this table is provisional on one cohort window.** The disjoint-window check above moved ProtGPT2 by −0.051 and dissolved its separation from the text control; the equivalent check for ProGen2-medium has now landed.
+>
+> **The second window splits the two protein arms, and it splits them the same way the threshold sweep does (EXP-R2-069).** Window 2 is `--cohort-skip 256`, float32, everything else identical:
+>
+> | threshold | gpt2-large w1 → w2 | ProtGPT2 w1 → w2 | ProGen2-medium w1 → w2 | both protein above control? |
+> |---:|---|---|---|---|
+> | 0.05 | 0.5312 → 0.5972 | 0.6133 → **0.5586** | 0.6719 → 0.7031 | w1 holds, **w2 fails** |
+> | 0.10 | 0.3611 → 0.4132 | 0.4297 → **0.3984** | 0.4375 → 0.5859 | w1 holds, **w2 fails** |
+> | 0.25 (headline) | 0.1042 → 0.1042 | 0.1953 → **0.1445** | 0.2734 → 0.3203 | holds in both |
+> | 0.50 | 0.0347 → 0.0382 | 0.0781 → **0.0664** | 0.1406 → 0.1562 | holds in both |
+>
+> **What survives is one arm, not the modality.** ProGen2-medium sits above the text control in *both* windows at *every* threshold on the ladder, and is interval-disjoint from it at 0.25 and 0.50 in both — the only cell of this table that is robust to draw and threshold at once. **ProtGPT2 does not survive:** it moves *down* in the second window at all four thresholds while the text control moves *up*, and at the two permissive cuts the two arms cross. Its margin over its matched control is smaller than the movement between two draws of one permutation, which is a statement about the precision of the measurement rather than about ProtGPT2.
+>
+> So §5.1's "all four protein arms sit above the text control" must be read as a one-window point ordering, and the retained claim narrows to: **the ProGen2 lineage propagates a single-token perturbation further than the matched text control; ProtGPT2 is not distinguishable from it.** That keeps the far-band result an architecture-and-tokenisation contrast, as the paragraph above already concluded on independent grounds, and removes the reading in which it is a text-vs-protein contrast — the matched pair is precisely the comparison that fails.
+>
+> **The text control is the immovable arm here, and that is the third time this asymmetry has appeared.** gpt2-large returns 0.1042 in both windows to four decimal places at the headline threshold, while both protein arms move by 0.03–0.15. §5.05(b) recorded the same asymmetry in nats of context information at 10–35× and the withdrawn matched-pair interval separation recorded it a second time. It is now a documented property of this panel rather than an incident: **a protein arm's cohort carries a selection uncertainty its matched text control does not**, on at least three unrelated statistics.
+>
+> *Two design faults in this comparison, both now fixed for the successor run.* The arms carried unequal case counts — 288 for gpt2-large against 128 for ProGen2-medium — so interval-overlap tests read tighter for one arm than the other, and an ordering conclusion drawn from overlap was partly reading sample size. And two windows sample a draw distribution rather than characterise it: with K=2 there is no way to tell a shifted arm from a noisy one. EXP-R2-070 runs **five disjoint windows at one case count (256) across seven arms**, which turns "does the ordering survive a second draw" into a paired per-window sign test with a between-window spread.
 
 > This is still the best-founded part-1 result the programme has — it survives production scale, resolved arithmetic, a fortyfold threshold sweep and sequence-clustered intervals — but it is an ordering, not a separation. What is still true and must travel with it: the structural n = 1 limit of §2 (one protein arm is matched; ProGen2-medium differs in architecture and tokenisation too, so its separation is not modality-identifying on its own), the corpus-repeat confound, ZymCTRL's structural exclusion from the estimand, and **the sampling check has not been redone in float32** — the disjoint-window comparison was bfloat16 and is withdrawn with the rest. Artefacts: `results/transfer_20260730/b6_float32/`.
 
@@ -498,7 +515,7 @@ Two further differences are open rather than closed:
 
 | item | question | status | cost |
 |---|---|---|---|
-| **D1.a** | Do the far-band propagation *magnitudes* differ, once resolved? | bfloat16 quantised the effect to the size of the effect; float32 re-run under way | ~1 GPU-h |
+| **D1.a** | Do the far-band propagation *magnitudes* differ, once resolved? | float32 re-run done (EXP-R2-068). A second window then split the protein side: ProGen2-medium holds against the text control at every threshold in both draws, ProtGPT2 crosses it. Five-window, equal-case successor running (EXP-R2-070) | ~1 GPU-h spent, ~5 GPU-h running |
 | **D1.b** | Is the tail statement a *distribution* statement at full population? | the census now runs on 817 of 817 matching proteins; the AUC / dominance battery has not been re-run on it | ~2 GPU-h, CPU-adjacent |
 
 **Exit condition unchanged in spirit:** D1 exists to explain transfer failures, not
@@ -586,6 +603,8 @@ comments, and those records are not rewritten. The mapping:
 ### 9.2 ~~One unresolved question worth 5 GPU-hours~~ — answered (EXP-R2-068)
 
 - ~~**Does non-local propagation survive at production scale?**~~ **Run at 1.5 GPU-h. It survives as an ordering and fails as a modality claim.** Every arm clears the case gate and every interval excludes zero, but the matched pair — the only modality-identifying comparison the panel has — overlaps at [0.202, 0.215]. What separates is ProGen2-medium from both other arms, which is an architecture and tokenisation contrast, and ZymCTRL cannot enter the estimand at all because its conditioning prompt puts the scored span outside the patching window. The strongest available substrate claim is therefore **not** a modality claim. Detail in §5.1.
+
+- **Follow-on, and it narrowed further (EXP-R2-069).** A disjoint second window removes ProtGPT2 from the ordering entirely — it moves *down* at all four thresholds while the text control moves *up*, and at the two permissive cuts they cross. **ProGen2-medium is the only arm above the text control in both draws at every threshold**, interval-disjoint in both at 0.25 and 0.50. So the surviving statement is about one lineage, not one modality, and the reading it rules out is the text-vs-protein one. A five-window equal-case successor (EXP-R2-070) is running to replace a two-draw sensitivity check with a characterised draw distribution.
 
 ---
 
