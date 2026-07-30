@@ -6,7 +6,7 @@ Study how and under what conditions mechanistic-interpretability methods develop
 
 1. **Compare model families.** Identify meaningful differences between text and protein generative models.
 2. **Evaluate method transfer.** Determine where existing methods transfer, where they fail, and whether each limitation belongs to the method, model, data, or evaluation interface.
-3. **Develop adapted methods.** Design and validate protein-specific methods only when the preceding evidence identifies a concrete failure mode.
+3. **Develop adapted methods.** Design and validate protein-specific methods only when the preceding evidence identifies a concrete failure mode. If feasible, leverage interpretability methods to uncover scientifically meaningful findings learned by the models, which correspond to real‑world phenomena or yield novel scientific insights.
 
 `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` is canonical for findings, limitations, retractions, and the current plan.
 
