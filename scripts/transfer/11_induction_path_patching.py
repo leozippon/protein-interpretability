@@ -105,6 +105,7 @@ from src.transfer.path_patching import (  # noqa: E402
     PathPatcher,
     bootstrap_difference,
     build_path_cases,
+    causal_census_agreement,
     select_senders,
     sender_effects,
     sender_set_overlap,
@@ -334,6 +335,7 @@ def run_arm(
             threshold=args.headline_threshold,
             fallback_top_k=args.fallback_top_k,
             max_senders=args.max_senders,
+            exhaustive=args.exhaustive_senders,
         )
         sender_sets[criterion] = senders
         sender_records[criterion] = {**provenance, "repeat_criterion": criterion}
@@ -389,6 +391,12 @@ def run_arm(
                     and sender_criterion == case_criterion == CRITERIA[0],
                 ),
             }
+            if args.exhaustive_senders:
+                conditions[key]["causal_census_agreement"] = causal_census_agreement(
+                    conditions[key]["per_sender_head"],
+                    threshold=args.headline_threshold,
+                    exhaustive=True,
+                )
             summary = conditions[key]["summary"]
             print(
                 f"[{name}] {key}: direct {summary['per_sender_head_mean']['direct']:+.4f} "
@@ -656,6 +664,16 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--max-senders", type=int, default=None)
+    parser.add_argument(
+        "--exhaustive-senders",
+        action="store_true",
+        help="patch EVERY head rather than the census-selected ones, and report "
+        "the causal/census agreement. Audit item D2.b is unanswerable without "
+        "this: with census-selected senders the causal top-k is drawn from the "
+        "census's own set, so a top-k Jaccard against the census is 1.0 by "
+        "construction. Costs the full head grid instead of its tail -- an order "
+        "of magnitude more patching -- which is why it is opt-in",
+    )
     parser.add_argument("--n-cases", type=int, default=64)
     parser.add_argument("--cases-per-probe", type=int, default=4)
     parser.add_argument("--max-case-tokens", type=int, default=640)

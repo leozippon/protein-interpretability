@@ -19,7 +19,9 @@ from src.transfer.induction_robustness import contrast_ratio_bootstrap  # noqa: 
 from src.transfer.lenses import split_cohort  # noqa: E402
 from src.transfer.path_patching import (  # noqa: E402
     attention_output_projection,
+    causal_census_agreement,
     require_supported_layout,
+    select_senders,
 )
 from src.transfer.prediction_addressed import unigram_percentiles  # noqa: E402
 from src.transfer.probes import skill_block  # noqa: E402
@@ -232,3 +234,107 @@ def test_split_cohort_records_parent_provenance_and_split_indices() -> None:
 
     assert sorted(all_indices) == list(range(len(cohort)))
     assert set(train.sampling["indices"]).isdisjoint(evaluation.sampling["indices"])
+
+
+# --------------------------------------------------------- exhaustive senders
+#
+# Audit item D2.b asked for a top-20 Jaccard between the causal ranking and the
+# prefix-matching census and got 1.0 on every arm, because the sender set was the
+# census-selected set: both rankings ranked the same heads, so no head the census
+# rejected could ever appear. The failure is invisible in the output -- a real
+# agreement would give 1.0 too -- so these tests pin the precondition rather than
+# the number.
+
+
+def _scores() -> np.ndarray:
+    return np.array([[0.30, 0.02, 0.11], [0.15, 0.01, 0.09]], dtype=np.float64)
+
+
+def test_exhaustive_selection_admits_heads_the_census_rejects() -> None:
+    selective, selective_provenance = select_senders(
+        _scores(), threshold=0.10, fallback_top_k=2
+    )
+    exhaustive, exhaustive_provenance = select_senders(
+        _scores(), threshold=0.10, fallback_top_k=2, exhaustive=True
+    )
+    assert selective_provenance["criterion"] == "prefix_matching_above_threshold"
+    assert exhaustive_provenance["criterion"] == "exhaustive_all_heads"
+    assert len(exhaustive) == _scores().size
+    # The whole point: the exhaustive set spans both sides of the threshold.
+    assert exhaustive_provenance["n_senders_below_threshold"] > 0
+    assert selective_provenance["n_senders_below_threshold"] == 0
+    assert {s.label for s in selective} < {s.label for s in exhaustive}
+
+
+def test_above_threshold_is_each_head_s_own_score_not_the_set_s() -> None:
+    """The per-head flag must not be the set-level answer broadcast to every head.
+
+    On the two selective criteria the two agree, so this is a no-op there; on the
+    exhaustive set only the per-head answer is true, and it is the field that says
+    which causally-ranked heads the census would have missed.
+    """
+
+    exhaustive, _ = select_senders(
+        _scores(), threshold=0.10, fallback_top_k=2, exhaustive=True
+    )
+    for sender in exhaustive:
+        assert sender.above_threshold == (sender.prefix_matching >= 0.10)
+    assert len({s.above_threshold for s in exhaustive}) == 2
+
+    # Unchanged on the paths that existed before.
+    for threshold, expected in ((0.10, True), (0.99, False)):
+        senders, _ = select_senders(_scores(), threshold=threshold, fallback_top_k=2)
+        assert {s.above_threshold for s in senders} == {expected}
+
+
+def _rows(effects: list[float]) -> list[dict[str, object]]:
+    senders, _ = select_senders(_scores(), threshold=0.10, fallback_top_k=2, exhaustive=True)
+    return [
+        {"label": s.label, "prefix_matching": s.prefix_matching, "effects": {"total": e}}
+        for s, e in zip(senders, effects, strict=True)
+    ]
+
+
+def test_agreement_refuses_a_census_selected_sender_set() -> None:
+    """The negative path is the defect: a selective set yields 1.0 and means nothing."""
+
+    with pytest.raises(ValueError, match="exhaustive"):
+        causal_census_agreement(
+            _rows([0.5, 0.4, 0.3, 0.2, 0.1, 0.05]), threshold=0.10, exhaustive=False
+        )
+
+
+def test_agreement_surfaces_a_head_the_census_ranks_below_threshold() -> None:
+    # Head ranked last by the census carries the largest causal effect.
+    rows = _rows([0.01, 0.02, 0.03, 0.04, 0.05, 0.90])
+    lowest = rows[-1]["label"]
+    report = causal_census_agreement(rows, threshold=0.10, exhaustive=True)
+
+    assert report["n_below_census_threshold"] == 3
+    assert report["strongest_head_below_census_threshold"]["label"] == lowest
+    assert report["strongest_head_below_census_threshold"]["causal_rank"] == 0
+    top_5 = report["top_k"][repr(5)]
+    assert lowest in top_5["causal_top_heads"]
+    assert lowest in top_5["causal_top_heads_below_census_threshold"]
+    # A census miss must cost agreement; the old circular statistic could not.
+    assert top_5["jaccard"] < 1.0
+
+
+def test_agreement_reports_a_swept_k_and_a_threshold_free_primary() -> None:
+    rows = _rows([0.60, 0.50, 0.40, 0.30, 0.20, 0.10])  # causal order == census order
+    report = causal_census_agreement(rows, threshold=0.10, exhaustive=True)
+
+    # Standing rule 8: the primary statistic needs no cut.
+    assert report["spearman_census_vs_causal_magnitude"]["rho"] == pytest.approx(1.0)
+    assert [c["k"] for c in report["top_k"].values()] == [5, 10, 20, 40]
+    for cut in report["top_k"].values():
+        assert cut["jaccard"] == pytest.approx(1.0)
+        assert cut["k_effective"] <= len(rows)
+        assert cut["truncated_to_head_count"] == (cut["k"] > len(rows))
+
+
+def test_agreement_rejects_duplicate_head_labels() -> None:
+    rows = _rows([0.1] * 6)
+    rows[1]["label"] = rows[0]["label"]
+    with pytest.raises(ValueError, match="duplicate head label"):
+        causal_census_agreement(rows, threshold=0.10, exhaustive=True)

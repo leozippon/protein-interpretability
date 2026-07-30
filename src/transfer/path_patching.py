@@ -97,6 +97,7 @@ from typing import Any
 
 import numpy as np
 import torch
+from scipy import stats
 
 from .arms import Arm
 from .circuits import RepeatProbe, Unigram, head_dim, head_ov_weights, n_head
@@ -207,6 +208,7 @@ def select_senders(
     threshold: float,
     fallback_top_k: int,
     max_senders: int | None = None,
+    exhaustive: bool = False,
 ) -> tuple[list[SenderHead], dict[str, Any]]:
     """Heads above the census threshold, or an explicitly flagged top-k if none are.
 
@@ -219,6 +221,17 @@ def select_senders(
     with ``above_threshold`` false on every one of them and
     ``not_induction_heads_by_panel_criterion`` set on the provenance record, so
     no reader can quote its numbers as induction-head numbers.
+
+    ``exhaustive`` admits **every** head, still ranked by prefix matching.  It
+    exists because the two selection rules above make one question unanswerable:
+    both admit only heads the census already picked, so any agreement statistic
+    computed between the causal ranking and the census is agreement between a set
+    and itself.  Audit item D2.b asked for a top-20 Jaccard against the census
+    and got 1.0 on all four arms by construction, which carries no information.
+    Seeing the census's *misses* requires a causal effect for heads the census
+    did not select, and that requires patching heads it scored below threshold.
+    This is a far more expensive measurement -- every head rather than the tail --
+    and it is opt-in for that reason, not a default.
     """
 
     if prefix_matching.ndim != 2:
@@ -238,7 +251,10 @@ def select_senders(
         )
     ]
     n_above = int((prefix_matching >= threshold).sum())
-    if n_above > 0:
+    if exhaustive:
+        chosen = ranked
+        criterion = "exhaustive_all_heads"
+    elif n_above > 0:
         chosen = [row for row in ranked if row[2] >= threshold]
         criterion = "prefix_matching_above_threshold"
     else:
@@ -248,8 +264,20 @@ def select_senders(
     if max_senders is not None and len(chosen) > max_senders:
         chosen = chosen[:max_senders]
         truncated = True
+    # ``above_threshold`` is each head's own score against the threshold. Under
+    # the two selective criteria that is identical to the set-level answer -- they
+    # admit either only heads at or above it, or, when none exist, only heads
+    # below it -- so this is not a behaviour change on those paths. Under
+    # ``exhaustive`` the set spans both sides of the threshold and only a per-head
+    # answer is true, which is the whole point of the criterion: it is the field
+    # that tells a reader which causally-ranked heads the census would have missed.
     senders = [
-        SenderHead(layer=layer, head=head, prefix_matching=score, above_threshold=n_above > 0)
+        SenderHead(
+            layer=layer,
+            head=head,
+            prefix_matching=score,
+            above_threshold=score >= threshold,
+        )
         for layer, head, score in chosen
     ]
     if not senders:
@@ -263,6 +291,9 @@ def select_senders(
         "max_senders": None if max_senders is None else int(max_senders),
         "truncated_to_max_senders": truncated,
         "not_induction_heads_by_panel_criterion": n_above == 0,
+        "exhaustive": bool(exhaustive),
+        "n_senders_above_threshold": sum(1 for s in senders if s.above_threshold),
+        "n_senders_below_threshold": sum(1 for s in senders if not s.above_threshold),
         "heads": [sender.as_dict() for sender in senders],
     }
     return senders, provenance
@@ -286,6 +317,112 @@ def sender_set_overlap(left: Sequence[SenderHead], right: Sequence[SenderHead]) 
         "right_top_heads": [s.label for s in list(right)[:top]],
         "top_heads_identical_as_set": {s.label for s in list(left)[:top]}
         == {s.label for s in list(right)[:top]},
+    }
+
+
+#: Top-k cuts the causal/census agreement is reported at. Audit item D2.b named
+#: k=20; it is swept rather than reported alone because a single k is a threshold
+#: and standing rule 8 asks for the ordering to be shown invariant across one.
+CAUSAL_AGREEMENT_TOP_K = (5, 10, 20, 40)
+
+
+def causal_census_agreement(
+    per_head: Sequence[Mapping[str, Any]],
+    *,
+    threshold: float,
+    exhaustive: bool,
+    effect_key: str = "total",
+    top_k: Sequence[int] = CAUSAL_AGREEMENT_TOP_K,
+) -> dict[str, Any]:
+    """Does the causal ranking recover the census ranking, and what does it add?
+
+    This refuses a non-exhaustive sender set, and the refusal is the point.  Audit
+    item D2.b asked for a top-20 Jaccard between the causal ranking and the
+    prefix-matching census, and the answer came back 1.0 on all four arms -- not
+    because the two agree, but because the sender set *was* the census-selected
+    set, so both rankings ranked the same heads and no head the census rejected
+    could appear.  Computing this statistic on a selective set produces a number
+    that looks like agreement and measures nothing.  The precondition is therefore
+    enforced here rather than documented, because the circularity is invisible in
+    the output: a Jaccard of 1.0 is exactly what a real agreement would also give.
+
+    The primary statistic is the rank correlation over **all** heads, which needs
+    no cut.  The top-k agreement is reported beside it, swept over k, because that
+    is the form the gate was written in.
+    """
+
+    if not exhaustive:
+        raise ValueError(
+            "causal/census agreement requires an exhaustive sender set. On a set "
+            "selected by the census itself, every head in the causal ranking is a "
+            "head the census already chose, so the top-k Jaccard is 1.0 by "
+            "construction and the census's misses cannot appear (audit D2.b)"
+        )
+    if not per_head:
+        raise ValueError("no per-head results to compare against the census")
+    if not top_k or any(k < 1 for k in top_k):
+        raise ValueError("top_k cuts must all be positive")
+
+    labels = [str(row["label"]) for row in per_head]
+    if len(set(labels)) != len(labels):
+        raise ValueError("per-head records contain a duplicate head label")
+    census_score = np.asarray(
+        [float(row["prefix_matching"]) for row in per_head], dtype=np.float64
+    )
+    effect = np.asarray([float(row["effects"][effect_key]) for row in per_head], dtype=np.float64)
+    if not np.isfinite(census_score).all() or not np.isfinite(effect).all():
+        raise ValueError("census scores and causal effects must all be finite")
+    magnitude = np.abs(effect)
+
+    above = census_score >= threshold
+    census_order = np.argsort(-census_score, kind="stable")
+    causal_order = np.argsort(-magnitude, kind="stable")
+
+    rho, p_value = stats.spearmanr(census_score, magnitude)
+    cuts: dict[str, Any] = {}
+    for k in top_k:
+        cut = min(int(k), len(per_head))
+        census_top = {labels[i] for i in census_order[:cut]}
+        causal_top = [labels[i] for i in causal_order[:cut]]
+        missed = [labels[i] for i in causal_order[:cut] if not above[i]]
+        union = census_top | set(causal_top)
+        cuts[repr(int(k))] = {
+            "k": int(k),
+            "k_effective": cut,
+            "truncated_to_head_count": cut != int(k),
+            "n_intersection": len(census_top & set(causal_top)),
+            "jaccard": _finite(len(census_top & set(causal_top)) / len(union), "causal jaccard"),
+            "causal_top_heads": causal_top,
+            "n_causal_top_below_census_threshold": len(missed),
+            "causal_top_heads_below_census_threshold": missed,
+        }
+    if len(cuts) != len(top_k):
+        raise ValueError("two top-k cuts collided on one key")
+
+    strongest_missed: dict[str, Any] | None = None
+    for rank, index in enumerate(causal_order):
+        if not above[index]:
+            strongest_missed = {
+                "label": labels[index],
+                "causal_rank": rank,
+                "prefix_matching": _finite(float(census_score[index]), "missed head score"),
+                f"effect_{effect_key}": _finite(float(effect[index]), "missed head effect"),
+            }
+            break
+
+    return {
+        "effect_key": effect_key,
+        "census_threshold": float(threshold),
+        "n_heads": len(per_head),
+        "n_above_census_threshold": int(above.sum()),
+        "n_below_census_threshold": int((~above).sum()),
+        "spearman_census_vs_causal_magnitude": {
+            "rho": _finite(float(rho), "causal spearman rho"),
+            "p_value": _finite(float(p_value), "causal spearman p"),
+            "n": len(per_head),
+        },
+        "top_k": cuts,
+        "strongest_head_below_census_threshold": strongest_missed,
     }
 
 
