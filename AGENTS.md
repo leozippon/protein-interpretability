@@ -87,22 +87,6 @@ Record each experiment's date, configuration or command, and result in `docs/EXP
 
 - Files in @.mutagenignore is ignored from local repository, but you can check and read using terminal commands.
 
-## Standing Rules
-
-1. **Never take the first N records of a biological corpus.** Sample under a seeded permutation and report a skip-offset sensitivity. File-order iteration has manufactured an effect three times, once worth +1.01 nats.
-2. **Check gate attainability on the text control before applying it to a protein arm.** A gate the positive control cannot pass is a specification defect, not a negative result. Violated twice, at real cost.
-3. **Use held-out, never plug-in, estimators** for information decompositions; plug-in bias tracks vocabulary size and reached +1.02 nats.
-4. **Feed every arm the format it was trained on**, and verify the rendering against the model's own likelihood. Rendering has been worth 1.42-1.78 nats/token.
-5. **An intervention that moves everything needs a control for moving everything.**
-6. **A reconstruction gate does not protect against wrong norm algebra**; RMSNorm-on-LayerNorm passes at 0.49% error while corrupting attribution.
-7. **Verify environment defaults have not narrowed the panel;** print resolved paths before every campaign. One variable silently reduced a campaign's text side to a single model while every downstream number stayed well-formed.
-8. **Prefer threshold-free statistics.** Where a threshold is unavoidable, sweep it and show the ordering is invariant.
-9. **Report residual-stream spectra on interior, alphabet-bearing positions**; an all-position participation ratio measures the attention sink and separators.
-10. **Search the literature by mechanism name, not by domain**, before designing a track.
-11. Never delete a result artifact; move it. Frozen provenance is external at `/Data2/lzp/bio_archive`; never edit it in place.
-13. Check `nvidia-smi` and `free -h` before and after GPU runs; on H200, run them inside the selected pod.
-14. Report failures rather than routing around them. A refutation is a valid result; state it plainly.
-
 ## Operational Guardrails
 
 - Fully read sufficient code and supporting documentation to form a sound design idea before writing or modifying any code.

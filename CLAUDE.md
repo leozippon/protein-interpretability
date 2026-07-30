@@ -87,29 +87,6 @@ Record each experiment's date, configuration or command, and result in `docs/EXP
 
 - Files in @.mutagenignore is ignored from local repository, but you can check and read using terminal commands.
 
-## Standing Rules
-
-This list is the operating summary. `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` Appendix B is the fuller catalogue and **its numbering differs from this one** — rule 8 here is threshold-free statistics, rule 8 there is decoy correction. Cite a rule by its bold name, not by number alone.
-
-1. **Never take the first N records of a biological corpus.** Sample under a seeded permutation and report a skip-offset sensitivity. File-order iteration has manufactured an effect three times, once worth +1.01 nats.
-2. **Check gate attainability on the text control before applying it to a protein arm.** A gate the positive control cannot pass is a specification defect, not a negative result. Violated twice, at real cost.
-3. **Use held-out, never plug-in, estimators** for information decompositions; plug-in bias tracks vocabulary size and reached +1.02 nats.
-4. **Feed every arm the format it was trained on**, and verify the rendering against the model's own likelihood. Rendering has been worth 1.42-1.78 nats/token.
-5. **An intervention that moves everything needs a control for moving everything.**
-6. **A reconstruction gate does not protect against wrong norm algebra**; RMSNorm-on-LayerNorm passes at 0.49% error while corrupting attribution.
-7. **Verify environment defaults have not narrowed the panel;** print resolved paths before every campaign. One variable silently reduced a campaign's text side to a single model while every downstream number stayed well-formed.
-8. **Prefer threshold-free statistics.** Where a threshold is unavoidable, sweep it and show the ordering is invariant.
-9. **Report residual-stream spectra on interior, alphabet-bearing positions**; an all-position participation ratio measures the attention sink and separators.
-10. **Search the literature by mechanism name, not by domain**, before designing a track.
-11. Never delete a result artifact; move it. Frozen provenance is external at `/Data2/lzp/bio_archive`; never edit it in place.
-12. **Give every arm the same number of sampling units before comparing them, and use a scale-free statistic when the arms differ in size.** An interval-overlap test across arms carrying 288 and 128 cases is partly a reading of sample size, and it supported a claim that a matched-count re-run then narrowed. The same error hides in per-arm proportions: "the top 1% of heads" is 1 head on GPT-2 and 7 on ProtGPT2, so concentration must be read from a Gini or a share-of-grid, not a top-k share.
-13. Check `nvidia-smi` and `free -h` before and after GPU runs; on H200, run them inside the selected pod.
-14. Report failures rather than routing around them. A refutation is a valid result; state it plainly.
-15. **Cohort sensitivity is a property of the statistic, not of the modality.** Measured in one session on the same arms: the pathway-budget ratio reproduced within 0.05 on every arm across draws, while the far-band fraction moved a quarter of its own value on ProtGPT2. A draw-robustness result for one measurement licenses nothing about another, in either direction.
-16. **Never normalise a signed decomposition by summed magnitudes.** The four causal-path components sum to the total exactly and still oppose in sign on 40–50% of heads, so a "share" computed from summed absolute values is not a share of anything and reached 1.03 of the whole it was supposedly part of. Confirm the components do not cancel before dividing by them.
-17. **A statistic compared against the set that selected its own inputs is circular, and the circular answer is indistinguishable from a real one.** A top-20 Jaccard against the census returned 1.0 on all four arms because the sender set *was* the census-selected set — which is exactly what genuine agreement would return. Enforce the precondition in code and raise; a comment does not stop the next run.
-18. **Before reading a low rank correlation as absence of signal, test reliability and concentration.** Protein arms gave an all-head census-to-causal ρ near zero, but per-head reliability was 0.916–0.991 (so not attenuation) and ρ over the top 32 heads was +0.808 — higher than either text control. The bulk was unordered, not the top, and the first reading of that table had to be retracted.
-
 ## Operational Guardrails
 
 - Fully read sufficient code and supporting documentation to form a sound design idea before writing or modifying any code.

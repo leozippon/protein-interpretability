@@ -399,7 +399,7 @@ Drawn from all **574,627** eligible Swiss-Prot entries and all **23,586** AlphaF
 >
 > Six arms, five disjoint windows of one seeded permutation, **256 cases per band on every arm**, float32, 30 of 31 jobs clean. This replaces the two-draw sensitivity check with a characterised draw distribution and removes the unequal-case-count confound.
 >
-> **(i) The pre-registered ≥30 far-band case gate is not attainable on the text control, and that is a specification defect.** At 256 cases per band gpt2-large returns 26 / 24 / 26 / 28 / 34 eligible far-band cases — **below the gate in four of five windows** — and gpt2-xl misses it in one. Standing rule 2 says a gate the positive control cannot pass is a specification defect rather than a negative result, and this one was violated in the recording direction: ProGen2-small's "gate FAILS at 23" in the table above was judged against a floor its own text control does not clear at the same case count. gpt2-large only met it before by running at 288 cases per band and landing on exactly 30. **The gate is withdrawn as stated.** ProGen2-small, at 33–62 cases here, clears it in every window anyway.
+> **(i) The pre-registered ≥30 far-band case gate is not attainable on the text control, and that is a specification defect.** At 256 cases per band gpt2-large returns 26 / 24 / 26 / 28 / 34 eligible far-band cases — **below the gate in four of five windows** — and gpt2-xl misses it in one. Appendix B rule 2 says a gate the positive control cannot pass is a specification defect rather than a negative result, and this one was violated in the recording direction: ProGen2-small's "gate FAILS at 23" in the table above was judged against a floor its own text control does not clear at the same case count. gpt2-large only met it before by running at 288 cases per band and landing on exactly 30. **The gate is withdrawn as stated.** ProGen2-small, at 33–62 cases here, clears it in every window anyway.
 >
 > **(ii) The paired per-window test, all four thresholds, both text controls.** Counting every arm × control × window comparison at each threshold:
 >
@@ -440,7 +440,7 @@ Drawn from all **574,627** eligible Swiss-Prot entries and all **23,586** AlphaF
 >
 > *Sampling.* A disjoint second window of the same permutation (`--cohort-skip 256`) moves the far-band fraction by **−0.021 / −0.020 / +0.016** for gpt2-large / ProtGPT2 / ProGen2-medium, every interval overlaps its partner, and all three still clear the case gate (42 / 60 / 60). The draw is not driving the result.
 >
-> *Threshold.* It is not threshold-invariant, and Appendix B rule 8 is the reason to have looked. Swept over the eligibility cut:
+> *Threshold.* It is not threshold-invariant, and Appendix B rule 17 is the reason to have looked. Swept over the eligibility cut:
 >
 > | cut | gpt2-large | ProtGPT2 | ProGen2-medium |
 > |---:|---:|---:|---:|
@@ -630,11 +630,11 @@ Three protein arms sit at Gini 0.940–0.944 against 0.826–0.829 for both text
 
 **(v) What this does and does not say about §4's head-count gap.** It does **not** show that prefix matching is a broken selector on protein — at the top of the grid it is a better one there than on text. It shows that a **count** of heads above a fixed prefix-matching threshold is a poor summary of protein arms specifically, because their causal importance is concentrated in far fewer heads and the threshold sits in a region where the score no longer orders anything. A head count is a statistic about the bulk; protein causal structure is not in the bulk.
 
-**(vi) The pre-registered gate is a specification defect, the second this session.** Top-20 Jaccard ≥ 0.8 is met by **no arm in any condition**; the best observed is 0.667 and the text control never exceeds 0.538. Standing rule 2 applies. Withdrawn as stated.
+**(vi) The pre-registered gate is a specification defect, the second this session.** Top-20 Jaccard ≥ 0.8 is met by **no arm in any condition**; the best observed is 0.667 and the text control never exceeds 0.538. Appendix B rule 2 applies. Withdrawn as stated.
 
 *Limits.* The causal effect is path patching on repeat probes, so a high-effect head is "causally important for repeat prediction", not "an induction head by mechanism". Effects are per-head means over 64 cases and ranking noise depresses Jaccard on every arm alike, which is exactly why the text control is the reference rather than an absolute cut. ProtGPT2's negative ρ values are small and marginal (p ≈ 0.04 at n = 720) and should be read as *uninformative*, not as anti-correlation. Artefacts: `results/transfer_20260730/d2bprime/`.
 
-**D2.b′'s instrument, and why the precondition is enforced rather than documented.** `select_senders` gained an `exhaustive` criterion that admits every head, and `causal_census_agreement` computes the comparison the gate asks for. That function **raises** on a non-exhaustive sender set. The reason is that D2.b's failure is invisible in its own output: a top-20 Jaccard of 1.0 is exactly what a genuine agreement would also produce, so nothing in the artefact distinguished "the two rankings agree" from "the two rankings ranked the same six heads". A comment would not have stopped the next run from reproducing it. Two further points of the design: `above_threshold` became each head's own score against the threshold rather than the set-level answer broadcast to every head — identical on both pre-existing criteria, and the only truthful answer on a set that spans the threshold, which is precisely the field that says which causally-ranked heads the census missed. And the primary statistic is the **rank correlation over all heads**, which needs no cut at all; the top-20 Jaccard the gate was written in is reported beside it and swept over k = 5/10/20/40, per standing rule 8.
+**D2.b′'s instrument, and why the precondition is enforced rather than documented.** `select_senders` gained an `exhaustive` criterion that admits every head, and `causal_census_agreement` computes the comparison the gate asks for. That function **raises** on a non-exhaustive sender set. The reason is that D2.b's failure is invisible in its own output: a top-20 Jaccard of 1.0 is exactly what a genuine agreement would also produce, so nothing in the artefact distinguished "the two rankings agree" from "the two rankings ranked the same six heads". A comment would not have stopped the next run from reproducing it. Two further points of the design: `above_threshold` became each head's own score against the threshold rather than the set-level answer broadcast to every head — identical on both pre-existing criteria, and the only truthful answer on a set that spans the threshold, which is precisely the field that says which causally-ranked heads the census missed. And the primary statistic is the **rank correlation over all heads**, which needs no cut at all; the top-20 Jaccard the gate was written in is reported beside it and swept over k = 5/10/20/40, per Appendix B rule 17.
 
 > *Validated end-to-end on GPT-2, and the instrument is not returning the circular answer.* At a deliberately small validation size — 8 cases, 144 heads, 90 s on one L20 — the census ranking and the causal ranking give Spearman **ρ = +0.70** (p = 7×10⁻²³) and a **top-20 Jaccard of 0.538**, against the 1.0 the selective sender set returned by construction. Six of the causal top-20 are heads the census scores *below* threshold, the strongest being L8H9 at prefix-matching 0.018 but causal rank 8. **These are not results and must not be quoted as any:** 8 cases per condition is far too few for a per-head effect estimate, and ranking noise depresses Jaccard on its own. What they establish is that the gate is now answerable — the statistic can fall below 1.0, and census misses can appear in it, neither of which was possible before. The measurement itself is queued behind EXP-R2-070 on four arms.
 | **D2.c** | Same on copy suppression — does effect size separate arms where prevalence cannot? Directly answers the measurability question §1 leaves open | ~13 GPU-h |
@@ -787,3 +787,63 @@ defaults to float32 for it; `04_circuit_primitives.py` did not, and the same
 lesson cost a second measurement. (EXP-R2-068.)
 
 16. **A declaration derived by comparing resolved paths is not host-portable.** Two environment variables that are distinct on the authoring host can alias on the running host, and then the comparison silently picks whichever branch is written first. Declare the choice where it is made. (EXP-R2-068, L21.)
+
+17. **Prefer threshold-free statistics.** Where a threshold is unavoidable, sweep
+it and show the ordering is invariant across the sweep. Two results this
+programme recorded as orderings turned out to hold only above a cut: the
+far-band propagation ordering reverses at the two most permissive eligibility
+thresholds, and the protein/text separation in EXP-R2-070 is clean at 0.50 and
+31/40 at 0.05.
+
+18. **Never delete a result artifact; move it.** Frozen provenance is external at
+`/Data2/lzp/bio_archive` and is never edited in place. A zero-byte file from a
+failed pull is not an artifact, but moving it costs nothing and records that the
+pull path can fail silently.
+
+19. **Check `nvidia-smi` and `free -h` before and after every GPU run**; on H200,
+run them inside the selected pod. Allocation is not utilisation, and "the GPUs
+were idle" must be distinguishable from "nobody looked".
+
+20. **Report failures rather than routing around them.** A refutation is a valid
+result; state it plainly. This includes one's own operational failures — three
+were recorded in EXP-R2-070's log entry rather than smoothed over, and one of
+them (a panel-scoped stage serialised onto a single GPU) would otherwise have
+cost thirteen hours silently.
+
+21. **Give every arm the same number of sampling units before comparing them, and
+use a scale-free statistic when the arms differ in size.** An interval-overlap
+test across arms carrying 288 and 128 cases is partly a reading of sample size,
+and it supported a far-band claim that a matched-count re-run then narrowed. The
+same error hides inside per-arm proportions: "the top 1% of heads" is one head on
+GPT-2 and seven on ProtGPT2, so concentration must be read from a Gini or a
+share-of-grid rather than a top-k share. (EXP-R2-070, EXP-R2-071.)
+
+22. **Cohort sensitivity is a property of the statistic, not of the modality.**
+Measured in one session on the same arms: the pathway-budget ratio reproduced
+within 0.05 on every arm across draws, while the far-band eligible fraction moved
+a quarter of its own value on ProtGPT2 between two windows of one permutation. A
+draw-robustness result for one measurement licenses nothing about another, in
+either direction. (EXP-R2-068, EXP-R2-069.)
+
+23. **Never normalise a signed decomposition by summed magnitudes.** The four
+causal-path components sum to the total exactly and still oppose in sign on
+40–50% of heads, so a "share" built from summed absolute values is not a share of
+anything — ProGen2-medium's reached 1.03 of the whole it was supposedly part of,
+and the modality contrast it produced was an artefact of the normalisation.
+Confirm the components do not cancel before dividing by them. (EXP-R2-071.)
+
+24. **A statistic compared against the set that selected its own inputs is
+circular, and the circular answer is indistinguishable from a real one.** A
+top-20 Jaccard against the prefix-matching census returned 1.0 on all four arms
+because the sender set *was* the census-selected set — which is exactly what
+genuine agreement would return, so nothing in the artefact revealed the defect.
+Enforce the precondition in code and raise; a comment does not stop the next run.
+(D2.b, repaired in `causal_census_agreement`.)
+
+25. **Before reading a low rank correlation as absence of signal, test reliability
+and concentration.** Protein arms gave an all-head census-to-causal ρ near zero,
+which was first recorded here as the census carrying no information about causal
+rank. That was wrong: per-head reliability was 0.916–0.991, so it was not
+attenuation, and ρ over the top 32 heads was +0.808 — higher than either text
+control. The bulk of the grid was unordered, not the top of it, and the finding
+had to be retracted and restated. (EXP-R2-071.)
