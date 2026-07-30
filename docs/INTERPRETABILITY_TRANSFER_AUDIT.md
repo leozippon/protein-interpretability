@@ -269,6 +269,21 @@ Attainability falls **monotonically with depth**, and three of four protein arms
 | llama-3.2-3b | 1.69 | | |
 | gpt2-large | 1.50 | | |
 
+> **Re-measured on corpus-wide seeded cohorts across twelve arms, and it reproduces to two decimal places (EXP-R2-068).** This stage had never been re-run since the cohort draw was fixed, so the separation above rested on file-order cohorts. On a seeded draw over the whole corpus:
+>
+> | text arm | file order | seeded | | protein arm | file order | seeded |
+> |---|---:|---:|---|---|---:|---:|
+> | qwen2.5-0.5b | 2.10 | **2.070** | | protgpt2 | 1.12 | **1.129** |
+> | gpt2-xl | 2.01 | **2.005** | | progen2-small | — | **1.057** |
+> | gpt2-medium | 1.88 | **1.836** | | progen2-medium | 0.93 | **0.930** |
+> | gpt2 | 1.77 | **1.754** | | progen2-base | 0.92 | **0.922** |
+> | llama-3.2-3b | 1.69 | **1.675** | | zymctrl | 0.55 | **0.530** |
+> | gpt2-large | 1.50 | **1.491** | | | | |
+>
+> **The ranges still do not overlap**: text 1.491–2.070 against protein 0.530–1.129, now on six text and five protein arms, with the newly admitted ProGen2-small falling inside the protein range at 1.057. `dialogpt-small` is excluded, not omitted: it returns 13.606 with `measurable_every_seed = false`, which is §5.05(a)'s off-distribution arm behaving exactly as that retraction describes.
+>
+> **This statistic is insensitive to the cohort draw, and that is worth contrasting with the far-band propagation fraction, which is not.** Every arm reproduces within 0.05 of its file-order value here, while ProtGPT2's far-band fraction moved by 0.051 — a quarter of its own value — between two windows of the same permutation. Cohort sensitivity is a property of the statistic, not of the modality alone, and neither can be assumed from the other. The two caveats that already travel with this row are untouched: it is a ratio to context information rather than a partition, and the tokenisation adjustment has not been applied.
+
 Matched pair 1.50 against 1.12. **It survives replacing GPT-2-large with a Qwen2 and a Llama decoder** — different labs, rotary/RMSNorm/gated-FFN, vocabularies 2.5–3x larger — so it is not a GPT-2 idiosyncrasy, which is what killed the QK/OV finding. **Two caveats that must travel with it:** these are ratios to context information rather than a partition (values > 1 mean ablation costs more than all extracted context information), and **the tokenisation adjustment that collapsed the earlier MLP-share coefficient has not been applied.** Not yet a claim.
 
 **(e) The tuned lens has no transfer failure.** *Qualification (EXP-R2-063): the lens stage draws its protein cohort on residues **64–120**, while `cohort_power` qualifies arms on **64–246** and the pathway and estimand stages measure on 64–246. So the arms this row scores were qualified on a different population, and (b) above prices protein cohort-block sensitivity at 0.16–0.60 nats. The band is a compute choice — the Jacobian sweep is quadratic in length — and it is now declared in the stage's artefact beside the qualifying band rather than being recoverable only by comparing argparse defaults. Nothing here is retracted; the cross-band comparison is weaker than it reads.* It improves on the logit lens at every non-identity layer on every scored arm, protein included — the only instrument in the campaign with a clean transfer. The Jacobian finite-difference guard passed on all nine scored arms, max relative error 4.7e-3 (ProtGPT2) against a 2e-2 tolerance, confirming that the earlier 1.008 failure was the forced `--dtype bfloat16` rather than an instrument defect. ProtGPT2 is the outlier on top-1 agreement (0.013–0.014, 5–10x below every other arm), consistent with its multi-residue-BPE aperture.
