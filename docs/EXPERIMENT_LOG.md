@@ -3006,3 +3006,19 @@ Five ProGen2 checkpoints were staged on GPFS and only two were in the panel. Loa
 **Candidate survey recorded as audit §9 D1.c**, covering MolCrawl protein GPT-2-large as the highest-value candidate for breaking the single-protein-arm limit, RITA, ProGen3+ProGenMech as the external baseline a D3 construction must replicate, Tranception for interface attribution, Pythia for seed calibration only, and Dayhoff for a data-mechanism study — each with the risk that has to be answered before admission. Four corpora are recorded as evidence packages with their traps: temporal extrapolation from UniParc timestamps, PDB-CATH out-of-family structure splits, independent MaveDB assays grouped by wild type, and a repeat-mechanism 2x2 which is the only design that would actually test the corpus-repeat confound §4 calls irremovable. And one caution the survey earns: predicted structures and sequence-inferred labels cannot demonstrate functional competence, which is the second half of the objective and currently has no instrument at all.
 
 **Launched, long-running:** a twelve-arm campaign over `cohort_power` then `circuit_primitives --sections induction`, which qualifies ProGen2-small on the frozen cohort and puts it into the seeded census beside the other four protein arms, giving the protein-side scale contrast on the headline statistic. Results root `results/panel12_20260730`.
+
+**Sixth addendum: the text-side scale slope does not transport to protein.**
+
+The twelve-arm campaign completed cleanly — `cohort_power` then `circuit_primitives --sections induction`, 11 minutes on three H200s. Cohorts verified before reading anything: 817 of 817 matching proteins (a census, so order cannot matter) and 817 of 1022 text, with probe counts 808 / 817 and ProtGPT2 at 597 of 817, the multi-residue-BPE coverage loss L14 records.
+
+**The measurement ProGen2-small was admitted for.** Every scale-adjusted statement this programme has made about the induction shortfall carried the GPT-2 ladder's slope onto the protein side, because the protein side had no ladder. It now has a two-rung contrast, and the slope is the same in sign and much shallower in magnitude:
+
+| probe | text (4 rungs) | protein (2 rungs) | ratio |
+|---|---:|---:|---:|
+| synthetic | −0.0735 / decade | −0.0172 | 4.3x shallower |
+| natural exact | −0.0572 | −0.0172 | 3.3x shallower |
+| natural approximate | −0.0446 | −0.0238 | 1.9x shallower |
+
+ProGen2-small reads 0.0260 on all three probes (5 heads of 192) against ProGen2-medium's 0.0139 / 0.0139 / 0.0093. So a larger protein decoder does put a smaller fraction of heads in the upper tail — the direction transports. The magnitude does not, and that cuts against the programme's own previous correction: the 2.34x scale-matched restatement removed gap using a slope three to four times too steep for the protein side, so **scale explains less of the shortfall than recorded, not more**. The 2.34x figure is a lower bound on the adjusted shortfall, not its value. Two rungs give a slope with no curvature and no interval, and the two rungs differ in depth and width together exactly as the text ladder's do.
+
+Also visible at matched scale: the protein corpus contrast is small, ProGen2-base 0.0116 against ProGen2-medium 0.0139 on the synthetic probe, both 765M — consistent with the audit's existing reading that corpus is worth roughly half the modality contrast in log terms rather than all of it.

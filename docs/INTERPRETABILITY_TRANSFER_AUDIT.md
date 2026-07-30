@@ -171,6 +171,18 @@ Eleven autoregressive decoders under one code path, each fed in the format it wa
 >
 > **The probe-dependence problem is reduced, not removed.** It moves to the permissive-tail thresholds: natural approximate inverts at 0.20 and 0.30, natural exact at 0.30. Both inversions are driven by the worst text arm reaching *exactly zero* while a protein arm retains one or two heads out of 720–1728 — a small-count tail effect, not a distributional statement, and the same reason the distributional separation fails. Nothing here converts the result into a modality claim: the structural n = 1 limit of §2 and the corpus-repeat confound of the closing paragraph are untouched. Artefacts: `results/transfer_20260730/induction_seeded/`.
 
+> **The text-side scale slope does not transport to protein, and the scale adjustment below over-corrects (EXP-R2-068).** Admitting ProGen2-small gave the protein side its first within-lineage scale contrast — 151M against ProGen2-medium's 765M, architecture, residue tokeniser and UniRef90+BFD30 mixture all held. Measured on the seeded census at threshold 0.10, protein cohorts being the whole matching population:
+>
+> | probe | text slope / decade (GPT-2 ladder, 4 rungs) | protein slope / decade (ProGen2, 2 rungs) | ratio |
+> |---|---:|---:|---:|
+> | synthetic | −0.0735 | **−0.0172** | 4.3x shallower |
+> | natural exact | −0.0572 | **−0.0172** | 3.3x shallower |
+> | natural approximate | −0.0446 | **−0.0238** | 1.9x shallower |
+>
+> ProGen2-small reads 0.0260 on all three probes (5 heads of 192) against ProGen2-medium's 0.0139 / 0.0139 / 0.0093 — so the **direction transports**: a larger protein decoder also puts a smaller fraction of heads in the upper tail. The **magnitude does not**. The 2.34x scale-matched restatement below was computed by carrying the text ladder's slope onto the protein side, which nothing had tested; a slope 3–4x shallower removes correspondingly less of the raw 5.45x matched-pair gap. **Scale therefore explains *less* of the shortfall than recorded, not more, and the 2.34x figure should be read as a lower bound on the adjusted shortfall rather than as its value.**
+>
+> Two rungs give a slope and no curvature, and no interval; ProGen2-small and ProGen2-medium differ in depth and width together, exactly as the text ladder's rungs do. At matched scale the protein corpus contrast is small: ProGen2-base 0.0116 against ProGen2-medium 0.0139 on the synthetic probe, both 765M. Artefacts: `results/transfer_20260730/panel12/`.
+
 **Scale — real, and does not explain the descriptive shortfall.** The within-lineage ladder falls monotonically: 0.1597, 0.1380, 0.0972, 0.0833; slope **−0.272/decade [−0.455, −0.088]** with head *count* rising 23 → 100. This explains llama-3.2-3b's low value. Restated against the ladder's scale-matched prediction, the shortfall is **2.34x descriptively**; the artifact does not report a scale-adjusted inferential test. Its reported **p = 0.0286** belongs instead to the unadjusted, one-sided exact permutation test over four text and three protein models for `fraction_above_0.10`, where complete separation reaches the minimum attainable p-value. Variance decomposition: scale adds **+0.003** given modality and lineage; modality +0.220; lineage +0.061 — but only **25.4%** of the modality indicator survives projection.
 
 **Corpus — roughly half the modality contrast in log terms.**
