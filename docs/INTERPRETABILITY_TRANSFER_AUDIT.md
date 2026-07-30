@@ -594,22 +594,43 @@ method, model, data or interface. What remains:
 
 Four arms, every head patched (720 / 720 / 432 / 720), 64 path cases, all four sender × case conditions, 4 h wall-clock on four GPUs. This is the first measurement in the programme that can see the census's **misses**.
 
-**(i) The threshold-free primary separates the matched pair completely, and it is stable.** Spearman ρ between prefix-matching score and causal-effect magnitude, over every head, across the four conditions:
+**(i) The all-head rank correlation separates the matched pair completely, and it is stable.** Spearman ρ between prefix-matching score and causal-effect magnitude over every head, range across the four conditions:
 
 | arm | census selects | ρ range across 4 conditions |
 |---|---:|---|
+| gpt2 | 18/144 (12.50%) | **+0.657 to +0.706** |
 | gpt2-large | 57/720 (7.92%) | **+0.428 to +0.507** |
-| protgpt2 | 14/720 (1.94%) | **−0.155 to −0.006** |
-| progen2-medium | 6/432 (1.39%) | +0.041 to +0.207 |
 | zymctrl | 0/720 (0.00%) | +0.216 to +0.271 |
+| progen2-small | 5/192 (2.60%) | +0.128 to +0.194 |
+| progen2-medium | 6/432 (1.39%) | +0.041 to +0.207 |
+| protgpt2 | 14/720 (1.94%) | **−0.155 to −0.006** |
 
-**gpt2-large's minimum exceeds every protein arm's maximum in every condition.** On the text control the census ranks heads in an order that predicts causal importance; **on its architecturally-matched protein partner it carries essentially no information about causal rank** — ProtGPT2's ρ never becomes positive and never departs meaningfully from zero. This is a method-transfer failure localised to the protein side at the *only* modality-identifying comparison the panel has (§2).
+The text minimum (+0.428) exceeds every protein maximum (+0.271) in all 24 arm × condition cells.
 
-**(ii) The census's failure mode is recall, not precision.** ProGen2-medium's top-5 Jaccard is **1.000** — the handful of heads it selects really are the causally strongest — but that collapses to 0.250 by k=20, because 14 of the causal top-20 are heads it scored below threshold. And the misses get *worse*, not better, on protein: the strongest head the census rejects carries |effect| 0.0194 on gpt2-large against 0.0497 on ProtGPT2, 0.0290 on ProGen2-medium, and **0.3049 on ZymCTRL** — where the census selects nothing at all yet the single strongest causal head in the entire grid is one it rejected.
+> **Correction to the first reading of this table.** It was recorded here that the census "carries essentially no information about causal rank" on protein. **That is wrong, and the diagnostic below is why.** Restricted to the 32 heads the census scores highest, ρ is **+0.808 on ProtGPT2 and +0.790 on ProGen2-medium — above both text arms** (gpt2 +0.647, gpt2-large +0.554). The census identifies protein arms' causally dominant heads *better* than it does text's. What collapses is the correlation over the remaining heads: +0.128 and +0.275 on the two text arms against **−0.265** on ProtGPT2 and +0.089 on ProGen2-medium. The all-grid ρ is low on protein because the bulk of the grid is unordered, not because the top of it is.
 
-**(iii) This reopens part of §4's descriptive gap.** The programme records that protein decoders put far fewer heads in the prefix-matching tail. EXP-R2-071 shows the selector under-recalls causally-important heads *more* on protein arms than on text, so an unknown part of that gap is a property of the measuring instrument rather than of the models. **It does not show that protein models "have induction heads after all."** What it shows is narrower and firmer: prefix-matching score fails to rank causal importance on protein arms, so a head count derived from it is not a causal head count there — while on the text control it is a reasonable proxy.
+**(ii) The structural difference underneath is concentration, and it is head-count free.** Effect concentration across the head grid, using statistics that do not depend on how many heads an arm has:
 
-**(iv) The pre-registered gate is a specification defect, the second this session.** Top-20 Jaccard ≥ 0.8 is met by **no arm in any condition**; the best observed is 0.667 and the text control never exceeds 0.429. Standing rule 2 applies: a gate the positive control cannot pass is not a negative result about the other arms. Withdrawn as stated; the threshold-free ρ above is what the item is answered on.
+| arm | Gini of \|effect\| | share of grid carrying half the total effect |
+|---|---:|---:|
+| gpt2 (text) | 0.829 | 4.9% |
+| gpt2-large (text) | 0.826 | 3.2% |
+| progen2-small | **0.941** | **1.6%** |
+| protgpt2 | **0.940** | **1.0%** |
+| progen2-medium | **0.944** | **0.7%** |
+| zymctrl | 0.612 | 10.6% |
+
+Three protein arms sit at Gini 0.940–0.944 against 0.826–0.829 for both text arms, with half the causal effect carried by 0.7–1.6% of heads against 3.2–4.9%. **Non-overlapping.** This is the same shape §5.1 reports in the distance dimension — text spreads many small effects, protein concentrates fewer large ones — now measured in the head dimension on an independent estimand. Two measurements, one structure.
+
+**ZymCTRL is the exception and runs the other way** (Gini 0.612, 10.6% of heads for half the effect — the least concentrated arm on the panel). It is also the one arm with a conditioning prompt, so this is a rendering-and-conditioning contrast rather than a modality one, and it is flagged rather than absorbed: any statement of the form "protein concentrates" is false of ZymCTRL as rendered.
+
+**(iii) Noise is not the explanation, and this was tested rather than assumed.** Per-head effect estimates carry SEMs, so the reliability of each arm's head ranking is computable: **0.916 to 0.991** across the six arms, and the SNR of the mean effect is 1.26–6.15. Disattenuating the Pearson correlation for measurement error moves it by at most 0.04 on any arm. The low protein ρ is not attenuation from noisier estimates.
+
+**(iv) The census's failure mode is recall.** ProGen2-medium's top-5 Jaccard is **1.000** and collapses to 0.250 by k=20. The strongest head the census *rejects* carries \|effect\| 0.0194 on gpt2-large against 0.0497 (ProtGPT2), 0.0290 (ProGen2-medium) and **0.3049 on ZymCTRL**, where the census selects nothing yet the strongest causal head in the whole grid is one it rejected.
+
+**(v) What this does and does not say about §4's head-count gap.** It does **not** show that prefix matching is a broken selector on protein — at the top of the grid it is a better one there than on text. It shows that a **count** of heads above a fixed prefix-matching threshold is a poor summary of protein arms specifically, because their causal importance is concentrated in far fewer heads and the threshold sits in a region where the score no longer orders anything. A head count is a statistic about the bulk; protein causal structure is not in the bulk.
+
+**(vi) The pre-registered gate is a specification defect, the second this session.** Top-20 Jaccard ≥ 0.8 is met by **no arm in any condition**; the best observed is 0.667 and the text control never exceeds 0.538. Standing rule 2 applies. Withdrawn as stated.
 
 *Limits.* The causal effect is path patching on repeat probes, so a high-effect head is "causally important for repeat prediction", not "an induction head by mechanism". Effects are per-head means over 64 cases and ranking noise depresses Jaccard on every arm alike, which is exactly why the text control is the reference rather than an absolute cut. ProtGPT2's negative ρ values are small and marginal (p ≈ 0.04 at n = 720) and should be read as *uninformative*, not as anti-correlation. Artefacts: `results/transfer_20260730/d2bprime/`.
 
