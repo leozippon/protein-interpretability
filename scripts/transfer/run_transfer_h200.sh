@@ -795,8 +795,8 @@ invoke_worker() {
   # and scheduled no GPU came back to the operator as "campaign complete". Every
   # H200 failure this controller has ever reported on was reported on that basis.
   #
-  # The worker therefore states its own status as its last line, and this is the
-  # authority. Absence is a failure in its own right: it means the worker never
+  # The worker therefore states its own status on a line of its own, uniquely, and
+  # that is the authority. Absence is a failure in its own right: it means the worker never
   # reached its EXIT trap, which covers a killed process, a dropped connection
   # and a pod exec that never started -- none of which the access layer
   # distinguishes from success either.
@@ -808,10 +808,18 @@ invoke_worker() {
   # It is deliberately NOT required to be the last line of the log. That was tried
   # and it is wrong for this transport: `kubectl exec` appends its own trailer
   # ("command terminated with exit code N") after the remote process's output, so
-  # a genuine sentinel is second-to-last on every failing run. Requiring last-line
-  # position turned a correctly reported failure into "no sentinel", i.e. traded a
-  # true status for a false one. Uniqueness gives the same guarantee without
-  # depending on what the transport appends.
+  # a genuine sentinel is second-to-last on every failing run, and requiring
+  # last-line position reported every genuine failure as 90 instead of its own
+  # status.
+  #
+  # Uniqueness is STRICTLY WEAKER than position plus uniqueness, and an earlier
+  # version of this comment wrongly claimed the two were equivalent. What is lost:
+  # if the worker is killed before its EXIT trap (SIGKILL, a mid-stream drop) and
+  # some stage has emitted exactly one line beginning with the sentinel, that line
+  # is believed. The residual exposure is accepted rather than closed, because the
+  # alternative mis-reports every real failure, and because no stage prints this
+  # prefix today -- a fact a test asserts against the stage sources rather than
+  # something this comment assumes.
   local sentinel matches
   matches="$(grep -ac "^${WORKER_EXIT_SENTINEL}" "${controller_log}" || true)"
   sentinel="$(grep -a "^${WORKER_EXIT_SENTINEL}" "${controller_log}" | tail -1 || true)"

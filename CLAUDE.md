@@ -47,6 +47,11 @@ export H200_POD=<running-pod-name>
 ~/hangzhou-remote/ssh_tunnel/h200_pod_exec.sh -- nvidia-smi
 ```
 
+The end-to-end status probe normally takes 40–50 seconds because it crosses
+several SSH and Kubernetes boundaries. Give `h200_status.sh` a caller-side
+timeout of at least 90 seconds. A timeout before its terminal `Health=` line is
+inconclusive, not a failed cluster-health result.
+
 Cluster allocation is not GPU utilization: `16/16` means all GPUs are assigned to pods, not necessarily computing. Inspect `nvidia-smi` inside the selected pod. Never persist pod names in repository files, manifests, or durable logs; status commands naturally display current names, and `H200_POD` is shell-local. Do not install dependencies in a pod or read the mode-600 `~/hangzhou-remote/config.sh`. Stage code and dependencies from B; the external README is authoritative for access, transfer, and recovery.
 
 ## Network And Downloads
@@ -103,8 +108,10 @@ Record each experiment's date, configuration or command, and result in `docs/EXP
 - Fully read sufficient code and supporting documentation to form a sound design idea before writing or modifying any code.
 - Treat resource checks and logging as mandatory steps, not optional cleanup.
 - Keep the repository organized, clean and tidy.
+- Perform audits at appropriate time.
 - Sub‑agents may be spawned to assist with development and auditing.
 - For difficult development and auditing tasks, spawn the highest‑performance sub‑agent.
 - Include the Repository Principles and Development Principles above explicitly in every sub-agent's task prompt.
-- For long‑running experiments (over 2 hours), you may terminate the session first and document when the session should be woken back up.
+- Avoid indiscriminately adding new code. Clean up redundant code in a timely manner.
+- When necessary, use abstractions, refactoring and other approaches to standardize code and reduce complexity.
 - Dare to break thinking inertia and rethink when necessary.

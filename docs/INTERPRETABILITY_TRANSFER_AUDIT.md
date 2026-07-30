@@ -310,6 +310,32 @@ Drawn from all **574,627** eligible Swiss-Prot entries and all **23,586** AlphaF
 
 **The gate is met and the ordering survives, but the modality separation does not.** All three arms clear the pre-registered ≥30 far-band cases (against 2–16 before), and every interval excludes zero. ProGen2-medium is disjoint from both other arms. **gpt2-large and ProtGPT2 overlap** on [0.202, 0.215] — so at production scale the text control and the matched protein arm are *not* separated, and what separates is ProGen2-medium from everything else. That is an architecture-and-tokenisation contrast as much as a modality one, and the matched pair is the only modality-identifying comparison the panel has (§2). **Still not a claim, and now for a sharper reason than sample size.**
 
+> **Re-run in float32; the bfloat16 numbers above are withdrawn and the conclusion reverses (EXP-R2-068).**
+>
+> The run had been in bfloat16, whose quantisation step (1/16) is the size of the quantity: 17 of 18 band medians across the three arms were exact multiples of 1/16, and over half of ProGen2-medium's far-band effects underflowed to exactly zero. Re-run in float32 on the same cases, same cohort digest, same seeds, same 288/256/128 cases per band:
+>
+> | arm | bfloat16 | **float32** | 95% interval | eligible | source sequences |
+> |---|---:|---:|---|---:|---:|
+> | gpt2-large | 0.1667 | **0.1042** | [0.0694, 0.1399] | 30/288 | 168 |
+> | protgpt2 | 0.2539 | **0.1953** | [0.1492, 0.2424] | 50/256 | 162 |
+> | progen2-medium | 0.4531 | **0.2734** | [0.2015, 0.3548] | 35/128 | 100 |
+>
+> **The matched pair is separated, and the ordering is threshold-invariant.** gpt2-large's upper bound (0.1399) sits below ProtGPT2's lower bound (0.1492); gpt2-large is disjoint from *both* protein arms while the two protein arms overlap each other — which is the shape a modality difference should have. Text < ProtGPT2 < ProGen2-medium holds at **all six** cuts from 0.05 to 2.0, a fortyfold range. Every arm clears the ≥30 case gate. The bfloat16 run had shown the matched pair overlapping and the ordering reversing at permissive cuts: **the quantisation was manufacturing the threshold-dependence that was reported as the limitation.**
+>
+> This is the strongest part-1 result the programme has — it survives production scale, resolved arithmetic, a threshold sweep, sequence-clustered intervals, and the only modality-identifying contrast the panel offers. What is still true and must travel with it: the structural n = 1 limit of §2 (one protein arm is matched; ProGen2-medium differs in architecture and tokenisation too, so its separation is not modality-identifying on its own), the corpus-repeat confound, ZymCTRL's structural exclusion from the estimand, and **the sampling check has not been redone in float32** — the disjoint-window comparison was bfloat16 and is withdrawn with the rest. Artefacts: `results/transfer_20260730/b6_float32/`.
+
+**New — protein dictionaries are data-limited where text ones are saturated.** gpt2-large 0.958 → 0.962 across 16x data; ZymCTRL 0.610 → 0.716 → **0.843** and still climbing at ~+0.12 per 4x. That is convergence of the **instrument**, not of the model — a distinction this programme has been blurring.
+
+**New — the one surviving pathway difference. Measured at production scale (EXP-R2-068, plan item B6).** Non-local propagation under activation patching: the share of single-token corruptions whose effect at a read-out position 33–64 tokens away clears the minimum-effect floor. Cohorts are seeded draws of 256 records; the interval resamples the **source sequence**, not the case. At these counts that is 1.3–1.7 cases per sequence rather than "many of a few" — the clustering is the conservative choice, not a large correction.
+
+| arm | eligible / total | fraction | 95% interval | source sequences |
+|---|---:|---:|---|---:|
+| gpt2-large | 48 / 288 | **0.167** | [0.122, 0.215] | 168 |
+| protgpt2 | 65 / 256 | **0.254** | [0.202, 0.307] | 162 |
+| progen2-medium | 58 / 128 | **0.453** | [0.369, 0.538] | 100 |
+
+**The gate is met and the ordering survives, but the modality separation does not.** All three arms clear the pre-registered ≥30 far-band cases (against 2–16 before), and every interval excludes zero. ProGen2-medium is disjoint from both other arms. **gpt2-large and ProtGPT2 overlap** on [0.202, 0.215] — so at production scale the text control and the matched protein arm are *not* separated, and what separates is ProGen2-medium from everything else. That is an architecture-and-tokenisation contrast as much as a modality one, and the matched pair is the only modality-identifying comparison the panel has (§2). **Still not a claim, and now for a sharper reason than sample size.**
+
 > **Two sensitivity checks were then run, and the second withdraws the numbers above (EXP-R2-068).**
 >
 > *Sampling.* A disjoint second window of the same permutation (`--cohort-skip 256`) moves the far-band fraction by **−0.021 / −0.020 / +0.016** for gpt2-large / ProtGPT2 / ProGen2-medium, every interval overlaps its partner, and all three still clear the case gate (42 / 60 / 60). The draw is not driving the result.
@@ -439,7 +465,8 @@ method, model, data or interface. What remains:
 | item | pre-registered gate | cost |
 |---|---|---|
 | **D2.a** | Input-contract certification retro-applied to every quoted number; must reproduce the 1.78-nat rendering delta and the file-order delta as positive controls. TG-00 now does both and TG-01 has run, so this is partly discharged | ≤4 GPU-h |
-| **D2.b** | Causal effect-size distributions on induction: top-20 Jaccard ≥ 0.8 against the census, else the cheap census is the less sensitive instrument and is not adopted | ~4 GPU-h |
+| ~~**D2.b**~~ | Causal effect-size distributions on induction: top-20 Jaccard ≥ 0.8 against the census. **RUN, EXP-R2-068 — the gate is not answerable by this instrument.** `11_induction_path_patching.py` computes a causal effect only for heads the census already selected by `prefix_matching >= threshold` (verified: the per-head records are *exactly* the selected sender set, 57 / 14 / 6 / 8 heads), so a top-20 Jaccard against that same census is **1.0 by construction** on all four arms. The comparison is circular and its result carries no information. Answering it needs causal effects for heads the census did **not** select — the exhaustive causal census §8 item 1 already flags as requiring a new, independently gated design. Restated as D2.b′ below | 0.4 GPU-h, spent |
+| **D2.b′** | Exhaustive per-head causal effect on induction, every head patched rather than every selected sender, so the census's *misses* are visible. Gate: does a causally-ranked top-20 recover the census's top-20, and does it find heads the census ranks below threshold? | ~20–30 GPU-h, not started |
 | **D2.c** | Same on copy suppression — does effect size separate arms where prevalence cannot? Directly answers the measurability question §1 leaves open | ~13 GPU-h |
 | **D2.d** | Complete the TG campaign: seven of twelve stages have no artefact in the corrected tree, so `SUMMARY.json` can only be produced in partial mode | ~6 GPU-h |
 

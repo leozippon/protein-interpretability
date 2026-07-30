@@ -75,10 +75,10 @@ SEARCH_DIRS = (
 #: prefix list rather than silently excluded from the scan, so that adding one is
 #: a visible decision and the reason is checkable.
 DELIBERATE_FILE_ORDER: dict[str, str] = {
-    "src/transfer/arms.py": (
-        "the declaration itself; its constructors are what every caller must pass "
-        "a seed to, and seed=None is the mode they offer"
-    ),
+    # `src/transfer/arms.py` is deliberately NOT here. It defines the constructors
+    # and calls none of them, so exempting it exempted nothing -- and because the
+    # filter matches a path prefix rather than a line, it would have silently
+    # pre-exempted any future file-order draw added anywhere in that file.
     "scripts/transfer_gap/tg00_input_contract.py": (
         "TG-00 is the positive control that PRICES a file-order draw. It has to "
         "make one: its cohort_delta_nats is the difference between a file-order "
@@ -360,9 +360,6 @@ class ASeededSkipIsDisjoint(unittest.TestCase):
         self.assertNotEqual(seeded, list(range(400)))
 
 
-if __name__ == "__main__":  # pragma: no cover
-    unittest.main()
-
 
 class ConditionedRenderingKeepsItsScoredSpan(unittest.TestCase):
     """One declaration of the token budget a conditioned rendering needs.
@@ -451,3 +448,81 @@ class StageConsumersMatchTheirLibraryContracts(unittest.TestCase):
         )
         body = source.split("def structural_invariants(", 1)[1].split("\n@", 1)[0]
         self.assertNotIn('"passed":', body)
+
+
+class TheConstructorListIsComplete(unittest.TestCase):
+    """`CORPUS_CONSTRUCTORS` is hand-maintained, and that is how this went wrong.
+
+    The tuple started with the two plain constructors and omitted the two repeat
+    ones, so the contract test passed while the census that carries the headline
+    part-1 result drew a four per cent head-of-file prefix. The fix added the two
+    names and added nothing that would catch a fifth constructor. This does.
+
+    A corpus-reading constructor is identified by what it does, not by its name:
+    it is a public function in `src.transfer` that returns a `Cohort` and reads a
+    corpus through `iter_fasta`, a parquet shard, or another such constructor.
+    """
+
+    def test_every_cohort_returning_constructor_in_the_library_is_listed(self):
+        import inspect
+
+        from src.transfer import arms, circuits
+
+        missing: list[str] = []
+        for module in (arms, circuits):
+            source = Path(inspect.getfile(module)).read_text(encoding="utf-8")
+            tree = ast.parse(source)
+            for node in tree.body:
+                if not isinstance(node, ast.FunctionDef) or node.name.startswith("_"):
+                    continue
+                returns = getattr(node, "returns", None)
+                name = returns.id if isinstance(returns, ast.Name) else None
+                if name != "Cohort":
+                    continue
+                body = ast.get_source_segment(source, node) or ""
+                reads_corpus = any(
+                    token in body
+                    for token in ("iter_fasta", "_eligible_", "pq.read_table", "text_cohort(", "protein_cohort(")
+                )
+                if reads_corpus and node.name not in CORPUS_CONSTRUCTORS:
+                    missing.append(f"{module.__name__}.{node.name}")
+        self.assertEqual(
+            missing,
+            [],
+            "these return a Cohort and read a corpus but are not in "
+            f"CORPUS_CONSTRUCTORS, so no test checks their call sites: {missing}",
+        )
+
+    def test_every_listed_constructor_exists(self):
+        # Guards the other direction: a renamed constructor must not leave a dead
+        # name in the tuple, which would make the call-site scan silently narrower.
+        from src.transfer import arms, circuits
+
+        for name in CORPUS_CONSTRUCTORS:
+            self.assertTrue(
+                hasattr(arms, name) or hasattr(circuits, name),
+                f"{name} is listed but exists in neither arms nor circuits",
+            )
+
+    def test_declared_exemptions_name_files_that_exist(self):
+        for prefix in DELIBERATE_FILE_ORDER:
+            self.assertTrue(
+                (REPO_ROOT / prefix).is_file(),
+                f"{prefix} is exempted but does not exist; a stale exemption is a "
+                "silently widened hole",
+            )
+
+    def test_non_drawing_stage_declarations_name_files_that_exist(self):
+        for name in NON_DRAWING_STAGES:
+            self.assertTrue(
+                (STAGE_DIR / name).is_file(),
+                f"{name} is declared as non-drawing but does not exist",
+            )
+
+
+if __name__ == "__main__":  # pragma: no cover
+    import sys as _sys
+
+    if str(REPO_ROOT) not in _sys.path:
+        _sys.path.insert(0, str(REPO_ROOT))
+    unittest.main()

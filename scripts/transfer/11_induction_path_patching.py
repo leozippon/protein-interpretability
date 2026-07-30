@@ -448,16 +448,17 @@ def panel_summary(results: dict[str, dict[str, Any]], args: argparse.Namespace) 
             "tokenisation": payload["arm"]["tokenisation"],
             "comparison_status": payload["arm"]["comparison_status"],
             "sender_set_stability": payload["sender_set_stability"],
-            # A returned invariant record IS the verdict: `structural_invariants`
-            # raises on any failure, so a payload that has one passed. It used to
-            # publish a `passed` flag that could never be false, and that flag was
-            # removed as an unfalsifiable guard -- correctly, but this consumer
-            # still read it and the stage died writing its panel summary after all
-            # four arms had been measured.
-            "structural_invariants_passed": "structural_invariants" in payload,
+            # No flag here. `structural_invariants` raises on any failure, so a
+            # payload that has a record passed and a boolean saying so cannot be
+            # false. It carried such a flag, the flag was removed as unfalsifiable,
+            # this consumer still read it and died -- and the first repair replaced
+            # it with `"structural_invariants" in payload`, which is a compile-time
+            # constant over a dict literal that always has the key: the same
+            # unfalsifiable flag one layer out. What a reader needs is the basis.
             "structural_invariants_verdict_basis": (
-                "the record exists; path_patching.structural_invariants raises on "
-                "any failure rather than reporting one"
+                "the per-arm record exists; path_patching.structural_invariants "
+                "raises on any failure rather than reporting one, so there is no "
+                "boolean to publish"
             ),
         }
         for criterion in CRITERIA:

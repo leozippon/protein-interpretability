@@ -99,6 +99,11 @@ export H200_POD=<running-pod-name>
 bash scripts/transfer/run_transfer_h200.sh --dry-run
 ```
 
+`h200_status.sh` is an end-to-end probe across several SSH and Kubernetes
+boundaries and normally takes 40–50 seconds. Give it a caller-side timeout of at
+least 90 seconds. A timeout before the terminal `Health=` line is inconclusive,
+not evidence that the cluster is unhealthy.
+
 The status commands naturally display current pod names. Never persist a pod name in repository files, manifests, or durable logs.
 
 Launch the full contract only after reviewing the dry run:

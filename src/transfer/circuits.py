@@ -2273,6 +2273,44 @@ MINIMUM_ELIGIBILITY_CLUSTERS = MINIMUM_BOOTSTRAP_UNITS
 ELIGIBILITY_THRESHOLD_LADDER: tuple[float, ...] = (0.05, 0.10, 0.25, 0.50, 1.00, 2.00)
 
 
+def _threshold_sweep(
+    absolute: np.ndarray,
+    sources: np.ndarray,
+    minimum_effect: float,
+    seed: int,
+    resamples: int,
+) -> dict[str, Any]:
+    """The eligibility ladder, keyed so a row cannot be silently lost.
+
+    Keys were ``f"{threshold:g}"``, which is six significant digits. A
+    ``--patch-minimum-effect`` of 0.100000001 therefore rendered as ``"0.1"`` and
+    collided with the ladder's own 0.1 entry: the dict comprehension kept one of
+    them, the sweep came back one row short of the ladder it was built from, and
+    the row labelled with the run's own cut was silently the *ladder's* row at a
+    different threshold. Every invariant this sweep exists to provide would have
+    read as satisfied.
+
+    Built explicitly, with ``repr`` keys and a count check, so a collision raises
+    instead.
+    """
+
+    thresholds = sorted(set(ELIGIBILITY_THRESHOLD_LADDER) | {minimum_effect})
+    rows: dict[str, Any] = {}
+    for threshold in thresholds:
+        key = repr(float(threshold))
+        if key in rows:
+            raise AssertionError(
+                f"eligibility threshold {threshold!r} collides with an existing key "
+                f"{key!r}; the sweep would silently drop a row"
+            )
+        rows[key] = _threshold_row(absolute, sources, threshold, seed, resamples)
+    if len(rows) != len(thresholds):
+        raise AssertionError(
+            f"eligibility sweep produced {len(rows)} rows for {len(thresholds)} thresholds"
+        )
+    return rows
+
+
 def _threshold_row(
     absolute: np.ndarray,
     sources: np.ndarray,
@@ -2672,14 +2710,13 @@ def activation_patching(
             # from one generator seeded per threshold, so the interval at the
             # run's cut is the same interval as `eligible_fraction_interval`
             # rather than a second one computed off a diverged stream.
-            "eligible_fraction_by_threshold": {
-                f"{threshold:g}": _threshold_row(
-                    absolute, sources, threshold, eligibility_seed, eligibility_resamples
-                )
-                for threshold in sorted(
-                    set(ELIGIBILITY_THRESHOLD_LADDER) | {float(minimum_effect)}
-                )
-            },
+            "eligible_fraction_by_threshold": _threshold_sweep(
+                absolute,
+                sources,
+                float(minimum_effect),
+                eligibility_seed,
+                eligibility_resamples,
+            ),
             # The threshold-free companion: the distribution every fraction above
             # is one slice of, so a reader can re-cut at any value without a re-run.
             "absolute_effect_quantiles": {
