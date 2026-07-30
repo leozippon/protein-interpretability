@@ -395,6 +395,31 @@ Drawn from all **574,627** eligible Swiss-Prot entries and all **23,586** AlphaF
 >
 > **The text control is the immovable arm here, and that is the third time this asymmetry has appeared.** gpt2-large returns 0.1042 in both windows to four decimal places at the headline threshold, while both protein arms move by 0.03–0.15. §5.05(b) recorded the same asymmetry in nats of context information at 10–35× and the withdrawn matched-pair interval separation recorded it a second time. It is now a documented property of this panel rather than an incident: **a protein arm's cohort carries a selection uncertainty its matched text control does not**, on at least three unrelated statistics.
 >
+> ### EXP-R2-070 — five windows, equal case counts, and the separation is a large-effect-tail phenomenon
+>
+> Six arms, five disjoint windows of one seeded permutation, **256 cases per band on every arm**, float32, 30 of 31 jobs clean. This replaces the two-draw sensitivity check with a characterised draw distribution and removes the unequal-case-count confound.
+>
+> **(i) The pre-registered ≥30 far-band case gate is not attainable on the text control, and that is a specification defect.** At 256 cases per band gpt2-large returns 26 / 24 / 26 / 28 / 34 eligible far-band cases — **below the gate in four of five windows** — and gpt2-xl misses it in one. Standing rule 2 says a gate the positive control cannot pass is a specification defect rather than a negative result, and this one was violated in the recording direction: ProGen2-small's "gate FAILS at 23" in the table above was judged against a floor its own text control does not clear at the same case count. gpt2-large only met it before by running at 288 cases per band and landing on exactly 30. **The gate is withdrawn as stated.** ProGen2-small, at 33–62 cases here, clears it in every window anyway.
+>
+> **(ii) The paired per-window test, all four thresholds, both text controls.** Counting every arm × control × window comparison at each threshold:
+>
+> | threshold | protein higher | text higher | tied |
+> |---:|---:|---:|---:|
+> | 0.05 | 31/40 | 9 | 0 |
+> | 0.10 | 33/40 | 7 | 0 |
+> | 0.25 | 36/40 | 4 | 0 |
+> | **0.50** | **39/40** | **0** | 1 |
+>
+> **At the strictest cut every protein arm is above every text control in every window, with no exception.** The single non-positive cell is an exact tie (ProGen2-small against gpt2-large at skip 1024). The trend across the ladder is monotone: the separation is not a property of far-band propagation in general but of its **large-effect tail**. That is the shape §5.1 already inferred from one window — "text has many small effects, ProGen2-medium has fewer and much larger ones" — now measured across five draws and two controls.
+>
+> **(iii) Which arms survive draw *and* threshold.** ProGen2-base and ProGen2-medium are above both text controls in all five windows at all four thresholds — 40 of 40 comparisons each. ProtGPT2 and ProGen2-small are not: they hold at 0.25 and 0.50 but cross at the permissive cuts, confirming EXP-R2-069's narrowing rather than reversing it. **The matched pair separates only in the large-effect tail**, where ProtGPT2's smallest margin is +0.0039.
+>
+> *What this is not.* At K = 5 the exact two-sided sign test floors at p = 0.0625, so **no single arm-control pair reaches p < 0.05 on window sign alone**; and the 40 comparisons share windows and controls, so they are not 40 independent tests and no binomial over them is quoted. The evidence is the consistency pattern and its monotone dependence on threshold, not a p-value.
+>
+> **(iv) The cohort-sensitivity asymmetry, fourth appearance and first one immune to sample size.** Between-window standard deviation of the fraction at threshold 0.25, every arm on 256 cases: gpt2-large **0.0150**, gpt2-xl **0.0153**; ProtGPT2 0.0243, ProGen2-small 0.0435, ProGen2-base 0.0476, ProGen2-medium **0.0519**. The two modalities do not overlap — the smallest protein spread is 1.59× the largest text one. Earlier appearances (§5.05(b) at 10–35× in nats, the withdrawn matched-pair separation, EXP-R2-069) could all be argued down as sample-size artefacts because the arms carried different case counts. **This one cannot.** A protein arm's cohort carries a selection uncertainty its matched text control does not, and it is now measured on equal footing.
+>
+> *One job of 31 did not run.* ZymCTRL at the ~816-token window failed on a transport timeout during the code-snapshot push, not on anything it measured. It produced nothing and is queued for a re-run; whether ZymCTRL can enter this estimand at all remains open (L15).
+>
 > *Two design faults in this comparison, both now fixed for the successor run.* The arms carried unequal case counts — 288 for gpt2-large against 128 for ProGen2-medium — so interval-overlap tests read tighter for one arm than the other, and an ordering conclusion drawn from overlap was partly reading sample size. And two windows sample a draw distribution rather than characterise it: with K=2 there is no way to tell a shifted arm from a noisy one. EXP-R2-070 runs **five disjoint windows at one case count (256) across seven arms**, which turns "does the ordering survive a second draw" into a paired per-window sign test with a between-window spread.
 
 > This is still the best-founded part-1 result the programme has — it survives production scale, resolved arithmetic, a fortyfold threshold sweep and sequence-clustered intervals — but it is an ordering, not a separation. What is still true and must travel with it: the structural n = 1 limit of §2 (one protein arm is matched; ProGen2-medium differs in architecture and tokenisation too, so its separation is not modality-identifying on its own), the corpus-repeat confound, ZymCTRL's structural exclusion from the estimand, and **the sampling check has not been redone in float32** — the disjoint-window comparison was bfloat16 and is withdrawn with the rest. Artefacts: `results/transfer_20260730/b6_float32/`.
