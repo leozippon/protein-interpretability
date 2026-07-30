@@ -79,6 +79,7 @@ Run `hf` from the `ct` environment; downloads resume automatically.
 Record each experiment's date, configuration or command, and result in `docs/EXPERIMENT_LOG.md`. Re-read it immediately before appending because agents write concurrently. Record repository chronology in `docs/PROJECT_LOG.md`; runtime logs stay under ignored `logs/`.
 
 ## Mutagen
+
 - Files in @.mutagenignore is ignored from local repository, but you can check and read using terminal commands.
 
 ## Standing Rules
