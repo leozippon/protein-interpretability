@@ -362,3 +362,50 @@ class ASeededSkipIsDisjoint(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class ConditionedRenderingKeepsItsScoredSpan(unittest.TestCase):
+    """One declaration of the token budget a conditioned rendering needs.
+
+    ``content_bounds`` refuses a row whose ``<end>`` was truncated away, and the
+    stages' shipped defaults -- a 256-token unigram window against a 1000-residue
+    protein band -- put ZymCTRL's rows past it. The resolver was first written
+    inside ``04_circuit_primitives.py``; ``11_induction_path_patching.py`` then
+    failed on the same arm for the same reason, which is what a second copy of a
+    decision buys. It now lives beside ``fit_unigram``.
+    """
+
+    def _arm(self, name):
+        from src.transfer.arms import PANEL
+
+        class _Arm:
+            spec = PANEL[name]
+
+        return _Arm()
+
+    def test_only_a_conditioned_arm_is_widened(self):
+        from src.transfer.circuits import CONDITIONING_TOKEN_SLACK, conditioned_token_budget
+
+        self.assertEqual(
+            conditioned_token_budget(self._arm("zymctrl"), 256, 1000),
+            1000 + CONDITIONING_TOKEN_SLACK,
+        )
+        for name in ("protgpt2", "progen2-medium", "gpt2-large"):
+            self.assertEqual(conditioned_token_budget(self._arm(name), 256, 1000), 256)
+
+    def test_an_already_wide_request_is_not_narrowed(self):
+        from src.transfer.circuits import conditioned_token_budget
+
+        self.assertEqual(conditioned_token_budget(self._arm("zymctrl"), 4096, 1000), 4096)
+
+    def test_both_stages_resolve_the_budget_and_neither_restates_it(self):
+        for name in ("04_circuit_primitives.py", "11_induction_path_patching.py"):
+            source = (STAGE_DIR / name).read_text(encoding="utf-8")
+            self.assertIn("conditioned_token_budget(", source, name)
+            self.assertNotIn("def conditioned_token_budget", source, name)
+            self.assertNotIn("CONDITIONING_TOKEN_SLACK = ", source, name)
+            self.assertNotIn(
+                "max_tokens=args.unigram_max_tokens",
+                source,
+                f"{name} still fits its unigram on the unresolved window",
+            )

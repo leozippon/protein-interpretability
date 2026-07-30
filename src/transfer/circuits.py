@@ -556,6 +556,39 @@ class Unigram:
         }
 
 
+#: Slack over the residue count for a conditioned rendering's own tokens: an EC
+#: tag, ``<sep>``, ``<start>`` and ``<end>``. Measured at nine tokens for
+#: ZymCTRL's longest tag; thirty-two is a bound, not a fit.
+CONDITIONING_TOKEN_SLACK = 32
+
+
+def conditioned_token_budget(arm: Arm, requested: int, max_symbols: int) -> int:
+    """A unigram window wide enough to keep a conditioned rendering's ``<end>``.
+
+    An ``ec_conditioned`` arm wraps its residues in ``<start>`` and ``<end>``, and
+    :func:`content_bounds` refuses a row whose ``<end>`` was truncated away --
+    correctly, because scoring to the end of the valid tokens would count the
+    conditioning prompt as cohort content. But the stages' defaults contradict
+    each other: a 256-token unigram window against a 1000-residue protein band
+    puts ZymCTRL's rows at 621-816 tokens, so they lose their ``<end>`` and the run
+    dies inside :func:`fit_unigram`.
+
+    Declared here rather than in a stage. It was first written inside
+    ``04_circuit_primitives.py``, and ``11_induction_path_patching.py`` then failed
+    the same way on the same arm for the same reason -- a second copy of a decision
+    that had been made properly one import away, which is Appendix B rule 12.
+
+    Resolved **per arm** rather than refused for the group: a campaign dispatches
+    these stages as one process over every eligible arm, so an argument-time
+    refusal would lose the arms that were fine along with the one that was not.
+    Widening one arm's window changes no other arm's unigram.
+    """
+
+    if arm.spec.input_format != "ec_conditioned":
+        return int(requested)
+    return max(int(requested), int(max_symbols) + CONDITIONING_TOKEN_SLACK)
+
+
 def fit_unigram(arm: Arm, strings: Sequence[str], *, max_tokens: int) -> Unigram:
     """Count content tokens over arm-native input strings.
 

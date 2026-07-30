@@ -89,6 +89,7 @@ from src.transfer.circuits import (  # noqa: E402
     TEXT_EXACT_CRITERION,
     RepeatCriterion,
     attention_alignment_scores,
+    conditioned_token_budget,
     fit_unigram,
     head_census,
     induction_headline,
@@ -314,7 +315,10 @@ def run_arm(
     modality_cohorts = cohorts[arm.modality]
     analysis = modality_cohorts["analysis"]
     strings = analysis.input_strings(arm)
-    unigram = fit_unigram(arm, strings, max_tokens=args.unigram_max_tokens)
+    unigram_max_tokens = conditioned_token_budget(
+        arm, args.unigram_max_tokens, args.protein_max_len
+    )
+    unigram = fit_unigram(arm, strings, max_tokens=unigram_max_tokens)
 
     censuses: dict[str, dict[str, Any]] = {}
     sender_sets: dict[str, list] = {}
@@ -422,7 +426,7 @@ def run_arm(
         },
         "tokenisation": {
             "symbols_per_token": symbols_per_token(
-                arm, strings[: args.cohort_size], args.unigram_max_tokens
+                arm, strings[: args.cohort_size], unigram_max_tokens
             ),
             "unigram": unigram.summary(),
         },

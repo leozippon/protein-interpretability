@@ -72,6 +72,7 @@ from src.transfer.circuits import (  # noqa: E402
     activation_patching,
     attention_alignment_scores,
     build_patch_cases,
+    conditioned_token_budget,
     direct_logit_attribution,
     fit_unigram,
     head_census,
@@ -488,7 +489,9 @@ def run_arm(
     modality_cohorts = cohorts[arm.modality]
     analysis = modality_cohorts["analysis"]
     strings = analysis.input_strings(arm)
-    unigram_max_tokens = conditioned_token_budget(arm, args)
+    unigram_max_tokens = conditioned_token_budget(
+        arm, args.unigram_max_tokens, args.protein_max_len
+    )
     unigram = fit_unigram(arm, strings, max_tokens=unigram_max_tokens)
 
     payload: dict[str, Any] = {
@@ -806,36 +809,7 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-#: Slack over the residue count for a conditioned rendering's own tokens: an EC
-#: tag, ``<sep>``, ``<start>`` and ``<end>``. Measured at nine tokens for
-#: ZymCTRL's longest tag; thirty-two is a bound, not a fit.
-CONDITIONING_TOKEN_SLACK = 32
 
-
-def conditioned_token_budget(arm: Arm, args: argparse.Namespace) -> int:
-    """The unigram window for one arm, widened only where a rendering needs it.
-
-    An ``ec_conditioned`` arm wraps its residues in ``<start>`` and ``<end>``, and
-    ``circuits.content_bounds`` refuses a row whose ``<end>`` was truncated away --
-    correctly, because scoring to the end of the valid tokens would count the
-    conditioning prompt as cohort content. But two of this script's own defaults
-    contradict each other: ``--unigram-max-tokens`` is 256 while
-    ``--protein-max-len`` is 1000, so ZymCTRL's rows arrive at 621-816 tokens, lose
-    their ``<end>``, and the run dies inside ``fit_unigram``.
-
-    Resolved **per arm** rather than refused for the group. A campaign dispatches
-    this stage as one process over every circuit-eligible arm, so an
-    argument-time refusal -- which is what this was first written as -- would have
-    lost the ten arms that were fine along with the one that was not: the same
-    shape ``panel_contract.model_relative_path`` was written to end. Widening one
-    arm's window changes no other arm's unigram, and the resolved value is
-    recorded per arm in the artefact.
-    """
-
-    requested = int(args.unigram_max_tokens)
-    if arm.spec.input_format != "ec_conditioned":
-        return requested
-    return max(requested, args.protein_max_len + CONDITIONING_TOKEN_SLACK)
 
 
 def main() -> None:
