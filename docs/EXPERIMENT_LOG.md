@@ -3032,3 +3032,13 @@ The asymmetry is the more useful result, and it is one this programme already kn
 This is the third claim this session that a sensitivity check has weakened rather than confirmed — after the threshold sweep on the bfloat16 run and the dtype re-run itself. The pattern is worth naming: every one of them was a claim made from a single condition, and every one of them moved when the condition was varied.
 
 **Running in parallel at the time of writing:** `pathway_budget` and `estimand_power` across all twelve arms under corpus-wide seeded cohorts (fanned over two GPUs — neither stage has been re-run since the draw was fixed), and float32 far-band propagation for ProGen2-small and ProGen2-base, which would extend that measurement to five protein arms and give a scale contrast on propagation as well as on head count.
+
+**Eighth addendum: far-band propagation on five arms, and two scale effects with opposite signs.**
+
+Float32 far-band propagation now covers five arms. All four protein arms sit above the text control by point estimate — gpt2-large 0.1042 against ProGen2-small 0.1797, ProtGPT2 0.1953, ProGen2-medium 0.2734, ProGen2-base 0.3125 — and three of the four are interval-disjoint from it on this window.
+
+**ProGen2-small is not a gated result and is reported as underpowered.** It returns 23 eligible far-band cases against the pre-registered floor of 30, so its overlap with the text control is an absence of power, not a measured overlap. It needs roughly 176 cases per band; 128 was chosen from ProGen2-medium's eligibility rate, which is higher.
+
+**The interesting result is a dissociation between two scale effects.** On the ProGen2-small / ProGen2-medium pair, with corpus, architecture and tokeniser held fixed, far-band propagation rises at **+0.1330 per decade** while the induction head fraction falls at **−0.0172 per decade**. A larger protein decoder in this lineage carries a single-token perturbation *further* while devoting a *smaller* fraction of heads to prefix-matching. An account in which protein decoders simply have "less induction machinery" predicts those two moving together; they move apart. Two rungs, no interval, so this is a direction and not a magnitude — but it is a direction that constrains the mechanism, and it exists only because the protein side now has a scale contrast at all.
+
+**Every separation in that table is provisional on one cohort window**, and the previous addendum is the reason to say so rather than a formality: the disjoint-window check moved ProtGPT2 by −0.051 and dissolved its separation. Disjoint-window runs for ProtGPT2, ProGen2-medium and ProGen2-base are running on three GPUs; ProGen2-small's would need the larger case count first.

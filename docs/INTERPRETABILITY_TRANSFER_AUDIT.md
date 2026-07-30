@@ -338,6 +338,22 @@ Drawn from all **574,627** eligible Swiss-Prot entries and all **23,586** AlphaF
 >
 > The asymmetry is itself the finding, and it is the one this programme already knows: the text arm's far-band fraction is insensitive to which records were drawn and the protein arm's is not. That is §5.05(b)'s protein-specific cohort sensitivity — recorded there at 10–35x larger on the protein side, in nats of context information — reappearing in an unrelated statistic. **A protein arm's number carries a selection uncertainty its matched text control does not, and any protein-vs-text interval comparison drawn from a single window overstates its own precision.** ProGen2-medium's disjoint window has not been run, so the three-arm ordering's robustness is untested.
 >
+> **Extended to five arms in float32 (EXP-R2-068), and a second scale effect appears with the opposite sign.**
+>
+> | arm | params | eligible / total | fraction | 95% interval | vs text control |
+> |---|---:|---:|---:|---|---|
+> | gpt2-large | 774M | 30/288 | **0.1042** | [0.0694, 0.1399] | — |
+> | progen2-small | 151M | 23/128 | 0.1797 | [0.1136, 0.2540] | overlaps; **gate FAILS** at 23 < 30 cases |
+> | protgpt2 | 738M | 50/256 | 0.1953 | [0.1492, 0.2424] | disjoint |
+> | progen2-medium | 765M | 35/128 | 0.2734 | [0.2015, 0.3548] | disjoint |
+> | progen2-base | 765M | 40/128 | 0.3125 | [0.2326, 0.3984] | disjoint |
+>
+> **All four protein arms sit above the text control by point estimate**, and three of the four are interval-disjoint from it on this window. ProGen2-small is *not* a gated result: 23 eligible far-band cases against the pre-registered floor of 30, so it is reported as underpowered rather than as an overlap, and it needs roughly 176 cases per band.
+>
+> **The propagation slope is positive where the head-count slope is negative.** On the same ProGen2-small / ProGen2-medium pair, with corpus, architecture and tokeniser held: far-band propagation rises **+0.1330/decade** while the induction head fraction falls **−0.0172/decade**. A larger protein decoder in this lineage propagates a single-token perturbation *further* while allocating *fewer* heads to prefix-matching. Those are opposite-signed scale effects in one lineage on two statistics that a "more induction machinery" account would move together, and neither is a modality claim.
+>
+> **Every interval separation in this table is provisional on one cohort window.** The disjoint-window check above moved ProtGPT2 by −0.051 and dissolved its separation from the text control; the equivalent check for the three ProGen2 arms is running. Until it lands, read the column as a point ordering with one window's intervals, which is exactly the precision overstatement the paragraph above warns about.
+
 > This is still the best-founded part-1 result the programme has — it survives production scale, resolved arithmetic, a fortyfold threshold sweep and sequence-clustered intervals — but it is an ordering, not a separation. What is still true and must travel with it: the structural n = 1 limit of §2 (one protein arm is matched; ProGen2-medium differs in architecture and tokenisation too, so its separation is not modality-identifying on its own), the corpus-repeat confound, ZymCTRL's structural exclusion from the estimand, and **the sampling check has not been redone in float32** — the disjoint-window comparison was bfloat16 and is withdrawn with the rest. Artefacts: `results/transfer_20260730/b6_float32/`.
 
 **New — protein dictionaries are data-limited where text ones are saturated.** gpt2-large 0.958 → 0.962 across 16x data; ZymCTRL 0.610 → 0.716 → **0.843** and still climbing at ~+0.12 per 4x. That is convergence of the **instrument**, not of the model — a distinction this programme has been blurring.
