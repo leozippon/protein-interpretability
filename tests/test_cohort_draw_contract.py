@@ -409,3 +409,45 @@ class ConditionedRenderingKeepsItsScoredSpan(unittest.TestCase):
                 source,
                 f"{name} still fits its unigram on the unresolved window",
             )
+
+
+class StageConsumersMatchTheirLibraryContracts(unittest.TestCase):
+    """A key a stage reads must be a key the library still returns.
+
+    `path_patching.structural_invariants` published a `passed` flag that could
+    never be false -- any failure raises -- and it was removed as an unfalsifiable
+    guard. Correct, but `11_induction_path_patching.py` still read it, so the stage
+    measured all four arms on the H200 and then died writing its panel summary.
+    The cost of a library change is paid by its consumers, and nothing was checking
+    them.
+    """
+
+    def test_no_stage_reads_the_removed_invariants_passed_flag(self):
+        import ast as _ast
+
+        for directory in SEARCH_DIRS:
+            for path in sorted(directory.glob("*.py")):
+                source = path.read_text(encoding="utf-8")
+                if "structural_invariants" not in source:
+                    continue
+                for node in _ast.walk(_ast.parse(source)):
+                    if not isinstance(node, _ast.Subscript):
+                        continue
+                    key = node.slice
+                    if isinstance(key, _ast.Constant) and key.value == "passed":
+                        inner = node.value
+                        rendered = _ast.dump(inner)
+                        self.assertNotIn(
+                            "structural_invariants",
+                            rendered,
+                            f"{path.relative_to(REPO_ROOT)}:{node.lineno} reads a "
+                            "'passed' key that structural_invariants no longer returns",
+                        )
+
+    def test_structural_invariants_really_does_not_return_that_key(self):
+        # Guards the test above against becoming vacuous if the key comes back.
+        source = (REPO_ROOT / "src" / "transfer" / "path_patching.py").read_text(
+            encoding="utf-8"
+        )
+        body = source.split("def structural_invariants(", 1)[1].split("\n@", 1)[0]
+        self.assertNotIn('"passed":', body)

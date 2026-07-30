@@ -448,7 +448,17 @@ def panel_summary(results: dict[str, dict[str, Any]], args: argparse.Namespace) 
             "tokenisation": payload["arm"]["tokenisation"],
             "comparison_status": payload["arm"]["comparison_status"],
             "sender_set_stability": payload["sender_set_stability"],
-            "structural_invariants_passed": payload["structural_invariants"]["passed"],
+            # A returned invariant record IS the verdict: `structural_invariants`
+            # raises on any failure, so a payload that has one passed. It used to
+            # publish a `passed` flag that could never be false, and that flag was
+            # removed as an unfalsifiable guard -- correctly, but this consumer
+            # still read it and the stage died writing its panel summary after all
+            # four arms had been measured.
+            "structural_invariants_passed": "structural_invariants" in payload,
+            "structural_invariants_verdict_basis": (
+                "the record exists; path_patching.structural_invariants raises on "
+                "any failure rather than reporting one"
+            ),
         }
         for criterion in CRITERIA:
             key = f"senders_{criterion}__cases_{criterion}"
