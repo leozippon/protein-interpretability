@@ -14,25 +14,25 @@ conda activate ct
 python scripts/transfer/panel_contract.py --verify
 ```
 
-The active campaign has 11 arms:
+The active campaign has 12 arms:
 
-`gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `qwen2.5-0.5b`, `llama-3.2-3b`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium`.
+`gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `qwen2.5-0.5b`, `llama-3.2-3b`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium`, `progen2-small`.
 
 The contract declares 11 stages in this order:
 
 | Order | Stage | Entry point | Scope | Contract-eligible arms |
 |---:|---|---|---|---|
-| 1 | `cohort_power` | `01_cohort_power.py` | panel-wide | all 11 |
-| 2 | `pathway_budget` | `02_pathway_budget.py` | per arm | all 11 |
-| 3 | `estimand_power` | `03_estimand_power.py` | per arm, then control-anchored recommendation | all 11 |
-| 4 | `circuit_primitives` | `04_circuit_primitives.py` | panel-wide | all 11 |
-| 5 | `relational_channel` | `05_relational_channel.py` | per arm | `zymctrl`, `progen2-base`, `progen2-medium` |
+| 1 | `cohort_power` | `01_cohort_power.py` | panel-wide | all 12 |
+| 2 | `pathway_budget` | `02_pathway_budget.py` | per arm | all 12 |
+| 3 | `estimand_power` | `03_estimand_power.py` | per arm, then control-anchored recommendation | all 12 |
+| 4 | `circuit_primitives` | `04_circuit_primitives.py` | panel-wide | all 12 |
+| 5 | `relational_channel` | `05_relational_channel.py` | per arm | `zymctrl`, `progen2-base`, `progen2-medium`, `progen2-small` |
 | 6 | `explanation_channel` | `06_explanation_channel.py` | armless | no arm dispatch |
 | 7 | `convergence_control` | `07_convergence_control.py` | armless | no arm dispatch |
-| 8 | `lens_family` | `08_lens_family.py` | per arm | `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium` |
-| 9 | `probe_and_erasure` | `09_probe_and_erasure.py` | per arm | all 11 |
+| 8 | `lens_family` | `08_lens_family.py` | per arm | `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium`, `progen2-small` |
+| 9 | `probe_and_erasure` | `09_probe_and_erasure.py` | per arm | all 12 |
 | 10 | `homology_control` | `10_homology_control.py` | panel-wide | `protgpt2`, `zymctrl`, `progen2-medium` |
-| 11 | `induction_path_patching` | `11_induction_path_patching.py` | panel-wide | `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium` |
+| 11 | `induction_path_patching` | `11_induction_path_patching.py` | panel-wide | `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium`, `progen2-small` |
 
 Eligibility is not uniform. Contract refusals are deliberate and include architecture, tokenization, modality, and stage-interface limits. Inspect them with `python scripts/transfer/panel_contract.py --json`; do not route around them.
 
@@ -121,7 +121,7 @@ GPUS=0,1 \
 bash scripts/transfer/run_transfer_h200.sh --dry-run
 ```
 
-`ARMS` defaults to the full 11-arm campaign panel and `STAGES` defaults to the full 11-stage order. The worker intersects requested arms with each stage contract and reports refusals; no unsupported arm is silently substituted.
+`ARMS` defaults to the full 12-arm campaign panel and `STAGES` defaults to the full 11-stage order. The worker intersects requested arms with each stage contract and reports refusals; no unsupported arm is silently substituted.
 
 ## Controller Environment
 
@@ -129,7 +129,7 @@ bash scripts/transfer/run_transfer_h200.sh --dry-run
 |---|---|
 | `H200_POD` | Required shell-local pod selection |
 | `H200_ACCESS_ROOT` | External access-helper root; defaults to `~/hangzhou-remote` |
-| `ARMS` | Comma-separated requested arms; defaults to the 11-arm campaign panel |
+| `ARMS` | Comma-separated requested arms; defaults to the 12-arm campaign panel |
 | `STAGES` | Comma-separated requested stages; defaults to all 11 contract stages |
 | `GPUS` | Comma-separated pod-relative GPU indices |
 | `TEXT_ARM` | Text control for control-anchored aggregation |

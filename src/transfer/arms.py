@@ -293,6 +293,35 @@ PANEL: dict[str, ArmSpec] = {
         architecture="progen",
         pretraining_corpus="uniref90_bfd30",
     ),
+    # The protein-side scale rung the panel lacked. 151M against ProGen2-medium's
+    # 765M, same architecture, same residue tokeniser, same UniRef90+BFD30
+    # pretraining mixture -- so ProGen2-small / ProGen2-medium is a within-lineage
+    # scale contrast on the PROTEIN side, holding corpus and tokenisation fixed.
+    #
+    # Why that matters more than one more arm. Until it was admitted, scale was
+    # measurable only on the text side: the GPT-2 ladder falls monotonically
+    # (0.1597 -> 0.0850 on the induction fraction) and the audit's scale-adjusted
+    # restatement of the head-count shortfall rests entirely on that text-side
+    # slope being transportable to protein, which no measurement had tested. This
+    # rung tests it inside the protein lineage.
+    #
+    # Load-checked on the pod before admission (EXP-R2-068): 151.1M parameters,
+    # 12 blocks of width 1024, 16 heads, vocab_size 32, n_positions 1024,
+    # ProGenAttention, and a forward pass returning logits of width 32 against a
+    # 31-token tokenizer -- the same shape as the two ProGen2 arms already here.
+    "progen2-small": ArmSpec(
+        name="progen2-small",
+        path=MODEL_ROOT / "progen2-small",
+        path_variable="TRANSFER_MODEL_BASE_DIR",
+        modality="protein",
+        n_layer=12,
+        d_model=1024,
+        tokenisation="residue",
+        input_format="n_to_c_control",
+        evaluation_cohort_source="swissprot",
+        architecture="progen",
+        pretraining_corpus="uniref90_bfd30",
+    ),
     # Architecturally identical to progen2-medium down to the parameter count
     # (764,803,616), differing only in pretraining corpus. That makes the pair a
     # controlled contrast on training data with architecture, scale and
@@ -510,6 +539,15 @@ PANEL["llama-3.2-3b"] = ArmSpec(
 
 #: Same architecture and parameter count, different pretraining corpus.
 MATCHED_DATA_CONTRAST = ("progen2-base", "progen2-medium")
+
+#: The protein-side scale ladder: same architecture, same residue tokeniser, same
+#: UniRef90+BFD30 mixture, 151M against 765M. The text side has had a four-rung
+#: ladder since EXP-R2-057 and the protein side had none, which is why every
+#: scale-adjusted statement about the head-count shortfall has had to assume the
+#: text-side slope transports. This pair is the first protein-internal test of
+#: that assumption. Two rungs is a slope estimate with no curvature, and it is
+#: declared as a contrast rather than a ladder for that reason.
+PROTEIN_SCALE_CONTRAST = ("progen2-small", "progen2-medium")
 
 #: The text-side equivalent: gpt2 and DialoGPT-small share architecture,
 #: tokeniser and size (12 layers, width 768, 50257 vocabulary) and differ only in

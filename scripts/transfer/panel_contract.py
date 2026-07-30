@@ -97,6 +97,7 @@ CAMPAIGN_PANEL: tuple[str, ...] = (
     "zymctrl",
     "progen2-base",
     "progen2-medium",
+    "progen2-small",
 )
 
 #: Panel members deliberately outside :data:`CAMPAIGN_PANEL`, with the reason.
@@ -109,6 +110,36 @@ PANEL_MEMBERS_NOT_STAGED: dict[str, str] = {
     ),
     "bygpt5-base-en": "see bygpt5-small-en",
     "bygpt5-medium-en": "see bygpt5-small-en",
+}
+
+#: Checkpoints that are staged on GPFS and load cleanly but are NOT declared in
+#: :data:`~src.transfer.arms.PANEL`, with the measured reason. Recorded here rather
+#: than left as an absence, because "we have not got round to it" and "admitting it
+#: would corrupt a statistic" are different facts and only one of them is a
+#: decision. Both were load-checked on the pod (EXP-R2-068).
+STAGED_BUT_NOT_ADMITTED: dict[str, str] = {
+    "progen2-large": (
+        "2779.4M parameters, 32 blocks of width 2560, loads and runs -- but its "
+        "config declares vocab_size 51200 against a 31-token tokenizer, so 51169 "
+        "of its logit rows are unreachable. Every statistic this package derives "
+        "from config.vocab_size would be computed over a mostly dead alphabet and "
+        "would not be comparable with the other ProGen2 arms: the held-out unigram "
+        "support, the plug-in entropy, and the rank-(V-1) aperture of L8. It is a "
+        "natural experiment on whether that aperture tracks the output MATRIX or "
+        "the reachable SYMBOLS -- same lineage, same effective alphabet, a 1600x "
+        "wider head -- and that is worth its own gated design, not a quiet "
+        "admission into a panel whose other arms read vocab_size as the alphabet"
+    ),
+    "progen2-xlarge": (
+        "6443.6M parameters, 32 blocks of width 4096, loads and runs a forward "
+        "pass returning logits of width 32 -- but its config carries no "
+        "vocab_size attribute at all, only vocab_size_emb and vocab_size_lm_head. "
+        "budget.arm_power reads config.vocab_size directly, so admitting it would "
+        "raise AttributeError inside cohort_power rather than produce a wrong "
+        "number. Admissible once the panel reads a declared alphabet size instead "
+        "of trusting a config key that two checkpoints in this lineage spell "
+        "differently"
+    ),
 }
 
 
@@ -557,9 +588,11 @@ COHORT_POWER_ITEM_RULES: tuple[tuple[str, str], ...] = (
         "computable so it must NOT be skipped",
     ),
     (
-        "protein_progen2_base",
-        "ProGen2-base uses the script's declared default dtype; no precision override "
-        "is inferred from a different checkpoint",
+        "protein_default_dtype",
+        "residue-level protein arms taking the script's declared default dtype; no "
+        "precision override is inferred from a different checkpoint. Named for the "
+        "rule rather than for a member: the old name described its only occupant, "
+        "and admitting ProGen2-small made that name cover one of two arms",
     ),
     (
         "protein_progen2_medium",
@@ -594,20 +627,20 @@ def cohort_power_items(requested: list[str] | tuple[str, ...] | None = None) -> 
         elif arm == "progen2-medium":
             buckets["protein_progen2_medium"].append(arm)
         else:
-            buckets["protein_progen2_base"].append(arm)
+            buckets["protein_default_dtype"].append(arm)
 
     extra = {
         "text": ("--skip-truncation",),
         "protein_large_vocab": ("--skip-truncation",),
         "protein_small_vocab": ("--with-ec",),
-        "protein_progen2_base": (),
+        "protein_default_dtype": (),
         "protein_progen2_medium": ("--dtype", "float32"),
     }
     cohort_names = {
         "text": None,
         "protein_large_vocab": "swissprot_large_vocab",
         "protein_small_vocab": "swissprot_small_vocab",
-        "protein_progen2_base": "swissprot_progen2_base",
+        "protein_default_dtype": "swissprot_default_dtype",
         "protein_progen2_medium": "swissprot_progen2_medium_f32",
     }
     items: list[CohortPowerItem] = []

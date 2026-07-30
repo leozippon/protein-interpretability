@@ -457,6 +457,28 @@ Two further differences are open rather than closed:
 **Exit condition unchanged in spirit:** D1 exists to explain transfer failures, not
 for its own sake. No new D1 measurement is authorised beyond these two.
 
+### D1.c — Candidate arms and corpora, with the risk each carries
+
+Reviewed 2026-07-30. Recorded here so the survey is not lost, and so that nothing
+on it can be admitted without its stated risk being answered first. **None is in
+the panel.** The panel grew by exactly one arm this session, ProGen2-small, and
+only after a load check on the pod.
+
+| candidate | what it would buy | why it is not admitted yet |
+|---|---|---|
+| **MolCrawl protein GPT-2-large** | The highest-value candidate: a *second* protein arm on GPT-2-large's 36x1280x20-head backbone, so the modality coefficient would stop resting on ProtGPT2 alone — the structural limit of §2 | Matched on backbone, **not** on parameter count (a small protein vocabulary shrinks the embedding and output layers); reported parameter counts disagree with the checkpoint; `bos_token_id`/`eos_token_id` disagree with the tokenizer's special symbols; no peer-reviewed validation; ProteinGym-finetuned variants must be excluded. "Both trained on UniRef50" does not fix release, filtering or compute budget. It would *reduce* the single-arm risk; it cannot on its own establish a causal modality difference |
+| **RITA** (one medium checkpoint) | Tests whether the conclusions are specific to the GPT-2 / ProGen2 lineages | Untried here; admit one rung before four |
+| **ProGen3-112M + ProGenMech** | The external baseline a D3 construction must replicate against, and the first sparse-MoE protein decoder in scope | Mandatory to replicate *before* D3, and must not be treated as already passing this programme's gates |
+| **Tranception, retrieval off/on** | A clean D2 interface-attribution experiment: identical weights, external homology retrieval toggled | Not part of the modality measurement; separate design |
+| **Pythia / PolyPythia multi-seed** | Seed variance and learning dynamics on the text side | Instrumental calibration only. It must **not** become extra text-side voting evidence — the text side already has seven arms against five protein |
+| **Dayhoff UR50/UR90 variants** | Controlled data-mechanism study | Only if the evidence points at a training-data confound |
+| **ProGen2-large** | Same lineage, same 31-token alphabet, a 1600x wider output head — a natural experiment on whether L8's rank-(V-1) aperture tracks the output *matrix* or the reachable *symbols* | Load-checked: 2779.4M parameters, works, but `vocab_size` 51200 against a 31-token tokenizer. Every `config.vocab_size`-derived statistic would be over a mostly dead alphabet. Deserves its own gated design; see `panel_contract.STAGED_BUT_NOT_ADMITTED` |
+| **ProGen2-xlarge** | Would extend the protein ladder to 6.4B, a 43x range | Load-checked: 6443.6M parameters, forward pass returns width 32 — but the config carries **no** `vocab_size`, only `vocab_size_emb`/`vocab_size_lm_head`, and `budget.arm_power` reads `config.vocab_size`. Admissible once the panel reads a *declared* alphabet size rather than trusting a key two checkpoints in one lineage spell differently |
+
+**Corpora, as evidence packages rather than more FASTA.** Four are worth building, in this order, and each carries a trap that has to be designed around rather than noticed afterwards. A *temporal* extrapolation set per model cutoff, from UniParc first-observation timestamps against a pinned Swiss-Prot release — but UniRef cluster IDs are rebuilt between releases and cannot be the identifier, and new appearance is not novelty without homology exclusion. A *PDB-CATH* set of experimental structures released after each cutoff, split out-of-family on CATH superfamilies with S20/S35 sensitivity beside the S40 already here, distinguishing an old sequence with a new structure from a genuinely new sequence. An *independent DMS* collection from late MaveDB assays absent from the model papers and from ProteinGym, grouped by wild type and homologous cluster — millions of mutant rows over one wild type are not independent units, which is the same error L1's cohort made at smaller scale. And a *repeat-mechanism* 2x2 (repeat present/absent x low/normal complexity) from RepeatsDB, Swiss-Prot repeat records and synthetic constructs, matched on length, taxonomy, domain architecture, compositional entropy and maximum training-set similarity — which is the only design that tests the corpus-repeat confound §4 calls irremovable, rather than restating it. MGnify is optional and cannot be a clean gold standard: it is largely predicted proteins and may overlap BFD.
+
+**A standing caution this survey earns.** Predicted structures, pLDDT and sequence-inferred labels support stratification and covariate adjustment. They cannot demonstrate functional competence or "acquired protein knowledge", which is the second half of the programme's objective and currently has no instrument at all.
+
 ### D2 — Where the methods transfer, and whose fault it is when they do not
 
 The deliverable. Twenty-one limitations are catalogued in §5, each scoped as

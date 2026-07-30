@@ -32,9 +32,9 @@ Frozen historical provenance, retired R0/R1 roots, old manuscripts, and retired 
 
 ## Campaign Contract
 
-The current contract contains 11 active model arms and 11 active stages. `scripts/transfer/panel_contract.py` is the source of truth; generated shell declarations and operator documentation must agree with it.
+The current contract contains 12 active model arms and 11 active stages. `scripts/transfer/panel_contract.py` is the source of truth; generated shell declarations and operator documentation must agree with it.
 
-Active arms: `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `qwen2.5-0.5b`, `llama-3.2-3b`, `protgpt2`, `zymctrl`, `progen2-base`, and `progen2-medium`.
+Active arms: `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `qwen2.5-0.5b`, `llama-3.2-3b`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium`, and `progen2-small`.
 
 Active stages: `cohort_power`, `pathway_budget`, `estimand_power`, `circuit_primitives`, `relational_channel`, `explanation_channel`, `convergence_control`, `lens_family`, `probe_and_erasure`, `homology_control`, and `induction_path_patching`.
 

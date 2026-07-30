@@ -63,14 +63,27 @@ class ArmCanRunPredicate(unittest.TestCase):
     def test_lens_family_refuses_rmsnorm_arms_and_admits_every_other_campaign_arm(self):
         eligible, refused = pc.stage_arms("lens_family")
         self.assertEqual({v.arm for v in refused}, {"qwen2.5-0.5b", "llama-3.2-3b"})
-        self.assertEqual(len(eligible), 9)  # the nine arms EXP-R2-060 scored
+        # Derived, not restated: admitting ProGen2-small moved this from 9 to 10
+        # and a hard-coded count made a legitimate panel change look like a defect.
+        self.assertEqual(
+            set(eligible),
+            {a for a in pc.CAMPAIGN_PANEL if a not in {"qwen2.5-0.5b", "llama-3.2-3b"}},
+        )
 
     def test_relational_channel_includes_progen2_base(self):
         # The worker's hand-written list named zymctrl and progen2-medium only.
         # progen2-base is protein, residue-tokenised and carries `relational`, so
         # excluding it narrowed the stage's panel by one arm with nothing saying so.
         eligible, _ = pc.stage_arms("relational_channel")
-        self.assertEqual(eligible, ["zymctrl", "progen2-base", "progen2-medium"])
+        self.assertEqual(
+            eligible,
+            [
+                a
+                for a in pc.CAMPAIGN_PANEL
+                if PANEL[a].modality == "protein" and PANEL[a].tokenisation == "residue"
+            ],
+        )
+        self.assertIn("progen2-base", eligible)
 
     def test_relational_channel_refuses_protgpt2_on_tokenisation_not_on_name(self):
         verdict = pc.arm_can_run("relational_channel", "protgpt2")
@@ -126,8 +139,9 @@ class StageDeclarationsMirrorTheirSource(unittest.TestCase):
         for arm in ("gpt2", "gpt2-medium", "gpt2-xl", "dialogpt-small",
                     "qwen2.5-0.5b", "llama-3.2-3b"):
             self.assertEqual(pc.model_variable(arm), "TRANSFER_TEXT_MODEL_BASE_DIR", arm)
-        for arm in ("protgpt2", "zymctrl", "progen2-base", "progen2-medium"):
-            self.assertEqual(pc.model_variable(arm), "TRANSFER_MODEL_BASE_DIR", arm)
+        for arm in pc.CAMPAIGN_PANEL:
+            if PANEL[arm].modality == "protein":
+                self.assertEqual(pc.model_variable(arm), "TRANSFER_MODEL_BASE_DIR", arm)
 
     def test_corpus_variables_follow_the_declared_evaluation_cohort(self):
         self.assertEqual(pc.corpus_variables("zymctrl"), ("TRANSFER_ZYMCTRL_FASTA",))
@@ -212,7 +226,7 @@ class DefaultsDoNotNarrowThePanel(unittest.TestCase):
         text = module.default_arms("text", False)
         self.assertEqual(len(text), 7, "the campaign's text side is seven arms")
         protein_ec = module.default_arms("protein", True)
-        self.assertEqual(len(protein_ec), 4)
+        self.assertEqual(len(protein_ec), sum(1 for a in pc.CAMPAIGN_PANEL if PANEL[a].modality == "protein"))
         self.assertIn("zymctrl", protein_ec)
         self.assertNotIn(
             "zymctrl",
@@ -238,7 +252,7 @@ class DefaultsDoNotNarrowThePanel(unittest.TestCase):
         arms = module.default_recommend_arms()
         text = [name for name in arms if PANEL[name].modality == "text"]
         self.assertEqual(text, [module.TEXT_POSITIVE_CONTROL])
-        self.assertEqual(len(arms), 5)  # one text control plus four protein arms
+        self.assertEqual(len(arms), 1 + sum(1 for a in pc.CAMPAIGN_PANEL if PANEL[a].modality == "protein"))  # one text control plus four protein arms
 
 
 class GuardsFireAtArgumentValidation(unittest.TestCase):
@@ -355,8 +369,8 @@ class ShellContractStaysInStepWithThePanel(unittest.TestCase):
         self.assertIn("--with-ec", items["protein_small_vocab"].extra_args)
         self.assertEqual(items["protein_large_vocab"].arms, ("protgpt2",))
         self.assertIn("--skip-truncation", items["protein_large_vocab"].extra_args)
-        self.assertEqual(items["protein_progen2_base"].arms, ("progen2-base",))
-        self.assertEqual(items["protein_progen2_base"].extra_args, ())
+        self.assertEqual(items["protein_default_dtype"].arms, ("progen2-base", "progen2-small"))
+        self.assertEqual(items["protein_default_dtype"].extra_args, ())
         self.assertEqual(items["protein_progen2_medium"].arms, ("progen2-medium",))
         self.assertEqual(
             items["protein_progen2_medium"].extra_args, ("--dtype", "float32")
@@ -485,7 +499,7 @@ class WorkerAndControllerBehaviour(unittest.TestCase):
         return result.stdout.strip().splitlines()
 
     def test_cohort_power_items_are_built_from_the_contract(self):
-        progen_base = self._build_command("cohort_power", "protein_progen2_base")
+        progen_base = self._build_command("cohort_power", "protein_default_dtype")
         self.assertIn("--kind", progen_base)
         self.assertEqual(progen_base[progen_base.index("--kind") + 1], "protein")
         self.assertEqual(
@@ -495,7 +509,7 @@ class WorkerAndControllerBehaviour(unittest.TestCase):
         self.assertNotIn("--dtype", progen_base)
         self.assertEqual(
             progen_base[progen_base.index("--cohort-name") + 1],
-            "swissprot_progen2_base",
+            "swissprot_default_dtype",
         )
         progen_medium = self._build_command("cohort_power", "protein_progen2_medium")
         self.assertEqual(
