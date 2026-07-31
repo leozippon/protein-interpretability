@@ -509,6 +509,29 @@ Drawn from all **574,627** eligible Swiss-Prot entries and all **23,586** AlphaF
 >
 > The successor measurement is the same instrument with the band declared in content symbols and resolved per arm, recording both the requested symbol band and the resolved token band. Until it lands, no far-band ordering across arms of different tokenisation may be cited.
 
+> ### EXP-R2-074 — the successor, and what survives is a decay rate rather than a level
+>
+> Six arms, bands and corruption span **both** declared in content symbols and resolved per arm by containment, float32, 256 cases per band. Resolved token geometry, which the artefact records: gpt2-large / gpt2-xl 2–3, 4–7, 8–14 tokens at one token per 4.56 characters; ProtGPT2 4–5, 7–11, 12–22 at 2.81 residues per token; every ProGen2 arm 10–16, 18–32, 34–64 at 0.996. Corruption span is 5 characters (one text token) and 3 residues (one ProtGPT2 token, its floor). *Three of five windows; two more running.*
+>
+> **The level comparison reverses, exactly as the withdrawal predicted.** At the shortest content band, 9–16 symbols, the text arms are *highest*: gpt2-large 0.682 and gpt2-xl 0.723 against ProtGPT2 0.546, ProGen2-small 0.551, ProGen2-medium 0.645, ProGen2-base 0.656. Anyone reading "protein propagates a single-token perturbation further" off the token-band tables was reading the tokeniser.
+>
+> **What separates is the decay with distance, and it separates completely.** Ratio of the 33–64-symbol band to the 9–16-symbol band, mean over windows:
+>
+> | arm | modality | 9–16 | 17–32 | 33–64 | **decay ratio** |
+> |---|---|---:|---:|---:|---:|
+> | gpt2-large | text | 0.682 | 0.533 | 0.331 | **0.485** |
+> | gpt2-xl | text | 0.723 | 0.498 | 0.361 | **0.502** |
+> | progen2-small | protein | 0.551 | 0.445 | 0.320 | **0.584** |
+> | protgpt2 | protein | 0.546 | 0.467 | 0.395 | **0.731** |
+> | progen2-base | protein | 0.656 | 0.566 | 0.496 | **0.756** |
+> | progen2-medium | protein | 0.645 | 0.582 | 0.491 | **0.762** |
+>
+> Text 0.485–0.502 against protein 0.584–0.762 at threshold 0.25, and 0.317–0.350 against 0.472–0.640 at threshold 0.50. **Protein decays more slowly in 20 of 20 paired arm × control × window comparisons at both thresholds, with no exceptions.**
+>
+> **Three reasons this is better founded than what it replaces.** It is a *within-arm ratio*, so the arm-specific level — the quantity the perturbation-size mismatch moves — largely cancels. Both legs of the confound are declared in the same unit. And **the matched pair separates for the first time on this estimand**: gpt2-large 0.485 against ProtGPT2 0.731, with ProtGPT2 sitting *inside* the protein range rather than being the arm that fails, which it was under every previous version of this measurement.
+>
+> **The residual confounds, stated rather than engineered around.** A residue is not a character, so 3 residues against 5 characters is matched within modality and not across it; the ratio cancels the level but not this. Integer token quantisation makes the *token*-distance ratio 4.3x for text and 3.7x for ProGen2, which biases toward faster text decay — correcting for it under a power law moves gpt2-large from 0.485 to ≈0.52, still below the lowest protein arm, so the separation survives the correction but with less room. The 20 comparisons share windows and arms and are not 20 independent tests; at K = 3 an exact sign test floors at 0.25 per pair, so the evidence is the consistency pattern, not a p-value. And this remains an architecture-and-tokenisation contrast as much as a modality one: the panel still has one matched protein arm (§2).
+
 > Read the withdrawal above before this paragraph. What survives it: the measurement is at production scale, in resolved float32 arithmetic, with sequence-clustered intervals and equal case counts, and its *within-arm* quantities are sound. What does not: any cross-arm ordering, because the arms were compared at a distance that means something different on each of them. The limits that were already recorded stand unchanged and are now joined by a larger one — the structural n = 1 limit of §2, the corpus-repeat confound, and ZymCTRL's structural exclusion from the estimand. Artefacts: `results/transfer_20260730/b6_float32/`, `results/transfer_20260730/farband5/`.
 
 **New — protein dictionaries are data-limited where text ones are saturated.** gpt2-large 0.958 → 0.962 across 16x data; ZymCTRL 0.610 → 0.716 → **0.843** and still climbing at ~+0.12 per 4x. That is convergence of the **instrument**, not of the model — a distinction this programme has been blurring.
@@ -640,7 +663,7 @@ Two further differences are open rather than closed:
 
 | item | question | status | cost |
 |---|---|---|---|
-| **D1.a** | Do the far-band propagation *magnitudes* differ, once resolved? | **REOPENED 2026-07-31 (EXP-R2-073).** EXP-R2-070's five-window answer reproduces exactly and is arithmetically sound, but it compares arms at a distance declared in **tokens** while they differ 4.4x in symbols per token; two protein arms swap order on the unit choice alone, so the result is not model-attributable. See the withdrawal block in §5.1. Reopened pending the same measurement at matched content distance | ~6 GPU-h spent; successor ~4 GPU-h |
+| **D1.a** | Do the far-band propagation *magnitudes* differ, once resolved? | **Reopened then re-answered, and the answer changed (EXP-R2-073 / 074).** The token-band result is withdrawn: two protein arms swap order on the unit choice alone. Re-measured with band *and* corruption span declared in content symbols, the **level** contrast reverses — text is highest at short content distance — and what separates is the **decay rate**, text 0.485–0.502 against protein 0.584–0.762, protein slower in 20 of 20 paired comparisons. The matched pair separates on this estimand for the first time. Three of five windows; the residual unit caveats are in §5.1 | ~6 GPU-h spent; successor ~3 GPU-h, running |
 | ~~**D1.b**~~ | Is the tail statement a *distribution* statement at full population? | **Answered (EXP-R2-073), CPU, no GPU spent.** No: it remains a tail statement, and the tail is now located — the ordering separates at every quantile from q75 to q99 and fails at the median and in the extreme upper tail. Pooled AUC 0.624, 20 of 28 pairs above 0.5, 2 of 28 showing stochastic dominance against the recorded 0 of 12. Two published figures moved with it: modality variance surviving projection 25.4% → **36.3%**, and the 2.34x scale-adjusted shortfall loses its interval verdict as an out-of-lineage extrapolation. Detail in §4 | 0 GPU-h, spent |
 
 **Exit condition unchanged in spirit:** D1 exists to explain transfer failures, not
