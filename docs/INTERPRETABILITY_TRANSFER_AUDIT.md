@@ -511,26 +511,28 @@ Drawn from all **574,627** eligible Swiss-Prot entries and all **23,586** AlphaF
 
 > ### EXP-R2-074 — the successor, and what survives is a decay rate rather than a level
 >
-> Six arms, bands and corruption span **both** declared in content symbols and resolved per arm by containment, float32, 256 cases per band. Resolved token geometry, which the artefact records: gpt2-large / gpt2-xl 2–3, 4–7, 8–14 tokens at one token per 4.56 characters; ProtGPT2 4–5, 7–11, 12–22 at 2.81 residues per token; every ProGen2 arm 10–16, 18–32, 34–64 at 0.996. Corruption span is 5 characters (one text token) and 3 residues (one ProtGPT2 token, its floor). *Three of five windows; two more running.*
+> Six arms, bands and corruption span **both** declared in content symbols and resolved per arm by containment, float32, 256 cases per band, **five disjoint windows** of one seeded permutation (four for the two text arms; gpt2-large and gpt2-xl at window 1024 were still running). Resolved token geometry, which the artefact records: gpt2-large / gpt2-xl 2–3, 4–7, 8–14 tokens at 4.56 characters per token; ProtGPT2 4–5, 7–11, 12–22 at 2.81 residues per token; every ProGen2 arm 10–16, 18–32, 34–64 at 0.996. Corruption span is 5 characters (one text token) and 3 residues (one ProtGPT2 token, its floor).
 >
-> **The level comparison reverses, exactly as the withdrawal predicted.** At the shortest content band, 9–16 symbols, the text arms are *highest*: gpt2-large 0.682 and gpt2-xl 0.723 against ProtGPT2 0.546, ProGen2-small 0.551, ProGen2-medium 0.645, ProGen2-base 0.656. Anyone reading "protein propagates a single-token perturbation further" off the token-band tables was reading the tokeniser.
+> **The level comparison reverses, exactly as the withdrawal predicted.** At the shortest content band, 9–16 symbols, the text arms are *highest*: gpt2-large 0.671 and gpt2-xl 0.704 against ProtGPT2 0.545, ProGen2-small 0.525, ProGen2-medium 0.656, ProGen2-base 0.664. Anyone reading "protein propagates a single-token perturbation further" off the token-band tables was reading the tokeniser.
 >
-> **What separates is the decay with distance, and it separates completely.** Ratio of the 33–64-symbol band to the 9–16-symbol band, mean over windows:
+> **What separates is the decay with distance, and it separates completely.** Ratio of the 33–64-symbol band to the 9–16-symbol band, mean over windows, threshold 0.25:
 >
-> | arm | modality | 9–16 | 17–32 | 33–64 | **decay ratio** |
-> |---|---|---:|---:|---:|---:|
-> | gpt2-large | text | 0.682 | 0.533 | 0.331 | **0.485** |
-> | gpt2-xl | text | 0.723 | 0.498 | 0.361 | **0.502** |
-> | progen2-small | protein | 0.551 | 0.445 | 0.320 | **0.584** |
-> | protgpt2 | protein | 0.546 | 0.467 | 0.395 | **0.731** |
-> | progen2-base | protein | 0.656 | 0.566 | 0.496 | **0.756** |
-> | progen2-medium | protein | 0.645 | 0.582 | 0.491 | **0.762** |
+> | arm | modality | 9–16 | 17–32 | 33–64 | **decay ratio** | between-window sd |
+> |---|---|---:|---:|---:|---:|---:|
+> | gpt2-xl | text | 0.704 | 0.517 | 0.332 | **0.472** | 0.042 |
+> | gpt2-large | text | 0.671 | 0.518 | 0.320 | **0.477** | 0.033 |
+> | progen2-small | protein | 0.525 | 0.420 | 0.312 | **0.596** | 0.080 |
+> | protgpt2 | protein | 0.545 | 0.448 | 0.382 | **0.706** | 0.104 |
+> | progen2-base | protein | 0.664 | 0.570 | 0.478 | **0.720** | 0.061 |
+> | progen2-medium | protein | 0.656 | 0.573 | 0.481 | **0.732** | 0.047 |
 >
-> Text 0.485–0.502 against protein 0.584–0.762 at threshold 0.25, and 0.317–0.350 against 0.472–0.640 at threshold 0.50. **Protein decays more slowly in 20 of 20 paired arm × control × window comparisons at both thresholds, with no exceptions.**
+> Text 0.472–0.477 against protein 0.596–0.732, a gap of **+0.119**; at threshold 0.50, text 0.302–0.307 against protein 0.500–0.624, a gap of **+0.193**. **Protein decays more slowly in 32 of 32 paired arm × control × window comparisons at both thresholds, with no exceptions.**
 >
-> **Three reasons this is better founded than what it replaces.** It is a *within-arm ratio*, so the arm-specific level — the quantity the perturbation-size mismatch moves — largely cancels. Both legs of the confound are declared in the same unit. And **the matched pair separates for the first time on this estimand**: gpt2-large 0.485 against ProtGPT2 0.731, with ProtGPT2 sitting *inside* the protein range rather than being the arm that fails, which it was under every previous version of this measurement.
+> **Three reasons this is better founded than what it replaces.** It is a *within-arm ratio*, so the arm-specific level — the quantity the perturbation-size mismatch moves — largely cancels. Both legs of the confound are declared in the same unit. And **the matched pair separates for the first time on this estimand**: gpt2-large 0.477 against ProtGPT2 0.706, with ProtGPT2 sitting *inside* the protein range rather than being the arm that fails, which it was under every previous version of this measurement.
 >
-> **The residual confounds, stated rather than engineered around.** A residue is not a character, so 3 residues against 5 characters is matched within modality and not across it; the ratio cancels the level but not this. Integer token quantisation makes the *token*-distance ratio 4.3x for text and 3.7x for ProGen2, which biases toward faster text decay — correcting for it under a power law moves gpt2-large from 0.485 to ≈0.52, still below the lowest protein arm, so the separation survives the correction but with less room. The 20 comparisons share windows and arms and are not 20 independent tests; at K = 3 an exact sign test floors at 0.25 per pair, so the evidence is the consistency pattern, not a p-value. And this remains an architecture-and-tokenisation contrast as much as a modality one: the panel still has one matched protein arm (§2).
+> **A fourth thing, which is a genuine surprise and a check on Appendix B rule 22.** The between-window spread of the decay ratio does **not** separate by modality — text 0.033 and 0.042 against protein 0.047 to 0.104 at threshold 0.25, and at threshold 0.50 ProGen2-base's 0.034 sits *below* gpt2-xl's 0.059. The protein-specific cohort sensitivity that appears in four other statistics does not appear in this one. That is rule 22 working in the direction that helps: cohort sensitivity is a property of the statistic, and this statistic happens to be a robust one.
+>
+> **The residual confounds, stated rather than engineered around.** A residue is not a character, so 3 residues against 5 characters is matched within modality and not across it; the ratio cancels the level but not this. Integer token quantisation makes the *token*-distance ratio 4.3x for text and 3.7x for ProGen2, which biases toward faster text decay — correcting for it under a power law moves gpt2-large from 0.477 to ≈0.51, still below the lowest protein arm, so the separation survives the correction with less room. The 32 comparisons share windows and arms and are not 32 independent tests. And this remains an architecture-and-tokenisation contrast as much as a modality one: the panel still has one matched protein arm (§2).
 
 > Read the withdrawal above before this paragraph. What survives it: the measurement is at production scale, in resolved float32 arithmetic, with sequence-clustered intervals and equal case counts, and its *within-arm* quantities are sound. What does not: any cross-arm ordering, because the arms were compared at a distance that means something different on each of them. The limits that were already recorded stand unchanged and are now joined by a larger one — the structural n = 1 limit of §2, the corpus-repeat confound, and ZymCTRL's structural exclusion from the estimand. Artefacts: `results/transfer_20260730/b6_float32/`, `results/transfer_20260730/farband5/`.
 
@@ -663,7 +665,7 @@ Two further differences are open rather than closed:
 
 | item | question | status | cost |
 |---|---|---|---|
-| **D1.a** | Do the far-band propagation *magnitudes* differ, once resolved? | **Reopened then re-answered, and the answer changed (EXP-R2-073 / 074).** The token-band result is withdrawn: two protein arms swap order on the unit choice alone. Re-measured with band *and* corruption span declared in content symbols, the **level** contrast reverses — text is highest at short content distance — and what separates is the **decay rate**, text 0.485–0.502 against protein 0.584–0.762, protein slower in 20 of 20 paired comparisons. The matched pair separates on this estimand for the first time. Three of five windows; the residual unit caveats are in §5.1 | ~6 GPU-h spent; successor ~3 GPU-h, running |
+| **D1.a** | Do the far-band propagation *magnitudes* differ, once resolved? | **Reopened, then re-answered, and the answer changed (EXP-R2-073 / 074).** The token-band result is withdrawn: two protein arms swap order on the unit choice alone. Re-measured over five windows with the band *and* the corruption span declared in content symbols, the **level** contrast reverses — text is highest at short content distance — and what separates is the **decay rate**: text 0.472–0.477 against protein 0.596–0.732, protein slower in **32 of 32** paired comparisons at both thresholds. The matched pair separates on this estimand for the first time, and the protein-specific cohort-sensitivity asymmetry does not appear in it. Residual unit caveats in §5.1 | ~6 + ~4 GPU-h, spent |
 | ~~**D1.b**~~ | Is the tail statement a *distribution* statement at full population? | **Answered (EXP-R2-073), CPU, no GPU spent.** No: it remains a tail statement, and the tail is now located — the ordering separates at every quantile from q75 to q99 and fails at the median and in the extreme upper tail. Pooled AUC 0.624, 20 of 28 pairs above 0.5, 2 of 28 showing stochastic dominance against the recorded 0 of 12. Two published figures moved with it: modality variance surviving projection 25.4% → **36.3%**, and the 2.34x scale-adjusted shortfall loses its interval verdict as an out-of-lineage extrapolation. Detail in §4 | 0 GPU-h, spent |
 
 **Exit condition unchanged in spirit:** D1 exists to explain transfer failures, not
