@@ -341,7 +341,7 @@ def circuit_architecture(arm: Arm) -> str:
     return architecture
 
 
-def _inner_decoder(arm: Arm) -> torch.nn.Module:
+def inner_decoder(arm: Arm) -> torch.nn.Module:
     """The module holding the embedding table, block list and final norm."""
 
     architecture = circuit_architecture(arm)
@@ -370,7 +370,7 @@ def final_norm(arm: Arm) -> torch.nn.Module:
 
     architecture = circuit_architecture(arm)
     attribute = "ln_f" if architecture in _GPT_STYLE else "norm"
-    inner = _inner_decoder(arm)
+    inner = inner_decoder(arm)
     if not hasattr(inner, attribute):
         raise TypeError(f"{arm.name}: declared {architecture} but no final {attribute}")
     return getattr(inner, attribute)
@@ -388,7 +388,7 @@ def embedding_module(arm: Arm) -> torch.nn.Module:
 
     architecture = circuit_architecture(arm)
     attribute = "drop" if architecture in _GPT_STYLE else "embed_tokens"
-    inner = _inner_decoder(arm)
+    inner = inner_decoder(arm)
     if not hasattr(inner, attribute):
         raise TypeError(f"{arm.name}: declared {architecture} but no {attribute}")
     return getattr(inner, attribute)
@@ -399,7 +399,7 @@ def embedding_weight(arm: Arm) -> torch.Tensor:
 
     architecture = circuit_architecture(arm)
     attribute = "wte" if architecture in _GPT_STYLE else "embed_tokens"
-    inner = _inner_decoder(arm)
+    inner = inner_decoder(arm)
     if not hasattr(inner, attribute):
         raise TypeError(f"{arm.name}: declared {architecture} but no {attribute}")
     return getattr(inner, attribute).weight

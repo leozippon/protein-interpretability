@@ -70,6 +70,14 @@ from .pathways import (
 from .scoring import target_rule
 from .statistics import MINIMUM_BOOTSTRAP_UNITS, bootstrap_unit_floor
 
+#: Minimum bootstrap draws that must fall below the requested lower percentile
+#: for the resulting bound to be an estimate rather than an order statistic of
+#: the extreme draws.  Ten is the point at which the Monte-Carlo spread of the
+#: bound across seeds drops below the smallest effect this census publishes; the
+#: guard using it is in :func:`cluster_bootstrap`, with the measurement that
+#: motivated it.
+MINIMUM_DRAWS_IN_TAIL = 10.0
+
 #: Distance bins, in tokens, used both to draw decoys and to coarsen the
 #: matching covariate.  Doubling bins because dependency distance is read on a
 #: log scale everywhere else in this programme and a linear bin would put a
@@ -1619,20 +1627,50 @@ def cluster_bootstrap(
     notice.  The PAA census resamples hundreds of sequences and is nowhere near
     this floor; what the floor stops is a future caller narrowing a cohort until
     it is.
+
+    **``alpha`` is guarded against ``replicates`` for the same reason.**  A
+    percentile at ``alpha/2`` is read off ``replicates`` draws, so the tail must
+    contain enough of them to be an estimate rather than an order statistic of the
+    minimum.  The caller that motivates this is the census's Bonferroni column,
+    ``alpha = 0.05 / n_heads``: at the 24 heads it has run, ``alpha/2`` lands at
+    sorted index 1.04 of 1000 and the bound already carries a Monte-Carlo spread
+    of 0.0028 logits across seeds, comparable to the smallest effect it publishes;
+    at the 720 heads an exhaustive census would patch it lands at index 0.035, so
+    the "lower bound" is the smallest draw and nothing else.  Refusing states the
+    replicate count that would resolve the requested tail, because that is the
+    parameter the caller can actually change.
+
+    This **replaces** a flat ``replicates >= 100``, which is the same rule stated
+    for one alpha and stated wrongly: at the default ``alpha = 0.05`` a hundred
+    replicates put 2.5 draws below the lower percentile, so the constant admitted
+    exactly what it was meant to exclude.  One rule, applied to the request the
+    caller actually made.
     """
 
     if per_cluster.ndim != 2 or weights.ndim != 1:
         raise ValueError("cluster bootstrap expects a (cluster, statistic) matrix")
     if per_cluster.shape[0] != weights.shape[0]:
         raise ValueError("weights do not align with clusters")
-    if replicates < 100:
-        raise ValueError("a percentile interval needs at least 100 replicates")
+    if not 0.0 < alpha < 1.0:
+        raise ValueError(f"alpha must lie in (0, 1); got {alpha}")
     keep = weights > 0
     values = per_cluster[keep]
     mass = weights[keep].astype(np.float64)
     floor = bootstrap_unit_floor(values.shape[0], minimum_units=minimum_clusters)
     if floor["degenerate"]:
         raise ValueError(f"cluster bootstrap refused: {floor['degenerate_reason']}")
+    # After the unit floor, because a caller who has both problems has the data
+    # problem first and the replicate count is the cheaper one to fix.
+    draws_in_tail = alpha / 2.0 * replicates
+    if draws_in_tail < MINIMUM_DRAWS_IN_TAIL:
+        raise ValueError(
+            f"alpha={alpha:.3e} puts {draws_in_tail:.2f} of {replicates} draws below "
+            f"the lower percentile, under a floor of {MINIMUM_DRAWS_IN_TAIL:.0f}; the "
+            "bound would be an order statistic of the extreme draws rather than an "
+            "estimate. Use at least "
+            f"{int(math.ceil(MINIMUM_DRAWS_IN_TAIL * 2.0 / alpha))} replicates, or a "
+            "less extreme alpha"
+        )
     rng = np.random.default_rng(seed)
     point = (values * mass[:, None]).sum(axis=0) / mass.sum()
     draws = np.empty((replicates, values.shape[1]), dtype=np.float64)

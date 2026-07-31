@@ -15,9 +15,10 @@ from __future__ import annotations
 
 import contextlib
 import inspect
+import json
 import math
 import sys
-from dataclasses import replace
+from dataclasses import fields, replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -1019,36 +1020,55 @@ def test_path_cases_refuse_a_probe_list_that_mixes_criteria():
 
 
 def test_path_patching_refuses_an_architecture_it_cannot_address():
-    """``circuits`` and ``pathway`` are both granted to arms this module cannot reach."""
+    """Admission is by declaration, and the declaration is a closed set.
 
-    rotary = _stub_arm("llama-3.2-3b")
-    assert rotary.supports("circuits") and rotary.supports("pathway")
+    EXP-R2-079 added the two rotary lineages, so the arms this once refused are
+    now admitted. The invariant under test is not which arms are in the set -- that
+    is the panel's business and it moves -- but that an architecture *outside* the
+    set is refused by name rather than reaching a GPU and failing at depth.
+    """
+
+    for name in ("llama-3.2-3b", "qwen2.5-0.5b", "gpt2-large", "progen2-medium"):
+        arm = _stub_arm(name)
+        assert PANEL[name].architecture in path_patching.SUPPORTED_ARCHITECTURES
+        path_patching.require_supported_layout(arm)
+
+    undeclared = _stub_arm("llama-3.2-3b", architecture="mamba")
     with pytest.raises(TypeError, match="path patching is implemented"):
-        path_patching.require_supported_layout(rotary)
-    path_patching.require_supported_layout(_stub_arm("gpt2-large"))
+        path_patching.require_supported_layout(undeclared)
 
 
 def _arm_with_projection(name: str, attribute: str) -> Arm:
     """An ``Arm`` whose blocks carry their attention output projection at ``attribute``.
 
     Includes the complete trunk, final norm and unembedding contract checked by
-    ``path_patching.require_supported_layout``.
+    ``path_patching.require_supported_layout``, **in the layout this arm's
+    architecture actually uses**: GPT-2 and ProGen keep the trunk at
+    ``model.transformer`` with blocks at ``.h``, a final ``ln_f`` and attention at
+    ``.attn``; the rotary lineages keep it at ``model.model`` with ``.layers``, a
+    final ``norm`` and attention at ``.self_attn``. Building one shape for both
+    would let a resolver that only ever saw GPT-2 pass this test.
     """
+
+    architecture = PANEL[name].architecture
+    rotary = architecture in ("llama", "qwen2")
+    attention_attribute = "self_attn" if rotary else "attn"
 
     def make_block() -> torch.nn.Module:
         block = torch.nn.Module()
         attention = torch.nn.Module()
         attention.add_module(attribute, torch.nn.Linear(4, 4))
-        block.add_module("attn", attention)
+        block.add_module(attention_attribute, attention)
         return block
 
-    transformer = torch.nn.Module()
-    transformer.add_module(
-        "h", torch.nn.ModuleList([make_block() for _ in range(PANEL[name].n_layer)])
+    inner = torch.nn.Module()
+    inner.add_module(
+        "layers" if rotary else "h",
+        torch.nn.ModuleList([make_block() for _ in range(PANEL[name].n_layer)]),
     )
-    transformer.add_module("ln_f", torch.nn.LayerNorm(4))
+    inner.add_module("norm" if rotary else "ln_f", torch.nn.LayerNorm(4))
     model = torch.nn.Module()
-    model.add_module("transformer", transformer)
+    model.add_module("model" if rotary else "transformer", inner)
     model.add_module("lm_head", torch.nn.Linear(4, 7))
     return Arm(
         spec=PANEL[name],
@@ -1063,12 +1083,13 @@ def _arm_with_projection(name: str, attribute: str) -> Arm:
 def test_require_supported_layout_admits_exactly_what_it_can_resolve():
     """The guard's admission must mean the projection resolves, not that a field matches.
 
-    GPT-2 and ProGen share the trunk this module addresses but use different
-    output-projection names. Admission requires both the declared projection and
-    the complete trunk contract used by the patcher.
+    The four admitted architectures fall into two trunk layouts and use three
+    output-projection names between them. Admission requires both the declared
+    projection and the complete trunk contract used by the patcher, on the layout
+    that architecture really has.
     """
 
-    for name in ("gpt2-large", "progen2-medium"):
+    for name in ("gpt2-large", "progen2-medium", "llama-3.2-3b", "qwen2.5-0.5b"):
         resolvable = _arm_with_projection(
             name, path_patching._OUTPUT_PROJECTION_ATTRIBUTE[PANEL[name].architecture]
         )
@@ -1080,6 +1101,21 @@ def test_require_supported_layout_admits_exactly_what_it_can_resolve():
             path_patching.attention_output_projection(unresolvable, 0)
         with pytest.raises(TypeError, match="has no"):
             path_patching.require_supported_layout(unresolvable)
+
+
+def test_require_supported_layout_refuses_a_rotary_arm_wearing_the_gpt2_trunk():
+    """A declaration that does not match the checkpoint is refused, not resolved.
+
+    The guard used to hard-code ``model.transformer``; it now asks
+    ``circuits.inner_decoder``, which branches on the declared architecture. A
+    llama arm whose checkpoint is laid out like GPT-2 is a declaration error, and
+    it has to fail here rather than at an arbitrary depth of a GPU run.
+    """
+
+    mislabelled = _arm_with_projection("gpt2-large", "c_proj")
+    mislabelled.spec = replace(PANEL["gpt2-large"], architecture="llama")
+    with pytest.raises(TypeError, match="no model.model"):
+        path_patching.require_supported_layout(mislabelled)
 
 
 def _head_row(direct: float, total: float) -> dict[str, float]:
@@ -1609,7 +1645,7 @@ FLOOR_RESPECTING_RESAMPLERS: dict[str, dict[str, object]] = {
         "below": lambda n: prediction_addressed.cluster_bootstrap(
             np.linspace(0.0, 1.0, n).reshape(n, 1),
             np.ones(n),
-            replicates=200,
+            replicates=400,
             seed=0,
         ),
     },
@@ -1766,10 +1802,10 @@ def test_a_cluster_bootstrap_below_the_unit_floor_is_refused():
 
     values = np.linspace(0.0, 1.0, 7).reshape(7, 1)
     with pytest.raises(ValueError, match="below the 8-unit floor"):
-        cluster_bootstrap(values, np.ones(7), replicates=200, seed=0)
+        cluster_bootstrap(values, np.ones(7), replicates=400, seed=0)
 
     ok = cluster_bootstrap(
-        np.linspace(0.0, 1.0, 8).reshape(8, 1), np.ones(8), replicates=200, seed=0
+        np.linspace(0.0, 1.0, 8).reshape(8, 1), np.ones(8), replicates=400, seed=0
     )
     assert ok["q_low"][0] <= ok["mean"][0] <= ok["q_high"][0]
 
@@ -1777,7 +1813,48 @@ def test_a_cluster_bootstrap_below_the_unit_floor_is_refused():
     # nothing to the estimate and must not be able to lift a run over it.
     weights = np.array([1.0] * 7 + [0.0] * 4)
     with pytest.raises(ValueError, match="below the 8-unit floor"):
-        cluster_bootstrap(np.linspace(0.0, 1.0, 11).reshape(11, 1), weights, replicates=200, seed=0)
+        cluster_bootstrap(np.linspace(0.0, 1.0, 11).reshape(11, 1), weights, replicates=400, seed=0)
+
+
+def test_a_percentile_the_replicate_count_cannot_resolve_is_refused():
+    """An interval is refused when its own tail holds too few draws to be one.
+
+    The census asks for a Bonferroni column at ``alpha = 0.05 / n_heads``. At the
+    24 heads it screens, 1000 replicates put 1.04 draws below the lower
+    percentile, so the published bound is the second-smallest draw and moves by
+    0.0028 logits between seeds -- the size of the smallest effect in the table
+    beside it. At the 720 heads an exhaustive census patches it is 0.035 draws.
+
+    The refusal states the replicate count that *would* resolve the request,
+    because that is the parameter a caller can change; and it subsumes the flat
+    ``replicates >= 100`` it replaced, which at the default alpha admitted 2.5
+    draws in the tail.
+    """
+
+    values = np.linspace(0.0, 1.0, 32).reshape(32, 1)
+    weights = np.ones(32)
+
+    with pytest.raises(ValueError, match="Use at least 9600 replicates"):
+        cluster_bootstrap(values, weights, replicates=1000, seed=0, alpha=0.05 / 24)
+    with pytest.raises(ValueError, match="Use at least 288000 replicates"):
+        cluster_bootstrap(values, weights, replicates=1000, seed=0, alpha=0.05 / 720)
+    # The old flat minimum admitted this; the rule that replaced it does not.
+    with pytest.raises(ValueError, match="Use at least 400 replicates"):
+        cluster_bootstrap(values, weights, replicates=100, seed=0)
+
+    resolved = cluster_bootstrap(values, weights, replicates=9600, seed=0, alpha=0.05 / 24)
+    assert resolved["q_low"][0] <= resolved["mean"][0] <= resolved["q_high"][0]
+
+    for bad in (0.0, 1.0, -0.1):
+        with pytest.raises(ValueError, match="alpha must lie"):
+            cluster_bootstrap(values, weights, replicates=1000, seed=0, alpha=bad)
+
+    # The data problem is reported before the replicate problem: a caller with
+    # both has to fix the cohort either way, and the count is the cheaper fix.
+    with pytest.raises(ValueError, match="below the 8-unit floor"):
+        cluster_bootstrap(
+            np.linspace(0.0, 1.0, 4).reshape(4, 1), np.ones(4), replicates=100, seed=0
+        )
 
 
 def test_a_head_population_below_the_unit_floor_publishes_no_spread():
@@ -2096,6 +2173,98 @@ def test_scaffolding_and_the_attention_sink_supply_no_antecedent_or_decoy():
     assert prediction_addressed.antecedent_sets(rows, plain, np.array([0])) == [
         [1, 2, 5, 8]
     ]
+
+
+def _load_stage_module(filename: str):
+    """Import a numbered entry point by path, the way the worker's preflight does."""
+
+    import importlib.util
+
+    path = REPO_ROOT / "scripts/transfer" / filename
+    spec = importlib.util.spec_from_file_location(f"_stage_{filename[:2]}", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_pool_round_trip_keeps_every_field_the_dataclass_declares(tmp_path):
+    """``content_low`` was dropped by save/load and by the matched subset.
+
+    ``antecedent_sets`` decides which keys the causal knockout removes and reads
+    ``content_low`` from the pool, so a reloaded pool that silently took the
+    dataclass default of 0 would add format scaffolding -- ProtGPT2's newline,
+    ZymCTRL's ``<sep>`` -- to the removed key set and attribute the effect to the
+    antecedent. It stayed latent because the only pool ever reloaded is the text
+    control's, whose content bound is 0 either way; it becomes live the first time
+    a protein pool is scored.
+
+    The assertion is over ``dataclasses.fields`` rather than a written-out list,
+    so a field added later cannot be dropped without failing here.
+    """
+
+    census = _load_stage_module("14_paa_census.py")
+    pool = prediction_addressed.InstancePool(
+        arm="protgpt2",
+        sequence=np.array([0]),
+        query=np.array([9]),
+        antecedent=np.array([5]),
+        predicted_token=np.array([7]),
+        confidence=np.array([0.5]),
+        distance=np.array([4]),
+        unigram_percentile=np.array([0.5]),
+        decoys=np.array([[2, 3]]),
+        clean_logit_target=np.array([1.0]),
+        clean_logit_runner_up=np.array([0.5]),
+        cascade={"positions_scored": 11},
+        content_low=3,
+    )
+    rows = [[7, 7, 7, 4, 6, 7, 2, 9, 7, 1, 3, 8]]
+    path = tmp_path / "pool.npz"
+    census.save_pool(path, rows, pool)
+    reloaded_rows, reloaded = census.load_pool(path)
+
+    assert reloaded_rows == rows
+    for field in fields(prediction_addressed.InstancePool):
+        original = getattr(pool, field.name)
+        restored = getattr(reloaded, field.name)
+        if isinstance(original, np.ndarray):
+            assert np.array_equal(original, restored), field.name
+        else:
+            assert original == restored, field.name
+
+    # The knockout key set is the thing that moved, so assert it directly rather
+    # than only the field it is derived from.
+    selected = np.array([0])
+    assert prediction_addressed.antecedent_sets(
+        reloaded_rows, reloaded, selected
+    ) == prediction_addressed.antecedent_sets(rows, pool, selected)
+    assert census._subset(reloaded, selected).content_low == pool.content_low
+
+
+def test_loading_a_pool_written_before_a_field_existed_refuses(tmp_path):
+    """A default is not a measurement, and downstream cannot tell them apart."""
+
+    census = _load_stage_module("14_paa_census.py")
+    path = tmp_path / "old_pool.npz"
+    np.savez_compressed(
+        path,
+        rows=np.asarray([[1, 2, 3]], dtype=np.int64),
+        arm="protgpt2",
+        cascade=json.dumps({}),
+        sequence=np.array([0]),
+        query=np.array([2]),
+        antecedent=np.array([1]),
+        predicted_token=np.array([3]),
+        confidence=np.array([0.5]),
+        distance=np.array([1]),
+        unigram_percentile=np.array([0.5]),
+        decoys=np.array([[1]]),
+        clean_logit_target=np.array([1.0]),
+        clean_logit_runner_up=np.array([0.5]),
+    )
+    with pytest.raises(RuntimeError, match="content_low"):
+        census.load_pool(path)
 
 
 def test_the_matching_gate_corrupts_what_the_causal_statistic_removes():

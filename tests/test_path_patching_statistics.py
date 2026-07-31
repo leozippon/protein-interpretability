@@ -115,10 +115,37 @@ def test_a_grid_with_no_effect_at_all_refuses_rather_than_returning_zero():
 # ------------------------------------------------------------------- reliability
 
 
-def _reliability_row(effect: float, sem: float | None, clustered: float | None):
+#: "Not supplied", which is not the same as a supplied ``None``: a head that
+#: contributed no eligible case carries ``mean_probe_clustered`` explicitly absent,
+#: and a fixture that cannot express that cannot test the withholding path.
+_SAME_AS_EFFECT = object()
+
+
+def _reliability_row(
+    effect: float,
+    sem: float | None,
+    clustered: float | None,
+    *,
+    clustered_effect: float | None | object = _SAME_AS_EFFECT,
+):
+    """One head's record, carrying **both** centres the module publishes.
+
+    The fixture used to omit ``mean_probe_clustered``, which is why nothing caught
+    the reliability function reading the case-weighted centre under both units.
+    ``clustered_effect`` defaults to ``effect`` so that a test which does not care
+    about the distinction reads unchanged, and the tests that do care set it.
+    """
+
     return {
         "recovery": {
-            "total": {"mean": effect, "sem": sem, "sem_probe_clustered": clustered}
+            "total": {
+                "mean": effect,
+                "mean_probe_clustered": (
+                    effect if clustered_effect is _SAME_AS_EFFECT else clustered_effect
+                ),
+                "sem": sem,
+                "sem_probe_clustered": clustered,
+            }
         }
     }
 
@@ -176,6 +203,70 @@ def test_reliability_is_withheld_when_a_head_carries_no_standard_error():
     assert probe["n_heads_without_a_standard_error"] == 1
     assert "different head population" in probe["withheld_reason"]
     # The case-level unit is unaffected: its standard errors are all present.
+    assert report["by_sem_cluster_unit"]["case"]["reliability_signed_effect"] is not None
+
+
+def test_each_unit_takes_its_observed_variance_over_its_own_centre():
+    """The standard error and the mean it describes travel together, or neither does.
+
+    ``sender_recoveries`` says at the point it builds the record that ``mean`` and
+    ``sem_probe_clustered`` are not a point estimate and its standard error:
+    ``mean`` weights each probe by its case count, the clustered standard error
+    describes ``mean_probe_clustered``, which weights probes equally.  This
+    function read the case-weighted centre under both units, so the probe-unit
+    reliability divided a probe-unit error variance by a case-unit observed
+    variance.  On ZymCTRL's approximate-repeat grid that read 0.008 against a
+    paired 0.170 (EXP-R2-078).
+
+    The two centres are given a deliberately different spread here: the clustered
+    centres vary four times as widely, so a function that ignored ``mean_key``
+    would return the *same* observed variance for both units and fail.
+    """
+
+    rows = [
+        _reliability_row(0.40, 0.02, 0.10, clustered_effect=1.60),
+        _reliability_row(0.20, 0.02, 0.10, clustered_effect=0.80),
+        _reliability_row(0.10, 0.02, 0.10, clustered_effect=0.40),
+        _reliability_row(0.05, 0.02, 0.10, clustered_effect=0.20),
+    ]
+    report = head_effect_reliability(rows)
+    probe = report["by_sem_cluster_unit"]["probe"]
+    case = report["by_sem_cluster_unit"]["case"]
+
+    assert probe["mean_key"] == "mean_probe_clustered"
+    assert case["mean_key"] == "mean"
+
+    observed_probe = float(np.var([1.60, 0.80, 0.40, 0.20], ddof=1))
+    observed_case = float(np.var([0.40, 0.20, 0.10, 0.05], ddof=1))
+    assert probe["observed_variance_signed_effect"] == pytest.approx(observed_probe)
+    assert case["observed_variance_signed_effect"] == pytest.approx(observed_case)
+    assert probe["reliability_signed_effect"] == pytest.approx(
+        (observed_probe - 0.10**2) / observed_probe
+    )
+    assert case["reliability_signed_effect"] == pytest.approx(
+        (observed_case - 0.02**2) / observed_case
+    )
+
+
+def test_a_head_missing_either_half_of_the_pair_withholds_the_unit():
+    """A centre is as load-bearing as a standard error, and may be absent alone.
+
+    ``_probe_clustered_sem`` returns ``mean_probe_clustered`` as ``None`` when a
+    head contributed no eligible case at all, while the case-level pair may still
+    be present.  Withholding on the standard error alone would then take the
+    observed variance over every head and the error variance over a subset.
+    """
+
+    rows = [
+        _reliability_row(0.40, 0.02, 0.10),
+        _reliability_row(0.20, 0.02, 0.10, clustered_effect=None),
+        _reliability_row(0.10, 0.02, 0.10),
+    ]
+    report = head_effect_reliability(rows)
+    probe = report["by_sem_cluster_unit"]["probe"]
+    assert probe["reliability_signed_effect"] is None
+    assert probe["n_heads_without_a_standard_error"] == 1
+    assert "mean_probe_clustered" in probe["withheld_reason"]
     assert report["by_sem_cluster_unit"]["case"]["reliability_signed_effect"] is not None
 
 
@@ -460,11 +551,16 @@ def test_the_published_concentration_numbers_reproduce_from_the_artefact():
 def test_the_published_reliability_range_is_the_case_level_reading():
     """0.916 to 0.991 is the case-level magnitude reading, and the floor moves.
 
-    ZymCTRL sets the published floor. On the probe-clustered standard error this
-    module calls correct it falls to 0.83 on the exact-repeat case set and to 0.19
-    on the approximate one -- which is not a grid whose ranking can be read at
-    all. The test pins the gap rather than either number, because the gap is what
-    the audit has to record.
+    ZymCTRL sets the published floor. On the probe-clustered pair this module
+    calls correct it falls to 0.82 on the exact-repeat case set and to 0.17 on the
+    approximate one. The test pins the gap rather than either number, because the
+    gap is what the audit has to record.
+
+    **The 0.008 that reached the audit document is not on this axis at all.** It
+    came from dividing a probe-clustered error variance by an observed variance
+    taken over the case-weighted centre -- two different estimators (EXP-R2-078).
+    Both mismatched figures are pinned below so that a regression to them fails
+    loudly rather than quietly restoring a retracted number.
     """
 
     payload = json.loads((D2BPRIME / "zymctrl.json").read_text(encoding="utf-8"))
@@ -474,27 +570,39 @@ def test_the_published_reliability_range_is_the_case_level_reading():
         conditions["senders_exact__cases_exact"]["per_sender_head"]
     )["by_sem_cluster_unit"]
     assert exact["case"]["reliability_magnitude_ranking"] == pytest.approx(0.916, abs=5e-4)
-    assert exact["probe"]["reliability_magnitude_ranking"] == pytest.approx(0.83, abs=0.01)
+    assert exact["probe"]["reliability_magnitude_ranking"] == pytest.approx(0.818, abs=5e-3)
 
-    approximate = head_effect_reliability(
-        conditions["senders_exact__cases_approximate"]["per_sender_head"]
-    )["by_sem_cluster_unit"]
-    # 0.72 published as case-level, 0.19 on the clustered standard error -- and
-    # 0.01 once the magnitude the ranking is actually taken on is used. A head
-    # ranking on this condition is very nearly all noise.
+    approximate_rows = conditions["senders_exact__cases_approximate"]["per_sender_head"]
+    approximate = head_effect_reliability(approximate_rows)["by_sem_cluster_unit"]
     assert approximate["case"]["reliability_magnitude_ranking"] == pytest.approx(
         0.657, abs=5e-3
     )
     assert approximate["probe"]["reliability_signed_effect"] == pytest.approx(
-        0.189, abs=5e-3
+        0.443, abs=5e-3
     )
     assert approximate["probe"]["reliability_magnitude_ranking"] == pytest.approx(
-        0.008, abs=5e-3
+        0.170, abs=5e-3
     )
+    # Still far below the case-level reading: the correction raises the floor by
+    # 20x and does not lift this grid into rankable territory.
     assert (
         approximate["probe"]["reliability_magnitude_ranking"]
         < approximate["case"]["reliability_magnitude_ranking"]
     )
+
+    # The retracted pairing, reconstructed here so its numbers are on record as
+    # what the defect produced rather than as what the artefact says.
+    mismatched = np.array(
+        [float(row["recovery"]["total"]["mean"]) for row in approximate_rows]
+    )
+    clustered_sem = np.array(
+        [float(row["recovery"]["total"]["sem_probe_clustered"]) for row in approximate_rows]
+    )
+    error_variance = float(np.mean(clustered_sem**2))
+    for scale, values in (("signed", mismatched), ("magnitude", np.abs(mismatched))):
+        observed = float(np.var(values, ddof=1))
+        retracted = (observed - error_variance) / observed
+        assert retracted == pytest.approx(0.189 if scale == "signed" else 0.008, abs=5e-3)
 
 
 # --------------------------------------------------- the stage's contract record

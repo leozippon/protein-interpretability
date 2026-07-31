@@ -100,7 +100,15 @@ import torch
 from scipy import stats
 
 from .arms import Arm
-from .circuits import RepeatProbe, Unigram, head_dim, head_ov_weights, n_head
+from .circuits import (
+    RepeatProbe,
+    Unigram,
+    final_norm,
+    head_dim,
+    head_ov_weights,
+    inner_decoder,
+    n_head,
+)
 from .statistics import MINIMUM_BOOTSTRAP_UNITS, bootstrap_unit_floor
 
 SCHEMA_VERSION = "r2_transfer_path_patching_v1"
@@ -773,10 +781,33 @@ def build_path_cases(
 #: attention modules: a search resolves a newly admitted architecture to whichever
 #: candidate attribute happened to exist on it, and getting this wrong moves the
 #: measurement to a different head without changing any shape.
-_OUTPUT_PROJECTION_ATTRIBUTE: dict[str, str] = {"gpt2": "c_proj", "progen": "out_proj"}
+_OUTPUT_PROJECTION_ATTRIBUTE: dict[str, str] = {
+    "gpt2": "c_proj",
+    "progen": "out_proj",
+    "llama": "o_proj",
+    "qwen2": "o_proj",
+}
 
-#: Architectures whose module layout this file resolves end to end: the trunk at
-#: ``model.transformer``, and an attention output projection above.
+#: Architectures whose module layout this file resolves end to end: the trunk and
+#: final norm through :func:`~.circuits.inner_decoder` and
+#: :func:`~.circuits.final_norm`, and an attention output projection above.
+#:
+#: The two rotary lineages were added for EXP-R2-079. Until then this module
+#: refused them, and the refusal was catalogued as an instrument limit on L22:
+#: every text arm carrying that result was GPT-2 architecture, which is the exact
+#: configuration that retracted the QK/OV finding. The extension is mechanical
+#: rather than conceptual, because the three things a rotary decoder does
+#: differently are all downstream of the patch:
+#:
+#: * **Rotary position embedding** is applied to queries and keys inside the
+#:   attention computation. The sender patch replaces the *input* to the output
+#:   projection, which is the attention result -- already past RoPE.
+#: * **Grouped-query attention** changes which key/value head a query head reads
+#:   and does not change the layout of that projection's input, which is the
+#:   concatenation of per-*query*-head outputs in every case. ``n_head`` returns
+#:   the query count by explicit declaration for this reason.
+#: * **RMSNorm** is a drop-in for the final-norm pre-hook, which only reads
+#:   ``args[0]``.
 SUPPORTED_ARCHITECTURES = frozenset(_OUTPUT_PROJECTION_ATTRIBUTE)
 
 
@@ -789,11 +820,14 @@ def require_supported_layout(arm: Arm) -> None:
     convention: an exception at an arbitrary depth of a GPU run is the failure
     mode capability declarations exist to replace.
 
-    **The declared architecture is checked, then verified.** GPT-2 and ProGen
-    share the ``transformer.h``/``transformer.ln_f`` trunk used throughout this
-    module, but keep the attention output projection under different names.
-    Resolving both the trunk and the projection on layer zero makes admission
-    mean that the path patcher can address the declared layout end to end.
+    **The declared architecture is checked, then verified.** The trunk and the
+    final norm are resolved through ``circuits.inner_decoder`` and
+    ``circuits.final_norm`` rather than by naming ``model.transformer.ln_f`` here:
+    this module held a second copy of that layout decision in six places, and
+    Appendix B rule 12 is that the module which decides a layout owns it and every
+    other module imports it. Resolving the trunk, the final norm, the block list
+    and the layer-zero projection makes admission mean that the path patcher can
+    address the declared layout end to end.
 
     A spec-only ``Arm`` (``model=None``, built by a scheduler to ask the
     question without a checkpoint) cannot be verified, so the declaration is all
@@ -803,22 +837,21 @@ def require_supported_layout(arm: Arm) -> None:
     if arm.spec.architecture not in SUPPORTED_ARCHITECTURES:
         raise TypeError(
             f"{arm.name}: path patching is implemented for "
-            f"{sorted(SUPPORTED_ARCHITECTURES)} only; {arm.spec.architecture!r} keeps "
-            "its trunk at model.model and its attention output projection at o_proj, "
-            "neither of which this module resolves"
+            f"{sorted(SUPPORTED_ARCHITECTURES)} only; {arm.spec.architecture!r} has "
+            "no declared attention output projection in this module"
         )
     if arm.model is None:
         return
-    transformer = getattr(arm.model, "transformer", None)
-    if transformer is None or not hasattr(transformer, "h") or not hasattr(transformer, "ln_f"):
+    # These raise with the architecture and the missing attribute named, which is
+    # the diagnostic a layout mismatch needs; catching and re-wrapping them would
+    # only restate it less precisely.
+    inner_decoder(arm)
+    final_norm(arm)
+    blocks = arm.blocks()
+    if len(blocks) != arm.n_layer:
         raise TypeError(
-            f"{arm.name}: declared {arm.spec.architecture} but path patching requires "
-            "model.transformer.h and model.transformer.ln_f"
-        )
-    if len(transformer.h) != arm.n_layer:
-        raise TypeError(
-            f"{arm.name}: declared {arm.n_layer} layers but model.transformer.h has "
-            f"{len(transformer.h)}"
+            f"{arm.name}: declared {arm.n_layer} layers but the block list has "
+            f"{len(blocks)}"
         )
     if not hasattr(arm.model, "lm_head"):
         raise TypeError(f"{arm.name}: path patching requires model.lm_head")
@@ -951,13 +984,13 @@ class PathPatcher:
     ) -> None:
         arm.require("circuits")
         arm.require("pathway")
-        # The capability gate no longer implies this module's layout: the panel
-        # grants both capabilities to the rotary text arms, and this module
-        # resolves ``arm.model.transformer`` and an attention output projection
-        # named ``c_proj``/``out_proj``, neither of which a rotary decoder has.
-        # Without this check such an arm passes the gate and dies at an arbitrary
-        # depth of the run, which ``arms.py`` names as the exact failure the gate
-        # exists to prevent.
+        # The capability gate does not imply this module's layout: it is granted
+        # per measurement family, while admission here means every module this
+        # file addresses resolves on this checkpoint. Without the check an arm
+        # passes the gate and dies at an arbitrary depth of a GPU run, which
+        # ``arms.py`` names as the exact failure capability declarations exist to
+        # prevent. The set is now four architectures rather than two, so the check
+        # is what distinguishes "declared and resolvable" from "declared".
         require_supported_layout(arm)
         if not cases:
             raise ValueError("no path cases were supplied")
@@ -976,11 +1009,26 @@ class PathPatcher:
         # ``head_ov_weights`` -- used by the linearity check below -- would be
         # slicing on the other value.
         self.head_dim = head_dim(arm)
-        if self.head_dim * self.n_head != arm.d_model:
+        # The invariant is that the heads tile the projection's INPUT, not that
+        # they tile the residual stream. Those coincide on every current panel
+        # arm, and they are not the same statement: a decoder that declares a
+        # ``head_dim`` independent of ``d_model / n_head`` -- which is why
+        # ``circuits.head_dim`` prefers the declaration -- has a perfectly
+        # patchable output projection whose input is ``n_head * head_dim`` wide,
+        # and the residual-stream form of this check would refuse it for a
+        # property the patch does not use.
+        self.sender_width = self.head_dim * self.n_head
+        projection_input = attention_output_projection(arm, 0).weight
+        # Conv1D (GPT-2) stores (in, out); nn.Linear stores (out, in). Take the
+        # axis that matches one of them rather than assuming a class.
+        in_features = getattr(
+            attention_output_projection(arm, 0), "in_features", None
+        ) or int(projection_input.shape[0])
+        if self.sender_width != in_features:
             raise TypeError(
-                f"{arm.name}: {self.n_head} heads of width {self.head_dim} do not "
-                f"tile a {arm.d_model}-wide residual stream, so a per-head column "
-                "slice of the output projection is not defined"
+                f"{arm.name}: {self.n_head} heads of width {self.head_dim} sum to "
+                f"{self.sender_width} but the attention output projection takes "
+                f"{in_features} inputs, so a per-head column slice of it is not defined"
             )
         self.batches = [
             self._prepare(self.cases[begin : begin + batch_size])
@@ -1002,7 +1050,7 @@ class PathPatcher:
         logits rather than assuming the trunk is the whole forward pass.
         """
 
-        hidden = self.arm.model.transformer(
+        hidden = inner_decoder(self.arm)(
             input_ids=ids, attention_mask=mask, use_cache=False
         ).last_hidden_state
         return self._unembed(hidden, batch)
@@ -1038,7 +1086,11 @@ class PathPatcher:
 
         def hook(_module, args: tuple) -> tuple:
             tensor = args[0]
-            if tensor.ndim != 3 or tensor.shape[-1] != self.arm.d_model:
+            # Against the projection's own input width, for the reason stated at
+            # ``self.sender_width``: this is the axis the head slice indexes, and
+            # it is not the residual width on a decoder that declares its own
+            # head_dim.
+            if tensor.ndim != 3 or tensor.shape[-1] != self.sender_width:
                 raise TypeError("attention output projection received an unexpected input")
             patched = tensor.clone()
             patched[rows, index, low:high] = value.to(patched.dtype)
@@ -1159,9 +1211,9 @@ class PathPatcher:
                 )
                 handles.append(arm.mlp(layer).register_forward_hook(capture_out(mlp_cache, layer)))
         handles.append(arm.blocks()[arm.n_layer - 1].register_forward_hook(capture_block(arm.n_layer - 1)))
-        handles.append(arm.model.transformer.ln_f.register_forward_pre_hook(capture_ln_f))
+        handles.append(final_norm(arm).register_forward_pre_hook(capture_ln_f))
         try:
-            hidden = arm.model.transformer(
+            hidden = inner_decoder(arm)(
                 input_ids=ids, attention_mask=batch.mask, use_cache=False
             ).last_hidden_state
         finally:
@@ -1250,7 +1302,7 @@ class PathPatcher:
             def capture(_module, args: tuple) -> None:
                 captured["final_residual"] = args[0][batch.rows, batch.q_index].detach().clone()
 
-            handles.append(arm.model.transformer.ln_f.register_forward_pre_hook(capture))
+            handles.append(final_norm(arm).register_forward_pre_hook(capture))
         try:
             read = self._readout(batch.corrupt_ids, batch.mask, batch)
         finally:
@@ -1720,7 +1772,7 @@ def structural_invariants(
         reference = arm.model(input_ids=ids, attention_mask=mask, use_cache=False).logits.float()[
             0, position
         ]
-        hidden = arm.model.transformer(
+        hidden = inner_decoder(arm)(
             input_ids=ids, attention_mask=mask, use_cache=False
         ).last_hidden_state
         observed = arm.model.lm_head(hidden[0, position]).float()
@@ -1820,7 +1872,7 @@ def _capture_all_positions(patcher: PathPatcher, batch: _Batch) -> dict[str, Any
         handles.append(arm.attention(layer).register_forward_hook(store(attn, layer)))
         handles.append(arm.mlp(layer).register_forward_hook(store(mlp, layer)))
     try:
-        arm.model.transformer(
+        inner_decoder(arm)(
             input_ids=batch.corrupt_ids, attention_mask=batch.mask, use_cache=False
         )
     finally:
@@ -1834,7 +1886,7 @@ def _capture_all_positions(patcher: PathPatcher, batch: _Batch) -> dict[str, Any
 
     handle = arm.blocks()[arm.n_layer - 1].register_forward_hook(store_block)
     try:
-        arm.model.transformer(
+        inner_decoder(arm)(
             input_ids=batch.clean_ids, attention_mask=batch.mask, use_cache=False
         )
     finally:
@@ -2158,9 +2210,19 @@ def effect_concentration(
     }
 
 
-#: The two standard errors :meth:`PathPatcher.sender_recoveries` publishes, keyed
-#: by the sampling unit each is taken over.
-RELIABILITY_SEM_KEYS: dict[str, str] = {"probe": "sem_probe_clustered", "case": "sem"}
+#: The point estimate and standard error that belong to each other, keyed by the
+#: sampling unit both are taken over. **The pair, not the standard error alone.**
+#: ``sender_recoveries`` says at its own construction site that ``mean`` and
+#: ``sem_probe_clustered`` are not an estimate and its standard error -- ``mean``
+#: weights each probe by how many cases it contributed and the clustered standard
+#: error describes ``mean_probe_clustered``, which weights probes equally. A
+#: reliability built from the observed variance of one estimator and the error
+#: variance of the other is not a reliability of anything, and it read ZymCTRL's
+#: approximate-repeat grid at 0.008 where the paired figure is 0.170.
+RELIABILITY_ESTIMATORS: dict[str, tuple[str, str]] = {
+    "probe": ("mean_probe_clustered", "sem_probe_clustered"),
+    "case": ("mean", "sem"),
+}
 
 #: Which of them a reliability figure should be read from. ``_Batch`` declares the
 #: probe record as this design's sampling unit -- several cases are drawn from one
@@ -2183,15 +2245,22 @@ def head_effect_reliability(
 
         reliability = (observed variance - mean error variance) / observed variance
 
-    **Which standard error is not a free choice.** This module declares the probe
-    record as the sampling unit and publishes both a case-level and a
-    probe-clustered standard error.  EXP-R2-071's published range, 0.916 to 0.991
-    across six arms, is the case-level one.  On the clustered standard error the
-    module itself calls correct, the same six arms give 0.834 to 0.976 on the
-    exact-repeat case set, and as low as 0.19 on one arm's approximate-repeat set
-    -- which is not a grid that can be ranked.  Both are returned, each labelled
-    with its unit, so the difference is a visible property of the artefact rather
-    than a choice made in a script that no longer exists.
+    **Which standard error is not a free choice, and neither is the mean beside
+    it.** This module declares the probe record as the sampling unit and publishes
+    a case-level and a probe-clustered estimator, each with its own centre.
+    EXP-R2-071's published range, 0.916 to 0.991 across six arms, is the
+    case-level one.  Both pairs are returned, each labelled with its unit, so the
+    difference is a visible property of the artefact rather than a choice made in
+    a script that no longer exists.
+
+    This function used to take the observed variance from the case-weighted
+    ``mean`` under *both* units while varying only the standard error, which is
+    the mismatch ``sender_recoveries`` warns against at the point it builds the
+    record.  On the exact-repeat case sets the two pairings agree to within 0.006
+    and nothing turned on it; on ZymCTRL's approximate-repeat set the mismatched
+    pairing read **0.008** against a paired **0.170** on the magnitude scale, and
+    **0.189** against **0.443** signed.  That 0.008 reached the audit document as
+    "a grid that cannot be ranked at all" (EXP-R2-078).
 
     **Two scales, because the ranking statistic is the magnitude.**
     ``reliability_signed_effect`` is the exact quantity: the standard error is the
@@ -2207,19 +2276,22 @@ def head_effect_reliability(
         raise ValueError(f"unknown pathway {pathway!r}; pathways are {list(PATHWAYS)}")
     if len(per_head) < 2:
         raise ValueError("reliability needs at least two heads to have a spread")
-    effect = np.asarray(
-        [float(row["recovery"][pathway]["mean"]) for row in per_head], dtype=np.float64
-    )
-    if not np.isfinite(effect).all():
-        raise ValueError("per-head effects contain non-finite values")
 
     by_unit: dict[str, Any] = {}
-    for unit, sem_key in RELIABILITY_SEM_KEYS.items():
+    for unit, (mean_key, sem_key) in RELIABILITY_ESTIMATORS.items():
         raw = [row["recovery"][pathway][sem_key] for row in per_head]
-        n_missing = sum(1 for value in raw if value is None)
+        centres = [row["recovery"][pathway][mean_key] for row in per_head]
+        # A head missing either half of the pair is missing the pair. Withholding
+        # on the standard error alone would leave the observed variance taken over
+        # a head population the error variance is not taken over, which is the
+        # same class of mismatch this function was repaired for.
+        n_missing = sum(
+            1 for value, centre in zip(raw, centres) if value is None or centre is None
+        )
         record: dict[str, Any] = {
             "sem_cluster_unit": unit,
             "sem_key": sem_key,
+            "mean_key": mean_key,
             "n_heads": len(per_head),
             "n_heads_without_a_standard_error": n_missing,
         }
@@ -2234,14 +2306,18 @@ def head_effect_reliability(
                     "reliability_magnitude_ranking": None,
                     "signal_to_noise_mean_effect": None,
                     "withheld_reason": (
-                        f"{n_missing} of {len(per_head)} heads carry no {sem_key}, so "
-                        "the mean error variance would be an average over a different "
-                        "head population than the observed variance"
+                        f"{n_missing} of {len(per_head)} heads carry no complete "
+                        f"({mean_key}, {sem_key}) pair, so the mean error variance "
+                        "would be an average over a different head population than "
+                        "the observed variance"
                     ),
                 }
             )
             by_unit[unit] = record
             continue
+        effect = np.asarray([float(value) for value in centres], dtype=np.float64)
+        if not np.isfinite(effect).all():
+            raise ValueError(f"{mean_key} values contain non-finite entries")
         sem = np.asarray([float(value) for value in raw], dtype=np.float64)
         if not np.isfinite(sem).all() or bool((sem < 0.0).any()):
             raise ValueError(f"{sem_key} values must be finite and non-negative")
@@ -2278,7 +2354,9 @@ def head_effect_reliability(
             "read by_sem_cluster_unit.probe. The case-level figure treats several "
             "nested prefixes of one protein as independent observations, so it "
             "understates the error variance and overstates the reliability; it is "
-            "published beside it because it is the figure EXP-R2-071 quoted"
+            "published beside it because it is the figure EXP-R2-071 quoted. Each "
+            "unit's observed variance is taken over the centre named in its own "
+            "mean_key, which is the estimator its sem_key describes"
         ),
         "scale_note": (
             "reliability_signed_effect is exact: the standard error belongs to the "

@@ -27,6 +27,7 @@ if str(STAGE_DIR) not in sys.path:
     sys.path.insert(0, str(STAGE_DIR))
 
 import panel_contract as pc  # noqa: E402
+from src.transfer import path_patching  # noqa: E402
 from src.transfer.arms import PANEL  # noqa: E402
 
 
@@ -46,13 +47,35 @@ def _load_stage_module(filename: str):
 class ArmCanRunPredicate(unittest.TestCase):
     """`arm_can_run(stage, arm)` -- the single predicate the stages had improvised."""
 
-    def test_path_patching_refuses_rotary_arms_with_the_module_declaration_named(self):
-        # path_patching.require_supported_layout raises for these, after the
-        # checkpoint is on the GPU. The worker used to hand it the whole arm list.
+    def test_path_patching_admits_the_rotary_arms_the_module_now_addresses(self):
+        # These were refused until EXP-R2-079 because `path_patching` resolved
+        # only the GPT-2 trunk, and the refusal was catalogued as an instrument
+        # limit on L22: every text arm carrying that result was GPT-2
+        # architecture, the configuration that retracted the QK/OV finding. The
+        # contract must follow the module, not a remembered fact about it.
         for arm in ("qwen2.5-0.5b", "llama-3.2-3b"):
             verdict = pc.arm_can_run("induction_path_patching", arm)
+            self.assertTrue(verdict.can_run, verdict.reason)
+            self.assertIn(PANEL[arm].architecture, path_patching.SUPPORTED_ARCHITECTURES)
+
+    def test_path_patching_refuses_an_architecture_outside_its_declaration(self):
+        # The predicate must answer from the module's declared set rather than
+        # from a hard-coded arm list, or it drifts the moment the set moves.
+        #
+        # The reason is whichever gate fires first, and that is deliberate: the
+        # ByGPT5 arms are refused on capabilities before their `t5_decoder` layout
+        # is ever consulted. Asserting the architecture reason unconditionally
+        # would be asserting the order of the gates, not the refusal.
+        unsupported = [
+            arm
+            for arm, spec in PANEL.items()
+            if spec.architecture not in path_patching.SUPPORTED_ARCHITECTURES
+        ]
+        self.assertTrue(unsupported, "no arm exercises the refusal path")
+        for arm in unsupported:
+            verdict = pc.arm_can_run("induction_path_patching", arm)
             self.assertFalse(verdict.can_run, arm)
-            self.assertIn("SUPPORTED_ARCHITECTURES", verdict.reason)
+            self.assertTrue(verdict.reason, arm)
 
     def test_path_patching_admits_declared_progen_layouts(self):
         for arm in ("progen2-base", "progen2-medium"):

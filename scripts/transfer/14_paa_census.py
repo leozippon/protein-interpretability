@@ -24,7 +24,9 @@ from __future__ import annotations
 import argparse
 import gc
 import json
+import math
 import sys
+from dataclasses import fields
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -55,6 +57,7 @@ from src.transfer.circuits import (  # noqa: E402
 )
 from src.transfer.pathways import held_out_cohort  # noqa: E402
 from src.transfer.prediction_addressed import (  # noqa: E402
+    MINIMUM_DRAWS_IN_TAIL,
     InstancePool,
     build_instance_pool,
     cluster_bootstrap,
@@ -253,28 +256,51 @@ def make_pool(
 
 
 def save_pool(path: Path, rows: list[list[int]], pool: InstancePool) -> None:
+    """Persist **every** field of the pool, checked against the dataclass.
+
+    ``content_low`` was absent here and from :func:`load_pool` and
+    :func:`_subset`, so a reloaded pool silently took the dataclass default of 0
+    and ``antecedent_sets`` searched from position 1 instead of from the first
+    content token. On a protein arm that adds ProtGPT2's newline wrapping or
+    ZymCTRL's ``<sep>`` to the key set the causal knockout removes -- exactly the
+    failure ``antecedent_sets`` documents itself as preventing -- and attributes
+    the resulting effect to the antecedent. It was latent only because the one
+    pool ever reloaded is the text control's, whose ``content_low`` is 0 anyway.
+
+    The field list is derived from the dataclass rather than written out, so a
+    field added later cannot be dropped by this round trip without failing here.
+    """
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(
-        path,
-        rows=np.asarray(rows, dtype=np.int64),
-        sequence=pool.sequence,
-        query=pool.query,
-        antecedent=pool.antecedent,
-        predicted_token=pool.predicted_token,
-        confidence=pool.confidence,
-        distance=pool.distance,
-        unigram_percentile=pool.unigram_percentile,
-        decoys=pool.decoys,
-        clean_logit_target=pool.clean_logit_target,
-        clean_logit_runner_up=pool.clean_logit_runner_up,
-        cascade=json.dumps(pool.cascade),
-        arm=pool.arm,
-    )
+    stored = {
+        "rows": np.asarray(rows, dtype=np.int64),
+        "arm": pool.arm,
+        "cascade": json.dumps(pool.cascade),
+        "content_low": np.asarray(pool.content_low, dtype=np.int64),
+    }
+    for field in fields(InstancePool):
+        if field.name in stored:
+            continue
+        stored[field.name] = getattr(pool, field.name)
+    missing = {field.name for field in fields(InstancePool)} - set(stored)
+    if missing:
+        raise RuntimeError(f"pool fields would not survive the round trip: {sorted(missing)}")
+    np.savez_compressed(path, **stored)
 
 
 def load_pool(path: Path) -> tuple[list[list[int]], InstancePool]:
     payload = np.load(path, allow_pickle=True)
     rows = [[int(value) for value in row] for row in payload["rows"]]
+    absent = [
+        field.name for field in fields(InstancePool) if field.name not in payload.files
+    ]
+    if absent:
+        # A pool written before a field existed cannot be silently completed from
+        # a default: the default reads as a measured value downstream.
+        raise RuntimeError(
+            f"{path}: pool is missing {sorted(absent)}; it predates the current "
+            "InstancePool and must be rebuilt rather than defaulted"
+        )
     pool = InstancePool(
         arm=str(payload["arm"]),
         sequence=payload["sequence"],
@@ -288,6 +314,7 @@ def load_pool(path: Path) -> tuple[list[list[int]], InstancePool]:
         clean_logit_target=payload["clean_logit_target"],
         clean_logit_runner_up=payload["clean_logit_runner_up"],
         cascade=json.loads(str(payload["cascade"])),
+        content_low=int(payload["content_low"]),
     )
     return rows, pool
 
@@ -523,13 +550,35 @@ def causal(args: argparse.Namespace, out: Path, selection: dict[str, Any]) -> di
     gap = cluster_bootstrap(
         gap_matrix, weights, replicates=args.bootstrap, seed=args.seed + 5
     )
-    gap_strict = cluster_bootstrap(
-        gap_matrix,
-        weights,
-        replicates=args.bootstrap,
-        seed=args.seed + 5,
-        alpha=0.05 / len(heads),
+    # The Bonferroni column asks for a percentile at 0.05/(2*n_heads). Whether
+    # `--bootstrap` replicates can resolve that tail is a property of the head
+    # count, and the head count is exactly what an exhaustive census multiplies by
+    # thirty. At 24 heads and 1000 replicates the requested percentile sits at
+    # sorted index 1.04, so the "bound" is the second-smallest draw and moves by
+    # 0.0028 logits between seeds -- the size of the smallest effect in the table
+    # beside it. `cluster_bootstrap` now refuses that rather than returning it, so
+    # the choice is made here and recorded: buy the replicates, or publish no
+    # Bonferroni bound and say why.
+    strict_alpha = 0.05 / len(heads)
+    strict_replicates = int(math.ceil(MINIMUM_DRAWS_IN_TAIL * 2.0 / strict_alpha))
+    gap_strict = None
+    strict_note = (
+        f"a percentile at alpha/2 = {strict_alpha / 2:.3e} needs "
+        f"{strict_replicates} replicates to put {MINIMUM_DRAWS_IN_TAIL:.0f} draws "
+        f"below it; the cap is --max-bonferroni-bootstrap={args.max_bonferroni_bootstrap}"
     )
+    if strict_replicates <= args.max_bonferroni_bootstrap:
+        gap_strict = cluster_bootstrap(
+            gap_matrix,
+            weights,
+            replicates=max(strict_replicates, args.bootstrap),
+            seed=args.seed + 5,
+            alpha=strict_alpha,
+        )
+        strict_note = (
+            f"percentile interval at alpha={strict_alpha:.3e} over "
+            f"{max(strict_replicates, args.bootstrap)} replicates"
+        )
     probability = cluster_bootstrap(
         probability_matrix, weights, replicates=args.bootstrap, seed=args.seed + 6
     )
@@ -561,7 +610,10 @@ def causal(args: argparse.Namespace, out: Path, selection: dict[str, Any]) -> di
             "delta_m_gap": float(gap["mean"][index]),
             "delta_m_gap_q025": float(gap["q_low"][index]),
             "delta_m_gap_q975": float(gap["q_high"][index]),
-            "delta_m_gap_q_bonferroni_low": float(gap_strict["q_low"][index]),
+            "delta_m_gap_q_bonferroni_low": (
+                float(gap_strict["q_low"][index]) if gap_strict is not None else None
+            ),
+            "delta_m_gap_q_bonferroni_basis": strict_note,
             "delta_probability": float(probability["mean"][index]),
             "delta_probability_q025": float(probability["q_low"][index]),
             "delta_probability_q975": float(probability["q_high"][index]),
@@ -756,6 +808,10 @@ def _gate_prefixes() -> list[tuple[str, ...]]:
 
 
 def _subset(pool: InstancePool, selected: np.ndarray) -> InstancePool:
+    """A pool restricted to ``selected``. ``content_low`` is a property of the
+    rendering, not of the instances, so it is carried unchanged; dropping it here
+    reset it to 0 for the same reason :func:`save_pool` describes."""
+
     return InstancePool(
         arm=pool.arm,
         sequence=pool.sequence[selected],
@@ -769,6 +825,7 @@ def _subset(pool: InstancePool, selected: np.ndarray) -> InstancePool:
         clean_logit_target=pool.clean_logit_target[selected],
         clean_logit_runner_up=pool.clean_logit_runner_up[selected],
         cascade=pool.cascade,
+        content_low=pool.content_low,
     )
 
 
@@ -966,6 +1023,19 @@ def main() -> None:
     parser.add_argument("--pool-batch", type=int, default=4)
     parser.add_argument("--attention-batch", type=int, default=4)
     parser.add_argument("--bootstrap", type=int, default=1000)
+    parser.add_argument(
+        "--max-bonferroni-bootstrap",
+        type=int,
+        default=40000,
+        help=(
+            "replicate ceiling for the head-count-corrected interval. The "
+            "requested percentile is 0.05/(2*n_heads), so the replicates needed "
+            "to resolve it grow linearly in the head count: about 9,600 at the 24 "
+            "heads this stage screens and about 288,000 at the 720 an exhaustive "
+            "census patches. Above the ceiling the column is withheld with its "
+            "reason rather than published as an order statistic of the extreme draws"
+        ),
+    )
     parser.add_argument("--a1-minimum", type=int, default=20000)
     parser.add_argument("--a2-minimum", type=int, default=2000)
     parser.add_argument("--top-set", type=int, default=20)
