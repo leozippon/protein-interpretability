@@ -2002,6 +2002,97 @@ def test_the_freeze_only_invariant_has_a_positive_control():
     assert "freeze_only:" not in message, "the old check cannot see an inert freeze"
 
 
+def test_the_census_score_is_emitted_on_the_key_set_the_knockout_removes():
+    """The selector scored one key; the causal statistic removes all of them.
+
+    ``paa_specific`` scores attention onto ``pool.antecedent``, the nearest
+    earlier occurrence. ``knockout_effects`` removes every earlier occurrence.
+    That is a mismatch of *one* key against a median of 3 on gpt2-large and 13 to
+    17 on ProGen2-medium, so a rank correlation between the two -- which is what
+    plan item D2.c is -- would be attenuated harder on the small alphabet by
+    construction, in the direction the modality hypothesis predicts.
+    ``corruption_effects`` already fixed this for the matching gate.
+
+    Both scores are emitted rather than one replacing the other: ``paa_specific``
+    is what EXP-R2-059 published and L5/L6 quote. The assertions below are
+    computed from the model's own attention pattern, not from the function's
+    return value, so they test the definition rather than the implementation.
+    """
+
+    arm, rows, pool = _tiny_paa_arm()
+    scores = prediction_addressed.paa_attention_scores(arm, rows, pool, batch_size=2)
+
+    ids = torch.tensor(np.asarray(rows, dtype=np.int64), dtype=torch.long)
+    with torch.no_grad():
+        pattern = arm.model(
+            input_ids=ids,
+            attention_mask=torch.ones_like(ids),
+            use_cache=False,
+            output_attentions=True,
+        ).attentions
+
+    key_sets = prediction_addressed.antecedent_sets(rows, pool, np.array([0, 1]))
+    # The fixture's predicted token recurs three times before the query, so this
+    # test would pass vacuously if the sets were singletons.
+    assert [len(keys) for keys in key_sets] == [3, 3]
+    assert scores["keys_per_instance"].tolist() == [3.0, 3.0]
+
+    for instance in (0, 1):
+        sequence = int(pool.sequence[instance])
+        query = int(pool.query[instance])
+        nearest = int(pool.antecedent[instance])
+        decoys = [int(value) for value in pool.decoys[instance]]
+        for layer in range(arm.n_layer):
+            weights = pattern[layer][sequence]
+            decoy_mean = np.mean(
+                [weights[:, query, decoy].numpy() for decoy in decoys], axis=0
+            )
+            expected_nearest = weights[:, query, nearest].numpy() - decoy_mean
+            expected_matched = (
+                np.sum([weights[:, query, key].numpy() for key in key_sets[instance]], axis=0)
+                - len(key_sets[instance]) * decoy_mean
+            )
+            np.testing.assert_allclose(
+                scores["paa_specific"][sequence, layer], expected_nearest, atol=1e-6
+            )
+            np.testing.assert_allclose(
+                scores["paa_specific_matched"][sequence, layer],
+                expected_matched,
+                atol=1e-6,
+            )
+
+    # The two scores must actually differ here, or the test cannot fail for the
+    # reason it exists: the nearest key carries only part of the removed mass.
+    assert not np.allclose(scores["paa_specific"], scores["paa_specific_matched"])
+
+
+def test_the_matched_census_score_collapses_onto_the_nearest_key_score():
+    """With one antecedent the two definitions coincide, and must.
+
+    The size-matched decoy baseline is ``n_keys`` times the per-key mean, so at
+    ``n_keys == 1`` it is the per-key mean and the matched score is the original.
+    A baseline that stayed at the per-key mean while the numerator became a sum
+    would pass the previous test and fail this one.
+    """
+
+    arm, rows, pool = _tiny_paa_arm()
+    # Row 0's predicted token 5 sits at 1, 3 and 6; blank the first two so only
+    # the nearest occurrence survives, and leave row 1 alone as the contrast.
+    single = [list(rows[0]), list(rows[1])]
+    single[0][1] = 14
+    single[0][3] = 14
+
+    key_sets = prediction_addressed.antecedent_sets(single, pool, np.array([0, 1]))
+    assert [len(keys) for keys in key_sets] == [1, 3]
+
+    scores = prediction_addressed.paa_attention_scores(arm, single, pool, batch_size=2)
+    np.testing.assert_allclose(
+        scores["paa_specific"][0], scores["paa_specific_matched"][0], atol=1e-6
+    )
+    assert not np.allclose(scores["paa_specific"][1], scores["paa_specific_matched"][1])
+    assert scores["keys_per_instance"].tolist() == [1.0, 3.0]
+
+
 def test_the_antecedent_knockout_confirms_the_intervention_took_effect():
     """C6c: the antecedent mass was captured on the clean pass only.
 

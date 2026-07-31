@@ -3467,3 +3467,28 @@ effect magnitude, read against the text range +0.371 to +0.706 and the protein
 maximum +0.271. Then either clear D2.c's two blockers or scope its claim to the
 lineages it can reach. The hung-controller fault is mitigated per-lane and still
 not fixed in the orchestration layer.
+
+**Addendum (2026-08-01): D2.c blocker 2 is closed in code, and the mismatch is bigger than the argument for it suggested.**
+
+`paa_attention_scores` now emits `paa_specific_matched` beside `paa_specific`:
+attention summed over the key set `antecedent_sets` returns — the set
+`knockout_effects` actually removes — against a decoy baseline scaled to the same
+number of keys, so the correction stays a positional baseline of matched size
+rather than a per-key one subtracted from a sum. The sum rather than the mean
+because the intervention's size scales with the total mass it removes, which is
+what the causal effect responds to. Both scores are returned rather than one
+replacing the other: `paa_specific` is what EXP-R2-059 published and L5/L6 quote,
+and redefining it in place would make those numbers unreproducible. Two tests pin
+the definitions against a real forward pass, one of them asserting that the two
+collapse onto each other when the predicted token occurs exactly once before the
+query — which is the case that catches a numerator changed to a sum while the
+baseline stayed per-key.
+
+*Validated on B, gpt2-large, 8 sequences, GPU 7 — a stage validation, **not** a
+result and not quotable as one.* Mean key set **2.93**, consistent with the median
+of 3 counted from the shipped pools. The two scores rank the 720 heads at
+Spearman **+0.567** (partial, non-sink-corrected +0.553). Part of that at 8
+sequences is estimation noise. What it establishes is that the two definitions are
+not interchangeable **on the arm where the mismatch is smallest**, so on a protein
+arm at 13–17 keys the divergence can only be larger. The choice of key set is not
+a technicality for D2.c; it is the estimand.

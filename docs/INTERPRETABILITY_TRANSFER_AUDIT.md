@@ -921,8 +921,20 @@ the protein arm, so a rank correlation between the two is attenuated harder on
 protein *by construction* — in the direction of the hypothesis. This is the same
 error `corruption_effects` already fixed for the matching gate, whose docstring
 says it plainly: "a conclusion the estimator manufactured out of alphabet size".
-It must be fixed in `paa_attention_scores` before D2.c produces a number, not
-noted afterwards.
+
+**Closed in code (EXP-R2-078), and the size of it is now measured rather than
+argued.** `paa_attention_scores` emits `paa_specific_matched` beside
+`paa_specific`: attention summed over the key set `antecedent_sets` returns — the
+one the knockout removes — against a decoy baseline scaled to the same number of
+keys, so the correction stays a positional baseline of matched size rather than a
+per-key one subtracted from a sum. Both are returned, because `paa_specific` is
+what EXP-R2-059 published and L5/L6 quote, and redefining it in place would make
+those numbers unreproducible. *On a validation-scale run — 8 sequences, gpt2-large,
+not a result and not quotable as one — the mean key set is 2.93 and the two scores
+rank the 720 heads at Spearman **+0.567**.* Part of that is estimation noise at
+this cohort size, but it establishes that the two definitions are not
+interchangeable **on the arm where the mismatch is smallest**; on a protein arm at
+13–17 keys the divergence can only be larger. D2.c must use the matched score.
 
 **Blocker 3, now cleared — the positive control is probably attainable.** The
 plan had inherited from L5 the belief that `paa_specific` does not rank causal

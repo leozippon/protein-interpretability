@@ -735,6 +735,33 @@ def paa_attention_scores(
     cannot be cluster-bootstrapped afterwards, and a census that emits only
     pooled means is not re-analysable, which is a failure this programme has
     already recorded once.
+
+    **Two scores, because the selector and the causal statistic disagree about
+    what a key is, and the disagreement is alphabet-size-dependent.**
+    ``paa_specific`` scores attention onto ``pool.antecedent`` -- the *nearest*
+    earlier occurrence of the predicted token -- against a decoy baseline.
+    :func:`knockout_effects` removes *every* earlier occurrence, the set
+    :func:`antecedent_sets` returns.  Counted from the shipped pools, that is a
+    median of 3 occurrences per instance on gpt2-large against 13 to 17 on
+    ProGen2-medium, so a rank correlation between this score and that causal
+    effect is attenuated harder on a small alphabet **by construction**, in the
+    direction any modality hypothesis would predict.  ``corruption_effects``
+    already fixed this exact error for the matching gate and its docstring names
+    it: "a conclusion the estimator manufactured out of alphabet size".
+
+    ``paa_specific_matched`` is the score whose key set is the one the knockout
+    removes: attention *summed* over the whole antecedent set, against a decoy
+    baseline scaled to the same number of keys, so the correction stays a
+    positional baseline of matched size rather than a per-key one subtracted from
+    a sum.  The sum rather than the mean because the intervention's size scales
+    with the total mass it removes, which is what the causal effect responds to.
+
+    Both are returned rather than one replacing the other.  ``paa_specific`` is
+    the statistic EXP-R2-059 published and L5/L6 quote, and silently redefining it
+    would make those numbers unreproducible; ``paa_specific_matched`` is the one a
+    census-to-causal comparison has to use.  The choice is then visible in the
+    artefact instead of made in an analysis script -- the same reason this package
+    emits two effect scales and two standard-error units elsewhere.
     """
 
     arm.require("circuits")
@@ -747,7 +774,10 @@ def paa_attention_scores(
     antecedent_sum = torch.zeros((n_sequences, layers, heads), dtype=torch.float64, device=device)
     decoy_sum = torch.zeros_like(antecedent_sum)
     sink_sum = torch.zeros_like(antecedent_sum)
+    matched_sum = torch.zeros_like(antecedent_sum)
+    matched_decoy_sum = torch.zeros_like(antecedent_sum)
     counts = np.zeros(n_sequences, dtype=np.int64)
+    key_counts = np.zeros(n_sequences, dtype=np.int64)
 
     state: dict[str, Any] = {}
 
@@ -768,6 +798,25 @@ def paa_attention_scores(
         antecedent_sum[:, layer].index_add_(0, sequence_index, antecedent.double())
         decoy_sum[:, layer].index_add_(0, sequence_index, decoy_mean.double())
         sink_sum[:, layer].index_add_(0, sequence_index, sink.double())
+
+        # The knockout's key set. Padded with the query's own position and masked
+        # out rather than with 0, because 0 is the attention sink and a padding
+        # index that lands on it would be read as real mass if the mask were ever
+        # dropped.
+        padded = state["key_set"]
+        key_mask = state["key_set_mask"]
+        n_keys = state["key_set_sizes"]
+        width = padded.shape[1]
+        flat_rows_k = rows_index.unsqueeze(1).expand(n, width).reshape(-1)
+        flat_queries_k = queries.unsqueeze(1).expand(n, width).reshape(-1)
+        key_values = pattern[flat_rows_k, :, flat_queries_k, padded.reshape(-1)]
+        key_values = key_values.view(n, width, heads) * key_mask.unsqueeze(-1)
+        matched = key_values.sum(dim=1)
+        # A positional baseline of the same size as the set it corrects, not a
+        # per-key baseline subtracted from a sum.
+        matched_decoy = decoy_mean * n_keys.unsqueeze(-1)
+        matched_sum[:, layer].index_add_(0, sequence_index, matched.double())
+        matched_decoy_sum[:, layer].index_add_(0, sequence_index, matched_decoy.double())
 
     handles = [
         attention_module(arm, layer).register_forward_hook(_WeightTap(consume, layer))
@@ -797,8 +846,30 @@ def paa_attention_scores(
             state["decoys"] = torch.tensor(
                 pool.decoys[selected], dtype=torch.long, device=device
             )
+            # One declaration of the knockout's key set, imported rather than
+            # re-derived: this is the function `knockout_effects` calls.
+            key_sets = antecedent_sets(rows, pool, selected)
+            width = max(len(keys) for keys in key_sets)
+            padded = np.empty((len(key_sets), width), dtype=np.int64)
+            key_mask = np.zeros((len(key_sets), width), dtype=np.float32)
+            for index, keys in enumerate(key_sets):
+                padded[index, : len(keys)] = keys
+                padded[index, len(keys) :] = int(pool.query[selected[index]])
+                key_mask[index, : len(keys)] = 1.0
+            state["key_set"] = torch.tensor(padded, dtype=torch.long, device=device)
+            state["key_set_mask"] = torch.tensor(key_mask, dtype=torch.float32, device=device)
+            state["key_set_sizes"] = torch.tensor(
+                np.asarray([len(keys) for keys in key_sets], dtype=np.float32),
+                dtype=torch.float32,
+                device=device,
+            )
             arm.model(input_ids=ids, attention_mask=mask, use_cache=False)
             np.add.at(counts, pool.sequence[selected], 1)
+            np.add.at(
+                key_counts,
+                pool.sequence[selected],
+                np.asarray([len(keys) for keys in key_sets], dtype=np.int64),
+            )
     finally:
         for handle in handles:
             handle.remove()
@@ -812,6 +883,8 @@ def paa_attention_scores(
     antecedent_mean = (antecedent_sum / divisor).cpu().numpy()
     decoy_mean = (decoy_sum / divisor).cpu().numpy()
     sink_mean = (sink_sum / divisor).cpu().numpy()
+    matched_mean = (matched_sum / divisor).cpu().numpy()
+    matched_decoy_mean = (matched_decoy_sum / divisor).cpu().numpy()
     # A sequence that contributed no instance has an accumulated sum of exactly
     # zero, and dividing by the placeholder 1 leaves it there. Zero is a legal
     # decoy-corrected attention and 1 - 0 is a legal non-sink mass, so an
@@ -822,7 +895,13 @@ def paa_attention_scores(
     # ``cluster_bootstrap`` is unaffected: it drops zero-weight clusters before
     # touching the values.
     inactive = ~active
-    for block in (antecedent_mean, decoy_mean, sink_mean):
+    for block in (
+        antecedent_mean,
+        decoy_mean,
+        sink_mean,
+        matched_mean,
+        matched_decoy_mean,
+    ):
         block[inactive] = np.nan
     return {
         "instances_per_sequence": counts,
@@ -831,6 +910,14 @@ def paa_attention_scores(
         "decoy_attention": decoy_mean,
         "paa_specific": antecedent_mean - decoy_mean,
         "non_sink_mass": 1.0 - sink_mean,
+        # The knockout-matched pair. `keys_per_instance` is the quantity that
+        # differs by alphabet size -- a median of 3 on gpt2-large against 13 to 17
+        # on ProGen2-medium -- and it is emitted so that a reader can see how far
+        # the two scores can diverge on this arm rather than having to assume.
+        "antecedent_set_attention": matched_mean,
+        "decoy_attention_size_matched": matched_decoy_mean,
+        "paa_specific_matched": matched_mean - matched_decoy_mean,
+        "keys_per_instance": np.where(active, key_counts / np.maximum(counts, 1), np.nan),
     }
 
 

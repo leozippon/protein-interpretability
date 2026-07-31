@@ -425,6 +425,13 @@ def census(args: argparse.Namespace, out: Path) -> dict[str, Any]:
         decoy_attention_per_sequence=scores["decoy_attention"],
         non_sink_mass_per_sequence=scores["non_sink_mass"],
         instances_per_sequence=scores["instances_per_sequence"],
+        # The knockout-matched score and the key count that makes it differ from
+        # the one above. Persisted rather than recomputed because the attention
+        # pattern is not retained and re-deriving it costs the whole pass.
+        paa_specific_matched_per_sequence=scores["paa_specific_matched"],
+        antecedent_set_attention_per_sequence=scores["antecedent_set_attention"],
+        decoy_attention_size_matched_per_sequence=scores["decoy_attention_size_matched"],
+        keys_per_instance=scores["keys_per_instance"],
         paa_specific_mean=paa_mean,
         paa_specific_q_low=booted["q_low"].reshape(layers, heads),
         paa_specific_q_high=booted["q_high"].reshape(layers, heads),
@@ -458,6 +465,33 @@ def census(args: argparse.Namespace, out: Path) -> dict[str, Any]:
             "median_confidence": float(np.median(pool.confidence)),
         },
         "paa_head_distribution": summarise_head_matrix(paa_mean, "paa_specific"),
+        # How far the selector's key set diverges from the one the causal
+        # knockout removes, on this arm. The rank correlation is the quantity
+        # that decides whether a census-to-causal comparison may use the cheaper
+        # score: the two definitions coincide only where the predicted token
+        # occurs once before the query, and how often that happens is a property
+        # of the alphabet, not of the model.
+        "knockout_matched_score": {
+            "mean_keys_per_instance": float(
+                np.nanmean(scores["keys_per_instance"][active])
+            ),
+            "distribution": summarise_head_matrix(
+                np.nanmean(scores["paa_specific_matched"][active], axis=0),
+                "paa_specific_matched",
+            ),
+            "spearman_against_paa_specific": partial_spearman(
+                paa_mean.reshape(-1),
+                np.nanmean(scores["paa_specific_matched"][active], axis=0).reshape(-1),
+                non_sink.reshape(-1),
+            ),
+            "note": (
+                "paa_specific scores the nearest earlier occurrence of the "
+                "predicted token; knockout_effects removes every earlier "
+                "occurrence. paa_specific_matched is the score on that key set, "
+                "with a decoy baseline scaled to the same number of keys. Use the "
+                "matched score for any comparison against a causal effect"
+            ),
+        },
         "top_paa_heads": [
             {
                 "layer": layer,
