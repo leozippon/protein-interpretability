@@ -154,6 +154,26 @@ Twelve autoregressive decoders under one code path, each fed in the format it wa
 
 **Distributional separation — fails.** Pooled AUC 0.595; 8 of 12 pairs above 0.5; **0 of 12** show stochastic dominance; quantile dominance fails at q50, q99.5 and q100; model-level median test p = 0.257. ProGen2-medium's best head reaches 87.6x uniform, beating every text arm but two. **The result is a tail statement, not a distributional one.**
 
+> ### D1.b answered — the battery re-run on the seeded 817-of-817 census (EXP-R2-073)
+>
+> Those figures came from a results tree that no longer exists; `12_induction_robustness.py` was hard-wired to it and raised `FileNotFoundError` on every path, so the instrument D1.b needed had to be repaired before the question could be asked. It now takes its source as an argument. Re-run on `results/transfer_20260730/panel12/`, synthetic probe, cut 0.10, on the same eleven arms:
+>
+> | statistic | recorded above | re-run on the seeded census |
+> |---|---|---|
+> | pooled AUC | 0.595 | **0.624** |
+> | pairs above 0.5 | 8 / 12 | **20 / 28** (min 0.400, median 0.581, max 0.729) |
+> | stochastic dominance | 0 / 12 | **2 / 28** |
+> | quantile dominance | fails at q50, q99.5, q100 | fails at the same three — **and separates at q75, q90, q95, q97.5, q99** |
+> | survival grid | 62% | 61.9% |
+> | model-level exact test | p = 0.0286 (fraction) | **at the floor, 1/330 = 0.00303, complete separation** on fraction, mean and q99; the median statistic does not separate |
+> | ladder slope / decade | −0.272 [−0.455, −0.088] | **−0.268 [−0.515, −0.020]** |
+>
+> **The conclusion is unchanged in direction and less absolute in wording.** "0 of 12 show stochastic dominance" cannot be restated as "none": two of twenty-eight pairs now do. And the middle of the distribution is not as featureless as the old summary implied — the ordering separates at every quantile from q75 to q99 and fails only at the median and in the extreme upper tail, where counts are single heads. **It is still a tail statement rather than a distributional one**, and the reason is now visible: the separation lives between the 75th and 99th percentiles of the per-head score, not across the distribution.
+>
+> **One published figure changes materially.** "Only **25.4%** of the modality indicator survives projection" was computed by dividing by an *uncentred* sum of squares, whose ceiling is n_protein/n rather than 1 — the statistic could not reach 1 even if scale and lineage explained nothing about modality. On the centred denominator, which is one minus the R² of the modality indicator on the nuisance block, the same fit gives **36.3%**. Increments are unchanged: modality +0.270, lineage +0.053, scale +0.003.
+>
+> **And the 2.34x scale-adjusted shortfall is withdrawn as an interval verdict.** `lineage_scale_ladder.predict()` extrapolated the GPT-2 line onto every other arm and published `observed_below_prediction_interval` for all of them, on an interval that prices residual scatter among four GPT-2 rungs and prices nothing about a different lineage, tokeniser or corpus. `in_fitted_lineage` is now carried through and the verdict is withheld off-lineage. The point ratio stands as descriptive; the interval statement does not. Independently, the arm that anchored the old comparison was `dialogpt-small`, which §5.05(a) retracts as off-distribution.
+
 **Probe dependence — fails on the best probe.**
 
 | probe | ordering |
@@ -175,6 +195,22 @@ Twelve autoregressive decoders under one code path, each fed in the format it wa
 > At the headline threshold the ordering now holds on **all three probes**. `dialogpt-small`'s natural-approximate fraction, the 0.0000 that produced the recorded inversion, reads **0.0278** on the seeded cohort; the worst text arm (llama-3.2-3b, 0.0268) sits above the best protein arm (ProtGPT2, 0.0181). Matched pair at 0.10: **5.46x** synthetic (against the recorded 5.38x), 4.07x natural exact, 2.92x natural approximate.
 >
 > **The probe-dependence problem is reduced, not removed.** It moves to the permissive-tail thresholds: natural approximate inverts at 0.20 and 0.30, natural exact at 0.30. Both inversions are driven by the worst text arm reaching *exactly zero* while a protein arm retains one or two heads out of 720–1728 — a small-count tail effect, not a distributional statement, and the same reason the distributional separation fails. Nothing here converts the result into a modality claim: the structural n = 1 limit of §2 and the corpus-repeat confound of the closing paragraph are untouched. Artefacts: `results/transfer_20260730/induction_seeded/`.
+
+> ### The twelfth arm breaks the synthetic probe, and one head decides the headline (EXP-R2-073)
+>
+> The table above is the **eleven**-arm panel. ProGen2-small was admitted after it was written, and it is the best protein arm on every probe. Re-derived on all twelve arms from `results/transfer_20260730/panel12/`:
+>
+> | probe | t = 0.05 | t = 0.10 | t = 0.20 | t = 0.30 |
+> |---|---|---|---|---|
+> | synthetic | holds | holds | **inverts** | **inverts** |
+> | natural exact | holds | holds | **inverts** | inverts |
+> | natural approximate | holds | holds | inverts | inverts |
+>
+> **"Synthetic holds at every threshold" is panel-dependent and no longer true.** At 0.20 the worst text arm is llama-3.2-3b at 0.0238 against ProGen2-small at 0.0260; at 0.30, 0.0179 against 0.0208. Neither inversion is the zero-arm artefact the paragraph above invokes — llama's values are non-zero, and the inverting protein arm is ProGen2-small in every cell. The recorded explanation covers the eleven-arm inversions and does not cover these.
+>
+> **At the headline threshold the ordering still holds on all three probes, by less than one head.** On the natural-approximate probe the margin is llama-3.2-3b **0.0268** against ProGen2-small **0.0260** — 0.0008, where one head of ProGen2-small's 192 is **0.0052**. Six heads instead of five inverts it. ProGen2-small contributes **five heads** to every probe, and the same five heads set the protein-side scale slope. The headline ordering on the probe the literature says to trust is therefore decided by a single head on a single arm.
+>
+> This does not overturn the result — the matched pair remains 5.46x and the protein arms sit at 0.007–0.026 against text 0.027–0.216 — but it fixes its precision. **The defensible statement is the matched-pair ratio and the panel-level pattern, not the worst-text-above-best-protein ordering**, which no longer survives its own threshold sweep and turns on one head at the cut where it does.
 
 > **The text-side scale slope does not transport to protein, and the scale adjustment below over-corrects (EXP-R2-068).** Admitting ProGen2-small gave the protein side its first within-lineage scale contrast — 151M against ProGen2-medium's 765M, architecture, residue tokeniser and UniRef90+BFD30 mixture all held. Measured on the seeded census at threshold 0.10, protein cohorts being the whole matching population:
 >
@@ -452,6 +488,8 @@ Drawn from all **574,627** eligible Swiss-Prot entries and all **23,586** AlphaF
 >
 > **What is withdrawn.** EXP-R2-070 (ii)'s "at the strictest cut every protein arm is above every text control in every window, with no exception" and (iii)'s 40-of-40 for ProGen2-base and ProGen2-medium are *arithmetically correct and reproduce exactly from the artefacts* — I re-derived 31/33/36/39 of 40 and the 40/40 cells — but they are statements about a token band, not about the models. §9.2's "the ProGen2 lineage propagates a single-token perturbation further than the matched text control" is withdrawn, and **D1.a's status reverts from *answered* to *open*.** EXP-R2-070 (iv)'s between-window spread asymmetry is *not* withdrawn on this ground — it is a within-arm quantity at a fixed band — but its levels are unit-dependent and the spread of a proportion depends on its level, so it needs re-derivation at matched content distance before it is quoted again.
 >
+> **A second, independent correction to the same block.** §5.1 describes the clustering as "1.3–1.7 cases per sequence … the clustering is the conservative choice, not a large correction." That is true of the earlier `b6_float32` run, which drew cohorts of 256 records and reached 100–168 clusters. **It is false of EXP-R2-070**, which ran at the default `--cohort-size 24`: verified in every artefact, 256 cases from **24 source sequences on every arm**, i.e. 10.7 cases per sequence and 24 bootstrap clusters. The correction is large, not small, and it is asymmetric — the clustered interval is *narrower* than the naive binomial on the text arms and up to ~1.7x wider on the protein arms. Every interval-disjointness statement in EXP-R2-069 and EXP-R2-070 therefore rests on 24 clusters, well below the count at which `statistics.py`'s own coverage simulation reaches nominal. The sign of that bias is conservative for the direction that was reported, which is why it did not surface earlier.
+>
 > **New standing rule (Appendix B rule 26).** Declare the unit of any distance, window or band, and resolve it per arm when the arms differ in symbols per token.
 >
 > The successor measurement is the same instrument with the band declared in content symbols and resolved per arm, recording both the requested symbol band and the resolved token band. Until it lands, no far-band ordering across arms of different tokenisation may be cited.
@@ -588,7 +626,7 @@ Two further differences are open rather than closed:
 | item | question | status | cost |
 |---|---|---|---|
 | **D1.a** | Do the far-band propagation *magnitudes* differ, once resolved? | **REOPENED 2026-07-31 (EXP-R2-073).** EXP-R2-070's five-window answer reproduces exactly and is arithmetically sound, but it compares arms at a distance declared in **tokens** while they differ 4.4x in symbols per token; two protein arms swap order on the unit choice alone, so the result is not model-attributable. See the withdrawal block in §5.1. Reopened pending the same measurement at matched content distance | ~6 GPU-h spent; successor ~4 GPU-h |
-| **D1.b** | Is the tail statement a *distribution* statement at full population? | the census now runs on 817 of 817 matching proteins; the AUC / dominance battery has not been re-run on it | ~2 GPU-h, CPU-adjacent |
+| ~~**D1.b**~~ | Is the tail statement a *distribution* statement at full population? | **Answered (EXP-R2-073), CPU, no GPU spent.** No: it remains a tail statement, and the tail is now located — the ordering separates at every quantile from q75 to q99 and fails at the median and in the extreme upper tail. Pooled AUC 0.624, 20 of 28 pairs above 0.5, 2 of 28 showing stochastic dominance against the recorded 0 of 12. Two published figures moved with it: modality variance surviving projection 25.4% → **36.3%**, and the 2.34x scale-adjusted shortfall loses its interval verdict as an out-of-lineage extrapolation. Detail in §4 | 0 GPU-h, spent |
 
 **Exit condition unchanged in spirit:** D1 exists to explain transfer failures, not
 for its own sake. No new D1 measurement is authorised beyond these two.
@@ -682,7 +720,7 @@ Three protein arms sit at Gini 0.940–0.944 against 0.826–0.829 for both text
 
 **(iii) Noise is not the explanation, and this was tested rather than assumed.** Per-head effect estimates carry SEMs, so the reliability of each arm's head ranking is computable: **0.916 to 0.991** across the six arms, and the SNR of the mean effect is 1.26–6.15. Disattenuating the Pearson correlation for measurement error moves it by at most 0.04 on any arm. The low protein ρ is not attenuation from noisier estimates.
 
-> **Corrected (EXP-R2-072): that range is computed on the sampling unit this module declares to be the wrong one.** `path_patching.py` publishes both a case-level `sem` and a `sem_probe_clustered`, and states in two places that the probe record, not the case, is the sampling unit. The 0.916–0.991 figures reproduce from the **case**-level SEM. On the probe-clustered SEM the same statistic reads 0.834–0.976 on the exact-repeat cases and falls as low as **0.189** (ZymCTRL) on the approximate ones. **The inference (iii) draws still holds where it matters** — on approximate cases gpt2-large and ProtGPT2 have essentially equal probe-clustered reliability (0.779, 0.783) while their ρ are +0.440 and −0.155, so differential attenuation does not explain the matched-pair gap. But reliability is a *variance* statistic dominated by the few large heads, so a value near 1 was never capable of establishing that the median head is resolved — which is the separate problem (v) of EXP-R2-072 records against the concentration statistics.
+> **Corrected (EXP-R2-072): that range is computed on the sampling unit this module declares to be the wrong one.** `path_patching.py` publishes both a case-level `sem` and a `sem_probe_clustered`, and states in two places that the probe record, not the case, is the sampling unit. The 0.916–0.991 figures reproduce exactly, from the **case**-level SEM on effect *magnitude*. Recomputed by the versioned implementation on the probe-clustered SEM the same statistic reads **0.827–0.975** on the exact-repeat cases, and on the approximate ones ZymCTRL falls to **0.008** — a grid that cannot be ranked at all. **The inference (iii) draws still holds where it matters:** on approximate cases gpt2-large and ProtGPT2 have near-equal probe-clustered reliability while their ρ are far apart, so differential attenuation does not explain the matched-pair gap. But reliability is a *variance* statistic dominated by the few large heads, so a value near 1 was never capable of establishing that the median head is resolved — which is the separate problem EXP-R2-072 (v) records against the concentration statistics. Both units and both scales are now emitted, each labelled, so the choice is visible in the artefact rather than made in an analysis script.
 
 **(iv) The census's failure mode is recall.** ProGen2-medium's top-5 Jaccard is **1.000** and collapses to 0.250 by k=20. The strongest head the census *rejects* carries \|effect\| 0.0194 on gpt2-large against 0.0497 (ProtGPT2), 0.0290 (ProGen2-medium) and 0.3049 on ZymCTRL, where the census selects nothing at all.
 
