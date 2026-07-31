@@ -3530,3 +3530,26 @@ defects: a seed collision in the random-direction control that reuses vectors
 across `(begin, layer)` pairs summing alike — not a statistical error, though not
 the independence the design implies — and a dead branch in the decoy window where
 `window >= 1` is always true.
+
+**Addendum (2026-08-01): the EXP-R2-079 chain became a per-GPU dispatcher, and I walked into the trap this log already documents.**
+
+*The scheduling fault.* EXP-R2-079 was first chained to start after EXP-R2-077
+drained *every* lane. That is wrong here: gpt2-xl carries 1200 heads on lane 0
+against 720 on lanes 2 and 3, and the ProtGPT2 leg is a separate single job on
+GPU 1, so the lanes free hours apart and an all-or-nothing chain would have left
+up to three cards idle for those hours. Replaced with a dispatcher that claims
+each GPU the moment its own predecessor announces it is done, read from the local
+queue logs. Same class of waste as the hung-controller fault recorded on
+2026-07-31, reached by scheduling rather than by transport.
+
+*My own fault, recorded rather than smoothed over (Appendix B rule 20).* Killing
+the first chain with `pkill -f logs/drivers/crosslab_census.sh` matched **the
+shell running the pkill**, whose command line contained that path, and killed it —
+so the heredoc writing the replacement never ran and the command returned 255.
+This is the identical failure mode EXP-R2-071 recorded when a chain's `pgrep -f`
+matched its own launch wrapper, met from the other direction. The rule earned
+there — *a pattern that a launching shell's command line can contain will match
+that shell* — is now a comment at the point in the dispatcher where the
+predecessor markers are declared, and the dispatcher keys on log lines rather than
+on processes throughout. Cost: nothing but the retry; the four running jobs are
+separate `setsid` processes and were untouched.
