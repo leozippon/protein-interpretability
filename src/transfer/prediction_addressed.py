@@ -513,6 +513,8 @@ def build_instance_pool(
         "positions_with_eligible_candidate": 0,
         "candidates_discarded_by_induction_target": 0,
         "candidates_discarded_by_distance_range": 0,
+        "candidates_discarded_by_induction_and_distance": 0,
+        "positions_with_no_antecedent_candidate": 0,
         "candidates_discarded_by_empty_decoy_pool": 0,
         "instances_retained": 0,
         "instances_dropped_by_per_sequence_cap": 0,
@@ -582,10 +584,23 @@ def build_instance_pool(
                     chosen = (token, star, probability)
                     break
                 if chosen is None:
-                    if induction_blocked:
+                    # The cascade has to close: `positions_scored` must equal the
+                    # sum of its exits, or a reader cannot tell an excluded
+                    # position from an unaccounted one. It did not. A position
+                    # blocked by *both* rules was charged to induction alone, and
+                    # a position where no candidate ever reached the antecedent
+                    # test -- nothing above `min_confidence`, or no earlier
+                    # occurrence of any top-k token -- was charged to nothing at
+                    # all: 15,536 of gpt2-large's 96,000 scored positions, 16.2%,
+                    # fell into no category.
+                    if induction_blocked and distance_blocked:
+                        cascade["candidates_discarded_by_induction_and_distance"] += 1
+                    elif induction_blocked:
                         cascade["candidates_discarded_by_induction_target"] += 1
                     elif distance_blocked:
                         cascade["candidates_discarded_by_distance_range"] += 1
+                    else:
+                        cascade["positions_with_no_antecedent_candidate"] += 1
                     continue
                 cascade["positions_with_eligible_candidate"] += 1
                 token, star, probability = chosen
@@ -671,6 +686,26 @@ def build_instance_pool(
                 cascade["instances_retained"] += 1
         del logits
         torch.cuda.empty_cache()
+
+    # Every scored position leaves through exactly one exit. Checked rather than
+    # trusted, because the previous accounting silently lost 16.2% of gpt2-large's
+    # positions and a rate quoted against a partial denominator reads exactly like
+    # a rate quoted against a whole one.
+    exits = (
+        "positions_with_eligible_candidate",
+        "candidates_discarded_by_induction_target",
+        "candidates_discarded_by_distance_range",
+        "candidates_discarded_by_induction_and_distance",
+        "positions_with_no_antecedent_candidate",
+    )
+    accounted = sum(cascade[name] for name in exits)
+    if accounted != cascade["positions_scored"]:
+        raise RuntimeError(
+            f"{arm.name}: the instance cascade does not close -- "
+            f"{cascade['positions_scored']} positions scored against {accounted} "
+            f"accounted for across {list(exits)}"
+        )
+    cascade["cascade_closes_over"] = " + ".join(exits)
 
     return InstancePool(
         arm=arm.name,
@@ -1568,12 +1603,35 @@ def decoy_corrected_prefix_matching(
     n_decoys: int,
     seed: int,
 ) -> dict[str, np.ndarray]:
-    """Prefix matching with and without the same decoy subtraction PAA uses.
+    """Prefix matching with and without a position-matched decoy subtraction.
 
     The induction headline this programme reports is an uncorrected attention
     weight.  If subtracting position-matched decoys moves it materially, that is
     a finding about the induction census and has to be read before any PAA
     number is.
+
+    **This is not the identical correction ``build_instance_pool`` applies, and
+    it cannot be made identical.**  That function's decoy eligibility carries a
+    fourth condition this one does not: a decoy key must not hold one of the
+    model's top-``ban`` predicted tokens at the query.  Adding it here would
+    require the query-position logits, which this pass does not read -- but the
+    reason not to add it is stronger than the cost.  **The ban is
+    alphabet-pathological.**  Over a twenty-symbol residue alphabet a top-20 ban
+    covers the alphabet, and it is already measured doing so: on ProGen2-medium it
+    empties the decoy pool for **93.0%** of eligible positions, which is why
+    ``--protein-ban-depths`` exists and why the matching gate reports a relaxed
+    depth beside the specified one.  Applying it here would delete the protein
+    side of this census to make a text-side definition match.
+
+    So the two corrections share the position window, the self-exclusion, the
+    same-token exclusion, the predecessor rule and the sink floor, and differ in
+    the prediction ban.  The docstring previously claimed they were "the same
+    decoy subtraction PAA uses" and an inline comment asserted the populations had
+    to match; both were false, and the difference runs in the direction that makes
+    *this* correction the more conservative one -- a decoy here may hold a
+    plausible prediction, so its attention is subtracted as if it were positional
+    baseline, and the corrected score is if anything over-subtracted.  Recorded as
+    an accepted limitation rather than closed, because closing it costs an arm.
     """
 
     arm.require("circuits")
@@ -1635,10 +1693,12 @@ def decoy_corrected_prefix_matching(
                 for query, key in zip(probe.query_positions, probe.key_positions):
                     span = query - key
                     low, high = DISTANCE_BIN_EDGES[distance_bin(span)]
-                    # Same sink exclusion as ``build_instance_pool``: the two
-                    # decoy draws have to select from the same key population or
-                    # the "same correction applied to both censuses" claim in
-                    # this function's docstring is not true.
+                    # Same sink exclusion as ``build_instance_pool``. The two
+                    # populations agree on the window, the self- and same-token
+                    # exclusions, the predecessor rule and this floor, and differ
+                    # in that function's top-``ban`` prediction ban -- see this
+                    # function's docstring for why that difference is accepted
+                    # rather than closed.
                     window = np.arange(max(1, query - high), query - low + 1)
                     if window.size == 0:
                         continue

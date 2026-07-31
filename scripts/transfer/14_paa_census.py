@@ -452,6 +452,13 @@ def census(args: argparse.Namespace, out: Path) -> dict[str, Any]:
             **pool.cascade,
             "gate_minimum": int(args.a1_minimum),
             "verdict": "PASS" if len(pool) >= args.a1_minimum else "FAIL",
+            # Two denominators, both named. The first is the historical one and
+            # its denominator is NOT "candidates": it is the induction-blocked
+            # positions plus the ones that yielded an instance, which omits the
+            # distance-blocked positions and the ones where no candidate reached
+            # the antecedent test at all -- 16.2% of gpt2-large's scored
+            # positions under the accounting that lost them. It is kept because
+            # EXP-R2-059 quotes 10.6%; the second is the rate a reader means.
             "induction_target_discard_rate": (
                 pool.cascade["candidates_discarded_by_induction_target"]
                 / max(
@@ -459,6 +466,17 @@ def census(args: argparse.Namespace, out: Path) -> dict[str, Any]:
                     + pool.cascade["positions_with_eligible_candidate"],
                     1,
                 )
+            ),
+            "induction_target_discard_rate_denominator": (
+                "candidates_discarded_by_induction_target + "
+                "positions_with_eligible_candidate"
+            ),
+            "induction_target_discard_rate_of_scored_positions": (
+                (
+                    pool.cascade["candidates_discarded_by_induction_target"]
+                    + pool.cascade["candidates_discarded_by_induction_and_distance"]
+                )
+                / max(pool.cascade["positions_scored"], 1)
             ),
             "instances": len(pool),
             "median_distance": float(np.median(pool.distance)),

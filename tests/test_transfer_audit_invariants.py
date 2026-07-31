@@ -2002,6 +2002,58 @@ def test_the_freeze_only_invariant_has_a_positive_control():
     assert "freeze_only:" not in message, "the old check cannot see an inert freeze"
 
 
+def test_the_instance_cascade_closes_over_every_scored_position():
+    """A position that leaves through no exit is indistinguishable from one kept.
+
+    The cascade charged a position blocked by *both* the induction rule and the
+    distance rule to induction alone, and charged a position where no candidate
+    ever reached the antecedent test -- nothing above ``min_confidence``, or no
+    earlier occurrence of any top-k token -- to nothing at all. On the shipped
+    gpt2-large pool that is 96,000 scored against 71,533 + 8,506 + 425 accounted:
+    **15,536 positions, 16.2%, in no category**. A rate quoted against a partial
+    denominator reads exactly like one quoted against a whole denominator.
+
+    The closure is now checked in the function rather than asserted here from its
+    output, so this test drives a real pool build and then confirms the arithmetic
+    the function guarantees.
+    """
+
+    arm = _tiny_gpt2()
+    # `content_bounds` reads the tokenizer's begin-of-text marker for the `raw`
+    # format; the fixture's stub tokenizer carries only a pad id.
+    arm.tokenizer.bos_token_id = None
+    rows = [
+        [3, 5, 7, 5, 9, 4, 5, 8, 6, 2, 5, 7, 3, 9, 5, 1],
+        [4, 6, 7, 6, 2, 9, 6, 3, 5, 1, 6, 8, 4, 2, 6, 7],
+    ]
+    counts = np.ones(16, dtype=np.int64)
+    pool = prediction_addressed.build_instance_pool(
+        arm,
+        rows,
+        unigram_counts=counts,
+        query_min=4,
+        top_k=3,
+        candidate_depth=3,
+        min_confidence=0.0,
+        n_decoys=2,
+        seed=1,
+        batch_size=2,
+    )
+    cascade = pool.cascade
+    exits = cascade["cascade_closes_over"].split(" + ")
+    assert set(exits) == {
+        "positions_with_eligible_candidate",
+        "candidates_discarded_by_induction_target",
+        "candidates_discarded_by_distance_range",
+        "candidates_discarded_by_induction_and_distance",
+        "positions_with_no_antecedent_candidate",
+    }
+    assert sum(cascade[name] for name in exits) == cascade["positions_scored"]
+    # The both-blocked bucket must exist as a key even when it is empty, or the
+    # closure sum silently changes shape between arms.
+    assert "candidates_discarded_by_induction_and_distance" in cascade
+
+
 def test_the_census_score_is_emitted_on_the_key_set_the_knockout_removes():
     """The selector scored one key; the causal statistic removes all of them.
 

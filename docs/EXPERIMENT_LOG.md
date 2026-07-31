@@ -3492,3 +3492,41 @@ sequences is estimation noise. What it establishes is that the two definitions a
 not interchangeable **on the arm where the mismatch is smallest**, so on a protein
 arm at 13–17 keys the divergence can only be larger. The choice of key set is not
 a technicality for D2.c; it is the estimand.
+
+**Addendum (2026-08-01): the last two audit findings — one closed, one accepted with its reason.**
+
+*The instance cascade did not close, and 16.2% of a published denominator was
+unaccounted.* `build_instance_pool` charged a position blocked by both the
+induction rule and the distance rule to induction alone, and charged a position
+where no candidate ever reached the antecedent test — nothing above
+`min_confidence`, or no earlier occurrence of any top-k token — to nothing at all.
+On the shipped gpt2-large pool: 96,000 scored against 71,533 + 8,506 + 425
+accounted, leaving **15,536 positions in no category**. The cascade now has five
+exits that sum to `positions_scored`, checked in the function rather than
+documented, and it raises if they ever stop summing. The published
+`induction_target_discard_rate` of 10.6% is *arithmetically correct* — its
+denominator is induction-blocked plus instance-yielding positions — but that is
+not the denominator "candidates" implies, so the artefact now names it and emits
+the rate over all scored positions beside it.
+
+*The two decoy corrections are not the same one, and cannot be made the same.*
+`decoy_corrected_prefix_matching` claimed "the same decoy subtraction PAA uses"
+and carried an inline comment asserting the two draws had to select from one key
+population. They do not: `build_instance_pool` additionally bans a decoy key
+holding one of the model's top-`ban` predictions at the query. **The obvious fix
+is alphabet-pathological.** Over a twenty-symbol residue alphabet a top-20 ban is
+the alphabet, and it is already measured emptying the decoy pool for 93.0% of
+eligible positions on ProGen2-medium — the measurement `--protein-ban-depths`
+exists because of. Adding the ban to the induction census would delete its protein
+side to make a text-side definition match. Recorded as an accepted limitation with
+the direction of the difference stated — this correction is the more conservative
+one, since a decoy here may hold a plausible prediction whose attention is then
+subtracted as though it were positional baseline. L6's headline rests on the tail
+count and the top-20 Jaccard and is unaffected. This is the Restraint Principle
+deciding a case where the Repair Principle would have cost an arm.
+
+*Two further findings were reviewed and not acted on*, as suggestions rather than
+defects: a seed collision in the random-direction control that reuses vectors
+across `(begin, layer)` pairs summing alike — not a statistical error, though not
+the independence the design implies — and a dead branch in the decoy window where
+`window >= 1` is always true.
