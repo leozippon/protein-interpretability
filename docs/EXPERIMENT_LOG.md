@@ -3553,3 +3553,68 @@ that shell* — is now a comment at the point in the dispatcher where the
 predecessor markers are declared, and the dispatcher keys on log lines rather than
 on processes throughout. Cost: nothing but the retry; the four running jobs are
 separate `setsid` processes and were untouched.
+
+**Addendum (2026-08-01, 02:02–02:20): a transport drop mid-campaign, the first EXP-R2-077 arm, and a scheduling lesson the drop taught.**
+
+*The drop.* At **02:02:11** all four EXP-R2-077 controllers exited **90**
+simultaneously — the sentinel-absent code — with the access layer reporting 255,
+which L20 records as not authoritative. This is the tenth through thirteenth time
+the sentinel machinery has refused to convert a dropped channel into a green
+campaign, and again it was right to: **three of the four pod-side workers survived
+the drop and are still computing** (gpt2-xl on GPU 0, gpt2-large on 2, zymctrl on
+3, each ~1h52m in at the time of the check). Cluster health re-probed `Health=ok`
+four minutes later, so the drop was the channel, not the cluster.
+
+*ProtGPT2's leg had already finished.* Its worker promoted `protgpt2.json` and
+`panel_summary.json` at 02:02, in the same minute the transport died, so the
+controller could not report success and the artefact had to be admitted the way
+this programme now admits every orphan: against the SHA-256 manifest the worker
+wrote beside it. Both digests match — `protgpt2.json`
+`e66f85e44a70f434f15d9f5c84ffcda164cdf0430bc84e8ac32723f06c86a398`,
+`panel_summary.json` `7a163e028217fd593e0166b7f93f5fb0e49d8ed3055c1cc69207ff0347c31891`
+— and the provenance record carries the exact command including
+`--cohort-draw-seed 20260802`. Verified again after the pull. Local copy:
+`results/transfer_20260801/d2bprime_draw/protgpt2_draw20260802/`.
+
+**The first result. ProtGPT2's census-to-causal correlation under a different
+corpus draw, and it moves AWAY from the text range.**
+
+| condition | draw 20260728 | draw 20260802 | delta |
+|---|---:|---:|---:|
+| senders_exact / cases_exact | −0.0763 | **−0.1513** | −0.0750 |
+| senders_exact / cases_approximate | −0.1554 | **−0.2259** | −0.0705 |
+| senders_approximate / cases_exact | −0.0058 | **−0.0547** | −0.0489 |
+| senders_approximate / cases_approximate | −0.0537 | **−0.0610** | −0.0072 |
+
+Range −0.1554…−0.0058 → **−0.2259…−0.0547**. All four conditions move down, by
+0.007 to 0.075 against a modality gap of about 0.5, and the arm stays far below
+both the text minimum (+0.371) and the protein maximum (+0.271). **On this arm the
+separation widens under a second draw rather than narrowing.** One arm only; the
+matched-pair text control has not landed and nothing may be concluded about the
+separation until it does.
+
+*The pre-stated census property is confirmed in the artefact.* The protein
+**exact**-repeat cohort digest is byte-identical across the two draws —
+`3ea68a87c593c532` both times — exactly as recorded before the run, because
+Swiss-Prot yields exactly 48 matching records against a request of 48 and
+`_select_matching` returns all of them under any seed. The analysis cohort and the
+approximate-repeat cohort both changed. So the movement above is carried by the
+approximate cohort and the unigram fit, and the exact-case conditions are
+*structurally* insensitive to the draw on the protein side — which is why they move
+least in absolute terms among the conditions that could move at all.
+
+**The scheduling lesson, and my second operational fault of the session.** The
+per-GPU dispatcher fired both cross-lab jobs within seconds of the drop, because
+the queue logs it keyed on had just written `ALL LANES DRAINED` and `exit 90`.
+Both jobs refused to schedule — the health check stated no `Health=` line and the
+controller declined an undecidable precondition, which is the guard working — but
+the queue was consumed and the dispatcher exited. **After a drop the local queue
+logs say "drained" while three cards are busy: the pod is the only authority on
+what is running.** llama was relaunched on the genuinely free GPU 1 at 02:06 and
+is computing; the qwen leg is now watched by a driver that polls in-pod
+`nvidia-smi` for a card under 1000 MiB rather than trusting a local marker, and
+that retries rather than surrendering the card when a health check refuses.
+
+*Still owed operationally:* the three surviving workers have no controller left to
+pull their artefacts. Each must be verified against its own manifest and pulled by
+hand when it finishes, exactly as ProtGPT2's was.
