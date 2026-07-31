@@ -96,7 +96,7 @@ These rules exist because this project has twice set a numerical gate whose atta
 5. **Exploratory results stay labelled.** Pilot measurements are descriptive and motivate hypotheses; they do not establish that an assumption holds, fails, or causes an observed gap.
 6. **A limitation is scoped before it is reported.** One demonstrated on the text control is a property of the **method**; one appearing only on protein arms is a property of the **transfer**. The distinction is the spine of the catalogue and is not optional.
 
-Appendix B of the audit document holds the further standing rules — twenty-seven as of 2026-07-31 — each earned by a specific failure here. Read it before touching measurement code.
+Appendix B of the audit document holds the further standing rules — twenty-eight entries numbered to 27, because rule 15b was inserted beside 15 rather than renumbering a set that is cited by number elsewhere. Each is earned by a specific failure here. Read it before touching measurement code.
 
 ## Compute policy
 

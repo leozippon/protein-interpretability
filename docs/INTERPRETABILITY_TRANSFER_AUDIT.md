@@ -725,7 +725,7 @@ only after a load check on the pod.
 
 ### D2 — Where the methods transfer, and whose fault it is when they do not
 
-The deliverable. Twenty-one limitations are catalogued in §5, each scoped as
+The deliverable. Twenty-three limitations are catalogued in §5, each scoped as
 method, model, data or interface. What remains:
 
 | item | pre-registered gate | cost |

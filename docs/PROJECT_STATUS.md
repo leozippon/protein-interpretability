@@ -9,7 +9,7 @@ InterpretabilityTransfer is the only live research programme in this repository.
 ## Progress
 
 - **Model comparison:** closed to open-ended measurement. The surviving induction result is a probe-dependent upper-tail difference, not a general modality or capability claim.
-- **Method transfer:** active and the main deliverable. Twenty-one limitations are catalogued; several were demonstrated on text controls and therefore constrain the method rather than protein models. The strongest directly measured result is EXP-R2-071/072: the prefix-matching induction census ranks causal importance on text decoders and does not on protein decoders, with an off-distribution text control ruling out distribution mismatch.
+- **Method transfer:** active and the main deliverable. Twenty-three limitations are catalogued; several were demonstrated on text controls and therefore constrain the method rather than protein models. The strongest directly measured result is EXP-R2-071/072: the prefix-matching induction census ranks causal importance on text decoders and does not on protein decoders, with an off-distribution text control ruling out distribution mismatch. Two checks the audit records as owed against it — a corpus-draw check and a cross-lab text control, the latter needing an instrument extension that has now landed — are in flight as EXP-R2-077 and EXP-R2-079.
 - **Adapted method:** not yet justified. Construction remains gated on a reproducible root cause from the transfer evaluation.
 
 The active contract contains 12 model arms and 11 stages. `scripts/transfer/panel_contract.py` is the scheduling source of truth; never restate its counts by hand.
