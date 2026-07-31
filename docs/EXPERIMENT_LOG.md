@@ -3235,3 +3235,235 @@ The pod's four GPUs were at 0%, 100%, 0%, 0% on waking — three idle since 06:3
 *Also visible with seven text arms:* the text decay ratio spans 0.423 (gpt2) to 0.611 (dialogpt-small), much wider than the four-arm view suggested, and it does not order by scale — gpt2 124M reads 0.423 while gpt2-large 774M reads 0.489 and llama 3.21B reads 0.526, with gpt2-medium 355M at 0.509 out of order. The protein side does order by scale (ProGen2-small 0.596 to ProGen2-medium 0.732, with two 765M arms differing only in corpus at 0.720 and 0.732), so the extrapolation risk runs toward *small* protein arms, and the smallest is already measured.
 
 **Wake point.** The H200 is idle and deliberately so: the next item is D2.c, the exhaustive causal census on copy suppression, which is the replication that would generalise L22 from one mechanism to two and is the gate on §8's opening 0. It needs a design pass rather than a driver — the previous PAA work returned NO-GO — and starting it unplanned at the end of a long session is how the specification defects in Appendix B rule 2 got written. The orchestration fault recorded above (a lane with no timeout on a hung controller) should be fixed before the next long campaign, since it cost ~1.5 GPU-hours of idle time on a single run.
+
+---
+
+## 2026-08-01 — EXP-R2-077/078/079: the two owed checks on L22, and the repairs that had to land first
+
+Picked up the wake point above. The next item was recorded as D2.c; the design
+pass it asked for is below and its verdict is **not schedulable as specified**.
+What went onto the idle cards instead is the pair of checks EXP-R2-072 records as
+owed against L22, the programme's strongest part-2 result — one of which needed a
+code extension that also lifted a catalogued instrument limit.
+
+### EXP-R2-077 — the cohort-draw check on the census-to-causal correlation
+
+*Why this and not D2.c.* EXP-R2-072 (iv) states plainly that the seed-2 runs are
+**not** cohort-draw checks: `--seed` governs case sampling and the bootstrap while
+the corpus draw is governed by `--cohort-draw-seed`, and the repeat-cohort digests
+were byte-identical across the two seeds. Appendix B rule 22 forbids inheriting a
+draw-robustness result from another statistic. The check costs no new code.
+
+*Design.* Four arms at the byte-identical EXP-R2-071/072 configuration
+(`--exhaustive-senders --repeat-cohort-size 48`) under `--cohort-draw-seed 20260801`:
+**gpt2-xl**, the text minimum at +0.371 whose fall would close the gap from above;
+**zymctrl**, the protein maximum at +0.271 whose rise would close it from below;
+and **gpt2-large / protgpt2**, the matched pair. One alternate draw rather than
+two — at K = 2 a shifted arm cannot be told from a noisy one, so this is posed as
+an ordering question, not a variance estimate. Launched 00:08 +08:00, four lanes,
+work-stealing, per-job `timeout` as a mitigation for the hung-controller fault the
+wake point flags (a mitigation, not the fix: it frees the lane and does not reap a
+pod-side process).
+
+*Stated before the run: part of this statistic cannot move.* Swiss-Prot yields
+exactly **48** exact-repeat matching records of 203,063 eligible against a request
+of 48, so `_select_matching` returns all of them under any seed and the protein
+exact-repeat cohort is a **census**. Its identity cannot change. The check
+therefore bites on the approximate conditions and on the text arms, where the
+draws do differ — verified on B before launch: 48 of 137 matching (text exact) and
+48 of 1022 (text approximate) at the default seed against 48 of 133 and 48 of 1021
+at 20260801, all four digests distinct.
+
+*A protein-specific fragility, found by the entry point refusing to run short.*
+ProtGPT2 died at 40 seconds on draw 20260801: **58 of 64** approximate-repeat path
+cases, 32 keys outside the unigram support. A CPU scan over four draws before any
+further GPU time:
+
+| draw | protgpt2 exact | protgpt2 approximate | zymctrl exact | zymctrl approximate |
+|---|---|---|---|---|
+| 20260728 (reference) | 64 | 64 | 64 | 64 |
+| 20260801 | 64 | **58 — FAIL** | 64 | 64 |
+| 20260802 | 64 | 64 | 64 | 64 |
+| 20260803 | 64 | **57 — FAIL** | 64 | 64 |
+
+The arm ran at 20260802. **The selection is on case-count parity — the same
+criterion that set `--repeat-cohort-size 48` in EXP-R2-071 — and is evaluated
+before any effect is measured, so it cannot select on the outcome.** The rejected
+draws are recorded rather than hidden, and the failure rate is itself a result:
+**ProtGPT2's 64-case parity in EXP-R2-071/072 was draw-contingent on roughly half
+the draws tried, and nothing said so.** That is the protein-side cohort
+sensitivity of §5.05(b) reaching the *case set* rather than the estimate, and it is
+specific to the subword protein arm — ZymCTRL, residue-level, reaches 64 on every
+draw tested. ZymCTRL kept draw 20260801 rather than being killed and restarted at
+20260802: the check is per-arm by construction, each arm against its own reference
+draw, so the two protein arms need not share one alternate permutation.
+
+*Status at the time of writing: running, four GPUs at 100%. No result.*
+
+### EXP-R2-078 — a repository audit under the Development Principles, and four repairs
+
+Two Opus sub-agents audited `prediction_addressed.py`, `path_patching.py`,
+`statistics.py`, `scoring.py` and `io.py`. Every finding acted on below was
+re-derived independently from the code or the shipped artefacts before any change.
+Two findings were rejected as suggestions rather than defects and are not acted on
+here (a seed collision in the random-direction control that is not a statistical
+error, and a dead branch).
+
+**(1) A published number moves: the reliability figures paired the wrong centre
+with the wrong standard error.** `head_effect_reliability` read the observed
+variance from the case-weighted `mean` under *both* sampling units while varying
+only the standard error, so the probe-clustered figure divided a probe-unit error
+variance by a case-unit observed variance. `sender_recoveries` states the pairing
+rule at the point it builds the record — `mean` weights probes by case count,
+`sem_probe_clustered` describes `mean_probe_clustered`, which weights them equally
+— and the function twelve lines away broke it. Recomputed over every shipped
+`d2bprime*` artefact:
+
+| arm / condition | as published | correctly paired |
+|---|---:|---:|
+| ZymCTRL, approximate cases, magnitude | **0.008** | **0.170** |
+| ZymCTRL, approximate cases, signed | 0.189 | **0.443** |
+| gpt2-xl, approximate cases, signed | 0.659 | 0.706 |
+| gpt2-large, approximate cases, signed | 0.779 | 0.807 |
+| every exact-case condition, ten arms | — | moves by < 0.006 |
+
+The audit document's "**0.008** — a grid that cannot be ranked at all" is
+withdrawn as stated. 0.170 is still very low, and the exact-case range is
+unaffected, so **nothing resting on the exact-case reliability moves**, including
+the inference that differential attenuation does not explain the matched-pair gap.
+The mismatch was invisible because the test fixture omitted `mean_probe_clustered`
+entirely and pinned the two mismatched values as expectations; they are now pinned
+as *retracted* values, reconstructed in the test from the artefact, so a
+regression restores them loudly.
+
+**(2) The instrument limit on L22 is lifted, and validated on a real checkpoint.**
+`path_patching` refused `qwen2` and `llama`, which is why every text arm carrying
+L22 is GPT-2 architecture — the exact configuration that retracted the QK/OV
+finding. The extension is mechanical, and the reason it is mechanical is worth
+recording: the three things a rotary decoder does differently are all *downstream*
+of the patch. RoPE is applied to queries and keys inside attention, and the sender
+patch replaces the input to the output projection, which is the attention result.
+Grouped-query attention changes which key/value head a query head reads and not
+the layout of that projection's input, which is the concatenation of per-*query*-head
+outputs in every case. RMSNorm is a drop-in for the final-norm pre-hook.
+
+The trunk and final norm now come from `circuits.inner_decoder` and
+`circuits.final_norm` rather than from six hard-coded `model.transformer.ln_f`
+references — Appendix B rule 12, one declaration imported. Two guards asserted
+`n_head * head_dim == d_model`, which is **not** the invariant the patch needs:
+the slice indexes the output projection's *input*, and the two coincide only while
+no panel arm declares its own `head_dim`.
+
+*Validated end to end on Qwen2.5-0.5B, 336 exhaustive senders, 727 s on one L20.*
+`structural invariants passed`: head-write linearity at **2.19e-06** median
+relative error against a 0.02 tolerance — which is the GQA correctness proof,
+since it checks that the per-head column slice of the projection's input matches
+the per-query-head slice of `W_O` that `head_ov_weights` takes — readout-matches-model
+at **1.21e-06**, position locality at 4.77e-07. The panel contract was regenerated;
+`induction_path_patching` now declares all 12 arms.
+
+**(3) `content_low` did not survive the pool round trip.** `save_pool`,
+`load_pool` and `_subset` in `14_paa_census.py` each dropped it, so a reloaded pool
+silently took the dataclass default of 0 and `antecedent_sets` would search from
+position 1 instead of the first content token — adding ProtGPT2's newline wrapping
+or ZymCTRL's `<sep>` to the key set the causal knockout removes, which is exactly
+the failure that function documents itself as preventing. Latent, because the only
+pool ever reloaded is the text control's, whose bound is 0 either way; live the
+first time a protein pool is scored, which is D2.c. The round trip is now derived
+from `dataclasses.fields` and a pool missing a field is refused rather than
+defaulted.
+
+**(4) A percentile nobody could resolve.** `cluster_bootstrap` accepted any
+`alpha` against any replicate count, and the census's Bonferroni column asks for
+`0.05 / (2 * n_heads)`: at the 24 heads it screens and 1000 replicates that is
+sorted index **1.04**, so the "lower bound" is the second-smallest draw and moves
+by 0.0028 logits between seeds — the size of the smallest effect published beside
+it. At 720 heads it is index 0.035. One rule now ties alpha to replicates,
+**replacing** the flat `replicates >= 100`, which is the same rule stated for one
+alpha and stated wrongly: at the default alpha a hundred replicates put 2.5 draws
+in the tail. The caller either buys the replicates or withholds the column with
+its reason attached.
+
+*Validation.* 441 tests plus 34 subtests pass (from 434), ruff clean, both
+generated contracts verified.
+
+### EXP-R2-078 (continued) — the D2.c design pass, and why it is not schedulable
+
+**Blocker 1: the matched pair cannot enter the estimand.** Verified against the
+tokenisers rather than inferred. ProtGPT2 renders at **0.349 tokens per residue**,
+so a 512-token pool row needs ~1468 residues against a cohort band capped at 800 —
+no row qualifies and `tokenised_rows` refuses the arm. ZymCTRL is worse than a band
+problem: `content_bounds` requires exactly one `<end>` inside the window and the
+row must also reach it, and those two conditions intersect at the single residue
+length `width - 10` — measured, exactly 502 at width 512. So D2.c as specified runs
+GPT-2 lineage against ProGen2 lineage **without the matched pair**, which is the
+only modality-identifying comparison the panel has. A cross-lineage-only result on
+the second mechanism cannot discharge a gate about the first.
+
+**Blocker 2: the selector and the causal statistic are measured on different key
+sets, alphabet-dependently.** `paa_attention_scores` scores attention onto the
+*nearest* earlier occurrence; `knockout_effects` removes *every* earlier
+occurrence. Counted from the shipped pools: median **3** occurrences before the
+query on gpt2-large against **13–17** on ProGen2-medium. A rank correlation
+between the two is therefore attenuated harder on protein by construction, in the
+direction of the hypothesis. `corruption_effects` already fixed this exact error
+for the matching gate and its docstring names it — "a conclusion the estimator
+manufactured out of alphabet size".
+
+**Blocker 3 is cleared, and it was the one that mattered most.** The plan had
+inherited from L5 that `paa_specific` does not rank causal effect even on
+gpt2-large, which would make D2.c a gate no text control can pass. **That figure
+is on the signed effect; D2.c's statistic is the magnitude.** Recomputed on both
+retained trees, no re-run:
+
+| tree | heads | signed rho | magnitude rho |
+|---|---:|---:|---:|
+| `paa_gate` | 24 | +0.086 (p = 0.69) | **+0.608 (p = 0.0016)** |
+| `paa_gate` | 16 screened | +0.265 (p = 0.32) | **+0.621 (p = 0.010)** |
+| `paa_gate_extended` | 32 | −0.162 (p = 0.38) | **+0.533 (p = 0.0017)** |
+| `paa_gate_extended` | 24 screened | −0.305 (p = 0.15) | **+0.648 (p = 0.0006)** |
+
+Near zero on the signed scale in all four cells; +0.53 to +0.65 and significant in
+all four on the magnitude scale — comparable to gpt2-large's induction +0.428 to
++0.507. **L5 stands exactly as written**, since it claims the signed result; what
+changes is the inference the plan drew from it. Two limits belong in D2.c's
+pre-registration: these heads were selected by `paa_specific` itself, so the
+correlation is range-restricted and the all-grid value may move either way; and a
+magnitude ranking conflates suppressive with promoting heads, so it is evidence
+that the selector orders causal importance, not that it finds copy suppression.
+
+**Cost, re-derived.** `knockout_effects` needs `ceil(N/B) * (2 + H)` forwards:
+36,100 at gpt2-large's 720 heads and 800 instances. Anchored on EXP-R2-059's
+measured 0.73 s per (16, 512) forward, **3–5 H200-hours for gpt2-large alone**,
+23–39 for a ten-arm panel. Three avoidable costs sit inside it — the full
+`[batch, token, vocab]` logit tensor materialised where one position is read, a
+dense `(B, n_head, W, W)` mask per head per batch, and `use_cache` left on — and
+fixing them brings the panel to **12–25 H200-hours**. The table's "~13 GPU-h" was
+costed by analogy.
+
+### EXP-R2-079 — the cross-lab control on L22, chained and pre-registered
+
+qwen2.5-0.5b and llama-3.2-3b on the exhaustive causal census at the byte-identical
+EXP-R2-071/072 configuration, so they combine with the ten arms already measured.
+Chained behind EXP-R2-077 on the terminal lines of its queue logs rather than on a
+process pattern — a chain that greps for its own launch command matches its own
+wrapper, which idled the GPUs for eight minutes in EXP-R2-071.
+
+**Pre-registered, because the scale trend makes one arm genuinely ambiguous.** The
+text side falls about −0.26 per decade (0.657 / 0.575 / 0.428 / 0.371 at 124M /
+355M / 774M / 1.56B). Extrapolating: qwen2.5-0.5b at 494M predicts **≈+0.60**,
+comfortably inside the text range; llama-3.2-3b at 3.21B predicts **≈+0.29**,
+which is *within reach of the protein maximum of +0.271*. So a llama value near
+0.29 is what the scale trend predicts and is **not** evidence against L22; a value
+near zero or negative, like ProtGPT2's, would be. Recording this before the run,
+because reading a narrow margin either way afterwards is how the specification
+defects in Appendix B rule 2 got written.
+
+**Wake point.** Read `logs/draw_queue.log`, `logs/draw_protgpt2_queue.log` and
+`logs/crosslab_census_queue.log` in that order; artefacts at
+`results/.../d2bprime_draw_20260801/<arm>/` and `.../d2bprime_crosslab_20260801/<arm>/`,
+primary statistic the all-head Spearman between prefix-matching score and causal
+effect magnitude, read against the text range +0.371 to +0.706 and the protein
+maximum +0.271. Then either clear D2.c's two blockers or scope its claim to the
+lineages it can reach. The hung-controller fault is mitigated per-lane and still
+not fixed in the orchestration layer.

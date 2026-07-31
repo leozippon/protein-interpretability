@@ -358,6 +358,19 @@ The figures that carry the most weight, with their provenance, so the catalogue 
 
 **L5 — no valid `paa_specific` screen for copy-suppression on GPT-2-large.** `paa_specific` rank against measured ΔM-gap: Spearman **−0.062 (p = 0.71)** over 40 heads; 5 of 56 heads clear the control band against induction's 70 of 720. This does not test another proxy or an exhaustive causal effect-size census.
 
+> **L5 is on the *signed* effect, and D2.c's statistic is the magnitude — on which the same heads and the same artefacts read +0.53 to +0.65 (EXP-R2-078, CPU, no re-run).** The distinction is not a technicality and it decides whether D2.c has a positive control at all. L5 asks whether `paa_specific` ranks heads by *suppression strength*, a signed question: knocking out a suppressive head should raise the target's logit relative to the runner-up, so its ΔM-gap should be positive. L22's statistic is a different one — whether the selector orders *causal importance*, which is `|effect|` — and that is the statistic D2.c would have to replicate. Recomputed on both retained trees:
+>
+> | tree | heads | signed ρ | \|effect\| ρ |
+> |---|---:|---:|---:|
+> | `paa_gate` | 24 (16 screened + 8 control) | +0.086 (p = 0.69) | **+0.608 (p = 0.0016)** |
+> | `paa_gate` | 16 screened only | +0.265 (p = 0.32) | **+0.621 (p = 0.010)** |
+> | `paa_gate_extended` | 32 (24 + 8) | −0.162 (p = 0.38) | **+0.533 (p = 0.0017)** |
+> | `paa_gate_extended` | 24 screened only | −0.305 (p = 0.15) | **+0.648 (p = 0.0006)** |
+>
+> On the signed scale the correlation is indistinguishable from zero in all four cells; on the magnitude scale it is +0.53 to +0.65 and significant in all four — **comparable to gpt2-large's induction value of +0.428 to +0.507**, which is the text control D2.c would be judged against. **L5 stands exactly as written**: no valid *signed* screen for copy suppression exists on this arm, and that is what it claims. What changes is the inference the plan had drawn from it — that D2.c's positive control was known dead. It is not known dead, and on the evidence available it is probably attainable.
+>
+> **Two limits on that reading, both material.** These 24–32 heads were *selected by `paa_specific` itself* plus a control block, so the correlation is over a restricted range and the exhaustive-grid value could move in either direction — the same range-restriction that made EXP-R2-071's top-32 reading disagree with its all-grid one. And a magnitude ranking conflates suppressive heads with promoting ones, so a high magnitude ρ is evidence that the selector orders causal importance, not that it finds copy suppression. Both belong in D2.c's pre-registration rather than in its discussion.
+
 **L8 — the aperture is algebraically forced.** Numerical rank of `∂logits/∂h_l` is exactly **31** for ProGen2-medium and **457** for ZymCTRL, at every layer and probe, against 1150–1278 for the 50k-vocab arms. Validated against central finite differences at 2.2e-4–2.5e-3 relative error. **Vocabulary-conditional, not modality-conditional** — ProtGPT2's interface is near-full-rank. The honest label is *protein-typical, not protein-necessary*.
 
 **L9 — explanation closure, measured; re-derived under seeded permutation (EXP-R2-068, plan item B3).** Bits/symbol within one 300-symbol window, every channel now drawn under a seeded permutation of its **whole** corpus and every unit list visited in seeded order, with Student-t intervals over per-unit values (not clustered):
@@ -776,6 +789,18 @@ Three protein arms sit at Gini 0.940–0.944 against 0.826–0.829 for both text
 **(iii) Noise is not the explanation, and this was tested rather than assumed.** Per-head effect estimates carry SEMs, so the reliability of each arm's head ranking is computable: **0.916 to 0.991** across the six arms, and the SNR of the mean effect is 1.26–6.15. Disattenuating the Pearson correlation for measurement error moves it by at most 0.04 on any arm. The low protein ρ is not attenuation from noisier estimates.
 
 > **Corrected (EXP-R2-072): that range is computed on the sampling unit this module declares to be the wrong one.** `path_patching.py` publishes both a case-level `sem` and a `sem_probe_clustered`, and states in two places that the probe record, not the case, is the sampling unit. The 0.916–0.991 figures reproduce exactly, from the **case**-level SEM on effect *magnitude*. Recomputed by the versioned implementation on the probe-clustered SEM the same statistic reads **0.827–0.975** on the exact-repeat cases, and on the approximate ones ZymCTRL falls to **0.008** — a grid that cannot be ranked at all. **The inference (iii) draws still holds where it matters:** on approximate cases gpt2-large and ProtGPT2 have near-equal probe-clustered reliability while their ρ are far apart, so differential attenuation does not explain the matched-pair gap. But reliability is a *variance* statistic dominated by the few large heads, so a value near 1 was never capable of establishing that the median head is resolved — which is the separate problem EXP-R2-072 (v) records against the concentration statistics. Both units and both scales are now emitted, each labelled, so the choice is visible in the artefact rather than made in an analysis script.
+>
+> > **Corrected again (EXP-R2-078): the 0.008 is not a reliability at all, and the paired figure is 0.170.** The correction above changed the standard error and left the *centre* alone. `head_effect_reliability` read the observed variance from the case-weighted `mean` under both sampling units, so the probe-clustered figure divided a probe-unit error variance by a case-unit observed variance — two different estimators. `sender_recoveries` states the pairing rule at the point it builds the record: `mean` weights each probe by how many cases it contributed, and `sem_probe_clustered` describes `mean_probe_clustered`, which weights probes equally. Recomputed with each standard error against the centre it belongs to, on the same artefacts:
+> >
+> > | arm / condition | as published | correctly paired |
+> > |---|---:|---:|
+> > | ZymCTRL, approximate cases, magnitude | **0.008** | **0.170** |
+> > | ZymCTRL, approximate cases, signed | 0.189 | **0.443** |
+> > | gpt2-xl, approximate cases, signed | 0.659 | 0.706 |
+> > | gpt2-large, approximate cases, signed | 0.779 | 0.807 |
+> > | every exact-case condition, ten arms | — | moves by < 0.006 |
+> >
+> > **What this changes.** "A grid that cannot be ranked at all" is withdrawn as stated: 0.170 is very low — 83% of the head-to-head spread on that condition is estimation noise — but it is twenty times the retracted figure and it is not zero. The exact-repeat range is unaffected, so **nothing that rests on the exact-case reliability moves**, including the (iii) inference that differential attenuation does not explain the matched-pair gap. The mismatch was invisible because the test fixture omitted `mean_probe_clustered` entirely and the two retracted values were pinned as expectations. They are now pinned as *retracted* values, reconstructed in the test from the artefact, so a regression to them fails loudly.
 
 **(iv) The census's failure mode is recall.** ProGen2-medium's top-5 Jaccard is **1.000** and collapses to 0.250 by k=20. The strongest head the census *rejects* carries \|effect\| 0.0194 on gpt2-large against 0.0497 (ProtGPT2), 0.0290 (ProGen2-medium) and 0.3049 on ZymCTRL, where the census selects nothing at all.
 
@@ -835,8 +860,95 @@ The text minimum (+0.371) exceeds every protein maximum (+0.271) in all **40** a
 
 *Limits.* Same as EXP-R2-071: path patching on repeat probes measures causal importance for repeat prediction, not induction by mechanism; 64 cases per condition. Every text arm on this panel is GPT-2 architecture, so a cross-lab text arm would strengthen (ii) — `induction_path_patching` refuses `qwen2` and `llama` because `SUPPORTED_ARCHITECTURES` has no module layout for them, which is a recorded instrument limit and a candidate extension, not an omission. Artefacts: `results/transfer_20260730/d2bprime_ext/`, `results/transfer_20260730/d2bprime_seed2/`.
 
-| **D2.c** | Same on copy suppression — does effect size separate arms where prevalence cannot? Directly answers the measurability question §1 leaves open | ~13 GPU-h |
+> **Both owed checks are now in flight (2026-08-01). Neither result is in this document yet; do not anticipate them.**
+>
+> **The cohort-draw check (iv) asks for — EXP-R2-077.** Four arms at the identical configuration under a different corpus draw: gpt2-xl (the text minimum, the arm whose fall would close the gap from above), ZymCTRL (the protein maximum, whose rise would close it from below), and the matched pair. One alternate draw, not two: at K = 2 a shifted arm cannot be told from a noisy one, so this is posed as an ordering question rather than a variance estimate. **Part of the statistic is immune to the draw by construction and that is worth stating**: Swiss-Prot yields exactly 48 exact-repeat matching records of 203,063 eligible against a request of 48, so the protein exact-repeat cohort is a corpus *census* and its identity cannot change under any seed. The check therefore bites on the approximate conditions and on the text arms.
+>
+> *A protein-specific fragility surfaced before any GPU time was spent.* ProtGPT2 reaches only **58 of 64** approximate-repeat path cases under draw 20260801 and **57** under 20260803, because a multi-residue BPE puts the repeat's key token outside the unigram support fit on the analysis cohort; ZymCTRL, residue-level, reaches 64 on every draw tested. The entry point refuses to run short, so the arm ran at 20260802 instead and the rejected draws are recorded. **This means ProtGPT2's 64-case parity in EXP-R2-071/072 was itself draw-contingent**, on roughly half the draws tried, and nothing said so — a new instance of the protein-side cohort sensitivity of §5.05(b), reaching the case set rather than the estimate.
+>
+> **The cross-lab control this limits paragraph asks for — EXP-R2-079.** The instrument limit is lifted: `path_patching` now resolves the llama and qwen2 layouts, validated end to end on a Qwen2.5-0.5B checkpoint at 336 exhaustive senders with head-write linearity at 2.2e-06 relative error under grouped-query attention (EXP-R2-078). qwen2.5-0.5b and llama-3.2-3b run at the identical configuration. **Pre-registered, because the scale trend makes one arm ambiguous:** extrapolating (iii)'s −0.26 per decade predicts ≈+0.60 for qwen (494M) and **≈+0.29 for llama (3.21B) — within reach of the protein maximum of +0.271**. A llama value near 0.29 is therefore what the scale trend predicts and is *not* evidence against L22; a value near zero or negative, like ProtGPT2's, would be. Written down before the run, because reading a narrow margin either way afterwards is the failure Appendix B rule 2 keeps finding.
+
+| **D2.c** | Same on copy suppression — does effect size separate arms where prevalence cannot? Directly answers the measurability question §1 leaves open. **Design pass done (EXP-R2-078); not schedulable as specified.** Two blockers must be cleared first and the cost is 2x what this row carried — see the D2.c section below | 12–25 GPU-h |
 | **D2.d** | Complete the TG campaign: seven of twelve stages have no artefact in the corrected tree, so `SUMMARY.json` can only be produced in partial mode | ~6 GPU-h |
+
+### D2.c — the design pass, and the three things that have to be built first
+
+Costed at "~13 GPU-h" while it was one line in a table. A design pass
+(EXP-R2-078) put that at **12–25 H200-hours** for a ten-arm panel and found that
+the measurement as imagined cannot be run at all on the two arms that matter
+most. Recorded here before any compute is scheduled, because the plan's own
+history is that a gate written into a table and costed by analogy is how
+Appendix B rule 2 keeps being violated.
+
+**What D2.c is.** L22 says a head-prevalence census's selector orders causal
+importance on text decoders and not on protein decoders, measured on *one*
+mechanism. §8 item 0 is gated on replicating that on a second mechanism, copy
+suppression: score every head with `paa_specific`, measure every head's causal
+effect by knockout, and compare the two rankings — the same design as D2.b′, a
+different selector and a different metric.
+
+**Blocker 1 — the matched pair cannot enter the estimand.** Verified directly
+against the tokenisers, not inferred:
+
+| arm | tokens per residue | residues needed for a 512-token row | admitted at width 512, band 520–800 |
+|---|---:|---:|---|
+| progen2-medium | 1.001 | ~511 | yes |
+| zymctrl | 1.016 | ~504 | **only at exactly 502 residues** |
+| protgpt2 | 0.349 | **~1468** | **none** |
+
+ProtGPT2's multi-residue BPE means no row inside the cohort band reaches the
+pool's 512-token width, so `tokenised_rows` refuses the arm outright. ZymCTRL is
+worse than a band problem: its conditioned rendering is
+`{ec}<sep><start>{seq}<end>`, `content_bounds` requires exactly one `<end>` inside
+the window, and the two conditions intersect at the single residue length
+`width − 10`. **So D2.c as specified would run on the GPT-2 lineage against the
+ProGen2 lineage and would not include the matched pair** — the only
+modality-identifying comparison this panel has (§2). A cross-lineage-only result
+on the second mechanism cannot discharge a gate about the first. Fixing it means
+raising `--protein-max-len` past ~1500 for ProtGPT2, which moves the cohort band
+and is an L13 exposure that must be declared and measured, and giving ZymCTRL a
+window co-designed with its conditioning prompt — the same wall L15 put in front
+of the far-band estimand.
+
+**Blocker 2 — the census and the causal statistic are measured on different key
+sets, and the difference is alphabet-size-dependent.** `paa_attention_scores`
+scores attention onto `pool.antecedent`, the *nearest* earlier occurrence of the
+predicted token. `knockout_effects` removes every earlier occurrence, via
+`antecedent_sets`. Counted from the shipped pools, occurrences before the query:
+median **3** per instance on gpt2-large against **13–17** on ProGen2-medium. The
+selector therefore sees one of three keys on the text arm and one of thirteen on
+the protein arm, so a rank correlation between the two is attenuated harder on
+protein *by construction* — in the direction of the hypothesis. This is the same
+error `corruption_effects` already fixed for the matching gate, whose docstring
+says it plainly: "a conclusion the estimator manufactured out of alphabet size".
+It must be fixed in `paa_attention_scores` before D2.c produces a number, not
+noted afterwards.
+
+**Blocker 3, now cleared — the positive control is probably attainable.** The
+plan had inherited from L5 the belief that `paa_specific` does not rank causal
+effect even on gpt2-large, which would make D2.c a gate no text control can pass.
+That figure is on the signed effect; on the magnitude scale L22 uses, the same
+heads read **+0.53 to +0.65**. See the L5 block in §5.1 for the table and for the
+two limits on that reading.
+
+**Cost, re-derived rather than carried over.** `knockout_effects` needs
+`ceil(N/B) × (2 + H)` forward passes for `H` heads and `N` instances: 36,100 at
+gpt2-large's 720 heads and 800 instances, against the 24 heads the gate stage runs
+today. Anchored on EXP-R2-059's measured 0.73 s per (16, 512) forward, that is
+**3–5 H200-hours for gpt2-large alone** and 23–39 for a ten-arm panel, with
+gpt2-xl 42% of it. The stage also materialises the full `[batch, token, vocab]`
+logit tensor on every pass where one position is read, allocates a dense
+`(B, n_head, W, W)` knockout mask per head per batch, and leaves `use_cache` on —
+`path_patching._readout` avoids the first of these and documents why. Fixing the
+three brings the panel to **12–25 H200-hours**. TF32 would recover roughly 4x more
+but must first pass the quantisation check that rejected bfloat16 for this metric,
+which is cheap and has not been run.
+
+**Order of work, and it is not "start the campaign".** Fix blocker 2; decide and
+declare the protein band and window that admit ProtGPT2 and ZymCTRL, or record
+that the matched pair is unavailable and scope D2.c's claim accordingly; run the
+exhaustive census on gpt2-large alone and check the all-grid positive control
+against the restricted-range +0.53 to +0.65; only then schedule the panel.
 
 ### D3 — Adapted methods, hard-gated
 
