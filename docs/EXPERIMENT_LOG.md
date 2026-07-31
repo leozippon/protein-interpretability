@@ -3618,3 +3618,37 @@ that retries rather than surrendering the card when a health check refuses.
 *Still owed operationally:* the three surviving workers have no controller left to
 pull their artefacts. Each must be verified against its own manifest and pulled by
 hand when it finishes, exactly as ProtGPT2's was.
+
+**Addendum (2026-08-01, 02:30): the campaign is left autonomous, and the wake point is restated against what actually survived.**
+
+Three watchers are running on B, all `setsid`, none keyed on a process pattern:
+
+| driver | what it does | log |
+|---|---|---|
+| `crosslab_llama.sh` | llama-3.2-3b on GPU 1 under its own controller, which pulls on success | `logs/crosslab_llama_g1.log` |
+| `crosslab_qwen_watch.sh` | claims the next card the **pod** reports under 1000 MiB, retries a refused health check rather than surrendering the card | `logs/crosslab_qwen_watch.log` |
+| `draw_recover.sh` | verifies and pulls the three orphaned EXP-R2-077 runs when their workers promote, refusing anything whose digest does not match | `logs/draw_recover.log` |
+
+All four H200s are at 100%: gpt2-xl, gpt2-large and zymctrl on the surviving
+EXP-R2-077 workers, llama-3.2-3b on the fresh controller.
+
+**Wake point, replacing the one written at 01:40.**
+
+1. `logs/draw_recover.log` first. It says which of gpt2-large, zymctrl and gpt2-xl
+   were pulled and verified, and names any that were **refused** on a digest
+   mismatch. A refusal is a result about the channel, not about the arm, and the
+   arm is then re-runnable from its recorded command.
+2. Read each arm's `causal_census_agreement.spearman_census_vs_causal_magnitude.rho`
+   over all four conditions and put it beside the reference draw in
+   `results/transfer_20260730/d2bprime*/`. **ProtGPT2 is already in:** it moves from
+   −0.1554…−0.0058 to −0.2259…−0.0547, away from the text range. The comparison
+   that matters is gpt2-large, its matched control: if the text arm moves down by
+   a comparable amount the check is uninformative, and if it holds near +0.43 to
+   +0.51 the separation survives a second draw on the only modality-identifying
+   pair the panel has.
+3. `logs/crosslab_llama_g1.log` and the qwen log. Read those two against the
+   pre-registration recorded above — qwen ≈ +0.60 expected, llama ≈ +0.29 expected
+   and within reach of the protein maximum, so **a narrow llama margin is the
+   prediction, not a refutation**.
+4. Only then D2.c, whose two blockers and re-derived cost are in the audit
+   document's own D2.c section.
