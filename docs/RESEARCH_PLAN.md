@@ -21,12 +21,12 @@ The prior conserved sparse-readout programme — atlas, EC steering, enzyme desi
 
 ## Model panel
 
-Eleven autoregressive decoders under one code path, each fed in the format it was trained on. Full table, with the identifying contrasts, in the audit document §2.
+Twelve autoregressive decoders under one code path, each fed in the format it was trained on. Full table, with the identifying contrasts, in the audit document §2. `scripts/transfer/panel_contract.py` is the declaration; the lists below are a reading of it.
 
 | modality | arms |
 |---|---|
 | text | gpt2, gpt2-medium, gpt2-large, gpt2-xl, dialogpt-small, qwen2.5-0.5b, llama-3.2-3b |
-| protein | protgpt2, zymctrl, progen2-base, progen2-medium |
+| protein | protgpt2, zymctrl, progen2-base, progen2-medium, progen2-small |
 
 Design properties worth restating because they bound every inference drawn here:
 
@@ -96,7 +96,7 @@ These rules exist because this project has twice set a numerical gate whose atta
 5. **Exploratory results stay labelled.** Pilot measurements are descriptive and motivate hypotheses; they do not establish that an assumption holds, fails, or causes an observed gap.
 6. **A limitation is scoped before it is reported.** One demonstrated on the text control is a property of the **method**; one appearing only on protein arms is a property of the **transfer**. The distinction is the spine of the catalogue and is not optional.
 
-Appendix B of the audit document holds fourteen further standing rules, each earned by a specific failure here. Read it before touching measurement code.
+Appendix B of the audit document holds the further standing rules — twenty-seven as of 2026-07-31 — each earned by a specific failure here. Read it before touching measurement code.
 
 ## Compute policy
 
@@ -113,7 +113,7 @@ Capacity must be confirmed with `nvidia-smi` **inside the pod**. The cluster hea
 2. A reusable, gated measurement package with attainability and power checks built in.
 3. Whichever constructive result the catalogued limitations earn. No proposal is advanced that is not traceable to a catalogued limitation; the three best-supported openings are in the audit document §8.
 
-Total remaining budget, phased and costed, is the audit document §9: approximately 90–140 H200 GPU-hours.
+Total remaining budget, phased and costed, is the audit document §9. That document is the single figure; do not restate it here.
 
 ## Canonical materials
 

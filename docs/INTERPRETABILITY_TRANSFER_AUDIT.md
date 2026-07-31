@@ -1,6 +1,6 @@
 # Interpretability transfer audit: text to protein generative models
 
-**Status:** active; canonical analysis document **Supersedes:** repository-root `check.md`, which is frozen and no longer maintained **Updated:** 2026-07-30
+**Status:** active; canonical analysis document **Supersedes:** repository-root `check.md`, which is frozen and no longer maintained **Updated:** 2026-07-31
 
 ---
 
@@ -90,11 +90,15 @@ If the work stopped now, the defensible claims are:
 
 **On part 1 (differences).** One measured difference survives in weakened form: on synthetic repeat probes, protein decoders have fewer heads in the *upper tail* of the induction-score distribution than text decoders, after adjusting for a real within-lineage scale effect. It is **not** a general distributional difference, it **inverts** at the headline threshold on the most defensible probe, and its modality increment is carried by a single protein model. It should not be presented as a modality finding.
 
+The far-band propagation result, recorded here until 2026-07-31 as the best-founded part-1 result, is **withdrawn as a model claim**: it compared arms at a distance declared in tokens across arms differing 4.4x in symbols per token, and two *protein* arms swap order on that choice alone (§5.1, EXP-R2-073). The strongest surviving part-1 measurement is therefore §5.05(d)'s pathway budget, whose statistic is a within-arm dimensionless ratio and is not exposed to the same hazard — with the two caveats that already travel with it.
+
 **On part 2 (limitations).** This is where the programme's real yield is, and much of it was demonstrated *on the text control*, which makes it a property of the method rather than of protein models. See §4.
 
 **On part 3 (adapted methods).** Not yet earned. Two candidate directions carry standing rejections (§6.1) and no proposal is currently traceable to a measured limitation with adequate evidence.
 
-**The strongest directly measured part-2 result available** is narrower: `paa_specific` does not provide a valid cheap ranking screen for copy-suppression on GPT-2-large, despite the causal mechanism itself being detectable. This result does not establish that head-prevalence censuses generally have a narrow domain, nor does it rule out another screen or an exhaustive causal effect-size census. Measurability remains a candidate contributor to an apparent transfer gap, not an established general explanation.
+**The strongest directly measured part-2 result available is now EXP-R2-071/072: the prefix-matching induction census is a causal proxy on text decoders and is not one on protein decoders.** With every head patched rather than only the census's own selections, the Spearman correlation between census score and causal-effect magnitude separates the modalities completely — the text minimum (+0.428, gpt2-large) exceeds every protein maximum (+0.271, ZymCTRL) in all 36 arm × condition cells on four text and five protein arms, the matched pair included. The obvious alternative explanation is ruled out by its own control: `dialogpt-small`, a *text* decoder that §5.05(a) shows is off-distribution on the evaluation corpus at −4.08 nats, does **not** collapse (+0.518 to +0.640). The failure mode is recall in the bulk of the grid, not at its top, and the consequence for this programme is direct — an unknown part of §4's head-count gap belongs to the instrument rather than to the models. This does **not** show that protein decoders have induction heads after all.
+
+The earlier holder of that position remains valid and narrower: `paa_specific` does not provide a valid cheap ranking screen for copy-suppression on GPT-2-large, despite the causal mechanism itself being detectable. Neither result establishes that head-prevalence censuses generally have a narrow domain. Measurability is now a *demonstrated* contributor to an apparent transfer gap on one mechanism, rather than a candidate one.
 
 ---
 
@@ -102,7 +106,7 @@ If the work stopped now, the defensible claims are:
 
 ### 2. The panel
 
-Eleven autoregressive decoders under one code path, each fed in the format it was trained on. All were staged and load-checked on GPFS in EXP-R2-058; ten checkpoints received full source-to-GPFS SHA-256 verification, while Qwen2.5-0.5B was recorded as byte-size checked only.
+Twelve autoregressive decoders under one code path, each fed in the format it was trained on. Eleven were staged and load-checked on GPFS in EXP-R2-058, ten of them with full source-to-GPFS SHA-256 verification while Qwen2.5-0.5B was recorded as byte-size checked only; ProGen2-small was load-checked on the pod and admitted in EXP-R2-068. `scripts/transfer/panel_contract.py` is the declaration — this table is a reading of it, not a second copy.
 
 | arm | modality | layers x width | tokenisation | corpus / conditioning |
 |---|---|---|---|---|
@@ -117,6 +121,7 @@ Eleven autoregressive decoders under one code path, each fed in the format it wa
 | zymctrl | protein | 36 x 1280 | residue 458 | EC-labelled, tag-conditioned |
 | progen2-base | protein | 27 x 1536 | residue 32 | corpus contrast partner |
 | progen2-medium | protein | 27 x 1536 | residue 32 | corpus contrast partner |
+| progen2-small | protein | 12 x 1024 | residue 32 | UniRef90+BFD30; protein-side scale rung |
 
 **Design properties that make specific contrasts identifiable:**
 
@@ -206,7 +211,9 @@ Eleven autoregressive decoders under one code path, each fed in the format it wa
 | gpt2-xl / llama-3.2-3b | 2.15x [1.92, 2.29] |
 | **modality, matched pair** | **5.38x [5.23, 5.54]** |
 
-**The identification limit, which no experiment can remove.** Induction heads are useful only on corpora containing repeated subsequences. Approximate repeats occur in **32.3% of text documents against 0.402% of protein entries** — an eightyfold difference. A decoder allocating fewer heads to prefix-matching on a repeat-poor corpus is allocating capacity efficiently against its data. Breaking the confound would require a protein decoder trained on a repeat-rich corpus, which cannot exist: a synthetic protein corpus with 32% repeat prevalence is not a protein corpus. **Even the terminal 2x2 training design cannot fix this**, as it matches architecture, parameters, scale and budget but explicitly not the data-generating process.
+**The identification limit, which no experiment can remove.** Induction heads are useful only on corpora containing repeated subsequences. Approximate repeats occur in **32.3% of text documents against 0.402% of protein entries** — an eightyfold difference.
+
+> *The eightyfold figure is not unit-free, and the direction of the asymmetry flips with the unit (EXP-R2-073).* The two criteria are declared in **content symbols**, which is correct and is what keeps them free of the token confound that withdrew the far-band result — but they are not the same criterion. Text requires a repeat unit of **40 characters** with 15 distinct symbols and scores similarity by identity; protein requires **16 residues** with 8 distinct symbols and scores by BLOSUM62 non-adverse substitution. In symbols the text criterion is 2.5x the stricter; converted through each arm's measured symbols per token it is 40/4.4 ≈ **9 tokens** against 16/1.0 = **16 tokens**, so in tokens the *protein* criterion is the stricter one. Both choices are domain-motivated — a 40-character phrase and a 16-residue motif are the natural repeat units of their corpora — and the qualitative conclusion is untouched, because no plausible re-parameterisation closes two orders of magnitude. What should not be quoted as a unit-free fact is the multiplier. A decoder allocating fewer heads to prefix-matching on a repeat-poor corpus is allocating capacity efficiently against its data. Breaking the confound would require a protein decoder trained on a repeat-rich corpus, which cannot exist: a synthetic protein corpus with 32% repeat prevalence is not a protein corpus. **Even the terminal 2x2 training design cannot fix this**, as it matches architecture, parameters, scale and budget but explicitly not the data-generating process.
 
 ---
 
@@ -239,6 +246,8 @@ Eleven autoregressive decoders under one code path, each fed in the format it wa
 | L19 | RMSNorm-on-LayerNorm algebra passes a reconstruction gate at 0.49% error while producing systematically wrong attribution; the loud failure (omitted bias, 0.518) is safer than the quiet one | OV/QK circuit analysis on modern architectures | EXP-R2-055 | **method** |
 | L20 | **No remote predicate the campaign controller relied on could return false.** The access layer returns 0 whatever the remote command exits with — measured, `h200_pod_exec.sh -- bash -c "exit 7"` and `h200_pod_bash.sh "exit 5"` both return **0**. Three consequences, each verified on the cluster: a worker that refused a campaign at preflight and scheduled no GPU was reported as `campaign complete`, exit 0; the remote half of the code-freeze guarantee was never actually checked; and the append-only invocation manifest was **never pushed at all** — every run directory on GPFS holds `INVOCATIONS=0` while the controller logged "already present and verified". A campaign's verdict, its frozen code and its provenance record all travelled on a channel that cannot say no | any remote-execution pipeline | EXP-R2-068 | **method** — the L18 shape, one layer above the ledger built to prevent it |
 | L21 | A generated contract can verify on the host that generated it and disagree on the host that runs it. The arm-to-environment-variable map was *inferred* by comparing resolved paths; the pod sets `TRANSFER_TEXT_MODEL_BASE_DIR="${TRANSFER_MODEL_BASE_DIR}"` because all checkpoints share one GPFS directory, so the comparison aliased and six of seven text arms classified as protein-root arms **on the pod only** | any host-portable declaration derived from resolved paths | EXP-R2-068 | **method** |
+| L22 | **A head-prevalence census's selector ranks causal importance on text decoders and does not on protein decoders.** With every head patched, the census-to-causal rank correlation separates completely: text minimum +0.428 above protein maximum +0.271 in all 36 arm × condition cells over four text and five protein arms, matched pair included. The failure is *recall in the bulk* — over the top-32 census heads ProtGPT2 reaches +0.808, above every text arm — and it is **not** distribution mismatch, because `dialogpt-small`, a text decoder at −4.08 nats of context information, reads +0.518 to +0.640. An unknown part of §4's head-count gap therefore belongs to the instrument | head-prevalence census, circuit census, any selector-then-count design | EXP-R2-071, EXP-R2-072 | **transfer** — demonstrated on the matched pair, absent on the text control including its off-distribution arm |
+| L23 | **A cross-arm estimand whose unit is tokens is not a cross-arm estimand when the arms differ in symbols per token.** The far-band propagation band was declared in tokens across arms at 4.4 / 2.8 / 1.0 symbols per token; the ordering between the two *protein* arms — same content alphabet, different tokeniser — reverses between a token band and a residue band. The artefact recorded `symbols_per_token` and nothing consumed it | activation patching, any windowed or distance-based estimand | EXP-R2-073 | **transfer** — the confound is created by tokenisation, which is where the modalities differ most |
 
 ### 5.05 Instrument-transfer campaign, 11 arms, 4x H200 (EXP-R2-060)
 
@@ -422,7 +431,32 @@ Drawn from all **574,627** eligible Swiss-Prot entries and all **23,586** AlphaF
 >
 > *Two design faults in this comparison, both now fixed for the successor run.* The arms carried unequal case counts — 288 for gpt2-large against 128 for ProGen2-medium — so interval-overlap tests read tighter for one arm than the other, and an ordering conclusion drawn from overlap was partly reading sample size. And two windows sample a draw distribution rather than characterise it: with K=2 there is no way to tell a shifted arm from a noisy one. EXP-R2-070 **ran** five disjoint windows at one case count (256) across six arms; its result is the block above, and it both confirmed this narrowing and withdrew the case gate the table above judges ProGen2-small against.
 
-> This is still the best-founded part-1 result the programme has — it survives production scale, resolved arithmetic, a fortyfold threshold sweep and sequence-clustered intervals — but it is an ordering, not a separation. What is still true and must travel with it: the structural n = 1 limit of §2 (one protein arm is matched; ProGen2-medium differs in architecture and tokenisation too, so its separation is not modality-identifying on its own), the corpus-repeat confound, ZymCTRL's structural exclusion from the estimand, and **the sampling check has not been redone in float32** — the disjoint-window comparison was bfloat16 and is withdrawn with the rest. Artefacts: `results/transfer_20260730/b6_float32/`.
+> ### WITHDRAWN 2026-07-31 (EXP-R2-073) — the far-band distance band is declared in tokens, and the sign of the contrast is a free parameter of that choice
+>
+> **`DISTANCE_BANDS` is a module constant in token units** (`src/transfer/circuits.py:72-80`) with no per-arm resolution and no CLI knob, while `04_circuit_primitives.py` records `tokenisation.symbols_per_token` in the same artefact and never uses it. Measured on the shipped five-window artefacts: **4.403 symbols/token** (gpt2-large, gpt2-xl), **2.816** (ProtGPT2), **0.996** (every ProGen2 arm). So the "33–64 token" far band is 33–64 residues on ProGen2, ~93–180 residues on ProtGPT2, and ~145–282 characters on GPT-2 — and the "single-token corruption" is one residue, ~2.8 residues, or ~4.4 characters. The estimand's two length scales are in different content units on different arms.
+>
+> **The decisive check needs no cross-modality unit at all.** ProtGPT2 and ProGen2 are both protein decoders whose content alphabet is residues; only the tokeniser differs. Reading each arm's own six-band curve, no interpolation, mean over the five windows at threshold 0.25:
+>
+> | comparison | ProtGPT2 | ProGen2-base | ProGen2-medium |
+> |---|---:|---:|---:|
+> | at 33–64 **tokens** (the published band) | **0.157** | **0.305** | **0.288** |
+> | at 25–45 **residues** (ProtGPT2's 9–16 token band) | **0.381** | — | — |
+> | at 48–90 **residues** (ProtGPT2's 17–32 token band) | **0.281** | — | — |
+> | at 33–64 **residues** (ProGen2's 33–64 token band) | ≈0.335 (interpolated) | 0.305 | 0.288 |
+>
+> At matched *token* distance ProtGPT2 sits well below both ProGen2 arms; at matched *residue* distance it sits at or above both, and it does so on raw bands — its 48–90-residue value, at a **longer** content distance, already equals ProGen2's 33–64-residue value. The same reversal holds at threshold 0.50. **Two protein arms swap order on the unit choice alone**, so "protein propagates a single-token perturbation further" is not a property of protein.
+>
+> Re-indexing every arm by content symbols and interpolating at **24 content symbols** — inside the measured range for all six arms — gives gpt2-large 0.516, gpt2-xl 0.515, ProtGPT2 0.443, ProGen2-medium 0.407, ProGen2-base 0.383, ProGen2-small 0.236: **the ordering reverses, with the text controls highest.**
+>
+> **Neither alignment isolates the model, and that is the point.** Token-matching matches positional distance and mismatches perturbation size; symbol-matching matches content distance and mismatches perturbation size the other way. The confound acts at two places with opposite signs, so there is no post-hoc re-indexing of these artefacts that recovers a model-attributable ordering.
+>
+> **What is withdrawn.** EXP-R2-070 (ii)'s "at the strictest cut every protein arm is above every text control in every window, with no exception" and (iii)'s 40-of-40 for ProGen2-base and ProGen2-medium are *arithmetically correct and reproduce exactly from the artefacts* — I re-derived 31/33/36/39 of 40 and the 40/40 cells — but they are statements about a token band, not about the models. §9.2's "the ProGen2 lineage propagates a single-token perturbation further than the matched text control" is withdrawn, and **D1.a's status reverts from *answered* to *open*.** EXP-R2-070 (iv)'s between-window spread asymmetry is *not* withdrawn on this ground — it is a within-arm quantity at a fixed band — but its levels are unit-dependent and the spread of a proportion depends on its level, so it needs re-derivation at matched content distance before it is quoted again.
+>
+> **New standing rule (Appendix B rule 26).** Declare the unit of any distance, window or band, and resolve it per arm when the arms differ in symbols per token.
+>
+> The successor measurement is the same instrument with the band declared in content symbols and resolved per arm, recording both the requested symbol band and the resolved token band. Until it lands, no far-band ordering across arms of different tokenisation may be cited.
+
+> Read the withdrawal above before this paragraph. What survives it: the measurement is at production scale, in resolved float32 arithmetic, with sequence-clustered intervals and equal case counts, and its *within-arm* quantities are sound. What does not: any cross-arm ordering, because the arms were compared at a distance that means something different on each of them. The limits that were already recorded stand unchanged and are now joined by a larger one — the structural n = 1 limit of §2, the corpus-repeat confound, and ZymCTRL's structural exclusion from the estimand. Artefacts: `results/transfer_20260730/b6_float32/`, `results/transfer_20260730/farband5/`.
 
 **New — protein dictionaries are data-limited where text ones are saturated.** gpt2-large 0.958 → 0.962 across 16x data; ZymCTRL 0.610 → 0.716 → **0.843** and still climbing at ~+0.12 per 4x. That is convergence of the **instrument**, not of the model — a distinction this programme has been blurring.
 
@@ -464,7 +498,7 @@ Drawn from all **574,627** eligible Swiss-Prot entries and all **23,586** AlphaF
 
 The four candidate causes named for this programme — insufficient pretraining, limited output interface, divergent pathways, method-intrinsic non-transferability — do not cover where several retractions actually came from. A fifth is required:
 
-**Protein-specific measurement substrate.** Input rendering worth 1.42 nats/token (L11); conditioning-tag leakage worth 1.73 nats (L15); corpus file order worth up to 1.01 nats (L13); corpus repeat statistics at 32.3% against 0.402%. None is a property of protein *computation*; all are properties of measuring protein models. The text-derived literature treats input rendering as fixed and corpus order as irrelevant, because in text they nearly are.
+**Protein-specific measurement substrate.** Input rendering worth 1.42 nats/token (L11); conditioning-tag leakage worth 1.73 nats (L15); corpus file order worth up to 1.01 nats (L13); corpus repeat statistics at 32.3% against 0.402%; a distance band declared in tokens whose ordering reverses in residues (L23); and a head selector that ranks causal importance on text and not on protein (L22). None is a property of protein *computation*; all are properties of measuring protein models. The text-derived literature treats input rendering as fixed, corpus order as irrelevant, and a token as a unit of content, because in text those are nearly true.
 
 Attribution summary across all catalogued limitations:
 
@@ -472,9 +506,9 @@ Attribution summary across all catalogued limitations:
 |---|---|
 | Insufficient pretraining / convergence | **weak for the model, clear for the dictionary** — the matched-corpus contrast moves MLP share 0.019 against a ~0.43 gap (~1/22) and induction 0.0069 against −0.10 (~7%) |
 | Limited output semantic interface | **strong** — algebraic (rank 31), definitional (closure), and measured |
-| Divergent computational pathways | **not supported** — four instruments disagree; one provisional survivor |
+| Divergent computational pathways | **not supported** — four instruments disagree; the one provisional survivor (far-band propagation) was withdrawn on EXP-R2-073's unit confound |
 | Method-intrinsic non-transferability | **strong** — every instance demonstrated on the text control |
-| Protein-specific measurement substrate | **strong** — source of four retractions |
+| Protein-specific measurement substrate | **strongest** — source of six retractions, and now of the programme's best part-2 result (L22) |
 
 ### 6. Method-family coverage
 
@@ -496,7 +530,7 @@ Against the fourteen families enumerated for this programme:
 | Contrastive / concept vectors | no | untested | — |
 | Training-data attribution | partial | homology control done; full influence functions not attempted | — |
 | Steering / clamping | historical | calibrated negative in prior R2 work | causal |
-| *(circuit census — not on the original list)* | yes | **L5: `paa_specific` screen failure for copy-suppression on GPT-2-large** | substrate |
+| *(circuit census — not on the original list)* | yes | **L22: the selector ranks causal importance on text and not on protein, with the off-distribution text control ruling out distribution mismatch; L5: `paa_specific` screen failure for copy-suppression on GPT-2-large** | substrate |
 
 ---
 
@@ -513,7 +547,9 @@ Recorded so they are not re-proposed under new names. Both have been rejected mu
 
 No proposal is advanced here that is not traceable to a catalogued limitation. The best-supported openings, in order:
 
-1. **From L5** — a causal-effect-based mechanism comparison over a fixed budget of exhaustively tested heads, requiring no valid cheap screen. Trades coverage for validity. Per-instance ΔM-gap matrices were retained, so its feasibility is answerable without a rerun.
+0. **From L22 (new, EXP-R2-071/072) — a census-validity diagnostic, and it is the first opening this programme has earned rather than assumed.** The measured limitation is specific: a head-prevalence census's selector orders causal importance on text decoders and does not on protein decoders, the failure is in the bulk of the grid rather than at its top, and an off-distribution *text* control does not reproduce it. That licenses a small, general instrument — before a prevalence census is reported for any model, exhaustively patch a bounded random sample of heads and report the selector-to-causal rank correlation against the text control's value; below it, the count is not interpretable and must be published as a selector diagnostic rather than as a mechanism count. It is cheap, it is threshold-free, its attainability is demonstrated on the positive control by construction, and it is the rare case where the adapted method *is* the measurement that exposed the limitation. **Still gated**: it rests on one mechanism, so D2.c must replicate it on copy suppression first. If D2.c returns a text-like correlation on protein, this opening closes.
+
+1. **From L5** — a causal-effect-based mechanism comparison over a fixed budget of exhaustively tested heads, requiring no valid cheap screen. Trades coverage for validity. Per-instance ΔM-gap matrices were retained, so its feasibility is answerable without a rerun. *Partly discharged for induction by EXP-R2-071/072; open for copy suppression as D2.c.*
 2. **From L1/L3/L4** — a dictionary-evaluation protocol whose estimand is power-checked on the text control before any protein arm is scored, reporting loss recovered and KL rather than FVU.
 3. **From L8** — a readout that does not route through the unembedding, since the rank-(V−1) aperture is a hard vocabulary-conditional algebraic constraint and small residue vocabularies make it especially restrictive.
 
@@ -551,7 +587,7 @@ Two further differences are open rather than closed:
 
 | item | question | status | cost |
 |---|---|---|---|
-| ~~**D1.a**~~ | Do the far-band propagation *magnitudes* differ, once resolved? | **Answered (EXP-R2-070).** Five windows at equal case counts: the separation is real but confined to the **large-effect tail** — 39/40 arm × control × window comparisons favour protein at threshold 0.50 with zero exceptions, falling to 31/40 at 0.05. ProGen2-base and ProGen2-medium survive draw and threshold together; ProtGPT2 and ProGen2-small only at the stricter cuts. The ≥30 case gate was withdrawn as unattainable on the text control | ~6 GPU-h, spent |
+| **D1.a** | Do the far-band propagation *magnitudes* differ, once resolved? | **REOPENED 2026-07-31 (EXP-R2-073).** EXP-R2-070's five-window answer reproduces exactly and is arithmetically sound, but it compares arms at a distance declared in **tokens** while they differ 4.4x in symbols per token; two protein arms swap order on the unit choice alone, so the result is not model-attributable. See the withdrawal block in §5.1. Reopened pending the same measurement at matched content distance | ~6 GPU-h spent; successor ~4 GPU-h |
 | **D1.b** | Is the tail statement a *distribution* statement at full population? | the census now runs on 817 of 817 matching proteins; the AUC / dominance battery has not been re-run on it | ~2 GPU-h, CPU-adjacent |
 
 **Exit condition unchanged in spirit:** D1 exists to explain transfer failures, not
@@ -607,9 +643,27 @@ Four arms, every head patched (720 / 720 / 432 / 720), 64 path cases, all four s
 
 The text minimum (+0.428) exceeds every protein maximum (+0.271) in all 24 arm × condition cells.
 
-> **Correction to the first reading of this table.** It was recorded here that the census "carries essentially no information about causal rank" on protein. **That is wrong, and the diagnostic below is why.** Restricted to the 32 heads the census scores highest, ρ is **+0.808 on ProtGPT2 and +0.790 on ProGen2-medium — above both text arms** (gpt2 +0.647, gpt2-large +0.554). The census identifies protein arms' causally dominant heads *better* than it does text's. What collapses is the correlation over the remaining heads: +0.128 and +0.275 on the two text arms against **−0.265** on ProtGPT2 and +0.089 on ProGen2-medium. The all-grid ρ is low on protein because the bulk of the grid is unordered, not because the top of it is.
+> **Correction to the first reading of this table.** It was recorded here that the census "carries essentially no information about causal rank" on protein. **That is wrong.** The all-grid ρ is low on protein because the bulk of the grid is unordered, not because the top of it is: restricted to the 32 heads the census scores highest, ρ is **+0.808 on ProtGPT2** against +0.647 (gpt2) and +0.554 (gpt2-large), while over the remaining heads it collapses.
+>
+> **Corrected again on the nine-arm panel (EXP-R2-072), and one half of it does not generalise.** The top-32 statement was made on two text and two protein arms. Across the range of all four sender × case conditions on nine arms it reads:
+>
+> | arm | ρ over the top-32 census heads | ρ over the remaining heads |
+> |---|---|---:|
+> | gpt2 | +0.481 to +0.647 | +0.342 |
+> | gpt2-medium | +0.554 to +0.679 | +0.477 |
+> | gpt2-large | +0.554 to +0.670 | +0.350 |
+> | dialogpt-small | +0.477 to +0.703 | +0.268 |
+> | protgpt2 | **+0.792 to +0.824** | **−0.223** |
+> | progen2-base | +0.584 to +0.686 | +0.094 |
+> | progen2-medium | +0.551 to +0.790 | +0.088 |
+> | progen2-small | +0.417 to +0.496 | +0.133 |
+> | zymctrl | −0.100 to +0.225 | +0.259 |
+>
+> **"Protein arms' top heads are ranked better than text's" survives only for ProtGPT2.** ProGen2-base and ProGen2-medium overlap the text range; ProGen2-small sits below every text arm and ZymCTRL is near zero. The *second* half survives and is the load-bearing one: **the remaining-head correlation separates the modalities** — text +0.268 to +0.477 against protein −0.223 to +0.259 — so the census orders the bulk of a text grid and does not order the bulk of a protein grid, which is what makes a head *count* a bad summary of a protein arm.
+>
+> **Two of the four originally published remaining-head figures were not reproducible and are replaced above.** The recorded +0.128 for gpt2 re-derives as **+0.342** from the cited artefact, and +0.275 for gpt2-large as **+0.350**; ProtGPT2's −0.265 and ProGen2-medium's +0.089 re-derive within 0.04. The cause is Appendix B rule 12 in its sharpest form: these statistics had **no implementation in the repository** and were computed by unversioned throwaway code, so the split that produced them cannot be recovered. They now live in `path_patching.py` with tests, and the direction of the error was conservative — the true text bulk correlation is *higher*, so the contrast is larger than was reported.
 
-**(ii) The structural difference underneath is concentration, and it is head-count free.** Effect concentration across the head grid, using statistics that do not depend on how many heads an arm has:
+**(ii) The structural difference underneath is concentration, and it is head-count free.** *Suspended pending re-derivation — see EXP-R2-072 (v). These statistics are head-count free but not **case**-count free, and they sum \|effect\| over a grid whose majority is individually indistinguishable from zero, so part of what they integrate is estimation noise of a size that differs across arms. Do not cite this table or its qualification until the noise-corrected variant lands.* Effect concentration across the head grid, using statistics that do not depend on how many heads an arm has:
 
 | arm | Gini of \|effect\| | share of grid carrying half the total effect |
 |---|---:|---:|
@@ -628,7 +682,25 @@ Three protein arms sit at Gini 0.940–0.944 against 0.826–0.829 for both text
 
 **(iii) Noise is not the explanation, and this was tested rather than assumed.** Per-head effect estimates carry SEMs, so the reliability of each arm's head ranking is computable: **0.916 to 0.991** across the six arms, and the SNR of the mean effect is 1.26–6.15. Disattenuating the Pearson correlation for measurement error moves it by at most 0.04 on any arm. The low protein ρ is not attenuation from noisier estimates.
 
-**(iv) The census's failure mode is recall.** ProGen2-medium's top-5 Jaccard is **1.000** and collapses to 0.250 by k=20. The strongest head the census *rejects* carries \|effect\| 0.0194 on gpt2-large against 0.0497 (ProtGPT2), 0.0290 (ProGen2-medium) and **0.3049 on ZymCTRL**, where the census selects nothing yet the strongest causal head in the whole grid is one it rejected.
+> **Corrected (EXP-R2-072): that range is computed on the sampling unit this module declares to be the wrong one.** `path_patching.py` publishes both a case-level `sem` and a `sem_probe_clustered`, and states in two places that the probe record, not the case, is the sampling unit. The 0.916–0.991 figures reproduce from the **case**-level SEM. On the probe-clustered SEM the same statistic reads 0.834–0.976 on the exact-repeat cases and falls as low as **0.189** (ZymCTRL) on the approximate ones. **The inference (iii) draws still holds where it matters** — on approximate cases gpt2-large and ProtGPT2 have essentially equal probe-clustered reliability (0.779, 0.783) while their ρ are +0.440 and −0.155, so differential attenuation does not explain the matched-pair gap. But reliability is a *variance* statistic dominated by the few large heads, so a value near 1 was never capable of establishing that the median head is resolved — which is the separate problem (v) of EXP-R2-072 records against the concentration statistics.
+
+**(iv) The census's failure mode is recall.** ProGen2-medium's top-5 Jaccard is **1.000** and collapses to 0.250 by k=20. The strongest head the census *rejects* carries \|effect\| 0.0194 on gpt2-large against 0.0497 (ProtGPT2), 0.0290 (ProGen2-medium) and 0.3049 on ZymCTRL, where the census selects nothing at all.
+
+> **The cross-arm reading of those four numbers is withdrawn (EXP-R2-072, verified against the artefacts).** A per-head effect is normalised by that arm's own clean-minus-corrupt denominator, and the denominators span **32x** across the panel. Restated in logits:
+>
+> | arm | eligible | mean denominator (logits) | rejected head, normalised | rejected head, **logits** |
+> |---|---:|---:|---:|---:|
+> | gpt2 | 63/64 | 24.68 | 0.0337 | **0.832** |
+> | gpt2-medium | 63/64 | 24.69 | 0.0158 | 0.391 |
+> | gpt2-large | 63/64 | 24.10 | 0.0194 | 0.469 |
+> | dialogpt-small | 36/64 | 12.41 | 0.0773 | 0.959 |
+> | protgpt2 | 64/64 | 20.68 | 0.0497 | **1.027** |
+> | progen2-base | 61/64 | 9.22 | 0.1179 | **1.087** |
+> | progen2-small | 59/64 | 8.12 | 0.0596 | 0.484 |
+> | progen2-medium | 62/64 | 9.36 | 0.0290 | 0.271 |
+> | **zymctrl** | **24/64** | **0.76** | **0.3049** | **0.233** |
+>
+> ZymCTRL's headline 0.3049 — quoted as 15.7x gpt2-large's — is **0.233 logits, the smallest of the nine**. The sentence's force came entirely from a denominator a thirtieth the size of the text control's, itself a consequence of ZymCTRL clearing the eligibility floor on only 24 of 64 cases. **What survives is the within-arm statement**, which is the one that matters for the census: on ZymCTRL the census selects no head at all while heads with real causal effect exist, and the top-k Jaccard collapse with k is a within-arm quantity. Appendix B rule 27 now travels with any cross-arm effect quote.
 
 **(v) What this does and does not say about §4's head-count gap.** It does **not** show that prefix matching is a broken selector on protein — at the top of the grid it is a better one there than on text. It shows that a **count** of heads above a fixed prefix-matching threshold is a poor summary of protein arms specifically, because their causal importance is concentrated in far fewer heads and the threshold sits in a region where the score no longer orders anything. A head count is a statistic about the bulk; protein causal structure is not in the bulk.
 
@@ -639,6 +711,36 @@ Three protein arms sit at Gini 0.940–0.944 against 0.826–0.829 for both text
 **D2.b′'s instrument, and why the precondition is enforced rather than documented.** `select_senders` gained an `exhaustive` criterion that admits every head, and `causal_census_agreement` computes the comparison the gate asks for. That function **raises** on a non-exhaustive sender set. The reason is that D2.b's failure is invisible in its own output: a top-20 Jaccard of 1.0 is exactly what a genuine agreement would also produce, so nothing in the artefact distinguished "the two rankings agree" from "the two rankings ranked the same six heads". A comment would not have stopped the next run from reproducing it. Two further points of the design: `above_threshold` became each head's own score against the threshold rather than the set-level answer broadcast to every head — identical on both pre-existing criteria, and the only truthful answer on a set that spans the threshold, which is precisely the field that says which causally-ranked heads the census missed. And the primary statistic is the **rank correlation over all heads**, which needs no cut at all; the top-20 Jaccard the gate was written in is reported beside it and swept over k = 5/10/20/40, per Appendix B rule 17.
 
 > *Validated end-to-end on GPT-2, and the instrument is not returning the circular answer.* At a deliberately small validation size — 8 cases, 144 heads, 90 s on one L20 — the census ranking and the causal ranking give Spearman **ρ = +0.70** (p = 7×10⁻²³) and a **top-20 Jaccard of 0.538**, against the 1.0 the selective sender set returned by construction. Six of the causal top-20 are heads the census scores *below* threshold, the strongest being L8H9 at prefix-matching 0.018 but causal rank 8. **These are not results and must not be quoted as any:** 8 cases per condition is far too few for a per-head effect estimate, and ranking noise depresses Jaccard on its own. What they establish is that the gate is now answerable — the statistic can fall below 1.0, and census misses can appear in it, neither of which was possible before. The measurement itself is queued behind EXP-R2-070 on four arms.
+### EXP-R2-072 — the off-distribution text control does not collapse, so the census result is not distribution mismatch
+
+The exhaustive census was extended from four arms to nine (gpt2-xl still running), at the identical `--exhaustive-senders --repeat-cohort-size 48` configuration, so all nine combine without a case-count confound. The cohort digests are byte-identical across arms within a modality, which is what licenses pooling them.
+
+**(i) `dialogpt-small` is the control this measurement most needed, and it answers the alternative explanation.** §5.05(a) shows dialogpt-small is off-distribution on the evaluation corpus at −4.08 nats of context information — a *text* decoder that is unmeasurable the way protein arms are often suspected of being. If the protein arms' near-zero census-to-causal correlation were distribution mismatch rather than modality, dialogpt-small should collapse with them. **It does not:** ρ **+0.518 to +0.640**, squarely inside the text range, and *above* gpt2-large. Being off-distribution on the scoring corpus does not destroy the census's causal ordering; being a protein decoder does.
+
+**(ii) The separation is complete on nine arms.** All-head ρ between prefix-matching score and causal-effect magnitude, range across the four sender × case conditions:
+
+| arm | modality | heads | census selects | ρ range |
+|---|---|---:|---:|---|
+| gpt2 | text | 144 | 18 (12.50%) | +0.657 to +0.706 |
+| gpt2-medium | text | 384 | 44 (11.46%) | +0.552 to +0.643 |
+| gpt2-large | text | 720 | 57 (7.92%) | **+0.428 to +0.507** |
+| dialogpt-small | text | 144 | 7 (4.86%) | +0.518 to +0.640 |
+| zymctrl | protein | 720 | 0 (0.00%) | **+0.216 to +0.271** |
+| progen2-medium | protein | 432 | 6 (1.39%) | +0.041 to +0.207 |
+| progen2-small | protein | 192 | 5 (2.60%) | +0.128 to +0.194 |
+| progen2-base | protein | 432 | 3 (0.69%) | +0.050 to +0.176 |
+| protgpt2 | protein | 720 | 14 (1.94%) | −0.155 to −0.006 |
+
+The text minimum (+0.428) exceeds every protein maximum (+0.271) in all **36** arm × condition cells, on four text and five protein arms, two of which — gpt2-large and ProtGPT2 — are the matched pair.
+
+**(iii) The text side carries a monotone scale effect, and it runs against the finding rather than producing it.** On the GPT-2 ladder ρ falls 0.657 → 0.575 → 0.428 across 124M / 355M / 774M. The matched-pair comparison therefore uses the text arm with the *lowest* correlation on the panel, which is the conservative direction. And scale does not supply an alternative: ProGen2-small (151M, 12 layers) reads +0.128 to +0.194 against gpt2 (124M, 12 layers) at +0.657 to +0.706 — matched depth, matched scale, a fivefold gap. gpt2-xl is running and will say whether the text decline continues or flattens.
+
+**(iv) A second seed moves the statistic by less than the modality gap — but it is a weaker check than its name suggests.** Re-running gpt2-large and ProtGPT2 at `--seed 20260731` gives +0.461 to +0.538 (from +0.428 to +0.507) and −0.180 to −0.055 (from −0.155 to −0.006): both shift by ~0.03 against a gap of ~0.6. **However, the repeat-cohort digests are byte-identical across the two seeds**, because `--seed` governs case sampling and the bootstrap while the corpus draw is governed by a separate `--corpus-draw-seed` (`arms.DEFAULT_CORPUS_DRAW_SEED`). So these are **case-resampling** robustness runs, not cohort-draw robustness runs. Given §5.05(b) and Appendix B rule 22 — cohort sensitivity is a property of the statistic and protein arms carry more of it — a cohort-draw check on this statistic is still owed.
+
+**(v) The concentration statistics of EXP-R2-071 (ii) are under re-derivation and should not be quoted meanwhile.** Adding ProGen2-base at Gini 0.958 (highest on the panel) and dialogpt-small at 0.769 preserves the recorded shape on exact-repeat probes, but the statistic sums \|effect\| over the whole head grid, and more than half of each arm's heads are individually indistinguishable from zero — so the Gini is partly integrating estimation noise whose mass is not matched across arms with unequal eligible-case counts. Both the ZymCTRL exception and the "collapses on approximate probes" qualification are decided in that unresolved bulk. They are suspended, not withdrawn, pending the noise-corrected variant now implemented in `path_patching.py`.
+
+*Limits.* Same as EXP-R2-071: path patching on repeat probes measures causal importance for repeat prediction, not induction by mechanism; 64 cases per condition. Every text arm on this panel is GPT-2 architecture, so a cross-lab text arm would strengthen (ii) — `induction_path_patching` refuses `qwen2` and `llama` because `SUPPORTED_ARCHITECTURES` has no module layout for them, which is a recorded instrument limit and a candidate extension, not an omission. Artefacts: `results/transfer_20260730/d2bprime_ext/`, `results/transfer_20260730/d2bprime_seed2/`.
+
 | **D2.c** | Same on copy suppression — does effect size separate arms where prevalence cannot? Directly answers the measurability question §1 leaves open | ~13 GPU-h |
 | **D2.d** | Complete the TG campaign: seven of twelve stages have no artefact in the corrected tree, so `SUMMARY.json` can only be produced in partial mode | ~6 GPU-h |
 
@@ -690,7 +792,7 @@ comments, and those records are not rewritten. The mapping:
 
 - ~~**Does non-local propagation survive at production scale?**~~ **Run at 1.5 GPU-h. It survives as an ordering and fails as a modality claim.** Every arm clears the case gate and every interval excludes zero, but the matched pair — the only modality-identifying comparison the panel has — overlaps at [0.202, 0.215]. What separates is ProGen2-medium from both other arms, which is an architecture and tokenisation contrast, and ZymCTRL cannot enter the estimand at all because its conditioning prompt puts the scored span outside the patching window. The strongest available substrate claim is therefore **not** a modality claim. Detail in §5.1.
 
-- **Follow-on, and it narrowed further (EXP-R2-069), then resolved (EXP-R2-070 — see §5.1).** A disjoint second window removes ProtGPT2 from the ordering entirely — it moves *down* at all four thresholds while the text control moves *up*, and at the two permissive cuts they cross. **ProGen2-medium is the only arm above the text control in both draws at every threshold**, interval-disjoint in both at 0.25 and 0.50. So the surviving statement is about one lineage, not one modality, and the reading it rules out is the text-vs-protein one. A five-window equal-case successor (EXP-R2-070) is running to replace a two-draw sensitivity check with a characterised draw distribution.
+- **Follow-on, and it narrowed further (EXP-R2-069), then resolved (EXP-R2-070), then was withdrawn (EXP-R2-073 — see §5.1).** A disjoint second window removed ProtGPT2 from the ordering entirely, leaving ProGen2-medium as the only arm above the text control in both draws at every threshold, so the surviving statement was about one lineage rather than one modality. The five-window equal-case successor confirmed that narrowing and confined the separation to the large-effect tail. **All of it is now withdrawn as a model claim**, because every one of those comparisons was made at a band declared in tokens across arms that differ 4.4x in symbols per token, and the ordering between the two protein arms reverses under a content-symbol band. The lineage reading is withdrawn along with the modality reading; what remains is a well-executed measurement of an estimand that was not identified.
 
 ---
 
@@ -845,7 +947,26 @@ Enforce the precondition in code and raise; a comment does not stop the next run
 25. **Before reading a low rank correlation as absence of signal, test reliability
 and concentration.** Protein arms gave an all-head census-to-causal ρ near zero,
 which was first recorded here as the census carrying no information about causal
-rank. That was wrong: per-head reliability was 0.916–0.991, so it was not
-attenuation, and ρ over the top 32 heads was +0.808 — higher than either text
-control. The bulk of the grid was unordered, not the top of it, and the finding
-had to be retracted and restated. (EXP-R2-071.)
+rank. That was wrong: per-head reliability was high, so it was not attenuation,
+and ρ over the top 32 heads was +0.808 on ProtGPT2 — higher than either text
+control then on the panel. The bulk of the grid was unordered, not the top of it,
+and the finding had to be retracted and restated. (EXP-R2-071.) *The supporting
+numbers in this rule were themselves corrected by EXP-R2-072/073 — see §EXP-R2-071;
+the reasoning is what the rule carries, not the figures.*
+
+26. **Declare the unit of every distance, window and band, and resolve it per arm
+when the arms differ in symbols per token.** The far-band propagation estimand was
+declared in tokens and compared across arms at 4.4x, 2.8x and 1.0x symbols per
+token. The ordering between the two *protein* arms — same content alphabet, only
+the tokeniser differing — reverses between a token band and a residue band, so the
+sign of the reported contrast was a free parameter of an unstated choice. The
+artefact recorded `symbols_per_token` in the same file and nothing consumed it. A
+band constant with no per-arm resolution is a cross-arm claim waiting to happen.
+(EXP-R2-073.)
+
+27. **A statistic quoted across arms must state its denominator.** Per-head causal
+effects are normalised by each arm's own clean-minus-corrupt metric, and those
+denominators span 32x across the panel (0.76 to 24.10 logits). The same head read
+15.7x the text control's on the normalised scale and 0.50x on the logit scale. A
+normalised effect is a within-arm quantity unless the denominator travels with it.
+(EXP-R2-072.)
