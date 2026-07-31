@@ -22,7 +22,13 @@ here corresponds to a defect that was live in this directory:
 * ``cohort_provenance`` asserted ``selection: "file_order"`` where the truth was
   "unrecorded", and cohorts were drawn under a seed but consumed in corpus order;
 * TG-07 and TG-09 published the retracted all-position residual spectrum under
-  the names a reader picks up by default.
+  the names a reader picks up by default;
+* a stage's scoring window -- the token truncation that decides which positions
+  of a drawn sequence are scored -- was declared nowhere, so two stages on one
+  residue band could measure two position distributions and be divided;
+* ``tg02`` carried a second implementation of the alphabet-bearing-token
+  predicate ``tg_common`` owns, and its copy decided which tokens the stage's
+  primary estimand permutes.
 """
 
 from __future__ import annotations
@@ -258,6 +264,153 @@ def test_every_measuring_stage_writes_its_contract_record():
             continue
         source = (STAGE_DIR / stage.entry_point).read_text(encoding="utf-8")
         assert f'stage_contract_record("{name}"' in source, name
+
+
+# --------------------------------------------------------- the scoring window
+
+
+def test_every_scoring_window_actually_in_use_is_declared():
+    """A band selects sequences; a window selects positions of them.
+
+    TG-01 scores every position 1..383 of every drawn sequence and TG-06 scores
+    positions 1..255 of the sequences that reach 256 tokens. Both draw 400-1000
+    residues, so a check on the band alone reads them as one population -- which
+    is what ``tg99`` did when it divided one by the other.
+    """
+
+    declared = {
+        name: None if stage.scoring_window is None else stage.scoring_window.tokens
+        for name, stage in tg_contract.TG_STAGES.items()
+    }
+    assert declared["tg01"] == 384
+    assert declared["tg06"] == 256
+    assert declared["tg05"] is None  # truncates nothing, which is a third answer
+    assert tg_contract.TG_STAGES["tg06"].scoring_window.option == "--window"
+
+
+def test_a_window_in_the_code_that_the_table_omits_is_refused():
+    stripped = replace(tg_contract.TG_STAGES["tg01"], scoring_window=None)
+    original = dict(tg_contract.TG_STAGES)
+    tg_contract.TG_STAGES["tg01"] = stripped
+    try:
+        problems = tg_contract.verify()
+    finally:
+        tg_contract.TG_STAGES.clear()
+        tg_contract.TG_STAGES.update(original)
+    assert any("does not declare" in problem for problem in problems), problems
+
+
+def test_a_window_in_the_table_that_the_code_dropped_is_refused():
+    ghost = replace(
+        tg_contract.TG_STAGES["tg05"],
+        scoring_window=tg_contract.ScoringWindow("max_len", 256),
+    )
+    original = dict(tg_contract.TG_STAGES)
+    tg_contract.TG_STAGES["tg05"] = ghost
+    try:
+        problems = tg_contract.verify()
+    finally:
+        tg_contract.TG_STAGES.clear()
+        tg_contract.TG_STAGES.update(original)
+    assert any("does not carry" in problem for problem in problems), problems
+
+
+def test_a_window_the_table_gets_wrong_is_refused():
+    wrong = replace(
+        tg_contract.TG_STAGES["tg03"],
+        scoring_window=tg_contract.ScoringWindow("max_len", 384),
+    )
+    original = dict(tg_contract.TG_STAGES)
+    tg_contract.TG_STAGES["tg03"] = wrong
+    try:
+        problems = tg_contract.verify()
+    finally:
+        tg_contract.TG_STAGES.clear()
+        tg_contract.TG_STAGES.update(original)
+    assert any("but TG_STAGES declares 384" in problem for problem in problems), problems
+
+
+def test_a_window_spelled_where_verify_cannot_find_it_is_refused():
+    """The window is one scalar, so the check is a closed set of spellings rather
+    than a shape match. That is weaker than the band check and is stated as such;
+    a declaration verify() cannot read back is refused at import."""
+
+    bad = replace(
+        tg_contract.TG_STAGES["tg03"],
+        scoring_window=tg_contract.ScoringWindow("n_ctx", 256),
+    )
+    original = dict(tg_contract.TG_STAGES)
+    tg_contract.TG_STAGES["tg03"] = bad
+    try:
+        with pytest.raises(AssertionError, match="not one of the spellings"):
+            tg_contract._check_stages()
+    finally:
+        tg_contract.TG_STAGES.clear()
+        tg_contract.TG_STAGES.update(original)
+
+
+def test_the_artefact_record_carries_the_window_beside_the_band():
+    record = tg_contract.stage_contract_record("tg06", ["gpt2-large"])
+    assert record["scoring_window"]["argument"] == "--window"
+    assert record["scoring_window"]["tokens"] == 256
+    assert record["cohort_band"]["protein_residue_bands"][0]["protein_residues"] == [
+        400,
+        1000,
+    ]
+    assert tg_contract.stage_contract_record("tg05", ["progen2-medium"])[
+        "scoring_window"
+    ] is None
+
+
+# ------------------------------------- which tokens carry the alphabet, declared
+
+
+class _VocabArm(_StubArm):
+    """A stub arm with a vocabulary, for the whole-vocabulary projection."""
+
+    def vocab(self, size: int = 120):
+        class _Config:
+            vocab_size = size
+
+        class _Model:
+            config = _Config()
+
+        self.model = _Model()
+        return self
+
+
+def test_the_two_projections_of_the_symbol_predicate_agree():
+    """``symbol_token_ids`` and ``symbol_position_mask`` are one decision.
+
+    TG-02 carried its own copy of the predicate, and that copy decided which
+    tokens its primary estimand -- ``shuffled_symbols``, the manipulation the
+    script exists to score -- permutes. Appendix B rule 12: the module that
+    decides which tokens carry the alphabet is one declaration, imported.
+    """
+
+    arm = _VocabArm().vocab(120)
+    ids = torch.arange(120, dtype=torch.long).reshape(6, 20)
+    admitted = tg_common.symbol_token_ids(arm)
+    mask = tg_common.symbol_position_mask(arm, ids)
+    assert {int(token) for token in ids.reshape(-1)[mask.reshape(-1)]} == admitted
+    # ids >= 100 decode to a newline, which is not an amino acid.
+    assert admitted == set(range(100))
+    assert all(tg_common.token_carries_symbol(arm, token) is False for token in (100, 119))
+
+
+def test_no_stage_reimplements_the_symbol_predicate():
+    """A second definition is the defect, not a second call site."""
+
+    offenders = []
+    for stage in tg_contract.TG_STAGES.values():
+        source = (STAGE_DIR / stage.entry_point).read_text(encoding="utf-8")
+        if "def symbol_token_ids" in source or "def token_carries_symbol" in source:
+            offenders.append(stage.entry_point)
+        for line in source.splitlines():
+            code = line.split("#", 1)[0]
+            if "set(AA20)" in code or "frozenset(AA20)" in code:
+                offenders.append(f"{stage.entry_point}: {line.strip()}")
+    assert offenders == []
 
 
 # ------------------------------------------------------------------- the arms

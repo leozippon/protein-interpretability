@@ -32,6 +32,9 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.transfer import (  # noqa: E402
     channels,
+    circuits,
+    homology,
+    induction_robustness,
     path_patching,
     pathways,
     prediction_addressed,
@@ -1126,6 +1129,8 @@ def test_head_heterogeneity_is_not_reported_as_a_confidence_interval():
         [0.1, 0.2, 0.15, 0.05, 0.12, 0.18, 0.08, 0.11],
         resamples=500,
         seed=2,
+        left_criterion="prefix_matching_above_threshold",
+        right_criterion="prefix_matching_above_threshold",
     )
     assert report["is_a_sampling_confidence_interval"] is False
     assert report["resampling_unit"] == "sender_head"
@@ -1538,8 +1543,157 @@ def test_the_clean_reference_is_shared_rather_than_compared():
 # ---------------------------------------------------- one shared bootstrap floor
 
 
+def _stratum_scores(count: int) -> list[SimpleNamespace]:
+    return [
+        SimpleNamespace(
+            sums={"prefix_matching": np.full((2, 2), 0.1 + 0.01 * index)},
+            scored_positions=10,
+            uniform_sum=1.0,
+        )
+        for index in range(count)
+    ]
+
+
+def _mean_difference(truth: np.ndarray, prediction: np.ndarray) -> float:
+    return float(np.mean(prediction - truth))
+
+
+def _case_flags(clusters: int) -> tuple[np.ndarray, np.ndarray]:
+    sources = np.repeat(np.arange(clusters), 3)
+    flags = (np.arange(sources.size) % 2).astype(bool)
+    return flags, sources
+
+
+#: Every resampler in ``src.transfer`` that reaches the shared unit floor, with a
+#: call one unit below the floor and one exactly on it.  ``raises`` is required
+#: of the functions whose unit count is a configuration choice, or whose return
+#: value has nowhere to carry a verdict a caller would have to notice;
+#: ``degenerate`` of the ones whose unit count is a measured property of a
+#: checkpoint or a stratum, where the count is itself the finding and the point
+#: estimate survives.  The distinction is the one ``bootstrap_unit_floor``'s
+#: docstring draws, and it is asserted here rather than described.
+FLOOR_RESPECTING_RESAMPLERS: dict[str, dict[str, object]] = {
+    "statistics.paired_group_bootstrap": {
+        "refusal": "raises",
+        "below": lambda n: statistics.paired_group_bootstrap(
+            np.zeros(n),
+            np.ones(n),
+            np.full(n, 2.0),
+            np.arange(n),
+            _mean_difference,
+            seed=0,
+            n_bootstrap=200,
+        ),
+    },
+    "induction_robustness.cluster_bootstrap_fraction": {
+        "refusal": "raises",
+        "below": lambda n: induction_robustness.cluster_bootstrap_fraction(
+            np.tile(np.array([[0.9, 0.0], [0.0, 0.0]]), (n, 1, 1)),
+            threshold=0.1,
+            resamples=200,
+            seed=0,
+        ),
+    },
+    "induction_robustness.contrast_ratio_bootstrap": {
+        "refusal": "raises",
+        "below": lambda n: induction_robustness.contrast_ratio_bootstrap(
+            np.tile(np.array([[0.9, 0.9], [0.0, 0.0]]), (n, 1, 1)),
+            np.tile(np.array([[0.9, 0.0], [0.0, 0.0]]), (n, 1, 1)),
+            threshold=0.1,
+            resamples=200,
+            seed=0,
+        ),
+    },
+    "prediction_addressed.cluster_bootstrap": {
+        "refusal": "raises",
+        "below": lambda n: prediction_addressed.cluster_bootstrap(
+            np.linspace(0.0, 1.0, n).reshape(n, 1),
+            np.ones(n),
+            replicates=200,
+            seed=0,
+        ),
+    },
+    "homology.bootstrap_stratum": {
+        "refusal": "degenerate",
+        "below": lambda n: homology.bootstrap_stratum(
+            _stratum_scores(n), threshold=0.05, n_heads=4, resamples=64, seed=1
+        ),
+    },
+    "path_patching.bootstrap_difference": {
+        "refusal": "degenerate",
+        # Both criteria are required and named per side: EXP-R2-073 made the
+        # resampled population a declared fact rather than a docstring, because
+        # under the exhaustive criterion the population is the whole head grid
+        # and the caveat that shipped with it described a threshold-selected set.
+        "below": lambda n: path_patching.bootstrap_difference(
+            list(np.linspace(0.4, 0.6, n)),
+            list(np.linspace(0.0, 0.2, n)),
+            resamples=200,
+            seed=2,
+            left_criterion="prefix_matching_above_threshold",
+            right_criterion="prefix_matching_above_threshold",
+        ),
+    },
+    "circuits._case_resampled_interval": {
+        "refusal": "degenerate",
+        "below": lambda n: circuits._case_resampled_interval(
+            *_case_flags(n), np.random.default_rng(0), 200
+        ),
+    },
+}
+
+#: Resamplers that do NOT reach the floor. Recorded rather than quietly left out
+#: of the loop above, because the previous version of this test asserted the
+#: property in its name and exercised no resampler at all, so the five below were
+#: invisible. Each is the same hazard in a module the repair that wrote this list
+#: did not own; ``probes.sequence_bootstrap`` resamples sequences,
+#: ``lenses.*_cluster_bootstrap`` and ``pathways.pathway_cluster_bootstrap``
+#: resample clusters, and all five guard nothing or guard ``n < 2``.
+RESAMPLERS_WITHOUT_A_UNIT_FLOOR = frozenset(
+    {
+        "probes.sequence_bootstrap",
+        "lenses.lens_cluster_bootstrap",
+        "lenses.residue_class_cluster_bootstrap",
+        "lenses.jacobian_cluster_bootstrap",
+        "pathways.pathway_cluster_bootstrap",
+    }
+)
+
+#: The floor itself, which is not a resampler.
+FLOOR_DECLARATION = "statistics.bootstrap_unit_floor"
+
+
+def _package_resamplers() -> set[str]:
+    """Every resampling entry point in ``src.transfer``, found rather than listed."""
+
+    import importlib
+    import pkgutil
+
+    from src import transfer as package
+
+    found: set[str] = set()
+    for module_info in pkgutil.iter_modules(package.__path__):
+        module = importlib.import_module(f"src.transfer.{module_info.name}")
+        for name, member in vars(module).items():
+            if not inspect.isfunction(member) or member.__module__ != module.__name__:
+                continue
+            lowered = name.lower()
+            if "bootstrap" in lowered or "resampl" in lowered:
+                found.add(f"{module_info.name}.{name}")
+    return found
+
+
 def test_one_bootstrap_unit_floor_is_declared_and_every_resampler_reaches_it():
-    """C7: three bootstraps, one hazard, and the floor existed in one of them."""
+    """C7: the floor is declared once, and the declaration is not the property.
+
+    The previous version of this test asserted ``MINIMUM_BOOTSTRAP_UNITS == 8``
+    and called ``bootstrap_unit_floor`` twice.  Both passed while three of the
+    package's resamplers guarded ``n < 2`` or nothing, one of which returned an
+    interval *narrower* at two units than at three -- the pinching pathology the
+    constant's own comment is written about.  A test named for every resampler
+    has to invoke every resampler, so this one enumerates them: one unit below
+    the floor must refuse, and the floor itself must not.
+    """
 
     assert MINIMUM_BOOTSTRAP_UNITS is statistics.MINIMUM_BOOTSTRAP_UNITS
     assert statistics.MINIMUM_BOOTSTRAP_UNITS == 8
@@ -1550,6 +1704,56 @@ def test_one_bootstrap_unit_floor_is_declared_and_every_resampler_reaches_it():
     assert "coverage" in floor["degenerate_reason"]
     assert statistics.bootstrap_unit_floor(8)["degenerate"] is False
     assert statistics.bootstrap_unit_floor(8)["degenerate_reason"] is None
+
+    for name, spec in FLOOR_RESPECTING_RESAMPLERS.items():
+        call = spec["below"]
+        if spec["refusal"] == "raises":
+            with pytest.raises(ValueError, match="below the 8-unit floor"):
+                call(MINIMUM_BOOTSTRAP_UNITS - 1)
+        else:
+            refused = call(MINIMUM_BOOTSTRAP_UNITS - 1)
+            assert refused["degenerate"] is True, name
+            # ``circuits`` names the same floor after its own unit -- "8-cluster"
+            # against "8-unit" -- so the count is what is asserted, not the noun.
+            assert f"below the {MINIMUM_BOOTSTRAP_UNITS}-" in (
+                refused.get("degenerate_reason") or refused.get("reason") or ""
+            ), name
+        accepted = call(MINIMUM_BOOTSTRAP_UNITS)
+        assert accepted is not None, name
+        if spec["refusal"] == "degenerate":
+            assert accepted["degenerate"] is False, name
+
+
+def test_the_resampler_inventory_is_complete_and_its_gaps_are_named():
+    """C7: a resampler cannot arrive, or be repaired, without a decision.
+
+    The five in ``RESAMPLERS_WITHOUT_A_UNIT_FLOOR`` are an accepted limitation,
+    not a defect that was overlooked: they live in modules outside the change
+    that fixed the others, and the honest record of that is a named list this
+    test holds to be exhaustive.  Adding a resampler fails here until it is
+    placed in one list or the other; giving one of the five a floor fails here
+    until it is moved.
+    """
+
+    discovered = _package_resamplers()
+    declared = (
+        set(FLOOR_RESPECTING_RESAMPLERS)
+        | set(RESAMPLERS_WITHOUT_A_UNIT_FLOOR)
+        | {FLOOR_DECLARATION}
+    )
+    assert discovered == declared, (
+        "undeclared resamplers: "
+        f"{sorted(discovered - declared)}; declared but absent: "
+        f"{sorted(declared - discovered)}"
+    )
+    for name in RESAMPLERS_WITHOUT_A_UNIT_FLOOR:
+        module_name, function_name = name.split(".")
+        module = sys.modules[f"src.transfer.{module_name}"]
+        source = inspect.getsource(getattr(module, function_name))
+        assert "bootstrap_unit_floor" not in source, (
+            f"{name} now applies the floor; move it into "
+            "FLOOR_RESPECTING_RESAMPLERS with a below-floor call"
+        )
 
 
 def test_a_cluster_bootstrap_below_the_unit_floor_is_refused():
@@ -1586,7 +1790,12 @@ def test_a_head_population_below_the_unit_floor_publishes_no_spread():
     """
 
     report = path_patching.bootstrap_difference(
-        [0.4, 0.5, 0.6, 0.55], [0.1, 0.2, 0.15, 0.05], resamples=500, seed=2
+        [0.4, 0.5, 0.6, 0.55],
+        [0.1, 0.2, 0.15, 0.05],
+        resamples=500,
+        seed=2,
+        left_criterion="prefix_matching_above_threshold",
+        right_criterion="prefix_matching_above_threshold",
     )
     assert report["degenerate"] is True
     assert report["n_units"] == 4
@@ -1598,7 +1807,12 @@ def test_a_head_population_below_the_unit_floor_publishes_no_spread():
 
     # The smaller side sets the floor: eight against four is still four.
     lopsided = path_patching.bootstrap_difference(
-        [0.4] * 12, [0.1, 0.2, 0.15, 0.05], resamples=500, seed=2
+        [0.4] * 12,
+        [0.1, 0.2, 0.15, 0.05],
+        resamples=500,
+        seed=2,
+        left_criterion="prefix_matching_above_threshold",
+        right_criterion="prefix_matching_above_threshold",
     )
     assert lopsided["degenerate"] is True and lopsided["n_units"] == 4
 

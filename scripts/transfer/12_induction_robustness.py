@@ -21,7 +21,19 @@ Parameter counts are read from the checkpoint headers rather than declared, so
 that a mis-copied figure cannot enter the scale axis.  Buffers -- GPT-2's causal
 mask, rotary inverse frequencies -- and a tied ``lm_head`` duplicate are excluded,
 which is what makes the counts agree with the published figures (GPT-2-large
-773,891,840; DialoGPT-small 124,412,160).
+773,891,840; DialoGPT-small 124,412,160).  ``--parameters-from`` supplies them
+from a recorded map instead, for the case this stage exists for: it loads no
+model, so it must be runnable on a host that holds the census artefacts without
+holding the weights.
+
+Which artefacts are read is an argument.  It used to be a table of absolute
+paths in this file, pointing at two campaign directories that have since been
+superseded; every one of them was gone, so the stage raised ``FileNotFoundError``
+and the census could not be re-analysed at all.  ``--census-root`` names a
+directory of per-arm ``circuit_primitives`` artefacts -- the default is where
+``04_circuit_primitives.py`` writes -- and the analysed panel is the set of arm
+artefacts found under it, so the panel is a property of the campaign that
+produced the evidence rather than of a list maintained by hand here.
 """
 
 from __future__ import annotations
@@ -32,6 +44,7 @@ import json
 import re
 import struct
 import sys
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -53,6 +66,7 @@ from src.transfer.induction_robustness import (  # noqa: E402
     collinearity_verdict,
     corpus_contrast,
     lineage_scale_ladder,
+    lineage_slope_transport,
     load_census,
     model_level_exact_test,
     pairwise_auc,
@@ -69,34 +83,10 @@ from src.transfer.induction_robustness import (  # noqa: E402
 
 TRANSFER_RESULTS = REPO_ROOT / "results/transfer"
 
-#: Which artefact each arm's census is read from.  The four text arms were
-#: measured in the ``circuit_primitives_text_control`` run and the three protein
-#: arms in ``circuit_primitives_approximate``; GPT-2-large appears in both and
-#: the two agree exactly on the synthetic probe (108/70/35/21 heads above the
-#: four fixed cuts), which is checked rather than assumed by
-#: ``--cross-check-arm``.
-DEFAULT_SOURCES: dict[str, Path] = {
-    "gpt2-large": TRANSFER_RESULTS / "circuit_primitives_text_control/gpt2-large.json",
-    "qwen2.5-0.5b": TRANSFER_RESULTS / "circuit_primitives_text_control/qwen2.5-0.5b.json",
-    "dialogpt-small": TRANSFER_RESULTS / "circuit_primitives_text_control/dialogpt-small.json",
-    "llama-3.2-3b": TRANSFER_RESULTS / "circuit_primitives_text_control/llama-3.2-3b.json",
-    "protgpt2": TRANSFER_RESULTS / "circuit_primitives_approximate/protgpt2.json",
-    "progen2-medium": TRANSFER_RESULTS / "circuit_primitives_approximate/progen2-medium.json",
-    "zymctrl": TRANSFER_RESULTS / "circuit_primitives_approximate/zymctrl.json",
-}
-
-#: Arms that identify the scale slope and the corpus effect, measured at exactly
-#: the settings ``DEFAULT_SOURCES`` were measured at -- same seed, same cohort
-#: digests, same probe count, same dtype -- because a rung measured differently
-#: cannot enter the same table as the rungs it is there to calibrate.  Held apart
-#: from the seven-arm panel so that the headline table stays what it was and the
-#: ladder is visibly an addition rather than a redefinition.
-LADDER_SOURCES: dict[str, Path] = {
-    "gpt2": TRANSFER_RESULTS / "circuit_primitives_text_ladder/gpt2.json",
-    "gpt2-medium": TRANSFER_RESULTS / "circuit_primitives_text_ladder/gpt2-medium.json",
-    "gpt2-xl": TRANSFER_RESULTS / "circuit_primitives_text_ladder/gpt2-xl.json",
-    "progen2-base": TRANSFER_RESULTS / "circuit_primitives_text_ladder/progen2-base.json",
-}
+#: Where ``04_circuit_primitives.py`` writes by default, and therefore where this
+#: stage reads by default.  A campaign that writes elsewhere is pointed at with
+#: ``--census-root``; nothing about which arms exist is decided here.
+DEFAULT_CENSUS_ROOT = TRANSFER_RESULTS / "circuit_primitives"
 
 #: Pairs identical in architecture, parameter count and tokeniser, differing only
 #: in pretraining corpus.  ``arms.py`` names them ``TEXT_DATA_CONTRAST`` and
@@ -104,15 +94,6 @@ LADDER_SOURCES: dict[str, Path] = {
 CORPUS_PAIRS: dict[str, tuple[str, str]] = {
     "text": ("gpt2", "dialogpt-small"),
     "protein": ("progen2-base", "progen2-medium"),
-}
-
-#: The same arm measured in a second run, used as a reproducibility check on the
-#: numbers every conclusion below rests on.
-CROSS_CHECK: dict[str, Path] = {
-    "gpt2-large": TRANSFER_RESULTS / "circuit_primitives/gpt2-large.json",
-    "protgpt2": TRANSFER_RESULTS / "circuit_primitives/protgpt2.json",
-    "progen2-medium": TRANSFER_RESULTS / "circuit_primitives/progen2-medium.json",
-    "zymctrl": TRANSFER_RESULTS / "circuit_primitives/zymctrl.json",
 }
 
 DEFAULT_OUTPUT = TRANSFER_RESULTS / "induction_robustness"
@@ -182,6 +163,94 @@ def count_parameters(directory: Path) -> dict[str, int]:
     }
 
 
+def census_paths(root: Path, names: Sequence[str] | None) -> dict[str, Path]:
+    """Locate one census artefact per arm under ``root``.
+
+    With no ``--arms``, every ``<arm>.json`` under the root whose stem names a
+    panel arm is read, so the analysed panel is the campaign's, not this file's.
+    With ``--arms``, every named arm must be present: a silently narrowed panel
+    is Appendix B rule 7, and a panel list maintained here beside the one in
+    ``arms.py`` is rule 12.
+    """
+
+    if not root.is_dir():
+        raise FileNotFoundError(
+            f"{root}: not a directory. --census-root must name a directory of "
+            "per-arm circuit_primitives artefacts, such as the output directory of "
+            "scripts/transfer/04_circuit_primitives.py"
+        )
+    available = {
+        path.stem: path for path in sorted(root.glob("*.json")) if path.stem in PANEL
+    }
+    if names is None:
+        if not available:
+            raise FileNotFoundError(
+                f"{root}: holds no <arm>.json census artefact for any arm of the "
+                f"panel ({', '.join(sorted(PANEL))})"
+            )
+        return available
+    missing = [name for name in names if name not in available]
+    if missing:
+        raise FileNotFoundError(
+            f"{root}: no census artefact for {missing}; the directory holds "
+            f"{sorted(available)}"
+        )
+    return {name: available[name] for name in names}
+
+
+def recorded_parameter_counts(path: Path) -> dict[str, int]:
+    """Total parameter counts out of a JSON map or an earlier run of this stage."""
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    block = payload["parameters"] if "parameters" in payload else payload
+    counts: dict[str, int] = {}
+    for name, value in block.items():
+        if isinstance(value, Mapping):
+            if "total" not in value:
+                raise KeyError(f"{path}: no total parameter count for {name!r}")
+            counts[name] = int(value["total"])
+        elif isinstance(value, (int, float)):
+            counts[name] = int(value)
+    if not counts:
+        raise ValueError(f"{path}: carries no parameter counts")
+    return counts
+
+
+def arm_parameters(
+    names: Sequence[str], *, recorded: Path | None
+) -> dict[str, dict[str, Any]]:
+    """Parameter counts for every analysed arm, with their provenance.
+
+    Counted from the checkpoint headers by default, because a figure copied by
+    hand onto the scale axis is exactly the mistake the header count exists to
+    prevent.  ``--parameters-from`` supplies them from a recorded map for the
+    case this stage is built for -- it loads no model and touches no GPU, so it
+    has to be runnable on a host that carries the artefacts and not the weights.
+    Either way the source travels into the output beside the number, and an arm
+    that neither source can supply is refused by name rather than defaulted.
+    """
+
+    supplied = recorded_parameter_counts(recorded) if recorded is not None else {}
+    out: dict[str, dict[str, Any]] = {}
+    for name in names:
+        if name in supplied:
+            out[name] = {"total": int(supplied[name]), "source": str(recorded)}
+            continue
+        directory = Path(PANEL[name].path)
+        if not directory.is_dir():
+            raise FileNotFoundError(
+                f"{name}: no parameter count. The checkpoint directory {directory} is "
+                "absent and "
+                + (
+                    f"{recorded} does not carry {name}"
+                    if recorded is not None
+                    else "no --parameters-from map was given"
+                )
+            )
+        out[name] = {**count_parameters(directory), "source": "checkpoint_header"}
+    return out
+
+
 def cross_check(name: str, primary: ArmCensus, other: Path, probe: str) -> dict[str, Any]:
     """Two independent runs of the same arm must give the same head matrix."""
 
@@ -198,37 +267,32 @@ def cross_check(name: str, primary: ArmCensus, other: Path, probe: str) -> dict[
     }
 
 
-def build(args: argparse.Namespace) -> dict[str, Any]:
-    parameters: dict[str, dict[str, int]] = {}
-    arms: list[ArmCensus] = []
-    verification: list[dict[str, Any]] = []
-    for name, path in DEFAULT_SOURCES.items():
-        if not path.exists():
-            raise FileNotFoundError(f"{name}: census artefact missing at {path}")
-        parameters[name] = count_parameters(Path(PANEL[name].path))
-        arm = load_census(path, parameters=parameters[name]["total"], probe=args.probe)
-        verification.append(verify_against_stored_counts(arm))
-        arms.append(arm)
+def replicate_checks(
+    arms: Sequence[ArmCensus], root: Path | None, probe: str
+) -> dict[str, Any]:
+    """Re-read each arm from a second campaign root, where one is given.
 
-    # The v1 artefacts carry only the synthetic probe, so a natural-probe run has
-    # no replicate to check against. That is recorded rather than silently
-    # skipped: "no cross-check was possible" and "the cross-check passed" are
-    # different statements about the same field.
-    replicates: list[dict[str, Any]] = []
-    for name, path in CROSS_CHECK.items():
-        if not any(a.name == name for a in arms):
-            # Not in this invocation's arm list; there is nothing to cross-check
-            # against, and no claim is made about the arm either way.
-            continue
+    "No replicate was available", "the replicate carries no census for this
+    probe" and "the replicate agrees" are three different statements and are
+    recorded as three different states.  The first used to be a bare ``continue``,
+    which made the field shorter and left the reader to infer which of the three
+    had happened.
+    """
+
+    if root is None:
+        return {
+            "replicate_root": None,
+            "attempted": False,
+            "reason": "no --replicate-root was given, so no arm was cross-checked",
+            "arms": [],
+        }
+    rows: list[dict[str, Any]] = []
+    for arm in arms:
+        path = root / f"{arm.name}.json"
         if not path.exists():
-            # The branch below records "the replicate exists but carries no
-            # census for this probe". This one records "there is no replicate",
-            # which the comment above says is a different statement and which
-            # used to be a bare `continue` -- so the field was simply shorter and
-            # a reader could not tell an absent replicate from an unattempted one.
-            replicates.append(
+            rows.append(
                 {
-                    "arm": name,
+                    "arm": arm.name,
                     "replicate_source": str(path),
                     "available": False,
                     "reason": "the replicate artefact does not exist",
@@ -236,34 +300,53 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
             )
             continue
         replicate_probes = json.loads(path.read_text(encoding="utf-8"))["induction"]
-        if args.probe not in replicate_probes:
-            replicates.append(
+        if probe not in replicate_probes:
+            rows.append(
                 {
-                    "arm": name,
+                    "arm": arm.name,
                     "replicate_source": str(path),
                     "available": False,
-                    "reason": f"the replicate artefact carries no {args.probe} census",
+                    "reason": f"the replicate artefact carries no {probe} census",
                 }
             )
             continue
-        entry = cross_check(name, next(a for a in arms if a.name == name), path, args.probe)
+        entry = cross_check(arm.name, arm, path, probe)
         entry["available"] = True
-        replicates.append(entry)
+        rows.append(entry)
+    return {
+        "replicate_root": str(root),
+        "attempted": True,
+        "reason": None,
+        "arms": rows,
+    }
 
-    ladder_arms: list[ArmCensus] = []
-    for name, path in LADDER_SOURCES.items():
-        if not path.exists():
-            raise FileNotFoundError(
-                f"{name}: ladder census missing at {path}; run 04_circuit_primitives.py "
-                "on the lineage rungs at the settings the panel was measured at"
-            )
-        parameters[name] = count_parameters(Path(PANEL[name].path))
-        arm = load_census(path, parameters=parameters[name]["total"], probe=args.probe)
+
+def build(args: argparse.Namespace) -> dict[str, Any]:
+    sources = census_paths(args.census_root, args.arms)
+    parameters = arm_parameters(list(sources), recorded=args.parameters_from)
+    arms: list[ArmCensus] = []
+    verification: list[dict[str, Any]] = []
+    for name, path in sources.items():
+        arm = load_census(
+            path,
+            parameters=parameters[name]["total"],
+            probe=args.probe,
+            # The lineage term is derived from the panel declaration, and the v1
+            # schema does not carry it into the artefact.
+            architecture=PANEL[name].architecture,
+        )
         verification.append(verify_against_stored_counts(arm))
-        ladder_arms.append(arm)
-    extended = arms + ladder_arms
+        arms.append(arm)
+    modalities = sorted({arm.modality for arm in arms})
+    if modalities != ["protein", "text"]:
+        raise ValueError(
+            f"every statistic below contrasts the two modalities; {args.census_root} "
+            f"supplied only {modalities}"
+        )
 
-    sweep = threshold_sweep(arms)
+    replicates = replicate_checks(arms, args.replicate_root, args.probe)
+
+    sweep = threshold_sweep(arms, headline_threshold=args.threshold)
     fits = {
         covariate: scale_modality_fit(arms, threshold=args.threshold, covariate=covariate)
         for covariate in SCALE_COVARIATES
@@ -279,7 +362,8 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "probe": args.probe,
         "headline_threshold": args.threshold,
-        "sources": {name: str(path) for name, path in DEFAULT_SOURCES.items()},
+        "census_root": str(args.census_root),
+        "sources": {name: str(path) for name, path in sources.items()},
         "parameters": parameters,
         "arms": [
             {
@@ -329,35 +413,47 @@ def build(args: argparse.Namespace) -> dict[str, Any]:
         "scale_modality_fits": fits,
         "scale_modality_verdict": collinearity_verdict(fits),
         "scale_inversion": scale_inversion_checks(arms, threshold=args.threshold),
-        "within_lineage_ladder": lineage_scale_ladder(extended, threshold=args.threshold),
-        "variance_decomposition": variance_decomposition(extended, threshold=args.threshold),
+        "within_lineage_ladder": lineage_scale_ladder(arms, threshold=args.threshold),
+        "slope_transport": lineage_slope_transport(arms, threshold=args.threshold),
+        "variance_decomposition": variance_decomposition(arms, threshold=args.threshold),
         "corpus_contrast": corpus_contrast(
-            extended, threshold=args.threshold, pairs=CORPUS_PAIRS
+            arms, threshold=args.threshold, pairs=CORPUS_PAIRS
         ),
-        "extended_panel_fits": {
-            covariate: scale_modality_fit(
-                extended, threshold=args.threshold, covariate=covariate
-            )
-            for covariate in SCALE_COVARIATES
-        },
-        "extended_panel_arms": [
-            {
-                "name": arm.name,
-                "modality": arm.modality,
-                "parameters": arm.parameters,
-                "n_layer": arm.n_layer,
-                "n_heads": arm.n_heads,
-                "d_model": arm.d_model,
-                "count_above_threshold": int((arm.flat >= args.threshold).sum()),
-                "fraction": arm.fraction_above(args.threshold),
-            }
-            for arm in extended
-        ],
     }
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--census-root",
+        type=Path,
+        default=DEFAULT_CENSUS_ROOT,
+        help="directory of per-arm circuit_primitives artefacts to analyse; the "
+        "default is where 04_circuit_primitives.py writes",
+    )
+    parser.add_argument(
+        "--arms",
+        nargs="+",
+        default=None,
+        choices=sorted(PANEL),
+        help="analyse exactly these arms and fail if the census root is missing any "
+        "of them; the default is every panel arm the root carries",
+    )
+    parser.add_argument(
+        "--parameters-from",
+        type=Path,
+        default=None,
+        help="JSON map of arm to total parameter count, or an artefact this stage "
+        "wrote earlier; used instead of counting the checkpoint headers, which "
+        "this stage otherwise requires the weights on disk for",
+    )
+    parser.add_argument(
+        "--replicate-root",
+        type=Path,
+        default=None,
+        help="a second census root; each arm found there is re-read and its head "
+        "matrix compared against the primary one",
+    )
     parser.add_argument("--probe", default=PRIMARY_PROBE, choices=list(PROBES))
     parser.add_argument("--threshold", type=float, default=0.10)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
@@ -371,6 +467,14 @@ def main() -> None:
     path = args.output_dir / f"induction_robustness_{args.probe}.json"
     write_json(path, payload)
     print(f"wrote {path}", flush=True)
+
+    print(f"\ncensus root: {payload['census_root']}")
+    print(
+        f"panel: {len(payload['arms'])} arms "
+        f"({sum(1 for a in payload['arms'] if a['modality'] == 'text')} text, "
+        f"{sum(1 for a in payload['arms'] if a['modality'] == 'protein')} protein), "
+        f"probe {payload['probe']}, headline cut {payload['headline_threshold']}"
+    )
 
     sweep = payload["threshold_sweep"]
     print("\nthreshold sweep (fraction of heads above cut)")
@@ -431,17 +535,51 @@ def main() -> None:
         f"-> {ladder['direction']}"
     )
     print(f"verdict: {ladder['verdict']}")
-    print("\nscale-matched prediction against observation")
+    print(
+        "\nscale-matched prediction against observation (the interval is a statement "
+        f"about a new rung of {'/'.join(ladder['lineage'])} and its verdict is "
+        "withheld for every other arm)"
+    )
     print("arm | modality | predicted | prediction interval | observed | shortfall | below PI")
     for name, row in sorted(ladder["predictions"].items()):
         shortfall = row["shortfall_ratio"]
+        verdict = (
+            str(row["observed_below_prediction_interval"])
+            if row["prediction_interval_applies"]
+            else "withheld (out of lineage)"
+        )
         print(
             f"{name} | {row['modality']} | {row['predicted_fraction']:.4f} | "
             f"[{row['prediction_interval'][0]:.4f}, {row['prediction_interval'][1]:.4f}] | "
             f"{row['observed_fraction']:.4f} | "
             f"{'inf' if shortfall is None else f'{shortfall:.2f}x'} | "
-            f"{row['observed_below_prediction_interval']}"
+            f"{verdict}"
         )
+    transport = payload["slope_transport"]
+    print("\nslope transport, on the elasticity scale (one scale for both lineages)")
+    for label, block in transport["lineages"].items():
+        print(
+            f"  {label}: {block['present']} -> "
+            + ", ".join(
+                f"{rung['arm']} {rung['count_above_threshold']}/{rung['n_heads']}="
+                f"{rung['fraction']:.4f}"
+                for rung in block["rungs"]
+            )
+        )
+    if "text_slope_per_decade" in transport:
+        print(
+            f"  text {transport['text_slope_per_decade']:+.4f}/decade against protein "
+            f"{transport['protein_slope_per_decade']:+.4f}/decade; level ratio "
+            f"{transport['level_ratio_text_over_protein']:.2f}x"
+        )
+        print(
+            f"  one-head envelope on the ratio: "
+            f"{transport['one_head_sensitivity']['ratio_envelope']}"
+        )
+    print(
+        f"  decidable: {transport['decidable']}; ratio "
+        f"{transport['slope_ratio_text_over_protein']}; {transport['reason']}"
+    )
     print("\ncorpus-only contrasts (architecture, size and tokeniser held fixed)")
     for label, row in payload["corpus_contrast"]["pairs"].items():
         if not row.get("available"):

@@ -38,8 +38,11 @@ set -euo pipefail
 # H200_POD to a running pod before invoking this script (see
 # ~/hangzhou-remote/README.md). Before doing anything else, this script
 # invokes the documented cluster health check
-# (~/hangzhou-remote/ssh_tunnel/h200_status.sh) and aborts if it fails,
-# rather than reimplementing tunnel/master/node/pod checks itself. All
+# (~/hangzhou-remote/ssh_tunnel/h200_status.sh), reads the terminal
+# `Health=` line that check states its verdict on, and aborts unless it
+# says ok -- rather than reimplementing tunnel/master/node/pod checks
+# itself, and rather than trusting the probe's exit status, which travels
+# on the layer that returns 0 for a remote command that exited 7 (L20). All
 # GPFS access goes through the documented access-layer tools
 # (h200_sync.sh, h200_gpfs_push.sh, h200_pod_bash.sh, h200_pod_exec.sh) --
 # this script never opens its own connection to the cluster.
@@ -63,6 +66,15 @@ H200_SYNC="${H200_SYNC:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_sync.sh}"
 H200_GPFS_PUSH="${H200_GPFS_PUSH:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_gpfs_push.sh}"
 H200_POD_BASH="${H200_POD_BASH:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_pod_bash.sh}"
 H200_POD_EXEC="${H200_POD_EXEC:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_pod_exec.sh}"
+
+# Caller-side bound on the cluster health probe, in seconds. The probe is an
+# end-to-end check across several SSH and Kubernetes boundaries and normally
+# takes 40-50 s; scripts/transfer/README.md's "Launch On H200" requires a
+# caller-side timeout of at least 90. A timeout reached before the probe's
+# terminal `Health=` line is INCONCLUSIVE -- it is not evidence that the cluster
+# is unhealthy -- and verify_h200_cluster reports it as such while still
+# refusing to schedule.
+H200_STATUS_TIMEOUT_SECONDS="${H200_STATUS_TIMEOUT_SECONDS:-120}"
 
 CONTROLLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "${CONTROLLER_DIR}/../.." && pwd)}"
@@ -170,7 +182,9 @@ usage() {
 Usage: H200_POD=<pod> run_transfer_h200.sh [--dry-run] [--force]
 
 Environment overrides: H200_POD (required except for --help), H200_ACCESS_ROOT,
-REPO_ROOT, PROJECT_ROOT, GPFS_PROJECT_ROOT, GPFS_PACKAGE_ROOT,
+H200_STATUS_TIMEOUT_SECONDS (caller-side bound on the cluster health probe, in
+seconds; at least 90), REPO_ROOT, PROJECT_ROOT, GPFS_PROJECT_ROOT,
+GPFS_PACKAGE_ROOT,
 GPFS_RESULTS_ROOT, GPFS_LOGS_ROOT, ARMS (comma-separated), GPUS
 (comma-separated indices, pod-relative), TEXT_ARM, STAGES (comma-separated,
 default every stage the panel contract declares -- scope a campaign to what
@@ -319,6 +333,25 @@ reject_duplicate_values() {
 
 # --------------------------------------------------------------- preflight
 
+# The cluster's verdict, read from the line the probe states it on.
+#
+# This was the last controller decision still taken on the access layer's exit
+# status. `if ! "${H200_STATUS_CHECK}"` cannot be true on this deployment: the
+# probe's final action is a pod check issued through the same path L20 measured
+# returning 0 for a command that exited 7, so under `set -e` the branch was
+# unreachable and the gate could not refuse. CLAUDE.md and
+# scripts/transfer/README.md's "Launch On H200" both name the terminal `Health=`
+# line as the authority, and nothing here was reading it.
+#
+# So this is `pod_predicate`'s shape applied to the one remote question that
+# lacked it: capture stdout, decide on a word the probe states, and refuse
+# anything else -- including silence, which is what a probe that died before its
+# verdict produces. The exit status is reported in the diagnostic and is not the
+# decision.
+#
+# The probe's output is never echoed. It names the pod, and `redact` only covers
+# what this script prints; the verdict word is the only part that is needed and
+# the only part that cannot carry an infrastructure identifier.
 verify_h200_cluster() {
   if [ ! -x "${H200_STATUS_CHECK}" ]; then
     echo "H200 cluster health check not found or not executable: ${H200_STATUS_CHECK}" >&2
@@ -326,11 +359,37 @@ verify_h200_cluster() {
     exit 2
   fi
   log "running H200 cluster health check (tunnel, master, nodes, GPU allocation, pod match)"
-  if ! "${H200_STATUS_CHECK}"; then
-    echo "H200 cluster health check failed; aborting before touching anything" >&2
+  local report verdict
+  local status=0
+  # `|| status=$?` rather than a bare assignment: errexit is suspended in a `||`
+  # list, and a probe that exits non-zero is not by itself an answer here.
+  report="$(timeout "${H200_STATUS_TIMEOUT_SECONDS}" "${H200_STATUS_CHECK}" 2>&1)" \
+    || status=$?
+  verdict="$(printf '%s\n' "${report}" | sed -n 's/^Health=\(.*\)$/\1/p' | tail -1)"
+  if [ -z "${verdict}" ] && [ "${status}" = "124" ]; then
+    echo "H200 cluster health check did not reach its Health= line within" >&2
+    echo "${H200_STATUS_TIMEOUT_SECONDS}s. That is INCONCLUSIVE, not a failed health" >&2
+    echo "result: nothing about the cluster is established either way, and nothing" >&2
+    echo "has been transferred or executed. Re-run the probe by hand." >&2
     exit 2
   fi
-  log "H200 cluster health check passed"
+  case "${verdict}" in
+    ok)
+      log "H200 cluster health check passed: Health=ok (probe exit status ${status}, not consulted)"
+      ;;
+    "")
+      echo "H200 cluster health check stated no Health= line, so the campaign's" >&2
+      echo "precondition is undecidable and nothing is scheduled. Its exit status was" >&2
+      echo "${status} and is not authoritative: the access layer returns 0 for a remote" >&2
+      echo "command that exited 7 (L20)." >&2
+      exit 2
+      ;;
+    *)
+      echo "H200 cluster health check reported Health=${verdict}; aborting before" >&2
+      echo "touching anything." >&2
+      exit 2
+      ;;
+  esac
 }
 
 # ------------------------------------------------------------ code freeze
@@ -876,6 +935,14 @@ if ! command -v python3 >/dev/null 2>&1; then
   echo "python3 not found on PATH (needed to render the run manifest)" >&2
   exit 2
 fi
+# The health probe is bounded rather than left to hang: it crosses several SSH
+# and Kubernetes boundaries, and a stall there is indistinguishable from a slow
+# answer. Without timeout(1) the bound cannot be applied, and an unbounded probe
+# is not what scripts/transfer/README.md's "Launch On H200" specifies.
+if ! command -v timeout >/dev/null 2>&1; then
+  echo "timeout(1) not found on PATH (needed to bound the cluster health probe)" >&2
+  exit 2
+fi
 require_local_path "project root" "${PROJECT_ROOT}"
 require_local_path "src/transfer" "${PROJECT_ROOT}/src/transfer"
 require_local_path "scripts/transfer" "${PROJECT_ROOT}/scripts/transfer"
@@ -1000,6 +1067,7 @@ POD_COMMAND=(
 
 if [ "${DRY_RUN}" = "1" ]; then
   log "[dry-run] would run H200 cluster health check: ${H200_STATUS_CHECK}"
+  log "[dry-run]   bounded at ${H200_STATUS_TIMEOUT_SECONDS}s and required to state Health=ok"
   log "[dry-run] would check snapshot absence via: ${H200_POD_BASH} \"test -e '${SNAPSHOT_DIR}' ...\""
   log "[dry-run] would push code snapshot ($( wc -l < "${FILE_LIST}" ) files) via:"
   log "[dry-run]   ${H200_SYNC} push <local-staging> ${SNAPSHOT_DIR}"

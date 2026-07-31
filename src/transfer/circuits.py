@@ -54,6 +54,7 @@ from .statistics import MINIMUM_BOOTSTRAP_UNITS
 from .arms import (
     AA20,
     Arm,
+    ArmSpec,
     Cohort,
     ZYMCTRL_FASTA,
     iter_fasta,
@@ -69,7 +70,21 @@ SCHEMA_VERSION = "r2_transfer_circuit_primitives_v2"
 #: including that layer; the two sublayer kinds isolate one pathway.
 COMPONENT_KINDS = ("attn_out", "mlp_out", "resid_post")
 
-#: Inclusive ``q - p`` bands for the patching distance sweep.
+#: Inclusive ``q - p`` bands for the patching distance sweep, **in tokens**.
+#:
+#: A token is not a unit of content, and on this panel it is not even
+#: approximately one: the measured symbols per content token is 0.996 on the
+#: ProGen2 arms, 2.816 on ProtGPT2 and 4.403 on GPT-2.  The band ``33-64``
+#: therefore means 33-64 residues on ProGen2, about 93-180 residues on ProtGPT2
+#: and about 145-282 characters on GPT-2, so a modality ordering read across arms
+#: off this ladder is in part a reading of their tokenizers -- and this one
+#: reverses when the ladder is declared in content symbols instead.
+#:
+#: The ladder is kept unchanged because every artefact measured before the unit
+#: became declarable was drawn on it and has to stay reproducible.
+#: :data:`SYMBOL_DISTANCE_BANDS` is the same sweep declared in a unit the arms
+#: share, and :func:`resolve_distance_bands` makes the choice between them an
+#: explicit, recorded argument rather than a module constant nobody names.
 DISTANCE_BANDS: tuple[tuple[int, int], ...] = (
     (1, 1),
     (2, 4),
@@ -77,6 +92,61 @@ DISTANCE_BANDS: tuple[tuple[int, int], ...] = (
     (9, 16),
     (17, 32),
     (33, 64),
+)
+
+#: The units a distance band and a corruption span may be declared in.
+#:
+#: ``token``
+#:     the model's own input units.  Matches where the read-out sits relative to
+#:     the perturbation, and mismatches *what was perturbed*: one token is one
+#:     residue on a residue-level arm and about 2.8 residues or 4.4 characters on
+#:     a BPE arm.
+#: ``content_symbol``
+#:     residues on a protein arm, characters on a text arm, resolved to a per-arm
+#:     token geometry through that arm's own measured symbols per token.
+#:
+#: See :data:`DISTANCE_UNIT_CAVEAT` for what neither unit can do.
+DISTANCE_UNITS: tuple[str, ...] = ("token", "content_symbol")
+
+#: The distance sweep declared in content symbols.
+#:
+#: The three widest rungs of :data:`DISTANCE_BANDS` and no more.  The four
+#: narrowest have no image in tokens on a text arm at all: at 4.4 characters per
+#: token a single token step already spans more than the whole ``2-4`` band, so
+#: "a distance of two to four characters" is not a question GPT-2 can be asked,
+#: and :func:`resolve_distance_bands` refuses such a band rather than rounding it
+#: up to one token.  That the near bands are not commensurable across this panel
+#: in content units is a property of the panel, declared here rather than hidden
+#: inside a rounding rule.
+SYMBOL_DISTANCE_BANDS: tuple[tuple[int, int], ...] = ((9, 16), (17, 32), (33, 64))
+
+#: Tokens corrupted per case when no span is declared.  One, which is what every
+#: artefact before the span became declarable was measured with.
+DEFAULT_CORRUPTION_SPAN_TOKENS = 1
+
+#: Carried into every artefact a distance ladder produces.
+#:
+#: The confound has two legs and they push in opposite directions.  Matching the
+#: *distance* in tokens leaves the *perturbation* mismatched -- one token is 1
+#: residue on ProGen2 and about 2.8 on ProtGPT2 -- and matching the distance in
+#: residues while leaving the perturbation in tokens mismatches it the other way,
+#: which is a sufficient explanation on its own for ProtGPT2 reading above
+#: ProGen2 at matched residue distance.  Both legs are therefore declarable, and
+#: even with both matched the residue-to-character step across modalities is not
+#: unit-free.  Recorded rather than engineered away.
+DISTANCE_UNIT_CAVEAT = (
+    "A token geometry matches the positional distance between perturbation and "
+    "read-out and mismatches the perturbation itself (one token is 1 residue on a "
+    "residue-level arm, about 2.8 residues on ProtGPT2, about 4.4 characters on "
+    "GPT-2). A content-symbol geometry matches both legs in the arm's own content "
+    "alphabet, at the price of a per-arm rounding to whole tokens and a floor: no "
+    "arm can perturb less than one token, so the finest matched perturbation a set "
+    "of arms can reach is set by its coarsest tokenizer. Even with both legs "
+    "matched, a residue-to-character comparison across modalities is not unit-free; "
+    "the comparisons this geometry identifies are WITHIN a modality -- ProtGPT2 "
+    "against ProGen2 at a fixed residue alphabet, one text lineage against another, "
+    "one lineage across scale. Any ordering quoted from this artefact must name "
+    "this unit."
 )
 
 #: Smallest ``|signed total| / total magnitude`` at which a *signed* pathway
@@ -394,6 +464,19 @@ def sequence_start_id(arm: Arm) -> int:
     raise ValueError(f"{arm.name}: tokenizer declares neither a BOS nor an end-of-text token")
 
 
+def content_symbol_name(arm: Arm) -> str:
+    """What one *content symbol* is for this arm: a residue, or a character.
+
+    The same rule :func:`~.arms.symbols_per_token` counts by, named so that an
+    artefact can say which.  A band of "33-64 content symbols" is 33-64 residues
+    on a protein arm and 33-64 characters on a text arm, and those are not the
+    same quantity; a reader given only the number cannot tell, and the whole point
+    of declaring the unit is that they no longer have to guess.
+    """
+
+    return "residue" if arm.modality == "protein" else "character"
+
+
 def content_bounds(arm: Arm, ids: Sequence[int], n_valid: int) -> tuple[int, int]:
     """Half-open token span holding modality content, excluding format scaffolding.
 
@@ -569,9 +652,18 @@ def conditioned_token_budget(arm: Arm, requested: int, max_symbols: int) -> int:
     :func:`content_bounds` refuses a row whose ``<end>`` was truncated away --
     correctly, because scoring to the end of the valid tokens would count the
     conditioning prompt as cohort content. But the stages' defaults contradict
-    each other: a 256-token unigram window against a 1000-residue protein band
-    puts ZymCTRL's rows at 621-816 tokens, so they lose their ``<end>`` and the run
-    dies inside :func:`fit_unigram`.
+    each other: a 256-token unigram window against a 600-1000 residue protein band
+    puts ZymCTRL's rows at 610-1010 tokens -- one token per residue, a nine-token
+    conditioning prompt, and the closing ``<end>`` at index ``residues + 9`` -- so
+    they lose their ``<end>`` and the run dies inside :func:`fit_unigram`.
+
+    That range used to be stated here as "621-816 tokens", which is neither end of
+    it, and a queued ZymCTRL patching job was sized at ``--patch-seq-len 816`` from
+    the upper figure. At 816 only a record of exactly 806 residues can enter
+    :func:`build_patch_cases`: a shorter row never reaches the window, and a longer
+    one is refused by :func:`content_bounds` for losing its ``<end>``.
+    :func:`patch_seq_len_refusal` answers that question from the panel declaration,
+    before a checkpoint is loaded, instead of from this prose.
 
     Declared here rather than in a stage. It was first written inside
     ``04_circuit_primitives.py``, and ``11_induction_path_patching.py`` then failed
@@ -587,6 +679,71 @@ def conditioned_token_budget(arm: Arm, requested: int, max_symbols: int) -> int:
     if arm.spec.input_format != "ec_conditioned":
         return int(requested)
     return max(int(requested), int(max_symbols) + CONDITIONING_TOKEN_SLACK)
+
+
+#: Input formats whose content span is *closed* by a trailing marker, so that
+#: truncating a row destroys the span rather than shortening it.
+#:
+#: :func:`content_bounds` refuses such a truncated row, which is right. The
+#: consequence for any measurement that cuts every row to one common length is
+#: declared here, once: only a row whose own token length is exactly that length
+#: can enter at all. Read off the branches of :func:`content_bounds` rather than
+#: restated per stage (Appendix B rule 12).
+CLOSED_CONTENT_FORMATS = frozenset({"ec_conditioned"})
+
+
+def patch_seq_len_refusal(
+    spec: ArmSpec, seq_len: int, *, min_symbols: int, max_symbols: int
+) -> str | None:
+    """Why no patching case can be cut for this arm at ``seq_len``, or ``None``.
+
+    Decidable from the panel declaration and the cohort band alone, so a stage can
+    refuse before a checkpoint reaches a GPU. That is the point: the arithmetic
+    below was previously done by hand, off a wrong figure in a docstring, and the
+    resulting job was scheduled, allocated and only then found to be impossible --
+    Appendix B rule 12 one step out, where a decision made properly one import away
+    is re-made as an operator integer.
+
+    :func:`build_patch_cases` cuts every case to one token length. For a format in
+    :data:`CLOSED_CONTENT_FORMATS` a row's token length tracks its content length,
+    so a row longer than ``seq_len`` loses its closing marker under truncation and a
+    shorter row never reaches the window: only rows of exactly ``seq_len`` tokens
+    can enter. A cohort banded over a *range* of lengths therefore has no
+    admissible ``seq_len`` at all, and that is a refusal rather than a tuning
+    problem.
+    """
+
+    if spec.input_format not in CLOSED_CONTENT_FORMATS:
+        return None
+    if seq_len < 1 or min_symbols < 1 or max_symbols < min_symbols:
+        raise ValueError(
+            f"{spec.name}: invalid patch window (seq_len={seq_len}, "
+            f"symbols={min_symbols}-{max_symbols})"
+        )
+    if min_symbols != max_symbols:
+        return (
+            f"{spec.name}: a {spec.input_format} row is a conditioning prompt, one "
+            f"token per content symbol and a closing marker, so its token length "
+            f"tracks its residue count. Every patching case shares one token length; "
+            f"a longer row loses its closing marker under truncation and a shorter "
+            f"row is dropped, so only rows of exactly --patch-seq-len tokens can "
+            f"enter. This cohort is banded at {min_symbols}-{max_symbols} residues "
+            f"and so has no single row length: no value of --patch-seq-len admits it, "
+            f"including the requested {seq_len}. Band the cohort at one length or "
+            f"leave this arm out of --sections patching"
+        )
+    low = max_symbols + 2
+    high = max_symbols + CONDITIONING_TOKEN_SLACK
+    if not low <= seq_len <= high:
+        return (
+            f"{spec.name}: a {spec.input_format} row of {max_symbols} residues is "
+            f"{max_symbols} content tokens plus a conditioning prompt and a closing "
+            f"marker, which CONDITIONING_TOKEN_SLACK bounds between {low} and {high} "
+            f"tokens; --patch-seq-len={seq_len} lies outside that range, so every row "
+            f"is either dropped for not reaching the window or refused for losing its "
+            f"closing marker"
+        )
+    return None
 
 
 def fit_unigram(arm: Arm, strings: Sequence[str], *, max_tokens: int) -> Unigram:
@@ -1266,6 +1423,13 @@ class RepeatProbe:
     key_positions: tuple[int, ...]
     coverage: float
     repeat_symbols: int
+    #: Index of the cohort record this probe was built from, or -1 when the probe
+    #: was not built from a cohort (a synthetic probe, or one constructed by hand
+    #: in a test). It is carried because record-level loss is otherwise
+    #: unrecoverable from the probe set: a record that aligns nowhere has no probe
+    #: to report it on, so a mean coverage over the surviving probes is a mean over
+    #: the records that survived. See :func:`probe_record_retention`.
+    record_index: int = -1
 
     def __post_init__(self) -> None:
         if self.kind not in {
@@ -1274,6 +1438,8 @@ class RepeatProbe:
             "natural_repeat_approximate",
         }:
             raise ValueError(f"unknown probe kind {self.kind!r}")
+        if self.record_index < -1:
+            raise ValueError("a probe's record index must be non-negative or -1")
         if not self.query_positions or len(self.query_positions) != len(self.key_positions):
             raise ValueError("probe query and key positions must be non-empty and aligned")
         length = len(self.input_ids)
@@ -1373,6 +1539,93 @@ def record_symbol_offsets(arm: Arm, text: str, record: str) -> list[int]:
     return offsets
 
 
+#: Fraction of a natural-repeat cohort's records that must reach a probe before
+#: the probe set may be scored.
+#:
+#: Measured on the seeded 817-record cohorts: every text arm retains 808/817
+#: (0.989), every ProGen2 arm and ZymCTRL 817/817 (1.000), ProtGPT2 597/817
+#: (0.731). The drop is not random. A record reaches a probe only when both copies
+#: of its repeat are segmented at identical token boundaries, and a substitution
+#: can move a merge boundary, so the retained set is biased toward the near-exact
+#: end of an *approximate*-repeat cohort -- on the one arm that carries every
+#: modality coefficient, and in the exact-versus-approximate contrast the
+#: two-probe design exists to make.
+#:
+#: One half is a bound, not a fit: below it the scored set is a minority of the
+#: cohort and the census is not the cohort's in any useful sense. ProtGPT2's 0.731
+#: clears it and is not thereby endorsed -- :func:`probe_record_retention` reports
+#: the retention and the identity-fraction contrast between the retained and the
+#: dropped records with every census, so the selection sits beside the number it
+#: selected rather than being inferable only by counting probes.
+MINIMUM_PROBE_RECORD_RETENTION = 0.5
+
+
+def probe_record_retention(
+    probes: Sequence[RepeatProbe], cohort: Cohort
+) -> dict[str, Any]:
+    """Which cohort records reached a probe, and how the survivors differ.
+
+    Record-level loss is the coverage statistic one level out. ``coverage``
+    reports the aligned fraction *within* a probe and is already reported;
+    a record that aligns nowhere contributes no probe at all, so it is invisible
+    to any mean over probes. Both are needed and both are now reported.
+
+    The identity-fraction contrast is the evidence, not a flag: if the retained
+    records are systematically more identical than the dropped ones, the cohort
+    that was scored is not the cohort that was drawn, and it differs along exactly
+    the axis the approximate criterion was introduced to vary.
+    """
+
+    total = len(cohort.records)
+    if total < 1:
+        raise ValueError(f"cohort {cohort.name!r} has no records")
+    indices = [int(probe.record_index) for probe in probes]
+    if any(index < 0 for index in indices):
+        raise ValueError(
+            "probe set carries no cohort record indices, so record-level retention "
+            "cannot be measured; build it with natural_repeat_probes"
+        )
+    if len(set(indices)) != len(indices):
+        raise ValueError("two probes claim the same cohort record")
+    if any(index >= total for index in indices):
+        raise ValueError(f"a probe indexes a record outside cohort {cohort.name!r}")
+    stats = cohort.metadata.get("repeat_stats")
+    if not isinstance(stats, list) or len(stats) != total:
+        raise ValueError(
+            f"cohort {cohort.name!r} carries no per-record repeat_stats aligned to "
+            "its records, so the retained and dropped records cannot be compared"
+        )
+    kept = set(indices)
+    dropped = [index for index in range(total) if index not in kept]
+
+    def mean_of(field: str, selection: Sequence[int]) -> float | None:
+        if not selection:
+            return None
+        return _finite(
+            float(np.mean([float(stats[index][field]) for index in selection])),
+            f"{field} over {len(selection)} records",
+        )
+
+    retained = sorted(kept)
+    return {
+        "n_records": int(total),
+        "n_retained": len(retained),
+        "n_dropped": len(dropped),
+        "record_retention": _finite(len(retained) / total, "record retention"),
+        "minimum_record_retention": float(MINIMUM_PROBE_RECORD_RETENTION),
+        "retained_identity_fraction_mean": mean_of("identity_fraction", retained),
+        "dropped_identity_fraction_mean": mean_of("identity_fraction", dropped),
+        "retained_repeat_length_mean": mean_of("length", retained),
+        "dropped_repeat_length_mean": mean_of("length", dropped),
+        "selection": (
+            "a record reaches a probe only when both copies of its repeat are "
+            "segmented at identical token boundaries, so a gap between the retained "
+            "and dropped identity fractions is a selection on the very axis the "
+            "exact/approximate contrast measures"
+        ),
+    }
+
+
 def natural_repeat_probes(
     arm: Arm,
     cohort: Cohort,
@@ -1423,7 +1676,9 @@ def natural_repeat_probes(
         raise TypeError(f"{arm.name}: natural-repeat alignment needs a fast tokenizer")
     strings = cohort.input_strings(arm)
     probes: list[RepeatProbe] = []
-    for text, record, coordinates in zip(strings, cohort.records, repeats):
+    for index_of_record, (text, record, coordinates) in enumerate(
+        zip(strings, cohort.records, repeats)
+    ):
         first, second, span = (int(value) for value in coordinates)
         symbol_at = record_symbol_offsets(arm, text, record)
         symbol_of = {offset: index for index, offset in enumerate(symbol_at)}
@@ -1471,12 +1726,24 @@ def natural_repeat_probes(
                 key_positions=tuple(keys),
                 coverage=len(queries) / candidates,
                 repeat_symbols=span,
+                record_index=index_of_record,
             )
         )
     if not probes:
         raise RuntimeError(
             f"{arm.name}: no {probe_kind} probe survived token alignment on cohort "
             f"{cohort.name!r}"
+        )
+    retention = probe_record_retention(probes, cohort)
+    if retention["record_retention"] < MINIMUM_PROBE_RECORD_RETENTION:
+        raise RuntimeError(
+            f"{arm.name}: only {retention['n_retained']} of {retention['n_records']} "
+            f"records in cohort {cohort.name!r} reached a probe "
+            f"({retention['record_retention']:.3f}, below the "
+            f"{MINIMUM_PROBE_RECORD_RETENTION} floor). The loss is not random -- a "
+            f"record is kept only when both copies of its repeat are segmented at "
+            f"identical token boundaries -- so the scored set would be a biased "
+            f"minority of the cohort"
         )
     return probes
 
@@ -2272,6 +2539,21 @@ MINIMUM_ELIGIBILITY_CLUSTERS = MINIMUM_BOOTSTRAP_UNITS
 #: distribution the fraction is a single slice of.
 ELIGIBILITY_THRESHOLD_LADDER: tuple[float, ...] = (0.05, 0.10, 0.25, 0.50, 1.00, 2.00)
 
+#: Inference dtypes :func:`activation_patching` refuses to run in.
+#:
+#: The read-out is a difference of two logits and the far-band effect it has to
+#: resolve is of order 0.05 logits, while bfloat16 carries eight mantissa bits: at
+#: a logit magnitude of 8 its quantisation step is 0.0625, larger than the effect
+#: being measured. This is not a precision preference. It withdrew a whole
+#: measurement: the eligible fraction came out inflated by 60% relative, upward
+#: (transfer audit, Appendix B rule 15b). ``14_paa_census.py`` had already learned
+#: the same lesson on the M-gap and defaults its census to float32.
+#:
+#: Declared here rather than in the stage so that the refusal reaches every
+#: caller, and enforced against ``Arm.dtype`` -- the dtype the checkpoint was
+#: actually loaded with -- rather than against a command-line string.
+PATCHING_REFUSED_DTYPES = frozenset({"bfloat16"})
+
 
 def _threshold_sweep(
     absolute: np.ndarray,
@@ -2386,6 +2668,233 @@ def _case_resampled_interval(
 
 
 @dataclass(frozen=True)
+class DistanceBandPlan:
+    """The geometry one arm's patch cases are cut to, and the unit it was declared in.
+
+    Two things are declared, not one.  ``requested`` is the perturbation-to-
+    read-out distance ladder and ``requested_corruption_span`` is the size of the
+    perturbation itself; both are in :attr:`unit`, and both are resolved here to
+    the tokens the sampler actually works in.  Declaring only the first is not
+    enough: at a matched residue distance ProtGPT2 still corrupts about 2.8
+    residues where ProGen2 corrupts one, which is on its own a sufficient
+    explanation for ProtGPT2 reading higher, so a band-only re-run produces
+    another number that cannot be attributed to the model.
+
+    Under ``unit="token"`` the resolved geometry is the requested geometry and
+    this class is a labelled no-op, which is what keeps every artefact measured
+    before the unit became declarable reproducible from the same code path.
+
+    Band *labels* are formed from ``requested``, never from ``token_bands``, so a
+    panel run under ``content_symbol`` puts the same label on the same content
+    distance for every arm -- that is the point of declaring a shared unit -- and
+    the resolved token band travels beside each label.
+    """
+
+    unit: str
+    requested: tuple[tuple[int, int], ...]
+    token_bands: tuple[tuple[int, int], ...]
+    requested_corruption_span: int
+    corruption_span_tokens: int
+    symbols_per_token: float | None
+
+    def __post_init__(self) -> None:
+        if self.unit not in DISTANCE_UNITS:
+            raise ValueError(
+                f"unknown distance unit {self.unit!r}; declared units are "
+                f"{list(DISTANCE_UNITS)}"
+            )
+        if not self.requested or len(self.requested) != len(self.token_bands):
+            raise ValueError("a distance plan needs one resolved token band per request")
+        for low, high in self.token_bands:
+            if low < 1 or high < low:
+                raise ValueError(f"invalid resolved token band ({low}, {high})")
+        if self.corruption_span_tokens < 1 or self.requested_corruption_span < 1:
+            raise ValueError("a case must corrupt at least one token")
+        if self.corruption_span_tokens > min(low for low, _ in self.token_bands):
+            raise ValueError(
+                f"a {self.corruption_span_tokens}-token corruption reaches the "
+                f"read-out of the narrowest band {min(self.token_bands)}"
+            )
+        if (self.unit == "content_symbol") != (self.symbols_per_token is not None):
+            raise ValueError(
+                "symbols_per_token is required for a content_symbol plan and "
+                "meaningless for a token plan"
+            )
+        if self.unit == "token" and (
+            self.requested != self.token_bands
+            or self.requested_corruption_span != self.corruption_span_tokens
+        ):
+            raise ValueError("a token plan must resolve to the geometry it requested")
+
+    @property
+    def labels(self) -> tuple[str, ...]:
+        return tuple(f"{low}-{high}" for low, high in self.requested)
+
+    @property
+    def widest_token_distance(self) -> int:
+        return max(high for _, high in self.token_bands)
+
+    @property
+    def realised_corruption_symbols(self) -> float | None:
+        """What the resolved span actually perturbs, in content symbols."""
+
+        if self.symbols_per_token is None:
+            return None
+        return self.corruption_span_tokens * self.symbols_per_token
+
+    def as_dict(self) -> dict[str, Any]:
+        scale = self.symbols_per_token
+        realised = self.realised_corruption_symbols
+        return {
+            "unit": self.unit,
+            "symbols_per_token": (
+                None if scale is None else _finite(float(scale), "symbols per token")
+            ),
+            "bands": [
+                {
+                    "label": label,
+                    "requested": [int(low), int(high)],
+                    "tokens": [int(token_low), int(token_high)],
+                    "realised_content_symbols": (
+                        None
+                        if scale is None
+                        else [
+                            _finite(token_low * scale, "band symbols"),
+                            _finite(token_high * scale, "band symbols"),
+                        ]
+                    ),
+                }
+                for label, (low, high), (token_low, token_high) in zip(
+                    self.labels, self.requested, self.token_bands
+                )
+            ],
+            "corruption_span": {
+                "requested": int(self.requested_corruption_span),
+                "tokens": int(self.corruption_span_tokens),
+                "realised_content_symbols": (
+                    None if realised is None else _finite(realised, "corruption symbols")
+                ),
+                # The floor this arm imposes on any matched perturbation: it cannot
+                # corrupt less than one token, so a panel's finest matched
+                # perturbation is set by its coarsest tokenizer.
+                "arm_floor_content_symbols": (
+                    None if scale is None else _finite(float(scale), "corruption floor")
+                ),
+                "rounding_relative_error": (
+                    None
+                    if realised is None
+                    else _finite(
+                        abs(realised - self.requested_corruption_span)
+                        / self.requested_corruption_span,
+                        "corruption rounding",
+                    )
+                ),
+            },
+            "caveat": DISTANCE_UNIT_CAVEAT,
+        }
+
+
+def resolve_distance_bands(
+    bands: Sequence[tuple[int, int]],
+    *,
+    unit: str,
+    corruption_span: int = DEFAULT_CORRUPTION_SPAN_TOKENS,
+    symbols_per_token: float | None = None,
+) -> DistanceBandPlan:
+    """Resolve a declared patching geometry to the tokens the sampler needs.
+
+    A ``content_symbol`` *band* is resolved by containment:
+    ``[ceil(low / s), floor(high / s)]`` for the arm's measured symbols per token
+    ``s``, so every token distance the sampler may draw carries an expected
+    content distance inside the band that was asked for.  A band with no whole
+    token inside it raises rather than being widened to the nearest token: on a
+    4.4-characters-per-token arm every band below ``9-16`` is in that position,
+    and rounding one of them to a distance of one token would compare a
+    4.4-character step against a 1-residue step under a label asserting the two
+    were matched.
+
+    A ``content_symbol`` *corruption span* is resolved to the nearest whole number
+    of tokens, and **refused below one token**.  That floor is the honest content
+    of "match the perturbation": ProtGPT2 cannot corrupt fewer than about 2.8
+    residues because it has no smaller unit, so the finest matched perturbation a
+    set of arms can reach is set by its coarsest tokenizer.  The realised span in
+    symbols and the rounding error are reported per arm rather than assumed away.
+
+    The rule is an expectation, not an identity: ``s`` is a cohort mean and a
+    particular token covers a particular number of symbols.  That approximation is
+    the price of comparing arms whose tokenizers differ by 4.4x, and it is
+    recorded with the number rather than corrected for.
+    """
+
+    if unit not in DISTANCE_UNITS:
+        raise ValueError(
+            f"unknown distance unit {unit!r}; declared units are {list(DISTANCE_UNITS)}"
+        )
+    requested = tuple((int(low), int(high)) for low, high in bands)
+    if not requested:
+        raise ValueError("a distance ladder needs at least one band")
+    for low, high in requested:
+        if low < 1 or high < low:
+            raise ValueError(f"invalid distance band ({low}, {high})")
+    span = int(corruption_span)
+    if span < 1:
+        raise ValueError("a case must corrupt at least one symbol")
+
+    if unit == "token":
+        if symbols_per_token is not None:
+            raise ValueError(
+                "a token geometry is not resolved through symbols_per_token; declare "
+                "unit='content_symbol' to use it"
+            )
+        return DistanceBandPlan(
+            unit=unit,
+            requested=requested,
+            token_bands=requested,
+            requested_corruption_span=span,
+            corruption_span_tokens=span,
+            symbols_per_token=None,
+        )
+
+    if symbols_per_token is None:
+        raise ValueError(
+            "a content_symbol geometry needs the arm's measured symbols_per_token"
+        )
+    scale = _finite(float(symbols_per_token), "symbols per token")
+    if scale <= 0.0:
+        raise ValueError(f"symbols_per_token must be positive, got {scale}")
+    resolved: list[tuple[int, int]] = []
+    for low, high in requested:
+        token_low = math.ceil(low / scale)
+        token_high = math.floor(high / scale)
+        if token_high < token_low:
+            raise ValueError(
+                f"content-symbol band ({low}, {high}) has no token image at "
+                f"{scale:.4f} symbols per token: it spans "
+                f"[{low / scale:.3f}, {high / scale:.3f}] tokens, which contains no "
+                f"whole token distance. Declare a band at least one token wide for "
+                f"this arm; rounding it would compare unequal content distances under "
+                f"one label"
+            )
+        resolved.append((token_low, token_high))
+    if span < scale:
+        raise ValueError(
+            f"a corruption span of {span} content symbols is below this arm's floor "
+            f"of {scale:.4f}: one token is the smallest perturbation it has, so the "
+            f"finest matched perturbation a panel can reach is set by its coarsest "
+            f"tokenizer. Declare a span of at least {math.ceil(scale)} symbols, or "
+            f"leave this arm out of the matched comparison"
+        )
+    return DistanceBandPlan(
+        unit=unit,
+        requested=requested,
+        token_bands=tuple(resolved),
+        requested_corruption_span=span,
+        corruption_span_tokens=math.floor(span / scale + 0.5),
+        symbols_per_token=scale,
+    )
+
+
+@dataclass(frozen=True)
 class PatchCase:
     """One clean/corrupted pair with its perturbation and read-out positions."""
 
@@ -2394,6 +2903,13 @@ class PatchCase:
     position_p: int
     position_q: int
     band: str
+    #: Tokens corrupted, contiguously, from ``position_p``.  Defaulted to one, so
+    #: a case built before the span was declarable is unchanged.  It is declarable
+    #: because "exactly one token differs" is what makes the *perturbation* leg of
+    #: a cross-arm comparison unmatchable: one token is one residue on a
+    #: residue-level arm and about 2.8 on ProtGPT2, and matching the distance while
+    #: leaving that free swaps one confound for another.
+    corrupt_span: int = 1
     #: Index of the cohort row this case was cut from. Cases are drawn with
     #: replacement, so several cases share a source; that is the cluster any
     #: interval over cases has to resample. Defaulted so the frozen artefacts and
@@ -2405,15 +2921,26 @@ class PatchCase:
     def __post_init__(self) -> None:
         if len(self.clean_ids) != len(self.corrupt_ids):
             raise ValueError("clean and corrupted inputs must have the same length")
-        if not 0 <= self.position_p < self.position_q < len(self.clean_ids):
-            raise ValueError("patching requires 0 <= p < q < sequence length")
+        if self.corrupt_span < 1:
+            raise ValueError("a case must corrupt at least one token")
+        if not (
+            0 <= self.position_p
+            and self.position_p + self.corrupt_span <= self.position_q < len(self.clean_ids)
+        ):
+            raise ValueError(
+                "patching requires 0 <= p and p + span <= q < sequence length, so that "
+                "the perturbation does not reach the read-out"
+            )
         differing = [
             index
             for index, (left, right) in enumerate(zip(self.clean_ids, self.corrupt_ids))
             if left != right
         ]
-        if differing != [self.position_p]:
-            raise ValueError("the corrupted input must differ at exactly position p")
+        if differing != list(range(self.position_p, self.position_p + self.corrupt_span)):
+            raise ValueError(
+                "the corrupted input must differ at exactly the declared span, "
+                "contiguously from position p"
+            )
 
 
 def build_patch_cases(
@@ -2422,11 +2949,20 @@ def build_patch_cases(
     unigram: Unigram,
     *,
     seq_len: int,
-    bands: Sequence[tuple[int, int]] = DISTANCE_BANDS,
+    plan: DistanceBandPlan,
     cases_per_band: int,
     seed: int,
 ) -> list[PatchCase]:
-    """Sample one single-token corruption per case, at a controlled ``q - p``.
+    """Sample one corruption per case, at a controlled ``q - p`` and a controlled size.
+
+    ``plan`` carries both legs of the geometry and the unit they were declared in
+    (:class:`DistanceBandPlan`).  Each case's band label is the *requested* band,
+    so a panel run in content symbols labels the same content distance identically
+    on every arm, while the distance actually drawn comes from that arm's resolved
+    token band.  A case corrupts ``plan.corruption_span_tokens`` contiguous tokens
+    from ``p``; at the default of one token this samples exactly the sequence of
+    draws it did before the span was declarable, so the existing artefacts remain
+    reproducible.
 
     All cases are cut to the same token length so that the whole sweep runs as
     one batch and no padding position can enter the measurement.
@@ -2435,25 +2971,50 @@ def build_patch_cases(
     the unigram support, which excludes layout tokens.  Corrupting a line break,
     or reading the next-token logit off one, would make the measurement partly
     about a rendering's layout for the one arm whose rendering has layout tokens.
+
+    An arm whose content span is closed by a trailing marker
+    (:data:`CLOSED_CONTENT_FORMATS`) is refused here unless every cohort row is
+    already exactly ``seq_len`` tokens long, with the row lengths named.  Cutting
+    such a row removes the marker, and :func:`content_bounds` then refuses it one
+    row at a time, deep inside the loop and after the checkpoint is on the GPU;
+    dropping those rows instead would silently select the cohort by length.
+    :func:`patch_seq_len_refusal` answers the same question from the declaration
+    alone, before anything is loaded.
     """
 
-    if seq_len < 8 or cases_per_band < 1 or not bands:
+    if seq_len < 8 or cases_per_band < 1:
         raise ValueError("invalid patch-case parameters")
-    usable: list[list[int]] = []
-    for text in strings:
-        row = [int(token) for token in arm.tokenizer(text, return_tensors=None)["input_ids"]]
-        if len(row) < seq_len:
-            continue
-        usable.append(row[:seq_len])
+    if seq_len <= plan.widest_token_distance + 2:
+        raise ValueError(
+            f"{arm.name}: seq_len={seq_len} does not exceed the widest resolved token "
+            f"distance {plan.widest_token_distance}; under a content-symbol geometry "
+            f"the token bands are per arm, so this cannot be decided from the "
+            f"requested band alone"
+        )
+    rows = [
+        [int(token) for token in arm.tokenizer(text, return_tensors=None)["input_ids"]]
+        for text in strings
+    ]
+    if arm.spec.input_format in CLOSED_CONTENT_FORMATS:
+        lengths = sorted({len(row) for row in rows})
+        if lengths != [seq_len]:
+            raise RuntimeError(
+                f"{arm.name}: this arm's content span is closed by a trailing marker, "
+                f"so a row longer than seq_len={seq_len} loses that marker under "
+                f"truncation while a shorter row never reaches the window -- only a row "
+                f"of exactly {seq_len} tokens can enter. This cohort renders to "
+                f"{len(lengths)} distinct token lengths spanning "
+                f"{lengths[0]}-{lengths[-1]}, so it cannot be patched at any single "
+                f"sequence length; see patch_seq_len_refusal"
+            )
+    usable = [row[:seq_len] for row in rows if len(row) >= seq_len]
     if not usable:
         raise RuntimeError(f"{arm.name}: no cohort record reaches {seq_len} tokens")
     support = {int(token) for token in unigram.token_ids}
     rng = np.random.default_rng(seed)
+    corrupt_span = plan.corruption_span_tokens
     cases: list[PatchCase] = []
-    for low, high in bands:
-        if low < 1 or high < low:
-            raise ValueError(f"invalid distance band ({low}, {high})")
-        label = f"{low}-{high}"
+    for label, (low, high) in zip(plan.labels, plan.token_bands):
         produced = 0
         for _ in range(cases_per_band * 64):
             source = int(rng.integers(0, len(usable)))
@@ -2465,10 +3026,14 @@ def build_patch_cases(
                 continue
             position_p = int(rng.integers(begin, end - distance))
             position_q = position_p + distance
-            if row[position_p] not in support or row[position_q] not in support:
+            perturbed = range(position_p, position_p + corrupt_span)
+            if any(row[at] not in support for at in perturbed):
+                continue
+            if row[position_q] not in support:
                 continue
             corrupted = list(row)
-            corrupted[position_p] = unigram.sample_other(rng, row[position_p])
+            for at in perturbed:
+                corrupted[at] = unigram.sample_other(rng, row[at])
             cases.append(
                 PatchCase(
                     clean_ids=tuple(row),
@@ -2477,6 +3042,7 @@ def build_patch_cases(
                     position_q=position_q,
                     band=label,
                     source=source,
+                    corrupt_span=corrupt_span,
                 )
             )
             produced += 1
@@ -2484,8 +3050,10 @@ def build_patch_cases(
                 break
         if produced < cases_per_band:
             raise RuntimeError(
-                f"{arm.name}: only {produced}/{cases_per_band} cases for band {label} at "
-                f"seq_len={seq_len}; the band does not fit the content span"
+                f"{arm.name}: only {produced}/{cases_per_band} cases for band {label} "
+                f"(resolved to {low}-{high} tokens) at seq_len={seq_len}; the band does "
+                f"not fit the content span, or too few of its positions carry a token "
+                f"in the unigram support"
             )
     return cases
 
@@ -2517,6 +3085,14 @@ def activation_patching(
     clean run and reused for the corrupted and patched runs, so the metric is a
     genuine difference-in-differences rather than a moving target.
 
+    A case may corrupt more than one token (``PatchCase.corrupt_span``), and every
+    case in one call must corrupt the same number, because the perturbation size is
+    part of the geometry being compared rather than a per-case accident.  Patching
+    "at ``p``" then restores the component over the *whole* perturbed span, which
+    is the only reading under which the recovered fraction means "restore this
+    component where the input was changed"; at a span of one token it is the same
+    computation, on the same positions, as before the span was declarable.
+
     Cases whose corruption moves the metric by less than ``minimum_effect``
     logits are excluded from the recovered-fraction average, because the ratio is
     then a ratio of noise.  The exclusion rate is reported per band and is itself
@@ -2541,6 +3117,14 @@ def activation_patching(
     """
 
     arm.require("circuits")
+    if arm.dtype in PATCHING_REFUSED_DTYPES:
+        raise ValueError(
+            f"{arm.name}: activation patching is refused in {arm.dtype}. The metric is "
+            f"a difference of two logits and the effect it must resolve is of order "
+            f"{minimum_effect} logits, which is below this dtype's own quantisation "
+            f"step at logit scale; the last run that ignored this inflated its eligible "
+            f"fraction by 60% relative (Appendix B rule 15b). Load the arm in float32"
+        )
     if not cases:
         raise ValueError("no patching cases were supplied")
     if minimum_effect <= 0:
@@ -2553,13 +3137,28 @@ def activation_patching(
     width = len(cases[0].clean_ids)
     if any(len(case.clean_ids) != width for case in cases):
         raise ValueError("all patching cases must share one sequence length")
+    corrupt_span = int(cases[0].corrupt_span)
+    if any(int(case.corrupt_span) != corrupt_span for case in cases):
+        raise ValueError("all patching cases must corrupt the same number of tokens")
 
     device = arm.device
     clean = torch.tensor([case.clean_ids for case in cases], dtype=torch.long, device=device)
     corrupt = torch.tensor([case.corrupt_ids for case in cases], dtype=torch.long, device=device)
+    # Both sites are (case, position) matrices: the read-out is one position and
+    # the perturbation is `corrupt_span` of them, and the patch has to cover the
+    # whole perturbation rather than its first token.
     sites = {
-        "p": torch.tensor([case.position_p for case in cases], dtype=torch.long, device=device),
-        "q": torch.tensor([case.position_q for case in cases], dtype=torch.long, device=device),
+        "p": torch.tensor(
+            [
+                [case.position_p + offset for offset in range(corrupt_span)]
+                for case in cases
+            ],
+            dtype=torch.long,
+            device=device,
+        ),
+        "q": torch.tensor(
+            [[case.position_q] for case in cases], dtype=torch.long, device=device
+        ),
     }
     chunks = [
         slice(start, min(start + batch_size, len(cases)))
@@ -2576,74 +3175,78 @@ def activation_patching(
     top_token = torch.zeros(len(cases), dtype=torch.long, device=device)
     alternative = torch.zeros(len(cases), dtype=torch.long, device=device)
 
-    def capture(kind: str, layer: int, span: slice, local_rows: torch.Tensor):
+    def capture(kind: str, layer: int, chunk: slice, local_rows: torch.Tensor):
         def hook(_module, _args, output: Any) -> None:
             tensor = _leading_tensor(output)
             for site, index in sites.items():
                 key = (kind, layer, site)
                 if key not in cache:
                     cache[key] = torch.zeros(
-                        (len(cases), tensor.shape[-1]), dtype=tensor.dtype, device=device
+                        (len(cases), index.shape[1], tensor.shape[-1]),
+                        dtype=tensor.dtype,
+                        device=device,
                     )
-                cache[key][span] = tensor[local_rows, index[span]].detach()
+                cache[key][chunk] = tensor[
+                    local_rows.unsqueeze(1), index[chunk]
+                ].detach()
 
         return hook
 
-    def logits_at_q(ids: torch.Tensor, span: slice, local_rows: torch.Tensor) -> torch.Tensor:
+    def logits_at_q(ids: torch.Tensor, chunk: slice, local_rows: torch.Tensor) -> torch.Tensor:
         """Logits at the read-out position only, for one chunk of cases."""
 
-        logits = arm.model(input_ids=ids[span], use_cache=False).logits
-        return logits[local_rows, sites["q"][span]].float()
+        logits = arm.model(input_ids=ids[chunk], use_cache=False).logits
+        return logits[local_rows, sites["q"][chunk, 0]].float()
 
     metric_clean = torch.zeros(len(cases), dtype=torch.float32, device=device)
-    for span in chunks:
-        local_rows = torch.arange(span.stop - span.start, device=device)
+    for chunk in chunks:
+        local_rows = torch.arange(chunk.stop - chunk.start, device=device)
         handles = [
-            module.register_forward_hook(capture(kind, layer, span, local_rows))
+            module.register_forward_hook(capture(kind, layer, chunk, local_rows))
             for (kind, layer), module in modules.items()
             if kind in component_kinds
         ]
         try:
-            read = logits_at_q(clean, span, local_rows)
+            read = logits_at_q(clean, chunk, local_rows)
         finally:
             for handle in handles:
                 handle.remove()
         ranked = read.topk(2, dim=-1)
-        top_token[span] = ranked.indices[:, 0]
-        alternative[span] = ranked.indices[:, 1]
-        metric_clean[span] = (
+        top_token[chunk] = ranked.indices[:, 0]
+        alternative[chunk] = ranked.indices[:, 1]
+        metric_clean[chunk] = (
             read.gather(1, ranked.indices[:, :1]).squeeze(1)
             - read.gather(1, ranked.indices[:, 1:2]).squeeze(1)
         )
 
-    def metric(read: torch.Tensor, span: slice) -> torch.Tensor:
-        return read.gather(1, top_token[span].unsqueeze(1)).squeeze(1) - read.gather(
-            1, alternative[span].unsqueeze(1)
+    def metric(read: torch.Tensor, chunk: slice) -> torch.Tensor:
+        return read.gather(1, top_token[chunk].unsqueeze(1)).squeeze(1) - read.gather(
+            1, alternative[chunk].unsqueeze(1)
         ).squeeze(1)
 
     def corrupt_metric(patch_site: tuple[str, int, str] | None) -> torch.Tensor:
         """The metric on the corrupted input, optionally with one component restored."""
 
         out = torch.zeros(len(cases), dtype=torch.float32, device=device)
-        for span in chunks:
-            local_rows = torch.arange(span.stop - span.start, device=device)
+        for chunk in chunks:
+            local_rows = torch.arange(chunk.stop - chunk.start, device=device)
             handle = None
             if patch_site is not None:
                 kind, layer, site = patch_site
-                cached = cache[(kind, layer, site)][span]
-                index = sites[site][span]
+                cached = cache[(kind, layer, site)][chunk]
+                index = sites[site][chunk]
 
                 def hook(_module, _args, output: Any) -> Any:
                     tensor = _leading_tensor(output)
                     patched = tensor.clone()
-                    patched[local_rows, index] = cached.to(patched.dtype)
+                    patched[local_rows.unsqueeze(1), index] = cached.to(patched.dtype)
                     if isinstance(output, tuple):
                         return (patched,) + tuple(output[1:])
                     return patched
 
                 handle = modules[(kind, layer)].register_forward_hook(hook)
             try:
-                out[span] = metric(logits_at_q(corrupt, span, local_rows), span)
+                out[chunk] = metric(logits_at_q(corrupt, chunk, local_rows), chunk)
             finally:
                 if handle is not None:
                     handle.remove()
@@ -2754,6 +3357,7 @@ def activation_patching(
     return {
         "sequence_length": width,
         "n_cases": len(cases),
+        "corruption_span_tokens": corrupt_span,
         "minimum_effect_logits": float(minimum_effect),
         "eligible_cases": int(eligible.sum()),
         "component_kinds": list(component_kinds),

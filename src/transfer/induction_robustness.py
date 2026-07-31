@@ -68,9 +68,19 @@ from typing import Any
 import numpy as np
 from scipy import stats
 
-from .statistics import MINIMUM_FINITE_DRAW_FRACTION
+from .statistics import (
+    MINIMUM_BOOTSTRAP_UNITS,
+    MINIMUM_FINITE_DRAW_FRACTION,
+    bootstrap_unit_floor,
+)
 
-SCHEMA_VERSION = "r2_transfer_induction_robustness_v1"
+#: Bumped from ``v1`` by the 2026-07-30 repair. The payload changed shape in
+#: four places a reader must not confuse with the old one: the census source is
+#: an argument rather than a hard-wired table, the threshold ladder carries the
+#: run's own cut, ``modality_variance_surviving_scale_and_lineage`` is now
+#: divided by a centred sum of squares, and the ladder's out-of-lineage
+#: predictions carry no interval verdict.
+SCHEMA_VERSION = "r2_transfer_induction_robustness_v2"
 
 #: Probe whose census the headline table is read from.  The synthetic probe is
 #: the one the seven-arm comparison was measured on and is the only probe for
@@ -192,12 +202,20 @@ def load_census(
     *,
     parameters: int,
     probe: str = PRIMARY_PROBE,
+    architecture: str | None = None,
 ) -> ArmCensus:
     """Read one arm's census out of a ``circuit_primitives`` artefact.
 
     ``parameters`` is supplied by the caller rather than read from the artefact
     because the artefact does not carry it; :func:`count_parameters` derives it
     from the checkpoint on disk.
+
+    ``architecture`` is supplied on the same footing and for the same reason: the
+    v1 schema predates the field, and :func:`arm_lineage` needs it.  Where the
+    artefact carries one and the caller supplies a different one the two are not
+    reconciled -- the artefact was produced under a different panel declaration
+    than the one being analysed against, which is a fact about the run and not a
+    field to be overwritten.
     """
 
     import json
@@ -212,12 +230,18 @@ def load_census(
     alignment = induction[probe]
     census = alignment["census"]
     scores = np.asarray(induction["per_head"][PER_HEAD_KEY[probe]], dtype=np.float64)
+    recorded = arm.get("architecture") or None
+    if recorded is not None and architecture is not None and recorded != architecture:
+        raise ValueError(
+            f"{path}: the artefact records architecture {recorded!r} and the caller "
+            f"declares {architecture!r}; these are different panels"
+        )
     return ArmCensus(
         name=arm["name"],
         modality=arm["modality"],
-        # ``architecture`` is absent from the v1 schema; the four v1 artefacts
-        # are all GPT-2-family or ProGen and the field is descriptive only.
-        architecture=arm.get("architecture") or "unrecorded",
+        # ``architecture`` is absent from the v1 schema, so a caller that needs
+        # the lineage term passes the panel's declaration in.
+        architecture=recorded or architecture or "unrecorded",
         n_layer=int(arm["n_layer"]),
         n_head_per_layer=int(scores.shape[1]),
         d_model=int(arm["d_model"]),
@@ -267,7 +291,22 @@ def verify_against_stored_counts(arm: ArmCensus) -> dict[str, Any]:
 # ------------------------------------------------------------ threshold sweep
 
 
-def threshold_sweep(arms: Sequence[ArmCensus]) -> dict[str, Any]:
+def threshold_label(value: float) -> str:
+    """The row label for a cut, at the smallest precision that round-trips.
+
+    Two decimals for every cut the census stores and for every cut anyone has
+    run, so existing labels are unchanged; more digits for a cut that two
+    decimals would round into a different number, because a row labelled 0.15
+    that was computed at 0.155 is worse than no row.
+    """
+
+    short = f"{float(value):.2f}"
+    return short if float(short) == float(value) else f"{float(value):.6g}"
+
+
+def threshold_sweep(
+    arms: Sequence[ArmCensus], *, headline_threshold: float | None = None
+) -> dict[str, Any]:
     """Per-arm fraction at every threshold the census carries, plus the ordering.
 
     Reports, at each threshold: every arm's fraction; the lowest text fraction
@@ -276,12 +315,23 @@ def threshold_sweep(arms: Sequence[ArmCensus]) -> dict[str, Any]:
     it is the one whose threshold dependence matters.  A ratio at or below one is
     a broken separation and is labelled as such rather than being reported as a
     small effect.
+
+    ``headline_threshold`` is the cut the run publishes its own ratio at, and it
+    is *unioned into* the ladder rather than assumed to be in it.  The census
+    stores counts at four fixed cuts; a run invoked at any other cut produced a
+    sweep that could not exhibit the ordering at the cut it reported, which is
+    Appendix B rule 17 defeated by the ladder rather than by the data.
+    ``circuits._threshold_sweep`` already carries exactly this remedy.
     """
 
-    fixed = sorted({float(label) for arm in arms for label in arm.stored_counts})
+    stored = {float(label) for arm in arms for label in arm.stored_counts}
+    requested = set() if headline_threshold is None else {float(headline_threshold)}
+    fixed = sorted(stored | requested)
     rows: list[dict[str, Any]] = []
     for threshold in fixed:
-        rows.append(_sweep_row(arms, f"{threshold:.2f}", {arm.name: threshold for arm in arms}))
+        rows.append(
+            _sweep_row(arms, threshold_label(threshold), {arm.name: threshold for arm in arms})
+        )
     rows.append(
         _sweep_row(
             arms,
@@ -294,6 +344,13 @@ def threshold_sweep(arms: Sequence[ArmCensus]) -> dict[str, Any]:
     return {
         "rows": rows,
         "fixed_thresholds": fixed,
+        "thresholds_stored_by_the_census": sorted(stored),
+        "headline_threshold": (
+            None if headline_threshold is None else float(headline_threshold)
+        ),
+        "headline_threshold_row": (
+            None if headline_threshold is None else threshold_label(headline_threshold)
+        ),
         "separation_holds_at_every_threshold": orderings_preserved,
         "thresholds_where_separation_breaks": breaks,
         "note": (
@@ -940,6 +997,15 @@ def _inversion_verdict(matched: Mapping[str, Any], inverted: Mapping[str, Any]) 
 #: modality contrast it is meant to adjudicate.
 GPT2_LINEAGE: tuple[str, ...] = ("gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl")
 
+#: The protein-side scale rungs, in ascending size.  ``progen2-base`` is
+#: deliberately absent: it carries ProGen2-medium's parameter count, depth and
+#: width and differs only in pretraining mixture, so it is the corpus contrast
+#: (see :func:`corpus_contrast`) and not a rung of a scale ladder.  Two rungs
+#: give a slope and no curvature and no interval, which is why
+#: :func:`lineage_slope_transport` refuses a ratio one head could move rather
+#: than quoting one.
+PROGEN2_LINEAGE: tuple[str, ...] = ("progen2-small", "progen2-medium")
+
 
 def lineage_scale_ladder(
     arms: Sequence[ArmCensus],
@@ -966,6 +1032,16 @@ def lineage_scale_ladder(
     the question is what a *new* decoder of that size would score, not where the
     fitted line's mean lies.  With two residual degrees of freedom it is wide,
     and it is meant to be.
+
+    **And it is a statement about a new rung of the fitted lineage, not about
+    any decoder of that size.**  Its width prices the residual scatter of four
+    GPT-2 rungs around their own line; it prices nothing about a different
+    architecture, tokeniser or pretraining corpus, and it cannot, because no such
+    model was in the fit.  Every prediction therefore carries the lineage it was
+    fitted on, and an ``observed_below_prediction_interval`` verdict is issued
+    only for arms inside it.  For everything else the point prediction and the
+    shortfall ratio are retained and labelled an extrapolation -- which is what
+    the published 2.34x restatement was, unlabelled.
     """
 
     index = {arm.name: arm for arm in arms}
@@ -1007,15 +1083,34 @@ def lineage_scale_ladder(
             ],
         }
 
+    fitted_architectures = sorted({arm.architecture for arm in rungs})
+    fitted_scale_range = [float(scale.min()), float(scale.max())]
+    withheld_reason = (
+        "not a rung of the fitted " + "/".join(present) + " ladder: the prediction "
+        "interval prices the residual scatter of those rungs around their own line "
+        "and prices nothing about a different lineage, tokeniser or pretraining "
+        "corpus, so no inside/below verdict is issued. The point prediction and the "
+        "shortfall ratio below are an extrapolation off the fitted line"
+    )
+
     predictions: dict[str, Any] = {}
     for arm in arms:
-        if arm.name in present:
-            continue
         prediction = predict(arm.parameters)
         observed = arm.fraction_above(threshold)
+        in_lineage = arm.name in present
         prediction.update(
             {
                 "modality": arm.modality,
+                "architecture": arm.architecture,
+                "in_fitted_lineage": in_lineage,
+                "shares_fitted_architecture": bool(
+                    arm.architecture in fitted_architectures
+                ),
+                "inside_fitted_scale_range": bool(
+                    fitted_scale_range[0] - 1e-12
+                    <= prediction["log10_parameters"]
+                    <= fitted_scale_range[1] + 1e-12
+                ),
                 "observed_fraction": observed,
                 "observed_count": int((arm.flat >= threshold).sum()),
                 "n_heads": arm.n_heads,
@@ -1023,13 +1118,23 @@ def lineage_scale_ladder(
                 "shortfall_ratio": (
                     prediction["predicted_fraction"] / observed if observed > 0.0 else None
                 ),
-                "observed_below_prediction_interval": bool(
-                    observed < prediction["prediction_interval"][0]
+                "prediction_interval_applies": in_lineage,
+                "prediction_interval_withheld_reason": (
+                    None if in_lineage else withheld_reason
                 ),
-                "observed_inside_prediction_interval": bool(
-                    prediction["prediction_interval"][0]
-                    <= observed
-                    <= prediction["prediction_interval"][1]
+                "observed_below_prediction_interval": (
+                    bool(observed < prediction["prediction_interval"][0])
+                    if in_lineage
+                    else None
+                ),
+                "observed_inside_prediction_interval": (
+                    bool(
+                        prediction["prediction_interval"][0]
+                        <= observed
+                        <= prediction["prediction_interval"][1]
+                    )
+                    if in_lineage
+                    else None
                 ),
             }
         )
@@ -1078,8 +1183,244 @@ def lineage_scale_ladder(
             "single lineage, so this slope identifies scale as a bundle and "
             "attributes it to no single component"
         ),
+        "fitted_architectures": fitted_architectures,
+        "fitted_log10_parameter_range": fitted_scale_range,
+        "prediction_scope": (
+            "the prediction interval is a statement about a new rung of the fitted "
+            "lineage at a given parameter count; for every arm outside that lineage "
+            "it is an extrapolation onto a different population and its verdict is "
+            "withheld rather than reported"
+        ),
         "predictions": predictions,
     }
+
+
+def _log_log_slope(parameters: np.ndarray, fractions: np.ndarray) -> float:
+    """Elasticity of a positive fraction against parameter count, per decade.
+
+    The same fit :func:`lineage_scale_ladder` makes, factored out so that a
+    comparison between two lineages cannot be made on a different scale from the
+    ladder it is compared against.  Raises rather than returning a sentinel when
+    a rung sits at zero: ``log10(0)`` is not a steep slope, it is no slope.
+    """
+
+    if parameters.shape != fractions.shape or parameters.size < 2:
+        raise ValueError("a slope needs at least two rungs")
+    if (fractions <= 0.0).any():
+        raise ValueError("a log-log slope needs every rung above the threshold")
+    scale = np.log10(parameters.astype(np.float64))
+    if float(scale.max() - scale.min()) <= 0.0:
+        raise ValueError("a slope needs rungs at distinct parameter counts")
+    design = np.column_stack([np.ones_like(scale), scale])
+    coefficients, *_ = np.linalg.lstsq(design, np.log10(fractions), rcond=None)
+    return float(coefficients[1])
+
+
+def lineage_slope_transport(
+    arms: Sequence[ArmCensus],
+    *,
+    threshold: float,
+    text_lineage: Sequence[str] = GPT2_LINEAGE,
+    protein_lineage: Sequence[str] = PROGEN2_LINEAGE,
+) -> dict[str, Any]:
+    """Does the text side's scale slope transport to the protein side?
+
+    **One scale, declared, for both lineages: the elasticity.**  The slope of
+    ``log10(fraction)`` on ``log10(parameters)`` is what
+    :func:`lineage_scale_ladder` fits and it is the form in which a slope can be
+    carried to another model, because it is free of the level either population
+    happens to sit at.  A slope in *fraction points per decade* is not: where the
+    text arms' mean fraction is several times the protein arms', an absolute
+    slope several times steeper on the text side is exactly what equal
+    elasticities produce, and comparing the two is the non-scale-free comparison
+    Appendix B rule 21 forbids.  The level ratio is reported so the size of that
+    effect is visible; no linear ratio is emitted at all, because carrying both
+    scales in one artefact is how one document came to hold two incompatible
+    "slope per decade" figures that reverse each other's conclusion.
+
+    **A ratio one head could move is refused.**  Each rung's numerator is an
+    integer count of heads, and a protein rung carrying five heads out of a
+    couple of hundred puts the whole comparison inside the resolution of that
+    integer.  Every single-head perturbation of every rung in both ladders is
+    refitted; if the envelope of the resulting ratios contains 1.0 -- if one head
+    anywhere decides which modality's slope is the steeper one -- the ratio is
+    withheld and the envelope is reported in its place.
+    """
+
+    index = {arm.name: arm for arm in arms}
+    requested = {"text": list(text_lineage), "protein": list(protein_lineage)}
+    rungs = {
+        label: [index[name] for name in names if name in index]
+        for label, names in requested.items()
+    }
+    blocks = {
+        label: {
+            "requested": requested[label],
+            "present": [arm.name for arm in members],
+            "rungs": [
+                {
+                    "arm": arm.name,
+                    "parameters": arm.parameters,
+                    "n_heads": arm.n_heads,
+                    "count_above_threshold": int((arm.flat >= threshold).sum()),
+                    "fraction": arm.fraction_above(threshold),
+                }
+                for arm in members
+            ],
+        }
+        for label, members in rungs.items()
+    }
+    out: dict[str, Any] = {
+        "threshold": float(threshold),
+        "scale": "elasticity_d_log10_fraction_per_decade_of_parameters",
+        "scale_reason": (
+            "the elasticity is the ladder's own scale and the only one whose "
+            "cross-lineage ratio does not read the two populations' levels; a "
+            "points-per-decade slope compared across populations at different "
+            "levels is Appendix B rule 21"
+        ),
+        "lineages": blocks,
+    }
+    short = [label for label, members in rungs.items() if len(members) < 2]
+    if short:
+        out.update(
+            {
+                "decidable": False,
+                "reason": (
+                    f"{short} carries fewer than two rungs in this panel; a slope "
+                    "cannot be fitted, let alone transported"
+                ),
+                "slope_ratio_text_over_protein": None,
+            }
+        )
+        return out
+
+    counts = {
+        label: np.array(
+            [float((arm.flat >= threshold).sum()) for arm in members], dtype=np.float64
+        )
+        for label, members in rungs.items()
+    }
+    heads = {
+        label: np.array([float(arm.n_heads) for arm in members], dtype=np.float64)
+        for label, members in rungs.items()
+    }
+    parameters = {
+        label: np.array([float(arm.parameters) for arm in members], dtype=np.float64)
+        for label, members in rungs.items()
+    }
+
+    def slope(label: str, override: np.ndarray | None = None) -> float:
+        block = counts[label] if override is None else override
+        return _log_log_slope(parameters[label], block / heads[label])
+
+    try:
+        base = {label: slope(label) for label in rungs}
+    except ValueError as error:
+        out.update(
+            {
+                "decidable": False,
+                "reason": f"no slope on one side: {error}",
+                "slope_ratio_text_over_protein": None,
+            }
+        )
+        return out
+
+    def ratio_of(text_slope: float, protein_slope: float) -> float | None:
+        if abs(protein_slope) < 1e-12 or text_slope * protein_slope <= 0.0:
+            return None
+        return text_slope / protein_slope
+
+    envelope: list[float] = []
+    unresolvable: list[dict[str, Any]] = []
+    for label, members in rungs.items():
+        for position, arm in enumerate(members):
+            for delta in (-1.0, 1.0):
+                moved = counts[label].copy()
+                moved[position] += delta
+                perturbed = dict(base)
+                try:
+                    perturbed[label] = slope(label, moved)
+                except ValueError as error:
+                    unresolvable.append(
+                        {"arm": arm.name, "delta": int(delta), "reason": str(error)}
+                    )
+                    continue
+                value = ratio_of(perturbed["text"], perturbed["protein"])
+                if value is None:
+                    unresolvable.append(
+                        {
+                            "arm": arm.name,
+                            "delta": int(delta),
+                            "reason": "the two slopes do not share a sign under this "
+                            "perturbation, so their ratio is not a shallower/steeper "
+                            "statement",
+                        }
+                    )
+                    continue
+                envelope.append(value)
+
+    point = ratio_of(base["text"], base["protein"])
+    spread = [min(envelope), max(envelope)] if envelope else None
+    resolved = bool(
+        point is not None
+        and not unresolvable
+        and spread is not None
+        and (spread[0] > 1.0 or spread[1] < 1.0)
+    )
+    mean_fraction = {
+        label: float(np.mean(counts[label] / heads[label])) for label in rungs
+    }
+    out.update(
+        {
+            "text_slope_per_decade": base["text"],
+            "protein_slope_per_decade": base["protein"],
+            "direction_transports": bool(base["text"] * base["protein"] > 0.0),
+            "mean_fraction": mean_fraction,
+            "level_ratio_text_over_protein": (
+                mean_fraction["text"] / mean_fraction["protein"]
+                if mean_fraction["protein"] > 0.0
+                else None
+            ),
+            "one_head_sensitivity": {
+                "n_perturbations": 2 * sum(len(m) for m in rungs.values()),
+                "ratio_envelope": spread,
+                "unresolvable_perturbations": unresolvable,
+            },
+            "decidable": resolved,
+            "slope_ratio_text_over_protein": point if resolved else None,
+            "slope_ratio_point_estimate_if_counts_were_exact": point,
+            "verdict": (
+                (
+                    "protein_slope_is_shallower"
+                    if point is not None and point > 1.0
+                    else "protein_slope_is_steeper"
+                )
+                if resolved
+                else "one_head_decides_the_direction"
+            ),
+            "reason": (
+                "the ratio is stable in sign against every single-head perturbation "
+                "of every rung in both ladders"
+                if resolved
+                else "moving one head on one rung carries the ratio across 1.0 "
+                f"(envelope {spread}), so the head counts in this panel do not "
+                "resolve which lineage's slope is the steeper one; no ratio is "
+                "published"
+            ),
+            "why_no_linear_slope": (
+                "a fraction-points-per-decade slope is reported by neither lineage "
+                "here. Its cross-lineage ratio is a reading of the two populations' "
+                "levels as much as of their slopes, and the levels differ by "
+                f"{mean_fraction['text'] / mean_fraction['protein']:.2f}x in this "
+                "panel" if mean_fraction["protein"] > 0.0 else
+                "a fraction-points-per-decade slope is reported by neither lineage "
+                "here; its cross-lineage ratio would read the two populations' "
+                "levels as much as their slopes"
+            ),
+        }
+    )
+    return out
 
 
 def corpus_contrast(
@@ -1126,31 +1467,44 @@ def corpus_contrast(
 
 # ------------------------------------------- corpus, lineage, variance shares
 
-#: Architecture lineage of each panel arm.  This is deliberately NOT the modality
-#: label: the GPT-2 lineage spans both modalities (five text rungs, plus ProtGPT2
-#: and ZymCTRL), which is the only reason a modality term can be separated from a
-#: lineage term at all in this panel -- and, as :func:`variance_decomposition`
-#: records, it is separated by ProtGPT2 alone once ZymCTRL's zero is dropped.
-ARM_LINEAGE = {
-    "gpt2": "gpt2",
-    "gpt2-medium": "gpt2",
-    "gpt2-large": "gpt2",
-    "gpt2-xl": "gpt2",
-    "dialogpt-small": "gpt2",
-    "protgpt2": "gpt2",
-    "zymctrl": "gpt2",
-    "qwen2.5-0.5b": "qwen2",
-    "llama-3.2-3b": "llama",
-    "progen2-base": "progen",
-    "progen2-medium": "progen",
-}
+def arm_lineage(arms: Sequence[ArmCensus]) -> dict[str, str]:
+    """Each arm's architecture lineage, read off the panel declaration.
+
+    Deliberately NOT the modality label: the GPT-2 lineage spans both modalities
+    (five text rungs, plus ProtGPT2 and ZymCTRL), which is the only reason a
+    modality term can be separated from a lineage term at all in this panel.
+
+    Taken from :attr:`ArmCensus.architecture`, which ``load_census`` copies out of
+    the artefact, which ``04_circuit_primitives.py`` copies out of ``arms.py``.
+    This module used to restate it as a hand-maintained table -- a second panel
+    declaration -- and by the time ``progen2-small`` was admitted to give the
+    protein side its scale contrast the table was stale, so
+    :func:`variance_decomposition` raised ``KeyError`` on the very panel §4
+    describes.  Appendix B rule 12: one declaration, imported, never restated.
+
+    An artefact predating the ``architecture`` field reads ``unrecorded``.  That
+    is refused rather than folded into one family, because collapsing every arm
+    into a single lineage silently deletes the lineage term from the
+    decomposition and inflates the modality term with what it absorbed.
+    """
+
+    unrecorded = sorted(
+        arm.name for arm in arms if arm.architecture in ("", "unrecorded")
+    )
+    if unrecorded:
+        raise ValueError(
+            f"no architecture recorded for {unrecorded}; the lineage term cannot be "
+            "derived from an artefact that does not carry the panel's architecture "
+            "declaration, and substituting one family for all of them would delete "
+            "the term rather than estimate it"
+        )
+    return {arm.name: arm.architecture for arm in arms}
 
 
 def variance_decomposition(
     arms: Sequence[ArmCensus],
     *,
     threshold: float,
-    lineage: Mapping[str, str] = ARM_LINEAGE,
 ) -> dict[str, Any]:
     """What share of the between-arm spread is modality, and what is everything else?
 
@@ -1180,9 +1534,7 @@ def variance_decomposition(
     if len(usable) < 6:
         raise ValueError("a variance decomposition needs at least six arms above the threshold")
     names = [arm.name for arm in usable]
-    missing = [name for name in names if name not in lineage]
-    if missing:
-        raise KeyError(f"no lineage declared for {sorted(missing)}")
+    lineage = arm_lineage(usable)
 
     response = np.log10(np.array([arm.fraction_above(threshold) for arm in usable]))
     scale = np.array([math.log10(float(arm.parameters)) for arm in usable])
@@ -1225,11 +1577,25 @@ def variance_decomposition(
     # How much of the modality indicator survives being projected off the scale
     # and lineage columns: if almost none does, the increment below is a number
     # about rounding error rather than about modality.
+    #
+    # Divided by the CENTRED sum of squares, which makes this the standard
+    # partial-R-squared complement, ``1 - R^2(modality ~ scale + lineage)``. The
+    # denominator was the uncentred ``modality @ modality``, which for a 0/1
+    # indicator is just the count of protein arms; the statistic's ceiling was
+    # therefore ``n_protein / n`` rather than one, so it understated the
+    # surviving share by that factor and "a quarter survives" was really "nearly
+    # half survives" -- a different sentence about the same fit.
     nuisance = np.column_stack([intercept, scale_block, lineage_columns])
     projection, *_ = np.linalg.lstsq(nuisance, modality, rcond=None)
     modality_residual = modality - nuisance @ projection
+    centred_sum_of_squares = float(((modality - modality.mean()) ** 2).sum())
+    if centred_sum_of_squares <= 0.0:
+        raise ValueError(
+            "every usable arm carries the same modality label, so there is no "
+            "modality contrast to decompose"
+        )
     residual_share = float(
-        (modality_residual @ modality_residual) / max(float(modality @ modality), 1e-12)
+        (modality_residual @ modality_residual) / centred_sum_of_squares
     )
 
     spanning = {
@@ -1278,6 +1644,13 @@ def variance_decomposition(
             - r_squared(modality_block, lineage_columns)["r_squared"]
         ),
         "modality_variance_surviving_scale_and_lineage": residual_share,
+        "modality_variance_surviving_denominator": "centred_sum_of_squares",
+        "modality_variance_surviving_note": (
+            "one minus the R-squared of the modality indicator on scale and lineage. "
+            "Divided by the centred sum of squares, so the statistic runs on [0, 1] "
+            "with 1 meaning the indicator is untouched by the nuisance columns; the "
+            "uncentred denominator used before could not exceed n_protein / n"
+        ),
         "identification": {
             "families_spanning_both_modalities": spanning_families,
             "arms_per_family": spanning,
@@ -1322,12 +1695,32 @@ def contrast_ratio_bootstrap(
     ratio undefined; those draws are counted and reported rather than dropped
     silently, because a contrast that is undefined a third of the time is not a
     contrast with a wide interval, it is a contrast that has not been measured.
+
+    **Two further shapes are not ``ok`` and used to be reported as ``ok``.**  A
+    head fraction is a count over a fixed head grid, so the resample
+    distribution of a ratio of two of them is a small set of atoms, and at the
+    published probe counts it is routinely a handful.  When it collapses to one
+    atom the interval is a point, which -- as ``statistics.mean_interval``
+    records for the same shape -- reads as perfect precision and is the one thing
+    a reader will not question.  When an endpoint lands exactly on the point
+    estimate the interval is one-sided in fact while looking two-sided.  The
+    number of distinct atoms is therefore reported, and both shapes are named in
+    ``interval_status`` rather than left for a reader to notice by comparing
+    three numbers.
     """
 
     if per_probe_high.ndim != 3 or per_probe_low.ndim != 3:
         raise ValueError("per-probe scores must have shape (probe, layer, head)")
     if resamples < 1:
         raise ValueError("resamples must be positive")
+    # The unit floor, on the smaller of the two probe sets: this function had no
+    # unit guard at all, so a two-probe arm could set the width of a published
+    # modality ratio.
+    floor = bootstrap_unit_floor(
+        int(min(per_probe_high.shape[0], per_probe_low.shape[0]))
+    )
+    if floor["degenerate"]:
+        raise ValueError(f"contrast ratio bootstrap refused: {floor['degenerate_reason']}")
 
     def fraction(block: np.ndarray, picks: np.ndarray) -> float:
         mean = block[picks].mean(axis=0).reshape(-1)
@@ -1355,11 +1748,20 @@ def contrast_ratio_bootstrap(
         if interval_defined
         else None
     )
+    point = point_high / point_low if point_low > 0.0 else None
+    flags: list[str] = []
+    if interval is not None:
+        if interval[0] == interval[1]:
+            flags.append("zero_width_interval_over_a_single_resample_atom")
+        elif point is not None:
+            for edge, value in (("lower", interval[0]), ("upper", interval[1])):
+                if math.isclose(value, point, rel_tol=1e-9, abs_tol=0.0):
+                    flags.append(f"{edge}_endpoint_coincides_with_the_point_estimate")
     return {
         "threshold": float(threshold),
         "fraction_high": point_high,
         "fraction_low": point_low,
-        "ratio": point_high / point_low if point_low > 0.0 else None,
+        "ratio": point,
         "interval": interval,
         "confidence": confidence,
         "resamples": int(resamples),
@@ -1367,11 +1769,24 @@ def contrast_ratio_bootstrap(
         "undefined_share": undefined / resamples,
         "finite_resamples": len(ratios),
         "minimum_finite_resamples": minimum_finite,
+        "n_distinct_resampled_ratios": int(np.unique(ratios).size) if ratios else 0,
+        "interval_flags": flags,
         "interval_status": (
-            "ok"
-            if interval_defined
-            else "undefined_denominator_in_more_than_5_percent_of_resamples"
+            "undefined_denominator_in_more_than_5_percent_of_resamples"
+            if not interval_defined
+            else ("degenerate_resample_distribution" if flags else "ok")
         ),
+        "interval_status_note": (
+            "a ratio of two head fractions takes finitely many values, so its "
+            "resample distribution is a set of atoms; an interval over one atom, or "
+            "one whose endpoint is the point estimate, is not a 95% interval that "
+            "happens to be narrow and is not reported as ok"
+        ),
+        "n_probe_clusters": {
+            "high": int(per_probe_high.shape[0]),
+            "low": int(per_probe_low.shape[0]),
+        },
+        "minimum_probe_clusters": int(MINIMUM_BOOTSTRAP_UNITS),
         "resampling_unit": "probe",
     }
 
@@ -1409,8 +1824,16 @@ def cluster_bootstrap_fraction(
     if resamples < 1:
         raise ValueError("resamples must be positive")
     n_probes = per_probe.shape[0]
-    if n_probes < 2:
-        raise ValueError("a cluster bootstrap needs at least two probes")
+    # ``n_probes < 2`` was the guard, which is the pre-EXP-R2-061 guard the unit
+    # floor replaced everywhere else. Measured on this function: at two probes
+    # the interval comes out *narrower* than at three on the same generating
+    # process, because a two-cluster resample distribution has three atoms and
+    # the percentile rule trims the extreme ones. The number of probes is a
+    # configuration choice, not a measured property of the checkpoint, so this
+    # is raised rather than returned as a degenerate record.
+    floor = bootstrap_unit_floor(int(n_probes))
+    if floor["degenerate"]:
+        raise ValueError(f"probe cluster bootstrap refused: {floor['degenerate_reason']}")
     n_heads = per_probe.shape[1] * per_probe.shape[2]
     point = float((per_probe.mean(axis=0).reshape(-1) >= threshold).sum()) / n_heads
     rng = np.random.default_rng(seed)
@@ -1428,8 +1851,11 @@ def cluster_bootstrap_fraction(
         "confidence": confidence,
         "resamples": int(resamples),
         "n_probe_clusters": int(n_probes),
+        "minimum_probe_clusters": int(MINIMUM_BOOTSTRAP_UNITS),
         "n_heads": int(n_heads),
         "bootstrap_sd": float(draws.std(ddof=1)),
+        "n_distinct_resampled_fractions": int(np.unique(draws).size),
+        "zero_width_interval": bool(low == high),
         "resampling_unit": "probe",
         "note": (
             "probes are the cluster; heads and layers are not resampled because "

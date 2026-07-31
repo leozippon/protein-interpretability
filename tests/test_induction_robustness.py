@@ -14,7 +14,14 @@ properties asserted here are the ones a reader has to be able to assume:
   own floor, so a p-value at 1/35 cannot be mistaken for strong evidence;
 - the probe bootstrap resamples probes and nothing else, and in particular a
   degenerate interval on an arm whose heads are far from the cut is a correct
-  answer rather than a bug;
+  answer rather than a bug -- while an interval over a single resample atom is
+  labelled as one rather than published as ``ok``;
+- the sweep carries the cut the run reports, so the ordering can be read at the
+  threshold the artefact publishes and not only at the four the census stored;
+- a slope carried from one lineage to another is computed on one declared scale
+  and is withheld when a single head would move its direction;
+- the lineage label comes from the panel declaration, and a prediction interval
+  fitted on one lineage issues no verdict about another;
 - the sweep calls a broken separation broken.  A negative result that reports
   itself as a small positive one is worse than no analysis.
 """
@@ -35,9 +42,13 @@ if str(REPO_ROOT) not in sys.path:
 from src.transfer.induction_robustness import (  # noqa: E402
     COLLINEARITY_LIMIT,
     ArmCensus,
+    arm_lineage,
     auc,
     cluster_bootstrap_fraction,
     collinearity_report,
+    contrast_ratio_bootstrap,
+    lineage_scale_ladder,
+    lineage_slope_transport,
     model_level_exact_test,
     one_sided_ks,
     pairwise_auc,
@@ -45,7 +56,9 @@ from src.transfer.induction_robustness import (  # noqa: E402
     scale_modality_fit,
     survival_dominance,
     threshold_sweep,
+    variance_decomposition,
 )
+from src.transfer.statistics import MINIMUM_BOOTSTRAP_UNITS  # noqa: E402
 
 
 def make_arm(
@@ -55,12 +68,13 @@ def make_arm(
     *,
     parameters: int = 100_000_000,
     d_model: int = 128,
+    architecture: str = "gpt2",
 ) -> ArmCensus:
     layers, heads = scores.shape
     return ArmCensus(
         name=name,
         modality=modality,
-        architecture="gpt2",
+        architecture=architecture,
         n_layer=layers,
         n_head_per_layer=heads,
         d_model=d_model,
@@ -186,6 +200,39 @@ def test_sweep_reports_a_broken_separation_as_broken():
     assert "0.10" in sweep["thresholds_where_separation_breaks"]
 
 
+def test_the_sweep_carries_the_cut_the_run_reports():
+    """A ladder that omits the published cut cannot show invariance at it.
+
+    The census stores four cuts.  A run invoked at any other one produced a sweep
+    whose rows were the stored four, so the artefact reported a ratio at a
+    threshold its own ordering evidence never touched -- Appendix B rule 17
+    defeated by the ladder rather than by the data.
+    """
+
+    text = make_arm("t", "text", np.full((4, 4), 0.5))
+    protein = make_arm("p", "protein", np.zeros((4, 4)))
+
+    default = threshold_sweep([text, protein])
+    assert 0.15 not in default["fixed_thresholds"]
+    assert default["headline_threshold"] is None
+
+    sweep = threshold_sweep([text, protein], headline_threshold=0.15)
+    assert 0.15 in sweep["fixed_thresholds"]
+    assert sweep["headline_threshold_row"] == "0.15"
+    assert sweep["thresholds_stored_by_the_census"] == [0.05, 0.10, 0.20, 0.30]
+    assert any(row["threshold"] == "0.15" for row in sweep["rows"])
+
+    # A cut the census already stores is not duplicated into a second row.
+    stored = threshold_sweep([text, protein], headline_threshold=0.10)
+    assert stored["fixed_thresholds"] == [0.05, 0.10, 0.20, 0.30]
+    assert [row["threshold"] for row in stored["rows"]].count("0.10") == 1
+
+    # A cut two decimals would round into a different number gets its own label.
+    fine = threshold_sweep([text, protein], headline_threshold=0.155)
+    assert fine["headline_threshold_row"] == "0.155"
+    assert any(row["threshold"] == "0.155" for row in fine["rows"])
+
+
 def test_sweep_treats_a_zero_protein_arm_as_a_separation_not_a_failure():
     """An undefined ratio and a failed ordering are different states."""
 
@@ -292,13 +339,51 @@ def test_a_degenerate_interval_is_a_correct_answer_when_heads_are_far_from_the_c
     result = cluster_bootstrap_fraction(per_probe, threshold=0.10, resamples=500, seed=1)
     assert result["interval"] == [result["point_estimate"], result["point_estimate"]]
     assert result["bootstrap_sd"] == pytest.approx(0.0)
+    # Correct is not the same as unremarkable: the artefact says in as many words
+    # that the interval spans one value, so a reader is not left to infer it from
+    # two identical numbers.
+    assert result["zero_width_interval"] is True
+    assert result["n_distinct_resampled_fractions"] == 1
 
 
-def test_bootstrap_refuses_a_single_probe():
-    with pytest.raises(ValueError, match="at least two probes"):
-        cluster_bootstrap_fraction(
-            np.zeros((1, 4, 4)), threshold=0.1, resamples=10, seed=0
+def test_bootstrap_refuses_a_probe_set_below_the_unit_floor():
+    """``n_probes < 2`` was the guard the shared floor exists to replace.
+
+    Measured on this function before the change: at two probes the interval came
+    out *narrower* than at three on the same scores, because a two-cluster
+    resample distribution has three atoms and the percentile rule trims the
+    extreme ones.  So the smallest probe set read as the most precise one, which
+    is the shape that decided two withdrawn verdicts elsewhere in this
+    programme.
+    """
+
+    per_probe = np.tile(np.array([[0.9, 0.0], [0.0, 0.0]]), (16, 1, 1))
+    per_probe[:8, 0, 1] = 0.9  # a head that only some probes push over the cut
+
+    for count in (1, 2, MINIMUM_BOOTSTRAP_UNITS - 1):
+        with pytest.raises(ValueError, match="below the 8-unit floor"):
+            cluster_bootstrap_fraction(
+                per_probe[:count], threshold=0.1, resamples=200, seed=0
+            )
+
+    at_floor = cluster_bootstrap_fraction(
+        per_probe[:MINIMUM_BOOTSTRAP_UNITS], threshold=0.1, resamples=200, seed=0
+    )
+    assert at_floor["n_probe_clusters"] == MINIMUM_BOOTSTRAP_UNITS
+    assert at_floor["minimum_probe_clusters"] == MINIMUM_BOOTSTRAP_UNITS
+
+
+def test_the_contrast_bootstrap_refuses_the_smaller_probe_set_below_the_floor():
+    """It had no unit guard at all, so one two-probe arm could set the width."""
+
+    high = np.tile(np.array([[0.9, 0.9], [0.0, 0.0]]), (16, 1, 1))
+    low = np.tile(np.array([[0.9, 0.0], [0.0, 0.0]]), (16, 1, 1))
+    with pytest.raises(ValueError, match="below the 8-unit floor"):
+        contrast_ratio_bootstrap(
+            high, low[:2], threshold=0.1, resamples=200, seed=0
         )
+    ok = contrast_ratio_bootstrap(high, low, threshold=0.1, resamples=200, seed=0)
+    assert ok["n_probe_clusters"] == {"high": 16, "low": 16}
 
 
 def test_bootstrap_refuses_a_matrix_without_a_probe_axis():
@@ -327,3 +412,393 @@ def test_census_refuses_a_non_finite_score():
     scores[0, 0] = np.nan
     with pytest.raises(ValueError, match="non-finite"):
         make_arm("x", "text", scores)
+
+
+# ------------------------------------------------ contrast interval degeneracy
+
+
+def _probe_block(n_probes: int, above: int, heads: int = 4) -> np.ndarray:
+    block = np.zeros((n_probes, 1, heads))
+    block[:, 0, :above] = 0.9
+    return block
+
+
+def test_a_single_atom_contrast_interval_is_not_reported_as_ok():
+    """A zero-width interval reads as perfect precision and is the one shape a
+    reader will not question.
+
+    ``statistics.mean_interval`` already flags exactly this and says why.  The
+    shipped ``induction_probe_bootstrap.json`` carried ``3.8462 [3.8462,
+    3.8462]`` under ``interval_status: ok``: every resample of both arms returns
+    the same two fractions, so the interval spans one atom and describes nothing.
+    """
+
+    high = _probe_block(16, 3)
+    low = _probe_block(16, 1)
+    result = contrast_ratio_bootstrap(high, low, threshold=0.1, resamples=500, seed=0)
+
+    assert result["interval"][0] == result["interval"][1]
+    assert result["n_distinct_resampled_ratios"] == 1
+    assert result["interval_status"] == "degenerate_resample_distribution"
+    assert "zero_width_interval_over_a_single_resample_atom" in result["interval_flags"]
+
+
+def test_an_interval_endpoint_on_the_point_estimate_is_named():
+    """``[2.30, 2.40]`` around a point of 2.30 is a one-sided interval in fact.
+
+    Three of the shipped contrasts have this shape.  It arises whenever the
+    resampled fraction can only move one way: here the numerator arm has a head
+    that clears the cut only when one probe is drawn more than once, so the ratio
+    is either its point value or a larger one, and the lower endpoint is the
+    point estimate rather than a 2.5% quantile of anything.
+    """
+
+    high = np.zeros((16, 1, 8))
+    low = np.zeros((16, 1, 8))
+    high[:, 0, :4] = 0.9  # four heads over the cut on every probe
+    high[0, 0, 4] = 0.9  # a fifth head carried by one probe alone
+    low[:, 0, :2] = 0.9  # a denominator that no resample moves
+
+    result = contrast_ratio_bootstrap(high, low, threshold=0.1, resamples=4000, seed=1)
+    assert result["ratio"] == pytest.approx(2.0)
+    assert result["interval"][0] == pytest.approx(result["ratio"])
+    assert result["interval"][1] > result["ratio"]
+    assert result["n_distinct_resampled_ratios"] == 2
+    assert result["interval_status"] == "degenerate_resample_distribution"
+    assert result["interval_flags"] == [
+        "lower_endpoint_coincides_with_the_point_estimate"
+    ]
+
+
+def test_a_well_spread_contrast_interval_is_still_ok():
+    """The flag has to be able to say no, or it says nothing."""
+
+    rng = np.random.default_rng(7)
+    high = np.zeros((32, 2, 16))
+    low = np.zeros((32, 2, 16))
+    high[:, 0, :] = rng.random((32, 16)) * 0.3
+    low[:, 0, :] = rng.random((32, 16)) * 0.22
+
+    result = contrast_ratio_bootstrap(high, low, threshold=0.1, resamples=2000, seed=3)
+    assert result["n_distinct_resampled_ratios"] > 10
+    assert result["interval_flags"] == []
+    assert result["interval_status"] == "ok"
+    assert result["interval"][0] < result["ratio"] < result["interval"][1]
+
+
+# ----------------------------------------------------- lineage and its transport
+
+
+def lineage_panel() -> list[ArmCensus]:
+    """Six arms spanning two architectures and both modalities."""
+
+    arms = []
+    for index, name in enumerate(("gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl")):
+        scores = np.zeros((4, 8))
+        scores.reshape(-1)[: 8 - 2 * index] = 0.5
+        arms.append(
+            make_arm(name, "text", scores, parameters=int(10 ** (8 + index * 0.4)))
+        )
+    for index, (name, above) in enumerate((("progen2-small", 4), ("progen2-medium", 3))):
+        scores = np.zeros((4, 8))
+        scores.reshape(-1)[:above] = 0.5
+        arms.append(
+            make_arm(
+                name,
+                "protein",
+                scores,
+                parameters=int(10 ** (8.2 + index * 0.7)),
+                architecture="progen",
+            )
+        )
+    return arms
+
+
+def test_lineage_is_read_from_the_panel_declaration():
+    """A second hand-maintained panel table went stale and raised on the panel."""
+
+    arms = lineage_panel()
+    assert arm_lineage(arms) == {
+        "gpt2": "gpt2",
+        "gpt2-medium": "gpt2",
+        "gpt2-large": "gpt2",
+        "gpt2-xl": "gpt2",
+        "progen2-small": "progen",
+        "progen2-medium": "progen",
+    }
+    # The decomposition runs on an arm the old table had never heard of.
+    decomposition = variance_decomposition(arms, threshold=0.10)
+    assert decomposition["lineage_families"] == ["gpt2", "progen"]
+    assert decomposition["n_arms"] == 6
+
+
+def test_an_unrecorded_architecture_is_refused_rather_than_pooled():
+    """Folding every arm into one family deletes the lineage term silently."""
+
+    arms = lineage_panel()
+    arms[0] = make_arm(
+        "gpt2", "text", arms[0].scores, parameters=arms[0].parameters,
+        architecture="unrecorded",
+    )
+    with pytest.raises(ValueError, match="no architecture recorded"):
+        arm_lineage(arms)
+
+
+def test_modality_survival_is_a_share_of_the_centred_sum_of_squares():
+    """The denominator was the uncentred sum of squares, so the ceiling was not one.
+
+    ``modality @ modality`` counts the protein arms, so the statistic could not
+    exceed ``n_protein / n`` however untouched the indicator was by the nuisance
+    columns.  The check is direct: an indicator orthogonal to scale and lineage
+    must survive at 1.0, and under the old denominator it could not.
+    """
+
+    decomposition = variance_decomposition(lineage_panel(), threshold=0.10)
+    share = decomposition["modality_variance_surviving_scale_and_lineage"]
+    assert 0.0 <= share <= 1.0
+    assert decomposition["modality_variance_surviving_denominator"] == (
+        "centred_sum_of_squares"
+    )
+
+    modality = np.array([1.0 if a.modality == "protein" else 0.0 for a in lineage_panel()])
+    n_protein = float(modality.sum())
+    uncentred_ceiling = n_protein / modality.size
+    # The old statistic's ceiling. Any value above it is unreachable under the
+    # uncentred denominator, which is what makes 25.4% and 44.5% the same fit.
+    assert uncentred_ceiling < 1.0
+
+
+def test_the_ladder_withholds_its_interval_verdict_out_of_lineage():
+    """The interval prices four GPT-2 rungs and prices nothing about ProGen2."""
+
+    ladder = lineage_scale_ladder(lineage_panel(), threshold=0.10)
+    assert ladder["lineage"] == ["gpt2", "gpt2-medium", "gpt2-large", "gpt2-xl"]
+
+    inside = ladder["predictions"]["gpt2-medium"]
+    assert inside["in_fitted_lineage"] is True
+    assert inside["prediction_interval_applies"] is True
+    assert inside["observed_inside_prediction_interval"] in (True, False)
+    assert inside["prediction_interval_withheld_reason"] is None
+
+    outside = ladder["predictions"]["progen2-medium"]
+    assert outside["in_fitted_lineage"] is False
+    assert outside["shares_fitted_architecture"] is False
+    assert outside["prediction_interval_applies"] is False
+    assert outside["observed_below_prediction_interval"] is None
+    assert outside["observed_inside_prediction_interval"] is None
+    assert "extrapolation" in outside["prediction_interval_withheld_reason"]
+    # The descriptive comparison survives; only the verdict is withheld.
+    assert outside["shortfall_ratio"] is not None
+
+
+def _transport_panel(protein_counts: tuple[int, int]) -> list[ArmCensus]:
+    """Four text rungs over three decades against two protein rungs over one."""
+
+    arms = []
+    for index, (name, above) in enumerate(
+        zip(("t1", "t2", "t3", "t4"), (200, 160, 128, 102))
+    ):
+        scores = np.zeros((16, 16))
+        scores.reshape(-1)[:above] = 0.5
+        arms.append(make_arm(name, "text", scores, parameters=int(10 ** (8 + index))))
+    for index, (name, above) in enumerate(zip(("p1", "p2"), protein_counts)):
+        scores = np.zeros((16, 16))
+        scores.reshape(-1)[:above] = 0.5
+        arms.append(
+            make_arm(
+                name,
+                "protein",
+                scores,
+                parameters=int(10 ** (8 + index)),
+                architecture="progen",
+            )
+        )
+    return arms
+
+
+def test_slope_transport_refuses_a_ratio_one_head_would_move():
+    """Five heads out of 192 is a +/-1-head object, and the ratio has to say so.
+
+    The protein ladder is two rungs and its upper rung carries six heads, so
+    moving one of them swings the elasticity ratio from 0.48 to 1.68 -- across
+    1.0, which is the point at which the comparison stops being able to say which
+    modality's slope is the steeper one.  A ratio the head counts cannot resolve
+    is withheld, and the envelope that withheld it is reported in its place.
+    """
+
+    transport = lineage_slope_transport(
+        _transport_panel((8, 6)),
+        threshold=0.10,
+        text_lineage=("t1", "t2", "t3", "t4"),
+        protein_lineage=("p1", "p2"),
+    )
+    assert transport["scale"] == "elasticity_d_log10_fraction_per_decade_of_parameters"
+    point = transport["slope_ratio_point_estimate_if_counts_were_exact"]
+    low, high = transport["one_head_sensitivity"]["ratio_envelope"]
+    assert low < 1.0 < high
+    assert low <= point <= high
+    assert transport["one_head_sensitivity"]["unresolvable_perturbations"] == []
+    assert transport["decidable"] is False
+    assert transport["slope_ratio_text_over_protein"] is None
+    assert transport["verdict"] == "one_head_decides_the_direction"
+    # The direction is reported even where the magnitude cannot be: both slopes
+    # fall with scale, which is a statement the counts do resolve.
+    assert transport["direction_transports"] is True
+    assert transport["text_slope_per_decade"] < 0.0
+    assert transport["protein_slope_per_decade"] < 0.0
+    # No linear slope is emitted anywhere; the level gap that would corrupt one
+    # is reported instead.
+    assert "points_per_decade" not in transport
+    assert transport["level_ratio_text_over_protein"] > 1.0
+
+
+def test_slope_transport_publishes_a_ratio_one_head_cannot_move():
+    """The refusal has to be able to say yes, or the function measures nothing."""
+
+    transport = lineage_slope_transport(
+        _transport_panel((120, 118)),
+        threshold=0.10,
+        text_lineage=("t1", "t2", "t3", "t4"),
+        protein_lineage=("p1", "p2"),
+    )
+    assert transport["decidable"] is True
+    assert transport["verdict"] == "protein_slope_is_shallower"
+    assert transport["slope_ratio_text_over_protein"] > 1.0
+    low, high = transport["one_head_sensitivity"]["ratio_envelope"]
+    assert low > 1.0
+    assert transport["one_head_sensitivity"]["unresolvable_perturbations"] == []
+
+
+def test_slope_transport_refuses_a_lineage_it_cannot_fit():
+    arms = lineage_panel()
+    transport = lineage_slope_transport(
+        arms, threshold=0.10, protein_lineage=("progen2-medium",)
+    )
+    assert transport["decidable"] is False
+    assert transport["slope_ratio_text_over_protein"] is None
+    assert "fewer than two rungs" in transport["reason"]
+
+
+# ------------------------------------------------------- the stage's own sources
+
+
+def _stage() -> object:
+    """Import ``12_induction_robustness.py`` the way the worker's preflight does."""
+
+    import importlib.util
+
+    path = REPO_ROOT / "scripts" / "transfer" / "12_induction_robustness.py"
+    spec = importlib.util.spec_from_file_location("_stage_12", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _write_census(directory: Path, name: str) -> Path:
+    """A minimal artefact of the shape ``load_census`` reads."""
+
+    import json
+
+    scores = [[0.5, 0.0], [0.0, 0.0]]
+    flat = [value for row in scores for value in row]
+    payload = {
+        "arm": {
+            "name": name,
+            "modality": "protein" if name.startswith(("prot", "prog", "zym")) else "text",
+            "architecture": "gpt2",
+            "n_layer": 2,
+            "d_model": 8,
+        },
+        "induction": {
+            "synthetic_repeat": {
+                "census": {
+                    "count_above_threshold": {
+                        f"{t:.2f}": sum(1 for v in flat if v >= t)
+                        for t in (0.05, 0.10, 0.20, 0.30)
+                    },
+                    "data_driven_threshold": 0.4,
+                    "count_above_data_driven": sum(1 for v in flat if v >= 0.4),
+                },
+                "uniform_baseline": 0.01,
+                "n_probes": 16,
+            },
+            "per_head": {"prefix_matching_synthetic": scores},
+        },
+    }
+    path = directory / f"{name}.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def test_the_stage_reads_a_census_root_and_names_what_is_missing(tmp_path):
+    """The source was a table of absolute paths, and every one of them was gone.
+
+    ``DEFAULT_SOURCES`` and ``LADDER_SOURCES`` named two superseded campaign
+    directories, so the stage raised ``FileNotFoundError`` on a path nobody had
+    asked for and the census could not be re-analysed at all. The root is now an
+    argument; the panel is whatever the root carries; and a named arm the root
+    does not carry is refused by name rather than silently dropped.
+    """
+
+    stage = _stage()
+    root = tmp_path / "census"
+    root.mkdir()
+    _write_census(root, "gpt2")
+    _write_census(root, "protgpt2")
+    (root / "panel_summary.json").write_text("{}", encoding="utf-8")
+
+    discovered = stage.census_paths(root, None)
+    assert sorted(discovered) == ["gpt2", "protgpt2"]  # panel_summary is not an arm
+
+    selected = stage.census_paths(root, ["protgpt2"])
+    assert list(selected) == ["protgpt2"]
+
+    with pytest.raises(FileNotFoundError, match="gpt2-xl"):
+        stage.census_paths(root, ["gpt2", "gpt2-xl"])
+    with pytest.raises(FileNotFoundError, match="not a directory"):
+        stage.census_paths(tmp_path / "absent", None)
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    with pytest.raises(FileNotFoundError, match="no <arm>.json"):
+        stage.census_paths(empty, None)
+
+
+def test_the_stage_refuses_an_arm_whose_parameter_count_it_cannot_source(
+    tmp_path, monkeypatch
+):
+    """A stage that loads no model must not require the weights, or lie about them.
+
+    Parameter counts came only from the checkpoint headers, so this GPU-free
+    stage could not run on a host that carries the census artefacts without the
+    weights -- which is every host but the one the campaign ran on. A recorded
+    map is accepted instead, its provenance travels into the output, and an arm
+    neither source can supply is refused by name rather than defaulted.
+    """
+
+    import json
+    from dataclasses import replace
+
+    stage = _stage()
+    # Whether a checkpoint happens to sit on the running host is not what this
+    # test is about, so the arm's declared path is pointed at an absent one.
+    monkeypatch.setitem(
+        stage.PANEL,
+        "protgpt2",
+        replace(stage.PANEL["protgpt2"], path=tmp_path / "no-such-checkpoint"),
+    )
+    recorded = tmp_path / "parameters.json"
+    recorded.write_text(
+        json.dumps({"parameters": {"gpt2": {"total": 124412160}}}), encoding="utf-8"
+    )
+
+    counts = stage.arm_parameters(["gpt2"], recorded=recorded)
+    assert counts["gpt2"]["total"] == 124412160
+    assert counts["gpt2"]["source"] == str(recorded)
+
+    with pytest.raises(FileNotFoundError, match="protgpt2: no parameter count"):
+        stage.arm_parameters(["gpt2", "protgpt2"], recorded=recorded)
+
+    plain = tmp_path / "plain.json"
+    plain.write_text(json.dumps({"gpt2": 124412160}), encoding="utf-8")
+    assert stage.arm_parameters(["gpt2"], recorded=plain)["gpt2"]["total"] == 124412160

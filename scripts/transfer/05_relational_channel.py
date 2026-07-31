@@ -28,7 +28,7 @@ _STAGE_DIR = str(Path(__file__).resolve().parent)
 if _STAGE_DIR not in sys.path:
     sys.path.insert(0, _STAGE_DIR)
 
-from panel_contract import arm_can_run  # noqa: E402
+from panel_contract import arm_can_run, stage_contract_record  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
     PANEL,
     REPO,
@@ -366,6 +366,11 @@ def main() -> None:
         },
         "homology": homology_summary,
         "splits": splits,
+        # A per-arm stage narrows by running fewer processes, not by shrinking a
+        # list, so its artefacts are identical whether the campaign covered the
+        # eligible panel or one arm of it. The record is what makes the two
+        # distinguishable after the fact.
+        "stage_contract": stage_contract_record("relational_channel", [arm.name]),
     }
     destination = args.out / f"{arm.name}.json"
     write_json(destination, payload)

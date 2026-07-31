@@ -37,6 +37,18 @@ LOCAL_POD_BASH = _STUB_DIR / "pod_bash.sh"
 LOCAL_POD_BASH.write_text('#!/usr/bin/env bash\nbash -c "$1"\n', encoding="utf-8")
 LOCAL_POD_BASH.chmod(0o755)
 
+#: A stand-in for h200_status.sh that states the verdict a healthy probe states.
+#:
+#: The default here used to be `/bin/true`, which is precisely what the
+#: controller may no longer accept: the probe answers on its terminal `Health=`
+#: line, because the layer carrying its exit status returns 0 for a command that
+#: exited 7 (L20). A stub that only succeeds exercises none of that gate.
+LOCAL_STATUS_OK = _STUB_DIR / "status_ok.sh"
+LOCAL_STATUS_OK.write_text(
+    "#!/usr/bin/env bash\nprintf 'Health=ok\\n'\n", encoding="utf-8"
+)
+LOCAL_STATUS_OK.chmod(0o755)
+
 
 def extract_function(path: Path, name: str) -> str:
     source = path.read_text(encoding="utf-8")
@@ -59,7 +71,7 @@ def controller_env(**overrides: str) -> dict[str, str]:
     env.update(
         {
             "H200_POD": "test-pod",
-            "H200_STATUS_CHECK": "/bin/true",
+            "H200_STATUS_CHECK": str(LOCAL_STATUS_OK),
             "H200_SYNC": "/bin/true",
             "H200_GPFS_PUSH": "/bin/true",
             "H200_POD_BASH": str(LOCAL_POD_BASH),
@@ -71,6 +83,34 @@ def controller_env(**overrides: str) -> dict[str, str]:
     )
     env.update(overrides)
     return env
+
+
+def make_project_copy(root: Path) -> Path:
+    """A minimal checkout the controller can freeze, hash, push and log against.
+
+    Every controller invocation that is not a ``--dry-run`` writes its own copy
+    of the worker log to ``${PROJECT_ROOT}/logs/transfer_h200_controller/``, and
+    ``PROJECT_ROOT`` defaults to the checkout the controller was started from. A
+    test that overrides ``GPFS_*`` and not ``PROJECT_ROOT`` therefore files
+    synthetic campaign records in the operational controller log directory,
+    under run-ids carrying the real code hash -- indistinguishable from a real
+    campaign by filename. Measured before this was fixed: 189 of the 294 files
+    in that directory were this suite's, one of them recording a `campaign
+    INCOMPLETE` verdict for a campaign that never ran.
+
+    So it is a module-level helper rather than one class's method: every test
+    that runs the controller for real builds its own project root from it.
+    """
+
+    project = root / "project"
+    (project / "src").mkdir(parents=True)
+    shutil.copy2(REPO_ROOT / "src" / "__init__.py", project / "src" / "__init__.py")
+    shutil.copytree(REPO_ROOT / "src" / "transfer", project / "src" / "transfer")
+    shutil.copytree(TRANSFER_DIR, project / "scripts" / "transfer")
+    ladder = project / "docs" / "analysis" / "MODEL_LADDER_20260728.md"
+    ladder.parent.mkdir(parents=True)
+    shutil.copy2(REPO_ROOT / "docs" / "analysis" / ladder.name, ladder)
+    return project
 
 
 class RequestValidationTests(unittest.TestCase):
@@ -687,25 +727,16 @@ class SnapshotContractTests(unittest.TestCase):
         path.write_text("#!/usr/bin/env bash\nset -euo pipefail\n" + body, encoding="utf-8")
         path.chmod(0o755)
 
-    def make_project_copy(self, root: Path) -> Path:
-        project = root / "project"
-        (project / "src").mkdir(parents=True)
-        shutil.copy2(REPO_ROOT / "src" / "__init__.py", project / "src" / "__init__.py")
-        shutil.copytree(REPO_ROOT / "src" / "transfer", project / "src" / "transfer")
-        shutil.copytree(TRANSFER_DIR, project / "scripts" / "transfer")
-        ladder = project / "docs" / "analysis" / "MODEL_LADDER_20260728.md"
-        ladder.parent.mkdir(parents=True)
-        shutil.copy2(REPO_ROOT / "docs" / "analysis" / ladder.name, ladder)
-        return project
-
     def test_transfer_and_reuse_verify_complete_staged_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            project = self.make_project_copy(root)
+            project = make_project_copy(root)
             helpers = root / "helpers"
             helpers.mkdir()
             marker = root / "worker-invocations"
-            self.write_executable(helpers / "status", ":\n")
+            # The probe states its verdict on stdout; `:` says nothing and the
+            # controller now refuses silence rather than reading exit status.
+            self.write_executable(helpers / "status", "printf 'Health=ok\\n'\n")
             self.write_executable(
                 helpers / "sync",
                 '[ "$1" = push ]\nmkdir -p "$3"\ncp -a "$2/." "$3/"\n',
@@ -792,10 +823,10 @@ class SnapshotContractTests(unittest.TestCase):
         # path at exactly the moment they are needed.
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            project = self.make_project_copy(root)
+            project = make_project_copy(root)
             helpers = root / "helpers"
             helpers.mkdir()
-            self.write_executable(helpers / "status", ":\n")
+            self.write_executable(helpers / "status", "printf 'Health=ok\\n'\n")
             self.write_executable(
                 helpers / "sync",
                 '[ "$1" = push ]\nmkdir -p "$3"\ncp -a "$2/." "$3/"\n',
@@ -871,6 +902,79 @@ class SnapshotContractTests(unittest.TestCase):
             )
 
 
+#: The healthy verdict, as the access-layer stub writes it.
+HEALTHY_STATUS_STUB = "#!/usr/bin/env bash\nprintf 'Health=ok\\n'\n"
+
+
+def access_layer_stubs(tmp, pod_exec_body, status_body=HEALTHY_STATUS_STUB) -> Path:
+    """The five access-layer tools as local stubs, under an ssh_tunnel/ root."""
+
+    access = Path(tmp) / "ssh_tunnel"
+    access.mkdir(parents=True)
+    (access / "h200_status.sh").write_text(status_body, encoding="utf-8")
+    # The transfer stubs really move the bytes, because verify_remote_snapshot
+    # can now fail and a stub that transferred nothing would fail it. That is
+    # the point: before this change the verification could not fail, so a
+    # do-nothing stub passed it and so, on the cluster, would a do-nothing
+    # transfer.
+    (access / "h200_sync.sh").write_text(
+        '#!/usr/bin/env bash\nmkdir -p -- "$3"\ncp -r -- "$2"/. "$3"/\n',
+        encoding="utf-8",
+    )
+    (access / "h200_gpfs_push.sh").write_text(
+        '#!/usr/bin/env bash\nmkdir -p -- "$(dirname -- "$2")"\ncp -- "$1" "$2"\n',
+        encoding="utf-8",
+    )
+    for name in ("h200_status", "h200_sync", "h200_gpfs_push"):
+        (access / f"{name}.sh").chmod(0o755)
+    # Every remote question this controller asks answers on stdout, and the
+    # command string carries its own echo, so the stub evaluates it locally
+    # rather than merely succeeding.
+    pod_bash = access / "h200_pod_bash.sh"
+    pod_bash.write_text('#!/usr/bin/env bash\nbash -c "$1"\n', encoding="utf-8")
+    pod_bash.chmod(0o755)
+    exec_helper = access / "h200_pod_exec.sh"
+    exec_helper.write_text(pod_exec_body, encoding="utf-8")
+    exec_helper.chmod(0o755)
+    return access
+
+
+def run_controller_with_stubs(tmp, access, **overrides) -> subprocess.CompletedProcess[str]:
+    """One real controller run against local stubs, in its own project root.
+
+    PROJECT_ROOT is the whole reason this is a shared helper. It is what the
+    controller derives CONTROLLER_LOG_DIR from, so a run that leaves it at the
+    default files its worker log in the operational
+    logs/transfer_h200_controller/ of whatever checkout the suite is run from.
+    """
+
+    project = make_project_copy(Path(tmp))
+    # H200_ACCESS_ROOT is the parent of ssh_tunnel/, which is where
+    # access_layer_stubs put the stubs.
+    environment = controller_env(
+        PROJECT_ROOT=str(project),
+        REPO_ROOT=str(project),
+        H200_ACCESS_ROOT=str(access.parent),
+        H200_STATUS_CHECK=str(access / "h200_status.sh"),
+        H200_SYNC=str(access / "h200_sync.sh"),
+        H200_GPFS_PUSH=str(access / "h200_gpfs_push.sh"),
+        H200_POD_BASH=str(access / "h200_pod_bash.sh"),
+        H200_POD_EXEC=str(access / "h200_pod_exec.sh"),
+        GPFS_PACKAGE_ROOT=str(Path(tmp) / "packages"),
+        GPFS_RESULTS_ROOT=str(Path(tmp) / "results"),
+        GPFS_LOGS_ROOT=str(Path(tmp) / "logs"),
+        **overrides,
+    )
+    return subprocess.run(
+        ["bash", str(CONTROLLER)],
+        capture_output=True,
+        text=True,
+        cwd=tmp,
+        env=environment,
+        timeout=180,
+    )
+
+
 class WorkerStatusDoesNotTravelOnTheTransport(unittest.TestCase):
     """The access layer returns 0 whatever the remote command exits with.
 
@@ -880,40 +984,6 @@ class WorkerStatusDoesNotTravelOnTheTransport(unittest.TestCase):
     the worker's whole ledger exists to prevent, defeated one layer above it. The
     worker now states its status on its last line and the controller reads that.
     """
-
-    def _controller_env(self, tmp, pod_exec_body):
-        """A controller environment whose access helpers are local stubs."""
-
-        access = Path(tmp) / "ssh_tunnel"
-        access.mkdir(parents=True)
-        (access / "h200_status.sh").write_text(
-            "#!/usr/bin/env bash\nexit 0\n", encoding="utf-8"
-        )
-        # The transfer stubs really move the bytes, because verify_remote_snapshot
-        # can now fail and a stub that transferred nothing would fail it. That is
-        # the point: before this change the verification could not fail, so a
-        # do-nothing stub passed it and so, on the cluster, would a do-nothing
-        # transfer.
-        (access / "h200_sync.sh").write_text(
-            '#!/usr/bin/env bash\nmkdir -p -- "$3"\ncp -r -- "$2"/. "$3"/\n',
-            encoding="utf-8",
-        )
-        (access / "h200_gpfs_push.sh").write_text(
-            '#!/usr/bin/env bash\nmkdir -p -- "$(dirname -- "$2")"\ncp -- "$1" "$2"\n',
-            encoding="utf-8",
-        )
-        for name in ("h200_status", "h200_sync", "h200_gpfs_push"):
-            (access / f"{name}.sh").chmod(0o755)
-        # Every remote question this controller asks answers on stdout, and the
-        # command string carries its own echo, so the stub evaluates it locally
-        # rather than merely succeeding.
-        pod_bash = access / "h200_pod_bash.sh"
-        pod_bash.write_text('#!/usr/bin/env bash\nbash -c "$1"\n', encoding="utf-8")
-        pod_bash.chmod(0o755)
-        exec_helper = access / "h200_pod_exec.sh"
-        exec_helper.write_text(pod_exec_body, encoding="utf-8")
-        exec_helper.chmod(0o755)
-        return access
 
     def test_the_sentinel_has_one_declaration_and_the_controller_reads_it(self):
         worker = WORKER.read_text(encoding="utf-8")
@@ -931,9 +1001,50 @@ class WorkerStatusDoesNotTravelOnTheTransport(unittest.TestCase):
         )
         self.assertIn("h200_worker.sh\" | head -1", controller.replace("\n", " ") + " ")
 
+    def test_no_stage_source_prints_the_exit_sentinel(self):
+        """The one fact that bounds the residual exposure invoke_worker accepts.
+
+        The controller requires the sentinel to be UNIQUE, not to be the last
+        line, because `kubectl exec` appends a trailer after the remote process's
+        output and a position requirement mis-reported every genuine failure.
+        Uniqueness is strictly weaker: a worker killed before its EXIT trap, plus
+        a stage that had printed exactly one line beginning with the prefix,
+        would be believed. invoke_worker's comment accepts that "because no stage
+        prints this prefix today -- a fact a test asserts against the stage
+        sources rather than something this comment assumes". No such test
+        existed. The test above counts declarations in the worker, which is a
+        different fact.
+        """
+
+        declaration = re.search(
+            r'^WORKER_EXIT_SENTINEL="(.*)"$',
+            WORKER.read_text(encoding="utf-8"),
+            flags=re.MULTILINE,
+        )
+        self.assertIsNotNone(declaration, "the worker declares no sentinel")
+        sentinel = declaration.group(1)
+        sources = [
+            *sorted(TRANSFER_DIR.glob("*.py")),
+            *sorted((REPO_ROOT / "src" / "transfer").rglob("*.py")),
+        ]
+        self.assertTrue(sources, "no stage sources found; the check would be vacuous")
+        offenders = [
+            str(path.relative_to(REPO_ROOT))
+            for path in sources
+            if sentinel in path.read_text(encoding="utf-8")
+        ]
+        self.assertEqual(
+            offenders,
+            [],
+            f"{sentinel!r} appears in a source the worker runs, so a line of stage "
+            "output could be read as the campaign's exit status. Either stop "
+            "printing it or make the controller require last-line position and "
+            "accept the transport trailer some other way",
+        )
+
     def test_a_nonzero_worker_status_fails_the_controller_though_the_transport_says_zero(self):
         with tempfile.TemporaryDirectory() as tmp:
-            access = self._controller_env(
+            access = access_layer_stubs(
                 tmp,
                 # Exactly the observed behaviour: emit the worker's output,
                 # including its sentinel, and then exit 0 regardless.
@@ -942,29 +1053,29 @@ class WorkerStatusDoesNotTravelOnTheTransport(unittest.TestCase):
                 "echo 'TRANSFER_WORKER_EXIT=1'\n"
                 "exit 0\n",
             )
-            result = self._run_controller(tmp, access)
+            result = run_controller_with_stubs(tmp, access)
             self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
             self.assertIn("worker reported exit status 1", result.stdout + result.stderr)
 
     def test_a_missing_sentinel_is_itself_a_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
-            access = self._controller_env(
+            access = access_layer_stubs(
                 tmp,
                 # A worker killed mid-run, or a pod exec that never started:
                 # output, no sentinel, and a transport that still says 0.
                 "#!/usr/bin/env bash\necho 'partial output'\nexit 0\n",
             )
-            result = self._run_controller(tmp, access)
+            result = run_controller_with_stubs(tmp, access)
             self.assertEqual(result.returncode, 90, result.stdout + result.stderr)
             self.assertIn("did not", result.stdout + result.stderr)
 
     def test_a_clean_worker_still_succeeds(self):
         with tempfile.TemporaryDirectory() as tmp:
-            access = self._controller_env(
+            access = access_layer_stubs(
                 tmp,
                 "#!/usr/bin/env bash\necho 'TRANSFER_WORKER_EXIT=0'\nexit 0\n",
             )
-            result = self._run_controller(tmp, access)
+            result = run_controller_with_stubs(tmp, access)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_a_transport_trailer_after_the_sentinel_is_tolerated(self):
@@ -974,72 +1085,49 @@ class WorkerStatusDoesNotTravelOnTheTransport(unittest.TestCase):
         # correctly reported failure into "no sentinel" -- a true status traded for
         # a false one. Uniqueness is the invariant, not position.
         with tempfile.TemporaryDirectory() as tmp:
-            access = self._controller_env(
+            access = access_layer_stubs(
                 tmp,
                 "#!/usr/bin/env bash\n"
                 "echo 'TRANSFER_WORKER_EXIT=3'\n"
                 "echo 'command terminated with exit code 3'\n"
                 "exit 0\n",
             )
-            result = self._run_controller(tmp, access)
+            result = run_controller_with_stubs(tmp, access)
             self.assertEqual(result.returncode, 3, result.stdout + result.stderr)
             self.assertIn("worker reported exit status 3", result.stdout + result.stderr)
 
     def test_two_sentinels_are_refused_rather_than_resolved(self):
         with tempfile.TemporaryDirectory() as tmp:
-            access = self._controller_env(
+            access = access_layer_stubs(
                 tmp,
                 "#!/usr/bin/env bash\n"
                 "echo 'TRANSFER_WORKER_EXIT=1'\n"
                 "echo 'TRANSFER_WORKER_EXIT=0'\n"
                 "exit 0\n",
             )
-            result = self._run_controller(tmp, access)
+            result = run_controller_with_stubs(tmp, access)
             self.assertEqual(result.returncode, 91, result.stdout + result.stderr)
             self.assertIn("exactly one is expected", result.stdout + result.stderr)
 
     def test_a_non_numeric_status_is_not_a_status(self):
         with tempfile.TemporaryDirectory() as tmp:
-            access = self._controller_env(
+            access = access_layer_stubs(
                 tmp,
                 "#!/usr/bin/env bash\necho 'TRANSFER_WORKER_EXIT=ok'\nexit 0\n",
             )
-            result = self._run_controller(tmp, access)
+            result = run_controller_with_stubs(tmp, access)
             self.assertEqual(result.returncode, 90, result.stdout + result.stderr)
 
     def test_a_trailing_blank_line_does_not_hide_the_sentinel(self):
         # tee and the access layer both add trailing whitespace; the sentinel is
         # the last non-empty line, not literally the last byte.
         with tempfile.TemporaryDirectory() as tmp:
-            access = self._controller_env(
+            access = access_layer_stubs(
                 tmp,
                 "#!/usr/bin/env bash\nprintf 'TRANSFER_WORKER_EXIT=0\\n\\n   \\n'\nexit 0\n",
             )
-            result = self._run_controller(tmp, access)
+            result = run_controller_with_stubs(tmp, access)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
-    def _run_controller(self, tmp, access):
-        # H200_ACCESS_ROOT is the parent of ssh_tunnel/, which is where
-        # _controller_env put the stubs.
-        environment = controller_env(
-            H200_ACCESS_ROOT=str(access.parent),
-            H200_STATUS_CHECK=str(access / "h200_status.sh"),
-            H200_SYNC=str(access / "h200_sync.sh"),
-            H200_GPFS_PUSH=str(access / "h200_gpfs_push.sh"),
-            H200_POD_BASH=str(access / "h200_pod_bash.sh"),
-            H200_POD_EXEC=str(access / "h200_pod_exec.sh"),
-            GPFS_PACKAGE_ROOT=str(Path(tmp) / "packages"),
-            GPFS_RESULTS_ROOT=str(Path(tmp) / "results"),
-            GPFS_LOGS_ROOT=str(Path(tmp) / "logs"),
-        )
-        return subprocess.run(
-            ["bash", str(CONTROLLER)],
-            capture_output=True,
-            text=True,
-            cwd=tmp,
-            env=environment,
-            timeout=180,
-        )
 
 
 class ArmPathVariableIsDeclaredNotInferred(unittest.TestCase):
@@ -1078,6 +1166,165 @@ class ArmPathVariableIsDeclaredNotInferred(unittest.TestCase):
         for arm, spec in PANEL.items():
             self.assertIn(spec.path_variable, contract.MODEL_PATH_VARIABLES, arm)
             self.assertEqual(contract.model_variable(arm), spec.path_variable, arm)
+
+
+class ControllerLogsFollowTheProjectRoot(unittest.TestCase):
+    """A synthetic campaign record must not land in an operational log directory.
+
+    `CONTROLLER_LOG_DIR="${PROJECT_ROOT}/logs/transfer_h200_controller"` and
+    `invoke_worker` writes `${CONTROLLER_LOG_DIR}/${RUN_ID}.log`, so a test that
+    overrides `GPFS_*` and leaves `PROJECT_ROOT` at its default files its stub
+    worker's output beside real campaigns -- under a run-id carrying the real
+    code hash, which makes it indistinguishable from one by filename. Measured
+    on this host: 189 of the 294 files in that directory were this suite's, and
+    one of them recorded a `campaign INCOMPLETE` verdict that no campaign ever
+    produced. The existing files are kept and reported, not deleted (Appendix B
+    rule 18); what this test holds is that no new one is created.
+    """
+
+    def test_the_worker_log_is_written_under_project_root_not_the_checkout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            access = access_layer_stubs(
+                tmp, "#!/usr/bin/env bash\necho 'TRANSFER_WORKER_EXIT=0'\nexit 0\n"
+            )
+            result = run_controller_with_stubs(tmp, access)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            match = re.search(r"run_id=([0-9]{14}_[0-9a-f]{12}) code_hash=", result.stdout)
+            self.assertIsNotNone(match, result.stdout)
+            run_id = match.group(1)
+            written = sorted(
+                path.name
+                for path in (
+                    Path(tmp) / "project" / "logs" / "transfer_h200_controller"
+                ).glob("*.log")
+            )
+            self.assertEqual(written, [f"{run_id}.log"])
+            self.assertFalse(
+                (
+                    REPO_ROOT / "logs" / "transfer_h200_controller" / f"{run_id}.log"
+                ).exists(),
+                "this suite filed a synthetic campaign record in the checkout's "
+                "operational controller log directory",
+            )
+
+
+class ClusterHealthIsDecidedOnStdout(unittest.TestCase):
+    """The last controller decision that was still taken on an exit status.
+
+    `if ! "${H200_STATUS_CHECK}"` cannot be true on this deployment. The health
+    probe's final action is a pod check issued through the same `kubectl exec`
+    path that L20 measured returning 0 for a command that exited 7, so under
+    `set -e` the branch was unreachable and the gate could not refuse. CLAUDE.md
+    and scripts/transfer/README.md name the probe's terminal `Health=` line as
+    the authority and nothing read it. The blast radius was bounded -- the
+    stdout-predicated checks that follow would have failed -- but a gate that
+    cannot say no is the L20 shape surviving in the layer L20's repair claims to
+    have closed.
+    """
+
+    def run_with_status(self, status_body, **overrides):
+        with tempfile.TemporaryDirectory() as tmp:
+            access = access_layer_stubs(
+                tmp,
+                "#!/usr/bin/env bash\necho 'TRANSFER_WORKER_EXIT=0'\nexit 0\n",
+                status_body=status_body,
+            )
+            return run_controller_with_stubs(tmp, access, **overrides)
+
+    def test_an_unhealthy_verdict_refuses_though_the_probe_exits_zero(self):
+        result = self.run_with_status(
+            "#!/usr/bin/env bash\necho 'Health=degraded'\nexit 0\n"
+        )
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("Health=degraded", result.stderr)
+        # Refused before anything crossed to GPFS.
+        self.assertNotIn("pushing code snapshot", result.stdout)
+
+    def test_a_probe_that_states_no_verdict_is_undecidable_not_healthy(self):
+        # A probe killed mid-run, or one whose own transport died: output, no
+        # verdict, exit 0. `/bin/true` is the degenerate case of this.
+        result = self.run_with_status(
+            "#!/usr/bin/env bash\necho 'tunnel up'\nexit 0\n"
+        )
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("no Health= line", result.stderr)
+        self.assertNotIn("pushing code snapshot", result.stdout)
+
+    def test_the_verdict_and_not_the_exit_status_is_the_decision(self):
+        # The negative path of the same rule: a probe that states ok and exits
+        # non-zero still schedules, because on this transport the status it
+        # carries is not the probe's own.
+        result = self.run_with_status(
+            "#!/usr/bin/env bash\nprintf 'Health=ok\\n'\nexit 7\n"
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Health=ok", result.stdout)
+
+    def test_a_probe_that_hangs_is_bounded_and_reported_as_inconclusive(self):
+        result = self.run_with_status(
+            "#!/usr/bin/env bash\nsleep 30\nprintf 'Health=ok\\n'\n",
+            H200_STATUS_TIMEOUT_SECONDS="1",
+        )
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("INCONCLUSIVE", result.stderr)
+        self.assertNotIn("pushing code snapshot", result.stdout)
+
+    def test_the_default_bound_clears_the_documented_floor(self):
+        # CLAUDE.md and scripts/transfer/README.md both require at least 90 s;
+        # the call site had no caller-side bound at all.
+        match = re.search(
+            r'H200_STATUS_TIMEOUT_SECONDS="\$\{H200_STATUS_TIMEOUT_SECONDS:-(\d+)\}"',
+            CONTROLLER.read_text(encoding="utf-8"),
+        )
+        self.assertIsNotNone(match, "the controller declares no health-probe timeout")
+        self.assertGreaterEqual(int(match.group(1)), 90)
+
+
+class EveryArmDispatchedStageDeclaresWhatItMeasured(unittest.TestCase):
+    """An artefact must say which eligible arms its invocation left out.
+
+    `panel_contract.stage_contract_record` is that declaration -- the arms
+    measured, the arms eligible and not measured, the module refusals, and the
+    cohort band beside the band the arms were qualified on -- and it is worth
+    nothing in a stage that does not write it. `10_homology_control.py` wrote
+    `panel_summary.json` with no such record, so a narrowed run of a panel-scoped
+    stage and a full-panel run produced artefacts a reader cannot tell apart.
+    That is L18 at the artefact level, in a stage whose declared scope is
+    panel-wide.
+
+    Generalised over the contract rather than written stage by stage, for the
+    reason `tests/test_transfer_gap_contract.py` generalises its TG counterpart:
+    a stage added to STAGE_CONTRACTS is covered without this file being edited,
+    and a stage that starts writing the record cannot quietly stop.
+
+    Armless stages are outside the scope: they dispatch no arm, so there is no
+    arm selection for an invocation to narrow. Every other stage is in it,
+    including those whose repairs are in flight -- this fails on them until those
+    land, and that failure is the finding rather than a defect here.
+    """
+
+    def test_every_arm_dispatched_stage_writes_its_contract_record(self):
+        missing = []
+        for stage, contract in pc.STAGE_CONTRACTS.items():
+            if contract.scope == "armless":
+                continue
+            source = (TRANSFER_DIR / contract.entry_point).read_text(encoding="utf-8")
+            # Tolerant of line wrapping: a formatter may put the stage name on
+            # the next line, and a source-text literal that a reformat can break
+            # would be repaired by reformatting the source to suit the test --
+            # the wrong direction. The check is still that this stage names
+            # ITSELF, which is the fact worth holding.
+            if not re.search(
+                r'stage_contract_record\(\s*"' + re.escape(stage) + r'"', source
+            ):
+                missing.append(contract.entry_point)
+        self.assertEqual(
+            missing,
+            [],
+            "these stages write measurement artefacts without declaring which "
+            "eligible arms the invocation omitted, so a narrowed run is "
+            "indistinguishable from a full-panel one",
+        )
 
 
 if __name__ == "__main__":

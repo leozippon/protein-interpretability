@@ -91,7 +91,9 @@ __all__ = [
     "loss_recovered",
     "protein_input",
     "symbol_position_mask",
+    "symbol_token_ids",
     "symbols_per_token",
+    "token_carries_symbol",
     "tokenize_batch",
     "write_json",
 ]
@@ -430,32 +432,71 @@ def loss_recovered(
     }
 
 
+#: The alphabet a protein arm's symbols are drawn from, as a set, resolved once.
+_PROTEIN_ALPHABET = frozenset(AA20)
+
+
+def token_carries_symbol(arm: Arm, token: int) -> bool:
+    """Whether one vocabulary id decodes to at least one alphabet symbol.
+
+    **The declaration, and the only one.** A native rendering puts non-symbol
+    tokens into the scored stream: ProtGPT2's FASTA wrap contributes a newline
+    every 60 residues plus an end-of-text prefix, and ZymCTRL's EC tag and
+    ``<sep>``/``<start>``/``<end>`` markers are tokens too. Which of a model's
+    tokens are alphabet-bearing decides three different things in this series --
+    which positions a spectrum is read on, which positions a cross-entropy is
+    reported over, and which tokens TG-02's primary estimand permutes -- and it
+    was written twice: here, and again in ``tg02``'s own ``symbol_token_ids``.
+    Appendix B rule 12: the module that decides which tokens carry the alphabet
+    is one declaration, imported, never reimplemented. The two copies happened to
+    agree; the rendering defect of the audit's section 0.1 also happened to agree
+    until it did not.
+
+    Text is the complement of whitespace rather than a fixed alphabet, because a
+    text vocabulary has no closed symbol set and the tokens that matter to
+    exclude are the structural ones.
+    """
+
+    piece = arm.tokenizer.decode([token])
+    if arm.modality == "protein":
+        return any(character in _PROTEIN_ALPHABET for character in piece)
+    return bool(piece.strip())
+
+
+def symbol_token_ids(arm: Arm) -> set[int]:
+    """Every vocabulary id :func:`token_carries_symbol` admits.
+
+    Resolved once over the whole vocabulary rather than per window: a
+    manipulation has to treat the same token the same way in every block, and a
+    per-window decode would make that depend on which tokens happened to appear.
+    """
+
+    return {
+        token
+        for token in range(arm.model.config.vocab_size)
+        if token_carries_symbol(arm, token)
+    }
+
+
 def symbol_position_mask(arm: Arm, ids: torch.Tensor) -> torch.Tensor:
     """True where a token carries at least one alphabet symbol.
 
-    A native rendering puts non-symbol tokens into the scored stream: ProtGPT2's
-    FASTA wrap contributes a newline every 60 residues plus an end-of-text
-    prefix, and ZymCTRL's EC tag and ``<sep>``/``<start>``/``<end>`` markers are
-    tokens too. Those positions belong in the model's own cross-entropy -- they
-    are part of the distribution it was trained on -- but a claim about how well
-    a dictionary reconstructs *protein* computation should be checkable against
-    the residue-bearing positions alone. This mask makes that check possible
-    instead of leaving the two conflated.
+    The same predicate as :func:`symbol_token_ids`, projected onto the tokens
+    actually present instead of onto the vocabulary: those positions belong in
+    the model's own cross-entropy -- they are part of the distribution it was
+    trained on -- but a claim about how well a dictionary reconstructs *protein*
+    computation should be checkable against the residue-bearing positions alone.
+    The decode is cached per call because a cohort repeats tokens heavily and a
+    vocabulary sweep would be the more expensive way round here.
     """
 
-    alphabet = set(AA20) if arm.modality == "protein" else None
     flat = ids.reshape(-1).tolist()
     cache: dict[int, bool] = {}
     keep = []
     for token in flat:
         hit = cache.get(token)
         if hit is None:
-            piece = arm.tokenizer.decode([token])
-            hit = (
-                any(c in alphabet for c in piece)
-                if alphabet is not None
-                else bool(piece.strip())
-            )
+            hit = token_carries_symbol(arm, token)
             cache[token] = hit
         keep.append(hit)
     return torch.tensor(keep, dtype=torch.bool, device=ids.device).reshape(ids.shape)

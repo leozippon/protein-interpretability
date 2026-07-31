@@ -53,10 +53,18 @@ MINIMUM_FINITE_DRAW_FRACTION = 0.95
 
 
 #: Smallest number of resampling units at which a percentile bootstrap interval
-#: may be published. One declaration, imported by every module that resamples;
-#: ``homology`` held the only copy and ``prediction_addressed.cluster_bootstrap``
-#: and ``path_patching.bootstrap_difference`` each carried their own weaker
-#: ``n < 2`` guard, so the same hazard was defended in one place out of three.
+#: may be published. One declaration, imported by every module that resamples --
+#: which is not the same thing as one *honoured* by every module that resamples,
+#: and the difference was measured rather than assumed. Seven of the twelve
+#: resamplers in this package reach it: :func:`paired_group_bootstrap` here,
+#: ``induction_robustness.cluster_bootstrap_fraction``,
+#: ``induction_robustness.contrast_ratio_bootstrap``,
+#: ``homology.bootstrap_stratum``, ``path_patching.bootstrap_difference``,
+#: ``prediction_addressed.cluster_bootstrap`` and
+#: ``circuits._case_resampled_interval``. Five do not, and are named in
+#: ``tests/test_transfer_audit_invariants.py`` so the list cannot grow in
+#: silence: ``probes.sequence_bootstrap``, the three
+#: ``lenses.*_cluster_bootstrap`` and ``pathways.pathway_cluster_bootstrap``.
 #:
 #: **The derivation this constant used to carry did not support it.** It read:
 #: "eight is the point at which the probability of an all-identical resample
@@ -181,6 +189,11 @@ def paired_group_bootstrap(
     pairing that makes the difference meaningful is preserved draw by draw.
     ``derived_statistic`` receives the two scores from each draw, which keeps
     composite statistics such as chance-corrected skill inside the bootstrap.
+
+    Refused below :data:`MINIMUM_BOOTSTRAP_UNITS` groups. The group is the
+    resampling unit here, so the floor that governs every other percentile
+    interval in this package governs this one; it used to guard ``n < 2``, which
+    is the guard the floor exists to replace.
     """
 
     truth = np.asarray(y)
@@ -194,8 +207,16 @@ def paired_group_bootstrap(
     if group_ids.shape != truth.shape:
         raise ValueError("groups must align with truth")
     unique_groups = np.unique(group_ids)
-    if unique_groups.size < 2:
-        raise ValueError("at least two groups are required")
+    # The unit floor, not ``n < 2``. Two groups admit the whole range where a
+    # percentile interval is anti-conservative -- and, worse, not monotone in
+    # width: a two-group resample distribution has three atoms and the
+    # percentile rule trims the extreme ones, so the smallest design reads as
+    # the most precise. Raised rather than flagged, because every caller reads
+    # ``difference_ci95`` straight into a report and a degenerate marker beside
+    # it would be optional to notice.
+    floor = bootstrap_unit_floor(int(unique_groups.size))
+    if floor["degenerate"]:
+        raise ValueError(f"paired group bootstrap refused: {floor['degenerate_reason']}")
     if n_bootstrap < 1:
         raise ValueError("n_bootstrap must be positive")
 
@@ -265,6 +286,7 @@ def paired_group_bootstrap(
         "n_non_finite_draws": int(n_bootstrap) - len(differences),
         "n_ratio_draws": len(ratios),
         "n_groups": int(unique_groups.size),
+        "minimum_groups": int(MINIMUM_BOOTSTRAP_UNITS),
     }
     if derived_statistic is not None:
         derived_score = float(derived_statistic(left_score, right_score))

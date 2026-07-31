@@ -33,7 +33,7 @@ import argparse
 import json
 import sys
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -46,6 +46,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+# The stage directory itself, so `panel_contract` imports under every invocation
+# regardless of how the entry point was addressed -- the same shape stages 10 and
+# 11 use.
+STAGE_DIR = Path(__file__).resolve().parent
+if str(STAGE_DIR) not in sys.path:
+    sys.path.insert(0, str(STAGE_DIR))
+
+from panel_contract import stage_contract_record  # noqa: E402
 from src.transfer.io import write_json  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
     DEFAULT_CORPUS_DRAW_SEED,
@@ -60,11 +68,15 @@ from src.transfer.arms import (  # noqa: E402
     tokenize_batch,
 )
 from src.transfer.circuits import (  # noqa: E402
+    DEFAULT_CORRUPTION_SPAN_TOKENS,
     DISTANCE_BANDS,
+    DISTANCE_UNITS,
     INDUCTION_THRESHOLDS,
+    PATCHING_REFUSED_DTYPES,
     PROTEIN_APPROXIMATE_CRITERION,
     PROTEIN_EXACT_CRITERION,
     SCHEMA_VERSION,
+    SYMBOL_DISTANCE_BANDS,
     TEXT_APPROXIMATE_CRITERION,
     TEXT_EXACT_CRITERION,
     RepeatCriterion,
@@ -73,6 +85,7 @@ from src.transfer.circuits import (  # noqa: E402
     attention_alignment_scores,
     build_patch_cases,
     conditioned_token_budget,
+    content_symbol_name,
     direct_logit_attribution,
     fit_unigram,
     head_census,
@@ -81,7 +94,10 @@ from src.transfer.circuits import (  # noqa: E402
     n_head,
     natural_repeat_probes,
     ov_copying_scores,
+    patch_seq_len_refusal,
+    probe_record_retention,
     protein_repeat_cohort,
+    resolve_distance_bands,
     summarise_head_matrix,
     summarise_patching,
     synthetic_repeat_probes,
@@ -350,9 +366,16 @@ def run_induction(
     )
 
     natural_scores: dict[str, dict[str, Any]] = {}
+    natural_retention: dict[str, dict[str, Any]] = {}
     for label in REPEAT_PROBES:
         cohort = cohorts[f"repeat_{label}"]
         probes = natural_repeat_probes(arm, cohort, max_tokens=args.natural_max_tokens)
+        # Record-level loss, beside the within-probe loss `mean_coverage` already
+        # reports. A record that aligns nowhere contributes no probe, so it is
+        # invisible to any mean over probes -- and it is dropped for a reason
+        # (identical token boundaries in both copies) that correlates with the
+        # criterion under test.
+        natural_retention[label] = probe_record_retention(probes, cohort)
         natural_scores[label] = attention_alignment_scores(
             arm, probes, batch_size=args.natural_batch_size
         )
@@ -367,19 +390,12 @@ def run_induction(
         seed=args.seed,
     )
 
-    ranking = {
-        "prefix_matching_synthetic": synthetic_scores["scores"]["prefix_matching"],
-        "same_token_synthetic": synthetic_scores["scores"]["same_token"],
-        "offset_two_synthetic": synthetic_scores["scores"]["offset_two"],
-        "copy_diagonal_fraction": copying["diagonal_fraction"],
-        "copy_mean_normalised_rank": copying["mean_normalised_rank"],
-        "copy_matched_diagonal_fraction": matched["diagonal_fraction"],
-        "copy_matched_mean_normalised_rank": matched["mean_normalised_rank"],
-    }
-    for label in REPEAT_PROBES:
-        scores = natural_scores[label]["scores"]
-        ranking[f"prefix_matching_natural_{label}"] = scores["prefix_matching"]
-        ranking[f"same_token_natural_{label}"] = scores["same_token"]
+    ranking = head_ranking(
+        synthetic_scores["scores"],
+        {label: natural_scores[label]["scores"] for label in REPEAT_PROBES},
+        copying,
+        matched,
+    )
 
     result: dict[str, Any] = {
         "ov_decomposition_relative_error": decomposition_error,
@@ -423,6 +439,7 @@ def run_induction(
         result[f"natural_repeat_{label}"] = {
             **{key: value for key, value in scores.items() if key != "scores"},
             "cohort": cohort_record(cohorts[f"repeat_{label}"]),
+            "record_retention": natural_retention[label],
             "census": census,
             "headline": induction_headline(
                 scores, census, threshold=args.headline_threshold
@@ -430,11 +447,48 @@ def run_induction(
             "same_token_distribution": _matrix_summary(
                 scores["scores"]["same_token"], "same_token"
             ),
+            "offset_two_distribution": _matrix_summary(
+                scores["scores"]["offset_two"], "offset_two"
+            ),
         }
         result[f"top_heads_natural_{label}"] = top_heads(
             ranking, key=f"prefix_matching_natural_{label}", count=args.top_heads
         )
     return result
+
+
+def head_ranking(
+    synthetic: Mapping[str, np.ndarray],
+    natural: Mapping[str, Mapping[str, np.ndarray]],
+    copying: Mapping[str, np.ndarray],
+    matched: Mapping[str, np.ndarray],
+) -> dict[str, np.ndarray]:
+    """Every per-head matrix this stage ranks by and writes into ``per_head``.
+
+    Derived by iterating the statistics the estimator returned, rather than by
+    naming three of them.  Naming them is how the ``offset_two`` decoy came to be
+    measured on the natural probes and then dropped on the floor: it was computed
+    by :func:`attention_alignment_scores` for every probe, and only the synthetic
+    probe's copy reached ``per_head``.  A distribution-body battery needs a
+    positional decoy to correct with (Appendix B rule 8), and the probes that need
+    it most are the natural ones -- for a wrapped arm they are the ones to trust --
+    so the correction was missing exactly where it mattered, and recovering it
+    would have cost a GPU re-run of the whole panel.
+
+    Key spellings are unchanged; they are read by artefact consumers.
+    """
+
+    ranking: dict[str, np.ndarray] = {
+        f"{name}_synthetic": matrix for name, matrix in synthetic.items()
+    }
+    for label, scores in natural.items():
+        for name, matrix in scores.items():
+            ranking[f"{name}_natural_{label}"] = matrix
+    for name, matrix in copying.items():
+        ranking[f"copy_{name}"] = matrix
+    for name, matrix in matched.items():
+        ranking[f"copy_matched_{name}"] = matrix
+    return ranking
 
 
 def _matrix_summary(values: np.ndarray, label: str) -> dict[str, Any]:
@@ -450,16 +504,51 @@ def run_attribution(arm: Arm, analysis: Cohort, args: argparse.Namespace) -> dic
     return result
 
 
+def distance_band_plan(arm: Arm, strings: Sequence[str], args: argparse.Namespace):
+    """Resolve this arm's patching geometry, in the unit the run declared.
+
+    Under ``--patch-distance-unit content_symbol`` both legs of the geometry -- the
+    perturbation-to-read-out distance and the size of the perturbation -- are
+    resolved through this arm's *own* measured symbols per token, so the two arms
+    of a comparison are matched in residues (or in characters) rather than in a
+    unit whose size differs between them by 4.4x.
+
+    The scale is measured over exactly the truncated rows the cases are cut from,
+    at ``--patch-seq-len``, and not reused from the arm-level
+    ``tokenisation.symbols_per_token`` in this artefact, which is measured over a
+    different window (``--unigram-max-tokens``). Two measurements of one quantity
+    are allowed to differ; taking one for the other silently is not.
+    """
+
+    unit = args.patch_distance_unit
+    measured = (
+        symbols_per_token(arm, strings, args.patch_seq_len)
+        if unit == "content_symbol"
+        else None
+    )
+    return resolve_distance_bands(
+        requested_distance_bands(args),
+        unit=unit,
+        corruption_span=(
+            args.patch_corruption_span
+            if args.patch_corruption_span is not None
+            else DEFAULT_CORRUPTION_SPAN_TOKENS
+        ),
+        symbols_per_token=measured,
+    )
+
+
 def run_patching(
     arm: Arm, analysis: Cohort, unigram: Unigram, args: argparse.Namespace
 ) -> dict[str, Any]:
     strings = analysis.input_strings(arm)
+    plan = distance_band_plan(arm, strings, args)
     cases = build_patch_cases(
         arm,
         strings,
         unigram,
         seq_len=args.patch_seq_len,
-        bands=DISTANCE_BANDS,
+        plan=plan,
         cases_per_band=args.patch_cases_per_band,
         seed=args.seed + 1,
     )
@@ -469,6 +558,19 @@ def run_patching(
         minimum_effect=args.patch_minimum_effect,
         batch_size=args.patch_batch_size,
     )
+    result["distance_geometry"] = {
+        **plan.as_dict(),
+        "content_symbol": content_symbol_name(arm),
+        "symbols_per_token_source": {
+            "window_tokens": int(args.patch_seq_len),
+            "n_records": len(strings),
+            "note": (
+                "measured over exactly the rows the cases are cut from; the "
+                "arm-level tokenisation.symbols_per_token in this artefact is a "
+                "different measurement, over --unigram-max-tokens"
+            ),
+        },
+    }
     result["summary"] = summarise_patching(result, arm=arm)
     return result
 
@@ -584,6 +686,11 @@ def panel_summary(results: dict[str, dict[str, Any]], args: argparse.Namespace) 
                     "cohort_census": probe["cohort"]["census"],
                     "cohort_criterion": probe["cohort"]["criterion"],
                     "head_mean": probe["census"]["distribution"]["mean"],
+                    # First-class, not buried: the cohort a census was computed on
+                    # is the cohort that reached a probe, and on one arm that is
+                    # 27% smaller than the cohort that was drawn.
+                    "record_retention": probe["record_retention"]["record_retention"],
+                    "n_records_retained": probe["record_retention"]["n_retained"],
                 }
             row["copy_matched_mean_rank"] = induction["copying"]["matched_mean_normalised_rank"][
                 "max"
@@ -614,12 +721,27 @@ def panel_summary(results: dict[str, dict[str, Any]], args: argparse.Namespace) 
                 band: entry["best_mean"]
                 for band, entry in patching["summary"]["resid_post|q"].items()
             }
+            # Without these three the band labels above are ambiguous: "33-64" is a
+            # token band on one run and a content-symbol band on another, and under
+            # the second it resolves to a different token band on every arm.
+            geometry = patching["distance_geometry"]
+            row["patch_distance_unit"] = geometry["unit"]
+            row["patch_content_symbol"] = geometry["content_symbol"]
+            row["patch_band_tokens"] = {
+                band["label"]: band["tokens"] for band in geometry["bands"]
+            }
+            row["patch_corruption_span"] = geometry["corruption_span"]
         rows[name] = row
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "matched_pair": list(MATCHED_PAIR),
         "arms": rows,
+        # Which eligible arms this invocation left out. Without it a one-arm
+        # far-band shard and a full-panel run write panel summaries a reader
+        # cannot tell apart -- L18 at the artefact level, on the stage whose
+        # declared scope is panel-wide. (EXP-R2-073.)
+        "stage_contract": stage_contract_record("circuit_primitives", sorted(rows)),
         "probe_comparison": probe_comparison(rows),
         "configuration": {key: value for key, value in sorted(vars(args).items()) if key != "output_dir"},
     }
@@ -705,7 +827,17 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--device", default="cuda:0")
-    parser.add_argument("--dtype", default="bfloat16")
+    parser.add_argument(
+        "--dtype",
+        default="float32",
+        help="inference dtype. float32 rather than bfloat16 because the patching "
+        "section measures a difference of two logits of order 0.05 against a "
+        "bfloat16 quantisation step of 0.0625 at logit scale, and reading one off "
+        "the other inflated an eligible fraction by 60% relative (Appendix B rule "
+        "15b). --sections patching is refused outright under a dtype in "
+        "circuits.PATCHING_REFUSED_DTYPES; the other sections may still be run "
+        "under one, deliberately",
+    )
     parser.add_argument("--attn-implementation", default="eager")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--seed", type=int, default=20260728)
@@ -791,12 +923,43 @@ def parse_args() -> argparse.Namespace:
         "and not the model is what bounds --patch-cases-per-band",
     )
     parser.add_argument("--patch-minimum-effect", type=float, default=0.25)
+    parser.add_argument(
+        "--patch-distance-unit",
+        default="token",
+        choices=list(DISTANCE_UNITS),
+        help="unit the distance band and the corruption span are declared in. "
+        "'token' reproduces every artefact measured before this option existed and "
+        "matches the positional distance while leaving the perturbation mismatched "
+        "(one token is 1 residue on ProGen2, ~2.8 on ProtGPT2, ~4.4 characters on "
+        "GPT-2). 'content_symbol' resolves both legs per arm from its own measured "
+        "symbols per token, is refused for a run spanning both modalities because a "
+        "residue is not a character, and requires --patch-corruption-span",
+    )
+    parser.add_argument(
+        "--patch-distance-band",
+        nargs="+",
+        default=None,
+        metavar="LOW-HIGH",
+        help="distance bands, inclusive, in --patch-distance-unit; defaults to "
+        "circuits.DISTANCE_BANDS for tokens and circuits.SYMBOL_DISTANCE_BANDS for "
+        "content symbols",
+    )
+    parser.add_argument(
+        "--patch-corruption-span",
+        type=int,
+        default=None,
+        help="size of the perturbation, in --patch-distance-unit. Defaults to one "
+        "token, which is what every existing artefact carries. Under a "
+        "content-symbol geometry it must be declared and it cannot be finer than "
+        "one token of the arm being measured, so the finest matched perturbation a "
+        "set of arms can reach is set by its coarsest tokenizer",
+    )
 
     args = parser.parse_args()
     if len(set(args.arms)) != len(args.arms):
         raise ValueError("duplicate arms requested")
-    if args.patch_seq_len <= DISTANCE_BANDS[-1][1] + 2:
-        raise ValueError("patch sequence length must exceed the widest distance band")
+    if "patching" in args.sections:
+        validate_patching_arguments(args)
     if args.repeat_scan_workers < 1:
         raise ValueError("repeat scan needs at least one worker")
     if args.approximate_cohort_size is not None and args.approximate_cohort_size < 1:
@@ -810,6 +973,86 @@ def parse_args() -> argparse.Namespace:
 
 
 
+
+
+def parse_distance_band(text: str) -> tuple[int, int]:
+    """``"33-64"`` as an inclusive band -- the spelling the artefact labels use."""
+
+    low, _, high = text.partition("-")
+    if not high or not low.strip().isdigit() or not high.strip().isdigit():
+        raise ValueError(f"distance band {text!r} must be spelled LOW-HIGH")
+    band = (int(low), int(high))
+    if band[0] < 1 or band[1] < band[0]:
+        raise ValueError(f"invalid distance band {text!r}")
+    return band
+
+
+def requested_distance_bands(args: argparse.Namespace) -> tuple[tuple[int, int], ...]:
+    """The ladder this run declared, in ``--patch-distance-unit``."""
+
+    if args.patch_distance_band:
+        return tuple(parse_distance_band(item) for item in args.patch_distance_band)
+    if args.patch_distance_unit == "content_symbol":
+        return SYMBOL_DISTANCE_BANDS
+    return DISTANCE_BANDS
+
+
+def validate_patching_arguments(args: argparse.Namespace) -> None:
+    """Every patching precondition that can be decided from the command line.
+
+    These used to be found at run time, after the checkpoint was on the GPU: one
+    produced a measurement that had to be withdrawn, one produced a job that could
+    not have produced anything at all, and one would have produced a
+    cross-modality number in a unit that does not cross modalities.  Reading only
+    ``args`` and the panel declaration, they cost nothing and are checked before a
+    lane is allocated.
+
+    The per-arm resolution of a content-symbol geometry is *not* checked here: it
+    needs the arm's measured symbols per token, so it is enforced in
+    :func:`~src.transfer.circuits.resolve_distance_bands` at build time instead.
+    """
+
+    bands = requested_distance_bands(args)
+    widest = max(high for _, high in bands)
+    if args.patch_distance_unit == "token" and args.patch_seq_len <= widest + 2:
+        raise ValueError("patch sequence length must exceed the widest distance band")
+    if args.patch_corruption_span is not None and args.patch_corruption_span < 1:
+        raise ValueError("--patch-corruption-span must be at least one")
+    if args.patch_distance_unit == "content_symbol":
+        modalities = sorted({PANEL[name].modality for name in args.arms})
+        if len(modalities) > 1:
+            raise ValueError(
+                f"--patch-distance-unit content_symbol is refused for a run spanning "
+                f"{modalities}: a content symbol is a residue on a protein arm and a "
+                f"character on a text arm, so one band label would name two different "
+                f"quantities. The comparisons this geometry identifies are within a "
+                f"modality -- run the protein arms and the text arms as separate "
+                f"invocations"
+            )
+        if args.patch_corruption_span is None:
+            raise ValueError(
+                "--patch-distance-unit content_symbol requires "
+                "--patch-corruption-span: matching the distance while leaving the "
+                "perturbation at one token per arm swaps one confound for another, "
+                "since one token is ~2.8 residues on ProtGPT2 and 1 on ProGen2"
+            )
+    if args.dtype in PATCHING_REFUSED_DTYPES:
+        raise ValueError(
+            f"--sections patching is refused at --dtype {args.dtype}: the metric is a "
+            f"difference of two logits and --patch-minimum-effect is "
+            f"{args.patch_minimum_effect}, which is at or below this dtype's own "
+            f"quantisation step at logit scale (Appendix B rule 15b). Run at "
+            f"--dtype float32, or drop 'patching' from --sections"
+        )
+    for name in args.arms:
+        refusal = patch_seq_len_refusal(
+            PANEL[name],
+            args.patch_seq_len,
+            min_symbols=args.protein_min_len,
+            max_symbols=args.protein_max_len,
+        )
+        if refusal is not None:
+            raise ValueError(refusal)
 
 
 def main() -> None:

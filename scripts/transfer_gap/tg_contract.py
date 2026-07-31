@@ -37,6 +37,17 @@ dropped -- and TG-05's pair is renamed to the panel's spelling.
 tested, and called by nothing, so no artefact in the corrected tree carried a
 ``cohort_band`` key at all. Every measuring stage writes it now.
 
+**A band is half of a population, and only the half was declared.** A residue
+band says which sequences a stage draws. It does not say which positions of them
+are scored, and two stages on one band can still measure two different position
+distributions: TG-01 truncates at ``--max-len 384`` and scores every position
+1..383 of every drawn sequence, while TG-06 keeps only the sequences that reach
+256 tokens and scores positions 1..255 of those, at ``--window 256``.
+``tg99``'s commensurability check compared bands alone, so it passed that pair
+and published ``frac_information_from_attention_pattern`` -- a TG-01 numerator
+over a TG-06 denominator. :class:`ScoringWindow` is the second half, declared
+beside the band and checked against the source in both directions like it.
+
 **Arm eligibility was declared in two places and enforced in the wrong one.**
 ``tg05`` and ``tg06`` declared ``arms=None`` here, meaning "the whole TG panel",
 and then hard-refused arms in their own bodies -- ``tg05`` on the literal string
@@ -88,7 +99,10 @@ if str(_STAGE_DIR) not in sys.path:
 from src.transfer.arms import PANEL, ArmSpec  # noqa: E402
 from tg_common import DEFAULT_COHORT_SEED, TG_PANEL  # noqa: E402
 
-SCHEMA_VERSION = "r2_transfer_gap_contract_v2"
+# v3 adds `scoring_window` to `stage_contract_record`: a band alone does not fix
+# the population a stage measured, and an artefact that records only the band
+# cannot be checked for commensurability against another stage's.
+SCHEMA_VERSION = "r2_transfer_gap_contract_v3"
 
 #: The band on which the TG comparison table in the audit is read. Chosen as
 #: 120-1000 because it is the band of TG-03, TG-07, TG-08 and TG-09 -- the
@@ -123,6 +137,45 @@ class ProteinBand:
         return self.residues == REFERENCE_PROTEIN_BAND
 
 
+#: The argparse options a TG stage may spell its scoring window with. A window
+#: is one scalar, so it cannot be matched on *shape* the way a ``--x-min/--x-max``
+#: band pair can; this is the closed set :func:`verify` refuses an undeclared
+#: spelling from, and a stage that invents a new one has to be added here. That
+#: is a weaker guarantee than the band check's and it is stated rather than
+#: hidden: the band check learned this lesson the expensive way, when a
+#: name-based lookup saw nothing at all in two stages.
+SCORING_WINDOW_ARGUMENTS = ("max_len", "window")
+
+
+@dataclass(frozen=True)
+class ScoringWindow:
+    """The token truncation a stage scores inside, and the argument that sets it.
+
+    The companion of :class:`ProteinBand`, and it exists for the same reason one
+    step further in. A band selects sequences; a window selects positions of
+    them, and a cross-entropy is strongly position-dependent -- TG-01's own
+    artefact reads 1.89 nats of information gain in the first twentieth of its
+    384-token window against 4.51 at its widest on ProtGPT2, four times the
+    0.5-nat floor the guards in ``tg99`` apply. Two stages that agree on the band
+    and disagree on the window have not measured one population, and nothing in
+    this table said so.
+
+    Unlike a band, a window is not compared against a reference: there is no
+    evidence that any one truncation is the right one for this series, only that
+    a difference between two of them has to be visible.
+    """
+
+    argument: str
+    tokens: int
+    reason: str = ""
+
+    @property
+    def option(self) -> str:
+        """How the stage spells it, so a failure message is copy-pasteable."""
+
+        return f"--{self.argument.replace('_', '-')}"
+
+
 @dataclass(frozen=True)
 class TgStage:
     """What one TG stage measures, on which arms, over which residues.
@@ -140,6 +193,14 @@ class TgStage:
         cohort. Checked against the source by :func:`verify` in both directions,
         so neither an undeclared band in the code nor a declared band that no
         longer exists can survive.
+
+    ``scoring_window``
+        the token truncation this stage scores inside, as a
+        :class:`ScoringWindow`, or ``None`` for a stage that truncates nothing.
+        Checked against the source by :func:`verify` in both directions, for the
+        reason the bands are: a window the code carries and the table omits is
+        exactly what let ``tg99`` divide a TG-01 numerator by a TG-06
+        denominator.
 
     ``arm_predicate``
         the stage's real eligibility rule, written against :class:`ArmSpec`
@@ -165,6 +226,7 @@ class TgStage:
     entry_point: str
     scope: str
     protein_bands: tuple[ProteinBand, ...] = ()
+    scoring_window: ScoringWindow | None = None
     arm_predicate: Callable[[ArmSpec], bool] | None = field(default=None, compare=False)
     arms: tuple[str, ...] | None = None
     arms_reason: str = ""
@@ -281,6 +343,13 @@ TG_STAGES: dict[str, TgStage] = {
                 "controls are not measured on one cohort and read as one number",
             ),
         ),
+        scoring_window=ScoringWindow(
+            "max_len",
+            1024,
+            "wide enough to hold a whole 600-2000 residue record under either "
+            "rendering, because the control prices the rendering of a record and "
+            "not of a window of one",
+        ),
         arms=("protgpt2", "progen2-medium"),
         arms_reason=(
             "the two arms whose rendering the input contract certifies: ProtGPT2 "
@@ -308,6 +377,13 @@ TG_STAGES: dict[str, TgStage] = {
                 "interior to the sequence on a residue-level arm",
             ),
         ),
+        scoring_window=ScoringWindow(
+            "max_len",
+            384,
+            "the truncation curve reaches 128 tokens of visible context and the "
+            "query positions are drawn at q >= 128, so the window has to be "
+            "several times the longest context",
+        ),
     ),
     "tg02": TgStage(
         name="tg02",
@@ -318,12 +394,16 @@ TG_STAGES: dict[str, TgStage] = {
                 "res", (400, 1000), "shares TG-01's cohort so the two are read together"
             ),
         ),
+        scoring_window=ScoringWindow(
+            "max_len", 384, "shares TG-01's window as well as its cohort"
+        ),
     ),
     "tg03": TgStage(
         name="tg03",
         entry_point="tg03_matched_sae.py",
         scope="per_arm",
         protein_bands=(ProteinBand("res", REFERENCE_PROTEIN_BAND),),
+        scoring_window=ScoringWindow("max_len", 256),
     ),
     "tg04": TgStage(
         name="tg04",
@@ -373,6 +453,15 @@ TG_STAGES: dict[str, TgStage] = {
                 "pattern to freeze; short sequences have too few positions",
             ),
         ),
+        scoring_window=ScoringWindow(
+            "window",
+            256,
+            "NOT A TRUNCATION LIKE THE OTHERS: this stage keeps only the "
+            "sequences that reach the window and scores exactly its first 256 "
+            "positions, so its scored population is both a subset of the cohort "
+            "and a prefix of each member. TG-01 draws the same residue band and "
+            "scores every position of every sequence up to 384",
+        ),
         arm_predicate=_gpt2_eager_attention,
         arms_reason=(
             "pattern capture and injection monkeypatch "
@@ -388,18 +477,21 @@ TG_STAGES: dict[str, TgStage] = {
         entry_point="tg07_variance_behaviour.py",
         scope="per_arm",
         protein_bands=(ProteinBand("res", REFERENCE_PROTEIN_BAND),),
+        scoring_window=ScoringWindow("max_len", 256),
     ),
     "tg08": TgStage(
         name="tg08",
         entry_point="tg08_budget_sweep.py",
         scope="per_arm",
         protein_bands=(ProteinBand("res", REFERENCE_PROTEIN_BAND),),
+        scoring_window=ScoringWindow("max_len", 256),
     ),
     "tg09": TgStage(
         name="tg09",
         entry_point="tg09_depth_profile.py",
         scope="per_arm",
         protein_bands=(ProteinBand("res", REFERENCE_PROTEIN_BAND),),
+        scoring_window=ScoringWindow("max_len", 256),
     ),
     "tg10": TgStage(
         name="tg10",
@@ -416,6 +508,7 @@ TG_STAGES: dict[str, TgStage] = {
                 "is not commensurate with TG-03/07/08/09's loss-recovered numbers",
             ),
         ),
+        scoring_window=ScoringWindow("max_len", 256),
     ),
     "tg99": TgStage(
         name="tg99",
@@ -452,6 +545,17 @@ def _check_stages() -> None:
                     "band lets a verdict be read as covering a population it was never "
                     "measured on (Appendix B rule 13)"
                 )
+        window = stage.scoring_window
+        if window is not None:
+            if window.argument not in SCORING_WINDOW_ARGUMENTS:
+                raise AssertionError(
+                    f"stage {key!r} declares a scoring window on "
+                    f"{window.option}, which is not one of the spellings "
+                    f"{list(SCORING_WINDOW_ARGUMENTS)} that verify() can find in a "
+                    "stage's source; add it there or the declaration is unchecked"
+                )
+            if window.tokens < 1:
+                raise AssertionError(f"stage {key!r} declares an empty scoring window")
         if stage.arms is not None:
             unknown = [a for a in stage.arms if a not in PANEL]
             if unknown:
@@ -634,6 +738,39 @@ def verify() -> list[str]:
                     f"declares {declared[prefix]}"
                 )
 
+        window = stage.scoring_window
+        observed_windows = {
+            key: defaults[key] for key in SCORING_WINDOW_ARGUMENTS if key in defaults
+        }
+        if window is None:
+            for key, value in sorted(observed_windows.items()):
+                problems.append(
+                    f"{name}: {stage.entry_point} scores inside "
+                    f"--{key.replace('_', '-')} = {value} that TG_STAGES does not "
+                    "declare. Two stages on one residue band can still score "
+                    "different position distributions, and tg99 divides one "
+                    "stage's number by another's"
+                )
+        else:
+            if window.argument not in defaults:
+                problems.append(
+                    f"{name}: TG_STAGES declares a scoring window on "
+                    f"{window.option} that {stage.entry_point} does not carry"
+                )
+            elif defaults[window.argument] != window.tokens:
+                problems.append(
+                    f"{name}: {stage.entry_point} scores inside {window.option} = "
+                    f"{defaults[window.argument]} but TG_STAGES declares "
+                    f"{window.tokens}"
+                )
+            for key in sorted(set(observed_windows) - {window.argument}):
+                problems.append(
+                    f"{name}: {stage.entry_point} carries a second scoring window "
+                    f"--{key.replace('_', '-')} = {observed_windows[key]} beside the "
+                    f"declared {window.option}; which one bounds the scored "
+                    "positions is then not decidable from the table"
+                )
+
         if stage.scope == "per_arm" and "arm" not in defaults:
             problems.append(f"{name}: declared per_arm but has no --arm argument")
         if stage.scope == "multi_arm" and "arms" not in defaults:
@@ -653,6 +790,17 @@ def _band_records(contract: TgStage) -> list[dict[str, Any]]:
         }
         for band in contract.protein_bands
     ]
+
+
+def _window_record(contract: TgStage) -> dict[str, Any] | None:
+    window = contract.scoring_window
+    if window is None:
+        return None
+    return {
+        "argument": window.option,
+        "tokens": window.tokens,
+        "reason": window.reason or None,
+    }
 
 
 def stage_contract_record(stage: str, arms: list[str] | tuple[str, ...]) -> dict[str, Any]:
@@ -691,6 +839,10 @@ def stage_contract_record(stage: str, arms: list[str] | tuple[str, ...]) -> dict
             "protein_residue_bands": _band_records(contract),
             "reference_protein_residues": list(REFERENCE_PROTEIN_BAND),
         },
+        # Which sequences were drawn is `cohort_band`; which positions of them
+        # were scored is this, and an artefact carrying only the first cannot be
+        # checked for commensurability against another stage's.
+        "scoring_window": _window_record(contract),
     }
 
 
@@ -708,6 +860,7 @@ def contract_payload() -> dict[str, Any]:
                 "entry_point": stage.entry_point,
                 "scope": stage.scope,
                 "protein_residue_bands": _band_records(stage),
+                "scoring_window": _window_record(stage),
                 "declared_arms": None if stage.arms is None else list(stage.arms),
                 "declared_arms_reason": stage.arms_reason or None,
                 "arms_derived_from_arm_spec": stage.arm_predicate is not None,

@@ -48,7 +48,12 @@ import torch
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+# See 08_lens_family.py for why the stage directory is added explicitly.
+_STAGE_DIR = str(Path(__file__).resolve().parent)
+if _STAGE_DIR not in sys.path:
+    sys.path.insert(0, _STAGE_DIR)
 
+from panel_contract import stage_contract_record  # noqa: E402
 from src.transfer.io import write_json  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
     DEFAULT_CORPUS_DRAW_SEED,
@@ -711,7 +716,16 @@ def run_arm(
 def panel_summary(
     search: dict[str, Any], arms: dict[str, dict[str, Any]], args: argparse.Namespace
 ) -> dict[str, Any]:
-    """One row per (arm, stratum): the table the report is written from."""
+    """One row per (arm, stratum): the table the report is written from.
+
+    Carries ``stage_contract``, which stages 01, 02, 03 and 08 already write and
+    this one did not. Without it a run narrowed to one arm and a run over the
+    stage's whole declared panel produce ``panel_summary.json`` files a reader
+    cannot tell apart, and neither says anything about the eligible arms it
+    omitted -- the L18 shape at the artefact level, in a stage whose declared
+    scope is panel-wide. ``configuration`` below records ``--arms`` as it was
+    passed, which says what ran and not what could have.
+    """
 
     table: dict[str, Any] = {}
     for name, payload in arms.items():
@@ -785,6 +799,7 @@ def panel_summary(
         "schema_version": SCHEMA_VERSION,
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "stage": "summary",
+        "stage_contract": stage_contract_record("homology_control", list(arms)),
         "no_text_arm": NO_TEXT_ARM,
         "cohort": search["cohort"],
         "diamond": search["diamond"],

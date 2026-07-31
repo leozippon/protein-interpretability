@@ -36,6 +36,11 @@ distant context is order-dependent. Two shuffles are therefore scored:
                        place, so the block stays well-formed and only residue
                        order is destroyed
 
+Which tokens are alphabet-bearing is `tg_common.token_carries_symbol`, imported
+here through `symbol_token_ids`. It used to be restated in this file, deciding
+which tokens the primary estimand permutes from a second copy of a predicate
+`tg_common` already owned (Appendix B rule 12).
+
 For an arm whose rendering has no separators the two are the same manipulation
 and the two numbers agree; the difference between them is the price of the
 format. `shuffled_symbols` is the primary, because it is the one that answers the
@@ -69,10 +74,10 @@ import torch.nn.functional as F
 from tg_common import (
     DEFAULT_COHORT_SEED,
     REPO,
-    AA20,
     cohort_for,
     cohort_provenance,
     load_arm,
+    symbol_token_ids,
     write_json,
 )
 from tg_contract import stage_contract_record
@@ -107,26 +112,6 @@ def conditioning_prefix_length(arm, ids: list[int]) -> int:
             )
         return ids.index(start_id) + 1
     return 0 if PANEL[arm.name].input_format == "raw" else 1
-
-
-def symbol_token_ids(arm) -> set[int]:
-    """Token ids whose decoded piece carries at least one alphabet symbol.
-
-    Resolved once over the whole vocabulary rather than per window: the
-    manipulation has to treat the same token the same way in every block, and a
-    per-window decode would make that depend on which tokens happened to appear.
-    """
-
-    alphabet = set(AA20) if arm.modality == "protein" else None
-    keep = set()
-    for token in range(arm.model.config.vocab_size):
-        piece = arm.tokenizer.decode([token])
-        if alphabet is None:
-            if piece.strip():
-                keep.add(token)
-        elif any(character in alphabet for character in piece):
-            keep.add(token)
-    return keep
 
 
 def shuffle_symbols_only(block: list[int], symbols: set[int], rng) -> list[int]:

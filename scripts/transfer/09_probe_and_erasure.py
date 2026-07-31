@@ -44,6 +44,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from panel_contract import stage_contract_record  # noqa: E402
 from src.transfer.io import write_json  # noqa: E402
 from src.transfer.arms import PANEL, REPO, Arm, ArmSpec, load_arm  # noqa: E402
 from src.transfer.probes import (  # noqa: E402
@@ -529,6 +530,10 @@ def main() -> None:
         },
         "refused_concepts": refusals,
         "concepts": reports,
+        # See 05_relational_channel.py: a per-arm stage narrows by running fewer
+        # processes, so without this a one-arm campaign and a full-panel one leave
+        # artefacts a reader cannot tell apart.
+        "stage_contract": stage_contract_record("probe_and_erasure", [arm.name]),
     }
     write_json(destination, payload)
     print(f"wrote {destination}")

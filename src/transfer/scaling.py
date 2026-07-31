@@ -165,6 +165,20 @@ PRIMARY_INDUCTION_PROBE = "natural"
 #: :data:`PRIMARY_METRIC`, a share of the cohort's context information: a
 #: modality offset of ten points of context information would be material, so an
 #: interval wider than that cannot distinguish "no offset" from "a large one".
+#:
+#: **Its attainability on this design was never checked, and it is not
+#: attained.** This is the only route to ``gap_explained_by_convergence`` and it
+#: requires *both* fits inside the margin; the widest half-width the shipped runs
+#: produce is 0.26-0.34 against a margin of 0.10, so on the evidence to date the
+#: verdict is unreachable and every ``underpowered`` reading here is a statement
+#: about the ladder's width rather than about convergence. Evidence-discipline
+#: rule 1 and Appendix B rule 2 say a gate whose positive case cannot be produced
+#: is a specification defect, and the same shape has already cost this programme
+#: L1 and L2. The margin is left where it is rather than widened to whatever the
+#: data happen to reach -- moving a criterion to admit a result is the failure
+#: this module warns about elsewhere -- and :func:`decide_verdict` now returns
+#: the attainability record beside the verdict so the defect is visible in the
+#: artefact instead of inferable from two numbers in it.
 DEFAULT_EQUIVALENCE_MARGIN = 0.10
 
 #: Residual degrees of freedom below which no fit is read at all. Two is the
@@ -2072,6 +2086,27 @@ def decide_verdict(
     half_widths = {
         label: (high - low) / 2.0 for label, (low, high) in readings.items()
     }
+    # Attainability, reported rather than left to be inferred. The margin is the
+    # only route to ``gap_explained_by_convergence``, so whether this design can
+    # produce a half-width that small is a property of the design and belongs in
+    # the artefact beside the verdict it gates. The rung multiple assumes the
+    # half-width falls as one over the square root of the usable rungs; it
+    # ignores the t-quantile's own fall with residual degrees of freedom and is
+    # therefore an over-estimate of what would be needed.
+    widest = max(half_widths.values())
+    decision["equivalence_margin_attainability"] = {
+        "margin": float(equivalence_margin),
+        "half_widths": {label: float(value) for label, value in half_widths.items()},
+        "widest_half_width": float(widest),
+        "attained": bool(widest <= equivalence_margin),
+        "usable_rung_multiple_required": float((widest / equivalence_margin) ** 2),
+        "note": (
+            "gap_explained_by_convergence is reachable only when both half-widths "
+            "sit inside the margin; where they do not, 'underpowered' is a "
+            "statement about this ladder's width and must not be read as evidence "
+            "for either the convergence or the residual-gap reading"
+        ),
+    }
     if all(width <= equivalence_margin for width in half_widths.values()):
         decision["verdict"] = "gap_explained_by_convergence"
         decision["reason"] = (
@@ -2085,7 +2120,11 @@ def decide_verdict(
         "the modality coefficient's interval contains zero in both fits - unadjusted "
         f"{list(np.round(readings['unadjusted'], 4))}, tokenisation-adjusted "
         f"{list(np.round(readings['tokenisation_adjusted'], 4))} - but the widest "
-        f"half-width {max(half_widths.values()):.4f} exceeds the declared margin "
-        f"{equivalence_margin:.4f}, so no offset is excluded"
+        f"half-width {widest:.4f} exceeds the declared margin "
+        f"{equivalence_margin:.4f}, so no offset is excluded. The margin is "
+        f"{widest / equivalence_margin:.1f}x away, which is roughly "
+        f"{(widest / equivalence_margin) ** 2:.0f}x this ladder's usable rungs: the "
+        "equivalence verdict is not attainable on this design and its absence is "
+        "not evidence against convergence"
     )
     return decision

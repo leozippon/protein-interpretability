@@ -71,8 +71,12 @@ SHELL_CONTRACT = Path(__file__).resolve().parent / "panel_contract.sh"
 
 #: v2 adds the per-arm checkpoint path relative to the variable that relocates it
 #: (:func:`model_relative_path`), which is what lets the worker preflight a
-#: checkpoint rather than a models root.
-SCHEMA_VERSION = "r2_transfer_panel_contract_v2"
+#: checkpoint rather than a models root. v3 makes the protein cohort band a
+#: complete declaration: a stage that draws more than one protein cohort declares
+#: every one of them, every declared band names the argparse pair that sets it,
+#: and ``matches_qualifying_stage: null`` now means "this stage declares no
+#: protein cohort" rather than "nobody filled this field in".
+SCHEMA_VERSION = "r2_transfer_panel_contract_v3"
 
 
 # --------------------------------------------------------------- campaign panel
@@ -171,6 +175,36 @@ _check_campaign_panel()
 
 
 @dataclass(frozen=True)
+class ProteinBand:
+    """One residue band a stage draws a cohort on, and the argument that sets it.
+
+    ``argument_prefix`` names the argparse option pair the stage carries, so a
+    reader (and ``tests/test_farband_estimand.py``) can read the band back out of
+    the entry point instead of trusting this table.
+
+    Deliberately the same record, spelled the same way, as
+    ``scripts/transfer_gap/tg_contract.py::ProteinBand``. The TG campaign found
+    three live undeclared bands inside the mechanism built to stop undeclared
+    bands, and fixed it with this shape; the transfer campaign's own contract had
+    room for exactly one band per stage, which is how ``circuit_primitives`` came
+    to draw two and declare neither.
+    """
+
+    argument_prefix: str
+    residues: tuple[int, int]
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        low, high = self.residues
+        if low < 1 or high < low:
+            raise AssertionError(f"invalid protein band {self.residues} on {self.argument_prefix}")
+
+    @property
+    def matches_qualifying_stage(self) -> bool:
+        return tuple(self.residues) == QUALIFYING_PROTEIN_BAND
+
+
+@dataclass(frozen=True)
 class StageContract:
     """What one campaign stage requires of an arm, and how it is dispatched.
 
@@ -202,11 +236,37 @@ class StageContract:
     tokenisation_reason: str = ""
     declared_arms: tuple[str, ...] | None = None
     declared_arms_source: str = ""
-    #: Protein residue band this stage's cohort is drawn on, as the stage's own
+    #: EVERY protein residue band this stage draws a cohort on, as the stage's own
     #: argparse defaults set it. See :data:`QUALIFYING_PROTEIN_BAND`.
-    protein_band: tuple[int, int] | None = None
+    #:
+    #: A tuple rather than a single band because stages draw more than one:
+    #: ``circuit_primitives`` draws its analysis, attribution and patching cohort
+    #: at 600-1000 residues and its two natural-repeat cohorts at 200-800, and the
+    #: field it had room for could only ever have declared one of them. It
+    #: declared neither, and ``matches_qualifying_stage`` therefore read ``null``
+    #: -- identical to a stage that draws no protein cohort at all.
+    #:
+    #: Empty means the stage declares that it draws no protein cohort with a single
+    #: residue band; :attr:`protein_band_reason` then says which of the two reasons
+    #: applies, and :func:`_check_stage_contracts` requires it.
+    protein_bands: tuple[ProteinBand, ...] = ()
+    #: How this stage's bands relate to :data:`QUALIFYING_PROTEIN_BAND`, or why
+    #: there are none. Required either way.
     protein_band_reason: str = ""
     notes: str = ""
+
+    @property
+    def protein_band(self) -> tuple[int, int] | None:
+        """The single band this stage draws on, or ``None`` if it draws 0 or 2+.
+
+        A stage on several bands has no one band, and answering with the first
+        would be the same defect one level down. Readers that need the complete
+        answer take :attr:`protein_bands`.
+        """
+
+        if len(self.protein_bands) == 1:
+            return self.protein_bands[0].residues
+        return None
 
 
 SCOPES = ("per_arm", "panel_wide", "control_anchored", "armless")
@@ -224,7 +284,7 @@ STAGE_CONTRACTS: dict[str, StageContract] = {
         entry_point="01_cohort_power.py",
         scope="panel_wide",
         capabilities=frozenset({"budget"}),
-        protein_band=(64, 246),
+        protein_bands=(ProteinBand("res", (64, 246)),),
         protein_band_reason="this stage defines the qualifying band",
         notes=(
             "scores every arm passed to one invocation in one process and writes "
@@ -237,7 +297,7 @@ STAGE_CONTRACTS: dict[str, StageContract] = {
         entry_point="02_pathway_budget.py",
         scope="per_arm",
         capabilities=frozenset({"pathway"}),
-        protein_band=(64, 246),
+        protein_bands=(ProteinBand("res", (64, 246)),),
         protein_band_reason="matches the qualifying band",
     ),
     "estimand_power": StageContract(
@@ -245,7 +305,7 @@ STAGE_CONTRACTS: dict[str, StageContract] = {
         entry_point="03_estimand_power.py",
         scope="per_arm",
         capabilities=frozenset({"pathway"}),
-        protein_band=(64, 246),
+        protein_bands=(ProteinBand("res", (64, 246)),),
         protein_band_reason="matches the qualifying band",
         notes=(
             "`measure` is per arm; the `recommend` aggregation that follows it is "
@@ -258,6 +318,30 @@ STAGE_CONTRACTS: dict[str, StageContract] = {
         scope="panel_wide",
         architectures=frozenset(_CIRCUIT_ARCHITECTURES),
         architecture_source="src.transfer.circuits._CIRCUIT_ARCHITECTURES",
+        protein_bands=(
+            ProteinBand(
+                "protein_len",
+                (600, 1000),
+                "the analysis cohort: it fits the unigram every synthetic probe "
+                "samples from, supplies the direct-logit-attribution rows and "
+                "supplies every patching case. 600-1000 residues because a 33-64 "
+                "token distance band does not fit inside a 246-residue record",
+            ),
+            ProteinBand(
+                "repeat_len",
+                (200, 800),
+                "the two natural-repeat cohorts: a 16-residue tandem repeat is far "
+                "too rare inside the qualifying band to fill a cohort",
+            ),
+        ),
+        protein_band_reason=(
+            "NEITHER BAND IS THE QUALIFYING BAND, AND THIS STAGE DRAWS TWO. Every "
+            "circuit number this stage publishes -- the induction census, the "
+            "attribution decomposition and the whole far-band patching sweep -- is "
+            "measured on a protein population that cohort_power never qualified "
+            "these arms on, and the stage declared no band at all until this "
+            "contract did (Appendix B rule 13, which this stage earned)"
+        ),
         notes=(
             "the `circuits` capability is deliberately NOT required: this stage "
             "carries grant_circuits(), an explicit per-arm override recorded in "
@@ -276,16 +360,34 @@ STAGE_CONTRACTS: dict[str, StageContract] = {
             "residue; a multi-residue BPE arm has no such map and must not have one "
             "approximated for it"
         ),
+        protein_bands=(ProteinBand("len", (110, 320)),),
+        protein_band_reason=(
+            "NARROWER THAN THE QUALIFYING BAND. The cohort is the AlphaFold "
+            "structure set filtered to this stage's own --min-len/--max-len, so an "
+            "arm qualified by cohort_power at 64-246 residues is measured here on a "
+            "different protein population"
+        ),
     ),
     "explanation_channel": StageContract(
         name="explanation_channel",
         entry_point="06_explanation_channel.py",
         scope="armless",
+        protein_band_reason=(
+            "no residue band: this stage builds Pfam and AlphaFold *unit* cohorts "
+            "whose length parameter is a window over annotated units, not a residue "
+            "band over Swiss-Prot records, so there is nothing here to compare with "
+            "the qualifying band"
+        ),
     ),
     "convergence_control": StageContract(
         name="convergence_control",
         entry_point="07_convergence_control.py",
         scope="armless",
+        protein_band_reason=(
+            "no single residue band: the protein cohorts are drawn one per rung of "
+            "src.transfer.scaling's ladder table and each rung carries its own "
+            "(low, high), so a band declared here would name one rung of a sweep"
+        ),
         notes="sweeps src.transfer.scaling's ladder table, not the campaign arm list",
     ),
     "lens_family": StageContract(
@@ -295,7 +397,7 @@ STAGE_CONTRACTS: dict[str, StageContract] = {
         capabilities=frozenset({"lens"}),
         architectures=frozenset(LENS_ARCHITECTURES),
         architecture_source="src.transfer.scaling.LENS_ARCHITECTURES",
-        protein_band=(64, 120),
+        protein_bands=(ProteinBand("res", (64, 120)),),
         protein_band_reason=(
             "NARROWER THAN THE QUALIFYING BAND. The Jacobian sweep is quadratic in "
             "sequence length and this band was chosen for cost. It means an arm "
@@ -310,6 +412,15 @@ STAGE_CONTRACTS: dict[str, StageContract] = {
         name="probe_and_erasure",
         entry_point="09_probe_and_erasure.py",
         scope="per_arm",
+        protein_bands=(
+            ProteinBand("len", (110, 320), "the concept-probe cohorts"),
+            ProteinBand("fitness_len", (40, 300), "the fitness-probe cohort"),
+        ),
+        protein_band_reason=(
+            "NEITHER BAND IS THE QUALIFYING BAND, AND THIS STAGE DRAWS TWO: the "
+            "concept probes on --min-len/--max-len and the fitness probe on "
+            "--fitness-min-len/--fitness-max-len"
+        ),
         notes=(
             "every arm is valid: src.transfer.probes declares concepts for both "
             f"modalities (text {list(concepts_for_modality('text'))}, protein "
@@ -324,6 +435,12 @@ STAGE_CONTRACTS: dict[str, StageContract] = {
         modalities=frozenset({"protein"}),
         declared_arms=("protgpt2", "zymctrl", "progen2-medium"),
         declared_arms_source="10_homology_control.py::PROTEIN_ARMS",
+        protein_bands=(ProteinBand("repeat_len", (200, 800)),),
+        protein_band_reason=(
+            "WIDER THAN THE QUALIFYING BAND, and deliberately identical to "
+            "circuit_primitives' repeat band: the cohort whose homology this stage "
+            "controls for has to be the cohort the induction census was measured on"
+        ),
         notes=(
             "the stage declares its own arm set and this mirrors it, checked "
             "against the source by tests/test_transfer_stage_contract.py. Note "
@@ -340,6 +457,15 @@ STAGE_CONTRACTS: dict[str, StageContract] = {
         capabilities=frozenset({"circuits"}),
         architectures=frozenset(SUPPORTED_ARCHITECTURES),
         architecture_source="src.transfer.path_patching.SUPPORTED_ARCHITECTURES",
+        protein_bands=(
+            ProteinBand("protein_len", (600, 1000), "the analysis cohort"),
+            ProteinBand("repeat_len", (200, 800), "the two natural-repeat cohorts"),
+        ),
+        protein_band_reason=(
+            "NEITHER BAND IS THE QUALIFYING BAND, AND THIS STAGE DRAWS TWO. The same "
+            "two bands as circuit_primitives, from this stage's own "
+            "--protein-min-len/--protein-max-len and --repeat-min-len/--repeat-max-len"
+        ),
     ),
 }
 
@@ -364,6 +490,23 @@ def _check_stage_contracts() -> None:
             unknown = [a for a in contract.declared_arms if a not in PANEL]
             if unknown:
                 raise AssertionError(f"stage {stage!r} declares unknown arms {unknown}")
+        prefixes = [band.argument_prefix for band in contract.protein_bands]
+        if len(set(prefixes)) != len(prefixes):
+            raise AssertionError(
+                f"stage {stage!r} declares two protein bands on one argument pair "
+                f"{prefixes}"
+            )
+        # An absent band has to be a decision. It was an omission for
+        # circuit_primitives, which draws protein cohorts on two bands and declared
+        # neither, and a null `matches_qualifying_stage` read exactly the same there
+        # as it does for a stage that draws no protein cohort at all.
+        if not contract.protein_band_reason:
+            raise AssertionError(
+                f"stage {stage!r} does not say how its protein cohort relates to the "
+                f"qualifying band {QUALIFYING_PROTEIN_BAND}. A stage that draws no "
+                "protein cohort, and one whose bands nobody has looked up, must not "
+                "be spelled the same way"
+            )
 _check_stage_contracts()
 
 
@@ -531,18 +674,45 @@ def stage_contract_record(stage: str, arms: list[str] | tuple[str, ...]) -> dict
                 **{v.arm: v.reason for v in refused if v.arm not in measured},
             },
         },
-        "cohort_band": {
-            "protein_residues": (
-                None if contract.protein_band is None else list(contract.protein_band)
-            ),
-            "qualifying_stage_protein_residues": list(QUALIFYING_PROTEIN_BAND),
-            "matches_qualifying_stage": (
-                None
-                if contract.protein_band is None
-                else contract.protein_band == QUALIFYING_PROTEIN_BAND
-            ),
-            "reason": contract.protein_band_reason or None,
-        },
+        "cohort_band": cohort_band_record(contract),
+    }
+
+
+def cohort_band_record(contract: StageContract) -> dict[str, Any]:
+    """Every protein band a stage draws on, beside the band it was qualified on.
+
+    ``protein_residue_bands`` is the complete answer and is the field to read.
+    ``protein_residues`` is the single band for the common case of a stage that
+    draws exactly one, kept because that is what a reader expects and what the
+    frozen artefacts of the single-band stages carry; it is ``null`` for a stage
+    that draws several, whose bands are then all in the list beside it.
+
+    ``matches_qualifying_stage`` is ``null`` if and only if the stage declares no
+    protein band at all, which is now a declared fact carrying a ``reason`` rather
+    than the absence of one. Otherwise it is true only when every band this stage
+    draws is the qualifying band -- a stage that draws a second cohort somewhere
+    else does not match it however its first band reads.
+    """
+
+    bands = contract.protein_bands
+    return {
+        "protein_residues": (
+            None if contract.protein_band is None else list(contract.protein_band)
+        ),
+        "protein_residue_bands": [
+            {
+                "argument_prefix": band.argument_prefix,
+                "protein_residues": list(band.residues),
+                "matches_qualifying_stage": band.matches_qualifying_stage,
+                "reason": band.reason or None,
+            }
+            for band in bands
+        ],
+        "qualifying_stage_protein_residues": list(QUALIFYING_PROTEIN_BAND),
+        "matches_qualifying_stage": (
+            None if not bands else all(band.matches_qualifying_stage for band in bands)
+        ),
+        "reason": contract.protein_band_reason or None,
     }
 
 
@@ -832,15 +1002,7 @@ def contract_payload() -> dict[str, Any]:
             "declared_arms": (
                 None if contract.declared_arms is None else list(contract.declared_arms)
             ),
-            "protein_residue_band": (
-                None if contract.protein_band is None else list(contract.protein_band)
-            ),
-            "protein_band_matches_qualifying_stage": (
-                None
-                if contract.protein_band is None
-                else contract.protein_band == QUALIFYING_PROTEIN_BAND
-            ),
-            "protein_band_reason": contract.protein_band_reason or None,
+            "cohort_band": cohort_band_record(contract),
             "eligible_arms": eligible,
             "refused_arms": {v.arm: v.reason for v in refused},
             "notes": contract.notes or None,

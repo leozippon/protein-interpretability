@@ -287,32 +287,88 @@ def test_above_threshold_is_each_head_s_own_score_not_the_set_s() -> None:
         assert {s.above_threshold for s in senders} == {expected}
 
 
+#: The head grid ``_scores`` describes. The agreement statistic's precondition is
+#: that every one of these heads carries a causal effect.
+_GRID = 6
+
+
 def _rows(effects: list[float]) -> list[dict[str, object]]:
     senders, _ = select_senders(_scores(), threshold=0.10, fallback_top_k=2, exhaustive=True)
     return [
-        {"label": s.label, "prefix_matching": s.prefix_matching, "effects": {"total": e}}
+        {
+            "label": s.label,
+            "prefix_matching": s.prefix_matching,
+            "effects": {"total": e},
+            # A denominator of 10 logits, so the two scales are distinguishable and
+            # a test cannot pass by reading the wrong one.
+            "effects_logits": {"total": e * 10.0},
+        }
         for s, e in zip(senders, effects, strict=True)
     ]
 
 
-def test_agreement_refuses_a_census_selected_sender_set() -> None:
-    """The negative path is the defect: a selective set yields 1.0 and means nothing."""
+def test_selection_refuses_to_truncate_an_exhaustive_set() -> None:
+    """``--exhaustive-senders --max-senders 20`` rebuilt the D2.b artefact exactly.
 
-    with pytest.raises(ValueError, match="exhaustive"):
-        causal_census_agreement(
-            _rows([0.5, 0.4, 0.3, 0.2, 0.1, 0.05]), threshold=0.10, exhaustive=False
+    Truncation keeps the highest-scoring heads, so the surviving set is
+    census-selected while still carrying the exhaustive label: every head is above
+    threshold, ``n_senders_below_threshold`` is 0, and the agreement statistic
+    computed on it is circular again with nothing in the record saying so.
+    """
+
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        select_senders(
+            _scores(), threshold=0.10, fallback_top_k=2, max_senders=2, exhaustive=True
         )
+    # Truncation of a *selective* set is untouched: it never claimed to be a grid.
+    _, provenance = select_senders(
+        _scores(), threshold=0.10, fallback_top_k=2, max_senders=1
+    )
+    assert provenance["truncated_to_max_senders"] is True
+
+
+def test_agreement_refuses_a_sender_set_smaller_than_the_head_grid() -> None:
+    """The negative path is the defect: a selective set yields 1.0 and means nothing.
+
+    The precondition is checked against the size of the head grid, which
+    ``select_senders`` publishes, rather than against a boolean the caller
+    supplies -- a boolean is only as true as the arguments beside it, and
+    ``max_senders`` used to falsify it silently.
+    """
+
+    rows = _rows([0.5, 0.4, 0.3, 0.2, 0.1, 0.05])
+    with pytest.raises(ValueError, match="every head in the grid"):
+        causal_census_agreement(rows[:4], threshold=0.10, n_heads_in_grid=_GRID)
+    _, provenance = select_senders(
+        _scores(), threshold=0.10, fallback_top_k=2, exhaustive=True
+    )
+    assert provenance["n_heads_in_grid"] == _GRID
+
+
+def test_agreement_refuses_per_head_records_without_the_logit_scale() -> None:
+    """A recovery-scale magnitude is not comparable across arms; the logit one is."""
+
+    rows = _rows([0.5, 0.4, 0.3, 0.2, 0.1, 0.05])
+    for row in rows:
+        del row["effects_logits"]
+    with pytest.raises(ValueError, match="effects_logits"):
+        causal_census_agreement(rows, threshold=0.10, n_heads_in_grid=_GRID)
 
 
 def test_agreement_surfaces_a_head_the_census_ranks_below_threshold() -> None:
     # Head ranked last by the census carries the largest causal effect.
     rows = _rows([0.01, 0.02, 0.03, 0.04, 0.05, 0.90])
     lowest = rows[-1]["label"]
-    report = causal_census_agreement(rows, threshold=0.10, exhaustive=True)
+    report = causal_census_agreement(rows, threshold=0.10, n_heads_in_grid=_GRID)
 
     assert report["n_below_census_threshold"] == 3
-    assert report["strongest_head_below_census_threshold"]["label"] == lowest
-    assert report["strongest_head_below_census_threshold"]["causal_rank"] == 0
+    missed = report["strongest_head_below_census_threshold"]
+    assert missed["label"] == lowest
+    assert missed["causal_rank"] == 0
+    # Both scales, so a cross-arm quote cannot be built on the normalised one
+    # without the denominator that produced it.
+    assert missed["effect_total"] == pytest.approx(0.90)
+    assert missed["effect_total_logits"] == pytest.approx(9.0)
     top_5 = report["top_k"][repr(5)]
     assert lowest in top_5["causal_top_heads"]
     assert lowest in top_5["causal_top_heads_below_census_threshold"]
@@ -322,19 +378,49 @@ def test_agreement_surfaces_a_head_the_census_ranks_below_threshold() -> None:
 
 def test_agreement_reports_a_swept_k_and_a_threshold_free_primary() -> None:
     rows = _rows([0.60, 0.50, 0.40, 0.30, 0.20, 0.10])  # causal order == census order
-    report = causal_census_agreement(rows, threshold=0.10, exhaustive=True)
+    report = causal_census_agreement(rows, threshold=0.10, n_heads_in_grid=_GRID)
 
     # Standing rule 8: the primary statistic needs no cut.
     assert report["spearman_census_vs_causal_magnitude"]["rho"] == pytest.approx(1.0)
-    assert [c["k"] for c in report["top_k"].values()] == [5, 10, 20, 40]
+    # 32 is in the ladder because EXP-R2-071 quoted its rank split at that cut.
+    assert [c["k"] for c in report["top_k"].values()] == [5, 10, 20, 32, 40]
     for cut in report["top_k"].values():
         assert cut["jaccard"] == pytest.approx(1.0)
         assert cut["k_effective"] <= len(rows)
         assert cut["truncated_to_head_count"] == (cut["k"] > len(rows))
 
 
+def test_the_rank_split_is_reported_at_every_cut_and_withheld_when_undefined() -> None:
+    """The retraction of EXP-R2-071's first reading turns on this split.
+
+    An all-grid rho near zero is compatible with the census ordering the top of
+    the grid well and the bulk not at all, which is what the protein arms turned
+    out to do -- so the split is a published statistic, not a diagnostic run once
+    in a script that no longer exists.
+    """
+
+    # Census rank and causal rank agree on the top three and reverse below them.
+    rows = _rows([0.60, 0.50, 0.40, 0.01, 0.02, 0.03])
+    report = causal_census_agreement(rows, threshold=0.10, n_heads_in_grid=_GRID)
+
+    at_five = report["top_k"][repr(5)]
+    assert at_five["spearman_top_k"]["n"] == 5
+    assert at_five["n_remaining"] == 1
+    # One head left over: no ranking exists, and none is invented.
+    assert at_five["spearman_remaining"]["rho"] is None
+    assert "fewer than three heads" in at_five["spearman_remaining"]["withheld_reason"]
+
+    # At a cut the grid can support, both halves are real and they disagree.
+    at_three = causal_census_agreement(
+        rows, threshold=0.10, n_heads_in_grid=_GRID, top_k=(3,)
+    )["top_k"][repr(3)]
+    assert at_three["spearman_top_k"]["rho"] == pytest.approx(1.0)
+    assert at_three["spearman_remaining"]["rho"] == pytest.approx(-1.0)
+    assert report["rank_split"]["split_by"] == "census_rank"
+
+
 def test_agreement_rejects_duplicate_head_labels() -> None:
     rows = _rows([0.1] * 6)
     rows[1]["label"] = rows[0]["label"]
     with pytest.raises(ValueError, match="duplicate head label"):
-        causal_census_agreement(rows, threshold=0.10, exhaustive=True)
+        causal_census_agreement(rows, threshold=0.10, n_heads_in_grid=_GRID)

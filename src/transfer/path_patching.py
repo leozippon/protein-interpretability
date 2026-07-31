@@ -232,6 +232,16 @@ def select_senders(
     did not select, and that requires patching heads it scored below threshold.
     This is a far more expensive measurement -- every head rather than the tail --
     and it is opt-in for that reason, not a default.
+
+    ``max_senders`` is refused together with ``exhaustive``, because the two
+    compose into exactly the artefact the exhaustive criterion was written to
+    make impossible.  Truncation keeps the highest-scoring heads, so an
+    exhaustive set cut to its first ``max_senders`` rows is a census-selected set
+    carrying the ``exhaustive_all_heads`` label: every head still in it is one the
+    census ranked at the top, the causal top-k is drawn from the census's own
+    choice again, and ``n_senders_below_threshold`` comes back 0 with nothing in
+    the provenance record contradicting the criterion.  That is the D2.b
+    circularity restored under a different flag (Appendix B rule 24).
     """
 
     if prefix_matching.ndim != 2:
@@ -242,6 +252,14 @@ def select_senders(
         raise ValueError("fallback_top_k must be positive")
     if max_senders is not None and max_senders < 1:
         raise ValueError("max_senders must be positive when given")
+    if max_senders is not None and exhaustive:
+        raise ValueError(
+            "max_senders and exhaustive are mutually exclusive: truncation keeps "
+            "the highest-scoring heads, so an exhaustive set cut to max_senders "
+            "rows is a census-selected set wearing the exhaustive label, and the "
+            "causal/census agreement computed on it is circular again (audit "
+            "D2.b, Appendix B rule 24)"
+        )
 
     order = np.argsort(prefix_matching, axis=None)[::-1]
     ranked = [
@@ -284,6 +302,11 @@ def select_senders(
         raise RuntimeError("sender selection produced no heads")
     provenance = {
         "criterion": criterion,
+        # The size of the head grid this set was drawn from. Published because
+        # ``causal_census_agreement`` needs it: its precondition is that every
+        # head in the grid carries a causal effect, and that is a fact about the
+        # data, not a flag the caller asserts.
+        "n_heads_in_grid": int(prefix_matching.size),
         "threshold": float(threshold),
         "n_above_threshold": n_above,
         "n_senders": len(senders),
@@ -299,20 +322,60 @@ def select_senders(
     return senders, provenance
 
 
-def sender_set_overlap(left: Sequence[SenderHead], right: Sequence[SenderHead]) -> dict[str, Any]:
-    """How much two sender sets agree, so stability is shown rather than assumed."""
+#: The selection criterion under which two sender sets carry no stability
+#: information, because both are the whole head grid and their overlap is 1.0
+#: whatever the census did.
+EXHAUSTIVE_CRITERION = "exhaustive_all_heads"
 
+
+def sender_set_overlap(
+    left: Sequence[SenderHead],
+    right: Sequence[SenderHead],
+    *,
+    left_criterion: str,
+    right_criterion: str,
+) -> dict[str, Any]:
+    """How much two sender sets agree, and whether the comparison could have failed.
+
+    Under the two selective criteria this is a real check: the exact and the
+    approximate census pick heads independently, and a low Jaccard would mean the
+    sender set is a property of the repeat criterion rather than of the model.
+
+    Under ``exhaustive_all_heads`` it is not a check at all.  Both sets are the
+    entire head grid, so the intersection is the union and the Jaccard is 1.0 by
+    construction -- which is what all six arms of EXP-R2-071 published, under a
+    docstring that said "stability is shown rather than assumed".  It was
+    assumed.  The criteria are therefore taken as arguments and the triviality is
+    stated in the record rather than left for a reader to infer from a number
+    that cannot come out any other way (Appendix B rule 24).
+    """
+
+    for label, criterion in (("left", left_criterion), ("right", right_criterion)):
+        if not criterion:
+            raise ValueError(f"the {label} sender set must declare its criterion")
     a = {(s.layer, s.head) for s in left}
     b = {(s.layer, s.head) for s in right}
     union = a | b
     if not union:
         raise ValueError("cannot compare two empty sender sets")
     top = 4
+    trivial = left_criterion == right_criterion == EXHAUSTIVE_CRITERION
     return {
         "n_left": len(a),
         "n_right": len(b),
         "n_intersection": len(a & b),
         "jaccard": _finite(len(a & b) / len(union), "sender jaccard"),
+        "left_criterion": str(left_criterion),
+        "right_criterion": str(right_criterion),
+        "comparison_is_trivial": bool(trivial),
+        "stability_verdict": (
+            "not a stability check: both sets are the whole head grid under the "
+            "exhaustive criterion, so the Jaccard is 1.0 whatever the two censuses "
+            "did and no value other than 1.0 is reachable"
+            if trivial
+            else "the two censuses selected these sets independently, so a Jaccard "
+            "below 1.0 was reachable and the value carries information"
+        ),
         "left_top_heads": [s.label for s in list(left)[:top]],
         "right_top_heads": [s.label for s in list(right)[:top]],
         "top_heads_identical_as_set": {s.label for s in list(left)[:top]}
@@ -323,54 +386,138 @@ def sender_set_overlap(left: Sequence[SenderHead], right: Sequence[SenderHead]) 
 #: Top-k cuts the causal/census agreement is reported at. Audit item D2.b named
 #: k=20; it is swept rather than reported alone because a single k is a threshold
 #: and standing rule 8 asks for the ordering to be shown invariant across one.
-CAUSAL_AGREEMENT_TOP_K = (5, 10, 20, 40)
+#:
+#: 32 is in the ladder because EXP-R2-071's retraction of its own first reading
+#: turns on the rank correlation split at k=32, and a published number that no
+#: versioned code path produces is the defect that retraction was written to
+#: correct. One ladder serves both the Jaccard and the rank split, so the cut a
+#: number is quoted at cannot drift between them.
+CAUSAL_AGREEMENT_TOP_K = (5, 10, 20, 32, 40)
+
+
+def _spearman(
+    census_score: np.ndarray, magnitude: np.ndarray, label: str
+) -> dict[str, Any]:
+    """Spearman rho, or the reason there is none, in one shape.
+
+    Two points always correlate at +/-1 and a constant vector has no ranking at
+    all; ``scipy`` answers the first with 1.0 and the second with NaN, and both
+    would be published as a correlation.  Both are reachable here: splitting the
+    grid by census rank leaves a remainder that a large k can empty, and an arm
+    whose census scores are tied across the tail has a constant side.
+    """
+
+    if census_score.size != magnitude.size:
+        raise ValueError("census scores and causal magnitudes do not align")
+    if census_score.size < 3:
+        return {
+            "rho": None,
+            "p_value": None,
+            "n": int(census_score.size),
+            "withheld_reason": (
+                "fewer than three heads: a rank correlation over two points is "
+                "+1 or -1 by construction and over fewer is undefined"
+            ),
+        }
+    if float(np.ptp(census_score)) == 0.0 or float(np.ptp(magnitude)) == 0.0:
+        return {
+            "rho": None,
+            "p_value": None,
+            "n": int(census_score.size),
+            "withheld_reason": (
+                "one side is constant across these heads, so it carries no "
+                "ordering for the other to agree with"
+            ),
+        }
+    rho, p_value = stats.spearmanr(census_score, magnitude)
+    return {
+        "rho": _finite(float(rho), f"{label} rho"),
+        "p_value": _finite(float(p_value), f"{label} p"),
+        "n": int(census_score.size),
+    }
 
 
 def causal_census_agreement(
     per_head: Sequence[Mapping[str, Any]],
     *,
     threshold: float,
-    exhaustive: bool,
+    n_heads_in_grid: int,
     effect_key: str = "total",
     top_k: Sequence[int] = CAUSAL_AGREEMENT_TOP_K,
 ) -> dict[str, Any]:
     """Does the causal ranking recover the census ranking, and what does it add?
 
-    This refuses a non-exhaustive sender set, and the refusal is the point.  Audit
-    item D2.b asked for a top-20 Jaccard between the causal ranking and the
-    prefix-matching census, and the answer came back 1.0 on all four arms -- not
-    because the two agree, but because the sender set *was* the census-selected
-    set, so both rankings ranked the same heads and no head the census rejected
-    could appear.  Computing this statistic on a selective set produces a number
-    that looks like agreement and measures nothing.  The precondition is therefore
-    enforced here rather than documented, because the circularity is invisible in
-    the output: a Jaccard of 1.0 is exactly what a real agreement would also give.
+    This refuses a sender set smaller than the head grid, and the refusal is the
+    point.  Audit item D2.b asked for a top-20 Jaccard between the causal ranking
+    and the prefix-matching census, and the answer came back 1.0 on all four arms
+    -- not because the two agree, but because the sender set *was* the
+    census-selected set, so both rankings ranked the same heads and no head the
+    census rejected could appear.  Computing this statistic on a selective set
+    produces a number that looks like agreement and measures nothing.  The
+    precondition is enforced here rather than documented, because the circularity
+    is invisible in the output: a Jaccard of 1.0 is exactly what a real agreement
+    would also give.
+
+    **The precondition is derived from the data, not accepted from the caller.**
+    It used to be a boolean the caller passed, and a boolean is only as true as
+    the argument beside it: ``select_senders(..., max_senders=20,
+    exhaustive=True)`` truncated the grid to the twenty highest-scoring heads,
+    left ``exhaustive`` set, and this function then certified a top-20 Jaccard of
+    1.0 over a census-selected set with the guard silent -- bit for bit the D2.b
+    artefact.  ``n_heads_in_grid`` is a fact about the model, published by
+    ``select_senders`` in its provenance record, and the check is that every head
+    in that grid carries a causal effect (Appendix B rule 24).
 
     The primary statistic is the rank correlation over **all** heads, which needs
     no cut.  The top-k agreement is reported beside it, swept over k, because that
-    is the form the gate was written in.
+    is the form the gate was written in, and at each k the same rank correlation
+    is reported *split* by census rank: over the top-k heads and over the
+    remainder.  The split is what EXP-R2-071 had to retract its first reading on
+    -- an all-grid rho near zero on the protein arms turned out to be an unordered
+    bulk sitting under a top-32 rho of +0.79 to +0.81, higher than either text
+    control -- and it had no implementation in this repository until now.
     """
 
-    if not exhaustive:
-        raise ValueError(
-            "causal/census agreement requires an exhaustive sender set. On a set "
-            "selected by the census itself, every head in the causal ranking is a "
-            "head the census already chose, so the top-k Jaccard is 1.0 by "
-            "construction and the census's misses cannot appear (audit D2.b)"
-        )
+    if n_heads_in_grid < 1:
+        raise ValueError("n_heads_in_grid must be positive")
     if not per_head:
         raise ValueError("no per-head results to compare against the census")
+    if len(per_head) != n_heads_in_grid:
+        raise ValueError(
+            "causal/census agreement requires a causal effect for every head in "
+            f"the grid: {len(per_head)} of {n_heads_in_grid} heads were patched. "
+            "On any smaller set the heads present are the ones a census-derived "
+            "rule already chose, so the top-k Jaccard is 1.0 by construction and "
+            "the census's misses cannot appear (audit D2.b, Appendix B rule 24)"
+        )
     if not top_k or any(k < 1 for k in top_k):
         raise ValueError("top_k cuts must all be positive")
 
     labels = [str(row["label"]) for row in per_head]
     if len(set(labels)) != len(labels):
         raise ValueError("per-head records contain a duplicate head label")
+    n_without_logits = sum(1 for row in per_head if "effects_logits" not in row)
+    if n_without_logits:
+        raise ValueError(
+            "every per-head record must carry effects_logits: the recovery-scale "
+            "effect is divided by that arm's own L_clean - L_corrupt, whose mean "
+            "differs across this panel by more than an order of magnitude, so a "
+            "magnitude read off it is not a magnitude another arm can be compared "
+            f"against. {n_without_logits} of {len(per_head)} records carry only "
+            "effects"
+        )
     census_score = np.asarray(
         [float(row["prefix_matching"]) for row in per_head], dtype=np.float64
     )
     effect = np.asarray([float(row["effects"][effect_key]) for row in per_head], dtype=np.float64)
-    if not np.isfinite(census_score).all() or not np.isfinite(effect).all():
+    effect_logits = np.asarray(
+        [float(row["effects_logits"][effect_key]) for row in per_head], dtype=np.float64
+    )
+    if (
+        not np.isfinite(census_score).all()
+        or not np.isfinite(effect).all()
+        or not np.isfinite(effect_logits).all()
+    ):
         raise ValueError("census scores and causal effects must all be finite")
     magnitude = np.abs(effect)
 
@@ -378,11 +525,12 @@ def causal_census_agreement(
     census_order = np.argsort(-census_score, kind="stable")
     causal_order = np.argsort(-magnitude, kind="stable")
 
-    rho, p_value = stats.spearmanr(census_score, magnitude)
     cuts: dict[str, Any] = {}
     for k in top_k:
         cut = min(int(k), len(per_head))
-        census_top = {labels[i] for i in census_order[:cut]}
+        top_index = census_order[:cut]
+        remaining_index = census_order[cut:]
+        census_top = {labels[i] for i in top_index}
         causal_top = [labels[i] for i in causal_order[:cut]]
         missed = [labels[i] for i in causal_order[:cut] if not above[i]]
         union = census_top | set(causal_top)
@@ -395,6 +543,18 @@ def causal_census_agreement(
             "causal_top_heads": causal_top,
             "n_causal_top_below_census_threshold": len(missed),
             "causal_top_heads_below_census_threshold": missed,
+            # Split by *census* rank, not by causal rank: the question is whether
+            # the census orders the heads it itself ranks highest, and splitting on
+            # the causal magnitude would condition on the outcome.
+            "n_remaining": int(remaining_index.size),
+            "spearman_top_k": _spearman(
+                census_score[top_index], magnitude[top_index], f"top-{cut}"
+            ),
+            "spearman_remaining": _spearman(
+                census_score[remaining_index],
+                magnitude[remaining_index],
+                f"below-top-{cut}",
+            ),
         }
     if len(cuts) != len(top_k):
         raise ValueError("two top-k cuts collided on one key")
@@ -407,6 +567,13 @@ def causal_census_agreement(
                 "causal_rank": rank,
                 "prefix_matching": _finite(float(census_score[index]), "missed head score"),
                 f"effect_{effect_key}": _finite(float(effect[index]), "missed head effect"),
+                # The figure a cross-arm sentence has to be built on. EXP-R2-071
+                # ranked this head's magnitude across four arms on the recovery
+                # scale, where each arm divides by its own denominator; on the
+                # logit scale the ordering it reported reverses.
+                f"effect_{effect_key}_logits": _finite(
+                    float(effect_logits[index]), "missed head logit effect"
+                ),
             }
             break
 
@@ -414,15 +581,35 @@ def causal_census_agreement(
         "effect_key": effect_key,
         "census_threshold": float(threshold),
         "n_heads": len(per_head),
+        "n_heads_in_grid": int(n_heads_in_grid),
         "n_above_census_threshold": int(above.sum()),
         "n_below_census_threshold": int((~above).sum()),
-        "spearman_census_vs_causal_magnitude": {
-            "rho": _finite(float(rho), "causal spearman rho"),
-            "p_value": _finite(float(p_value), "causal spearman p"),
-            "n": len(per_head),
+        "spearman_census_vs_causal_magnitude": _spearman(
+            census_score, magnitude, "all heads"
+        ),
+        "rank_split": {
+            "split_by": "census_rank",
+            "cuts": [int(k) for k in top_k],
+            "note": (
+                "top_k[k].spearman_top_k and top_k[k].spearman_remaining are the "
+                "all-head rank correlation restricted to the k heads the census "
+                "scores highest and to the rest of the grid. The split is by census "
+                "rank rather than by causal magnitude because splitting on the "
+                "outcome would select the heads whose effect is large. It is swept "
+                "over the same ladder as the Jaccard (Appendix B rule 17)"
+            ),
         },
         "top_k": cuts,
         "strongest_head_below_census_threshold": strongest_missed,
+        "effect_scale_note": (
+            f"effect_{effect_key} is on the recovery scale: each case is divided by "
+            "its own L_clean - L_corrupt before averaging, so the scale is a "
+            f"property of this arm and this case set. effect_{effect_key}_logits is "
+            "the same quantity un-normalised. Only the logit figure is comparable "
+            "across arms; the eligible denominators of this panel span more than an "
+            "order of magnitude and a magnitude ordering taken on the recovery scale "
+            "can reverse on the logit scale"
+        ),
     }
 
 
@@ -1126,10 +1313,27 @@ class PathPatcher:
         }
 
     @torch.no_grad()
-    def sender_recoveries(self, sender: SenderHead) -> dict[str, dict[str, float]]:
-        """Mean recovered logit difference per pathway, over eligible cases."""
+    def sender_recoveries(self, sender: SenderHead) -> dict[str, dict[str, Any]]:
+        """Mean recovered logit difference per pathway, on both scales.
+
+        ``mean`` is the recovery: each case's restored logit difference divided by
+        that case's own ``L_clean - L_corrupt``. ``mean_logits`` is the numerator
+        of that ratio, averaged over the same eligible cases and nothing else.
+
+        The second one is published because the first is not comparable across
+        arms and reads as though it were. The denominator is a property of the arm
+        and the case set -- mean eligible denominators on this panel run from 0.76
+        logits on ZymCTRL to 24.10 on gpt2-large, a factor of 32 -- so a head
+        carrying recovery 0.30 on the arm with the small denominator is a *weaker*
+        write to the logits than a head carrying 0.02 on the arm with the large
+        one. EXP-R2-071 published exactly that comparison in the wrong direction.
+        The numerator was already computed here and thrown away.
+        """
 
         collected: dict[str, list[torch.Tensor]] = {pathway: [] for pathway in PATHWAYS}
+        collected_logits: dict[str, list[torch.Tensor]] = {
+            pathway: [] for pathway in PATHWAYS
+        }
         keeps: list[torch.Tensor] = []
         for batch in self.batches:
             keeps.append(batch.eligible)
@@ -1142,11 +1346,13 @@ class PathPatcher:
                     freeze_mlp_from=mlp_from,
                 )
                 collected[pathway].append(self._recovery(metric, batch))
+                collected_logits[pathway].append(metric - batch.metric_corrupt)
         keep = torch.cat(keeps)
         probes = torch.cat([batch.probe_index for batch in self.batches])[keep]
-        result: dict[str, dict[str, float]] = {}
+        result: dict[str, dict[str, Any]] = {}
         for pathway, parts in collected.items():
             values = torch.cat(parts)[keep]
+            logits = torch.cat(collected_logits[pathway])[keep]
             # ``build_path_cases`` draws several cases from one probe, and those
             # cases are nested prefixes of one protein sharing nearly their whole
             # context. Dividing by sqrt(n_cases) treats them as independent and
@@ -1163,11 +1369,23 @@ class PathPatcher:
             result[pathway] = {
                 "mean": _finite(float(values.mean()), f"{pathway} recovery"),
                 "mean_cluster_unit": "case",
-                "sem": _finite(
-                    float(values.std() / math.sqrt(values.numel()))
+                # The same mean before the per-case denominator is applied. Not a
+                # rescaling of ``mean`` by one number: each case carries its own
+                # denominator, so the two scales can order heads differently.
+                "mean_logits": _finite(
+                    float(logits.mean()), f"{pathway} logit effect"
+                ),
+                # ``None``, not 0.0. Nine lines below, ``_probe_clustered_sem``
+                # returns None in the same situation and says why: a single
+                # observation supports no interval and a fabricated zero reads as
+                # perfect precision. This branch published the zero.
+                "sem": (
+                    _finite(
+                        float(values.std() / math.sqrt(values.numel())),
+                        f"{pathway} sem",
+                    )
                     if values.numel() > 1
-                    else 0.0,
-                    f"{pathway} sem",
+                    else None
                 ),
                 "sem_cluster_unit": "case",
                 "median": _finite(float(values.median()), f"{pathway} median"),
@@ -1661,13 +1879,30 @@ def _direct_frozen_everywhere(
 # --------------------------------------------------------------- summaries
 
 
-def sender_effects(recoveries: Mapping[str, Mapping[str, float]]) -> dict[str, float]:
-    """The five path quantities one sender head implies, all on the recovery scale."""
+#: The two scales :meth:`PathPatcher.sender_recoveries` publishes a mean on.
+#: ``mean`` is the recovery, normalised per case by that case's own
+#: ``L_clean - L_corrupt``; ``mean_logits`` is the un-normalised numerator.
+EFFECT_SCALE_KEYS: tuple[str, ...] = ("mean", "mean_logits")
 
-    direct = float(recoveries["direct"]["mean"])
-    via_mlp = float(recoveries["via_mlp"]["mean"])
-    via_attn = float(recoveries["via_attn"]["mean"])
-    total = float(recoveries["total"]["mean"])
+
+def sender_effects(
+    recoveries: Mapping[str, Mapping[str, Any]], *, key: str = "mean"
+) -> dict[str, float]:
+    """The five path quantities one sender head implies, on one declared scale.
+
+    ``key="mean"`` gives the recovery scale, which is what every within-arm
+    statement is made on.  ``key="mean_logits"`` gives the same decomposition in
+    logits, which is the only scale on which two arms' magnitudes are commensurate
+    -- the recovery divides by a denominator that is a property of the arm.  The
+    decomposition is linear in the pathway means, so it holds identically on both.
+    """
+
+    if key not in EFFECT_SCALE_KEYS:
+        raise ValueError(f"unknown effect scale {key!r}; scales are {list(EFFECT_SCALE_KEYS)}")
+    direct = float(recoveries["direct"][key])
+    via_mlp = float(recoveries["via_mlp"][key])
+    via_attn = float(recoveries["via_attn"][key])
+    total = float(recoveries["total"][key])
     mlp_mediated = via_mlp - direct
     attn_mediated = via_attn - direct
     return {
@@ -1804,12 +2039,293 @@ def summarise_senders(
     }
 
 
+# ------------------------------------------- concentration and reliability
+#
+# EXP-R2-071's two structural readings -- that protein arms concentrate causal
+# effect into far fewer heads than text does, and that their low all-grid rank
+# correlation is not attenuation from noisy estimates -- were computed by
+# unversioned code that no longer exists. Neither statistic had an implementation
+# anywhere in this repository, so neither could be recomputed, checked against a
+# new artefact, or tested. One of the published numbers does not reproduce. The
+# functions below are those statistics, defined once and imported wherever they
+# are quoted (Appendix B rule 12).
+
+
+def _heads_carrying_half(magnitude: np.ndarray) -> int:
+    """How many of the largest heads it takes to carry half the absolute effect."""
+
+    ordered = np.sort(magnitude)[::-1]
+    total = float(ordered.sum())
+    cumulative = np.cumsum(ordered)
+    return int(np.searchsorted(cumulative, 0.5 * total) + 1)
+
+
+def gini(values: Sequence[float] | np.ndarray, *, label: str = "effect") -> float:
+    """Gini coefficient of ``|values|``: 0 for an even grid, near 1 for one head.
+
+    Head-count free, which is the requirement.  Head counts on this panel run
+    from 144 to 720 and the count is itself a disputed quantity, so a top-k share
+    is not a comparable statistic -- "the top 1% of heads" is one head on GPT-2
+    and seven on ProtGPT2 (Appendix B rule 21).  The Gini is invariant both to
+    replicating the grid and to rescaling every head by one positive constant.
+
+    An all-zero grid raises rather than returning 0: zero is the value a
+    *perfectly even* grid takes, so returning it for a grid with no effect at all
+    would publish the strongest possible statement about a measurement that
+    found nothing.
+    """
+
+    x = np.sort(np.abs(np.asarray(values, dtype=np.float64)))
+    if x.size < 2:
+        raise ValueError(f"a Gini over fewer than two {label} values is not defined")
+    if not np.isfinite(x).all():
+        raise ValueError(f"{label} values contain non-finite entries")
+    total = float(x.sum())
+    if total <= 0.0:
+        raise ValueError(
+            f"every {label} magnitude is zero, so there is no distribution to "
+            "concentrate; 0.0 is what a perfectly even grid returns and would be "
+            "read as one"
+        )
+    index = np.arange(1, x.size + 1, dtype=np.float64)
+    return _finite(
+        2.0 * float((index * x).sum()) / (x.size * total) - (x.size + 1) / x.size,
+        f"{label} gini",
+    )
+
+
+def share_of_grid_carrying_half_effect(
+    values: Sequence[float] | np.ndarray, *, label: str = "effect"
+) -> float:
+    """The fraction of the head grid that carries half the total absolute effect.
+
+    A proportion of the grid rather than a count, so it does not move with the
+    head count; the companion to :func:`gini` under Appendix B rule 21, and the
+    more readable of the two.
+    """
+
+    magnitude = np.abs(np.asarray(values, dtype=np.float64))
+    if magnitude.size < 2:
+        raise ValueError(f"a share of grid over fewer than two {label} values is not defined")
+    if not np.isfinite(magnitude).all():
+        raise ValueError(f"{label} values contain non-finite entries")
+    if float(magnitude.sum()) <= 0.0:
+        raise ValueError(
+            f"every {label} magnitude is zero, so no head carries half of nothing"
+        )
+    return _finite(
+        _heads_carrying_half(magnitude) / magnitude.size, f"{label} share of grid"
+    )
+
+
+def effect_concentration(
+    per_head: Sequence[Mapping[str, Any]], *, effect_key: str = "total"
+) -> dict[str, Any]:
+    """How unevenly one condition spreads its causal effect over the head grid."""
+
+    if not per_head:
+        raise ValueError("no per-head results to measure concentration over")
+    effect = np.asarray(
+        [float(row["effects"][effect_key]) for row in per_head], dtype=np.float64
+    )
+    magnitude = np.abs(effect)
+    n_half = _heads_carrying_half(magnitude) if float(magnitude.sum()) > 0.0 else 0
+    return {
+        "effect_key": effect_key,
+        "n_heads": int(effect.size),
+        "gini": gini(effect, label=f"{effect_key} effect"),
+        "share_of_grid_carrying_half_effect": share_of_grid_carrying_half_effect(
+            effect, label=f"{effect_key} effect"
+        ),
+        "n_heads_carrying_half_effect": int(n_half),
+        "total_absolute_effect": _finite(float(magnitude.sum()), "total absolute effect"),
+        "n_heads_negative_effect": int((effect < 0.0).sum()),
+        "scale_note": (
+            "both statistics are computed on |effect| over the whole grid and are "
+            "invariant to replicating it, so two arms with different head counts "
+            "are comparable (Appendix B rule 21). They are computed on the recovery "
+            "scale. A single positive rescaling of every head would leave both "
+            "unchanged, but the recovery scale divides each case by its own "
+            "denominator rather than the arm by one constant, so the two scales are "
+            "not guaranteed to agree exactly; the logit-scale per-head figures are "
+            "in effects_logits"
+        ),
+        "population_note": (
+            "this is the concentration of the sender set that was patched. It is a "
+            "statement about the head grid only when that set is the head grid, "
+            "which is the exhaustive criterion"
+        ),
+    }
+
+
+#: The two standard errors :meth:`PathPatcher.sender_recoveries` publishes, keyed
+#: by the sampling unit each is taken over.
+RELIABILITY_SEM_KEYS: dict[str, str] = {"probe": "sem_probe_clustered", "case": "sem"}
+
+#: Which of them a reliability figure should be read from. ``_Batch`` declares the
+#: probe record as this design's sampling unit -- several cases are drawn from one
+#: probe and are nested prefixes of one record sharing nearly their whole context
+#: -- so the case-level standard error understates the error variance and the
+#: reliability built on it overstates how well the heads are ordered.
+PRIMARY_SEM_CLUSTER_UNIT = "probe"
+
+
+def head_effect_reliability(
+    per_head: Sequence[Mapping[str, Any]], *, pathway: str = "total"
+) -> dict[str, Any]:
+    """How much of the head-to-head spread in causal effect is signal.
+
+    Appendix B rule 25: a low census-to-causal rank correlation is evidence of
+    absent signal only once the per-head estimates are shown reliable enough to
+    rank.  Classical reliability answers that from two quantities the artefact
+    already carries -- the variance of the per-head means, and each head's own
+    standard error:
+
+        reliability = (observed variance - mean error variance) / observed variance
+
+    **Which standard error is not a free choice.** This module declares the probe
+    record as the sampling unit and publishes both a case-level and a
+    probe-clustered standard error.  EXP-R2-071's published range, 0.916 to 0.991
+    across six arms, is the case-level one.  On the clustered standard error the
+    module itself calls correct, the same six arms give 0.834 to 0.976 on the
+    exact-repeat case set, and as low as 0.19 on one arm's approximate-repeat set
+    -- which is not a grid that can be ranked.  Both are returned, each labelled
+    with its unit, so the difference is a visible property of the artefact rather
+    than a choice made in a script that no longer exists.
+
+    **Two scales, because the ranking statistic is the magnitude.**
+    ``reliability_signed_effect`` is the exact quantity: the standard error is the
+    standard error of the signed mean, so observed variance decomposes into true
+    plus error variance on that scale and nowhere else.
+    ``reliability_magnitude_ranking`` applies the same formula to ``|effect|``,
+    which is what the census-to-causal correlation actually ranks and what
+    EXP-R2-071 quoted; folding the estimate at zero makes its error distribution
+    non-normal, so that figure is an approximation and is labelled as one.
+    """
+
+    if pathway not in PATHWAYS:
+        raise ValueError(f"unknown pathway {pathway!r}; pathways are {list(PATHWAYS)}")
+    if len(per_head) < 2:
+        raise ValueError("reliability needs at least two heads to have a spread")
+    effect = np.asarray(
+        [float(row["recovery"][pathway]["mean"]) for row in per_head], dtype=np.float64
+    )
+    if not np.isfinite(effect).all():
+        raise ValueError("per-head effects contain non-finite values")
+
+    by_unit: dict[str, Any] = {}
+    for unit, sem_key in RELIABILITY_SEM_KEYS.items():
+        raw = [row["recovery"][pathway][sem_key] for row in per_head]
+        n_missing = sum(1 for value in raw if value is None)
+        record: dict[str, Any] = {
+            "sem_cluster_unit": unit,
+            "sem_key": sem_key,
+            "n_heads": len(per_head),
+            "n_heads_without_a_standard_error": n_missing,
+        }
+        if n_missing:
+            # Not "average over the heads that have one". The observed variance is
+            # taken over every head; an error variance taken over a subset is an
+            # average over a different population, and the ratio of the two is not
+            # a reliability.
+            record.update(
+                {
+                    "reliability_signed_effect": None,
+                    "reliability_magnitude_ranking": None,
+                    "signal_to_noise_mean_effect": None,
+                    "withheld_reason": (
+                        f"{n_missing} of {len(per_head)} heads carry no {sem_key}, so "
+                        "the mean error variance would be an average over a different "
+                        "head population than the observed variance"
+                    ),
+                }
+            )
+            by_unit[unit] = record
+            continue
+        sem = np.asarray([float(value) for value in raw], dtype=np.float64)
+        if not np.isfinite(sem).all() or bool((sem < 0.0).any()):
+            raise ValueError(f"{sem_key} values must be finite and non-negative")
+        error_variance = float(np.mean(sem**2))
+        record["mean_standard_error"] = _finite(float(sem.mean()), "mean standard error")
+        record["mean_error_variance"] = _finite(error_variance, "mean error variance")
+        for scale, values in (
+            ("signed_effect", effect),
+            ("magnitude_ranking", np.abs(effect)),
+        ):
+            observed = float(np.var(values, ddof=1))
+            record[f"observed_variance_{scale}"] = _finite(observed, f"{scale} variance")
+            record[f"reliability_{scale}"] = (
+                _finite((observed - error_variance) / observed, f"{scale} reliability")
+                if observed > 0.0
+                else None
+            )
+        record["signal_to_noise_mean_effect"] = (
+            _finite(float(np.abs(effect).mean() / sem.mean()), "effect snr")
+            if float(sem.mean()) > 0.0
+            else None
+        )
+        by_unit[unit] = record
+
+    return {
+        "pathway": pathway,
+        "primary_sem_cluster_unit": PRIMARY_SEM_CLUSTER_UNIT,
+        "by_sem_cluster_unit": by_unit,
+        "estimator": (
+            "(variance of the per-head means - mean of the squared per-head "
+            "standard errors) / variance of the per-head means"
+        ),
+        "unit_note": (
+            "read by_sem_cluster_unit.probe. The case-level figure treats several "
+            "nested prefixes of one protein as independent observations, so it "
+            "understates the error variance and overstates the reliability; it is "
+            "published beside it because it is the figure EXP-R2-071 quoted"
+        ),
+        "scale_note": (
+            "reliability_signed_effect is exact: the standard error belongs to the "
+            "signed mean. reliability_magnitude_ranking applies the same formula to "
+            "|effect|, which is the quantity the census-to-causal correlation ranks, "
+            "and is an approximation because folding at zero makes the error "
+            "distribution non-normal"
+        ),
+    }
+
+
+#: What the resampled head population *is*, per sender criterion. The caveat used
+#: to be one fixed string describing a threshold-selected population, which is
+#: false under ``exhaustive_all_heads``: there the population is the arm's entire
+#: head grid, most of it scored at zero by the census. A provenance string that is
+#: wrong for the criterion the run used is worse than none, because it reads as a
+#: checked fact.
+RESAMPLED_POPULATION: dict[str, str] = {
+    "prefix_matching_above_threshold": (
+        "every head this arm scores at or above the prefix-matching threshold: its "
+        "whole population under that criterion rather than a sample of it, and "
+        "selected by a threshold on the census score, so the heads are not "
+        "exchangeable either"
+    ),
+    "top_k_no_head_above_threshold": (
+        "no head of this arm reaches the prefix-matching threshold, so the "
+        "population is its fallback_top_k highest-scoring heads: a top-k cut of the "
+        "grid, selected on the census score, and flagged by "
+        "not_induction_heads_by_panel_criterion as not induction heads under the "
+        "panel's own criterion"
+    ),
+    EXHAUSTIVE_CRITERION: (
+        "the arm's entire attention-head grid, not a threshold-selected subset. The "
+        "population is complete by construction, most of it carries an effect near "
+        "zero, and resampling it describes how heterogeneous a whole grid is"
+    ),
+}
+
+
 def bootstrap_difference(
     left: Sequence[float],
     right: Sequence[float],
     *,
     resamples: int,
     seed: int,
+    left_criterion: str,
+    right_criterion: str,
     minimum_units: int = MINIMUM_BOOTSTRAP_UNITS,
 ) -> dict[str, Any]:
     """Percentile spread of ``mean(left) - mean(right)`` across sender heads.
@@ -1850,6 +2366,14 @@ def bootstrap_difference(
     The point difference survives -- a mean of four numbers is a mean of four
     numbers -- and only the spread, its separation verdict and its p-value are
     withheld.
+
+    **What is being resampled depends on the criterion, so the caveat does too.**
+    Each side declares the criterion its sender set was selected under and the
+    record says what that population is.  The fixed caveat this function used to
+    publish described a threshold-selected population on every run, including the
+    six exhaustive arms of EXP-R2-071 where the population was the whole head
+    grid; the two sides may also differ, since an arm with no head above threshold
+    enters on a top-k fallback while its comparator does not.
     """
 
     a = np.asarray(left, dtype=np.float64)
@@ -1858,6 +2382,22 @@ def bootstrap_difference(
         raise ValueError("a bootstrap needs at least two heads per side")
     if resamples < 100:
         raise ValueError("too few bootstrap resamples to read a percentile interval")
+    for side, criterion in (("left", left_criterion), ("right", right_criterion)):
+        if criterion not in RESAMPLED_POPULATION:
+            raise ValueError(
+                f"the {side} sender set declares criterion {criterion!r}, which has "
+                f"no declared population; declared: {sorted(RESAMPLED_POPULATION)}"
+            )
+    population = {
+        "left": {
+            "sender_criterion": str(left_criterion),
+            "what_is_resampled": RESAMPLED_POPULATION[left_criterion],
+        },
+        "right": {
+            "sender_criterion": str(right_criterion),
+            "what_is_resampled": RESAMPLED_POPULATION[right_criterion],
+        },
+    }
     floor = bootstrap_unit_floor(int(min(a.size, b.size)), minimum_units=minimum_units)
     if floor["degenerate"]:
         return {
@@ -1867,6 +2407,7 @@ def bootstrap_difference(
             "separated_across_heads": None,
             "p_two_sided_uncorrected": None,
             "resampling_unit": "sender_head",
+            "resampled_population": population,
             "is_a_sampling_confidence_interval": False,
             "interval_caveat": (
                 "no spread is published: "
@@ -1894,12 +2435,14 @@ def bootstrap_difference(
         "separated_across_heads": bool(low > 0.0 or high < 0.0),
         "p_two_sided_uncorrected": _finite(min(1.0, 2.0 * tail), "bootstrap p"),
         "resampling_unit": "sender_head",
+        "resampled_population": population,
         "is_a_sampling_confidence_interval": False,
         "interval_caveat": (
-            "an arm's induction heads are its whole head population under a "
-            "prefix-matching threshold, not a sample; this interval describes "
-            "head-to-head heterogeneity and carries no uncertainty from the probe "
-            "records, which are the design's only real sampling unit"
+            "each side's heads are that arm's whole population under the criterion "
+            "named in resampled_population, not a sample of one; this interval "
+            "describes head-to-head heterogeneity within those populations and "
+            "carries no uncertainty from the probe records, which are the design's "
+            "only real sampling unit"
         ),
         "multiplicity": (
             "p_two_sided_uncorrected is uncorrected; the caller runs this once per "

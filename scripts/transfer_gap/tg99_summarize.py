@@ -18,8 +18,25 @@ candidate per arm remains backward compatible. Multiple candidates are refused
 unless each ambiguous arm is selected explicitly by a stable semantic identity.
 
 Two quantities are combined across stages, and both now check that the stages
-measured one population first; see :func:`band_refusal`. TG-00's two control
-deltas are surfaced, which they never were.
+measured one population first; see :func:`population_refusal`. TG-00's two
+control deltas are surfaced, which they never were.
+
+**Every artefact must declare the contract it was produced under.** This
+validated only that a file exists and parses as a JSON object, and then stamped
+``contract_schema_version`` with the version *this code* declares -- the code's
+opinion of itself, written onto a summary whose inputs may have been produced by
+several generations of the stage code. It was: fourteen of the eighteen
+non-summary artefacts in the corrected tree carry no ``contract`` key at all, one
+of them predating the branch that decides whether its own control applies,
+another trained under a different normalisation order, and two publishing the
+retracted all-position residual spectrum under the primary field names. Strict
+mode would have called that campaign complete. A missing or superseded
+``contract`` block is now a refusal that names the files.
+
+A partial summary announces itself on stdout as well as inside the JSON. It
+wrote the same ``SUMMARY.json`` as a strict run and printed the same table with
+``-`` in the absent cells, so the only thing separating an exploratory summary
+from a complete one was a field two levels down in a file nobody re-opens.
 """
 
 from __future__ import annotations
@@ -87,6 +104,27 @@ def load_json(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise SummaryError(f"JSON artefact {path} must contain an object")
     return value
+
+
+def contract_refusal(payload: dict[str, Any]) -> str | None:
+    """Why an artefact is not a record of the contract this code enforces.
+
+    ``None`` means it is. The check is deliberately on the artefact rather than
+    on the tree: a results directory is written stage by stage over days, and
+    "these files sit in one directory" has never implied "these files came from
+    one generation of the code". The tg01 artefacts of the corrected tree were
+    rewritten on 2026-07-30 and carry a contract block; the tg00, tg03, tg07 and
+    tg09 artefacts beside them are from 2026-07-29 and carry none, and three
+    substantive drifts between the two dates were confirmed.
+    """
+
+    contract = payload.get("contract")
+    if not isinstance(contract, dict):
+        return "carries no `contract` block"
+    version = contract.get("schema_version")
+    if version != CONTRACT_SCHEMA_VERSION:
+        return f"declares contract schema {version!r}"
+    return None
 
 
 def tg03_stable_identity(payload: dict[str, Any]) -> str:
@@ -206,6 +244,18 @@ def inspect_campaign(
     paths: dict[str, Path] = {}
     present: dict[str, list[str]] = {}
     missing: dict[str, list[str]] = {}
+    # Accumulated rather than raised at the first offender: a reader fixing a
+    # stale tree needs the whole list, and fourteen of eighteen were stale.
+    superseded: list[str] = []
+    observed_versions: set[str] = set()
+
+    def accept(path: Path) -> None:
+        payload = load_json(path)
+        refusal = contract_refusal(payload)
+        if refusal is None:
+            observed_versions.add(payload["contract"]["schema_version"])
+        else:
+            superseded.append(f"{path} {refusal}")
 
     for stage, artefacts in expected.items():
         stage_present: list[str] = []
@@ -220,7 +270,7 @@ def inspect_campaign(
                 )
             if candidates:
                 path = candidates[0]
-                load_json(path)
+                accept(path)
                 paths[f"{stage}:{GLOBAL_ARTEFACT}"] = path
                 stage_present.append(GLOBAL_ARTEFACT)
             else:
@@ -233,7 +283,7 @@ def inspect_campaign(
                     else root / stage / f"{artefact}.json"
                 )
                 if path is not None and path.is_file():
-                    load_json(path)
+                    accept(path)
                     paths[f"{stage}:{artefact}"] = path
                     stage_present.append(artefact)
                 else:
@@ -242,11 +292,26 @@ def inspect_campaign(
         if stage_missing:
             missing[stage] = stage_missing
 
+    if superseded:
+        raise SummaryError(
+            f"these artefacts under {root} were not produced under the contract "
+            f"this code enforces ({CONTRACT_SCHEMA_VERSION}), so a summary built "
+            "from them would carry numbers from several generations of the stage "
+            "code under one schema stamp: "
+            + "; ".join(superseded)
+            + ". Re-run the stages named, or point --root at a tree measured "
+            "under this contract"
+        )
+
     required_count = sum(len(artefacts) for artefacts in expected.values())
     present_count = sum(len(artefacts) for artefacts in present.values())
     completeness = {
         "complete": not missing,
-        "contract_schema_version": CONTRACT_SCHEMA_VERSION,
+        # Observed, not stamped. This used to be CONTRACT_SCHEMA_VERSION
+        # unconditionally, which asserted of every input the one thing none of
+        # them had been asked. `None` is the honest answer for a campaign with no
+        # artefacts at all; anything present has been checked against it above.
+        "contract_schema_version": next(iter(observed_versions), None),
         "expected_matrix": {
             stage: list(artefacts) for stage, artefacts in expected.items()
         },
@@ -263,33 +328,73 @@ def _loaded(paths: dict[str, Path], stage: str, artefact: str) -> dict[str, Any]
     return None if path is None else load_json(path)
 
 
-def band_refusal(arm: str, *stages: str) -> str | None:
+def population_refusal(arm: str, *stages: str) -> str | None:
     """Why two stages' numbers may not be divided, or ``None`` if they may.
 
     Combining a numerator from one stage with a denominator from another asserts
-    that the two measured one population. TG-01 draws protein cohorts on 400-1000
-    residues at ``max_len`` 384 and TG-03 on 120-1000 at 256: they share no
-    protein below 400 residues, and EXP-R2-060 prices protein cohort-block
-    sensitivity at 0.16-0.60 nats -- larger than the 0.5-nat floor the guard
-    beside this division applies. The bands are already declared in
-    ``tg_contract``; nothing was reading them.
+    that the two measured one population, and a population is fixed by two
+    declarations rather than one.
 
-    Text arms are unaffected, because a protein residue band does not select
-    their cohort. That is exactly the asymmetry that let this pass inspection:
-    the number was well formed on the control arm.
+    *Which sequences.* TG-01 draws protein cohorts on 400-1000 residues and TG-03
+    on 120-1000: they share no protein below 400 residues, and EXP-R2-060 prices
+    protein cohort-block sensitivity at 0.16-0.60 nats -- larger than the 0.5-nat
+    floor the guard beside this division applies. Text arms are unaffected by
+    this axis, because a protein residue band does not select their cohort, and
+    that asymmetry is what let the defect pass inspection: the number was well
+    formed on the control arm.
+
+    *Which positions of them.* A shared band still leaves the scored position
+    distribution free, and this half was checked by nothing. TG-01 truncates at
+    ``--max-len 384`` and scores every position 1..383 of every drawn sequence;
+    TG-06 keeps only the sequences that reach 256 tokens and scores exactly
+    positions 1..255 of those, at ``--window 256``. TG-01's own artefact prices
+    the difference: its information gain by position bin runs from 1.89 nats in
+    the first twentieth of the window to 4.51 at its widest on ProtGPT2, against
+    that same 0.5-nat floor. Unlike a residue band, a token truncation selects
+    positions in text exactly as it does in protein, so this axis is checked for
+    every arm. ``frac_information_from_attention_pattern`` combined TG-01 and
+    TG-06 across it and was published on every arm the pair could produce.
+
+    A consequence worth stating plainly rather than engineering around: under the
+    contract as it stands there is no arm for which TG-01 may be divided by TG-03
+    or TG-06 at all. Making one of those ratios available means re-running a
+    stage on the other's window, not relaxing this function.
     """
 
-    if PANEL[arm].modality != "protein":
-        return None
-    bands = {stage: TG_STAGES[stage].protein_band for stage in stages}
-    if len(set(bands.values())) == 1 and None not in bands.values():
-        return None
-    described = ", ".join(f"{stage} {band}" for stage, band in bands.items())
-    return (
-        f"incommensurate protein cohort bands ({described}); a ratio across them "
-        "would attribute one population's information to another's. EXP-R2-060 "
-        "prices protein cohort-block sensitivity at 0.16-0.60 nats"
-    )
+    reasons: list[str] = []
+    if PANEL[arm].modality == "protein":
+        bands = {stage: TG_STAGES[stage].protein_band for stage in stages}
+        if len(set(bands.values())) != 1 or None in bands.values():
+            described = ", ".join(f"{stage} {band}" for stage, band in bands.items())
+            reasons.append(
+                f"incommensurate protein cohort bands ({described}); a ratio "
+                "across them would attribute one population's information to "
+                "another's. EXP-R2-060 prices protein cohort-block sensitivity at "
+                "0.16-0.60 nats"
+            )
+    windows = {
+        stage: (
+            None
+            if TG_STAGES[stage].scoring_window is None
+            else (
+                TG_STAGES[stage].scoring_window.option,
+                TG_STAGES[stage].scoring_window.tokens,
+            )
+        )
+        for stage in stages
+    }
+    if len(set(windows.values())) != 1 or None in windows.values():
+        described = ", ".join(
+            f"{stage} {'undeclared' if window is None else f'{window[0]} {window[1]}'}"
+            for stage, window in windows.items()
+        )
+        reasons.append(
+            f"incommensurate scoring windows ({described}); the two stages scored "
+            "different position distributions of their sequences, and a "
+            "cross-entropy is position-dependent by more than the 0.5-nat floor "
+            "beside this division"
+        )
+    return "; ".join(reasons) or None
 
 
 def build_rows(paths: dict[str, Path]) -> dict[str, dict[str, Any]]:
@@ -372,7 +477,7 @@ def build_rows(paths: dict[str, Path]) -> dict[str, dict[str, Any]]:
                     "sae_denominator_valid": d3.get("denominator_valid"),
                 }
                 if d1 is not None:
-                    refusal = band_refusal(arm, "tg01", "tg03")
+                    refusal = population_refusal(arm, "tg01", "tg03")
                     information = d1["unigram_entropy_nats"] - d3["ce_clean_nats"]
                     row["sae_frac_information_lost"] = (
                         None
@@ -399,7 +504,7 @@ def build_rows(paths: dict[str, Path]) -> dict[str, dict[str, Any]]:
                     "uniform_cost_bits": d6["uniform_cost_bits"],
                 }
                 if d1 is not None:
-                    refusal = band_refusal(arm, "tg01", "tg06")
+                    refusal = population_refusal(arm, "tg01", "tg06")
                     information = d1["unigram_entropy_nats"] - d6["ce_nats"]["clean"]
                     row["frac_information_from_attention_pattern"] = (
                         None
@@ -451,6 +556,26 @@ def print_table(rows: dict[str, dict[str, Any]]) -> None:
         print(f"{key:<{width}}" + "".join(cells))
 
 
+def partial_banner(completeness: dict[str, Any]) -> str:
+    """The one line that separates an exploratory summary from a complete one.
+
+    ``--allow-partial`` wrote the same ``root/SUMMARY.json`` as strict mode and
+    printed the same table, with ``-`` in the cells no artefact backed. The mode
+    was recorded two levels down in a file nobody re-opens after reading the
+    table, so a screenshot of a partial run and of a complete one were the same
+    picture.
+    """
+
+    missing = "; ".join(
+        f"{stage}: {', '.join(artefacts)}"
+        for stage, artefacts in completeness["missing_matrix"].items()
+    )
+    return (
+        f"PARTIAL -- {completeness['present_artifact_count']} of "
+        f"{completeness['required_artifact_count']} artefacts, missing: {missing}"
+    )
+
+
 def summarize(
     root: Path,
     *,
@@ -485,6 +610,10 @@ def summarize(
         out["explanation_channel"] = channel
 
     destination = root / "SUMMARY.json"
+    # Before anything else this run prints, including write_json's own progress
+    # line: a banner under the table is a banner an operator scrolls past.
+    if not completeness["complete"]:
+        print(partial_banner(completeness))
     write_json(destination, out)
     print_table(rows)
     print(f"\nwrote {destination}")

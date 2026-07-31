@@ -68,7 +68,15 @@ import torch
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+# The stage directory itself, so `panel_contract` imports under every invocation
+# style this file sees: `python scripts/transfer/11_induction_path_patching.py`
+# (which puts the directory on sys.path anyway) and the worker's import
+# preflight, which loads this file through importlib and does not.
+_STAGE_DIR = str(Path(__file__).resolve().parent)
+if _STAGE_DIR not in sys.path:
+    sys.path.insert(0, _STAGE_DIR)
 
+from panel_contract import stage_contract_record  # noqa: E402
 from src.transfer.io import write_json  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
     DEFAULT_CORPUS_DRAW_SEED,
@@ -101,11 +109,15 @@ from src.transfer.circuits import SCHEMA_VERSION as CENSUS_SCHEMA_VERSION  # noq
 from src.transfer.path_patching import (  # noqa: E402
     DEFAULT_MIN_HEAD_EFFECT,
     DEFAULT_MINIMUM_EFFECT,
+    EFFECTS,
+    EXHAUSTIVE_CRITERION,
     SCHEMA_VERSION,
     PathPatcher,
     bootstrap_difference,
     build_path_cases,
     causal_census_agreement,
+    effect_concentration,
+    head_effect_reliability,
     select_senders,
     sender_effects,
     sender_set_overlap,
@@ -277,6 +289,33 @@ def run_census(
     return prefix_matching, record, probes
 
 
+#: What each per-head effect scale is, stated once in every condition record.
+#: EXP-R2-071 compared one head's magnitude across four arms on the recovery
+#: scale, where each arm divides by its own mean eligible denominator -- 0.76
+#: logits on ZymCTRL against 24.10 on gpt2-large -- and the ordering it published
+#: reverses in logits. The denominator is named here so a magnitude cannot be
+#: quoted across arms without it.
+EFFECT_SCALES: dict[str, str] = {
+    "effects": (
+        "recovery scale: each case's restored logit difference divided by that "
+        "case's own L_clean - L_corrupt, averaged over eligible cases. The "
+        "denominator is a property of this arm and this case set, so this scale is "
+        "NOT comparable across arms"
+    ),
+    "effects_logits": (
+        "logit scale: the same restored logit difference un-normalised, averaged "
+        "over the same eligible cases. This is the scale on which a cross-arm "
+        "magnitude comparison is defined"
+    ),
+    "denominator": (
+        "eligibility.mean_denominator_eligible is this condition's mean "
+        "L_clean - L_corrupt over eligible cases: the factor separating the two "
+        "scales, and the number that must be quoted beside any recovery-scale "
+        "magnitude that crosses an arm boundary"
+    ),
+}
+
+
 def run_condition(
     patcher: PathPatcher,
     senders: Sequence[Any],
@@ -284,7 +323,7 @@ def run_condition(
     *,
     resolve: bool,
 ) -> dict[str, Any]:
-    """Every sender's four pathways over one case set."""
+    """Every sender's four pathways over one case set, on both effect scales."""
 
     per_head: list[dict[str, Any]] = []
     for index, sender in enumerate(senders):
@@ -294,6 +333,7 @@ def run_condition(
             "label": sender.label,
             "recovery": recoveries,
             "effects": sender_effects(recoveries),
+            "effects_logits": sender_effects(recoveries, key="mean_logits"),
         }
         if resolve and index < args.resolve_senders:
             entry["receiver_profile"] = patcher.sender_receiver_profile(sender)
@@ -301,6 +341,16 @@ def run_condition(
     return {
         "per_sender_head": per_head,
         "summary": summarise_senders(per_head, min_head_effect=args.min_head_effect),
+        "per_sender_head_mean_logits": {
+            key: float(np.mean([row["effects_logits"][key] for row in per_head]))
+            for key in EFFECTS
+        },
+        # The two structural readings EXP-R2-071 published from unversioned code.
+        # They are computed here so that the number in a document and the number in
+        # an artefact come from one implementation (Appendix B rule 12).
+        "concentration": effect_concentration(per_head),
+        "reliability": head_effect_reliability(per_head),
+        "effect_scales": EFFECT_SCALES,
     }
 
 
@@ -395,7 +445,7 @@ def run_arm(
                 conditions[key]["causal_census_agreement"] = causal_census_agreement(
                     conditions[key]["per_sender_head"],
                     threshold=args.headline_threshold,
-                    exhaustive=True,
+                    n_heads_in_grid=sender_records[sender_criterion]["n_heads_in_grid"],
                 )
             summary = conditions[key]["summary"]
             print(
@@ -417,7 +467,10 @@ def run_arm(
         "induction_census": censuses,
         "sender_sets": sender_records,
         "sender_set_stability": sender_set_overlap(
-            sender_sets["exact"], sender_sets["approximate"]
+            sender_sets["exact"],
+            sender_sets["approximate"],
+            left_criterion=sender_records["exact"]["criterion"],
+            right_criterion=sender_records["approximate"]["criterion"],
         ),
         "case_sets": case_records,
         "structural_invariants": invariants,
@@ -480,7 +533,17 @@ def panel_summary(results: dict[str, dict[str, Any]], args: argparse.Namespace) 
                 ],
                 "eligible_fraction": condition["eligibility"]["eligible_fraction"],
                 "mean_denominator": condition["eligibility"]["mean_denominator"],
+                # The factor between the two effect scales, on the row where the
+                # recovery-scale means are read. A per-head magnitude taken from
+                # per_sender_head_mean is on this arm's own scale and is only
+                # comparable to another arm's once this number is beside it.
+                "mean_denominator_eligible": condition["eligibility"][
+                    "mean_denominator_eligible"
+                ],
                 "per_sender_head_mean": condition["summary"]["per_sender_head_mean"],
+                "per_sender_head_mean_logits": condition["per_sender_head_mean_logits"],
+                "concentration": condition["concentration"],
+                "reliability": condition["reliability"],
                 "per_sender_head_fraction_mean": condition["summary"][
                     "per_sender_head_fraction_mean"
                 ],
@@ -494,6 +557,13 @@ def panel_summary(results: dict[str, dict[str, Any]], args: argparse.Namespace) 
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_utc": datetime.now(timezone.utc).isoformat(),
+        # Without this a one-arm run and a full-panel run are distinguishable only
+        # by counting rows, which is the L18 shape: a stage whose panel narrowed
+        # and whose every downstream number still looked well-formed. Stages 01,
+        # 02, 03 and 08 already write it.
+        "stage_contract": stage_contract_record(
+            "induction_path_patching", sorted(results)
+        ),
         "controlled_pair": list(CONTROLLED_PAIR),
         "comparison_policy": (
             "gpt2-large versus protgpt2 is the controlled comparison: identical depth, "
@@ -546,13 +616,53 @@ def _head_values(payload: dict[str, Any], criterion: str, quantity: str) -> list
     return values
 
 
+def _sender_criterion(payload: dict[str, Any], criterion: str) -> str:
+    """Which rule selected this arm's sender set under one repeat criterion.
+
+    Read from the artefact rather than from ``args``, because it is not the same
+    for every arm: an arm with no head above the prefix-matching threshold enters
+    on the top-k fallback while its comparator enters on the threshold, and the
+    bootstrap's provenance has to say what each side's population actually is.
+    """
+
+    return str(payload["sender_sets"][criterion]["criterion"])
+
+
 def _contrast(
     results: dict[str, dict[str, Any]], reference: str, other: str, args: argparse.Namespace
 ) -> dict[str, Any]:
     entry: dict[str, Any] = {"reference_arm": reference, "arm": other}
     for criterion in CRITERIA:
         per_criterion: dict[str, Any] = {}
+        left_criterion = _sender_criterion(results[other], criterion)
+        right_criterion = _sender_criterion(results[reference], criterion)
         for quantity in CONTRAST_QUANTITIES:
+            if quantity == "mediated_fraction" and EXHAUSTIVE_CRITERION in {
+                left_criterion,
+                right_criterion,
+            }:
+                # Under the two selective criteria the head population is fixed
+                # before any effect is measured, and min_head_effect withholds the
+                # ratio for a handful of heads inside it. Under the exhaustive
+                # criterion the population is the whole grid, most of which sits
+                # below the floor, so the surviving heads are exactly the heads
+                # with the largest measured effect -- and how many survive differs
+                # by arm. Bootstrapping a difference between two such sets is
+                # selection on the outcome on both sides at once.
+                per_criterion[quantity] = {
+                    "available": False,
+                    "left_sender_criterion": left_criterion,
+                    "right_sender_criterion": right_criterion,
+                    "reason": (
+                        "mediated/total is withheld for every head whose |total| "
+                        "falls below min_head_effect; on the full head grid that "
+                        "filter selects the heads with the largest measured effect, "
+                        "and it selects a different fraction of each arm's grid, so "
+                        "the contrast would be between two outcome-selected "
+                        "populations"
+                    ),
+                }
+                continue
             left = _head_values(results[other], criterion, quantity)
             right = _head_values(results[reference], criterion, quantity)
             if len(left) < 2 or len(right) < 2:
@@ -566,7 +676,12 @@ def _contrast(
                 "arm": float(np.mean(left)),
                 "reference": float(np.mean(right)),
                 "bootstrap": bootstrap_difference(
-                    left, right, resamples=args.bootstrap_resamples, seed=args.seed + 100
+                    left,
+                    right,
+                    resamples=args.bootstrap_resamples,
+                    seed=args.seed + 100,
+                    left_criterion=left_criterion,
+                    right_criterion=right_criterion,
                 ),
             }
         entry[criterion] = per_criterion

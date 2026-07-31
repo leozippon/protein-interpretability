@@ -9,8 +9,13 @@ Three of these encode corrections rather than the original behaviour:
 * TG-00's rendering and cohort deltas reach the summary. ``build_rows`` read
   TG-01, 02, 03, 05 and 06 and never the positive-control stage, so no
   ``SUMMARY.json`` has ever carried either delta;
-* quantities combining two stages are refused when the stages drew on different
-  protein residue bands.
+* quantities combining two stages are refused when the stages measured
+  different populations -- a different residue band, or a different scoring
+  window over the same band. The second half was missing, and the test that
+  asserted TG-01 over TG-06 was *not* refused was the test encoding the defect;
+* an artefact that does not declare the contract it was produced under is
+  refused rather than summarised, and the summary records the version its inputs
+  declared instead of the version this code declares.
 """
 
 from __future__ import annotations
@@ -29,7 +34,7 @@ for _path in (str(REPO_ROOT), str(STAGE_DIR)):
 
 import tg99_summarize as tg99  # noqa: E402
 from tg_common import TG_PANEL  # noqa: E402
-from tg_contract import TG_STAGES  # noqa: E402
+from tg_contract import SCHEMA_VERSION, TG_STAGES, stage_contract_record  # noqa: E402
 
 SCRIPT = STAGE_DIR / "tg99_summarize.py"
 
@@ -42,6 +47,7 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
 def tg03_payload(arm: str, *, layer: int = 18, k: int = 32) -> dict[str, Any]:
     return {
         "arm": arm,
+        "contract": stage_contract_record("tg03", [arm]),
         "layer": layer,
         "n_layer": 36,
         "d_model": 1280,
@@ -65,6 +71,17 @@ def tg03_payload(arm: str, *, layer: int = 18, k: int = 32) -> dict[str, Any]:
 
 
 def stage_payload(stage: str, arm: str) -> dict[str, Any]:
+    """One stage artefact, carrying the contract block every stage now writes.
+
+    Not decoration: ``inspect_campaign`` refuses an artefact that does not
+    declare the contract this code enforces, and every artefact in the corrected
+    tree except TG-01's fails that.
+    """
+
+    return {**_stage_body(stage, arm), "contract": stage_contract_record(stage, [arm])}
+
+
+def _stage_body(stage: str, arm: str) -> dict[str, Any]:
     if stage == "tg00":
         # TG-00 is the positive-control stage; the summary read every other
         # stage and not it, so no SUMMARY.json ever carried a rendering or
@@ -128,7 +145,10 @@ def write_complete_campaign(root: Path) -> None:
         if contract.scope == "summary":
             continue
         if contract.scope == "armless":
-            write_json(root / stage / "explanation_channel.json", {"stage": stage})
+            write_json(
+                root / stage / "explanation_channel.json",
+                {"stage": stage, "contract": stage_contract_record(stage, [])},
+            )
             continue
         arms = contract.arms if contract.arms is not None else TG_PANEL
         for arm in arms:
@@ -255,7 +275,9 @@ def test_complete_campaign_is_accepted_with_contract_derived_matrix(
     }
     assert set(summary["arms"]) == set(TG_PANEL)
     assert summary["arms"]["gpt2-large"]["sae_fvu"] == 0.25
-    assert summary["explanation_channel"] == {"stage": "tg04"}
+    assert summary["explanation_channel"]["stage"] == "tg04"
+    # Read off the artefacts, not stamped from this code's own constant.
+    assert completeness["contract_schema_version"] == SCHEMA_VERSION
 
 
 def test_the_positive_control_deltas_reach_the_summary(tmp_path: Path) -> None:
@@ -283,7 +305,10 @@ def test_a_tg00_artefact_missing_its_controls_is_a_schema_failure(
 ) -> None:
     root = tmp_path / "broken"
     write_complete_campaign(root)
-    write_json(root / "tg00" / "protgpt2.json", {"arm": "protgpt2"})
+    write_json(
+        root / "tg00" / "protgpt2.json",
+        {"arm": "protgpt2", "contract": stage_contract_record("tg00", ["protgpt2"])},
+    )
 
     result = run_tg99(root)
     assert result.returncode == 2
@@ -291,14 +316,21 @@ def test_a_tg00_artefact_missing_its_controls_is_a_schema_failure(
     assert not (root / "SUMMARY.json").exists()
 
 
-def test_information_shares_are_refused_across_incommensurate_bands(
+def test_information_shares_are_refused_across_incommensurate_populations(
     tmp_path: Path,
 ) -> None:
-    """TG-01 draws 400-1000 residues and TG-03 draws 120-1000: they share no
-    protein below 400, and EXP-R2-060 prices protein cohort-block sensitivity at
-    0.16-0.60 nats, larger than the 0.5-nat floor beside this division."""
+    """Two stages measure one population only if they agree on both axes.
 
-    root = tmp_path / "bands"
+    TG-01 draws 400-1000 residues and TG-03 draws 120-1000: they share no protein
+    below 400, and EXP-R2-060 prices protein cohort-block sensitivity at
+    0.16-0.60 nats, larger than the 0.5-nat floor beside this division. That was
+    checked. The scoring window was not: TG-01 scores positions 1..383 of every
+    drawn sequence at ``--max-len 384`` and TG-03 positions 1..255 at 256, which
+    is a second population difference, and one that applies to the text control
+    as much as to a protein arm.
+    """
+
+    root = tmp_path / "populations"
     write_complete_campaign(root)
 
     assert run_tg99(root).returncode == 0
@@ -307,13 +339,135 @@ def test_information_shares_are_refused_across_incommensurate_bands(
     for arm in ("protgpt2", "zymctrl", "progen2-medium"):
         row = summary["arms"][arm]
         assert row["sae_frac_information_lost"] is None
-        assert "incommensurate protein cohort bands" in (
-            row["sae_frac_information_lost_refusal"]
-        )
-    # The text arm draws no protein band at all, so nothing is incommensurate
-    # for it -- which is exactly why the defect survived inspection.
+        refusal = row["sae_frac_information_lost_refusal"]
+        assert "incommensurate protein cohort bands" in refusal
+        assert "incommensurate scoring windows" in refusal
+    # The text arm draws no protein band, so the band axis says nothing about it
+    # -- which is exactly why the defect survived inspection. A token truncation
+    # selects positions in text just as it does in protein, so the window axis
+    # does. This assertion is the inverse of the one it replaces.
     text = summary["arms"]["gpt2-large"]
-    assert text["sae_frac_information_lost"] is not None
-    assert text["sae_frac_information_lost_refusal"] is None
-    # TG-01 and TG-06 share the 400-1000 band, so that ratio is not refused.
-    assert summary["arms"]["protgpt2"]["frac_information_from_attention_pattern"] is not None
+    assert text["sae_frac_information_lost"] is None
+    assert "incommensurate scoring windows" in text["sae_frac_information_lost_refusal"]
+    assert "cohort bands" not in text["sae_frac_information_lost_refusal"]
+
+
+def test_the_attention_share_is_refused_across_the_window_it_crosses(
+    tmp_path: Path,
+) -> None:
+    """The quantity that survived the band check and should not have.
+
+    TG-01 and TG-06 share the 400-1000 residue band, so ``band_refusal`` licensed
+    ``frac_information_from_attention_pattern`` on every arm the pair could
+    produce. They do not share a scored population: TG-06 keeps only the
+    sequences that reach 256 tokens and scores exactly their first 256 positions,
+    while TG-01 scores every position of every drawn sequence up to 384.
+    """
+
+    root = tmp_path / "attention"
+    write_complete_campaign(root)
+    assert run_tg99(root).returncode == 0
+    summary = json.loads((root / "SUMMARY.json").read_text(encoding="utf-8"))
+
+    for arm in ("gpt2-large", "protgpt2", "zymctrl"):
+        row = summary["arms"][arm]
+        assert row["frac_information_from_attention_pattern"] is None
+        assert "incommensurate scoring windows" in (
+            row["frac_information_from_attention_pattern_refusal"]
+        )
+
+
+def test_two_stages_on_one_band_and_one_window_are_not_refused() -> None:
+    """The negative path: the check must not refuse a commensurate pair.
+
+    A guard that refused everything would satisfy every assertion above and
+    measure nothing. TG-01 and TG-02 share both axes by declaration, and so do
+    TG-03 and TG-07.
+    """
+
+    for arm in TG_PANEL:
+        assert tg99.population_refusal(arm, "tg01", "tg02") is None, arm
+        assert tg99.population_refusal(arm, "tg03", "tg07") is None, arm
+
+
+def test_a_stage_that_declares_no_window_is_refused_rather_than_assumed() -> None:
+    """TG-05 truncates nothing, which is not the same fact as truncating at 256."""
+
+    refusal = tg99.population_refusal("progen2-medium", "tg03", "tg05")
+    assert "undeclared" in refusal
+    assert "incommensurate scoring windows" in refusal
+
+
+def test_an_artefact_without_a_contract_block_is_refused(tmp_path: Path) -> None:
+    """Fourteen of the eighteen artefacts in the corrected tree carry none.
+
+    ``inspect_campaign`` validated "the file exists and parses as an object" and
+    then recorded ``contract_schema_version`` from this code's own constant, so a
+    strict ``complete: true`` summary could be assembled from a mixture of code
+    generations and stamped with the current version.
+    """
+
+    root = tmp_path / "stale"
+    write_complete_campaign(root)
+    for arm in ("gpt2-large", "protgpt2"):
+        payload = dict(stage_payload("tg01", arm))
+        payload.pop("contract")
+        write_json(root / "tg01" / f"{arm}.json", payload)
+
+    result = run_tg99(root)
+
+    assert result.returncode == 2
+    # Every stale file is named, not just the first one found.
+    assert "tg01/gpt2-large.json carries no `contract` block" in result.stderr
+    assert "tg01/protgpt2.json carries no `contract` block" in result.stderr
+    assert not (root / "SUMMARY.json").exists()
+
+
+def test_an_artefact_from_a_superseded_contract_is_refused(tmp_path: Path) -> None:
+    root = tmp_path / "superseded"
+    write_complete_campaign(root)
+    payload = dict(stage_payload("tg06", "gpt2-large"))
+    payload["contract"] = {**payload["contract"], "schema_version": "r2_transfer_gap_contract_v1"}
+    write_json(root / "tg06" / "gpt2-large.json", payload)
+
+    result = run_tg99(root)
+
+    assert result.returncode == 2
+    assert "declares contract schema 'r2_transfer_gap_contract_v1'" in result.stderr
+    assert not (root / "SUMMARY.json").exists()
+
+
+def test_the_refusal_survives_allow_partial(tmp_path: Path) -> None:
+    """``--allow-partial`` licenses an incomplete campaign, not a stale one."""
+
+    root = tmp_path / "partial_stale"
+    write_json(root / "tg01" / "gpt2-large.json", _stage_body("tg01", "gpt2-large"))
+
+    result = run_tg99(root, "--allow-partial")
+
+    assert result.returncode == 2
+    assert "carries no `contract` block" in result.stderr
+    assert not (root / "SUMMARY.json").exists()
+
+
+def test_a_partial_summary_announces_itself_on_stdout(tmp_path: Path) -> None:
+    """It wrote the same SUMMARY.json and printed the same table as a strict run.
+
+    The only thing separating the two was ``completeness.mode``, two levels down
+    in a file nobody re-opens after reading the table.
+    """
+
+    root = tmp_path / "banner"
+    write_json(root / "tg01" / "gpt2-large.json", stage_payload("tg01", "gpt2-large"))
+
+    partial = run_tg99(root, "--allow-partial")
+    assert partial.returncode == 0, partial.stderr
+    first = partial.stdout.splitlines()[0]
+    assert first.startswith("PARTIAL -- 1 of 35 artefacts, missing: ")
+    assert "tg00: protgpt2, progen2-medium" in first
+
+    complete = tmp_path / "complete"
+    write_complete_campaign(complete)
+    finished = run_tg99(complete)
+    assert finished.returncode == 0, finished.stderr
+    assert "PARTIAL" not in finished.stdout

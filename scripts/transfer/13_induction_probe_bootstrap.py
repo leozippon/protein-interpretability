@@ -71,6 +71,7 @@ from src.transfer.induction_robustness import (  # noqa: E402
     SCHEMA_VERSION,
     cluster_bootstrap_fraction,
     contrast_ratio_bootstrap,
+    threshold_label,
 )
 
 DEFAULT_OUTPUT = REPO_ROOT / "results/transfer/induction_robustness"
@@ -263,14 +264,20 @@ def run_arm(name: str, args: argparse.Namespace, cohorts: dict[str, Any]) -> dic
 
     per_probe_store[name] = scores
     census_matrix = scores.mean(axis=0)
+    # The contrast is published at ``--contrast-threshold`` and the per-arm
+    # intervals were computed at the census ladder, so a run at any other cut
+    # reported a ratio at a threshold no arm carried an interval for. Unioned in,
+    # the same remedy ``circuits._threshold_sweep`` and
+    # ``induction_robustness.threshold_sweep`` carry: Appendix B rule 17.
+    thresholds = sorted(set(INDUCTION_THRESHOLDS) | {float(args.contrast_threshold)})
     intervals = {
-        f"{threshold:.2f}": cluster_bootstrap_fraction(
+        threshold_label(threshold): cluster_bootstrap_fraction(
             scores,
             threshold=threshold,
             resamples=args.resamples,
             seed=args.seed + 1,
         )
-        for threshold in INDUCTION_THRESHOLDS
+        for threshold in thresholds
     }
     return {
         "arm": name,
@@ -279,10 +286,14 @@ def run_arm(name: str, args: argparse.Namespace, cohorts: dict[str, Any]) -> dic
         "n_heads": int(census_matrix.size),
         "n_probes": len(probes),
         "probe": "synthetic_repeat",
+        "thresholds": thresholds,
+        "census_ladder_thresholds": list(INDUCTION_THRESHOLDS),
         "census_fraction_recomputed": {
-            f"{threshold:.2f}": float((census_matrix.reshape(-1) >= threshold).sum())
+            threshold_label(threshold): float(
+                (census_matrix.reshape(-1) >= threshold).sum()
+            )
             / census_matrix.size
-            for threshold in INDUCTION_THRESHOLDS
+            for threshold in thresholds
         },
         "probe_cluster_bootstrap": intervals,
         "runtime_seconds": round(time.time() - started, 2),
@@ -403,14 +414,16 @@ def main() -> None:
     modalities = {PANEL[name].modality for name in args.arms}
     cohorts = {modality: build_cohort(modality, args) for modality in sorted(modalities)}
     rows: dict[str, dict[str, Any]] = {}
+    headline = threshold_label(args.contrast_threshold)
     for name in args.arms:
         rows[name] = run_arm(name, args, cohorts)
         entry = rows[name]
-        interval = entry["probe_cluster_bootstrap"]["0.10"]
+        interval = entry["probe_cluster_bootstrap"][headline]
         print(
-            f"[{name}] fraction {interval['point_estimate']:.4f} "
+            f"[{name}] fraction at {headline} {interval['point_estimate']:.4f} "
             f"[{interval['interval'][0]:.4f}, {interval['interval'][1]:.4f}] "
-            f"over {interval['n_probe_clusters']} probe clusters, "
+            f"over {interval['n_probe_clusters']} probe clusters and "
+            f"{interval['n_distinct_resampled_fractions']} distinct resample values, "
             f"{entry['runtime_seconds']}s",
             flush=True,
         )
@@ -472,7 +485,10 @@ def main() -> None:
     path = args.output_dir / "induction_probe_bootstrap.json"
     write_json(path, payload)
     print(f"wrote {path}", flush=True)
-    print("\ncontrast | fractions | ratio | 95% probe-cluster interval | held fixed")
+    print(
+        "\ncontrast | fractions | ratio | 95% probe-cluster interval | atoms | "
+        "status | held fixed"
+    )
     for label, row in payload["contrasts"].items():
         if row.get("available") is False:
             print(f"{label}: unavailable")
@@ -483,7 +499,9 @@ def main() -> None:
             f"{label} ({row['high']}/{row['low']}) | "
             f"{row['fraction_high']:.4f}/{row['fraction_low']:.4f} | "
             f"{'undefined' if ratio is None else f'{ratio:.2f}x'} | "
-            f"{'n/a' if interval is None else f'[{interval[0]:.2f}, {interval[1]:.2f}]'} | "
+            f"{'n/a' if interval is None else f'[{interval[0]:.4f}, {interval[1]:.4f}]'} | "
+            f"{row['n_distinct_resampled_ratios']} | "
+            f"{row['interval_status']} | "
             f"{row['held_fixed']}"
         )
 
