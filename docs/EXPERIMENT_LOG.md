@@ -4276,3 +4276,68 @@ subset-reselection instability that supplied a third of the drift above.
 already licenses but which is not a like-for-like *selector* comparison. And width
 192 makes two of eight distance bins unreachable, so the estimand no longer probes
 long-range PAA — symmetric across the matched pair, but it narrows the claim.
+
+---
+
+## 2026-08-01 — EXP-R2-088: D2.c blocker 2 (A2 matching) at width 192 (launched)
+
+*2026-08-01 13:07 (−07:00). B workstation, L20 GPUs 1 and 3, `logs/drivers/paa_w192_match.sh`,
+logs `logs/paa_w192_match_{protgpt2,progen2-medium}.log`, out
+`results/transfer_20260801/paa_w192_match_{protgpt2,progen2-medium}/`.*
+
+EXP-R2-087 passed the attainability gate, so the width-192 design is live and its
+two remaining load-bearing claims are still projections rather than measurements:
+
+1. At width 512 ProtGPT2 **cannot build a PAA instance pool at all** — 0.349 tokens
+   per residue against a 512-token window and an 800-residue band. The entire
+   width-192 route exists because 192 tokens reaches ≈550 residues, landing inside
+   the unchanged 520–800 band. That has been argued and never run.
+2. The audit claims blocker 2 "nearly vanishes" at width 192 — median key set 1 on
+   ProtGPT2 against 2 on gpt2-large, so the residual mismatch runs **against** the
+   hypothesis rather than for it. **The gpt2-large half is now measured**: 2.86
+   keys per instance at width 192 against 5.52 at width 512, from the EXP-R2-083/084
+   census matrices. The ProtGPT2 half is unmeasured and is the half the claim needs.
+
+`match` is the only stage that already runs on protein arms, and it returns A2 with
+a PASS/FAIL against `--a2-minimum 20000`, so it answers both.
+
+**A new output directory, deliberately.** `14_paa_census.py` rebuilds `payload` per
+invocation and writes `paa_gate_report.json` from it, so `--stages match` into the
+width-192 control directory would overwrite the report EXP-R2-087 was decided on
+with one holding only `match`. The text pool and unigram counts are copied in
+instead, so the protein arms are matched against exactly the instances the gate was
+read on rather than a rebuild.
+
+*Failed once on launch and correctly*: `FileNotFoundError: … unigram_counts_text.npy`,
+before any GPU work. The stage declares its inputs and refuses without them.
+
+**An unrelated result already in hand from the same artefacts.** The cheap selector
+and the knockout-matched score agree far better in the narrow window: partial
+Spearman **0.5804 at width 192 against 0.3903 at width 512**. Since the divergence
+between those two key sets is blocker 2 itself, the narrow window helps for a
+second, independent reason the width-192 design never claimed.
+
+### D2.c panel scope, established while reading for this
+
+`census()` and `causal()` are bound to `args.text_arm` (lines 359/364/366/447 and
+576/578), so **the D2.c panel cannot run on a protein arm today** — the gate being
+passed does not make it launchable. The change is small and self-contained: the
+helpers underneath are already arm-generic (`build_cohorts(args, name)` takes a
+name, `make_pool(..., ban_depth=)` takes a depth), so it is parameterising the arm
+through two functions, arm-naming `census.json` / `causal.json` /
+`selected_heads.json`, and making ban depth explicit per arm.
+
+**The ban depth is the real design question, not the plumbing.** The code states
+that over a twenty-symbol alphabet a top-20 decoy ban is the whole alphabet, so the
+census as specified "cannot construct a protein instance at all" — which is why
+`match` already runs both depths. A D2.c comparison therefore either carries a
+declared text-20/protein-3 asymmetry in its claim or runs both arms at both depths.
+
+**Cost, revised down.** The width-192 exhaustive census + causal took **2.5 h on one
+L20** (00:26→02:54) against 7.7 h at width 512. The plan table's 12–25 H200-hours
+is a width-512 figure; a three-arm exhaustive panel at width 192 is a few H200-hours.
+
+*Deferred, not forgotten:* the code change waits until EXP-R2-086 drains, because
+`run_transfer_h200.sh` snapshots the whole of `scripts/transfer` per job. Editing
+`14_paa_census.py` cannot affect stage 11's behaviour, but it would split one
+robustness campaign across two recorded code hashes for no gain.
