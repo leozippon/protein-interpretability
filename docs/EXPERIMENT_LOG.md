@@ -4409,3 +4409,47 @@ a parameter, not a blocker, but it was invisible before the pool was built.
 *Unchanged and still owed:* `census()` and `causal()` remain bound to
 `args.text_arm`, so the panel still needs the arm-parameterisation change, deferred
 until EXP-R2-086 drains.
+
+---
+
+## 2026-08-01 — EXP-R2-089 / EXP-R2-090: giving the D2.c gate and the width effect a draw spread (launched)
+
+*2026-08-01 13:20 / 13:36 (−07:00). B workstation. EXP-R2-089 on L20 GPUs 1/3/4 at
+width 192 (~2.5 h each), EXP-R2-090 on GPUs 5/6/7 at width 512 (~7.7 h each).
+Drivers `logs/drivers/paa_w192_draws.sh` and `logs/drivers/paa_w512_draws.sh`; out
+`results/transfer_20260801/paa_w{192,512}_draw{20260801,20260802,20260803}/`.*
+
+**Why this is not optional.** EXP-R2-087 passed the D2.c gate on a **single corpus
+draw**: gpt2-large's width-192 exhaustive matched reading of +0.4515 sits inside the
+induction band +0.428 to +0.535 — **by 0.023**. On the same afternoon the L22 draw
+inventory measured this class of statistic moving as much as **0.107** between draws
+*on this very arm and condition* (gpt2-large, exact/exact, +0.4276 → +0.5350), with
+a median per-cell range of 0.051. A 0.023 margin read off one draw is not a
+decision. The gate is re-run at three further draws (20260801/02/03 against the
+reference 20260728), everything else held byte-identical to EXP-R2-083.
+
+**EXP-R2-090 does the same at width 512, on the same three draws.** That matters
+beyond symmetry: comparing the two widths draw-for-draw removes the draw as a
+between-width confound entirely, so the +0.079 width effect becomes a difference of
+two distributions rather than of two points.
+
+**What these can do.** Turn the gate from a point inside a band into a range against
+a range. If the four width-192 draws all land inside the induction band, the gate
+holds and D2.c proceeds. If they straddle its lower edge, the gate is **undecided at
+this precision** and the honest report is that width 192 is marginal — a finding,
+and one that costs a few idle L20-hours rather than a protein campaign to discover.
+
+**A launcher mistake, recorded because it is the interesting kind.** The width-512
+driver was first derived from the width-192 one with `sed` plus a Python string
+replace that was meant to move it onto the idle cards. **The replace silently did
+not match**, so all three jobs launched onto GPUs 1/3/4 — doubling up on the cards
+already running EXP-R2-089 while 5/6/7 sat idle. Nothing was corrupted (13.1 GiB of
+46 GiB, no OOM) and no result was affected; the three were killed by PID and
+relaunched. Two things worth keeping: a silent no-match in a launcher wastes compute
+without announcing itself, which is the same class as the EXP-R2-080 lane that
+declared success on an unchecked condition; and `pkill -f paa_w512` also matched the
+harness's own wrapper shell, so the kill was done by explicit PID instead. The
+width-512 driver is now written out in full rather than derived.
+
+*Ten GPUs busy: four H200s on EXP-R2-086, six B L20s one run each. GPUs 0 and 2 on B
+carry another user's work and are untouched.*
