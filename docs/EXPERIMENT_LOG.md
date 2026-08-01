@@ -3752,3 +3752,105 @@ to it. **The success test is not the controller's exit code:** a lane calls a jo
 done only when the pod-side manifest verifies, so another exit-90 drop costs
 nothing, and pulls run in a separate drainer (`multidraw_pull.sh`) because an 8 MB
 transfer would otherwise idle an H200 for minutes.
+
+### EXP-R2-081 — differential measurement error does not manufacture L22, and EXP-R2-072 (v) is decided
+
+*2026-08-01, analysis only. No GPU; reads artefacts already on disk while EXP-R2-080 occupies all four H200s. Script staged at `/tmp/lzp_scratch/l22_attenuation.py` on B, to be promoted into the repository once the campaign drains and the working tree can change safely.*
+
+**The objection.** L22 correlates a census score against \|causal effect\| across the
+head grid. If per-head \|effect\| estimates are noisier on protein than on text, the
+rank correlation is attenuated harder on protein — *toward zero, which is the
+direction of the hypothesis*. This is the same failure `corruption_effects` had to
+fix for the matching gate, whose docstring calls it "a conclusion the estimator
+manufactured out of alphabet size". It is the most serious objection available to
+L22 and it had not been tested.
+
+**The objection has a real basis.** `reliability_magnitude_ranking`,
+probe-clustered, on the exhaustive conditions:
+
+| condition | text arms | protein arms |
+|---|---|---|
+| exact probes | 0.861 – 0.980 | 0.823 – 0.934 |
+| approximate probes | 0.745 – 0.865 | **0.466 – 0.706** |
+
+On ZymCTRL's approximate conditions **reliability is 0.466 — over half the observed
+cross-head variance is estimation noise.** So protein \|effect\| really is measured
+worse, and really is measured worse *asymmetrically*, exactly where the objection
+predicts.
+
+**The separation survives correction in all 24 measured cells.** Classical
+disattenuation r → r/√reliability:
+
+| condition | observed text min / protein max | gap | disattenuated | gap |
+|---|---|---:|---|---:|
+| exact/exact | +0.4448 / +0.2823 | +0.1625 | +0.4794 / +0.3111 | **+0.1683** |
+| exact/approx | +0.4028 / +0.2468 | +0.1560 | +0.4560 / +0.3613 | **+0.0946** |
+| approx/exact | +0.4261 / +0.2098 | +0.2162 | +0.4592 / +0.2313 | **+0.2279** |
+| approx/approx | +0.4150 / +0.2269 | +0.1880 | +0.4698 / +0.3323 | **+0.1375** |
+
+The gap narrows in the two conditions carried by ZymCTRL's approximate cells (the
+noisiest, so the most boosted) and **widens in the other two**. Pooling all 24
+cells: text min +0.4560 against protein max +0.3613, gap **+0.0946**, separated.
+Correcting for the differential noise does not close the gap.
+
+*Three limits, stated rather than buried.* Only the **causal** side is
+disattenuated — census-score reliability is not measured by this instrument, so
+these are *lower bounds* on the true correlation and the correction is incomplete
+if census reliability itself differs by modality; the same one-sided assumption is
+applied to both modalities, which is the conservative choice available. Classical
+test theory derives the formula for **Pearson** correlations, so applying it to a
+Spearman correlation is an approximation. And `reliability_magnitude_ranking` is a
+variance ratio for the per-head means, not literally the reliability of the rank
+variable. This is a sensitivity analysis, not an exact correction; it is decisive
+only because the conclusion does not depend on the size of the correction.
+
+**EXP-R2-072 (v), the suspended concentration statistics, is now decided — and its
+stated resolution path does not exist.**
+
+*Defect in the canonical document.* §EXP-R2-072 (v) suspends the concentration
+statistics "pending the noise-corrected variant **now implemented** in
+`path_patching.py`". **No such variant is implemented.** `effect_concentration`
+(path_patching.py:2173) computes `gini` on raw \|effect\| with no noise correction,
+and no noise-corrected concentration exists anywhere in the repository. What
+EXP-R2-078 implemented was `head_effect_reliability`, which is a *different*
+statistic — it reports what fraction of the observed cross-head variance is signal,
+not a corrected Gini. The suspension therefore had no path to resolution and a
+reader would believe the fix was available. Correction applied to the audit.
+
+*What the reliability statistic does decide.* It answers item (v)'s actual concern
+— "the Gini is partly integrating estimation noise whose mass is not matched across
+arms" — by measuring that mass:
+
+- **On exact probes the mass is matched** (text 0.861–0.980, protein 0.823–0.934),
+  so concentration is interpretable there, and **the ZymCTRL exception is real**:
+  its Gini of 0.607 against 0.78–0.94 elsewhere stands at reliability 0.823 and
+  cannot be deflated into agreement with the others.
+- **On approximate probes it is not matched** (protein falls to 0.466–0.706). The
+  "collapses on approximate probes" qualification is therefore *confounded with an
+  estimation-noise collapse on the protein side* and *stays withdrawn*: the
+  concentration does fall on approximate probes for every arm, but on protein the
+  reliability falls with it, and the two cannot be separated by these artefacts.
+
+**Second defect found, deferred rather than fixed.** Ten stage entry points accept
+`--cohort-draw-seed`; **only `01_cohort_power.py` records it** (`"seeds": {…,
+"cohort_draw": …}`, line 501). The other nine — including
+`11_induction_path_patching.py`, which consumes it at line 230 and records only
+`{"master", "bootstrap"}` at line 478 — omit it. **EXP-R2-077/079/080 are
+draw-robustness experiments whose artefacts do not record which draw produced
+them.** Provenance survives only in directory names and driver logs, which is the
+hand-maintained-copy failure class `scripts/transfer/README.md` says
+`panel_contract.py` exists to end. It is worse than cosmetic because
+`--cohort-draw-seed 0` has declared special semantics (the historical file-order
+prefix, Appendix B rule 1), so an artefact cannot distinguish a declared choice
+from a permutation. It corrupts no computed number; severity is provenance.
+
+*Not fixed today, and the reason is a rule rather than convenience.*
+`run_transfer_h200.sh` freezes the **current working tree** per job, and EXP-R2-080
+still has eleven jobs queued, so editing `scripts/` now would split one robustness
+campaign across two frozen code hashes. The change is provably inert — it adds a
+dict key and touches no computed value — but a robustness campaign is the wrong
+place to introduce a second hash. EXP-R2-080's own provenance is independently
+recoverable: the driver writes `${arm}_${tag}_draw${draw}` into every results root,
+the drainer preserves it, and cohort digests distinguish draws. Fix queued for the
+drain, together with a test asserting that *every* stage accepting the flag records
+it, so a tenth stage cannot reintroduce the gap.
