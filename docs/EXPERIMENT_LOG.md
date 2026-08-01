@@ -4123,3 +4123,156 @@ EXP-R2-080 was running. They are unaudited, not confirmed.
 all three correctly, but two modules declare the same thing differently — the
 Appendix B rule 12 shape, and EXP-R2-073's D1.b re-run used the disagreeing
 module's default. Queued with the other deferred code fixes.
+
+---
+
+## 2026-08-01 — EXP-R2-086: EXP-R2-080 ran 6 of 15 jobs, not 2; one transport event and two driver defects
+
+**Re-inspection on resuming.** All three streams had drained while the session was
+down. EXP-R2-083 exited 0 at 02:54, EXP-R2-084 at 08:51, and the EXP-R2-080
+campaign declared ALL LANES DRAINED at 06:02 having reported only **two**
+successes out of fifteen. The four H200s then sat idle for 6.5 hours.
+
+**The campaign log's failure pattern is diagnostic.** The first four jobs ran ~4 h
+and failed together at 03:17–03:18 with `rc=90`. Every job afterwards failed with
+`rc=2` in about four minutes — except two, started at 03:28 and 03:37, which ran
+to completion. A refusal that is instant, universal on two lanes and absent on the
+other two is not a property of the work.
+
+The per-job log states it outright: `TRANSFER_WORKER_EXIT=2`, **`GPU 1 is occupied;
+refusing to schedule`**. So one transport drop at 03:17 severed four controllers
+while the pod-side workers kept computing and kept their GPUs. Lanes 2 and 3
+recovered as their orphans finished; lanes 0 and 1 held the two largest models and
+stayed blocked until ~04:13 and ~04:23, by which time both lanes had exhausted
+every candidate draw they had.
+
+**Four verified results were discarded.** Checked on GPFS:
+
+| job | pod-side manifest |
+|---|---|
+| gpt2-xl d3 draw=20260802 | **VERIFIED** |
+| llama-3.2-3b d2 draw=20260801 | **VERIFIED** |
+| zymctrl d3 draw=20260802 | **VERIFIED** |
+| zymctrl d4 draw=20260803 | **VERIFIED** |
+
+All four are jobs the campaign logged as `FAILED rc=90`. They finished after the
+lane gave up on them. With the two already pulled, **EXP-R2-080 produced 6 of 15**,
+and the other nine never ran at all — their GPFS directories are empty, so their
+candidate draws are untested rather than rejected.
+
+**Two driver defects, and they compound.**
+
+1. *The success test raced the worker.* `multidraw.sh`'s header states the correct
+   rule — "EXIT 90 IS NOT FAILURE … the lane's success test is whether the pod-side
+   manifest exists and verifies" — and implements it as **one** check taken the
+   instant the controller returns, when the worker is still computing and no
+   manifest can exist yet. The check was right about *what* to test and wrong about
+   *when*. Cost: four correct results.
+2. *A machine fault was read as a verdict on the draw.* `GPU N is occupied` is a
+   statement about the machine and carries no information about the draw, but the
+   lane treated it as this-draw-did-not-work and advanced to the next candidate.
+   Cost: nine jobs burned their entire candidate lists without running.
+
+Defect 1 creates the orphan that defect 2 then misreads.
+
+**Repair.** Both fixes turn on the same fact — a worker holds its GPU while it runs
+— so the pod's own state, not a timer, is the terminal condition. On a controller
+failure with no other evidence the lane now **polls** for the manifest, ending when
+it verifies (success) or when the GPU falls idle with the manifest still absent
+(genuine failure), with a second look after the GPU clears to cover the
+write-then-exit race. An environment refusal no longer consumes a candidate draw:
+the lane waits for the GPU and retries the same draw. Draw infeasibility is
+unchanged — still decided by `build_path_cases` refusing before any effect exists,
+still keyed on its own message, still unable to select on the outcome.
+
+**Relaunched** 12:42 as `logs/drivers/multidraw2.sh`, nine jobs over four lanes,
+with the four recovered results seeded straight into the pull queue. All four
+recovered artefacts **pulled and locally digest-verified** by 12:53. All four H200s
+back at 100%.
+
+---
+
+## 2026-08-01 — EXP-R2-087: the D2.c gate, and why the pre-registered criterion could not decide it
+
+Reads EXP-R2-083 (width 192) and EXP-R2-084 (width 512), both exhaustive over all
+720 gpt2-large heads. Analysis only, no re-run.
+
+**The criterion as pre-registered.** §D2.c item 1: gpt2-large's *exhaustive* PAA
+census at width 192, "read against the +0.53 to +0.65 the restricted-range reading
+gives at width 512", and "if it fails at width 192, this design is dead".
+
+**Pipeline validated against the document's own number first.** The restricted
+selection rule was transcribed from `14_paa_census.py` and reproduces all 24 heads
+of the historical selection exactly; recomputing its correlation gives **+0.6078
+(p = 0.0016)** against the published **+0.608 (p = 0.0016)** in the L5 block. The
+instrument reproduces the anchor before being used on anything new.
+
+**The target is not reproducible to the precision the gate needs.** The width-512 /
+restricted-24 / unmatched cell is nominally *identical* between the historical run
+and the new one, yet reads **+0.6078** against **+0.4922** — a drift of 0.116 at
+fixed width. Decomposed on the same 24 heads:
+
+| swap | ρ | change |
+|---|---:|---:|
+| historical census × historical causal | +0.6078 | — |
+| new census × historical causal | +0.5878 | −0.020 |
+| historical census × new causal | +0.5426 | −0.065 |
+| new census × new causal | +0.5391 | −0.069 |
+| …and re-selecting the 24 heads on the new ranking | +0.4922 | −0.047 |
+
+The census itself is highly stable across the cohort change (Spearman +0.986 over
+all 720 heads, max |difference| 1.5e-3); the causal half and the subset reselection
+carry the drift. `min_sequences` 128 → 64 changed the cohort digest, and
+`causal_instances` 600 → 800.
+
+**So the criterion conflates a target whose own reproducibility is ±0.12 with a
+width effect of +0.08.** It cannot resolve width. That is demonstrable at width 512
+alone — without reference to the width-192 result — so the mis-specification is
+established independently of the outcome. Appendix B rule 2, third instance.
+
+**A third confound, previously unrecorded.** The historical artefacts are schema
+`r2_transfer_paa_gate_v1` and contain **no matched score at all** —
+`paa_specific_matched` did not exist when they were made. So the +0.53–0.65 target
+is an *unmatched* figure, while §D2.c states "D2.c must use the matched score" and
+the census code itself says "Use the matched score for any comparison against a
+causal effect". The criterion instructed one score and compared against the other.
+
+**The answerable measurement.** Both widths, exhaustive over 720 heads, both score
+definitions. Bootstrap over the 200 sequences, resampled **jointly** — alignment
+verified, not assumed: the pool's `sequence` field runs 0–199, causal cluster
+labels are exactly `arange(200)`, and the weighted cluster mean regenerates every
+published per-head `delta_m_gap` exactly (max |diff| = 0).
+
+| width | score | exhaustive (720) | 95% CI | restricted (24) |
+|---|---|---:|---|---:|
+| 192 | unmatched | +0.4276 | [+0.385, +0.457] | +0.4122 |
+| 512 | unmatched | +0.5119 | [+0.455, +0.527] | +0.4922 |
+| 192 | **matched** | **+0.4515** | **[+0.401, +0.498]** | +0.4783 |
+| 512 | **matched** | **+0.5309** | **[+0.451, +0.547]** | +0.6496 |
+
+**Width effect, isolated at fixed range and score:** +0.0831 unmatched (CI [+0.016,
++0.118], P>0 = 0.997) and +0.0794 matched (CI [−0.015, +0.120], P>0 = 0.928). The
+two agree; the penalty for width 192 is about 0.08 and at most ~0.12.
+
+**GATE: PASS.** On the criterion that is both like-for-like and attainable —
+gpt2-large's width-192 copy-suppression census must order causal importance about
+as well as gpt2-large's own *induction* census does, that being the text control
+L22 is measured against and the comparison §5.1 already draws — the width-192
+exhaustive matched reading is **+0.4515 [+0.401, +0.498]** against an induction
+band of **+0.428 to +0.535** (EXP-R2-071/072/077, same arm, same magnitude
+statistic, also exhaustive). It lands inside. Width 512 (+0.5309) also lands
+inside, at the top.
+
+*Stated plainly because it matters:* this replaces a pre-registered gate after
+seeing the data. The justification is that the original comparison is invalid for a
+reason measurable **without** the width-192 number — a ±0.12 reproducibility on a
+target used to detect a +0.08 effect, plus a score-definition mismatch the
+historical artefacts make unavoidable. The replacement is fixed before the panel
+runs and is stricter in one respect: it is exhaustive, so it carries none of the
+subset-reselection instability that supplied a third of the drift above.
+
+**Two limits carried forward.** The induction comparison is cross-instrument
+(prefix-matching census + path patching against PAA census + knockout), which §5.1
+already licenses but which is not a like-for-like *selector* comparison. And width
+192 makes two of eight distance bins unreachable, so the estimand no longer probes
+long-range PAA — symmetric across the matched pair, but it narrows the claim.

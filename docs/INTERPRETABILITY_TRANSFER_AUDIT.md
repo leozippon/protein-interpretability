@@ -369,7 +369,7 @@ The figures that carry the most weight, with their provenance, so the catalogue 
 >
 > On the signed scale the correlation is indistinguishable from zero in all four cells; on the magnitude scale it is +0.53 to +0.65 and significant in all four — **comparable to gpt2-large's induction value of +0.428 to +0.507**, which is the text control D2.c would be judged against. **L5 stands exactly as written**: no valid *signed* screen for copy suppression exists on this arm, and that is what it claims. What changes is the inference the plan had drawn from it — that D2.c's positive control was known dead. It is not known dead, and on the evidence available it is probably attainable.
 >
-> **Two limits on that reading, both material.** These 24–32 heads were *selected by `paa_specific` itself* plus a control block, so the correlation is over a restricted range and the exhaustive-grid value could move in either direction — the same range-restriction that made EXP-R2-071's top-32 reading disagree with its all-grid one. And a magnitude ranking conflates suppressive heads with promoting ones, so a high magnitude ρ is evidence that the selector orders causal importance, not that it finds copy suppression. Both belong in D2.c's pre-registration rather than in its discussion.
+> **Two limits on that reading, both material — and a third found later.** These 24–32 heads were *selected by `paa_specific` itself* plus a control block, so the correlation is over a restricted range and the exhaustive-grid value could move in either direction — **it moves down, to +0.5309 exhaustive at width 512 (EXP-R2-087), and the restricted reading is additionally unstable at ±0.12 across cohorts at fixed width. The third limit: these artefacts predate `paa_specific_matched` entirely, so every number in this table is an *unmatched*-score figure, which is not the score a causal comparison may use** — the same range-restriction that made EXP-R2-071's top-32 reading disagree with its all-grid one. And a magnitude ranking conflates suppressive heads with promoting ones, so a high magnitude ρ is evidence that the selector orders causal importance, not that it finds copy suppression. Both belong in D2.c's pre-registration rather than in its discussion.
 
 **L8 — the aperture is algebraically forced.** Numerical rank of `∂logits/∂h_l` is exactly **31** for ProGen2-medium and **457** for ZymCTRL, at every layer and probe, against 1150–1278 for the 50k-vocab arms. Validated against central finite differences at 2.2e-4–2.5e-3 relative error. **Vocabulary-conditional, not modality-conditional** — ProtGPT2's interface is near-full-rank. The honest label is *protein-typical, not protein-necessary*.
 
@@ -905,7 +905,7 @@ qwen landed near prediction. **llama did not — predicted ≈+0.29 "within reac
 
 **EXP-R2-081 — the attenuation objection, tested and survived.** The most serious objection available to L22 is that protein \|effect\| estimates are noisier, so the rank correlation is attenuated harder on protein — *toward zero, the direction of the hypothesis*. It is the failure `corruption_effects` had to fix for the matching gate ("a conclusion the estimator manufactured out of alphabet size"), and it had not been tested. **The objection has a real basis:** probe-clustered reliability of the per-head \|effect\| is 0.823–0.934 on protein against 0.861–0.980 on text for exact probes, and **0.466–0.706 against 0.745–0.865** for approximate probes — ZymCTRL's approximate conditions are over half estimation noise. **The separation survives correction in all 24 measured cells.** Under classical disattenuation r → r∕√reliability the gap widens in two conditions and narrows in the two carried by ZymCTRL's noisy approximate cells, worst case exact/approx at **+0.1560 → +0.0946**; pooled over all 24 cells, text minimum +0.4560 against protein maximum +0.3613. Correcting for the differential noise does not close the gap. *Limits:* only the causal side is disattenuated (census-score reliability is unmeasured, so these are lower bounds, and the same one-sided assumption is applied to both modalities); the formula is derived for Pearson and applied to Spearman; and the reliability used is a variance ratio for the per-head means, not literally the rank variable's. A sensitivity analysis, not an exact correction — decisive only because the conclusion does not depend on the correction's size.
 
-| **D2.c** | Same on copy suppression — does effect size separate arms where prevalence cannot? Directly answers the measurability question §1 leaves open. **Both blockers now cleared (EXP-R2-078, EXP-R2-082): the matched pair enters at `--width 192` with the cohort band unchanged, at zero L13 exposure.** Gated on one attainability check first — gpt2-large's exhaustive census at width 192 against +0.53 to +0.65 — because the positive control is a width-512 measurement. ZymCTRL is irreducibly excluded from any shared window. See the D2.c section below | **1–2 GPU-h** for the check; panel cheaper than the 12–25 previously carried, since width 192 is ~2.7x cheaper per forward |
+| **D2.c** | Same on copy suppression — does effect size separate arms where prevalence cannot? Directly answers the measurability question §1 leaves open. **All blockers cleared and the attainability gate passed (EXP-R2-078, EXP-R2-082, EXP-R2-087): the matched pair enters at `--width 192` with the cohort band unchanged, at zero L13 exposure.** The gate was re-specified before it was read — the +0.53 to +0.65 target is restricted-range, unmatched-score and reproducible only to ±0.12 at fixed width — and passed against gpt2-large's own induction band: **+0.4515 [+0.401, +0.498]** exhaustive at width 192, inside +0.428 to +0.535. ZymCTRL is irreducibly excluded from any shared window. See the D2.c section below | **1–2 GPU-h** for the check; panel cheaper than the 12–25 previously carried, since width 192 is ~2.7x cheaper per forward |
 | **D2.d** | Complete the TG campaign: six of eleven measured stages have no artefact in the corrected tree (`missing_matrix`: tg02, tg04, tg05, tg06, tg08, tg10; 18 of 35 required artefacts present), so `SUMMARY.json` can only be produced in partial mode | ~6 GPU-h |
 
 ### D2.c — the design pass, and the three things that have to be built first
@@ -961,7 +961,7 @@ of the far-band estimand.
 >
 > **The replacement design — width, not band.** `--width 192` with the cohort band **unchanged** at 520–800: gpt2-large admits 400/400 (attainability on the control, rule 2), ProtGPT2 320–355/400. **L13 exposure is zero** — identical band, identical eligible stratum — so a D2.c result can actually be read against L22, which sits in the same 200–800 protein regime. Forwards are ~2.7× cheaper than at width 512. And blocker 2 nearly vanishes on the pair that matters: median key set 1 on ProtGPT2 against 2 on gpt2-large, so the residual mismatch runs **against** the hypothesis rather than for it, unlike the cross-lineage fallback's 17 against 3.
 >
-> *Three costs, declared not hidden.* The blocker-3 positive control (+0.53 to +0.65) is a width-512 measurement and **must be re-established at width 192 before anything is applied** — if it fails there, this design is dead. Two of eight distance bins become unreachable at width 192, so the estimand no longer probes long-range PAA; symmetric across the pair, but it narrows the claim. And the width filter selects ProtGPT2 records on **BPE compressibility** (+1.20 sd of tokens-per-residue at width 192, raising mean cohort length 628 → 643) while rejecting no text document at any width — a selection that exists only on the protein side because only there does a token stop being a residue.
+> *Three costs, declared not hidden.* ~~The blocker-3 positive control (+0.53 to +0.65) is a width-512 measurement and **must be re-established at width 192 before anything is applied** — if it fails there, this design is dead.~~ **Re-established and passed at width 192 (EXP-R2-087), but not against that number**, which is a restricted-range *unmatched*-score figure whose own reproducibility at fixed width is ±0.12; the exhaustive matched reading is +0.4515 [+0.401, +0.498] against gpt2-large's induction band of +0.428 to +0.535. Two of eight distance bins become unreachable at width 192, so the estimand no longer probes long-range PAA; symmetric across the pair, but it narrows the claim. And the width filter selects ProtGPT2 records on **BPE compressibility** (+1.20 sd of tokens-per-residue at width 192, raising mean cohort length 628 → 643) while rejecting no text document at any width — a selection that exists only on the protein side because only there does a token stop being a residue.
 >
 > **What the band route would have cost, now measured.** Moving to 1500–4000 shares **not one record** with the band L22's protein arms were measured on, shrinks the eligible stratum 12.6×, raises internal 3-mer repeat content 2.7× — the very property both mechanisms are defined on — and moves context information by **−1.75 nats at a common window, −2.31 under the gate0 formula**, against L13's catalogued 1.01. *The prescription in the struck clause would have cost 1.7–2.3× the incident that created L13.* (Validation scale, 96/1500 sequences; direction and magnitude secure, third decimal not.)
 >
@@ -1026,14 +1026,45 @@ with the cohort band unchanged** and at zero L13 exposure, while **ZymCTRL is
 irreducibly excluded from any shared window** and is a separately declared per-arm
 configuration or is not run. What remains, in order:
 
-1. **The attainability check, and nothing may be scheduled before it.** gpt2-large's
+1. ~~**The attainability check, and nothing may be scheduled before it.** gpt2-large's
    exhaustive PAA census at **width 192**, read against the +0.53 to +0.65 the
-   restricted-range reading gives at width 512. The positive control is a
-   width-512 measurement and does not transfer to a narrower window by assumption
-   (Appendix B rule 2). ≈1–2 H200-hours at width 192, so this is a check, not a
-   campaign. **If it fails at width 192, this design is dead** and the fallback is
-   the width-512 sensitivity arm at band 1550–4000, which buys the matched pair by
-   paying the full 1.75–2.31 nat L13 exposure.
+   restricted-range reading gives at width 512.~~ **DONE, and the criterion was
+   replaced before it was read — EXP-R2-087.** Both widths were measured
+   exhaustively over all 720 heads (EXP-R2-083/084), which showed the
+   pre-registered comparison cannot decide width:
+
+   > **Why the stated criterion was withdrawn, on evidence that does not involve the
+   > width-192 number.** The width-512 / restricted-24 / unmatched cell is nominally
+   > *identical* between the historical run and a fresh one, and reads **+0.6078**
+   > against **+0.4922** — a drift of **0.116 at fixed width**, against a width
+   > effect of +0.08. A target reproducible only to ±0.12 cannot resolve a +0.08
+   > difference. The census is not the culprit (Spearman +0.986 across the cohort
+   > change, max |difference| 1.5e-3); the causal half contributes −0.065, the
+   > cohort swap −0.020 and re-selecting the 24 heads on the new ranking −0.047.
+   > **And the target is on the wrong score**: the historical artefacts are schema
+   > `r2_transfer_paa_gate_v1` and contain no `paa_specific_matched` at all, so
+   > +0.53–+0.65 is an *unmatched* figure while this section requires the matched
+   > one. Appendix B rule 2, third instance. The correction is outcome-independent:
+   > all of it is measurable at width 512 alone.
+
+   **The replacement, and it is the one §5.1 already draws.** gpt2-large's width-192
+   copy-suppression census must order causal importance about as well as
+   gpt2-large's own **induction** census does — the text control L22 is measured
+   against. Exhaustive, magnitude statistic, matched score, bootstrapped over the
+   200 sequences with census and causal resampled jointly (alignment verified, and
+   the resample regenerates every published per-head `delta_m_gap` exactly).
+
+   | width | exhaustive ρ (matched) | 95% CI |
+   |---:|---:|---|
+   | 192 | **+0.4515** | [+0.401, +0.498] |
+   | 512 | **+0.5309** | [+0.451, +0.547] |
+
+   **PASS.** +0.4515 lands inside the induction band **+0.428 to +0.535** (same arm,
+   same statistic, also exhaustive). The width penalty is **+0.079** (CI [−0.015,
+   +0.120]) on the matched score and +0.083 (CI [+0.016, +0.118]) unmatched — the
+   two agree, so width 192 costs about 0.08 and at most ~0.12. **The design is not
+   dead and the width-512 fallback at band 1550–4000 is not needed**, so the full
+   1.75–2.31 nat L13 exposure is not paid.
 2. Only then the protein arms, on the declared width-192 configuration, with the
    two narrowed-estimand costs stated in the claim: two of eight distance bins
    unreachable, and a cohort selected on BPE compressibility.
