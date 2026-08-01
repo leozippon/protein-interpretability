@@ -3953,3 +3953,50 @@ on gpt2-large under all four selection rules the census applies, against 13.0
 width 192 as the attainability check, before any protein arm is scheduled — the
 audit's own order of work, with the width corrected. At ~2.7× cheaper than width
 512 this is roughly 1–2 H200-hours, not a campaign.
+
+### EXP-R2-083 — D2.c blocker 3's positive control, re-established at width 192 (launched)
+
+*2026-08-01 15:26 (+08:00). B workstation, L20 GPU 1, `logs/drivers/paa_w192_control.sh`, log `logs/paa_w192_control.log`, out `results/transfer_20260801/paa_w192_control/`.*
+
+**Why this runs before any protein arm.** EXP-R2-082 put the matched pair inside
+D2.c by lowering the pool width to 192 rather than moving the cohort band. But the
++0.53 to +0.65 magnitude Spearman that makes D2.c gateable at all is a **width-512**
+measurement, and Appendix B rule 2 requires attainability demonstrated on the text
+control before the design is applied, not assumed to survive a narrower window. If
+gpt2-large does not reproduce that range at width 192, **the width route is dead**
+and the fallback is the width-512 sensitivity arm at band 1550–4000, which buys the
+matched pair by paying the 1.75–2.31 nats of L13 exposure EXP-R2-082 measured.
+
+**Why on B rather than the H200s.** All four H200s are committed to EXP-R2-080 for
+about nine more hours. This is a single-arm check — precisely what the L20
+workstation is declared for — and B had six idle L20s. GPUs 0 and 2 carry another
+user's work and were left alone. Running here costs the campaign nothing and
+returns the answer sooner; the two streams are genuinely parallel rather than
+queued.
+
+**Exhaustive over the grid without double-counting.** gpt2-large is 36 × 20 = 720
+heads. `--causal-heads 712` takes the top 712 by `paa_specific`, and
+`--control-offset 712 --control-heads 8` draws the remaining 8 from an 8-element
+pool without replacement, so the union is all 720 heads exactly once.
+`--causal-heads 720` would instead have resampled controls from heads already
+tested.
+
+*Two interface facts checked rather than assumed.* The metric is already float32 —
+`--census-dtype` defaults to float32 and is what the census and causal stages load,
+while the bfloat16 default applies only to `gate0`, which is not run — so this does
+not touch the quantisation question that rejected bfloat16 for this metric. And the
+`census` stage is **text-arm only**, so no protein arm is loaded: the control really
+does come first.
+
+*Smoke-tested before committing hours.* A 32-sequence, 6-head run at width 192
+completed and its cascade closed. It also corroborated EXP-R2-082 independently:
+**106.8 instances per row against the sub-agent's 109.1** at the same width. The
+first invocation failed explicitly with `FileNotFoundError: /Data/lzp/text_models/
+gpt2-large does not exist; set TRANSFER_MODEL_BASE_DIR, TRANSFER_TEXT_MODEL_DIR or
+TRANSFER_TEXT_MODEL_BASE_DIR` — the Failure Principle behaving correctly, naming the
+remedy rather than falling back to a nearby checkpoint.
+
+**Read on completion:** the Spearman between `paa_specific_matched` and
+\|ΔM-gap\| over all 720 heads, against the width-512 range +0.53 to +0.65. The
+report does not publish that correlation directly, so it is computed from
+`census_matrices.npz` and `causal.json` the same way the L5 block recomputed it.
