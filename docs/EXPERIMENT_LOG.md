@@ -4521,3 +4521,64 @@ is currently behaving safely. The fix — have `gpu_busy` return a third state f
 "could not reach the pod", and treat that as "keep waiting" rather than as "idle" —
 is queued with the other deferred changes, and the abandoned draws will be swept off
 GPFS when the campaign drains.
+
+---
+
+## 2026-08-01 — EXP-R2-091: ProtGPT2 needs 600 cohort records, not the 400 extrapolation gives
+
+*B workstation, L20 GPUs 1 and 3, ~5 min each. `logs/drivers/paa_w192_a1.sh`, out
+`results/transfer_20260801/paa_w192_a1_protgpt2_n{400,600}/`.*
+
+EXP-R2-088 left D2.c one unmeasured parameter: ProtGPT2 returned 10037 instances
+from 200 sequences, so at the census default it reads **FAIL** against
+`--a1-minimum 20000`. Measured at two sizes rather than extrapolated:
+
+| `--census-sequences` | rows used | instances @ban20 | @ban3 | A1 ≥ 20000 | yield/seq |
+|---:|---:|---:|---:|---|---:|
+| 200 | 200 | 10037 | 10040 | **FAIL** | 50.2 |
+| 400 | 400 | **20047** | 20054 | PASS **by 47** | 50.1 |
+| 600 | 600 | 30090 | 30098 | PASS | 50.1 |
+
+**The extrapolation was arithmetically right and operationally wrong.** Yield is
+constant at 50.1 instances per sequence, so linear projection does give 400 — and
+400 clears the gate by **47 instances, 0.24%**. The text pool moved **0.9%** across
+the four EXP-R2-089 draws (21415–21619) on this same width. A threshold cleared by a
+quarter of the noise it will be re-drawn against is not cleared. **D2.c uses 600**,
+which clears by 50%. This is the whole reason the check was run at two sizes instead
+of computed: the number to use was never in doubt, its *margin* was.
+
+A2 is unaffected and drifts slightly upward with cohort size — retention 0.521 →
+0.530 → 0.539, projected 11263 → 11451 → 11645 — so the larger cohort costs nothing
+on the other gate. The cohort supplies the records: `build_cohorts` requests
+`census_sequences * 2` and all 600 rows reached width 192 from a request of 1200.
+
+### Three more abandoned results recovered
+
+The `gpu_busy` defect recorded above abandoned four EXP-R2-086 jobs at 14:11. A GPFS
+sweep finds **three already complete and digest-verified** — `gpt2-large d4
+draw20260803`, `progen2-base d2 draw20260801`, `protgpt2 d3 draw20260804` — with the
+fourth (`gpt2-large d3 draw20260802`) still running at ~3 h. All three queued to the
+drainer and pulling.
+
+**These are additions, not repairs.** The lanes have since started *different* draws
+for the same jobs (20260807, 20260802, 20260805), so each affected arm ends with
+more draws than the campaign asked for. Combined with the four recovered from
+EXP-R2-080, a defect of this shape has now donated seven extra cohort draws to the
+L22 spread estimate — which is the one quantity that campaign exists to measure.
+
+### EXP-R2-092 launched: the D2.c text control at the matched configuration
+
+*L20 GPUs 1 and 3, two draws, ~2.5 h each. `logs/drivers/paa_w192_n600_text.sh`.*
+
+If ProtGPT2 runs at 600 sequences and gpt2-large at 200, the text control carries the
+noisier selector — and attenuation from differential measurement error is exactly
+the objection EXP-R2-081 had to answer for L22. Running them unmatched would bias
+D2.c **against** its own text control by construction. So gpt2-large is re-run at
+`--census-sequences 600`, at two draws so the control has draw robustness from the
+start rather than being rescued into it as EXP-R2-087 was by EXP-R2-089.
+
+Nearly free: the census stage wrote its artefacts about a minute into EXP-R2-083
+while the causal stage took the remaining 2.5 h, and causal cost is fixed by
+`--causal-instances 800` × 720 heads. *Declared, not assumed comparable:*
+`--census-sequences` also shifts the text reference cohort, so this is a new
+configuration and is not a head-to-head successor to the 200-sequence gate runs.
