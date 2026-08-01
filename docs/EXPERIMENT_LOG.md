@@ -4341,3 +4341,71 @@ is a width-512 figure; a three-arm exhaustive panel at width 192 is a few H200-h
 `run_transfer_h200.sh` snapshots the whole of `scripts/transfer` per job. Editing
 `14_paa_census.py` cannot affect stage 11's behaviour, but it would split one
 robustness campaign across two recorded code hashes for no gain.
+
+---
+
+## 2026-08-01 — EXP-R2-088 results: ProtGPT2 builds at width 192, and blocker 2 is a tokeniser property
+
+Both arms completed in under five minutes on the idle L20s (13:07 → 13:11/13:12).
+*Correction to the launch note above: the A2 gate is `--a2-minimum` at **2000**, not
+20000; 20000 is `--a1-minimum`, a different gate on a different stage.*
+
+**(1) ProtGPT2 builds a PAA instance pool at width 192.** The claim it overturns is
+its own: at width 512, ProtGPT2 "cannot build a PAA instance pool at all", because
+0.349 tokens per residue against a 512-token window overshoots the 800-residue band.
+At width 192 it retains **10037** instances (ban 20) from 32000 scored positions.
+The width route works, and the reason it works is the one the design gave.
+
+**(2) A2 passes for both protein arms at both ban depths**, against a gate of 2000:
+
+| arm | ban | retention | projected surviving | verdict |
+|---|---:|---:|---:|---|
+| ProtGPT2 | 20 | 0.5210 | 11263 | **PASS** |
+| ProtGPT2 | 3 | 0.5340 | 11545 | **PASS** |
+| ProGen2-medium | 20 | 0.2460 | 5318 | **PASS** |
+| ProGen2-medium | 3 | 0.5523 | 11941 | **PASS** |
+
+**(3) The decoy-ban failure is a property of the tokeniser, not of the modality —
+and it is not a small effect.** The census bans a decoy from being one of the
+model's top-`ban_depth` candidates. The code says that over a twenty-symbol
+alphabet a top-20 ban is the whole alphabet, so the design "cannot construct a
+protein instance at all". Measured, the cascade says exactly which arms that
+sentence is about:
+
+| arm | vocab | instances @ban20 | @ban3 | candidates lost to an empty decoy pool @ban20 |
+|---|---:|---:|---:|---:|
+| ProtGPT2 | **50257** (BPE) | 10037 | 10040 | **5** of 10042 eligible |
+| ProGen2-medium | **31** (per-residue) | 2526 | 30130 | **28589** of 31115 eligible |
+
+The ban discards **92%** of ProGen2-medium's eligible candidates and **0.05%** of
+ProtGPT2's — a **12-fold** difference in retained instances against **1.0003-fold**.
+ProtGPT2's tokeniser is byte-pair over amino acids with a vocabulary of 50257,
+*identical to gpt2-large's*; ProGen2's is per-residue at 31, so twenty banned tokens
+really are most of its alphabet. ZymCTRL at 458 sits between.
+
+**This is a limitation of the evaluation interface, not of protein models.** It is
+the §1 question asked and answered for one mechanism: the failure belongs to the
+tokenisation the corpus is read through, and it disappears when the protein arm's
+tokeniser resembles the text arm's — which is what "matched pair" was supposed to
+mean and here demonstrably does.
+
+**(4) D2.c gets simpler, and the open design question closes.** The launch note
+recorded that a D2.c comparison "either carries a declared text-20/protein-3
+asymmetry in its claim or runs both arms at both depths". **Neither is needed for
+the matched pair**: gpt2-large and ProtGPT2 both run at the specified ban depth 20
+with no asymmetry to declare, because at vocabulary 50257 the ban costs both of them
+nothing. Only the ProGen2 arms need the relaxed depth, and their need is now
+*explained* rather than accommodated.
+
+**(5) A new constraint, surfaced by measurement rather than assumption.** A1 is
+reported as PASS/FAIL against `--a1-minimum 20000` in the census stage. ProtGPT2
+yields **10037 instances from 200 sequences** — about 50 per sequence — so at the
+census default it would read **FAIL**. Clearing it needs roughly 400 sequences, and
+EXP-R2-082 measured ProtGPT2 admitting 320–355 of 400 requested records at width
+192, which projects to ≈17000 and still short. A D2.c run on ProtGPT2 therefore
+needs a cohort request nearer **600** records, which at width 192 is cheap. This is
+a parameter, not a blocker, but it was invisible before the pool was built.
+
+*Unchanged and still owed:* `census()` and `causal()` remain bound to
+`args.text_arm`, so the panel still needs the arm-parameterisation change, deferred
+until EXP-R2-086 drains.
