@@ -4052,3 +4052,74 @@ all four H200s plus B GPU 1 were still at 100%. The suspended shell was only the
 wrapper that had already `setsid`-detached its children — which is why the drivers
 are written that way, and this is the second time in two days that choice has paid
 (the first being the 02:02 transport drop).
+
+### EXP-R2-085 — a deliberate hunt for one defect class in the canonical document
+
+*2026-08-01, read-only audit, no compute. Opus 5 sub-agent under no-GPU/no-write constraints; every finding re-verified here before any correction was applied.*
+
+**Why this was run.** Both defects found earlier today were the same class — *the
+canonical document asserting something about the code that is not true of the
+code* — and both were found **by accident** while doing other work. That is a bad
+way to find them, so the class was hunted deliberately across §5 (L1–L23), §5.05,
+§5.1, §8, the D2 plan rows, §D2.c, the EXP-R2 blocks and Appendix B.
+
+**Twelve findings. Ten corrected, one downgraded on re-verification, one resolved
+that the audit had left open.**
+
+| # | claim | reality | class |
+|---|---|---|---|
+| 1 | §(ii) concentration "suspended … until the noise-corrected variant lands" | that variant does not exist — the *other half* of the defect corrected at (v) this morning | **defect, high** |
+| 2 | D2.d "seven of twelve stages have no artefact" | eleven measured stages, **six** missing; 18 of 35 artefacts | **defect** |
+| 3 | EXP-R2-079 "all **five** structural invariants" | there are **nine** — eight quantitative plus a positive control | **defect** |
+| 4 | L8 vocabulary "differs **1600-fold** (32 to 151936)" | 151936/32 = **4748**; 1600 was the pre-Qwen/Llama panel | **defect** |
+| 5 | `--corpus-draw-seed` | the flag is `--cohort-draw-seed` in all ten stages; the quoted name exists nowhere | **defect** |
+| 6 | Appendix B rule 9 "never run `git clean` under ``" | the path is empty — a rule naming nothing, guarding ~47 GB | **defect** |
+| 7 | matched pair "identical parameter count (773,891,840)" | **774,030,080**, measured from both checkpoints; wrong by 138,240 | **defect** |
+| 8 | same table lists protgpt2 at **738M**, gpt2-large at 774M | byte-identical architectures; both 774M | **defect** |
+| 9 | causal effects "for heads selected by `prefix_matching >= threshold`" | true of three arms; **ZymCTRL's 8 came from the `top_k_no_head_above_threshold` fallback at `n_above_threshold: 0`** | defect (precision) |
+| 10 | top-k sweep "5/10/20/40" | `CAUSAL_AGREEMENT_TOP_K` includes **32** — the value the restated reading uses | suggestion |
+| 11 | `DISTANCE_BANDS` at `circuits.py:72-80`, "no CLI knob" | it is at 88-95, and the successor knob now exists | suggestion |
+| 12 | ZymCTRL far-band excluded because "`content_bounds` refuses" | `build_patch_cases` now refuses up front from the declaration | suggestion |
+
+**The one I rejected.** The audit reported that EXP-R2-081's "ZymCTRL Gini of 0.607"
+was the *approximate*-case *direct*-effect figure and should be 0.612. **Checked and
+it is not.** 0.6070 is exactly the exact-probe total-effect Gini in
+`results/transfer_20260801/d2bprime_draw/zymctrl/zymctrl.json` — the **alternate
+draw** — while 0.612 is the same statistic on the reference draw, whose artefact
+carries no `concentration` block at all and had to be recomputed. My number was
+right; what was wrong was that I never said **which draw**, and the comparison range
+"0.78–0.94" silently meant the arms measured in that same draw rather than the
+twelve-arm panel (0.769–0.958). Corrected by stating both, not by changing the
+value. *Recorded because taking the finding at face value would have introduced an
+error into a correct sentence.*
+
+**The one it left open, now closed.** The parameter-count inconsistency was reported
+as unadjudicated "because no checkpoints are present on this host" — but ProtGPT2
+and gpt2-large are both on B under `/Data/public`. Loaded on CPU: **both are
+exactly 774,030,080 parameters**, `n_positions` 1024, vocab 50257, 36 × 1280 × 20.
+**So §2's substantive claim — that the matched pair has an identical parameter
+count — is now verified from the checkpoints rather than asserted, which
+strengthens it**; only the literal figure was wrong.
+
+**Coverage, which matters as much as the hits.** The audit verified and found
+*correct* a long list of load-bearing claims, including: `causal_census_agreement`
+raising on a sender set smaller than the grid (and deriving that precondition from
+`n_heads_in_grid` rather than trusting the caller's flag — stronger than the
+document claims); the `exhaustive` criterion refusing `max_senders`; both
+cluster-unit estimators emitted and labelled; the retracted 0.008/0.189 pinned *as
+retracted* in tests; §5.05(b)'s digest identity byte-for-byte; every D2.c flag and
+default in EXP-R2-082's analysis; L6's docstring matching §5.1 word for word;
+`CAMPAIGN_PANEL` holding exactly §2's twelve arms; L23's 4.4/2.8/1.0; and §(vi)'s
+"best 0.667, text never exceeds 0.538", recomputed across all twelve arms.
+
+**Two items remain unverified and are recorded as such.** L20 and L21 rest on the
+`h200_*.sh` access layer, which the sub-agent was forbidden to touch while
+EXP-R2-080 was running. They are unaudited, not confirmed.
+
+**A code-side observation, no document claim wrong.** `scaling.PRIMARY_INDUCTION_PROBE
+= "natural"` and `circuits.py` calls the natural probe "the one to trust", while
+`induction_robustness.PRIMARY_PROBE = "synthetic_repeat"` is what
+`12_induction_robustness.py` takes as its `--probe` default. The document describes
+all three correctly, but two modules declare the same thing differently — the
+Appendix B rule 12 shape, and EXP-R2-073's D1.b re-run used the disagreeing
+module's default. Queued with the other deferred code fixes.
