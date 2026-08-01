@@ -905,10 +905,12 @@ qwen landed near prediction. **llama did not — predicted ≈+0.29 "within reac
 
 **EXP-R2-081 — the attenuation objection, tested and survived.** The most serious objection available to L22 is that protein \|effect\| estimates are noisier, so the rank correlation is attenuated harder on protein — *toward zero, the direction of the hypothesis*. It is the failure `corruption_effects` had to fix for the matching gate ("a conclusion the estimator manufactured out of alphabet size"), and it had not been tested. **The objection has a real basis:** probe-clustered reliability of the per-head \|effect\| is 0.823–0.934 on protein against 0.861–0.980 on text for exact probes, and **0.466–0.706 against 0.745–0.865** for approximate probes — ZymCTRL's approximate conditions are over half estimation noise. **The separation survives correction in all 24 measured cells.** Under classical disattenuation r → r∕√reliability the gap widens in two conditions and narrows in the two carried by ZymCTRL's noisy approximate cells, worst case exact/approx at **+0.1560 → +0.0946**; pooled over all 24 cells, text minimum +0.4560 against protein maximum +0.3613. Correcting for the differential noise does not close the gap. *Limits:* only the causal side is disattenuated (census-score reliability is unmeasured, so these are lower bounds, and the same one-sided assumption is applied to both modalities); the formula is derived for Pearson and applied to Spearman; and the reliability used is a variance ratio for the per-head means, not literally the rank variable's. A sensitivity analysis, not an exact correction — decisive only because the conclusion does not depend on the correction's size.
 
-| **D2.c** | Same on copy suppression — does effect size separate arms where prevalence cannot? Directly answers the measurability question §1 leaves open. **Design pass done (EXP-R2-078); not schedulable as specified.** Two blockers must be cleared first and the cost is 2x what this row carried — see the D2.c section below | 12–25 GPU-h |
+| **D2.c** | Same on copy suppression — does effect size separate arms where prevalence cannot? Directly answers the measurability question §1 leaves open. **Both blockers now cleared (EXP-R2-078, EXP-R2-082): the matched pair enters at `--width 192` with the cohort band unchanged, at zero L13 exposure.** Gated on one attainability check first — gpt2-large's exhaustive census at width 192 against +0.53 to +0.65 — because the positive control is a width-512 measurement. ZymCTRL is irreducibly excluded from any shared window. See the D2.c section below | **1–2 GPU-h** for the check; panel cheaper than the 12–25 previously carried, since width 192 is ~2.7x cheaper per forward |
 | **D2.d** | Complete the TG campaign: seven of twelve stages have no artefact in the corrected tree, so `SUMMARY.json` can only be produced in partial mode | ~6 GPU-h |
 
 ### D2.c — the design pass, and the three things that have to be built first
+
+> **Status (2026-08-01): all three are cleared; one attainability check stands between this and the panel.** Blocker 3 was cleared in EXP-R2-078 (the positive control exists on the magnitude scale), blocker 2 closed in code in the same pass, and blocker 1 was re-measured in EXP-R2-082 — where the prescription written below turned out to be **wrong**, and the fix is the pool width rather than the cohort band. The section is left standing with its errors struck and corrected in place, because the reasoning that produced the wrong prescription is the point. Read the blocker-1 correction block and the revised order of work at the end.
 
 Costed at "~13 GPU-h" while it was one line in a table. A design pass
 (EXP-R2-078) put that at **12–25 H200-hours** for a ten-arm panel and found that
@@ -941,11 +943,29 @@ the window, and the two conditions intersect at the single residue length
 `width − 10`. **So D2.c as specified would run on the GPT-2 lineage against the
 ProGen2 lineage and would not include the matched pair** — the only
 modality-identifying comparison this panel has (§2). A cross-lineage-only result
-on the second mechanism cannot discharge a gate about the first. Fixing it means
+on the second mechanism cannot discharge a gate about the first. ~~Fixing it means
 raising `--protein-max-len` past ~1500 for ProtGPT2, which moves the cohort band
-and is an L13 exposure that must be declared and measured, and giving ZymCTRL a
+and is an L13 exposure that must be declared and measured~~, and giving ZymCTRL a
 window co-designed with its conditioning prompt — the same wall L15 put in front
 of the far-band estimand.
+
+> **Blocker 1 re-measured (EXP-R2-082, 2026-08-01, CPU on B, no GPU). The prescription above was wrong, and the matched pair is available at zero L13 exposure.** Four corrections and one replacement design.
+>
+> **(1) Raising `--protein-max-len` does not work, because it is not the binding parameter.** The census band is `[--census-protein-min-len, --protein-max-len]` and the *floor* binds. Admitted rows out of 400 at width 512: band `[520, 1500]` → 7; `[520, 2000]` → 17; **`[520, 4000]` → 36**, still below `--min-sequences 64`, so the arm keeps failing. Full admission needs the **floor** raised to ~1550 (`[1550, 4000]` → 400/400). The struck clause would not have fixed the arm.
+>
+> **(2) The refusal is width-conditional, not unconditional — and this is the fix.** In the **unchanged** band 520–800, ProtGPT2 admits **400/400 at width 128, 320–355/400 at width 192, 65/400 at width 256, and 0 at width ≥ 320**. (Two independent measurements: a direct tokenisation of the declared `fasta_wrapped` rendering and a run through `tokenised_rows` itself agree exactly at 256 and at ≥ 320 and differ by ~9% at 192, from cohort-construction filtering. Tokens per residue 0.352 against the table's band-restricted 0.351.) **Lowering the pool width admits the matched pair without touching the band at all.**
+>
+> **(3) ZymCTRL's "1.016 tokens per residue" is a band artefact, not a tokeniser property.** Its rendering is exactly `R + 10` tokens on 5000/5000 records — a *constant* prefix, so the "rate" is `1 + 10/R`. Reporting it as a rate disguises that the constraint is exact: `tokenised_rows` requires `total == width`, so the admissible length is the single point `R = width − 10`, which the same paragraph then states correctly. The EC prefix is 9 tokens for 212,144 of 212,165 eligible records and 10 for 21 of them (a three-digit EC field splits), giving **two disjoint points, not a range** — and the two cannot be mixed, since `tokenised_rows` rejects inconsistent content offsets.
+>
+> **(4) Not previously recorded: the single-length ZymCTRL window breaks `build_cohorts`.** `14_paa_census.py` draws its reference corpus from the *same* band with a skip, and no exact residue length can supply it — the largest single length holds 959 records against a request of 4000. A trial run died on exactly this at a request of 600. Eighteen further lengths are poisoned by the 10-token EC tags. So the ZymCTRL window is not merely narrow; as specified it does not run.
+>
+> **The replacement design — width, not band.** `--width 192` with the cohort band **unchanged** at 520–800: gpt2-large admits 400/400 (attainability on the control, rule 2), ProtGPT2 320–355/400. **L13 exposure is zero** — identical band, identical eligible stratum — so a D2.c result can actually be read against L22, which sits in the same 200–800 protein regime. Forwards are ~2.7× cheaper than at width 512. And blocker 2 nearly vanishes on the pair that matters: median key set 1 on ProtGPT2 against 2 on gpt2-large, so the residual mismatch runs **against** the hypothesis rather than for it, unlike the cross-lineage fallback's 17 against 3.
+>
+> *Three costs, declared not hidden.* The blocker-3 positive control (+0.53 to +0.65) is a width-512 measurement and **must be re-established at width 192 before anything is applied** — if it fails there, this design is dead. Two of eight distance bins become unreachable at width 192, so the estimand no longer probes long-range PAA; symmetric across the pair, but it narrows the claim. And the width filter selects ProtGPT2 records on **BPE compressibility** (+1.20 sd of tokens-per-residue at width 192, raising mean cohort length 628 → 643) while rejecting no text document at any width — a selection that exists only on the protein side because only there does a token stop being a residue.
+>
+> **What the band route would have cost, now measured.** Moving to 1500–4000 shares **not one record** with the band L22's protein arms were measured on, shrinks the eligible stratum 12.6×, raises internal 3-mer repeat content 2.7× — the very property both mechanisms are defined on — and moves context information by **−1.75 nats at a common window, −2.31 under the gate0 formula**, against L13's catalogued 1.01. *The prescription in the struck clause would have cost 1.7–2.3× the incident that created L13.* (Validation scale, 96/1500 sequences; direction and magnitude secure, third decimal not.)
+>
+> **ZymCTRL remains irreducibly outside any shared window.** ProtGPT2 needs `t/r ≥ width/(width − 10) > 1` and never exceeds 0.40; `width − 10 ≥ 2.5·width` has no positive solution, and 0 of 581 records at R = 502 reach 512 ProtGPT2 tokens. **No width, at any cohort size, admits both.** ZymCTRL is therefore a separately declared per-arm configuration (`--width 348`, band 338–338, 400/400 admitted) or it is not run — and either way it cannot contribute to a statement about a common cohort.
 
 **Blocker 2 — the census and the causal statistic are measured on different key
 sets, and the difference is alphabet-size-dependent.** `paa_attention_scores`
@@ -993,11 +1013,33 @@ three brings the panel to **12–25 H200-hours**. TF32 would recover roughly 4x 
 but must first pass the quantisation check that rejected bfloat16 for this metric,
 which is cheap and has not been run.
 
-**Order of work, and it is not "start the campaign".** Fix blocker 2; decide and
+**Order of work, and it is not "start the campaign".** ~~Fix blocker 2; decide and
 declare the protein band and window that admit ProtGPT2 and ZymCTRL, or record
-that the matched pair is unavailable and scope D2.c's claim accordingly; run the
+that the matched pair is unavailable and scope D2.c's claim accordingly;~~ run the
 exhaustive census on gpt2-large alone and check the all-grid positive control
 against the restricted-range +0.53 to +0.65; only then schedule the panel.
+
+**Order of work as it now stands (EXP-R2-078, EXP-R2-082).** The first two items
+are done: blocker 2 is closed in code, and the band question is decided — the fix
+is the **pool width**, not the band, so the matched pair enters at **`--width 192`
+with the cohort band unchanged** and at zero L13 exposure, while **ZymCTRL is
+irreducibly excluded from any shared window** and is a separately declared per-arm
+configuration or is not run. What remains, in order:
+
+1. **The attainability check, and nothing may be scheduled before it.** gpt2-large's
+   exhaustive PAA census at **width 192**, read against the +0.53 to +0.65 the
+   restricted-range reading gives at width 512. The positive control is a
+   width-512 measurement and does not transfer to a narrower window by assumption
+   (Appendix B rule 2). ≈1–2 H200-hours at width 192, so this is a check, not a
+   campaign. **If it fails at width 192, this design is dead** and the fallback is
+   the width-512 sensitivity arm at band 1550–4000, which buys the matched pair by
+   paying the full 1.75–2.31 nat L13 exposure.
+2. Only then the protein arms, on the declared width-192 configuration, with the
+   two narrowed-estimand costs stated in the claim: two of eight distance bins
+   unreachable, and a cohort selected on BPE compressibility.
+3. ZymCTRL separately or not at all, and if separately then `build_cohorts` needs
+   its reference band decoupled from its cohort band first — as specified the
+   single-length window does not run.
 
 ### D3 — Adapted methods, hard-gated
 

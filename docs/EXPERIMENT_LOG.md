@@ -3854,3 +3854,102 @@ recoverable: the driver writes `${arm}_${tag}_draw${draw}` into every results ro
 the drainer preserves it, and cohort digests distinguish draws. Fix queued for the
 drain, together with a test asserting that *every* stage accepting the flag records
 it, so a tenth stage cannot reintroduce the gap.
+
+### EXP-R2-082 — D2.c blocker 1 re-measured: the fix is the pool width, not the cohort band
+
+*2026-08-01, CPU on B, no GPU (EXP-R2-080 holds all four H200s). Delegated to an Opus 5 sub-agent under explicit no-cluster/no-write constraints; its harness was validated against shipped artefacts before any conclusion (gpt2-large W=512: 359.4 instances/row against the shipped pool's 357.2, mean key set 5.54 against 5.51). **I re-derived the load-bearing claim independently before recording it** — see the verification note below.*
+
+**The audit's prescription for blocker 1 was wrong, and a strictly better fix exists.**
+
+**(1) Raising `--protein-max-len` past ~1500 does not fix ProtGPT2, because it is
+not the binding parameter.** The census band is
+`[--census-protein-min-len, --protein-max-len]` and the *floor* binds. Rows
+admitted of 400 at width 512: `[520,1500]` → 7, `[520,2000]` → 17, `[520,4000]` →
+**36**, still under `--min-sequences 64`. Full admission needs the **floor** at
+~1550.
+
+**(2) The refusal is width-conditional, and lowering the width fixes it at zero
+cost.** In the **unchanged** band 520–800, ProtGPT2 admits **400/400 at width 128,
+320–355/400 at width 192, 65/400 at width 256, 0 at width ≥ 320.**
+
+**(3) ZymCTRL's "1.016 tokens per residue" is a constant-overhead identity, not a
+rate.** The rendering is exactly `R + 10` tokens on 5000/5000 records, so the
+"rate" is `1 + 10/R`. `tokenised_rows` requires `total == width` exactly, making
+the admissible length the single point `R = width − 10`. The EC prefix is 9 tokens
+for 212,144 of 212,165 eligible records and 10 for 21 — **two disjoint points, not
+a range**, and unmixable (`inconsistent content offsets`).
+
+**(4) Newly found: the single-length ZymCTRL window does not run at all.**
+`build_cohorts` draws its reference corpus from the *same* band with a skip, and no
+exact length can supply it — the largest holds 959 records against a request of
+4000. A trial died at a request of only 600. Eighteen further lengths are poisoned
+by 10-token EC tags.
+
+**My independent verification of (2), because it carries the recommendation.** My
+first check used naive tokenisation and disagreed (232/400 at width 192, t/r
+0.3285). The cause was mine: ProtGPT2 declares `input_format="fasta_wrapped"`, and
+`arms.py` renders it as an end-of-text token plus 60-residue hard-wrapped lines —
+the rendering L11 prices at 1.42 nats/token. Re-run through that rendering:
+**t/r 0.3520** against the sub-agent's 0.3505, **width 256 → 65/400 exactly**,
+**width ≥ 320 → 0**, width 128 → 400/400, width 192 → 320/400 against its 355/400
+(~9%, from cohort-construction filtering the direct path does not apply). *The
+conclusion is confirmed and the two most constraining cells match exactly.* Recorded
+because the disagreement was real until the rendering was right, and a naive
+tokenisation would have under-stated admission across the board.
+
+**The replacement design.** `--width 192`, cohort band **unchanged** at 520–800:
+gpt2-large 400/400 (attainability on the control, rule 2), ProtGPT2 320–355/400,
+~21,240 ProtGPT2 instances at 400 rows against `--a1-minimum 20000`. **Zero L13
+exposure** — same band, same stratum, same draw seed — so the result can be read
+against L22, which lives in the same 200–800 protein regime. Forwards ~2.7× cheaper
+than width 512. And **blocker 2 nearly vanishes on the matched pair**: median key
+set 1 on ProtGPT2 against 2 on gpt2-large, so the residual mismatch runs *against*
+the hypothesis, where the cross-lineage fallback reads 17 against 3.
+
+*Three costs, declared.* The blocker-3 positive control (+0.53 to +0.65) is a
+width-512 measurement and **must be re-established at width 192 first**; if it fails
+there this design is dead and the sensitivity arm is the fallback. Two of eight
+distance bins become unreachable (max distance 189), narrowing the estimand away
+from long-range PAA. And the width filter selects ProtGPT2 records on **BPE
+compressibility** (+1.20 sd of tokens-per-residue at width 192; +8.11 sd at 128)
+while rejecting no text document at any width.
+
+**What the band route would have cost, now measured rather than asserted.** Band
+1550–4000 shares **not one record** with any band L22's protein arms used, shrinks
+the eligible stratum 12.6×, raises 3-mer self-repeat 0.0914 → 0.2494 (**2.7×** — the
+property both mechanisms are defined on), and moves ProtGPT2's context information
+by **−1.75 nats at a common window, −2.31 under the gate0 formula**, against L13's
+catalogued 1.01. **The audit's own prescription would have cost 1.7–2.3× the
+incident that created L13.** (Validation scale, 96/1500 sequences; direction and
+magnitude secure, third decimal not.)
+
+**ZymCTRL is irreducibly outside any shared window.** ProtGPT2 needs
+`t/r ≥ width/(width − 10) > 1` and never exceeds 0.405; `width − 10 ≥ 2.5·width` has
+no positive solution, and 0 of 581 records at R = 502 reach 512 ProtGPT2 tokens. **No
+width, at any cohort size, admits both.** ZymCTRL becomes a separately declared
+per-arm configuration (`--width 348`, band 338–338, 400/400) or is not run, and
+either way cannot support a statement about a common cohort.
+
+**Two further findings, both about the instrument rather than the models.** A fixed
+token width does **not** fix content: ProtGPT2 rows carry 1342/1431/1556 residues
+(min/median/max) at width 512 while ProGen2 carries exactly 511 and ZymCTRL exactly
+502 — L23 operating *inside* a single arm. And the width filter has **no analogue on
+the text control**, since no text document is ever rejected at any width; by this
+programme's own distinction that makes it a property of the *method*, surfaced only
+because a protein arm has a second symbol scale.
+
+**Two defects in frozen artefacts, found while verifying blocker 2.** The shipped
+pools predate the `content_low` field — `load_pool` correctly refuses them, so the
+guard works — and predate the key-floor fix: the gpt2-large pool holds **184
+instances whose antecedent is position 0** (the attention sink), on which current
+`antecedent_sets` would raise, and 622 with a decoy there. Both faults the current
+code documents as fixed, visible in a frozen artefact.
+
+*Blocker 2 itself is confirmed exactly as the audit states it*: median key set 3.0
+on gpt2-large under all four selection rules the census applies, against 13.0
+(ban20, whole pool) to 17.0 (ban3, shipped stratified selection) on ProGen2-medium.
+
+**Next compute, queued behind EXP-R2-080:** gpt2-large's exhaustive PAA census at
+width 192 as the attainability check, before any protein arm is scheduled — the
+audit's own order of work, with the width corrected. At ~2.7× cheaper than width
+512 this is roughly 1–2 H200-hours, not a campaign.
