@@ -4000,3 +4000,55 @@ remedy rather than falling back to a nearby checkpoint.
 \|ΔM-gap\| over all 720 heads, against the width-512 range +0.53 to +0.65. The
 report does not publish that correlation directly, so it is computed from
 `census_matrices.npz` and `causal.json` the same way the L5 block recomputed it.
+
+### EXP-R2-084 — the comparator EXP-R2-083 needs to be interpretable, and the confound I had built into my own gate
+
+*2026-08-01 16:07 (+08:00). B workstation, L20 GPU 3, `logs/drivers/paa_w512_control.sh`, log `logs/paa_w512_control.log`, out `results/transfer_20260801/paa_w512_control/`.*
+
+**The fault was mine and it was in the gate design, not the code.** EXP-R2-083
+measures the census-to-causal magnitude correlation **exhaustively, over all 720
+gpt2-large heads, at width 192**. The target I declared it would be read against —
+**+0.53 to +0.65** — is a **restricted-range** figure: the L5 recomputation covers
+the 16 to 32 heads the gate stage screens, not the grid. The audit's own L5 block
+lists range restriction as one of the two limits on that reading, and I quoted the
+number anyway as if it were an all-grid quantity.
+
+A bare comparison therefore confounds two things. Had exhaustive-at-192 returned,
+say, +0.40, that could have been the narrower window **or** the wider head range,
+and nothing in the artefacts would separate them. **A gate decided on a confounded
+comparison is precisely the Appendix B rule 2 failure the check exists to prevent** —
+caught before the result landed rather than after, which is the only reason it is a
+design note and not a retraction.
+
+**The fix is a 2 × 2, and three of its four cells are already free:**
+
+| | restricted (top ~24) | exhaustive (720) |
+|---|---|---|
+| **width 512** | +0.53 to +0.65 (L5, published) | **EXP-R2-084, this run** |
+| **width 192** | recomputable from EXP-R2-083 at no cost | EXP-R2-083 |
+
+The width-192 restricted cell costs nothing — it is the same artefact scored on the
+top-24 subset. So only the exhaustive width-512 cell needed compute. With it, **width
+is isolated at fixed range, and range is isolated at fixed width**, and the gate can
+be decided on a comparison that means what it says.
+
+*Configuration.* Defaults apart from the head range, so it reproduces the shipped
+`paa_gate` configuration and extends it from 24 heads to the whole grid: width 512,
+`--causal-heads 712 --control-offset 712 --control-heads 8` (all 720 exactly once),
+800 causal instances, batch 16. **The shipped pools predate the `content_low` field**,
+so this run's pool is deliberately *not* byte-identical to them — both cells of the
+width comparison come from current code, which is the point of running it rather
+than quoting the old number.
+
+*Placement.* Both L20 runs sit beside EXP-R2-080 rather than behind it: B had five
+idle L20s past the one carrying EXP-R2-083, and GPUs 0 and 2 belong to another
+user's workload and were left alone. Nothing was queued and no H200 time was taken
+from the campaign.
+
+**Session-suspension check, same date.** Sessions, shell tasks and sub-agents were
+suspended and re-inspected. **Everything survived**: all four EXP-R2-080 lanes, their
+four pod-side controllers, the pull drainer, and EXP-R2-083 were still running, and
+all four H200s plus B GPU 1 were still at 100%. The suspended shell was only the
+wrapper that had already `setsid`-detached its children — which is why the drivers
+are written that way, and this is the second time in two days that choice has paid
+(the first being the 02:02 transport drop).
