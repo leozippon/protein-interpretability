@@ -4453,3 +4453,71 @@ width-512 driver is now written out in full rather than derived.
 
 *Ten GPUs busy: four H200s on EXP-R2-086, six B L20s one run each. GPUs 0 and 2 on B
 carry another user's work and are untouched.*
+
+---
+
+## 2026-08-01 — EXP-R2-089 results: the D2.c gate is draw-robust, and the original draw was the conservative one
+
+Three alternate draws completed on B's L20s in ~2.4 h each (13:20 → 15:42/15:45,
+all exit 0). Same measurement as EXP-R2-083 in every other respect.
+
+| draw | cohort digest | A1 instances | matched ρ | unmatched ρ | inside band |
+|---|---|---:|---:|---:|---|
+| 20260728 (reference) | dedbcd48b50e | 21619 | **+0.4515** | +0.4290 | YES |
+| 20260801 | d36899629589 | 21415 | +0.4669 | +0.4391 | YES |
+| 20260802 | 3a0d6489c8aa | 21474 | **+0.5206** | +0.4553 | YES |
+| 20260803 | eb34c364334a | 21520 | +0.4522 | +0.4572 | YES |
+
+All four cohort digests differ, so these are genuinely four corpora; the pool is
+stable across them (21415–21619 instances, a 0.9% spread).
+
+**The gate holds at every draw.** Against gpt2-large's own induction band of +0.4276
+to +0.5350, **4 of 4** draws land inside, and the worst clears the floor by +0.0239.
+
+**And the draw EXP-R2-087 happened to use is the lowest of the four.** The
+single-draw decision was therefore the conservative one rather than a lucky one —
+which is the opposite of the failure mode the re-run was launched to catch.
+
+**The statistic is more draw-stable than the one that prompted the worry.** Its
+range over four draws is **0.0691** matched and **0.0282** unmatched, against the
+**0.1073** the *induction* path-patching statistic shows on this same arm and
+condition. Exhaustiveness is the likely reason: averaging a rank correlation over
+all 720 heads is far less draw-sensitive than the 48-cell induction reading, which
+is itself an argument for the exhaustive form of the criterion adopted in
+EXP-R2-087 over the restricted-range one it replaced.
+
+*Still open:* EXP-R2-090 repeats this at width 512 on the same three draws, so the
++0.079 width effect can be quoted draw-for-draw rather than point-to-point. Due
+~21:15.
+
+### A defect in my own EXP-R2-086 repair, found while it was running
+
+The repaired driver is working where it was aimed — lanes now log "GPU N occupied —
+environment, not draw; waiting for it to clear" and wait, instead of burning a
+candidate draw per refusal. But `await_manifest` has the *same class* of flaw the
+repair was written to remove.
+
+`gpu_busy` runs `nvidia-smi` in the pod and reads "no busy GPU" from an empty
+result. **It cannot distinguish an idle GPU from an unreachable pod** — and it is
+called precisely when the transport has just dropped, which is when the pod is most
+likely unreachable. At 14:11 all four lanes declared "FAILED, no manifest and GPU
+idle". The pod now shows those **same four workers still running**, two of them
+three hours in, on the draws the driver had already abandoned:
+
+| lane | declared | actually |
+|---|---|---|
+| gpu 0 | gpt2-large d3 draw=20260802 FAILED, moved to 20260806 | running, 3:00 elapsed |
+| gpu 1 | gpt2-large d4 draw=20260803 FAILED, moved to 20260807 | running, 2:59 elapsed |
+
+So I replaced "concluded too early" with "concluded on an unobservable" — an
+inability to observe read as an observation, which is the same mistake in a new
+place. **No data is lost**: the workers keep computing and their artefacts land on
+GPFS, recoverable exactly as EXP-R2-080's four were, and they are extra draws rather
+than wasted ones. The cost is lane time.
+
+*Not patched live.* The driver is a running bash script and bash reads it
+incrementally, so editing it in place risks corrupting execution of a campaign that
+is currently behaving safely. The fix — have `gpu_busy` return a third state for
+"could not reach the pod", and treat that as "keep waiting" rather than as "idle" —
+is queued with the other deferred changes, and the abandoned draws will be swept off
+GPFS when the campaign drains.
