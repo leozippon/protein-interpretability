@@ -3652,3 +3652,103 @@ EXP-R2-077 workers, llama-3.2-3b on the fresh controller.
    prediction, not a refutation**.
 4. Only then D2.c, whose two blockers and re-derived cost are in the audit
    document's own D2.c section.
+
+**Addendum (2026-08-01, 14:20): EXP-R2-077 and EXP-R2-079 are both in. The separation survives, the architecture confound is removed, and my own pre-registration was wrong.**
+
+*Recovery closed.* All three orphaned EXP-R2-077 workers promoted and were pulled
+by `draw_recover.sh` against their own manifests: gpt2-large 03:42, zymctrl 04:14,
+gpt2-xl 11:21. Nothing was refused on a digest mismatch. Both EXP-R2-079 legs also
+exited **90** — the same transport signature — and both had promoted correct
+artefacts; they were verified in-pod, pulled, and re-verified locally (llama
+`sha256sum -c` OK; qwen local digests `b3b77523…` / `96accc25…` equal to the
+pod-side manifest byte for byte). **Six runs across two campaigns were recovered
+from controllers that reported failure. Not one produced a bad artefact.** Exit 90
+is now four-for-four a statement about the channel.
+
+**EXP-R2-077, the cohort-draw check, complete.** Case seed held at 20260728 so only
+the corpus draw moves. ρ = Spearman(census, |causal effect|):
+
+| arm | exact/exact | exact/approx | approx/exact | approx/approx |
+|---|---:|---:|---:|---:|
+| gpt2-large | +0.4276 → **+0.5350** | +0.4402 → **+0.5034** | +0.4725 → **+0.5089** | +0.5071 → **+0.5217** |
+| gpt2-xl | +0.4087 → **+0.4448** | +0.3711 → **+0.4028** | +0.4576 → **+0.4261** | +0.4404 → **+0.4150** |
+| zymctrl | +0.2706 → **+0.2823** | +0.2197 → **+0.2468** | +0.2490 → **+0.2098** | +0.2160 → **+0.2269** |
+| protgpt2 | −0.0763 → **−0.1513** | −0.1554 → **−0.2259** | −0.0058 → **−0.0547** | −0.0537 → **−0.0610** |
+
+**The two modalities moved in opposite directions.** gpt2-large rose in all four
+cells (+0.015 to +0.107) while ProtGPT2 fell in all four (−0.007 to −0.075). That
+is what makes the check informative: a common-mode shift of the whole panel would
+have told us nothing, and the matched pair — the only modality-identifying
+comparison this panel has — separated *further*. Text minimum +0.3711 → +0.4028,
+protein maximum +0.2706 → +0.2823, gap **+0.1005 → +0.1205**.
+
+*A second, cleaner contrast the artefacts already contain.* Because
+`d2bprime_seed2` holds the corpus draw fixed and moves only `--seed`, the two
+factors can be separated on the two arms that have both: case-seed movement is the
+same size as corpus-draw movement (gpt2-large +0.006…+0.098, ProtGPT2
+−0.025…−0.059). Neither seed dominates; both are ordinary resampling noise.
+
+**EXP-R2-079, the cross-lab control — and a miscalibrated pre-registration I am
+recording as such.** Both rotary/GQA arms, exhaustive over every head, all five
+structural invariants passing at ≤2.5e-06 against a 1e-03 tolerance:
+
+| arm | arch | grid | exact/exact | exact/approx | approx/exact | approx/approx | pre-registered |
+|---|---|---:|---:|---:|---:|---:|---:|
+| llama-3.2-3b | llama | 672 | +0.5034 | +0.4794 | +0.5046 | +0.5038 | ≈ +0.29 |
+| qwen2.5-0.5b | qwen2 | 336 | +0.5749 | +0.5267 | +0.5746 | +0.5555 | ≈ +0.60 |
+
+qwen landed near its prediction. **llama did not: I predicted ≈ +0.29 "within reach
+of the protein maximum" and it came in at +0.4794 to +0.5046, high by about
++0.19.** The pre-registration was miscalibrated, and it was miscalibrated in the
+direction that *strengthens* the claim it was written to stress — which is exactly
+the case where it is tempting not to mention it. The prediction was extrapolated
+from llama's census headline, and that extrapolation is now known to under-predict
+the rank correlation for this lineage. Recorded so the next pre-registration is
+built on the miss rather than on the hit.
+
+**What L22 becomes.** The claim was 40 cells over ten arms in which every text arm
+was GPT-2 architecture — so "text vs protein" was confounded with "GPT-2 vs
+everything else", and ProtGPT2 being itself a GPT-2 made that confound the obvious
+attack. It is now 48 cells over twelve arms and the confound is cut both ways:
+
+| | GPT-2 architecture | rotary + GQA |
+|---|---|---|
+| **text** | gpt2 … gpt2-xl, +0.40 … +0.53 | llama, qwen, **+0.48 … +0.57** |
+| **protein** | ProtGPT2, **−0.06 … −0.23** | ProGen2 family (rotary), ≤ +0.27 |
+
+All-text minimum **+0.4028**, protein maximum **+0.2823**, separated in every one
+of the 48 cells. Two text lineages from different labs, different tokenizers,
+different position encodings and different attention layouts land above the
+protein ceiling; the arm that shares ProtGPT2's exact architecture is the one
+furthest above it. **The separation tracks modality, not architecture.**
+
+*The limit that is now binding, stated plainly.* The largest single-cell movement
+between two draws was **0.1073** (gpt2-large, exact/exact) and the mean absolute
+movement over sixteen cells was **0.0398**. The modality gap at its closest
+approach is **0.1205**. One cell therefore moved almost as far as the entire gap.
+At K=2 a shift cannot be told from noise — the EXP-R2-077 driver said so in its own
+header — so the honest statement today is *the ordering survived one alternate
+draw on four arms and was extended to two further lineages*, **not** that the gap
+is N standard errors wide. That is what EXP-R2-080 is for.
+
+**EXP-R2-080 launched 14:12, all four H200s at 91–100%, 15 jobs / ≈44 GPU-h.**
+`logs/drivers/multidraw.sh`, log `logs/multidraw_campaign.log`. It closes the two
+gaps above: a second draw for the **eight arms that never had one** (llama, qwen,
+gpt2, gpt2-medium, dialogpt-small, progen2-{base,medium,small}), so all 48 cells
+contribute to the robustness statement; and **K=4 on gpt2-large, ProtGPT2 and
+zymctrl** with **K=3 on gpt2-xl**, the four arms that define the gap, so the gap
+can finally be quoted against a measured draw-to-draw spread. gpt2-xl stops at K=3
+because it costs 11 GPU-h per draw; that asymmetry is a budget decision and is
+recorded rather than smoothed over.
+
+Two design points carried forward from this session's faults. **Draw feasibility is
+decided before any effect exists:** `build_path_cases` refuses to run short in
+about 40 s, during case construction, so the lane keys on that refusal's own
+message and moves to the next candidate draw, recording the rejection. This is the
+case-count parity criterion already used for ProtGPT2, applied automatically; it
+cannot select on the outcome because no outcome has been computed when it fires.
+Draws already known infeasible for ProtGPT2 (20260801, 20260803) are not offered
+to it. **The success test is not the controller's exit code:** a lane calls a job
+done only when the pod-side manifest verifies, so another exit-90 drop costs
+nothing, and pulls run in a separate drainer (`multidraw_pull.sh`) because an 8 MB
+transfer would otherwise idle an H200 for minutes.
