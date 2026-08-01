@@ -1067,6 +1067,18 @@ configuration or is not run. What remains, in order:
    two agree, so width 192 costs about 0.08 and at most ~0.12. **The design is not
    dead and the width-512 fallback at band 1550–4000 is not needed**, so the full
    1.75–2.31 nat L13 exposure is not paid.
+
+   > **And the pass is draw-robust — EXP-R2-089.** A margin of +0.0239 read off one
+   > corpus draw is not a decision, given the same class of statistic was measured
+   > moving 0.107 between draws on this very arm. Re-run at three further draws
+   > (cohort digests all distinct, A1 instances 21415–21619): **+0.4515, +0.4669,
+   > +0.5206, +0.4522** — **4 of 4 inside the band**, worst draw clearing the floor
+   > by +0.0239. **The draw the gate was decided on is the lowest of the four**, so
+   > the original reading was the conservative one. The statistic's own draw range
+   > is 0.0691 matched and 0.0282 unmatched, against the 0.1073 the *induction*
+   > reading shows on the same arm and condition — exhaustiveness buys draw
+   > stability, which is a further argument for the exhaustive criterion over the
+   > restricted-range one it replaced.
 2. Only then the protein arms, on the declared width-192 configuration, with the
    two narrowed-estimand costs stated in the claim: two of eight distance bins
    unreachable, and a cohort selected on BPE compressibility.
