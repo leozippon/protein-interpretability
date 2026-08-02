@@ -5334,3 +5334,41 @@ mode 2 alone from K=4 to K=6 made the case stronger rather than weaker.
 Panel separations at the new K: all-grid **+0.216** (holds), top 5% −0.561, top
 20% −0.139, bulk 80% −0.016 (all fail). The bulk separation has narrowed from
 −0.034 as both boundary arms' bulk values rose, but its sign is unchanged.
+
+### EXP-R2-103 — the ProGen2 negative is a family property
+
+Both lanes at `exit 0` in ten minutes; A1 passes at 30,340 and 30,447 instances.
+progen2-small reads **−0.1193** over two draws. All three ProGen2 arms are
+negative, across three scales and both pretraining corpora, against ProtGPT2 at
+[+0.187, +0.232] in the identical condition:
+
+| arm | heads | K | ranking ρ | size (ΔM-gap ÷ clean) | measurable |
+|---|---|---|---|---|---|
+| gpt2-large (ban 3) | 720 | 3 | +0.4726 | 7.61% | 42.8% |
+| ProtGPT2 (ban 3) | 720 | 3 | +0.2145 | 0.49% | 43.3% |
+| ProGen2-base | 432 | 3 | −0.2342 | 0.65% | 24.9% |
+| ProGen2-medium | 432 | 3 | −0.2111 | 0.62% | 26.3% |
+| **ProGen2-small** | 192 | 2 | **−0.1193** | 0.93% | 29.1% |
+
+**The size statistic still separates by modality with the fourth protein arm
+added** — text minimum 7.18% against protein maximum 0.93%, no overlap — while the
+ranking statistic still does not, ProtGPT2 sitting between the text arms and the
+ProGen2 family. The valence picture is unchanged: the all-heads shift is +0.14 on
+progen2-small against gpt2-large's −0.22 and −0.21, so **no protein arm shows the
+promoting-head enrichment** that gpt2-large's census top does.
+
+progen2-small is the *least* negative of the three ProGen2 arms. That could be
+scale, its 192-head grid, or draw noise at K=2; the three are not separated by
+this evidence and no reading of the ordering is claimed. EXP-R2-105 adds a third
+draw, which says only whether the value is stable.
+
+### Launched — EXP-R2-105 (14:11, `logs/drivers/d2c_fill.sh`)
+
+Two lanes on the cards EXP-R2-103 freed. progen2-small draw 3, for the stability
+question above. And **gpt2-medium at ban 3 — a third text arm for the size
+statistic**, which is the cleanest result D2.c has produced and whose every text
+number so far comes from gpt2-large. gpt2-medium costs about half of a 720-head
+arm and has the most unusual induction profile of any text arm (top-5% +0.696, the
+highest measured), so if a text arm is going to fall short of 7% it is a good
+candidate. EXP-R2-100's gpt2-xl lanes supply the second text arm on both
+statistics and continue on GPUs 1 and 5.
