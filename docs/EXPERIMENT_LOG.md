@@ -4582,3 +4582,74 @@ while the causal stage took the remaining 2.5 h, and causal cost is fixed by
 `--causal-instances 800` × 720 heads. *Declared, not assumed comparable:*
 `--census-sequences` also shifts the text reference cohort, so this is a new
 configuration and is not a head-to-head successor to the 200-sequence gate runs.
+
+---
+
+## 2026-08-01 — EXP-R2-093: L22's margin, finally quoted against a measured spread
+
+*Analysis over every path-patching artefact on disk — 33 runs, 31 of them distinct
+corpus draws at the reference master seed, K up to 5 (ProtGPT2). No new compute.*
+
+This closes the limit EXP-R2-080 was launched to close and that EXP-R2-072 recorded
+as binding: the separation had been quoted as a single difference, and at K = 2 a
+shift cannot be told from noise.
+
+**Draw identity is taken from the analysis cohort digest, not the seed**, because
+nine of the ten stages accepting `--cohort-draw-seed` do not record it. The repeat
+cohorts cannot serve — the protein exact-repeat digest is byte-identical across
+draws, since Swiss-Prot returns exactly 48 matching records against a request of 48.
+
+**The wrong test, and why.** Comparing the modality gap to the largest draw movement
+anywhere in the panel fails: that maximum (0.1328) is an extreme order statistic over
+44 cells and currently sits on **gpt2-large**, whose worst draw (+0.4402) is still
+far above the protein maximum (+0.2635) and which therefore cannot close the gap
+however far it moves. What matters is the variability of the arms at the boundary.
+
+**The right test, and it passes in every condition.** Each side taken at its *most
+adverse* draw — the text minimum's worst, the protein maximum's best:
+
+| condition | text min (worst draw) | its range | protein max (best draw) | its range | gap |
+|---|---|---:|---|---:|---:|
+| ex/ex | gpt2-xl **+0.4087** | 0.0964 | ZymCTRL **+0.2823** | 0.0446 | **+0.1264** |
+| ex/ap | gpt2-xl **+0.3711** | 0.0870 | ZymCTRL **+0.2635** | 0.0491 | **+0.1076** |
+| ap/ex | gpt2-xl **+0.4261** | 0.0538 | ZymCTRL **+0.2490** | 0.0553 | **+0.1771** |
+| ap/ap | gpt2-xl **+0.4150** | 0.0254 | ZymCTRL **+0.2624** | 0.0544 | **+0.1526** |
+
+Separated in all four, and **every gap exceeds the draw range of both arms that
+produce it**.
+
+**Protein arms are not the noisier ones, which the attenuation objection needs them
+to be.** Over the 44 cells with K ≥ 2: text median range **0.0475** (mean 0.0535, max
+0.1328) against protein **0.0468** (mean 0.0440, max 0.0926). EXP-R2-081 answered
+this objection *within* runs using a reliability correction; this is an independent
+*between-draw* check on a different quantity, and it agrees.
+
+**The corpus draw is not the dominant noise source.** Case-seed variation at a
+*fixed* draw moves single cells by a median 0.0490 and up to 0.0984 — the same
+magnitude as the draw itself (median 0.0475). A campaign varying only the draw was
+therefore measuring about half the variance, which is worth knowing before the next
+robustness claim is scoped.
+
+*Method note.* An earlier pass keyed runs on (arm, draw) and silently kept whichever
+file `glob` returned last, discarding gpt2-large's reference run and reporting a
+fabricated 0.009 range where the truth is 0.107. Keyed on (arm, draw, master seed)
+and refusing any repeat whose bytes differ, it then immediately caught a second
+collision — the 8-case `d2bprime_validation` artefact, which §5.1 marks "not results
+and must not be quoted as any", sharing a key with the real 64-case gpt2 run.
+Validation runs are now excluded on case count rather than on path.
+
+## 2026-08-01 — EXP-R2-092 results: the D2.c text control at the matched configuration
+
+Three draws at `--census-sequences 600`, width 192, exhaustive over 720 heads:
+
+| draw | A1 instances | matched ρ | unmatched ρ |
+|---|---:|---:|---:|
+| 20260728 | 64570 | **+0.4824** | +0.4507 |
+| 20260801 | 64720 | +0.4627 | +0.4475 |
+| 20260802 | 64883 | **+0.4493** | +0.4345 |
+
+All three inside gpt2-large's induction band (+0.4276 to +0.5350), and the draw range
+is **0.0331** against 0.0691 at 200 sequences — tripling the cohort tightens the
+statistic, as a mean over sequences should. **The D2.c text control is established at
+the configuration the protein arm requires**, so the panel no longer needs a text
+run when it is unblocked.
