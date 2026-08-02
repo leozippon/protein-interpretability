@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import inspect
 import sys
 from pathlib import Path
@@ -561,3 +562,48 @@ def test_tap_leaves_an_architecture_that_needs_no_request_untouched() -> None:
     assert len(tap_attention(_tap_arm(_NoNegotiation()), 0, lambda l, w: None)) == 1
     assert len(tap_attention(_tap_arm(_AlwaysWeights()), 0, lambda l, w: None)) == 2
     assert torch.equal(_capture(_AlwaysWeights())[0], _pattern())
+
+
+def _recorded_dicts(tree: ast.AST) -> list[ast.Dict]:
+    """Every dict literal a stage records under a "configuration"/"seeds" key."""
+    found: list[ast.Dict] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Dict):
+            continue
+        for key, value in zip(node.keys, node.values):
+            if (
+                isinstance(key, ast.Constant)
+                and key.value in {"configuration", "seeds"}
+                and isinstance(value, ast.Dict)
+            ):
+                found.append(value)
+    return found
+
+
+@pytest.mark.parametrize(
+    "script", sorted(p.name for p in (REPO_ROOT / "scripts" / "transfer").glob("[0-9]*.py"))
+)
+def test_a_stage_that_draws_a_cohort_records_which_draw_it_used(script: str) -> None:
+    # Rule: a result must carry its own provenance. A stage that accepts
+    # --cohort-draw-seed selects its cohort with it, so an artefact that omits it
+    # cannot be traced back to the draw that produced it, and the seed survives
+    # only in an ignored driver script. 02, 03 and 08 hand-enumerate a
+    # "configuration" block listing every other knob and silently dropped this
+    # one; the campaigns run so far all used the default, so the gap was latent
+    # rather than actual, and this is what keeps it that way.
+    source = (REPO_ROOT / "scripts" / "transfer" / script).read_text()
+    if "--cohort-draw-seed" not in source:
+        pytest.skip(f"{script} does not draw a cohort")
+    tree = ast.parse(source)
+    if any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "vars"
+        for node in ast.walk(tree)
+    ):
+        return  # dumps the whole namespace, so the seed is recorded by construction
+    recorded = "".join(ast.dump(d) for d in _recorded_dicts(tree))
+    assert "cohort_draw_seed" in recorded, (
+        f"{script} accepts --cohort-draw-seed but records neither it nor the full "
+        "argument namespace, so its results cannot be traced to a draw"
+    )

@@ -1001,3 +1001,16 @@ Immediate operational consequence: add a loss-recovered splice metric to the P0-
   measures that use no census: ProGen2's causal ordering reproduces across draws at
   +0.527 against +0.78 on text — real but weaker, and attenuation cannot carry a
   correlation past zero.
+- **L22's margin corrected onto a K-invariant statistic.** gpt2-xl reached K=7 and
+  the "gap exceeds both boundary arms' draw ranges" clause fell to 2 of 4
+  conditions — because an observed range grows with K and so penalises the
+  better-measured arm. On a standard deviation the gap is 3.36–3.95σ in all four.
+  The claim itself strengthened: gpt2-xl moved *up*, +0.437 → +0.458.
+- **Cohort-draw provenance closed in three stages.** `02_pathway_budget`,
+  `03_estimand_power` and `08_lens_family` accept `--cohort-draw-seed`, select
+  their cohort with it, and hand-enumerated a `configuration` block listing every
+  other knob while dropping this one; their results could not be traced to a draw.
+  Every campaign so far used the default, so the gap was latent. A parameterised
+  invariant test now covers all fourteen stages: a stage that draws a cohort must
+  record which draw it used, or dump its whole namespace. Verified to fail on the
+  pre-fix source and to name the offending stage. Suite: 464 passed, 4 skipped.

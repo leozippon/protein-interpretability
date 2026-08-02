@@ -555,6 +555,7 @@ def measure(args: argparse.Namespace) -> None:
                     "ablation_baselines": list(args.baselines),
                     "protein_cohort_source": args.protein_source,
                     "cohort_source": cohort_source(arm, args),
+                    "cohort_draw_seed": int(args.cohort_draw_seed),
                     "unigram_estimator": args.unigram_estimator,
                     "unigram_reference_size": args.unigram_reference_size,
                     "residue_length_range": [args.res_min, args.res_max],

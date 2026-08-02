@@ -837,6 +837,7 @@ def main() -> None:
                     "metric_chunk": args.metric_chunk,
                     "protein_cohort_source": args.protein_source,
                     "cohort_source": cohort_source(arm, args),
+                    "cohort_draw_seed": int(args.cohort_draw_seed),
                     "residue_length_range": [args.res_min, args.res_max],
                     "text_min_chars": args.text_min_chars,
                 },
