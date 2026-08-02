@@ -4718,3 +4718,53 @@ sequence count would hand one arm a noisier selector and attenuate its correlati
 which is the EXP-R2-081 objection and not one to reintroduce by construction. The
 cohort band stays 520–800, which is what buys zero L13 exposure and lets the result
 be read against L22 in the same protein regime.
+
+---
+
+## 2026-08-01 — EXP-R2-086 completes 9/9; EXP-R2-093 restated on the full panel; EXP-R2-095 launched
+
+**The recovery campaign finished all nine jobs** (19:56), against EXP-R2-080's two.
+**18 results pulled and locally digest-verified.** Seven of those were recovered from
+lanes that had declared them failed — four from EXP-R2-080's success-test race and
+three from my own `gpu_busy` defect — and because the lanes had meanwhile started
+*different* draws for the same jobs, all seven arrived as **extra** draws rather than
+as replacements.
+
+**Draw counts at the reference master seed, panel now complete at K ≥ 2 everywhere:**
+gpt2-large **6**, ProtGPT2 **5**, ZymCTRL **4**, ProGen2-base 3, gpt2-xl 3, and 2 each
+for dialogpt-small, gpt2, gpt2-medium, llama-3.2-3b, ProGen2-medium, ProGen2-small,
+qwen2.5-0.5b — **35 corpus draws** in all.
+
+**EXP-R2-093's conclusion is unchanged on the fuller data**, and one number moved in a
+way worth recording. The boundary-arm test is identical to four decimal places —
+separated in all four conditions with each side at its most adverse draw, gaps
++0.1076 to +0.1771, each exceeding both boundary arms' ranges. But the panel-wide
+maximum cell range grew from 0.1328 to **0.1475**, on gpt2-large, purely because that
+arm went from K=3 to K=6. **That is the argument against the panel-wide test made
+concrete**: a maximum over cells is an order statistic that grows with K, on an arm
+whose worst draw (+0.4402) cannot reach the protein maximum (+0.2635) however far it
+moves. Judging the margin by it would make the claim look weaker every time more
+evidence is collected. The boundary-arm comparison does not have that property.
+
+Protein arms remain the *less* variable side: median cell range **0.0468** against
+text **0.0486**, maximum 0.0926 against 0.1475.
+
+### EXP-R2-095 — attacking the margin where it is weakest (launched)
+
+*2026-08-01 20:00 (−07:00). All four H200s, four corpus draws of gpt2-xl,
+~10.4 h each. `logs/drivers/gpt2xl_draws.sh`.*
+
+The PAA census is **not** in `TRANSFER_STAGE_ORDER` and so is not wired into the
+controller/worker pipeline — D2.c runs on B only. The best use of four freed H200s
+on a wired stage is therefore the L22 margin's binding side.
+
+**gpt2-xl is that side**: the text minimum in all four conditions, at K=3, with the
+largest boundary-arm ranges (0.025–0.096); ZymCTRL is already K=4 at 0.045–0.055.
+Four more draws take gpt2-xl to **K=7**. This can only widen its observed range and
+only narrow the quoted gap — which is the point. A margin that survives being
+attacked on its weakest side is worth more than one measured where it is comfortable.
+
+**The `gpu_busy` fix is in this driver.** `gpu_state` returns a third value for
+"could not reach the pod", and the caller treats it as keep-waiting rather than as
+idle, so a lane can no longer conclude failure from an unreachable pod — the defect
+that cost EXP-R2-086 four hours of lane time this afternoon.
