@@ -4937,3 +4937,151 @@ asymmetry declared:* ProGen2 returns 8.40 keys/instance against 2.86, worth roug
 a ProGen2 advantage confounded.
 
 **EXP-R2-095** (H200s) continues; four gpt2-xl draws due ~06:30.
+
+## 2026-08-02 (morning) — EXP-R2-097/098 land; EXP-R2-099 answers D2.c on effect size and finds the census top is directionally selective only on text
+
+All three overnight campaigns completed clean: EXP-R2-097 at 01:30 (six lanes),
+EXP-R2-098 at 04:00 (six lanes), EXP-R2-095 verified at 06:27 (four H200 draws,
+`VERIFIED` on all four). No lane failed; every result directory carries all six
+artefacts.
+
+### EXP-R2-097 — D2.c at K=6
+
+Spearman(`paa_specific_matched`, |`delta_m_gap`|) over all 720 heads, width 192,
+n=600, ban 20:
+
+| arm | K=3 range | K=6 range | mean | sd |
+|---|---|---|---|---|
+| ProtGPT2 | [+0.154, +0.244] | **[+0.154, +0.244]** | +0.2022 | 0.0336 |
+| gpt2-large | [+0.449, +0.482] | **[+0.449, +0.482]** | +0.4685 | 0.0114 |
+
+**Doubling the draws did not move either endpoint.** The three new draws landed
+inside the existing ranges on both arms, so the EXP-R2-094 decision stands at K=6:
+the arms are disjoint with a +0.2049 gap at the most adverse pairing, and ProtGPT2
+is entirely above its own induction band of [−0.226, −0.006]. The L22 failure does
+not reproduce on copy suppression for this arm.
+
+The stratified reading, which is the claim that re-scopes L22 and was the reason
+for the campaign, also holds at K=6 — and the separation is *wider* than at K=3:
+
+| arm | all | top 5% | top 20% | bulk 80% | hit@20 (chance 0.56) |
+|---|---|---|---|---|---|
+| ProtGPT2 | +0.202 | +0.310 | **+0.640** | +0.034 | **8.5/20** |
+| gpt2-large | +0.469 | −0.159 | +0.202 | +0.385 | 4.7/20 |
+
+Sign-stable on every one of the six draws in every stratum. On the stratum a census
+actually publishes, the protein arm beats the text control on both measures, while
+the all-grid statistic says the reverse.
+
+### EXP-R2-098 — ProGen2-base at ban 3, and a split inside the protein family
+
+| arm | condition | K | range | mean |
+|---|---|---|---|---|
+| ProGen2-base | ban 3, n=200, 432 heads | 3 | **[−0.292, −0.159]** | −0.2342 |
+| gpt2-large | ban 3, n=200, 720 heads | 3 | [+0.454, +0.507] | +0.4726 |
+
+ProGen2-base reads **negative** where ProtGPT2 reads positive. Its hit@20 is
+**0.3/20 against a chance level of 0.93** — at or below chance. The declared
+keys/instance asymmetry runs *against* this result (8.32 against 2.86, worth
++0.0786 to ProGen2), so the deficit is conservative.
+
+**This split is not yet quotable, and the reason is recorded rather than worked
+around.** The two protein arms were measured in different conditions — ProtGPT2 at
+ban 20 / n=600 / 720 heads, ProGen2-base at ban 3 / n=200 / 432 heads. The text
+control is unmoved across that change (+0.4685 against +0.4726), which bounds the
+condition effect **on text** at ~0.004 but bounds nothing on a per-residue
+alphabet, which is exactly where a decoy-ban depth should bite hardest.
+EXP-R2-099 puts ProtGPT2 in ProGen2's exact condition to settle it.
+
+### EXP-R2-099 (a) — is the ProGen2 negative a noise artefact?
+
+ProGen2's grid sits at the noise floor in both strata (median |effect|/SE 0.93 in
+the census top 20%, 1.12 in the bulk, against ~2.3/1.35 on text and ProtGPT2), so
+the possibility had to be excluded that its census is being scored against noise.
+Three measures, none of which uses the census score:
+
+| arm | cross-draw ρ of \|ΔM-gap\| | heads with CI excluding 0 | EIV reliability |
+|---|---|---|---|
+| gpt2-large (ban 20) | +0.777 | 43.0% | 0.906 |
+| gpt2-large (ban 3) | +0.784 | 42.6% | 0.916 |
+| ProtGPT2 | +0.712 | 43.6% | 0.434 |
+| ProGen2-base | **+0.527** | **24.9%** | 0.780 |
+
+ProGen2's causal ordering is real but weaker — a ceiling of +0.527 on what any
+selector could reach, against +0.78 on text. **That does not explain a negative
+reading**: independent measurement error attenuates a rank correlation toward
+zero, it does not carry it past zero. The negative is a genuine anti-correlation,
+not an absence of signal.
+
+### EXP-R2-099 (b) — the census top is directionally selective on text only
+
+`prediction_addressed.py:1125` states the convention: *a positive ΔM-gap means the
+head was suppressing X*. The audit pre-registered the concern at line 372 — "a
+magnitude ranking conflates suppressive heads with promoting ones" — and this
+measures that conflation. Fraction of *measurable* census-top heads that are
+suppressive, swept over the cut, against each run's own control heads:
+
+| arm | top 1% | top 5% | top 10% | top 20% | controls | whole grid |
+|---|---|---|---|---|---|---|
+| gpt2-large (ban 20, 6 draws) | 0.19 | 0.20 | 0.20 | 0.19 | 0.50 | 0.41 |
+| gpt2-large (ban 3, 3 draws) | 0.19 | 0.22 | 0.21 | 0.21 | 0.50 | 0.40 |
+| ProtGPT2 (6 draws) | 0.44 | 0.61 | 0.59 | 0.61 | 0.47 | 0.67 |
+| ProGen2-base (3 draws) | 0.11 | 0.08 | 0.24 | 0.29 | 0.89 | 0.35 |
+
+On gpt2-large the census top is a **~21-point enrichment for promoting heads**
+against its own grid, and its control heads sit at exactly 0.50 — stable across
+four cuts, two conditions and nine draws, with the top-5% median effect at
+−0.00242 and a head-level bootstrap CI excluding zero. On ProtGPT2 the top is *not*
+enriched in either direction relative to its own grid (0.61 against 0.67; median
++0.00106, CI [−0.00073, +0.00324], includes zero). ProGen2's apparent enrichment
+comes entirely from the measurable-head restriction — unrestricted it reads 0.40
+against a grid of 0.41 — so it is a selection effect and is not claimed.
+
+**The directional selectivity of the instrument is a text-only property.** What
+transfers to ProtGPT2 is a magnitude ranking; what does not is any information
+about which way the head pushes.
+
+### EXP-R2-099 (c) — D2.c's posed question, answered on effect size
+
+The plan row poses D2.c as *"does effect size separate arms where prevalence
+cannot?"* Every statistic above answers a ranking question instead, because that is
+what L22 defined. Answered directly, using the instrument's own A3/A4 records and
+no census:
+
+| arm | K | clean M-gap | best ΔM-gap | **relative to clean** | suppressive heads | best control |
+|---|---|---|---|---|---|---|
+| gpt2-large (ban 20) | 6 | 0.371 | 0.0257 | **7.18%** | 127/720 | 0.00013 |
+| ProtGPT2 | 6 | 3.381 | 0.0259 | **0.77%** | 206/720 | 0.00021 |
+| gpt2-large (ban 3) | 3 | 0.492 | 0.0372 | **7.61%** | 121/720 | 0.00017 |
+| ProGen2-base | 3 | 1.756 | 0.0115 | **0.65%** | 37/432 | 0.00523 |
+
+**The absolute effects are the same size — 0.0257 against 0.0259 nats — and the
+separation is entirely in the denominator.** The protein arms run at a 4–9× larger
+clean margin, so the identical intervention is a far smaller perturbation of the
+decision. On the relative scale the arms are disjoint over every draw: ProtGPT2
+[0.40%, 2.16%] against [4.10%, 10.77%], ProGen2-base [0.60%, 0.73%] against
+[5.80%, 8.57%] — 1.9× and 7.9× at the most adverse pairing.
+
+Two biases in this statistic, both conservative for the protein-deficit direction:
+A4 takes `table[0]` after sorting on signed ΔM-gap, so it is a **maximum** over the
+grid, which favours the arm with more heads (720 against ProGen2's 432) and the arm
+with noisier estimates (ProGen2). A third fact runs the other way and is recorded:
+**A3 passes on every arm, and ProtGPT2 carries more confidently suppressive heads
+than gpt2-large** (206 against 127 of 720). A suppressive population exists on
+protein; it is the size of its effect relative to the model's own margin, and the
+census's ability to point at it, that separate.
+
+### Launched
+
+**EXP-R2-099** (09:10, four B cards, `logs/drivers/d2c_split.sh`) — ProtGPT2 at
+ban 3 / n=200, ProGen2's exact condition, three draws, plus ProGen2-medium draw 1.
+Decides whether the ProtGPT2/ProGen2 split is a property of the arm or of the
+condition.
+
+**EXP-R2-100** (queued behind it, `logs/drivers/d2c_round2.sh`) — gpt2-xl at ban 3,
+two draws, asking whether the promoting-top enrichment is a property of text
+decoders or of gpt2-large; plus ProGen2-medium draws 2 and 3, asking whether a
+negative reading is ProGen2-family-wide. Both run in the condition gpt2-large is
+already measured in, so neither needs a new control.
+
+B GPUs 0, 2, 3 and 4 carry other users' work throughout and were not touched.

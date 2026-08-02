@@ -974,3 +974,30 @@ Immediate operational consequence: add a loss-recovered splice metric to the P0-
 - **A second protein decoder is reachable**, at the ban depth its tokeniser needs:
   30108 instances against 2851, while the text control is unmoved, so the pair is
   matched at the relaxed depth rather than the protein arm taking an exception.
+
+## 2026-08-02 (morning) — D2.c answered on effect size; the census's directional selectivity found to be text-only
+
+- **K=6 moved nothing.** Three further draws per arm landed inside the existing
+  ranges endpoint for endpoint, and the stratified separation widened. The claim
+  that carried the burden at K=3 now carries it at K=6.
+- **D2.c answered on the question its own plan row poses.** The absolute knockout
+  effect is the same size on both modalities — 0.0257 against 0.0259 nats — and the
+  arms separate only once each is expressed as a fraction of its own clean margin:
+  0.4–2.2% on ProtGPT2 and 0.6–0.7% on ProGen2-base against 4.1–10.8% on matched
+  text controls, disjoint on every draw. The two biases in the statistic both run
+  toward the null.
+- **The census's directional selectivity is a text-only property.** gpt2-large's
+  census top is a 21-point enrichment for *promoting* heads against its own grid,
+  with control heads at exactly 0.50; ProtGPT2's top is not enriched either way.
+  A magnitude ranking transfers; which way the head pushes does not.
+- **The mechanism label needs care on the text control too** — a census top that is
+  80% promoting is ranking prediction-addressed attention, not isolating copy
+  suppression.
+- **A protein-family split is on the table and is explicitly not quotable yet.**
+  ProGen2-base reads negative where ProtGPT2 reads positive, but the two were
+  measured in different conditions; two campaigns are running to settle it rather
+  than the split being reported with a caveat.
+- **A noise explanation was excluded before the split was written down**, by three
+  measures that use no census: ProGen2's causal ordering reproduces across draws at
+  +0.527 against +0.78 on text — real but weaker, and attenuation cannot carry a
+  correlation past zero.
