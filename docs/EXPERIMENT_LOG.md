@@ -5301,3 +5301,36 @@ alone shares gpt2-large's architecture and 720-head grid, and ProGen2-base is ha
 of the corpus-controlled base/medium pair. Fresh seeds 20260810–20260811.
 
 **EXP-R2-102's four draws** are draining to B under the verify-locally rule.
+
+### EXP-R2-102 read — both halves of the two-mode resolution hold, and mode 2 sharpens
+
+All four draws pulled and locally verified at 14:07 (`drained=4 failed=0`).
+ZymCTRL is now K=6, ProGen2-medium and ProGen2-small K=3. Re-running the panel
+decomposition:
+
+| arm | K | all | top 5% | top 20% | bulk 80% | spread | hit@20 |
+|---|---|---|---|---|---|---|---|
+| protgpt2 | 6 | −0.108 | +0.749 | +0.617 | −0.271 | **+1.021** | 14.0 |
+| progen2-small | 3 | +0.153 | +0.828 | +0.400 | +0.133 | +0.696 | 7.8 |
+| progen2-medium | 3 | +0.161 | +0.727 | +0.274 | +0.135 | +0.592 | 8.2 |
+| progen2-base | 3 | +0.132 | +0.631 | +0.293 | +0.142 | +0.489 | 7.0 |
+| gpt2-xl | 7 | +0.458 | +0.567 | +0.507 | +0.172 | +0.395 | 12.1 |
+| gpt2-large | 7 | +0.509 | +0.508 | +0.627 | +0.216 | +0.292 | 11.4 |
+| **zymctrl** | **6** | +0.242 | **+0.131** | +0.204 | +0.188 | **−0.057** | **2.9** |
+
+**Mode 1 is unchanged by the added draws.** The four ProGen2/ProtGPT2 arms still
+hold the four highest spreads in the panel (+0.489 to +1.021, next is gpt2-xl at
++0.395), and progen2-medium and progen2-small moved by +0.006 and −0.007 in the
+top-5% going from K=2 to K=3.
+
+**Mode 2 sharpened.** ZymCTRL's top-5% fell from +0.141 to **+0.131** while its
+bulk rose to +0.188, so its spread went from −0.038 to **−0.057** — it is now the
+second-lowest spread on the panel and the only protein arm below every text arm
+but gpt2. Its census is *worse at the top than in its own bulk*, which is the
+defining mode-2 signature, and hit@20 stays at **2.9/20** where gpt2-large reaches
+11.4 and ProtGPT2 14.0 on the identical 720-head grid. Taking the arm that carries
+mode 2 alone from K=4 to K=6 made the case stronger rather than weaker.
+
+Panel separations at the new K: all-grid **+0.216** (holds), top 5% −0.561, top
+20% −0.139, bulk 80% −0.016 (all fail). The bulk separation has narrowed from
+−0.034 as both boundary arms' bulk values rose, but its sign is unchanged.
