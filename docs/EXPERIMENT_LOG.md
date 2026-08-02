@@ -5160,3 +5160,53 @@ the census is mediocre everywhere and *worst at the top* — top-5% +0.141, hit@
 for which "the census output is untrustworthy" is supported, and it is separately
 the arm irreducibly excluded from D2.c's shared window. No GPU was used; this is a
 re-reading of artefacts already on disk.
+
+### EXP-R2-095 recovered and read — L22 attacked on its binding side, and a sub-clause corrected
+
+The four H200 draws verified in-pod at 06:27 but had not been transferred; the
+EXP-R2-080 drainer exits on a marker from a campaign EXP-R2-095 did not write to,
+so it would have spun on an empty queue indefinitely. A one-shot drain
+(`logs/drivers/gpt2xl_pull.sh`) was written under the same admission rule — a
+result counts as recovered only when the **local** bytes reproduce the digests the
+worker recorded in the pod. One partially transferred directory was **deleted and
+requeued rather than admitted**: it had both JSON payloads but was interrupted
+before its manifest arrived, and a directory that cannot be checked is not a
+result. All five gpt2-xl draw directories now verify locally; **gpt2-xl is at K=7.**
+
+**The attack strengthened the claim it was aimed at.** gpt2-xl is L22's text
+minimum in every condition and had the largest draw ranges of any boundary arm, so
+it was the cheapest way to make the separation wrong. Instead its pooled all-grid
+value moved **up**, +0.437 → +0.458, widening the panel separation from +0.200 to
+**+0.221**, and the separation still holds in all four conditions with each side
+taken at its most adverse draw.
+
+**One sub-clause is corrected, and the defect is in the statistic rather than the
+claim.** EXP-R2-093 recorded that "each gap exceeds the draw range of both arms
+that define it". At K=7 that holds in **two of four** conditions:
+
+| condition | gpt2-xl worst | σ (K=7) | ZymCTRL best | σ (K=4) | gap | gap/σ pooled | exceeds ranges |
+|---|---|---|---|---|---|---|---|
+| ex/ex | +0.4087 | 0.0406 | +0.2823 | 0.0199 | +0.1264 | **3.95** | yes |
+| ex/ap | +0.3711 | 0.0389 | +0.2635 | 0.0231 | +0.1076 | **3.36** | no |
+| ap/ex | +0.3909 | 0.0498 | +0.2490 | 0.0232 | +0.1419 | **3.65** | no |
+| ap/ap | +0.3967 | 0.0457 | +0.2624 | 0.0240 | +0.1344 | **3.68** | yes |
+
+An observed range is not a K-invariant dispersion measure: the expected range of
+*n* normal draws grows from ~1.69σ at n=3 to ~2.70σ at n=7, so the clause penalises
+an arm **for having been measured more**, and it would have kept decaying with
+every draw added. Restated on a standard deviation, **the gap is 3.36 to 3.95
+pooled boundary-arm σ in all four conditions**. The quoted upper gap also falls
+from +0.177 to +0.142, because four further draws sampled gpt2-xl's distribution
+more fully. Both the audit headline and the L22 catalogue row are corrected.
+
+### Launched — EXP-R2-102 (H200, four lanes, `logs/drivers/stratmode_draws.sh`)
+
+The two-mode resolution is thin on both halves: progen2-medium and progen2-small
+sit at K=2 and are two of the four arms carrying mode 1, while ZymCTRL carries
+mode 2 **by itself** at K=4 and is simultaneously L22's binding protein arm — the
+most consequential and least redundant arm in the panel. Two ZymCTRL lanes take it
+to K=6 and one lane each takes the ProGen2 pair to K=3, on fresh cohort-draw seeds
+20260808–20260809 (every seed through 20260807 is spent, and a repeated draw is a
+duplicate rather than evidence). The three-valued `gpu_state` from the EXP-R2-095
+driver is carried over rather than rewritten: an empty `nvidia-smi` result is an
+inability to observe, not an observation of idleness.
