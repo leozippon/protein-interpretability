@@ -1024,20 +1024,27 @@ Immediate operational consequence: add a loss-recovered splice metric to the P0-
 - **ProGen2-medium replicates ProGen2-base**, and the two differ only in
   pretraining corpus at identical architecture and parameter count — so the
   agreement is neither scale nor architecture.
-- **The two readings of D2.c partition the panel differently.** By effect size the
-  split is clean text/protein with no overlap; by ranking — L22's statistic —
-  ProtGPT2 sits between the text arms and the ProGen2 arms and the modality
-  boundary is not recovered. A selector-validity statistic and an effect-size
-  statistic are not interchangeable evidence about a modality.
+- **The two readings of D2.c behave very differently as modality instruments.**
+  Both separate text from protein — an earlier version of this entry said ranking
+  did not, which was wrong. The difference is the cross-modality gap against the
+  spread *inside* the protein modality: 15.5 for effect size, 0.57 for ranking,
+  where the protein arms differ from each other by nearly twice what they differ
+  from text. A statistic with more structure inside a modality than across it is a
+  poor instrument for a modality claim, and that is L22's statistic.
 - **The valence call survived being re-checked on a second ProGen2 arm.** Only
   gpt2-large's census top is directionally selective; all three protein arms sit
   within ±0.03 of their own grid once the measurable-head selection is removed.
 - **The ProGen2 negative is a family property** — base −0.234, medium −0.211,
   small −0.119, three scales and both pretraining corpora.
 - **A second text arm widened one result and qualified another.** gpt2-medium's
-  relative effect is 14.98%, roughly double gpt2-large's, so the size separation
-  is now 8× with no overlap. But its valence shift is only −0.05 against
-  gpt2-large's −0.22, nearer the protein band — so the directional-selectivity
-  claim is now stated of gpt2-large and *not* of text decoders until gpt2-medium
-  reaches K=3 and the gpt2-xl lanes land. A claim was narrowed by the experiment
-  run to test it, which is the point of running it.
+  relative effect is 13.13% at K=3, roughly double gpt2-large's, so the size
+  separation is now 8× with no overlap. Its valence shift read −0.05 on one draw
+  and the directional-selectivity claim was narrowed to gpt2-large on that basis;
+  at K=3 it reads −0.128 and the two text arms span −0.13 to −0.22 against the
+  protein arms' −0.015 to +0.038, so the claim is stated of text again. The
+  narrowing was right on one draw and wrong by three, which is what K=3 was for.
+- **A claim of mine was wrong and is corrected.** I recorded that the ranking
+  statistic "does not partition by modality" because ProtGPT2 sits between the text
+  arms and the ProGen2 arms. That does not follow, and the line came from a
+  hard-coded print in a scratch script rather than a computed test; the script now
+  computes it. All three statistics separate text from protein.

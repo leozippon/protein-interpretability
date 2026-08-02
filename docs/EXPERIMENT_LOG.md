@@ -5417,3 +5417,45 @@ the size of what it points at are different quantities.
 ### Launched — EXP-R2-106 (14:52, `logs/drivers/d2c_med.sh`)
 
 gpt2-medium draws 2 and 3 at ban 3, on the cards EXP-R2-105 freed.
+
+### EXP-R2-106 read — the K=1 qualification is withdrawn, and an error of mine is corrected
+
+Both lanes `exit 0` at 15:32. gpt2-medium at K=3:
+
+| statistic | K=1 (EXP-R2-105) | **K=3 (EXP-R2-106)** | gpt2-large |
+|---|---|---|---|
+| ranking ρ | +0.5377 | **+0.5417** | +0.4685, +0.4726 |
+| size | 14.98% | **13.13%** | 7.18%, 7.61% |
+| valence shift, all heads | −0.05 | **−0.13** | −0.22, −0.21 |
+
+**The single draw was unrepresentative on valence and the qualification it forced
+is withdrawn.** At K=3 gpt2-medium reads −0.128, and the two text arms now span
+−0.13 to −0.22 against the four protein arms' −0.015 to +0.038. Text worst −0.128
+against protein best −0.015: **the valence separation holds on two text arms**, so
+the claim goes back to being about text rather than about gpt2-large. It is
+weaker on gpt2-medium than on gpt2-large, and gpt2-xl remains the independent
+check.
+
+**A correction to my own claim, which was wrong.** The 14:xx entry above and two
+audit passages said the *ranking* statistic "does not partition by modality" —
+that ProtGPT2 sitting between the text arms and the ProGen2 arms meant the
+boundary was not recovered. It does not follow and it is not true. The line came
+from a hard-coded `print` in `/tmp/lzp_scratch/dissociation.py` that I wrote as an
+interpretation and never computed; the script now computes the test. Measured:
+
+| statistic | text worst | protein best | gap | within-protein spread | gap ÷ spread |
+|---|---|---|---|---|---|
+| **size** | 7.18% | 0.89% | **6.29 pts** | 0.41 pts | **15.5** |
+| valence | −0.128 | −0.015 | +0.113 | 0.051 | 2.2 |
+| **ranking** | +0.4685 | +0.2145 | +0.254 | **+0.449** | **0.57** |
+
+**All three separate text from protein.** The real distinction — and it is a
+sharper one than what I claimed — is the cross-modality gap measured against the
+spread *within* the protein modality. For size the gap is 15.5× the internal
+spread. For ranking it is **0.57×**: the protein arms differ from each other by
+nearly twice what they differ from text, ProGen2-base at −0.234 against ProtGPT2
+at +0.215 spanning +0.449, while ProtGPT2 to the nearest text arm is +0.254. **A
+statistic carrying more structure inside a modality than across it is a poor
+instrument for a modality claim however cleanly it happens to separate**, and that
+is L22's statistic. The audit headline, the D2.c section and PROJECT_LOG are
+corrected.
