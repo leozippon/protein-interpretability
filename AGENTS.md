@@ -12,11 +12,12 @@ Study how and under what conditions mechanistic-interpretability methods develop
 
 ## Development Principles
 
-- **Audit Principle**: Freeze the scope and define contracts and invariants first; require reproducible evidence of material impact, and distinguish defects from suggestions and accepted limitations.
+- **Implementation Principle**: Implement the smallest complete solution for the current contract. Prefer simple, direct designs; avoid speculative generality, redundant guards, and features not justified by present evidence.
+- **Audit Principle**: Freeze the scope and define contracts and invariants first; require reproducible evidence of material impact, distinguish defects from suggestions and accepted limitations, and, unless instructed otherwise, weigh expected benefit against added complexity and redundancy. Do not turn low-impact risks into disproportionate machinery; still surface material defects and low-cost fixes.
 - **Repair Principle**: Fix one root cause per small, self-contained change and leave overall code health better; redesign instead of stacking exceptions when complexity keeps growing.
-- **Failure Principle**: Prefer explicit failure over silent fallback or false success when correctness cannot be guaranteed.
+- **Failure Principle**: Fail fast and explicitly rather than silently falling back or reporting false success when correctness cannot be guaranteed.
 - **Test Principle**: Test invariants, negative paths, and realistic end-to-end behavior rather than only the current implementation's happy path.
-- **Restraint Principle**: Record irreducible limitations honestly; do not add speculative abstractions, compatibility branches, or unsupported recovery behavior.
+- **Restraint Principle**: Record irreducible limitations honestly; do not disguise unsupported behavior as compatibility or recovery.
 
 ## Environment
 
@@ -89,13 +90,11 @@ Record each experiment's date, configuration or command, and result in `docs/EXP
 
 ## Operational Guardrails
 
+- Maintain independent judgment: users may make mistakes; raise timely objections and rethink assumptions when evidence warrants.
 - Fully read sufficient code and supporting documentation to form a sound design idea before writing or modifying any code.
 - Treat resource checks and logging as mandatory steps, not optional cleanup.
 - Keep the repository organized, clean and tidy.
-- Perform audits at appropriate time.
+- Before completion, run validation proportionate to the risk and report the results; record any unverified limitations.
 - Sub‑agents may be spawned to assist with development and auditing.
 - For difficult development and auditing tasks, spawn the highest‑performance sub‑agent.
-- Include the Repository Principles and Development Principles above explicitly in every sub-agent's task prompt.
-- Avoid indiscriminately adding new code. Clean up redundant code in a timely manner.
-- When necessary, use abstractions, refactoring and other approaches to standardize code and reduce complexity.
-- Dare to break thinking inertia and rethink when necessary.
+- Include the Research Objective and Development Principles above explicitly in every sub-agent's task prompt.
