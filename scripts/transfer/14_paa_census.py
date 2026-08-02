@@ -354,16 +354,36 @@ def per_cluster_matrix(
 # ---------------------------------------------------------------- census
 
 
-def census(args: argparse.Namespace, out: Path) -> dict[str, Any]:
+def census(
+    args: argparse.Namespace,
+    out: Path,
+    arm_name: str,
+    *,
+    ban_depth: int | None = None,
+) -> dict[str, Any]:
+    """Census one arm. ``arm_name`` is the arm being censused, not necessarily the
+    text control: D2.c needs this stage on a protein arm, and every helper below it
+    (:func:`build_cohorts`, :func:`make_pool`) was already arm-generic. Arms are run
+    in separate ``--out`` directories, so the per-arm artefacts do not collide and
+    need no renaming.
+
+    ``ban_depth`` is threaded because it is not a free parameter across modalities:
+    the decoy ban is over the model's top-``ban_depth`` predictions, and EXP-R2-088
+    measured it emptying the decoy pool for 28589 of 31115 eligible positions on
+    ProGen2-medium (vocabulary 31) against 5 of 10042 on ProtGPT2 (vocabulary
+    50257). Per-residue tokenisers need the relaxed depth; the matched pair does
+    not."""
     arm = load_arm(
-        args.text_arm,
+        arm_name,
         device=args.device,
         dtype=args.census_dtype,
         attn_implementation="eager",
     )
-    cohort, reference = build_cohorts(args, args.text_arm)
-    rows, pool, unigram_counts = make_pool(arm, args, cohort, reference)
-    save_pool(out / f"pool_{args.text_arm}.npz", rows, pool)
+    cohort, reference = build_cohorts(args, arm_name)
+    rows, pool, unigram_counts = make_pool(
+        arm, args, cohort, reference, ban_depth=ban_depth
+    )
+    save_pool(out / f"pool_{arm_name}.npz", rows, pool)
     print(f"  A1 cascade: {json.dumps(pool.cascade)}")
 
     scores = paa_attention_scores(arm, rows, pool, batch_size=args.attention_batch)
@@ -441,10 +461,10 @@ def census(args: argparse.Namespace, out: Path) -> dict[str, Any]:
         ],
         non_sink_mass=non_sink,
     )
-    np.save(out / "unigram_counts_text.npy", unigram_counts)
+    np.save(out / f"unigram_counts_{arm_name}.npy", unigram_counts)
 
     report: dict[str, Any] = {
-        "arm": args.text_arm,
+        "arm": arm_name,
         "cohort_digest": cohort.digest,
         "n_sequences": len(rows),
         "width": int(args.width),
@@ -572,10 +592,12 @@ def census(args: argparse.Namespace, out: Path) -> dict[str, Any]:
 # ---------------------------------------------------------------- causal
 
 
-def causal(args: argparse.Namespace, out: Path, selection: dict[str, Any]) -> dict[str, Any]:
-    rows, pool = load_pool(out / f"pool_{args.text_arm}.npz")
+def causal(
+    args: argparse.Namespace, out: Path, selection: dict[str, Any], arm_name: str
+) -> dict[str, Any]:
+    rows, pool = load_pool(out / f"pool_{arm_name}.npz")
     arm = load_arm(
-        args.text_arm,
+        arm_name,
         device=args.device,
         dtype=args.census_dtype,
         attn_implementation="eager",
@@ -730,7 +752,7 @@ def causal(args: argparse.Namespace, out: Path, selection: dict[str, Any]) -> di
 
 def matching(args: argparse.Namespace, out: Path) -> dict[str, Any]:
     text_rows, text_pool = load_pool(out / f"pool_{args.text_arm}.npz")
-    text_unigram = np.load(out / "unigram_counts_text.npy")
+    text_unigram = np.load(out / f"unigram_counts_{args.text_arm}.npy")
     text_arm = load_arm(args.text_arm, device=args.device, dtype=args.census_dtype)
     text_selected = stratified_sample(
         text_pool,
@@ -888,7 +910,7 @@ def query_source(
     args: argparse.Namespace, out: Path, selection: dict[str, Any]
 ) -> dict[str, Any]:
     rows, pool = load_pool(out / f"pool_{args.text_arm}.npz")
-    unigram_counts = np.load(out / "unigram_counts_text.npy")
+    unigram_counts = np.load(out / f"unigram_counts_{args.text_arm}.npy")
     arm = load_arm(
         args.text_arm,
         device=args.device,
@@ -1113,13 +1135,38 @@ def main() -> None:
     parser.add_argument("--query-instances", type=int, default=128)
     parser.add_argument("--query-batch", type=int, default=8)
     parser.add_argument("--alphas", type=float, nargs="+", default=[0.0, 0.5, 1.0, 2.0])
+    # The arm the `census` and `causal` stages run on. Defaults to the text control,
+    # which is every use before D2.c. `match` and `query` are unaffected: they
+    # compare the protein arms AGAINST the text control and keep naming --text-arm.
+    parser.add_argument("--census-arm", default=None)
+    # Depth of the decoy ban, passed to the census pool. None keeps
+    # `build_instance_pool`'s own default. This is not a free parameter across
+    # modalities -- see census().
+    parser.add_argument("--census-ban-depth", type=int, default=None)
     args = parser.parse_args()
 
     if args.gate0_arms is None:
         args.gate0_arms = [args.text_arm, "protgpt2", "zymctrl", "progen2-medium"]
-    unknown = [name for name in args.gate0_arms + args.protein_arms if name not in PANEL]
+    census_arm = args.census_arm or args.text_arm
+    unknown = [
+        name
+        for name in args.gate0_arms + args.protein_arms + [args.text_arm, census_arm]
+        if name not in PANEL
+    ]
     if unknown:
         raise ValueError(f"unknown arms {unknown}; panel is {sorted(PANEL)}")
+    # `match` and `query` read the text control's pool and unigram counts, which only
+    # the `census` stage writes and only for the arm it censused. Running them in the
+    # same invocation as a census of a DIFFERENT arm would look like it worked and
+    # would silently score against whatever pool happened to be in the directory, so
+    # it is refused rather than ordered around.
+    if census_arm != args.text_arm and {"match", "query"} & set(args.stages):
+        raise ValueError(
+            f"--census-arm {census_arm!r} differs from --text-arm {args.text_arm!r}, "
+            f"but stages {sorted({'match', 'query'} & set(args.stages))} consume the "
+            f"text control's pool and unigram counts. Run the text census in its own "
+            f"--out directory first, then those stages against it."
+        )
     args.out.mkdir(parents=True, exist_ok=True)
 
     payload: dict[str, Any] = {
@@ -1139,13 +1186,15 @@ def main() -> None:
         write_json(args.out / f"{args.gate0_label}.json", payload["gate0"])
     if "census" in args.stages:
         print("[census] A1 pool, A5 dissociation, induction decoy correction")
-        payload["census"] = census(args, args.out)
+        payload["census"] = census(
+            args, args.out, census_arm, ban_depth=args.census_ban_depth
+        )
         write_json(args.out / "census.json", payload["census"])
         write_json(selection_path, payload["census"]["selected_heads"])
     if "causal" in args.stages:
         print("[causal] A3 class non-emptiness, A4 causal magnitude")
         selection = json.loads(selection_path.read_text())
-        payload["causal"] = causal(args, args.out, selection)
+        payload["causal"] = causal(args, args.out, selection, census_arm)
         write_json(args.out / "causal.json", payload["causal"])
     if "match" in args.stages:
         print("[match] A2 matching feasibility against the protein arms")

@@ -2627,3 +2627,97 @@ def test_a_near_clonal_holdout_is_measured_rather_than_asserted():
     assert budget.markov_baselines(train, contaminated)["held_out_strictness"][
         "n_test_sequences_with_shared_kmer"
     ] == 1
+
+
+# --------------------------------------------------------------------------
+# D2.c needs the PAA census and its causal follow-up on a PROTEIN arm. Both were
+# bound to ``args.text_arm``, which is what made the panel unschedulable after the
+# attainability gate passed (EXP-R2-087/088). These pin the parameterisation.
+
+
+def _paa_source() -> str:
+    return (
+        Path(__file__).resolve().parents[1] / "scripts" / "transfer" / "14_paa_census.py"
+    ).read_text()
+
+
+def test_paa_census_and_causal_take_the_arm_they_run_on():
+    """``census`` and ``causal`` must not be bound to the text control.
+
+    Asserted on the signatures rather than by running them, because running them
+    needs a checkpoint. The regression this guards is a re-hardcode: someone
+    reaching for ``args.text_arm`` inside either body because every caller before
+    D2.c happened to pass the text arm.
+    """
+    census = _load_stage_module("14_paa_census.py")
+    for name in ("census", "causal"):
+        params = inspect.signature(getattr(census, name)).parameters
+        assert "arm_name" in params, f"{name}() does not take the arm it runs on"
+
+    source = _paa_source()
+    for func in ("def census(", "def causal("):
+        start = source.index(func)
+        end = source.index("\ndef ", start + 1)
+        body = source[start:end]
+        assert "args.text_arm" not in body, (
+            f"{func} reads args.text_arm again; it must use arm_name so a protein "
+            "arm can be censused"
+        )
+
+
+def test_paa_match_and_query_still_name_the_text_control():
+    """The other direction of the same invariant.
+
+    ``match`` and ``query`` score the protein arms AGAINST the text control, so
+    they must keep loading the text arm's pool and unigram counts. Parameterising
+    them by the census arm would silently change what the A2 gate compares.
+    """
+    source = _paa_source()
+    for func in ("def matching(", "def query_source("):
+        start = source.index(func)
+        end = source.index("\ndef ", start + 1)
+        body = source[start:end]
+        assert "args.text_arm" in body, (
+            f"{func} no longer names the text control; A2 and A6 are comparisons "
+            "against it, not against whichever arm was censused"
+        )
+
+
+def test_paa_unigram_counts_are_named_for_the_arm_that_produced_them():
+    """A protein census must not write its counts to ``unigram_counts_text.npy``.
+
+    The file is a contract between ``census`` and the stages that consume the text
+    control, so an arm-independent name would let a protein census satisfy a reader
+    expecting text counts.
+    """
+    source = _paa_source()
+    assert '"unigram_counts_text.npy"' not in source
+    assert 'f"unigram_counts_{arm_name}.npy"' in source
+    assert 'f"unigram_counts_{args.text_arm}.npy"' in source
+
+
+@pytest.mark.parametrize(
+    "argv, expected",
+    [
+        (["--stages", "census", "match", "--census-arm", "protgpt2"], "consume the"),
+        (["--stages", "census", "--census-arm", "not-an-arm"], "unknown arms"),
+    ],
+)
+def test_paa_census_arm_refuses_incoherent_requests(argv, expected, tmp_path):
+    """Negative paths, both of which would otherwise produce a plausible artefact.
+
+    Censusing one arm while running ``match`` would score the A2 gate against
+    whatever pool happened to be in the output directory.
+    """
+    import subprocess
+
+    script = (
+        Path(__file__).resolve().parents[1] / "scripts" / "transfer" / "14_paa_census.py"
+    )
+    result = subprocess.run(
+        [sys.executable, str(script), *argv, "--out", str(tmp_path / "out")],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert expected in result.stderr, result.stderr[-600:]
