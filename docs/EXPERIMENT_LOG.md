@@ -5372,3 +5372,48 @@ arm and has the most unusual induction profile of any text arm (top-5% +0.696, t
 highest measured), so if a text arm is going to fall short of 7% it is a good
 candidate. EXP-R2-100's gpt2-xl lanes supply the second text arm on both
 statistics and continue on GPUs 1 and 5.
+
+### EXP-R2-105 — the size separation widens, and one draw of gpt2-medium qualifies the valence claim
+
+Both lanes `exit 0` at 14:51. Two results pointing in opposite directions.
+
+**progen2-small at K=3 is stable**: −0.1198 against −0.1193 at K=2, size 0.89%.
+Nothing about the family reading changes.
+
+**gpt2-medium did not break the text floor on the size statistic — it raised it.**
+Its strongest prediction-addressed head moves the margin by **14.98%** of its own
+clean M-gap, roughly double gpt2-large's 7.18–7.61%, on a clean margin of 0.310
+nats and a best ΔM-gap of 0.0465. The modality separation is now text 7.18–14.98%
+against protein 0.49–0.89% — text minimum over protein maximum, **8×**, no overlap
+across five text/protein arm-conditions and four protein arms.
+
+| arm | K | ranking ρ | size | clean M-gap | best ΔM | measurable |
+|---|---|---|---|---|---|---|
+| **gpt2-medium** | 1 | **+0.5377** | **14.98%** | 0.310 | 0.0465 | 44.9% |
+| gpt2-large (ban 3) | 3 | +0.4726 | 7.61% | 0.492 | 0.0372 | 42.8% |
+| gpt2-large (ban 20) | 6 | +0.4685 | 7.18% | 0.371 | 0.0257 | 43.4% |
+| ProtGPT2 (ban 20) | 6 | +0.2022 | 0.77% | 3.381 | 0.0259 | 43.4% |
+| ProtGPT2 (ban 3) | 3 | +0.2145 | 0.49% | 3.297 | 0.0159 | 43.3% |
+| ProGen2-small | 3 | −0.1198 | 0.89% | 0.996 | 0.0089 | 26.8% |
+| ProGen2-medium | 3 | −0.2111 | 0.62% | 1.616 | 0.0098 | 26.3% |
+| ProGen2-base | 3 | −0.2342 | 0.65% | 1.756 | 0.0115 | 24.9% |
+
+**But it weakens the valence claim, which is what a second text arm was run to
+test.** The census-top-minus-grid shift in fraction suppressive, computed over
+*all* heads, reads −0.22 and −0.21 on gpt2-large and **−0.05 on gpt2-medium** —
+much nearer the four protein arms' band of +0.04 to −0.02 than gpt2-large's. So
+"the census top is directionally selective on **text decoders**" may in fact be
+"on **gpt2-large**", and the audit's wording is the narrower one for that reason.
+This is **one draw** and a single draw does not overturn a six-draw claim;
+EXP-R2-106 takes gpt2-medium to K=3 and EXP-R2-100's gpt2-xl lanes are the
+independent check on the same question.
+
+Note the direction of the size result and the direction of the valence result are
+independent: gpt2-medium has the *largest* relative effect of any arm measured and
+the *weakest* directional selectivity of any text arm, which is another instance
+of the dissociation recorded above — the census's ability to point at a head and
+the size of what it points at are different quantities.
+
+### Launched — EXP-R2-106 (14:52, `logs/drivers/d2c_med.sh`)
+
+gpt2-medium draws 2 and 3 at ban 3, on the cards EXP-R2-105 freed.

@@ -1032,3 +1032,12 @@ Immediate operational consequence: add a loss-recovered splice metric to the P0-
 - **The valence call survived being re-checked on a second ProGen2 arm.** Only
   gpt2-large's census top is directionally selective; all three protein arms sit
   within ±0.03 of their own grid once the measurable-head selection is removed.
+- **The ProGen2 negative is a family property** — base −0.234, medium −0.211,
+  small −0.119, three scales and both pretraining corpora.
+- **A second text arm widened one result and qualified another.** gpt2-medium's
+  relative effect is 14.98%, roughly double gpt2-large's, so the size separation
+  is now 8× with no overlap. But its valence shift is only −0.05 against
+  gpt2-large's −0.22, nearer the protein band — so the directional-selectivity
+  claim is now stated of gpt2-large and *not* of text decoders until gpt2-medium
+  reaches K=3 and the gpt2-xl lanes land. A claim was narrowed by the experiment
+  run to test it, which is the point of running it.
