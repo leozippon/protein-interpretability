@@ -911,7 +911,7 @@ qwen landed near prediction. **llama did not — predicted ≈+0.29 "within reac
 
 **EXP-R2-081 — the attenuation objection, tested and survived.** The most serious objection available to L22 is that protein \|effect\| estimates are noisier, so the rank correlation is attenuated harder on protein — *toward zero, the direction of the hypothesis*. It is the failure `corruption_effects` had to fix for the matching gate ("a conclusion the estimator manufactured out of alphabet size"), and it had not been tested. **The objection has a real basis:** probe-clustered reliability of the per-head \|effect\| is 0.823–0.934 on protein against 0.861–0.980 on text for exact probes, and **0.466–0.706 against 0.745–0.865** for approximate probes — ZymCTRL's approximate conditions are over half estimation noise. **The separation survives correction in all 24 measured cells.** Under classical disattenuation r → r∕√reliability the gap widens in two conditions and narrows in the two carried by ZymCTRL's noisy approximate cells, worst case exact/approx at **+0.1560 → +0.0946**; pooled over all 24 cells, text minimum +0.4560 against protein maximum +0.3613. Correcting for the differential noise does not close the gap. *Limits:* only the causal side is disattenuated (census-score reliability is unmeasured, so these are lower bounds, and the same one-sided assumption is applied to both modalities); the formula is derived for Pearson and applied to Spearman; and the reliability used is a variance ratio for the per-head means, not literally the rank variable's. A sensitivity analysis, not an exact correction — decisive only because the conclusion does not depend on the correction's size.
 
-| **D2.c** | Same on copy suppression — does effect size separate arms where prevalence cannot? Directly answers the measurability question §1 leaves open. **All blockers cleared and the attainability gate passed (EXP-R2-078, EXP-R2-082, EXP-R2-087): the matched pair enters at `--width 192` with the cohort band unchanged, at zero L13 exposure.** The gate was re-specified before it was read — the +0.53 to +0.65 target is restricted-range, unmatched-score and reproducible only to ±0.12 at fixed width — and passed against gpt2-large's own induction band: **+0.4515 [+0.401, +0.498]** exhaustive at width 192, inside +0.428 to +0.535. ZymCTRL is irreducibly excluded from any shared window. **Run and decided (EXP-R2-094, three draws): ProtGPT2 +0.154 to +0.244 against the matched control's +0.449 to +0.482 — a partial transfer, not the near-zero induction reading, so the L22 failure does not reproduce on a second mechanism.** EXP-R2-096 then found the aggregate statistic reports the opposite of the stratum a census publishes, on both mechanisms; see §7 item 0. **K=6 changed nothing (EXP-R2-097): three further draws on each arm landed inside the existing ranges, endpoint for endpoint, and the stratified separation widened — ProtGPT2 +0.640 in the top 20% against +0.202, hit@20 8.5/20 against 4.7/20, sign-stable on all six draws.** **The question is now answered on effect size as well, which is how the row poses it (EXP-R2-099): the absolute effect is identical across modalities (0.0257 against 0.0259 nats) and the arms separate 1.9–7.9x once each is expressed as a fraction of its own clean margin.** Open work: a second protein decoder reads *negative* where ProtGPT2 reads positive (EXP-R2-098, ProGen2-base [−0.292, −0.159] against a matched ban-3 control at [+0.454, +0.507]), but the two protein arms were measured in different conditions and **that split is not quotable until EXP-R2-099 puts ProtGPT2 in ProGen2's exact condition**. See the D2.c section below | **1–2 GPU-h** for the check; panel cheaper than the 12–25 previously carried, since width 192 is ~2.7x cheaper per forward |
+| **D2.c** | Same on copy suppression — does effect size separate arms where prevalence cannot? Directly answers the measurability question §1 leaves open. **All blockers cleared and the attainability gate passed (EXP-R2-078, EXP-R2-082, EXP-R2-087): the matched pair enters at `--width 192` with the cohort band unchanged, at zero L13 exposure.** The gate was re-specified before it was read — the +0.53 to +0.65 target is restricted-range, unmatched-score and reproducible only to ±0.12 at fixed width — and passed against gpt2-large's own induction band: **+0.4515 [+0.401, +0.498]** exhaustive at width 192, inside +0.428 to +0.535. ZymCTRL is irreducibly excluded from any shared window. **Run and decided (EXP-R2-094, three draws): ProtGPT2 +0.154 to +0.244 against the matched control's +0.449 to +0.482 — a partial transfer, not the near-zero induction reading, so the L22 failure does not reproduce on a second mechanism.** EXP-R2-096 then found the aggregate statistic reports the opposite of the stratum a census publishes, on both mechanisms; see §7 item 0. **K=6 changed nothing (EXP-R2-097): three further draws on each arm landed inside the existing ranges, endpoint for endpoint, and the stratified separation widened — ProtGPT2 +0.640 in the top 20% against +0.202, hit@20 8.5/20 against 4.7/20, sign-stable on all six draws.** **The question is now answered on effect size as well, which is how the row poses it (EXP-R2-099): the absolute effect is identical across modalities (0.0257 against 0.0259 nats) and the arms separate 1.9–7.9x once each is expressed as a fraction of its own clean margin.** **And D2.c turns out to have two answers inside one modality (EXP-R2-098/099/100).** ProGen2-base reads **[−0.292, −0.159]** and ProGen2-medium **[−0.282, −0.139]** against a matched ban-3 text control at [+0.454, +0.507]. Run in ProGen2's exact condition — ban 3, n=200 — ProtGPT2 reads **[+0.187, +0.232]**, a move of **+0.012** from its own ban-20/n=600 range, so **the split is a property of the arm and not of the condition**, and the two ProGen2 arms, which are architecturally identical down to the parameter count and differ only in pretraining corpus, agree. **The two readings of D2.c also partition the panel differently, which is the deeper result:** by *effect size* the panel splits cleanly text/protein (text 7.18–7.61% of the arm's own clean margin, all three protein arms 0.49–0.77%), while by *ranking* — L22's statistic — ProtGPT2 sits *between* the text arms and the ProGen2 arms and the modality boundary is not recovered at all. See the D2.c section below | **1–2 GPU-h** for the check; panel cheaper than the 12–25 previously carried, since width 192 is ~2.7x cheaper per forward |
 | **D2.d** | Complete the TG campaign: six of eleven measured stages have no artefact in the corrected tree (`missing_matrix`: tg02, tg04, tg05, tg06, tg08, tg10; 18 of 35 required artefacts present), so `SUMMARY.json` can only be produced in partial mode | ~6 GPU-h |
 
 ### D2.c — the design pass, and the three things that have to be built first
@@ -1157,16 +1157,48 @@ configuration or is not run. What remains, in order:
    the negative**: independent measurement error attenuates a rank correlation
    toward zero, it does not carry it past zero.
 
-   **The split may not be quoted yet, and the reason is a confound rather than a
-   doubt.** ProtGPT2 was measured at ban 20 / n=600 / 720 heads and ProGen2-base at
-   ban 3 / n=200 / 432 heads. The text control is unmoved across that change
-   (+0.4685 against +0.4726), which bounds the condition effect **on text** at
-   ~0.004 and bounds nothing on a per-residue alphabet — precisely where a decoy-ban
-   depth should bite hardest. EXP-R2-099 runs ProtGPT2 in ProGen2's exact condition;
-   EXP-R2-100 adds ProGen2-medium, so that a family-level reading does not rest on
-   one model, and gpt2-xl, so that the text side of item 6 does not either.
+   ~~**The split may not be quoted yet, and the reason is a confound rather than a
+   doubt.**~~ **Settled — the split is a property of the arm (EXP-R2-099, EXP-R2-100).**
+   ProtGPT2 was measured at ban 20 / n=600 and ProGen2-base at ban 3 / n=200, so the
+   comparison was confounded; the text control is unmoved across that change
+   (+0.4685 against +0.4726), which bounded the condition effect **on text** at
+   ~0.004 and bounded nothing on a per-residue alphabet. Run in ProGen2's exact
+   condition, **ProtGPT2 reads [+0.1874, +0.2318] — a move of +0.0123** — positive on
+   every draw and disjoint from both ProGen2 arms. **ProGen2-medium replicates
+   ProGen2-base** at [−0.2819, −0.1385]; the two are architecturally identical down
+   to the parameter count and differ only in pretraining corpus, so the agreement is
+   neither a scale nor an architecture effect. EXP-R2-103 adds progen2-small, the
+   last member of the family.
 
-6. **What the census contributes is directional, and only on text (EXP-R2-099).**
+   | arm | condition | K | range |
+   |---|---|---|---|
+   | gpt2-large | ban 20, n=600 | 6 | [+0.4493, +0.4824] |
+   | gpt2-large | ban 3, n=200 | 3 | [+0.4539, +0.5071] |
+   | ProtGPT2 | ban 20, n=600 | 6 | [+0.1543, +0.2444] |
+   | ProtGPT2 | **ban 3, n=200** | 3 | **[+0.1874, +0.2318]** |
+   | ProGen2-base | ban 3, n=200 | 3 | [−0.2924, −0.1594] |
+   | ProGen2-medium | ban 3, n=200 | 3 | [−0.2819, −0.1385] |
+
+6. **The two readings of D2.c partition the panel differently (EXP-R2-099/100).**
+   D2.c can be asked as a *ranking* question — does the census score order causal
+   magnitude, which is L22's statistic — or as a *size* question, which is how the
+   plan row poses it. They were treated as one question. They are not:
+
+   | ordering | text minimum | protein maximum | separates by modality |
+   |---|---|---|---|
+   | **size** (ΔM-gap ÷ clean M-gap) | **7.18%** | **0.77%** | **yes, no overlap** |
+   | ranking (census-to-causal ρ) | +0.4685 | +0.2145 | **no** |
+
+   By size the three protein arms sit in a tight band — ProtGPT2 0.77% and 0.49%,
+   ProGen2-base 0.65%, ProGen2-medium 0.62% — below both text conditions. By
+   ranking ProtGPT2 sits *between* the text arms and the ProGen2 arms. **A census
+   can rank well on an arm whose effects are negligible and badly on one whose
+   effects are not**, so a selector-validity statistic and an effect-size statistic
+   are not interchangeable evidence about a modality, and L22's choice of the
+   former is what makes its result a statement about instruments rather than about
+   protein models.
+
+7. **What the census contributes is directional, and only on text (EXP-R2-099).**
    The concern was pre-registered above — "a magnitude ranking conflates suppressive
    heads with promoting ones" — and is now measured rather than carried. Fraction of
    measurable census-top heads that are *suppressive* (`delta_m_gap > 0`, the
@@ -1185,7 +1217,20 @@ configuration or is not run. What remains, in order:
    zero. ProtGPT2's top is not enriched either way against its own grid (0.61
    against 0.67; median +0.00106, CI includes zero). **ProGen2's apparent enrichment
    is a selection effect and is not claimed**: unrestricted by measurability it
-   reads 0.40 against a grid of 0.41. Two consequences. First, the instrument's
+   reads 0.40 against a grid of 0.41.
+
+   **Re-checked on two ProGen2 arms and in both conditions (EXP-R2-100), and the
+   call holds.** Restricting to measurable heads is itself a selection on effect
+   size, so the shift computed over *all* heads is the honest one. Census top 5%
+   minus that arm's own grid: gpt2-large **−0.22** and **−0.21**, ProtGPT2 +0.02 and
+   +0.03, ProGen2-base −0.02, ProGen2-medium +0.01. **Only gpt2-large's census top
+   is directionally selective; all three protein arms sit within ±0.03 of their own
+   grid.** ProGen2-base's −0.26 under the measurability restriction against −0.02
+   without it is precisely the artefact the call named. Measurable-head fractions
+   travel with this: ~43% on gpt2-large and ProtGPT2 in both conditions against
+   **24.9%** and **26.3%** on the ProGen2 arms.
+
+   Two consequences. First, the instrument's
    directional selectivity is a text-only property, which is a sharper transfer
    failure than the magnitude gap and is not visible in any statistic reported
    before this. Second, **the mechanism label needs care even on the text control**

@@ -1014,3 +1014,21 @@ Immediate operational consequence: add a loss-recovered splice metric to the P0-
   invariant test now covers all fourteen stages: a stage that draws a cohort must
   record which draw it used, or dump its whole namespace. Verified to fail on the
   pre-fix source and to name the offending stage. Suite: 464 passed, 4 skipped.
+
+## 2026-08-02 (afternoon) — the protein split is an arm property, and the two D2.c statistics disagree
+
+- **D2.c has two answers inside one modality.** Run in ProGen2's exact condition,
+  ProtGPT2 moves by +0.012 and stays positive; both ProGen2 arms stay negative and
+  disjoint from it. The confound recorded this morning is eliminated rather than
+  argued away.
+- **ProGen2-medium replicates ProGen2-base**, and the two differ only in
+  pretraining corpus at identical architecture and parameter count — so the
+  agreement is neither scale nor architecture.
+- **The two readings of D2.c partition the panel differently.** By effect size the
+  split is clean text/protein with no overlap; by ranking — L22's statistic —
+  ProtGPT2 sits between the text arms and the ProGen2 arms and the modality
+  boundary is not recovered. A selector-validity statistic and an effect-size
+  statistic are not interchangeable evidence about a modality.
+- **The valence call survived being re-checked on a second ProGen2 arm.** Only
+  gpt2-large's census top is directionally selective; all three protein arms sit
+  within ±0.03 of their own grid once the measurable-head selection is removed.

@@ -5210,3 +5210,94 @@ to K=6 and one lane each takes the ProGen2 pair to K=3, on fresh cohort-draw see
 duplicate rather than evidence). The three-valued `gpu_state` from the EXP-R2-095
 driver is carried over rather than rewritten: an empty `nvidia-smi` result is an
 inability to observe, not an observation of idleness.
+
+## 2026-08-02 (afternoon) — EXP-R2-099/100 settle the protein split as an ARM property, and the two D2.c statistics are found to partition the panel differently
+
+EXP-R2-099 finished at 11:39 and EXP-R2-100's two ProGen2-medium lanes at ~13:5x,
+all at `exit 0`; EXP-R2-102 verified all four H200 draws by 13:54. EXP-R2-100's two
+gpt2-xl lanes continue.
+
+### The split is a property of the arm, not the condition
+
+ProtGPT2 was re-run in ProGen2's exact condition — ban 3, n=200, same width, same
+draws:
+
+| arm | condition | K | range | mean |
+|---|---|---|---|---|
+| gpt2-large | ban 20, n=600 | 6 | [+0.4493, +0.4824] | +0.4685 |
+| gpt2-large | ban 3, n=200 | 3 | [+0.4539, +0.5071] | +0.4726 |
+| ProtGPT2 | ban 20, n=600 | 6 | [+0.1543, +0.2444] | +0.2022 |
+| **ProtGPT2** | **ban 3, n=200** | 3 | **[+0.1874, +0.2318]** | **+0.2145** |
+| ProGen2-base | ban 3, n=200 | 3 | [−0.2924, −0.1594] | −0.2342 |
+| **ProGen2-medium** | ban 3, n=200 | 3 | **[−0.2819, −0.1385]** | **−0.2111** |
+
+**Moving ProtGPT2 into ProGen2's condition moved it by +0.0123** — it stays
+positive on every draw, and both ProGen2 arms remain disjoint from it. The
+confound recorded this morning is eliminated: **D2.c has two answers inside one
+modality**, and ProGen2-medium replicates ProGen2-base rather than base being an
+outlier. ProGen2-base and ProGen2-medium are architecturally identical down to the
+parameter count and differ only in pretraining corpus, so the agreement is not a
+scale or architecture effect. The declared keys/instance asymmetry (8.32–8.37
+against 2.12) still runs against the ProGen2 result, so their deficit is
+conservative.
+
+### The two D2.c statistics do not agree, and that is the finding
+
+D2.c can be read as a *ranking* question (does the census score order causal
+magnitude — L22's statistic) or a *size* question (how large is the effect
+relative to the model's own margin — how the plan row poses it). Treated as one
+question until now. They partition the panel differently:
+
+| ordering | text min | protein max | separates by modality? |
+|---|---|---|---|
+| **SIZE** (ΔM-gap ÷ clean M-gap) | **7.18%** | **0.77%** | **yes — cleanly** |
+| RANKING (census-to-causal ρ) | +0.4685 | +0.2145 (ProtGPT2) | **no** |
+
+By size the panel splits text / protein with no overlap and all three protein arms
+in a tight band: gpt2-large 7.18% and 7.61%, ProtGPT2 0.77% and 0.49%,
+ProGen2-base 0.65%, ProGen2-medium 0.62%. By ranking ProtGPT2 sits *between* the
+text arms and the ProGen2 arms, so the statistic that L22 defined does not
+recover the modality boundary at all on this mechanism. **A census can rank well
+on an arm whose effects are negligible, and badly on one whose effects are not**;
+these two readings of D2.c were never the same question.
+
+### Valence re-checked on two ProGen2 arms — the earlier call holds
+
+EXP-R2-099 recorded ProGen2-base's apparent directional enrichment as a *selection
+effect*, because it vanished once heads whose intervals span zero were included.
+That was one arm; here it is two, reported both ways. Census top 5% minus the
+arm's own grid, fraction suppressive:
+
+| arm | shift, measurable heads only | shift, **all heads** |
+|---|---|---|
+| gpt2-large (ban 20) | −0.21 | **−0.22** |
+| gpt2-large (ban 3) | −0.17 | **−0.21** |
+| ProtGPT2 (ban 20) | −0.06 | +0.02 |
+| ProtGPT2 (ban 3) | −0.03 | +0.03 |
+| ProGen2-base | −0.26 | **−0.02** |
+| ProGen2-medium | −0.14 | **+0.01** |
+
+Restricting to measurable heads is itself a selection on effect size, so the
+right-hand column is the honest one. **Only gpt2-large's census top is
+directionally selective**; all three protein arms sit within ±0.03 of their own
+grid. ProGen2's −0.26 under the restriction against −0.02 without it is exactly
+the artefact the earlier call named. Whether the enrichment is a text-decoder
+property or a gpt2-large property is what EXP-R2-100's gpt2-xl lanes are for.
+
+Measurable-head fractions travel with this: ~43% on gpt2-large and ProtGPT2 in
+both conditions, **24.9% and 26.3%** on the two ProGen2 arms.
+
+### Launched
+
+**EXP-R2-103** (13:55, two B cards freed by EXP-R2-100, `logs/drivers/d2c_small.sh`)
+— progen2-small at ban 3, two draws, 192 heads. The third and last member of the
+ProGen2 family; if it also reads negative the result is a family property, and if
+it does not, the split runs through the ProGen2 family itself.
+
+**EXP-R2-104** (13:58, four H200 lanes, `logs/drivers/mode1_draws.sh`) — ProtGPT2
+to K=7 and ProGen2-base to K=5 on the induction side. Mode 1's centre is what is
+thin: ProtGPT2 supplies the load-bearing +1.021 against +0.292 spread because it
+alone shares gpt2-large's architecture and 720-head grid, and ProGen2-base is half
+of the corpus-controlled base/medium pair. Fresh seeds 20260810–20260811.
+
+**EXP-R2-102's four draws** are draining to B under the verify-locally rule.
