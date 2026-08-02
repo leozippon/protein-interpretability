@@ -4653,3 +4653,68 @@ is **0.0331** against 0.0691 at 200 sequences — tripling the cohort tightens t
 statistic, as a mean over sequences should. **The D2.c text control is established at
 the configuration the protein arm requires**, so the panel no longer needs a text
 run when it is unblocked.
+
+---
+
+## 2026-08-01 — The PAA census is parameterised by arm, and EXP-R2-094 launches D2.c
+
+**The change.** `census()` and `causal()` were bound to `args.text_arm`, so passing
+the attainability gate did not make the D2.c panel runnable — neither stage could
+touch a protein arm. Every helper beneath them was already arm-generic
+(`build_cohorts(args, name)` takes a name, `make_pool(..., ban_depth=)` takes a
+depth), so this threads the arm through two functions rather than restructuring
+anything. Arms run in separate `--out` directories, so the per-arm artefacts do not
+collide and need no renaming.
+
+`--census-ban-depth` is threaded with it because the decoy ban is **not** a free
+parameter across modalities — EXP-R2-088 measured it emptying the decoy pool for
+28589 of 31115 eligible positions on ProGen2-medium against 5 of 10042 on ProtGPT2.
+
+**Two refusals rather than silent success.** `--census-arm` together with the `match`
+or `query` stages is rejected: those consume the text control's pool and unigram
+counts, and would otherwise score the A2 gate against whatever pool happened to be
+in the output directory. And the unigram counts are now named for the arm that
+produced them, so a protein census cannot satisfy a reader expecting text counts —
+`matching` and `query_source` keep naming `--text-arm` explicitly.
+
+**Five tests, each verified to fail against the pre-change source** rather than
+merely to pass against the new one: both signatures take `arm_name` and neither body
+reads `args.text_arm`; `matching` and `query_source` still do; the unigram filename
+is arm-scoped; and both refusals fire. Suite 444 → **449 passed, 34 subtests**. Ruff
+clean. Census smoke-tested end to end on gpt2-large at width 192.
+
+*On the deferral.* This was held back while EXP-R2-086 ran because
+`run_transfer_h200.sh` snapshots `scripts/transfer` per job. It was applied once the
+campaign had claimed all nine jobs, with two lanes on their **final** candidate draws
+and the rest drained, so no further snapshot is pending. Stage 11 does not import
+this file in any case.
+
+### EXP-R2-094 — D2.c, the first protein measurement (launched)
+
+*2026-08-01 18:43 (−07:00). B workstation, L20 GPUs 1/3/4, three corpus draws,
+~2.5 h each. `logs/drivers/d2c_protgpt2.sh`, out
+`results/transfer_20260801/d2c_protgpt2_draw{20260728,20260801,20260802}/`.*
+
+**The question.** L22 says a head-prevalence census's selector ranks causal
+importance on text decoders and not on protein ones — measured on *induction*. D2.c
+asks it of *copy suppression*. If the failure reproduces, the limitation is about
+protein decoders rather than about one mechanism. **If it does not, L22's §7 item-0
+opening closes**, which is the outcome the plan explicitly gates that opening on.
+
+**Every precondition is now measured rather than projected**, and two of them
+overturned what was projected: width 192 rather than the cohort band at zero L13
+exposure (EXP-R2-082); the gate re-specified and passed (EXP-R2-087) and draw-robust
+(EXP-R2-089); ProtGPT2 building a pool at width 192 at all (EXP-R2-088, which
+overturned "cannot build one"); the ban depth costing ProtGPT2 nothing so the matched
+pair needs no declared asymmetry (EXP-R2-088); 600 cohort records rather than the 400
+extrapolation gives (EXP-R2-091); and the text control at that same 600 (EXP-R2-092,
++0.4493 to +0.4824).
+
+**Matched to the text control in every setting that could bias it** — same width,
+same 600 sequences, same exhaustive 712+8 split over the identical 36×20 grid
+(ProtGPT2 and gpt2-large share an architecture and a parameter count exactly), same
+800 causal instances, same three draws, same float32 census dtype. An unmatched
+sequence count would hand one arm a noisier selector and attenuate its correlation,
+which is the EXP-R2-081 objection and not one to reintroduce by construction. The
+cohort band stays 520–800, which is what buys zero L13 exposure and lets the result
+be read against L22 in the same protein regime.
