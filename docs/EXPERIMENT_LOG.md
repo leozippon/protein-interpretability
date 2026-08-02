@@ -5085,3 +5085,78 @@ negative reading is ProGen2-family-wide. Both run in the condition gpt2-large is
 already measured in, so neither needs a new control.
 
 B GPUs 0, 2, 3 and 4 carry other users' work throughout and were not touched.
+
+### EXP-R2-101 — the L22 re-scoping across all twelve arms (CPU, existing artefacts, no re-run)
+
+The re-scoping in the headline was measured on the matched pair. If it is a
+property of that pair rather than of the modalities it is narrower than the
+sentence claims, so the same decomposition was run on every arm that has an
+induction census on disk, pooled over the four conditions.
+
+| arm | K | heads | all | top 5% | top 20% | bulk 80% | hit@20 | chance |
+|---|---|---|---|---|---|---|---|---|
+| dialogpt-small | 2 | 144 | +0.612 | +0.452 | +0.550 | +0.331 | 13.4 | 2.78 |
+| gpt2 | 2 | 144 | +0.701 | +0.315 | +0.495 | +0.469 | 13.0 | 2.78 |
+| gpt2-medium | 2 | 384 | +0.587 | +0.696 | +0.558 | +0.368 | 13.5 | 1.04 |
+| gpt2-large | 7 | 720 | +0.509 | +0.508 | +0.627 | +0.216 | 11.4 | 0.56 |
+| gpt2-xl | 3 | 1200 | +0.437 | +0.561 | +0.502 | +0.144 | 12.2 | 0.33 |
+| llama-3.2-3b | 2 | 672 | +0.501 | +0.267 | +0.499 | +0.317 | 8.5 | 0.60 |
+| qwen2.5-0.5b | 2 | 336 | +0.581 | +0.405 | +0.477 | +0.332 | 11.1 | 1.19 |
+| **progen2-small** | 2 | 192 | +0.157 | **+0.835** | +0.382 | +0.129 | 7.8 | 2.08 |
+| **progen2-medium** | 2 | 432 | +0.140 | **+0.722** | +0.256 | +0.136 | 8.4 | 0.93 |
+| **progen2-base** | 3 | 432 | +0.132 | **+0.631** | +0.293 | +0.142 | 7.0 | 0.93 |
+| **protgpt2** | 6 | 720 | −0.108 | **+0.749** | +0.617 | −0.271 | 14.0 | 0.56 |
+| **zymctrl** | 4 | 720 | +0.237 | +0.141 | +0.219 | +0.178 | 2.9 | 0.56 |
+
+**The all-grid separation holds across the panel and every stratified version of
+it fails.** Worst text arm against best protein arm: all-grid +0.437 against
++0.237, **separation +0.200, holds** — that is L22. Top 5%: +0.267 against
+**+0.835**, fails by −0.568. Top 20%: +0.477 against +0.617, fails. Bulk 80%:
++0.144 against +0.178, fails by −0.034. The four ProGen2/ProtGPT2 arms hold four
+of the five highest top-5% values in the panel.
+
+*Two comparability corrections applied before reading the table.* `hit@20` is
+capped at 20 while its chance floor is 400/n, so ratio-to-chance has a ceiling of
+n/20 — 7.2× on a 144-head grid against 60× on gpt2-xl — and is **not** comparable
+across arms; within the only grid size that contains both modalities it reads
+ProtGPT2 **14.0**, gpt2-large 11.4, ZymCTRL 2.9 at 720 heads. And the top-5%
+stratum is floored at 8 heads, so dialogpt-small, gpt2 (8) and progen2-small (10)
+are thin evidence; the load-bearing comparison is the matched pair at 36 heads
+each.
+
+**Why an aggregate can separate when none of its strata do.** An all-grid
+Spearman mixes strata, so it penalises an arm whose census is valid at the top and
+invalid in the bulk more heavily than one that is mediocre everywhere. Measuring
+that heterogeneity directly as top 5% − bulk 80%:
+
+| arm | spread | top 5% | bulk 80% | all |
+|---|---|---|---|---|
+| **protgpt2** | **+1.021** | +0.749 | −0.271 | −0.108 |
+| **progen2-small** | +0.706 | +0.835 | +0.129 | +0.157 |
+| **progen2-medium** | +0.586 | +0.722 | +0.136 | +0.140 |
+| **progen2-base** | +0.489 | +0.631 | +0.142 | +0.132 |
+| gpt2-xl | +0.416 | +0.561 | +0.144 | +0.437 |
+| gpt2-medium | +0.328 | +0.696 | +0.368 | +0.587 |
+| gpt2-large | +0.292 | +0.508 | +0.216 | +0.509 |
+| dialogpt-small | +0.121 | +0.452 | +0.331 | +0.612 |
+| qwen2.5-0.5b | +0.073 | +0.405 | +0.332 | +0.581 |
+| **zymctrl** | −0.038 | +0.141 | +0.178 | +0.237 |
+| llama-3.2-3b | −0.049 | +0.267 | +0.317 | +0.501 |
+| gpt2 | −0.154 | +0.315 | +0.469 | +0.701 |
+
+**The four GPT-2/ProGen2-lineage protein arms are the four most stratified arms in
+the panel**, and on the matched pair — same architecture, same 36-head top-5%, so
+no head-count or attenuation caveat applies — ProtGPT2's spread is **+1.021**
+against gpt2-large's **+0.292**. For gpt2-large the aggregate is representative of
+its own top (+0.509 against +0.508); for ProtGPT2 it is not (−0.108 against
++0.749).
+
+**So L22's aggregate gap is substantially a statement about heterogeneity rather
+than about uniformly worse recall, and it conflates two different situations.**
+Mode 1 (ProtGPT2, ProGen2 ×3): the census is valid where it is published and
+invalid in the bulk that is never reported. Mode 2 (**ZymCTRL, and it is alone**):
+the census is mediocre everywhere and *worst at the top* — top-5% +0.141, hit@20
+2.9/20 against gpt2-large's 11.4 on the same 720-head grid. ZymCTRL is the one arm
+for which "the census output is untrustworthy" is supported, and it is separately
+the arm irreducibly excluded from D2.c's shared window. No GPU was used; this is a
+re-reading of artefacts already on disk.
