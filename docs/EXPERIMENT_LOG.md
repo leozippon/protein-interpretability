@@ -5459,3 +5459,84 @@ statistic carrying more structure inside a modality than across it is a poor
 instrument for a modality claim however cleanly it happens to separate**, and that
 is L22's statistic. The audit headline, the D2.c section and PROJECT_LOG are
 corrected.
+
+### EXP-R2-107 (smoke) — D2.c is reachable on two rotary/GQA text decoders
+
+**The control D2.c has been missing.** Every D2.c number so far comes from the
+GPT-2 lineage — gpt2-large, gpt2-medium, gpt2-xl — or from ProtGPT2, which *is*
+gpt2-large's architecture. So "text arms reach 7–13% relative effect and carry a
+directionally selective census top, protein arms do neither" is equally consistent
+with "the GPT-2 lineage does and ProGen2 does not". L22 met this objection with
+these same two arms (EXP-R2-079); D2.c had no equivalent.
+
+Three things could have blocked it and each was checked rather than assumed:
+
+| check | llama-3.2-3b | qwen2.5-0.5b |
+|---|---|---|
+| attention tap under GQA | runs | runs |
+| **zero-mask max logit difference** | **0.0** | **0.0** |
+| A1 instances (gate 20,000) | 21,459 | 22,832 |
+| keys/instance (gpt2-large 2.86) | 2.63 | 2.68 |
+| A3 verdict | PASS | PASS |
+
+The tap needed no change: after `repeat_kv` the pattern is
+`(batch, n_query_heads, query, key)`, which is exactly what the shape contract
+built for ProGen2 expects, and `n_head` already returns the *query* count under
+grouped-query attention. The knockout's all-zero mask moved the logits by exactly
+0.0 on both, so the additive injection composes with their causal mask rather than
+replacing it. **No keys/instance asymmetry needs declaring for this pair**, unlike
+ProGen2's 8.4 against 2.86.
+
+*First attempt failed and the failure was mine, not the arms'.* Both lanes stopped
+at `only 40 cohort records reached 192 tokens` — I had set `--census-sequences 40`
+against the declared `--min-sequences` floor of 64. The guard did its job; the
+smoke was re-run at the campaign's own 200.
+
+**Indicative only, and stated as such:** on the 10 heads the smoke tested, the A4
+relative effect reads 4.97% (llama) and 7.38% (qwen). That is a maximum over 10
+heads rather than over 672 and 336, so it *understates* what a full grid gives, and
+it is not comparable to any number in the tables above. It is reported because it
+is what the smoke produced, not as evidence.
+
+### Launched — EXP-R2-107 (16:45, `logs/drivers/d2c_crosslab.sh`)
+
+Three draws each of llama-3.2-3b (664 causal heads) and qwen2.5-0.5b (328) at
+ban 3 / n=200 — the condition already carrying a gpt2-large control and a
+gpt2-medium arm, so neither needs a control of its own. Each lane runs its three
+draws sequentially on one card, because GPUs 1 and 5 still hold EXP-R2-100's
+gpt2-xl lanes.
+
+**EXP-R2-108** (16:4x, four H200 lanes, `logs/drivers/crosslab_draws.sh`) takes the
+same two arms to K=4 on the *induction* side, where five of seven text arms sit at
+K=2 and EXP-R2-101's mode-1/mode-2 reading rests on a top-5%-minus-bulk spread —
+a difference of two rank correlations, and the noisiest quantity in that table at
+K=2. **EXP-R2-104's four draws** (ProtGPT2 → K=7, ProGen2-base → K=5) are pulled
+and verified.
+
+### EXP-R2-104 read — mode 1's centre holds at K=8 and K=5
+
+The two arms that carry mode 1's load-bearing comparison were the thinnest part of
+it. Re-running the decomposition with the new draws:
+
+| arm | K (runs) | top 5% | bulk 80% | **spread** | before |
+|---|---|---|---|---|---|
+| protgpt2 | 8 | +0.747 | −0.267 | **+1.014** | +1.021 at 6 |
+| progen2-small | 3 | +0.828 | +0.133 | +0.696 | +0.696 at 3 |
+| progen2-medium | 3 | +0.727 | +0.135 | +0.592 | +0.592 at 3 |
+| progen2-base | 5 | +0.660 | +0.134 | **+0.526** | +0.489 at 3 |
+| gpt2-xl | 7 | +0.567 | +0.172 | +0.395 | +0.395 at 7 |
+| gpt2-large | 7 | +0.508 | +0.216 | +0.292 | +0.292 at 7 |
+| **zymctrl** | 6 | **+0.131** | +0.188 | **−0.057** | −0.057 at 6 |
+
+**Nothing moved that matters.** ProtGPT2's spread went from +1.021 to +1.014 on
+two further draws, ProGen2-base's from +0.489 to +0.526 on two further draws, and
+the four ProGen2/ProtGPT2 arms still hold the four highest spreads in the panel
+(+0.526 to +1.014) against gpt2-xl's +0.395 next. ProtGPT2's census top-20
+retrieval is 14.1/20 against gpt2-large's 11.4 and ZymCTRL's 2.9 on the identical
+720-head grid.
+
+*A counting note.* The inventory keys on the cohort digest and reports ProtGPT2 at
+K=7; the decomposition keys on `(arm, digest, master seed)` and admits 8 runs,
+because two share a cohort and differ in master seed. Those two are not
+independent cohort draws and the K=7 figure is the one to quote for draw
+independence.
