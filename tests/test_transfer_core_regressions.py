@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+import torch
 from torch import nn
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -23,7 +24,10 @@ from src.transfer.path_patching import (  # noqa: E402
     require_supported_layout,
     select_senders,
 )
-from src.transfer.prediction_addressed import unigram_percentiles  # noqa: E402
+from src.transfer.prediction_addressed import (  # noqa: E402
+    tap_attention,
+    unigram_percentiles,
+)
 from src.transfer.probes import skill_block  # noqa: E402
 from src.transfer.statistics import paired_group_bootstrap  # noqa: E402
 
@@ -424,3 +428,136 @@ def test_agreement_rejects_duplicate_head_labels() -> None:
     rows[1]["label"] = rows[0]["label"]
     with pytest.raises(ValueError, match="duplicate head label"):
         causal_census_agreement(rows, threshold=0.10, n_heads_in_grid=_GRID)
+
+
+# ------------------------------------------------- attention pattern taps
+#
+# The PAA census reads attention patterns through a forward hook on each
+# attention module. Which element of that module's output *is* the pattern is an
+# architecture detail: GPT-2 returns ``(output, weights)`` on every call, while
+# ProGen2's shipped modelling code returns ``(output, present)`` and appends the
+# weights only when its forward is asked for them. Taking position 1 is correct
+# on one and reads a key-value cache on the other.
+
+
+class _AlwaysWeights(nn.Module):
+    """GPT-2's contract: the pattern comes back whether or not it was asked for."""
+
+    def forward(self, hidden_states, attention_mask=None, output_attentions=False):
+        return hidden_states, _pattern()
+
+
+class _WeightsOnRequest(nn.Module):
+    """ProGen2's contract: position 1 is the cache, the pattern is appended."""
+
+    def forward(self, hidden_states, attention_mask=None, use_cache=False,
+                output_attentions=False):
+        present = (_cache(), _cache()) if use_cache else None
+        outputs = (hidden_states, present)
+        if output_attentions:
+            outputs += (_pattern(),)
+        return outputs
+
+
+class _NoNegotiation(nn.Module):
+    """An architecture with no ``output_attentions`` parameter at all."""
+
+    def forward(self, hidden_states):
+        return hidden_states, _pattern()
+
+
+_HEADS, _TOKENS, _DHEAD = 3, 5, 2
+
+
+def _pattern():
+    return torch.arange(1 * _HEADS * _TOKENS * _TOKENS, dtype=torch.float32).reshape(
+        1, _HEADS, _TOKENS, _TOKENS
+    )
+
+
+def _cache():
+    return torch.zeros(1, _HEADS, _TOKENS, _DHEAD)
+
+
+def _tap_arm(module: nn.Module) -> Arm:
+    """An Arm whose only exercised surface is ``attention`` and the head count."""
+
+    model = SimpleNamespace(config=SimpleNamespace(n_head=_HEADS))
+    arm = Arm(
+        spec=PANEL["gpt2-large"],
+        model=model,
+        tokenizer=object(),
+        device="cpu",
+        dtype="float32",
+        attn_implementation="eager",
+    )
+    object.__setattr__(arm, "attention", lambda layer: module)
+    return arm
+
+
+def _capture(module: nn.Module, **kwargs):
+    seen: dict[int, torch.Tensor] = {}
+    handles = tap_attention(_tap_arm(module), 0, lambda layer, w: seen.__setitem__(layer, w))
+    try:
+        module(torch.zeros(1, _TOKENS, 4), **kwargs)
+    finally:
+        for handle in handles:
+            handle.remove()
+    return seen
+
+
+def test_tap_reads_the_pattern_from_an_architecture_that_gates_on_request() -> None:
+    # Without the request hook this module returns (output, None) and the census
+    # cannot run on it at all -- which is how ProGen2 was found to be unreachable.
+    seen = _capture(_WeightsOnRequest())
+    assert torch.equal(seen[0], _pattern())
+
+
+def test_tap_never_mistakes_a_key_value_cache_for_a_pattern() -> None:
+    # The silent path: with use_cache on, position 1 is a (batch, head, token,
+    # d_head) cache tensor. It is not None, so a positional read consumes it and
+    # every per-head score downstream is computed from the wrong tensor.
+    seen = _capture(_WeightsOnRequest(), use_cache=True)
+    assert torch.equal(seen[0], _pattern())
+    assert seen[0].shape[-1] == seen[0].shape[-2]
+
+
+def test_tap_refuses_when_no_pattern_is_present() -> None:
+    class _Silent(nn.Module):
+        def forward(self, hidden_states, output_attentions=False):
+            return hidden_states, None
+
+    arm = _tap_arm(_Silent())
+    module = arm.attention(0)
+    handles = tap_attention(arm, 0, lambda layer, w: None)
+    try:
+        # The request hook fires, the module still returns nothing usable, and the
+        # tap says so rather than passing None on to the consumer.
+        with pytest.raises(RuntimeError, match="found 0"):
+            module(torch.zeros(1, _TOKENS, 4))
+    finally:
+        for handle in handles:
+            handle.remove()
+
+
+def test_tap_refuses_an_ambiguous_output() -> None:
+    class _Two(nn.Module):
+        def forward(self, hidden_states, output_attentions=False):
+            return hidden_states, _pattern(), _pattern()
+
+    arm = _tap_arm(_Two())
+    handles = tap_attention(arm, 0, lambda layer, w: None)
+    try:
+        with pytest.raises(RuntimeError, match="found 2"):
+            arm.attention(0)(torch.zeros(1, _TOKENS, 4))
+    finally:
+        for handle in handles:
+            handle.remove()
+
+
+def test_tap_leaves_an_architecture_that_needs_no_request_untouched() -> None:
+    # Rule: the request hook is registered only where the forward declares the
+    # parameter, so GPT-2's behaviour is bit-for-bit what it was before.
+    assert len(tap_attention(_tap_arm(_NoNegotiation()), 0, lambda l, w: None)) == 1
+    assert len(tap_attention(_tap_arm(_AlwaysWeights()), 0, lambda l, w: None)) == 2
+    assert torch.equal(_capture(_AlwaysWeights())[0], _pattern())

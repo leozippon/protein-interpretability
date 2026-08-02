@@ -37,6 +37,7 @@ deliberately not used.
 
 from __future__ import annotations
 
+import inspect
 import math
 from dataclasses import dataclass
 from typing import Any, Callable, Sequence
@@ -733,27 +734,99 @@ def attention_module(arm: Arm, layer: int) -> torch.nn.Module:
     return arm.attention(layer)
 
 
+class _RequestAttentionWeights:
+    """Pre-hook asking one attention module to return its pattern.
+
+    Whether an eager attention module emits its pattern unconditionally is an
+    architecture detail, not a property of the kernel.  GPT-2's returns
+    ``(output, weights)`` on every call; ProGen2 ships its own modelling code,
+    whose attention returns ``(output, present)`` and appends the weights *only*
+    when its forward is asked for them.  Requesting them per module keeps the
+    layer-by-layer memory profile :class:`_WeightTap` exists for -- the
+    model-level ``output_attentions=True`` materialises all 36 layers at once.
+    """
+
+    def __call__(self, module, args, kwargs):
+        kwargs["output_attentions"] = True
+        return args, kwargs
+
+
 class _WeightTap:
     """Forward hook returning the eager attention pattern of one layer.
 
-    ``output_attentions=True`` would materialise every layer's pattern at once;
-    at 36 layers, 20 heads and 512 tokens that is 377 MiB per sequence held
-    simultaneously.  Tapping layer by layer and reducing inside the hook keeps
-    the peak at one layer.
+    ``output_attentions=True`` at the model level would materialise every
+    layer's pattern at once; at 36 layers, 20 heads and 512 tokens that is
+    377 MiB per sequence held simultaneously.  Tapping layer by layer and
+    reducing inside the hook keeps the peak at one layer.
+
+    **The pattern is identified by contract rather than by tuple position.**
+    Position 1 is the pattern on GPT-2 and the key-value cache on ProGen2, and
+    reading it blindly is a silent-wrong-answer path rather than a failure: a
+    cache is ``(batch, head, token, d_head)``, which the previous
+    ``output[1] is None`` check rejects only because ``use_cache`` happens to be
+    off at every call site today.  The tap therefore takes the one tensor whose
+    shape a pattern has -- four axes, the arm's head count on axis 1, square
+    trailing axes -- and refuses when the output does not contain exactly one.
     """
 
-    def __init__(self, consume: Callable[[int, torch.Tensor], None], layer: int) -> None:
+    def __init__(
+        self,
+        consume: Callable[[int, torch.Tensor], None],
+        layer: int,
+        *,
+        n_heads: int,
+    ) -> None:
         self.consume = consume
         self.layer = layer
+        self.n_heads = n_heads
 
     def __call__(self, module, args, output):
-        if not isinstance(output, tuple) or len(output) < 2 or output[1] is None:
+        items = output if isinstance(output, tuple) else (output,)
+        found = [
+            item
+            for item in items
+            if isinstance(item, torch.Tensor)
+            and item.ndim == 4
+            and item.shape[1] == self.n_heads
+            and item.shape[-1] == item.shape[-2]
+        ]
+        if len(found) != 1:
             raise RuntimeError(
-                "attention module returned no weights; load the arm with "
-                "attn_implementation='eager'"
+                f"layer {self.layer}: expected exactly one "
+                f"(batch, {self.n_heads}, query, key) attention pattern in the "
+                f"attention module's output, found {len(found)}; load the arm "
+                "with attn_implementation='eager'"
             )
-        self.consume(self.layer, output[1])
+        self.consume(self.layer, found[0])
         return None
+
+
+def tap_attention(
+    arm: Arm, layer: int, consume: Callable[[int, torch.Tensor], None]
+) -> list[Any]:
+    """Register the pattern tap for one layer and return its hook handles.
+
+    Single declaration: every read of an attention pattern in this module goes
+    through here, so the ``output_attentions`` negotiation and the shape
+    contract cannot drift apart between the five call sites that need them.
+    The request hook is registered only when the module's forward declares the
+    parameter, so an architecture that emits the pattern unconditionally is
+    left exactly as it was.
+    """
+
+    module = attention_module(arm, layer)
+    handles: list[Any] = []
+    parameters = inspect.signature(type(module).forward).parameters
+    if "output_attentions" in parameters:
+        handles.append(
+            module.register_forward_pre_hook(
+                _RequestAttentionWeights(), with_kwargs=True
+            )
+        )
+    handles.append(
+        module.register_forward_hook(_WeightTap(consume, layer, n_heads=n_head(arm)))
+    )
+    return handles
 
 
 @torch.no_grad()
@@ -854,8 +927,9 @@ def paa_attention_scores(
         matched_decoy_sum[:, layer].index_add_(0, sequence_index, matched_decoy.double())
 
     handles = [
-        attention_module(arm, layer).register_forward_hook(_WeightTap(consume, layer))
+        handle
         for layer in range(layers)
+        for handle in tap_attention(arm, layer, consume)
     ]
     try:
         for begin in range(0, n_sequences, batch_size):
@@ -1123,8 +1197,9 @@ def knockout_effects(
             _store[layer] = (row_attention * _mask.unsqueeze(1)).sum(dim=-1)
 
         taps = [
-            attention_module(arm, layer).register_forward_hook(_WeightTap(consume, layer))
+            handle
             for layer in layers_needed
+            for handle in tap_attention(arm, layer, consume)
         ]
         try:
             clean_logits = arm.model(input_ids=ids, attention_mask=mask).logits[
@@ -1199,9 +1274,7 @@ def knockout_effects(
                 attention_module(arm, layer).register_forward_pre_hook(
                     _AntecedentKnockout(head, knock), with_kwargs=True
                 ),
-                attention_module(arm, layer).register_forward_hook(
-                    _WeightTap(consume_knocked, layer)
-                ),
+                *tap_attention(arm, layer, consume_knocked),
             ]
             try:
                 logits = arm.model(input_ids=ids, attention_mask=mask).logits[
@@ -1404,7 +1477,7 @@ def query_source_intervention(
         def consume(_layer: int, weights: torch.Tensor) -> None:
             captured["weights"] = weights.float()
 
-        tap = attention_module(arm, layer).register_forward_hook(_WeightTap(consume, layer))
+        taps = tap_attention(arm, layer, consume)
         try:
             per_alpha_mass = np.zeros((len(alphas), len(by_layer[layer]), selected.size))
             control_mass = np.zeros_like(per_alpha_mass)
@@ -1502,7 +1575,8 @@ def query_source_intervention(
                         del logits, pattern, probabilities
                 torch.cuda.empty_cache()
         finally:
-            tap.remove()
+            for tap in taps:
+                tap.remove()
 
         clusters = pool.sequence[selected]
         for head_index, head in enumerate(by_layer[layer]):
@@ -1667,8 +1741,9 @@ def decoy_corrected_prefix_matching(
         corrected[:, layer] += corrected_block.cpu().numpy()
 
     handles = [
-        attention_module(arm, layer).register_forward_hook(_WeightTap(consume, layer))
+        handle
         for layer in range(layers)
+        for handle in tap_attention(arm, layer, consume)
     ]
     counts = np.zeros(len(probes), dtype=np.int64)
     try:

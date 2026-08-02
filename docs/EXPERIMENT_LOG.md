@@ -4768,3 +4768,172 @@ attacked on its weakest side is worth more than one measured where it is comfort
 "could not reach the pod", and the caller treats it as keep-waiting rather than as
 idle, so a lane can no longer conclude failure from an unreachable pod — the defect
 that cost EXP-R2-086 four hours of lane time this afternoon.
+
+## 2026-08-01 (night) — EXP-R2-094 decides D2.c; EXP-R2-096 finds the statistic is measuring the wrong stratum
+
+### EXP-R2-094 — D2.c on ProtGPT2: the L22 failure does **not** reproduce on copy suppression
+
+*Three corpus draws, `--census-arm protgpt2`, width 192, `--census-sequences 600`,
+exhaustive 712+8 over the 36×20 grid, `--causal-instances 800`. All three `exit 0`
+by 21:20. Matched to EXP-R2-092's text control in every setting but the draw.*
+
+Spearman(`paa_specific_matched`, |ΔM-gap|) over all 720 heads:
+
+| arm | 20260728 | 20260801 | 20260802 | range |
+|---|---|---|---|---|
+| ProtGPT2 | +0.2444 | +0.1543 | +0.1926 | **[+0.154, +0.244]** |
+| gpt2-large | +0.4824 | +0.4627 | +0.4493 | **[+0.449, +0.482]** |
+
+**The pre-registered question is answered, and the answer is "no".** ProtGPT2's
+*induction* value is −0.226 to −0.006; its copy-suppression value is positive and
+sits entirely above that band. The arms do not overlap at their most adverse draws
+either — gap **+0.2049** — so a genuine text/protein deficit survives, but it is a
+*partial* transfer, not the near-zero induction reading. **On the plan's own
+criterion the §7 item-0 opening does not close**: D2.c did not return a text-like
+correlation. What follows below closes it on stronger grounds.
+
+*Correction to the pre-registration's expected direction.* Blocker 2 argued the
+unmatched score would attenuate the protein arm *in the direction of the
+hypothesis*. Measured, it does the opposite: ProtGPT2 reads +0.360 to +0.420
+unmatched against +0.154 to +0.244 matched, while gpt2-large moves the other way
+(+0.435 to +0.451 unmatched, +0.449 to +0.482 matched). **The wrong score would have
+hidden this finding, not manufactured it.** The width-192 design note anticipated the
+sign (key set 2.09 on ProtGPT2 against 2.83 on gpt2-large); the magnitude is new.
+
+### EXP-R2-090 — the width effect, paired by draw
+
+Four draws, identical cohort digests on both sides, gpt2-large, n=200:
+w192 → w512 gives **+0.0794, +0.0276, −0.0141, +0.0646** (mean +0.0394).
+**Not all one sign, so no width effect is established** — but the w512 readings
+(+0.4945 to +0.5309) sit as far above ProtGPT2's D2.c range as the w192 ones do, so
+the text/protein separation is not a width artefact.
+
+### EXP-R2-096 — three confounds killed, and then the finding turned over
+
+**(a) Instance count is not the driver.** gpt2-large at **21,415–21,619** instances
+reads +0.4515 to +0.5206 — *fewer* instances than ProtGPT2's 29,365–30,090, and a
+*higher* correlation. Tripling the text arm to 64,570–64,883 moves it by 0.002–0.038.
+
+**(b) Keys per instance buys ~5% of the gap.** Regressing ρ on keys/instance across
+eight gpt2-large runs spanning 2.73–5.59 keys (width as the lever, digests paired)
+gives **+0.0144 per key**. ProtGPT2 sits 0.74 keys low, predicting −0.011 against an
+observed −0.205.
+
+**(c) Two-sided disattenuation — the correction EXP-R2-081 could only do one-sided.**
+The PAA census retains per-sequence matrices, so the census side has a split-half
+reliability (200 random splits, Spearman–Brown): **0.996–0.999 on both modalities**,
+i.e. the selector is measured essentially without error at these cohort sizes. The
+causal side, by errors-in-variables on the bootstrap quantiles, is 0.845–0.913 on
+gpt2-large and 0.670–0.890 on ProtGPT2. Correcting both sides moves the gap from
+**+0.2049 to +0.2111**. The deficit is not a measurement artefact.
+
+**And then the decomposition.** A prevalence census does not report 720 heads; it
+reports the top of them. Splitting the same statistic by census-score stratum, on
+**both** mechanisms and the same matched pair:
+
+| mechanism | arm | K | all | top 5% | top 20% | bulk 80% | census top-20 ∩ causal top-20 |
+|---|---|---|---|---|---|---|---|
+| induction ex/ex | gpt2-large | 7 | +0.520 | +0.558 | +0.658 | +0.224 | 11.7/20 |
+| induction ex/ex | ProtGPT2 | 6 | **−0.106** | **+0.724** | **+0.685** | −0.273 | **15.7/20** |
+| copy suppression | gpt2-large | 3 | +0.465 | −0.159 | +0.199 | +0.385 | 4.7/20 |
+| copy suppression | ProtGPT2 | 3 | +0.197 | +0.318 | **+0.657** | +0.028 | **8.3/20** |
+
+All four induction conditions give the same shape (ProtGPT2 top-5% +0.724 to +0.773,
+bulk −0.208 to −0.352, overlap 12.7–15.7 against the text control's 10.9–11.9), and
+every individual draw agrees in sign. Chance overlap is 0.56/20.
+
+**The all-grid statistic reports the opposite of the stratum a census publishes.**
+Where the census actually speaks, the protein arm is *at least as* faithful as the
+text control on induction and *more* faithful on copy suppression. The text arm's
+aggregate advantage comes from the 576 heads nobody reports.
+
+**Is the bulk signal or noise?** Per-head |effect|/SE, probe-clustered for induction
+and bootstrap-derived for copy suppression:
+
+| | top 20% | bulk 80% |
+|---|---|---|
+| induction, gpt2-large | 2.10 (52% > 2) | **0.99 (12% > 2)** |
+| induction, ProtGPT2 | 1.14 (26% > 2) | **0.92 (7% > 2)** |
+| copy suppression, gpt2-large | 2.26 (56% > 2) | 1.38 (34% > 2) |
+| copy suppression, ProtGPT2 | 2.32 (55% > 2) | 1.41 (35% > 2) |
+
+**On induction the bulk is at the noise floor on both arms.** L22's headline number
+is therefore dominated by 576 heads whose individual effects are indistinguishable
+from zero, and its text/protein difference is a difference in how each census score
+correlates with near-zero effects. On copy suppression the bulk *does* carry signal
+(≈35% of heads above SNR 2), and there the protein deficit is real: +0.028 against
++0.385. **That is the one place a protein deficit survives with measurable effects
+behind it.**
+
+*Consequence for the §7 item-0 opening.* The proposed instrument — patch a bounded
+sample of heads, compare the selector-to-causal rank correlation against the text
+control, and declare a census uninterpretable below it — would reject ProtGPT2's
+induction census (−0.106 against +0.520) at exactly the arm whose census top-20
+retrieves 15.7/20 of the causally largest heads against the text control's 11.7/20.
+**The instrument is anti-correlated with what it is meant to certify.** The opening
+closes, but not on the pre-registered criterion: it closes because its statistic does
+not measure what a census reports.
+
+### EXP-R2-096 — a second protein arm becomes reachable, and a tap defect
+
+`14_paa_census.py` could not run on any ProGen2 arm: `RuntimeError: attention module
+returned no weights`. **The root cause is an interface mismatch, not a model or data
+limit.** GPT-2's attention returns `(output, weights)` on every call; ProGen2 ships
+its own modelling code whose attention returns `(output, present)` and appends the
+weights only when its forward is asked for them. `_WeightTap` read position 1 and
+rejected it only when `None`.
+
+**A worse defect was behind it.** Position 1 is a key-value cache on ProGen2, and a
+cache is `(batch, head, token, d_head)` — not `None`. The old tap survived only
+because `use_cache` happens to be off at every call site today; with it on, every
+per-head score would have been computed from a cache tensor **silently**.
+
+*Repair (one root cause, five call sites unified).* `tap_attention` registers a
+pre-hook requesting `output_attentions` **only where the module's forward declares
+it**, and `_WeightTap` now identifies the pattern by contract — four axes, the arm's
+head count on axis 1, square trailing axes — refusing when there is not exactly one
+candidate. Five unit tests cover the ProGen2 contract, the cache path, the
+zero-candidate and ambiguous cases, and the no-op guarantee.
+
+*Verified on real checkpoints rather than argued.* Tapping layer 0 of each arm and
+comparing against the verbatim pre-repair logic on the same forward pass:
+
+| arm | new tap | old tap |
+|---|---|---|
+| gpt2-large, ProtGPT2, ZymCTRL | (2, 20, 48, 48), rows sum to 1 | **bit-identical** |
+| ProGen2-base, ProGen2-medium | (2, 16, 48, 48), rows sum to 1 | RuntimeError |
+
+**Every result produced this week remains reproducible from current code**, and two
+new arms became reachable. Full suite: 23/23 in `test_transfer_core_regressions.py`,
+whole suite green.
+
+**A1 attainability, measured at n=200, width 192, reference draw:**
+
+| arm | ban 20 | ban 3 | keys/instance (ban 3) |
+|---|---|---|---|
+| ProGen2-base | 2,851 **FAIL** | **30,108 PASS** | 8.40 |
+| ProGen2-medium | 2,526 **FAIL** | **30,130 PASS** | 8.51 |
+| gpt2-large | 21,619 PASS | 21,649 PASS | 2.86 |
+
+EXP-R2-088's 28,589-of-31,115 decoy-pool collapse on ProGen2-medium reproduced to the
+digit, and depth 3 reduces it to 985. **The relaxation costs the text control
+nothing** (21,649 against 21,619, same key set to two decimals), so the pair can be
+matched at ban 3 rather than the protein arm being given a special case.
+
+The ProGen2 knockout path was then smoke-tested: **the all-zero mask moved the logits
+by exactly 0.0**, so the additive injection composes with ProGen2's own causal mask
+rather than replacing it.
+
+### Launched and queued
+
+**EXP-R2-097** (23:0x, six B cards, `logs/drivers/d2c_k6.sh`) — D2.c matched pair
+from K=3 to K=6, three new draws *on both arms*. The stratified reading is the claim
+that re-scopes L22, and it currently rests on three draws of a 144-head statistic.
+
+**EXP-R2-098** (queued behind it, `logs/drivers/d2c_progen.sh`) — D2.c on
+ProGen2-base at ban 3 against a ban-3 gpt2-large control, three draws each. *One
+asymmetry declared:* ProGen2 returns 8.40 keys/instance against 2.86, worth roughly
+**+0.08 to ProGen2** by the (b) slope, so a ProGen2 deficit would be conservative and
+a ProGen2 advantage confounded.
+
+**EXP-R2-095** (H200s) continues; four gpt2-xl draws due ~06:30.

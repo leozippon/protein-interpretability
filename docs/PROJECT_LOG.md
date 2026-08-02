@@ -947,3 +947,30 @@ Immediate operational consequence: add a loss-recovered splice metric to the P0-
 - **Recovered a campaign that had reported itself a near-total failure.** EXP-R2-080 declared 2 successes of 15; it had in fact produced **6**, and four verified results were discarded by a lane whose success test raced a still-computing worker. One transport drop at 03:17 left orphans holding GPUs, and a second defect then read "GPU occupied" — a statement about the machine — as a verdict on the draw, burning nine jobs through their candidate lists in four-minute increments without running any of them. Both repaired against the pod's own state rather than a timer, the four results recovered and digest-verified, and the nine relaunched.
 - **Decided the D2.c gate, and re-specified it first.** The pre-registered criterion compared an exhaustive width-192 census against a restricted-range, unmatched-score width-512 target whose reproducibility at fixed width is ±0.12 — larger than the +0.08 width effect it was meant to detect. Withdrawn under Appendix B rule 2 on evidence measurable at width 512 alone, so the correction does not depend on the outcome. On the like-for-like replacement the gate **passes**: +0.4515 [+0.401, +0.498] exhaustive at width 192, inside gpt2-large's own induction band of +0.428 to +0.535. The width-512 fallback and its full L13 exposure are not needed.
 - Four H200s and two B L20s kept at 100% throughout, including across a session suspension that all detached work survived.
+
+## 2026-08-01 (night) — D2.c decided on ProtGPT2; the L22 statistic re-scoped; ProGen2 unblocked
+
+- **D2.c ran and answered its question.** ProtGPT2's copy-suppression census orders
+  causal importance at +0.154 to +0.244 over three matched draws, against a text
+  control at +0.449 to +0.482 and against its own *induction* value of −0.226 to
+  −0.006. The L22 failure does not reproduce on a second mechanism; a partial
+  transfer does.
+- **Three confounds eliminated before the deficit was called one**: instance count
+  (the text arm reads higher at *fewer* instances), keys per instance (~5% of the
+  gap, from a measured +0.0144-per-key slope), and two-sided disattenuation — the
+  first time the census side's reliability could be estimated at all, at 0.996–0.999.
+- **The finding that matters is the decomposition.** On both mechanisms the all-grid
+  statistic reports the opposite of the stratum a census publishes: ProtGPT2's census
+  top-20 retrieves more of the causally largest heads than the text control's, while
+  its aggregate is far lower. On induction the bulk that drives the aggregate is at
+  the noise floor on both arms.
+- **§7 item 0 closes** — not on its pre-registered criterion, which it survives, but
+  because its statistic is anti-correlated with what it was meant to certify.
+- **A silent-wrong-answer path removed from the PAA census.** The attention tap took
+  the pattern by tuple position, which is a key-value cache on ProGen2; it survived
+  only because `use_cache` is off at every call site today. The tap now identifies
+  the pattern by shape contract, verified bit-identical on the three arms that
+  already worked and newly functional on both ProGen2 arms.
+- **A second protein decoder is reachable**, at the ban depth its tokeniser needs:
+  30108 instances against 2851, while the text control is unmoved, so the pair is
+  matched at the relaxed depth rather than the protein arm taking an exception.
