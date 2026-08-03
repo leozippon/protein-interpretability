@@ -1048,3 +1048,25 @@ Immediate operational consequence: add a loss-recovered splice metric to the P0-
   arms and the ProGen2 arms. That does not follow, and the line came from a
   hard-coded print in a scratch script rather than a computed test; the script now
   computes it. All three statistics separate text from protein.
+
+## 2026-08-02 (evening) — D2.c gets its cross-lab control, and a scale trend bounds the size result
+
+- **The control D2.c was missing is in hand and confirms the modality reading.**
+  Every D2.c number had come from the GPT-2 lineage or from ProtGPT2, which is
+  gpt2-large's architecture, so the modality claim was equally consistent with a
+  family claim. qwen2.5-0.5b — rotary/GQA, another lab, different tokeniser and
+  corpus — reads text-like on all three statistics: ranking +0.486, size 12.29%,
+  valence −0.18. The instrument needed no change to run on it: the attention tap
+  built for ProGen2's shape contract works unaltered under grouped-query
+  attention, and the zero-mask knockout check returned exactly 0.0.
+- **A scale trend bounds the size result, and it is recorded rather than
+  smoothed.** That statistic halves per doubling of parameters across both
+  families measured, gpt2-medium 13.13% down to gpt2-xl 3.19%, while the protein
+  arms fall far more slowly. It is not a head-count artefact — A4 is a maximum
+  over the grid, which biases the big arms up. The like-for-like comparison is at
+  matched scale, where the gap is ~12×; the whole-panel 3.6× rests on gpt2-xl and
+  the trend licenses no extrapolation past 1.5B, there being no protein arm above
+  774M in this panel.
+- **The ranking statistic got worse as a modality instrument**, its
+  gap-to-within-protein-spread ratio falling from 0.57 to 0.38 once gpt2-xl was
+  added.

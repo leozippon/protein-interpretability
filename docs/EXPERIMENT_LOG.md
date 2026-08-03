@@ -5540,3 +5540,72 @@ K=7; the decomposition keys on `(arm, digest, master seed)` and admits 8 runs,
 because two share a cohort and differ in master seed. Those two are not
 independent cohort draws and the K=7 figure is the one to quote for draw
 independence.
+
+### EXP-R2-100 and EXP-R2-107 read — the cross-lab control confirms all three statistics, and a scale trend appears
+
+gpt2-xl's two lanes finished at 19:22 and qwen2.5-0.5b's three at ~17:4x, all
+`exit 0`. Nine arm-conditions now, four text arms and four protein arms:
+
+| arm | params | K | ranking ρ | **size** | valence shift | measurable |
+|---|---|---|---|---|---|---|
+| gpt2-medium | 355M | 3 | +0.5417 | **13.13%** | −0.13 | 47.3% |
+| **qwen2.5-0.5b** | **0.5B** | 3 | **+0.4862** | **12.29%** | **−0.18** | 46.1% |
+| gpt2-large (ban 3) | 774M | 3 | +0.4726 | 7.61% | −0.21 | 42.8% |
+| gpt2-large (ban 20) | 774M | 6 | +0.4685 | 7.18% | −0.22 | 43.4% |
+| gpt2-xl | 1558M | 2 | +0.3840 | **3.19%** | −0.13 | 40.7% |
+| ProGen2-small | 151M | 3 | −0.1198 | 0.89% | +0.04 | 26.8% |
+| ProtGPT2 (ban 20) | 774M | 6 | +0.2022 | 0.77% | +0.02 | 43.4% |
+| ProGen2-base | 764M | 3 | −0.2342 | 0.65% | −0.02 | 24.9% |
+| ProGen2-medium | 764M | 3 | −0.2111 | 0.62% | +0.01 | 26.3% |
+| ProtGPT2 (ban 3) | 774M | 3 | +0.2145 | 0.49% | +0.03 | 43.3% |
+
+**The control D2.c was missing is now in hand, and it confirms the modality
+reading on all three statistics.** qwen2.5-0.5b is rotary/GQA from another lab,
+sharing neither architecture nor tokeniser nor corpus with the GPT-2 family, and
+it reads text-like on every one: ranking **+0.4862** inside the text band, size
+**12.29%** near the top of it, valence **−0.18** inside −0.13 to −0.22. So "text
+arms do this, protein arms do not" is not "the GPT-2 lineage does" — which was the
+live alternative, since every prior D2.c number came from that family or from
+ProtGPT2, which *is* gpt2-large's architecture. llama-3.2-3b is still running.
+
+**All three separations survive the wider panel:**
+
+| statistic | text worst | protein best | gap | within-protein spread | gap ÷ spread |
+|---|---|---|---|---|---|
+| size | 3.19% | 0.89% | 2.30 pts | 0.41 pts | **5.6** |
+| valence | −0.13 | −0.02 | 0.11 | 0.06 | ~2 |
+| ranking | +0.3840 | +0.2145 | +0.170 | **+0.449** | **0.38** |
+
+The ranking statistic got *worse* as a modality instrument with gpt2-xl added —
+ratio 0.57 → **0.38** — because gpt2-xl is the lowest text value. Its
+within-protein spread is now nearly three times its cross-modality gap.
+
+### A scale trend, and it is a limit on how far the size result may be extrapolated
+
+The size statistic falls monotonically with parameter count, **across two
+families**: gpt2-medium 355M → 13.13%, qwen 0.5B → 12.29%, gpt2-large 774M →
+7.61%, gpt2-xl 1558M → 3.19%. Roughly halving per doubling. The protein arms fall
+too but far more slowly: ProGen2-small 151M → 0.89%, ProGen2-base/medium 764M →
+0.62–0.65%, ProtGPT2 774M → 0.49–0.77%.
+
+**This is not a head-count artefact**, which was the first thing to suspect: A4 is
+a *maximum* over the grid, so gpt2-xl's 1200 heads should bias it **up** relative
+to gpt2-medium's 384, and it reads lowest anyway.
+
+Two consequences, both recorded rather than smoothed over. First, **at matched
+scale (~770M) the gap is about 12×** — gpt2-large 7.61% against ProtGPT2 0.49% and
+ProGen2 0.62–0.65% — which is the comparison to quote, and it is a like-for-like
+one. Second, **the whole-panel separation of 3.6× rests on gpt2-xl, the largest
+text arm, and the trend gives no licence to extrapolate past 1.5B**; there is no
+protein arm above 774M in this panel to extend the other side. The separation is
+measured on the arms measured and is stated that way.
+
+### Launched — EXP-R2-109 (19:2x, three B cards, `logs/drivers/d2c_ladder.sh`)
+
+Three points do not establish a trend. gpt2 (124M) extends the ladder downward
+inside one family with corpus, tokeniser and architecture held fixed — if the
+trend is real it should read *above* gpt2-medium's 13%. dialogpt-small (124M) has
+gpt2's exact architecture and parameter count but is off-distribution on this
+corpus at −4.08 nats, which separates "scale" from "fit to the evaluation corpus";
+L22 used the same arm for the same purpose. And gpt2-xl gets a third draw, since
+it is the arm that produced the trend and the one carrying the panel separation.
