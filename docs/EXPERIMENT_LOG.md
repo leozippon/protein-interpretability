@@ -5978,3 +5978,97 @@ alphabet-versus-modality on L22 needs a `t5_decoder` attention-output-projection
 declaration in `path_patching`, verified against its head slicing, and that is a
 change to a frozen instrument for one arm family. Not undertaken here; noted so the
 question is not mistaken for unanswerable in principle.
+
+## 2026-08-03 (afternoon) — EXP-R2-116: ProtGPT2's D2.c signal is the FASTA line break. "Two answers inside one modality" is WITHDRAWN
+
+Raised by an advisory sub-agent review and **reproduced here independently before
+any document was changed**, as the Audit Principle requires. Every number below is
+mine, recomputed from the retained per-instance matrices.
+
+### The defect
+
+`circuits.py` excludes line-break tokens from the unigram support (`fit_unigram`,
+lines 749–795) with a docstring stating the reason: *"ProtGPT2's FASTA rendering
+emits one every sixty residues … dropping a line break at an arbitrary position
+perturbs a record's layout rather than its sequence. Leaving them in would give the
+one arm whose rendering has layout tokens a systematically different perturbation
+from every other arm."* `arms.py:1061` confirms the rendering — ProtGPT2 is
+hard-wrapped at 60 residues with `"\n"`.
+
+**`prediction_addressed.py` contains no occurrence of `layout`, `\n` or "line
+break".** It applies `content_bounds` to the *leading* scaffold only, while its own
+`key_floor_reason` states the governing principle — *"positions below content_low
+are format scaffolding whose repetition is a property of the rendering rather than
+of the sequence"* — and never applies it to the interior. The FASTA wraps are
+interior.
+
+`fit_unigram`'s docstring even says *"nothing that scores real inputs uses this
+filter"*. The PAA census scores real inputs and needs it.
+
+### The contamination, measured on the retained pools
+
+| arm | layout share of PAA instances | share of total clean-margin mass | mean M-gap all → non-layout | median all → non-layout |
+|---|---|---|---|---|
+| **ProtGPT2** | **28.0–33.0%** | **108.6–109.5%** | +3.06 → **−0.42** | +0.021 → **−0.328** |
+| gpt2-large | 4.0–5.5% | 14.9–15.2% | +0.412 → +0.367 | +0.316 → +0.285 |
+| ProGen2 (all three) | **0.0%** | 0.0% | unchanged | unchanged |
+
+A single token id (199) accounts for it. **The layout instances carry more than
+the whole margin mass — the residue instances net negative.** ProtGPT2's
+PAA-pool median margin is **+0.021** against gpt2-large's **+0.316**.
+
+### The consequence: D2.c's ranking statistic, recomputed with layout instances excluded on every arm uniformly
+
+| arm | modality | K | A1 | layout % | published ρ | **corrected ρ** |
+|---|---|---|---|---|---|---|
+| gpt2 | text | 3 | PASS | 4.6% | +0.6308 | +0.5921 |
+| gpt2-medium | text | 3 | PASS | 5.0% | +0.5417 | +0.4959 |
+| dialogpt-small | text | 3 | **FAIL** | 0.0% | +0.5739 | +0.5739 |
+| qwen2.5-0.5b | text | 3 | PASS | 1.8% | +0.4862 | +0.4809 |
+| gpt2-large | text | 3 | PASS | 4.3% | +0.4726 | +0.4287 |
+| gpt2-xl | text | 3 | PASS | 4.0% | +0.3886 | +0.3557 |
+| llama-3.2-3b | text | 2 | PASS | 1.5% | +0.2915 | +0.2762 |
+| **ProtGPT2** | protein | 3 | **FAIL** | **29.1%** | **+0.2145** | **−0.0880** |
+| ProGen2-small | protein | 3 | PASS | 0.0% | −0.1198 | −0.1198 |
+| ProGen2-medium | protein | 3 | PASS | 0.0% | −0.2111 | −0.2111 |
+| ProGen2-base | protein | 3 | PASS | 0.0% | −0.2342 | −0.2342 |
+
+Sign-flipping on **9 of 9 ProtGPT2 draws across both conditions** (ban 20/n=600
+mean +0.2022 → **−0.1142**; ban 3/n=200 mean +0.2145 → **−0.0880**).
+
+### What this withdraws, and what it strengthens
+
+**WITHDRAWN — "D2.c has two answers inside one modality."** All four protein arms
+are negative once layout instances are excluded. ProtGPT2 does not sit between the
+text arms and the ProGen2 family; it sits with the ProGen2 family. The "~0.43
+within-protein effect" recorded as confounded-but-real was the FASTA wrap, and the
+~0.26 "modality effect isolated by the matched pair" is not that number.
+
+**WITHDRAWN — "protein decoders operate at 2–12× larger decision margins at
+prediction-addressed positions."** False of ProtGPT2, the only modality-identifying
+arm: median +0.021 against gpt2-large's +0.316, the *least* confident arm on
+medians. Its +3.297 mean is the layout tail.
+
+**STRENGTHENED — the modality separation.** Corrected: text **+0.2762 to +0.5921**
+against protein **−0.2342 to −0.0880**, gap **+0.3643** against a within-protein
+spread of **+0.1462**, **ratio 2.49**. The published figures were gap +0.170 and
+ratio 0.38, on which I had demoted the ranking statistic as "a poor instrument for
+a modality claim". **Corrected, it is a good one**, and D2.c reproduces L22's
+finding on a second mechanism with every protein arm on the same side.
+
+### A second, independent discipline breach in the same artefacts
+
+`a1_candidate_pool.verdict` reads **FAIL** on all three ProtGPT2 ban-3/n=200 runs
+(9,958–10,040 instances against `a1_minimum` 20,000) and all three dialogpt-small
+ban-3 runs (13,315–13,544). **I quoted the ProtGPT2 ban-3 runs as settling the
+split** without reading the gate verdict that sits in the artefact beside the
+number. The D2.c design (audit §D2.c step 2) predicted this exact failure —
+ProtGPT2 yields ~50 instances/sequence, so n=200 cannot reach 20,000 — and it was
+not checked when the runs landed. Every analysis script I wrote this week reads
+`causal` and ignores `census.a1_candidate_pool.verdict`.
+
+### Also corrected
+
+**llama-3.2-3b is at K=2, not K=1** (draws 20260728 +0.3201 and 20260801 +0.2629,
+mean **+0.2915**). The audit quotes its single-draw value as the text minimum. Its
+second draw landed while I was writing the entry that quoted the first.
