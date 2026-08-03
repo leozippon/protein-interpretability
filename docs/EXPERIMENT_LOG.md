@@ -6072,3 +6072,70 @@ not checked when the runs landed. Every analysis script I wrote this week reads
 **llama-3.2-3b is at K=2, not K=1** (draws 20260728 +0.3201 and 20260801 +0.2629,
 mean **+0.2915**). The audit quotes its single-draw value as the text minimum. Its
 second draw landed while I was writing the entry that quoted the first.
+
+### EXP-R2-117 — a second review raises depth and score-choice; both reproduce, and they INTERACT with the layout defect
+
+A second, independent advisory review (outside interpretability view) raised two
+further structural claims. Both reproduce. **Neither was run with knowledge of the
+layout defect, and applying the corrections together changes what they mean.**
+
+**Claim A — neither ranking statistic controls for layer depth.** True as stated:
+`select_senders` flattens the grid with `np.argsort(..., axis=None)`
+(`path_patching.py:272-278`), the sender patch and metric act at the query row only
+(`:1066-1080`, `:1058-1064`), so a head writing late lands closer to the
+unembedding, and there is no depth covariate anywhere in the repository. Confirmed
+here: `r(layer, |ΔM-gap|)` is **+0.28 to +0.72 on every arm**, so the causal
+readout is depth-biased by construction.
+
+**Claim B — the ProGen2 negatives flip sign under the score the shipped code
+actually ranks on.** True, and it was in my own first analysis this morning
+(`d2c_final.py` printed both columns: ProGen2-base matched −0.2507, unmatched
++0.1492) and I did not flag it. `14_paa_census.py:393-397` selects on
+`paa_specific`; the audit ruled at line ~1004 that comparisons must use
+`paa_specific_matched`. The two disagree in **sign** on all three ProGen2 arms.
+
+**The synthesis, with all corrections applied together:**
+
+| arm | modality | raw | layout-corrected | + within-layer | unmatched score |
+|---|---|---|---|---|---|
+| gpt2 | text | +0.631 | +0.592 | +0.400 | +0.657 |
+| gpt2-medium | text | +0.542 | +0.496 | +0.305 | +0.517 |
+| qwen2.5-0.5b | text | +0.486 | +0.481 | +0.206 | +0.672 |
+| gpt2-large | text | +0.473 | +0.429 | +0.210 | +0.397 |
+| gpt2-xl | text | +0.389 | +0.356 | +0.153 | +0.358 |
+| llama-3.2-3b | text | +0.291 | +0.276 | +0.280 | +0.506 |
+| **ProtGPT2** | protein | +0.214 | **−0.088** | **−0.232** | **−0.181** |
+| ProGen2-small | protein | −0.120 | −0.120 | −0.044 | **+0.115** |
+| ProGen2-medium | protein | −0.211 | −0.211 | −0.093 | **+0.072** |
+| ProGen2-base | protein | −0.234 | −0.234 | −0.091 | **+0.146** |
+| | | | **gap +0.364** | **gap +0.197** | **gap +0.212** |
+
+**The modality separation survives every correction and every combination** —
+layout-corrected, depth-controlled, and under the alternative score. That is a
+stronger position than the published one, not a weaker one.
+
+**But the second review's predicted *inversion* does not occur, and the reason is
+instructive.** It computed ProtGPT2's within-layer D2.c value as **+0.221** and
+concluded the separation inverts at the boundary (text min +0.196 against protein
+max +0.221). That figure is layout-contaminated: with layout instances excluded,
+ProtGPT2's within-layer value is **−0.232**, the *lowest of any arm on the panel*.
+**Its depth analysis was run on the very data the first review showed to be
+30% FASTA line breaks.** Two independent reviews, each correct about its own
+defect, and the second's headline conclusion is an artefact of the first's.
+
+**What must now be qualified rather than withdrawn:** *individual protein arm
+signs are not robust to the score choice.* "All three ProGen2 arms are negative"
+holds on `paa_specific_matched` and reverses on `paa_specific`. Both columns are
+to be published together; neither alone is defensible. The *modality* statement
+does not depend on the choice.
+
+**Unverified and material — the induction-side depth claim.** The review reports
+that on L22's own artefacts (`results/transfer_20260730/d2bprime*/`) partialling
+on layer reverses the matched pair: gpt2-large +0.428→+0.274 against ProtGPT2
+−0.076→+0.340, inverting in two of four conditions. **I have not reproduced this**
+— it is a different artefact set from the one checked above, and the D2.c version
+of the same claim did not survive contact with the layout correction. It is
+recorded here as a pending check with a live possibility that the same
+interaction applies, since `circuits.py` *does* carry the layout guard on the
+induction side and ProtGPT2's induction probes may therefore be clean. **No audit
+claim is changed on it until it is reproduced.**
