@@ -1101,3 +1101,19 @@ Immediate operational consequence: add a loss-recovered splice metric to the P0-
   available of why prediction-addressed machinery looks weak on protein arms, and
   it ties D2.c to L22: on this evidence the instruments are not failing to see a
   mechanism so much as there being much less of a task for one to solve.
+- **That entry is retracted the same day (EXP-R2-112).** Its ratio compared the
+  census's *filtered* PAA instances against unfiltered positions — a mismatch I
+  recorded as a limitation instead of removing. Under one uniform definition of
+  recurrence, every arm is *more* confident where a token recurs, so the effect is
+  not about recurrence. It is about the census's instance filter, which excludes
+  induction targets and requires a decoy pool and distance range: on text that
+  strips the easy repeats, on protein it does not. The D2.c denominator gap is
+  therefore a property of the **evaluation interface**, not of the models — which
+  is one of the four places the Research Objective asks a limitation to be
+  assigned, and a more useful answer than the one it replaces.
+- **The alphabet interpretation is refuted by a byte-level English decoder.**
+  ByGPT5 — text, 384-symbol vocabulary, 0.83 recurrent fraction — reads 1.47–1.52,
+  inside the BPE text band and below every protein arm. A coarse alphabet does not
+  make a text decoder behave like a protein one.
+- **And the uniform statistic fails my own instrument test**, so no modality claim
+  rests on it: cross-modality gap 0.064 against a within-protein spread of 11.53.

@@ -5725,3 +5725,73 @@ the comparison is not perfectly matched; and dialogpt-small's ratio is −0.71
 because its PAA-position margin is negative, so it is excluded from the ranges
 above and is consistent with being off-distribution rather than informative about
 modality.
+
+### EXP-R2-112 — RETRACTS the entry above. The effect is the census's instance filter, not recurrence
+
+EXP-R2-111's ratio mixed two different position sets — the census's *filtered* PAA
+instances on one side and all scored positions on the other — and I recorded that
+mismatch as a limitation rather than removing it. EXP-R2-112 removes it: one
+definition, one pass, all arms. **A position counts as recurrent if the token it
+predicts has appeared earlier in its own context.** No census, no knockout, no head
+grid, so it also runs on the ByGPT5 rungs, which carry only `budget` and `lens`
+capability and which the PAA census would refuse.
+
+| arm | modality | tokenisation | vocab | **rec. fraction** | m(rec) | m(non) | **rec ÷ non** |
+|---|---|---|---|---|---|---|---|
+| ProtGPT2 | protein | multi-residue BPE | 50257 | **0.09** | 11.63 | 0.87 | **13.30** |
+| llama-3.2-3b | text | bpe | 128256 | 0.34 | 2.12 | 1.52 | 1.39 |
+| qwen2.5-0.5b | text | bpe | 151936 | 0.35 | 1.89 | 1.24 | 1.52 |
+| dialogpt-small | text | bpe | 50257 | 0.36 | 1.20 | 1.06 | 1.13 |
+| gpt2-xl | text | bpe | 50257 | 0.36 | 2.65 | 1.66 | 1.60 |
+| gpt2-large | text | bpe | 50257 | 0.36 | 2.54 | 1.56 | 1.62 |
+| gpt2-medium | text | bpe | 50257 | 0.36 | 2.33 | 1.45 | 1.60 |
+| gpt2 | text | bpe | 50257 | 0.36 | 2.20 | 1.29 | 1.71 |
+| **bygpt5-small-en** | **text** | **byte** | **384** | **0.83** | 4.36 | 2.97 | **1.47** |
+| **bygpt5-base-en** | **text** | **byte** | **384** | **0.83** | 4.72 | 3.15 | **1.50** |
+| **bygpt5-medium-en** | **text** | **byte** | **384** | **0.83** | 4.85 | 3.19 | **1.52** |
+| ProGen2-small | protein | residue | 32 | 0.90 | 1.15 | 0.65 | 1.77 |
+| ProGen2-medium | protein | residue | 32 | 0.90 | 1.83 | 0.98 | 1.87 |
+| ProGen2-base | protein | residue | 32 | 0.90 | 1.89 | 0.97 | 1.95 |
+
+**Three corrections, in order of how wrong they were.**
+
+**(1) EXP-R2-111's headline is retracted.** "Text decoders are four to five times
+less confident where a token recurs" does not survive a uniform definition:
+**every arm is *more* confident at recurrent positions**, rec ÷ non from 1.13 to
+13.30. What EXP-R2-111 actually measured is that the census's PAA instances sit at
+much lower margins than typical positions on text (0.18–0.26) and not on protein
+(0.90–1.78). The census filter excludes induction targets, requires a non-empty
+decoy pool and a distance range — on text that strips the *easy* repeats and
+leaves genuinely ambiguous cases, on protein it does not. **So the D2.c
+denominator gap belongs to the census's instance selection interacting with
+modality, not to recurrence.** That is still a real finding, and it is one about
+the *evaluation interface* rather than about the models — which is the third of
+the four places the Research Objective asks a limitation to be assigned.
+
+**(2) The alphabet interpretation offered in EXP-R2-111 is refuted, not
+confirmed.** A byte-level *English* decoder was the test, and ByGPT5 reads
+**1.47–1.52** on all three rungs — squarely inside the BPE text band (1.13–1.71)
+and **below every protein arm**. A coarse alphabet and a 0.83 recurrent fraction
+do not make a text decoder behave like a protein one. The alphabet account of
+EXP-R2-111 is withdrawn.
+
+**(3) The uniform statistic is itself a poor modality instrument**, by exactly the
+criterion applied to L22's ranking statistic. It separates — text 1.13–1.71
+against protein 1.77–13.30 — but the **cross-modality gap is 0.064 against a
+within-protein spread of 11.53, a ratio of 0.0055**. ProtGPT2 and ProGen2 are both
+protein and differ sevenfold, because the recurrent *fraction* is a tokenisation
+property spanning 0.09 to 0.90 and it drives the statistic: ProtGPT2's
+multi-residue BPE makes exact token recurrence rare (9%) and therefore highly
+informative when it happens (m(rec) 11.63 against m(non) 0.87). No modality claim
+is made on this statistic.
+
+*ZymCTRL is excluded and the reason is the instrument's own guard:*
+`content_bounds` refuses a conditioned row truncated before its `<end>`, because a
+row without its boundary has no defined content span and scoring to the end of the
+valid tokens would count the EC prompt as cohort content. At width 192 no ZymCTRL
+row contains its boundary. That is the guard working, not a failure.
+
+**What survives from EXP-R2-111:** the all-position margin does not separate the
+modalities (text 1.466–1.913 against protein 1.110–1.852, overlapping, and on
+medians the protein arms are the less confident ones). That measurement stands and
+is unaffected by the filter mismatch, since it uses only the unfiltered set.
