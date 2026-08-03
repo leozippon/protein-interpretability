@@ -1117,3 +1117,18 @@ Immediate operational consequence: add a loss-recovered splice metric to the P0-
   make a text decoder behave like a protein one.
 - **And the uniform statistic fails my own instrument test**, so no modality claim
   rests on it: cross-modality gap 0.064 against a within-protein spread of 11.53.
+- **The census filter account is then confirmed directly** (EXP-R2-113): the margin
+  at the census's instances over the margin at all recurrent positions reads
+  0.143–0.199 on six text arms and 0.283–0.927 on four protein arms, disjoint.
+- **The D2.c split resolves into two effects, one of them isolated.** A modality
+  effect of ~0.26 is measured by the designed matched pair, which holds
+  architecture, tokenisation and vocabulary fixed. A second effect of ~0.43
+  separates ProtGPT2 from the ProGen2 arms with architecture, tokenisation,
+  vocabulary and corpus covarying; ZymCTRL would break it and is excluded, so that
+  exclusion now carries a cost it did not carry when it was decided.
+- **Mode 2 restated on retrieval rather than the spread**, after llama-3.2-3b at
+  K=4 took the panel's lowest spread while still retrieving at 14× chance.
+- **§7 gains its first opening since item 0 closed**, traced to EXP-R2-113:
+  difficulty-matched instance selection, with a stated gate and a null result
+  declared a complete answer. Proposed, not implemented — the instrument is frozen
+  and this changes its instance selection.

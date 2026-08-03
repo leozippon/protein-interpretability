@@ -5888,3 +5888,45 @@ Those are different failures and the spread alone cannot tell them apart.
 retrieve — ZymCTRL alone.** A negative spread by itself means only that an arm's
 census is no better at its top than in its bulk, which llama shows is compatible
 with a perfectly usable census. The earlier wording is corrected in the audit.
+
+### The D2.c confound resolves into two effects, one of which the panel *does* isolate
+
+EXP-R2-113 recorded that the ProtGPT2-vs-ProGen2 split has no identified
+explanation. That was under-stated: laying the ranking statistic out against
+architecture and tokenisation shows *which* part is identified and which is not.
+
+| arm | modality | architecture | tokenisation | D2.c ρ |
+|---|---|---|---|---|
+| gpt2 | text | gpt2 | bpe | +0.6308 |
+| dialogpt-small | text | gpt2 | bpe | +0.5739 |
+| gpt2-medium | text | gpt2 | bpe | +0.5417 |
+| qwen2.5-0.5b | text | qwen2 | bpe | +0.4862 |
+| gpt2-large | text | gpt2 | bpe | +0.4726 |
+| gpt2-xl | text | gpt2 | bpe | +0.3886 |
+| llama-3.2-3b | text | llama | bpe | +0.3201 |
+| **protgpt2** | **protein** | **gpt2** | **bpe** | **+0.2145** |
+| progen2-small | protein | progen | residue | −0.1198 |
+| progen2-medium | protein | progen | residue | −0.2111 |
+| progen2-base | protein | progen | residue | −0.2342 |
+
+**No single account fits.** A purely *architectural* one fails: ProtGPT2 carries
+gpt2's architecture and reads **+0.174 below the lowest gpt2-architecture text
+arm**. A purely *tokenisational* one fails: ProtGPT2 is BPE-tokenised and reads
+**+0.106 below the lowest BPE text arm**. A purely *modality* one fails too:
+ProtGPT2 sits ~0.43 above every ProGen2 arm, all of them protein. There are **two
+effects**, and they have different evidential standing:
+
+- **The modality effect is isolated, by the panel's designed matched pair.**
+  ProtGPT2 against gpt2-large holds architecture, tokenisation family and vocabulary
+  size fixed and varies modality and corpus: **+0.2145 against +0.4726, a gap of
+  0.258.** This is exactly the contrast the matched pair exists for and it needs no
+  further arm.
+- **The within-protein effect is not isolated.** ProtGPT2 against the ProGen2 arms
+  varies architecture, tokenisation, vocabulary and corpus simultaneously. ZymCTRL
+  — gpt2-family architecture with *residue* tokenisation — is the one arm that
+  would break it, and it is excluded from D2.c's window.
+
+So the correct statement is narrower than "the explanation is unidentified" and
+wider than "it is an arm property": **a modality effect of ~0.26 is measured at
+matched architecture and tokenisation, and a second effect of ~0.43 separates the
+two protein families with its cause unidentified.**
