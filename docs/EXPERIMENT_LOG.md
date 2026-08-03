@@ -5795,3 +5795,56 @@ row contains its boundary. That is the guard working, not a failure.
 modalities (text 1.466–1.913 against protein 1.110–1.852, overlapping, and on
 medians the protein arms are the less confident ones). That measurement stands and
 is unaffected by the filter mismatch, since it uses only the unfiltered set.
+
+### EXP-R2-113 — the filter account is confirmed directly, and the D2.c split is found to be confounded
+
+Two questions, both answerable from artefacts already on disk.
+
+**(1) Does the census filter select harder positions on text than on protein?**
+EXP-R2-112 inferred this; here it is measured, as the ratio of the margin at the
+census's PAA instances to the margin at *all* recurrent positions of the same arm:
+
+| arm | modality | PAA margin | recurrent margin | **PAA ÷ recurrent** | rec. fraction |
+|---|---|---|---|---|---|
+| qwen2.5-0.5b | text | 0.270 | 1.893 | **0.143** | 0.35 |
+| gpt2-medium | text | 0.371 | 2.325 | **0.160** | 0.36 |
+| gpt2 | text | 0.360 | 2.195 | **0.164** | 0.36 |
+| llama-3.2-3b | text | 0.363 | 2.123 | **0.171** | 0.34 |
+| gpt2-large | text | 0.492 | 2.540 | **0.194** | 0.36 |
+| gpt2-xl | text | 0.527 | 2.650 | **0.199** | 0.36 |
+| ProtGPT2 | protein | 3.297 | 11.631 | **0.283** | 0.09 |
+| ProGen2-small | protein | 0.996 | 1.148 | **0.868** | 0.90 |
+| ProGen2-medium | protein | 1.616 | 1.829 | **0.884** | 0.90 |
+| ProGen2-base | protein | 1.756 | 1.895 | **0.927** | 0.90 |
+
+**Confirmed and disjoint: text 0.143–0.199, protein 0.283–0.927.** The census
+selects positions five to seven times harder than a typical recurrent position on
+every text arm, and only 1.1–3.5× harder on the protein arms. That is the D2.c
+denominator gap, now demonstrated rather than inferred. dialogpt-small reads
+−0.656, consistent with its negative PAA margin, and is excluded.
+
+Note ProtGPT2 at 0.283 sits nearer the text arms than the ProGen2 arms do — the
+same ordering it shows on the ranking statistic.
+
+**(2) Is the ProtGPT2-vs-ProGen2 split on the ranking statistic a tokenisation
+effect? The panel cannot say, and that is the finding.** Spearman(recurrent
+fraction, D2.c ρ) over ten arms is **−0.437, p = 0.21** — not significant. Within
+the protein arms the question is worse than under-powered, it is **perfectly
+confounded**:
+
+| arm | tokenisation | vocab | rec. fraction | D2.c ρ |
+|---|---|---|---|---|
+| ProtGPT2 | multi-residue BPE | 50257 | 0.09 | **+0.214** |
+| ProGen2-base | residue | 32 | 0.90 | −0.234 |
+| ProGen2-medium | residue | 32 | 0.90 | −0.211 |
+| ProGen2-small | residue | 32 | 0.90 | −0.120 |
+
+**ProtGPT2 is the only protein arm that is not residue-tokenised, and it is the
+only protein arm with a positive ρ.** It is also the only protein arm with
+GPT-2's architecture, and it has its own pretraining corpus. Arm identity,
+tokenisation, and architecture covary perfectly across the four, so *"D2.c has two
+answers inside one modality"* stands as a **measurement** while its **explanation
+is not identified**. ZymCTRL would be the fourth residue-level protein arm and
+would break the tie, but it is irreducibly excluded from D2.c's shared window, so
+**no arm in this panel can separate these accounts.** Recorded as a limit of the
+panel rather than resolved by argument.
