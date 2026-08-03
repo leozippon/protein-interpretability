@@ -61,7 +61,7 @@ from .arms import (
     symbols_per_token,
 )
 from .budget import scored_tokens
-from .circuits import RepeatProbe, content_bounds, n_head
+from .circuits import RepeatProbe, content_bounds, layout_token_ids, n_head
 from .pathways import (
     LAPLACE_SMOOTHING,
     assert_disjoint,
@@ -509,12 +509,19 @@ def build_instance_pool(
     target_logits: list[float] = []
     runner_up_logits: list[float] = []
 
+    # Resolved once over the tokens this cohort actually contains, rather than
+    # over the whole vocabulary: decoding 50257 pieces per arm to find two of
+    # them is the kind of cost that gets a guard removed later.
+    layout_tokens = layout_token_ids(arm, {int(t) for row in rows for t in row})
+    cascade_layout_vocabulary = sorted(layout_tokens)
+
     cascade = {
         "positions_scored": 0,
         "positions_with_eligible_candidate": 0,
         "candidates_discarded_by_induction_target": 0,
         "candidates_discarded_by_distance_range": 0,
         "candidates_discarded_by_induction_and_distance": 0,
+        "candidates_discarded_by_layout_token": 0,
         "positions_with_no_antecedent_candidate": 0,
         "candidates_discarded_by_empty_decoy_pool": 0,
         "instances_retained": 0,
@@ -525,6 +532,13 @@ def build_instance_pool(
         "per_sequence_cap_selection": "seeded uniform draw over the row's eligible queries",
         "content_low": content_low,
         "key_floor": key_floor,
+        "layout_tokens_excluded_from_candidates": cascade_layout_vocabulary,
+        "layout_reason": (
+            "a predicted line break is a prediction about the record's layout "
+            "rather than its sequence, and only ProtGPT2's rendering emits them; "
+            "the judgement is circuits.layout_token_ids, which fit_unigram has "
+            "used since the module was written"
+        ),
         "key_floor_reason": (
             "antecedents and decoys are drawn at or above max(1, content_low): "
             "position 0 is the attention sink, and positions below content_low are "
@@ -563,11 +577,24 @@ def build_instance_pool(
                 chosen: tuple[int, int, float] | None = None
                 induction_blocked = False
                 distance_blocked = False
+                layout_blocked = False
                 for depth in range(candidate_depth):
                     token = int(top_ids[row_index, q, depth])
                     probability = float(top_probabilities[row_index, q, depth])
                     if probability < min_confidence:
                         break
+                    # A predicted line break is a prediction about the record's
+                    # layout, not about its sequence, and only one arm's
+                    # rendering has them. Admitting them made ProtGPT2's census
+                    # 28-33% FASTA wraps carrying more than the whole
+                    # clean-margin mass, and its copy-suppression correlation
+                    # reported the opposite sign from the residues (EXP-R2-116).
+                    # The judgement is `circuits.layout_token_ids`, imported
+                    # rather than repeated: `fit_unigram` has excluded these
+                    # since the module was written, for the same reason.
+                    if token in layout_tokens:
+                        layout_blocked = True
+                        continue
                     # Searched from the content floor, not from index 0: an
                     # antecedent inside the format scaffolding is a repetition
                     # of the rendering, not of the sequence.
@@ -600,6 +627,8 @@ def build_instance_pool(
                         cascade["candidates_discarded_by_induction_target"] += 1
                     elif distance_blocked:
                         cascade["candidates_discarded_by_distance_range"] += 1
+                    elif layout_blocked:
+                        cascade["candidates_discarded_by_layout_token"] += 1
                     else:
                         cascade["positions_with_no_antecedent_candidate"] += 1
                     continue
@@ -697,6 +726,7 @@ def build_instance_pool(
         "candidates_discarded_by_induction_target",
         "candidates_discarded_by_distance_range",
         "candidates_discarded_by_induction_and_distance",
+        "candidates_discarded_by_layout_token",
         "positions_with_no_antecedent_candidate",
     )
     accounted = sum(cascade[name] for name in exits)

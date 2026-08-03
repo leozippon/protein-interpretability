@@ -6139,3 +6139,50 @@ recorded here as a pending check with a live possibility that the same
 interaction applies, since `circuits.py` *does* carry the layout guard on the
 induction side and ProtGPT2's induction probes may therefore be clean. **No audit
 claim is changed on it until it is reproduced.**
+
+### EXP-R2-118 — the layout guard, repaired at the root and verified on the arm
+
+**Single declaration (Appendix B rule 12).** `circuits.layout_token_ids` is now the
+one judgement about what counts as layout. `fit_unigram` calls it instead of
+inlining the comprehension it has carried since the module was written, and
+`prediction_addressed.build_instance_pool` imports it rather than deciding for
+itself or — as it did — not at all. A predicted line break is discarded in the
+candidate loop through its own cascade exit,
+`candidates_discarded_by_layout_token`, so the cascade still closes; the excluded
+token ids and the reason are written into the artefact.
+
+**Verified on the real arm**, ProtGPT2 at n=200, width 192, ban 3, draw 20260728:
+
+```
+positions_scored                        32000
+candidates_discarded_by_layout_token     3001
+positions_with_eligible_candidate        7124
+instances_retained                       7122
+layout_tokens_excluded_from_candidates  [199]
+```
+
+Token 199 is the FASTA wrap and it is the only layout token in the cohort. The
+cascade closes.
+
+**Three of my own mistakes in making this fix, all caught by tests rather than by
+me.** (i) I referenced the layout vocabulary in the cascade record before defining
+it — an `UnboundLocalError` that failed both the live census and the repository's
+existing `test_the_instance_cascade_closes_over_every_scored_position`. (ii) That
+test's stub tokenizer had no `decode`, because `fit_unigram` had never run against
+it; I added `decode` to the stub rather than letting `layout_token_ids` tolerate a
+tokenizer without one, which would have been exactly the silent fallback the
+Failure Principle forbids. (iii) The same test asserts the exact exit set, which my
+new exit legitimately joins. That fixture carries no layout tokens, which makes it
+the control the fix needed: the new exit is asserted to stay at **0** and the
+excluded vocabulary at **[]** on an arm whose rendering has no wraps. Suite: **150
+passed, 4 skipped** on both modules; all three new tests verified to fail on the
+pre-fix source (`git show HEAD:` returns zero references to either symbol).
+
+**The guard changes the feasibility arithmetic, and this is the reason the
+re-run is not a repeat of the old configuration.** Removing ~30% of ProtGPT2's
+candidates takes n=200 from 10,040 instances to **7,122**, so A1 reads **FAIL**
+against its 20,000 gate — a harder failure than the one already recorded for that
+configuration. At n=600 the same rate projects to ~21,400, which clears. **ProtGPT2
+D2.c must therefore be re-run at n=600, and the n=200 condition is not available
+to it at all** under a correct content definition. That is a constraint discovered
+by the fix, not a choice.

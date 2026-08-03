@@ -40,7 +40,7 @@ kept unchanged so that the comparison between the two probes is the evidence.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from fractions import Fraction
@@ -746,6 +746,33 @@ def patch_seq_len_refusal(
     return None
 
 
+def layout_token_ids(arm: Arm, tokens: Iterable[int]) -> set[int]:
+    """Which of ``tokens`` carry a line break under this arm's tokeniser.
+
+    Single declaration, because two modules need the same judgement for two
+    different reasons and they must not drift.  A line break is real content --
+    ProtGPT2's FASTA rendering emits one every sixty residues (``arms.py``) and
+    they are 5% of its stream -- but it belongs to the record's *layout* rather
+    than to its sequence, and only one arm's rendering has them.  Any statistic
+    that treats them as sequence gives that arm a systematically different
+    quantity from every other arm.
+
+    :func:`fit_unigram` needs it so a synthetic replacement token does not
+    perturb layout; the prediction-addressed census needs it so an *instance*
+    whose predicted token is a wrap is not scored as a prediction about the
+    protein.  That second use was missing and it was not a small omission: the
+    wraps were 28-33% of ProtGPT2's PAA instances and carried more than the whole
+    clean-margin mass, so its copy-suppression correlation reported the opposite
+    sign from the one the residues give (EXP-R2-116).
+    """
+
+    return {
+        int(token)
+        for token in tokens
+        if any(character in arm.tokenizer.decode([int(token)]) for character in ("\n", "\r"))
+    }
+
+
 def fit_unigram(arm: Arm, strings: Sequence[str], *, max_tokens: int) -> Unigram:
     """Count content tokens over arm-native input strings.
 
@@ -774,11 +801,7 @@ def fit_unigram(arm: Arm, strings: Sequence[str], *, max_tokens: int) -> Unigram
             total += 1
     if total < 1:
         raise RuntimeError(f"{arm.name}: cohort produced no content tokens")
-    layout = {
-        token
-        for token in counter
-        if any(character in arm.tokenizer.decode([token]) for character in ("\n", "\r"))
-    }
+    layout = layout_token_ids(arm, counter)
     layout_mass = sum(counter[token] for token in layout)
     for token in layout:
         del counter[token]

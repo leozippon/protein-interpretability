@@ -16,7 +16,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.transfer.arms import Arm, ArmSpec, Cohort, PANEL  # noqa: E402
-from src.transfer.circuits import content_bounds  # noqa: E402
+from src.transfer.circuits import content_bounds, layout_token_ids  # noqa: E402
 from src.transfer.induction_robustness import contrast_ratio_bootstrap  # noqa: E402
 from src.transfer.lenses import split_cohort  # noqa: E402
 from src.transfer.path_patching import (  # noqa: E402
@@ -204,6 +204,45 @@ def test_content_bounds_refuse_a_malformed_fasta_prefix() -> None:
         content_bounds(_fasta_arm(), [3, 1, 3], 3)
     with pytest.raises(ValueError, match="has no line break"):
         content_bounds(_fasta_arm(), [0, 3], 2)
+
+
+def test_layout_tokens_are_identified_by_the_single_declaration() -> None:
+    # Rule: one judgement about what counts as layout, used by everything that
+    # needs it. Both a bare newline and a carriage-return pair are layout; a
+    # residue pair is not.
+    assert layout_token_ids(_fasta_arm(), [0, 1, 2, 3]) == {1, 2}
+    assert layout_token_ids(_fasta_arm(), []) == set()
+
+
+def test_the_paa_census_and_the_unigram_agree_on_what_layout_is() -> None:
+    # Rule: `fit_unigram` has excluded line-break tokens since the module was
+    # written, on the grounds that they perturb a record's layout rather than
+    # its sequence. The prediction-addressed census scores real inputs and never
+    # applied the same judgement, so an instance whose *predicted token* was
+    # ProtGPT2's 60-residue FASTA wrap was scored as a prediction about the
+    # protein. Those instances were 28-33% of its pool and carried more than the
+    # whole clean-margin mass, and its copy-suppression correlation reported the
+    # opposite sign from the residues (EXP-R2-116). This pins the two together:
+    # whatever `circuits` calls layout is what the census refuses.
+    source = (REPO_ROOT / "src" / "transfer" / "prediction_addressed.py").read_text()
+    assert "layout_token_ids" in source, (
+        "the PAA pool must take its layout judgement from circuits.layout_token_ids "
+        "rather than deciding for itself or not at all"
+    )
+    assert "candidates_discarded_by_layout_token" in source, (
+        "a discarded candidate must appear in the cascade, or the cascade cannot close "
+        "and a reader cannot tell an excluded position from an unaccounted one"
+    )
+    tree = ast.parse(source)
+    exits = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and node.value == "candidates_discarded_by_layout_token"
+    ]
+    assert len(exits) >= 3, (
+        "expected the layout exit to be initialised, incremented, and listed among "
+        f"the cascade exits; found {len(exits)} references"
+    )
 
 
 def test_split_cohort_records_parent_provenance_and_split_indices() -> None:

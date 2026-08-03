@@ -1282,6 +1282,15 @@ def _tiny_gpt2(seed: int = 3) -> Arm:
     class _PadTokenizer:
         pad_token_id = 0
 
+        @staticmethod
+        def decode(token_ids: list[int]) -> str:
+            # The pool now asks `circuits.layout_token_ids` which of the cohort's
+            # tokens carry a line break, so the stub needs the one method every
+            # real tokenizer has. This fixture's ids are bare integers with no
+            # layout among them, which is what makes it a control: the layout
+            # exit must stay at zero on an arm whose rendering has no wraps.
+            return f"<{token_ids[0]}>"
+
     return Arm(
         spec=replace(PANEL["gpt2-large"], name="tiny-gpt2", n_layer=2, d_model=8),
         model=model,
@@ -2046,9 +2055,19 @@ def test_the_instance_cascade_closes_over_every_scored_position():
         "candidates_discarded_by_induction_target",
         "candidates_discarded_by_distance_range",
         "candidates_discarded_by_induction_and_distance",
+        # A predicted line break is a prediction about the record's layout rather
+        # than its sequence; admitting them made 28-33% of ProtGPT2's pool FASTA
+        # wraps carrying more than the whole clean-margin mass (EXP-R2-116). The
+        # exit is listed here because a discarded candidate that leaves through
+        # no exit is exactly what this test exists to forbid.
+        "candidates_discarded_by_layout_token",
         "positions_with_no_antecedent_candidate",
     }
     assert sum(cascade[name] for name in exits) == cascade["positions_scored"]
+    # This fixture's tokens carry no layout, which makes it the control: the new
+    # exit must not divert a position on an arm whose rendering has no wraps.
+    assert cascade["candidates_discarded_by_layout_token"] == 0
+    assert cascade["layout_tokens_excluded_from_candidates"] == []
     # The both-blocked bucket must exist as a key even when it is empty, or the
     # closure sum silently changes shape between arms.
     assert "candidates_discarded_by_induction_and_distance" in cascade
