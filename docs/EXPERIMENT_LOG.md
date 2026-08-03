@@ -5930,3 +5930,51 @@ So the correct statement is narrower than "the explanation is unidentified" and
 wider than "it is an arm property": **a modality effect of ~0.26 is measured at
 matched architecture and tokenisation, and a second effect of ~0.43 separates the
 two protein families with its cause unidentified.**
+
+### EXP-R2-114 read — the induction panel is complete at K≥4, and mode 1 has not moved in six rounds
+
+dialogpt-small reached K=4 (spread +0.121 → +0.197, top-5% +0.452 → +0.552, still
+inside the text band) and ProGen2-medium and ProGen2-small reached K=4. **Every arm
+in the panel is now at K≥4**, with gpt2-large and ZymCTRL at 6 and gpt2-xl and
+ProtGPT2 at 7. Mode 1 is unchanged:
+
+| arm | K | spread | first measured |
+|---|---|---|---|
+| protgpt2 * | 7 | **+1.014** | +1.021 at K=6 |
+| progen2-small * | 4 | +0.704 | +0.706 at K=2 |
+| progen2-medium * | 4 | +0.604 | +0.586 at K=2 |
+| progen2-base * | 5 | +0.526 | +0.489 at K=3 |
+| gpt2-xl | 7 | +0.395 | +0.416 at K=3 |
+
+The four ProGen2/ProtGPT2 arms have held the four highest spreads in the panel
+through six rounds of added draws, and no arm has crossed another. **The panel
+decomposition is converged and further induction draws will not change it** —
+which is why EXP-R2-115 spends the next H200 slot on the two boundary arms
+instead, where draws can still move the L22 margin.
+
+### The byte-level text control cannot be extended to L22, and the reason is declared
+
+EXP-R2-112 used ByGPT5 — a byte-level *English* decoder — to refute an
+alphabet-based reading of the recurrence statistic. The same arm would be the
+ideal control for **L22 itself**: a text decoder with a coarse alphabet directly
+tests whether the induction-census failure tracks modality or tokenisation, which
+is the question the programme keeps circling and which EXP-R2-113 showed the
+protein arms alone cannot answer.
+
+It cannot be run, and the refusal is explicit rather than silent:
+
+```
+require_supported_layout(bygpt5-base-en)
+-> TypeError: path patching is implemented for ['gpt2', 'llama', 'progen', 'qwen2']
+   only; 't5_decoder' has no declared attention output projection in this module
+```
+
+ByGPT5 is a T5 decoder. Its panel entry declares `capabilities={"budget", "lens"}`
+— no `circuits` — so the declaration and the code agree, and the Failure Principle
+is doing its job: the arm is refused at the layout check rather than producing a
+number from a mis-sliced projection. **Recorded as an irreducible limitation of
+the current panel, with the exact requirement named:** answering
+alphabet-versus-modality on L22 needs a `t5_decoder` attention-output-projection
+declaration in `path_patching`, verified against its head slicing, and that is a
+change to a frozen instrument for one arm family. Not undertaken here; noted so the
+question is not mistaken for unanswerable in principle.
