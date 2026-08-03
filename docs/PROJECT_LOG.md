@@ -1090,3 +1090,14 @@ Immediate operational consequence: add a loss-recovered splice metric to the P0-
   points (124M 18.40% to 1558M 3.19%) with corpus and architecture fixed, but
   llama-3.2-3b at 3B reads 8.62%, far above gpt2-xl at half the size. An earlier
   entry called it a trend "across two families"; that rested on qwen alone.
+- **And the denominator difference turns out to be about recurrence, not
+  confidence (EXP-R2-111).** Measured at all scored positions rather than only at
+  prediction-addressed ones — no census, no knockout — the margin does not
+  separate the modalities at all, and on medians the protein arms are the less
+  confident ones. What separates is the ratio of the recurrence-position margin
+  to the all-position margin: 0.18–0.26 on four text arms against 0.90–1.78 on
+  four protein arms, disjoint. Text decoders are 4–5× less confident where a
+  token recurs; protein decoders are not. This is the most economical account
+  available of why prediction-addressed machinery looks weak on protein arms, and
+  it ties D2.c to L22: on this evidence the instruments are not failing to see a
+  mechanism so much as there being much less of a task for one to solve.

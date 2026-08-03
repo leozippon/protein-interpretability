@@ -5668,3 +5668,60 @@ based on qwen alone and llama does not follow it.
 With dialogpt-small excluded the relative separation still holds — text 3.19% to
 18.40% against protein 0.49% to 0.89%, no overlap — but what it measures is now
 stated properly.
+
+### EXP-R2-111 — the margin difference is about RECURRENCE, not about confidence
+
+EXP-R2-109's denominator was measured only at PAA-selected positions, which cannot
+distinguish two very different readings: (a) protein decoders are more confident
+everywhere, or (b) protein decoders are more confident specifically where a token
+recurs. This measures the same quantity — top-1 logit minus top-2 logit, which is
+what `m_gap` is built from — at **all** scored positions on the same cohorts,
+same width, same draw. No knockout, no census, no head grid: a property of model
+and corpus alone. Nine arms, 38,200 positions each.
+
+| arm | modality | **all-position mean** | all-position median | PAA mean | **PAA ÷ all** |
+|---|---|---|---|---|---|
+| gpt2-large | text | 1.913 | 1.022 | 0.492 | **0.26** |
+| gpt2-medium | text | 1.765 | 0.934 | 0.371 | **0.21** |
+| gpt2 | text | 1.610 | 0.868 | 0.360 | **0.22** |
+| qwen2.5-0.5b | text | 1.466 | 0.863 | 0.270 | **0.18** |
+| *dialogpt-small* | *text* | *1.106* | *0.740* | *−0.785* | *−0.71* |
+| ProtGPT2 | protein | 1.852 | 0.449 | 3.297 | **1.78** |
+| ProGen2-base | protein | 1.806 | 0.682 | 1.756 | **0.97** |
+| ProGen2-medium | protein | 1.750 | 0.636 | 1.616 | **0.92** |
+| ProGen2-small | protein | 1.110 | 0.371 | 0.996 | **0.90** |
+
+**Reading (a) is refuted. The all-position margin does not separate the
+modalities at all** — text 1.466–1.913 against protein 1.110–1.852, overlapping.
+Protein decoders are *not* generally more confident. On medians they are in fact
+*less* confident than the text arms (0.371–0.682 against 0.863–1.022) with heavier
+upper tails, which is why the means agree while the medians do not; the ratio
+column is mean-to-mean throughout and both are reported.
+
+**Reading (b) holds, and the separation is complete.** The PAA-to-all ratio reads
+**0.18–0.26 on four text arms and 0.90–1.78 on four protein arms** — disjoint,
+3.5× at the closest pairing. **Text decoders are four to five times less confident
+where a token recurs than at a typical position. Protein decoders are no less
+confident there, and ProtGPT2 is markedly more so.**
+
+**This reframes D2.c's size result and connects it to L22.** The denominator gap
+is not "protein models are confident"; it is that **recurrence is a locus of
+uncertainty for a text decoder and is not one for a protein decoder.** That is a
+sufficient account of why the prediction-addressed machinery looks weak on protein
+arms: in text, a repeated token is informationally loaded and deciding whether to
+repeat it is a genuine decision — which is precisely the task induction and
+copy-suppression circuits exist to perform. In a 20-letter alphabet over a
+192-residue window, a residue recurring is near-inevitable and carries almost no
+information, so there is little decision to make and little reason for specialised
+machinery to be recruited. The interpretability instruments are not failing to see
+a mechanism; on this evidence there is much less of a *task* for the mechanism to
+solve.
+
+*Stated as interpretation, not measurement.* The alphabet account above is an
+explanation of the measured ratio, not a second measurement — nothing here tests
+it directly. Two further limits: the PAA positions are filtered (decoy pool,
+induction-target exclusion, distance range) while the all-position set is not, so
+the comparison is not perfectly matched; and dialogpt-small's ratio is −0.71
+because its PAA-position margin is negative, so it is excluded from the ranges
+above and is consistent with being off-distribution rather than informative about
+modality.
