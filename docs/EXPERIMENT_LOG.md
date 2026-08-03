@@ -5848,3 +5848,43 @@ is not identified**. ZymCTRL would be the fourth residue-level protein arm and
 would break the tie, but it is irreducibly excluded from D2.c's shared window, so
 **no arm in this panel can separate these accounts.** Recorded as a limit of the
 panel rather than resolved by argument.
+
+### The panel decomposition at K≥4 on every arm but three — and mode 2 needs its definition sharpened
+
+gpt2-medium reached K=4 (its top-5% moved +0.696 → +0.667, spread +0.328 →
++0.269). Every arm is now at K≥4 except dialogpt-small, ProGen2-medium and
+ProGen2-small, all three of which EXP-R2-114 is filling. Mode 1 is unchanged and
+has been through five rounds of added draws without moving:
+
+| arm | K | top 5% | bulk 80% | spread | hit@20 |
+|---|---|---|---|---|---|
+| protgpt2 * | 7 | +0.747 | −0.267 | **+1.014** | 14.1 |
+| progen2-small * | 3 | +0.828 | +0.133 | +0.696 | 7.8 |
+| progen2-medium * | 3 | +0.727 | +0.135 | +0.592 | 8.2 |
+| progen2-base * | 5 | +0.660 | +0.134 | +0.526 | 7.2 |
+| gpt2-xl | 7 | +0.567 | +0.172 | +0.395 | 12.1 |
+| gpt2-large | 7 | +0.508 | +0.216 | +0.292 | 11.4 |
+| gpt2-medium | 4 | +0.667 | +0.397 | +0.269 | 13.6 |
+| dialogpt-small | 2 | +0.452 | +0.331 | +0.121 | 13.4 |
+| qwen2.5-0.5b | 4 | +0.420 | +0.333 | +0.087 | 10.7 |
+| **zymctrl \*** | 6 | **+0.131** | +0.188 | **−0.057** | **2.9** |
+| **llama-3.2-3b** | 4 | **+0.243** | +0.322 | **−0.079** | 8.5 |
+
+**Mode 2 was defined on the spread alone, and at K=4 that definition no longer
+picks out ZymCTRL uniquely: llama-3.2-3b now has the panel's *lowest* spread
+(−0.079), below ZymCTRL's −0.057.** A text arm has joined the class, so "ZymCTRL
+is the only arm on which an untrustworthy-census reading is supported" is not
+carried by the spread.
+
+**It is still carried by retrieval, which is the statistic that matters and the
+one the definition should have used.** On census top-20 retrieval ZymCTRL reads
+**2.9/20** against llama's **8.5/20** — and llama's chance level is 0.60 against
+ZymCTRL's 0.56, so the two are directly comparable. llama's census top is flat
+(top-5% +0.243 barely above its bulk +0.322) *while still retrieving the causally
+largest heads at 14× chance*; ZymCTRL's neither ranks within its top nor retrieves.
+Those are different failures and the spread alone cannot tell them apart.
+
+**Mode 2 is therefore restated as: mediocre in every stratum *and* failing to
+retrieve — ZymCTRL alone.** A negative spread by itself means only that an arm's
+census is no better at its top than in its bulk, which llama shows is compatible
+with a perfectly usable census. The earlier wording is corrected in the audit.
