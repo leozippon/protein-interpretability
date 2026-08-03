@@ -5609,3 +5609,62 @@ gpt2's exact architecture and parameter count but is off-distribution on this
 corpus at −4.08 nats, which separates "scale" from "fit to the evaluation corpus";
 L22 used the same arm for the same purpose. And gpt2-xl gets a third draw, since
 it is the arm that produced the trend and the one carrying the panel separation.
+
+### EXP-R2-109 read — the size separation is carried by the denominator, and that changes how it must be stated
+
+gpt2 and dialogpt-small finished three draws each at `exit 0`. gpt2 came in
+**above** gpt2-medium exactly as the within-family trend predicted, and two other
+things came with it that require the result to be restated.
+
+| arm | params | K | clean M-gap | best ΔM | A4 relative |
+|---|---|---|---|---|---|
+| gpt2 | 124M | 3 | 0.360 | **0.0626** | **18.40%** |
+| gpt2-medium | 355M | 3 | 0.371 | 0.0479 | 13.13% |
+| qwen2.5-0.5b | 0.5B | 3 | 0.270 | 0.0322 | 12.29% |
+| llama-3.2-3b | 3B | 1 | 0.363 | 0.0313 | 8.62% |
+| gpt2-large | 774M | 3 | 0.492 | 0.0372 | 7.61% |
+| gpt2-xl | 1558M | 2 | 0.518 | **0.0156** | 3.19% |
+| *dialogpt-small* | *124M* | *3* | ***−0.785*** | *0.0392* | *(5.00%)* |
+| ProGen2-small | 151M | 3 | 0.996 | 0.0089 | 0.89% |
+| ProtGPT2 | 774M | 3 | 3.297 | 0.0159 | 0.49% |
+| ProGen2-base | 764M | 3 | 1.756 | 0.0115 | 0.65% |
+| ProGen2-medium | 764M | 3 | 1.616 | 0.0098 | 0.62% |
+
+**(1) The absolute effect does not separate the modalities.** Excluding
+dialogpt-small, text spans 0.0156 to 0.0626 nats and protein 0.0089 to 0.0159 —
+and **ProtGPT2's 0.0159 exceeds gpt2-xl's 0.0156**. The two scales touch. Every
+part of the size separation therefore comes from the denominator.
+
+**(2) The denominator separates cleanly, and it needs no census and no knockout.**
+Mean clean M-gap: text 0.270–0.518, protein 0.996–3.297 — disjoint, ~1.9× at the
+closest pairing. **Protein decoders operate at 2–12× larger decision margins at
+prediction-addressed positions than text decoders do.** That is a modality
+difference in its own right, measured without any interpretability instrument at
+all, and it is the honest content of the size result.
+
+So the D2.c size finding must be stated as: *the same absolute intervention is a
+much smaller fraction of a protein decoder's decision margin, because protein
+decoders are far more confident at these positions.* It is **not** "the mechanism
+is weaker in protein models" — on the absolute scale the arms overlap.
+
+**(3) dialogpt-small has a negative clean M-gap (−0.785) and is excluded from the
+size comparison.** A4 divides by `max(|mean clean M-gap|, 1e-9)`, so its 5.00% is
+a ratio against an absolute value and has no defined sign. This is informative in
+its own right: at most PAA-selected positions this off-distribution arm is *not*
+predicting the antecedent token, which is what being off-distribution means here.
+It also shows the statistic's denominator is a free-running quantity that can
+cross zero, so a mean is not a safe summary of it — recorded as a limitation of
+A4 rather than worked around.
+
+**(4) The scale trend is a within-family trend, not a scale law.** Inside the
+GPT-2 family, holding corpus, tokeniser and architecture fixed, it is monotone
+over four points: 124M **18.40%**, 355M 13.13%, 774M 7.61%, 1558M 3.19%. Across
+families it is not: **llama-3.2-3b at 3B reads 8.62%**, far above gpt2-xl's 3.19%
+at half the size, and qwen at 0.5B reads 12.29%. llama is at K=1 and its two
+further draws are running, but the GPT-2 ladder alone cannot be read as a law
+about scale. The earlier entry called it a trend "across two families"; that was
+based on qwen alone and llama does not follow it.
+
+With dialogpt-small excluded the relative separation still holds — text 3.19% to
+18.40% against protein 0.49% to 0.89%, no overlap — but what it measures is now
+stated properly.

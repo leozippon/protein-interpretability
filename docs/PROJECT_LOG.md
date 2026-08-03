@@ -1070,3 +1070,23 @@ Immediate operational consequence: add a loss-recovered splice metric to the P0-
 - **The ranking statistic got worse as a modality instrument**, its
   gap-to-within-protein-spread ratio falling from 0.57 to 0.38 once gpt2-xl was
   added.
+
+## 2026-08-03 — the D2.c size result is restated: the separation is the denominator
+
+- **The absolute effect does not separate the modalities.** On ten arms, text
+  spans 0.0156–0.0626 nats and protein 0.0089–0.0159, and ProtGPT2's 0.0159
+  exceeds gpt2-xl's 0.0156. The two scales touch.
+- **What separates is the decision margin, and it needs no interpretability
+  instrument at all.** Mean clean M-gap is 0.270–0.518 on text against 0.996–3.297
+  on protein — disjoint. Protein decoders are 2–12× more confident at
+  prediction-addressed positions. The size result is therefore *the same
+  intervention is a smaller fraction of a protein decoder's margin*, not *the
+  mechanism is weaker in protein models*.
+- **A4's denominator can cross zero.** dialogpt-small, off-distribution here,
+  has a mean clean M-gap of −0.785, so its ratio has no defined sign. Excluded
+  from the size comparison with the reason recorded, and logged as a limitation
+  of the statistic rather than worked around.
+- **The scale trend is within-family, not a scale law.** Monotone over four GPT-2
+  points (124M 18.40% to 1558M 3.19%) with corpus and architecture fixed, but
+  llama-3.2-3b at 3B reads 8.62%, far above gpt2-xl at half the size. An earlier
+  entry called it a trend "across two families"; that rested on qwen alone.
