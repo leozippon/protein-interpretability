@@ -6641,3 +6641,57 @@ than by code: the four controllers push their snapshots through one shared
 Windows relay and collide on a single temp script path — GPU 1's log carries the
 relay's own "file is being used by another process" error. A 20-second stagger is
 not enough, because a push occupies the relay for minutes.
+
+### The D2.c panel re-run, specified before it is scheduled
+
+Owed because the decoy repair (EXP-R2-124) invalidates **every** existing D2.c
+number, not only ProtGPT2's — gpt2-large's decoy pool was 2.74% layout too. The
+specification is written down before any compute is booked, because the plan's
+own history is that a gate costed by analogy in a table is how Appendix B rule 2
+keeps being violated.
+
+**Condition, one for the whole panel.** `--width 192` (fixed by the contract),
+**`--census-ban-depth 3`**, **`--census-sequences 600`**.
+
+- *Ban 3, not the published mixture.* Readings to date use ban 3 on the residue
+  arms and ban 20 on ProtGPT2 and the text arms. EXP-R2-096 measured the
+  relaxation: at depth 3 ProGen2-medium builds 30,108 instances against 2,851 at
+  depth 20, while gpt2-large is **unmoved** — 21,649 against 21,619. So depth 3 is
+  a tokeniser accommodation the matched pair can *share* rather than a per-arm
+  exception, and it is the only depth at which the whole panel is one condition.
+- *600 sequences, not the census default of 200.* EXP-R2-118: under a correct
+  content definition ProtGPT2 yields 7,122 instances at n=200 against A1's 20,000
+  gate, and the causal stage now refuses that outright. n=600 projects to ~21,400
+  and measured 21,458. Every ProGen2 number in the audit is at n=200, so this is
+  also what makes the panel condition-matched rather than merely gate-passing.
+
+**Per-arm exhaustive head grids**, verified from the existing artefacts' own
+`settings` rather than recomputed. `--causal-heads` defaults to **16** and
+`--control-offset` to 120, so an invocation that omits these runs a *selective*
+16-head census and writes artefacts that look well-formed — the failure surfaces
+only at analysis, where `prediction_addressed.census_causal_agreement` now
+refuses a head set that is not the whole grid. Passed per item as
+`ARGS_PAA_CENSUS__<ARM>`:
+
+| arm | grid | `--causal-heads` / `--control-offset` |
+|---|---:|---:|
+| gpt2-xl | 1200 | 1192 |
+| gpt2-large, protgpt2 | 720 | 712 |
+| llama-3.2-3b | 672 | 664 |
+| progen2-base, progen2-medium | 432 | 424 |
+| gpt2-medium | 384 | 376 |
+| qwen2.5-0.5b | 336 | 328 |
+| progen2-small | 192 | 184 |
+| gpt2, dialogpt-small | 144 | 136 |
+
+`--control-heads 8` throughout.
+
+**Shape.** Three controller invocations, one per corpus draw, each with all
+eleven eligible arms across the four cards and its own `GPFS_RESULTS_ROOT` —
+because per-item resume provenance keys on the command and has no draw axis, so
+three draws into one root would overwrite each other.
+
+**Not launched yet, and the order matters.** EXP-R2-121 must read out first: if
+the rebuild does not reproduce at K≥2, the withdrawal of EXP-R2-116 is not
+settled and a 33-run panel would be measuring the wrong question. ZymCTRL is
+excluded by the contract and does not appear.
