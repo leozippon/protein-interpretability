@@ -603,8 +603,8 @@ def test_tap_refuses_an_ambiguous_output() -> None:
 def test_tap_leaves_an_architecture_that_needs_no_request_untouched() -> None:
     # Rule: the request hook is registered only where the forward declares the
     # parameter, so GPT-2's behaviour is bit-for-bit what it was before.
-    assert len(tap_attention(_tap_arm(_NoNegotiation()), 0, lambda l, w: None)) == 1
-    assert len(tap_attention(_tap_arm(_AlwaysWeights()), 0, lambda l, w: None)) == 2
+    assert len(tap_attention(_tap_arm(_NoNegotiation()), 0, lambda layer, weights: None)) == 1
+    assert len(tap_attention(_tap_arm(_AlwaysWeights()), 0, lambda layer, weights: None)) == 2
     assert torch.equal(_capture(_AlwaysWeights())[0], _pattern())
 
 
