@@ -7028,3 +7028,56 @@ lineage plus one unstable arm.
 
 *Still owed:* the matched pair to K=3 (running), gpt2-medium to K=3, and
 qwen/llama/gpt2-xl at all three draws.
+
+### EXP-R2-126 — the matched pair at K=3, and D2.c separates where L22 did not
+
+The modality-identifying comparison (§2: identical architecture, depth, width,
+vocabulary size and parameter count), under both guards, one condition, A1 PASS on
+every run, versioned statistic, three corpus draws.
+
+| arm | draw | A1 | all-grid ρ | within-layer | hit@20 | × chance |
+|---|---|---:|---:|---:|---:|---:|
+| ProtGPT2 | 20260728 | 21,458 | +0.0743 | −0.1561 | 5/20 | 9.0× |
+| ProtGPT2 | 20260801 | 21,064 | +0.0288 | −0.2673 | 0/20 | 0.0× |
+| ProtGPT2 | 20260802 | 21,396 | +0.1376 | −0.0451 | 0/20 | 0.0× |
+| gpt2-large | 20260728 | 63,045 | +0.4603 | +0.3137 | 8/20 | 14.4× |
+| gpt2-large | 20260801 | 63,234 | +0.4302 | +0.2888 | 7/20 | 12.6× |
+| gpt2-large | 20260802 | 63,370 | +0.4512 | +0.3084 | 6/20 | 10.8× |
+
+**Complete separation on both statistics, at the most adverse draws.** All-grid
+gap **+0.2926**; within-layer gap **+0.3339**. Six draws, no overlap on either.
+
+**And this is the point of contrast with L22.** On induction, depth control cut
+the modality gap from +10.4…+15.1 SE to a separation resolved in one condition of
+four — the finding that re-scoped L22 to a *method* limitation. On copy
+suppression the same control applied to the same arms with the same instrument
+leaves the gap **larger than the raw one** (+0.3339 against +0.2926). Whatever
+the depth confound does to an all-grid census-to-causal correlation, it is not
+what produces the D2.c separation.
+
+**The retrieval reading, finally settled at K=3.** I claimed 9.0× chance for
+ProtGPT2 from draw 20260728 and withdrew it at K=2. At K=3 the picture is neither
+what I claimed nor what the withdrawal implied: **ProtGPT2 returns 0/20 on two of
+three draws and 5/20 on the third**, while gpt2-large returns 6–8/20 and **never
+falls below 10.8× chance**. So ProtGPT2's census is at chance on the majority of
+draws with one draw well above it, and its matched control is never at chance.
+The honest form is a median statement — ProtGPT2 median 0/20 against gpt2-large
+median 7/20 — not a range statement, because the protein arm's spread is the
+whole statistic.
+
+**What the panel now supports.** Four protein arms measured at the same condition
+under both guards: ProtGPT2 (K=3) and all three ProGen2 arms (K=3). Every one
+shows the deficit — the ProGen2 family at chance on nine of nine draws, ProtGPT2
+at chance on two of three. Against six text arm-draws with no value below 2.9×
+chance. **This is the strongest D2.c evidence the programme has held**, and it is
+the first time the matched pair has separated on a mechanism statistic with every
+gate passing and every guard applied.
+
+**The limits that do not move.** ZymCTRL is structurally excluded from this window
+(no width admits it and ProtGPT2 together), so the protein side is ProtGPT2 plus
+one lineage. §2's structural limit stands: ProtGPT2 is the only protein arm
+carrying a text architecture, so a modality coefficient still rests on it alone —
+the matched pair identifies the contrast, it does not make it a population claim.
+And the text side of this panel is still missing qwen, llama and gpt2-xl at K=3,
+which is the cross-lab control that killed the QK/OV finding and must be in before
+this is called a modality result rather than a matched-pair one.
