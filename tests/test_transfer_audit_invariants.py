@@ -2073,6 +2073,84 @@ def test_the_instance_cascade_closes_over_every_scored_position():
     assert "candidates_discarded_by_induction_and_distance" in cascade
 
 
+def test_a_layout_token_reaches_neither_the_prediction_nor_the_decoy_pool():
+    """The guard has to hold on an arm that *has* layout tokens.
+
+    Every existing check on this repair is either a unit test of
+    ``layout_token_ids`` against a stub, a source-text assertion that
+    ``prediction_addressed`` mentions the symbol, or a cascade-closure test on a
+    fixture carrying **no** layout tokens.  None of them exercises a pool that
+    contains one, and the consequence was measured rather than supposed:
+    disabling the candidate guard outright -- ``if False and token in
+    layout_tokens`` -- left the suite at 151 passed, 4 skipped, because the
+    strings the source-text test counts all survive the mutation.
+
+    Two exclusions are asserted here because a layout token can enter this
+    statistic at two places and only one of them was closed by EXP-R2-118.  A
+    predicted layout token becomes the instance's *target*; a layout token drawn
+    into the decoy window becomes part of the *subtrahend*, since
+    ``paa_specific_matched`` is ``antecedent_set_attention - decoy_mean *
+    n_keys``.  On the repaired ProtGPT2 pool 4.30% of decoy keys and 16.1% of
+    instances still carried the FASTA wrap after EXP-R2-118, against 2.74% and
+    9.2% on gpt2-large -- the larger distortion falling on the arm whose
+    rendering has the tokens, which is the asymmetry EXP-R2-116 was written
+    about.
+    """
+
+    layout_id = 7
+    arm = _tiny_gpt2()
+    arm.tokenizer.bos_token_id = None
+
+    class _WrappingTokenizer:
+        pad_token_id = 0
+        # `content_bounds` reads this for the `raw` format; the arm is a GPT-2,
+        # whose tokenizer prepends nothing.
+        bos_token_id = None
+
+        @staticmethod
+        def decode(token_ids: list[int]) -> str:
+            return "\n" if token_ids[0] == layout_id else f"<{token_ids[0]}>"
+
+    arm.tokenizer = _WrappingTokenizer()
+    # The layout id recurs the way a wrap does -- often, and at interior
+    # positions, so `key_floor` cannot reach it and the decoy window can.
+    rows = [
+        [3, 5, layout_id, 5, 9, 4, layout_id, 8, 6, 2, 5, layout_id, 3, 9, 5, 1],
+        [4, 6, layout_id, 6, 2, 9, layout_id, 3, 5, 1, 6, layout_id, 4, 2, 6, 7],
+    ]
+    pool = prediction_addressed.build_instance_pool(
+        arm,
+        rows,
+        unigram_counts=np.ones(16, dtype=np.int64),
+        query_min=4,
+        top_k=3,
+        candidate_depth=3,
+        min_confidence=0.0,
+        n_decoys=2,
+        seed=1,
+        batch_size=2,
+    )
+
+    # The fixture is not vacuous: the arm declares the token as layout, and the
+    # token really does sit inside the range the decoy window draws from.
+    assert pool.cascade["layout_tokens_excluded_from_candidates"] == [layout_id]
+    assert pool.cascade["layout_tokens_excluded_from_decoys"] == [layout_id]
+    assert pool.sequence.size > 0, "fixture produced no instances to check"
+    table = np.asarray(rows)
+    assert (table == layout_id).any(), "fixture carries no layout token"
+
+    assert not (pool.predicted_token == layout_id).any(), (
+        "a layout token was predicted: it is the instance's target, so the "
+        "census would be scoring a prediction about the record's layout"
+    )
+    decoy_tokens = table[pool.sequence[:, None], pool.decoys]
+    assert not (decoy_tokens == layout_id).any(), (
+        "a layout token was drawn as a decoy: the decoy mean is the subtrahend "
+        "of every head's paa_specific score, so an anomalous key inflates the "
+        "baseline subtracted from whichever heads attend to it"
+    )
+
+
 def test_the_census_score_is_emitted_on_the_key_set_the_knockout_removes():
     """The selector scored one key; the causal statistic removes all of them.
 

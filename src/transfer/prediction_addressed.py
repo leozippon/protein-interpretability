@@ -514,6 +514,9 @@ def build_instance_pool(
     # them is the kind of cost that gets a guard removed later.
     layout_tokens = layout_token_ids(arm, {int(t) for row in rows for t in row})
     cascade_layout_vocabulary = sorted(layout_tokens)
+    # Materialised once for the decoy filter below, which is vectorised over the
+    # window and cannot use the set membership the candidate loop uses.
+    layout_key_ids = np.asarray(cascade_layout_vocabulary, dtype=np.int64)
 
     cascade = {
         "positions_scored": 0,
@@ -533,11 +536,15 @@ def build_instance_pool(
         "content_low": content_low,
         "key_floor": key_floor,
         "layout_tokens_excluded_from_candidates": cascade_layout_vocabulary,
+        "layout_tokens_excluded_from_decoys": cascade_layout_vocabulary,
         "layout_reason": (
             "a predicted line break is a prediction about the record's layout "
             "rather than its sequence, and only ProtGPT2's rendering emits them; "
             "the judgement is circuits.layout_token_ids, which fit_unigram has "
-            "used since the module was written"
+            "used since the module was written. The same vocabulary is barred "
+            "from the decoy pool, because the decoy mean is the subtrahend of "
+            "every head's paa_specific score and an anomalous key inflates it -- "
+            "the argument key_floor_reason makes for the attention sink"
         ),
         "key_floor_reason": (
             "antecedents and decoys are drawn at or above max(1, content_low): "
@@ -658,10 +665,24 @@ def build_instance_pool(
                 predecessor_ok = np.ones(window.size, dtype=bool)
                 nonzero = window >= 1
                 predecessor_ok[nonzero] = tokens[window[nonzero] - 1] != int(tokens[q])
+                # A layout token is barred from the decoy pool for the reason the
+                # paragraph above bars position 0, and the reason is not that it
+                # is rare. ``paa_specific_matched`` is
+                # ``antecedent_set_attention - decoy_mean * n_keys``, so the decoy
+                # draw is the *subtrahend* of every head's score: a decoy that
+                # carries anomalous attention inflates the baseline subtracted
+                # from whichever heads attend to it. Excluding a predicted line
+                # break (EXP-R2-118) cleaned the numerator and left this alone.
+                # Measured on the repaired pools: 4.30% of ProtGPT2's decoy keys
+                # and 2.74% of gpt2-large's are the wrap, reaching 16.1% and 9.2%
+                # of instances -- so the arm whose rendering has layout tokens
+                # takes the larger baseline distortion, which is the asymmetry
+                # EXP-R2-116 was written about.
                 eligible = window[
                     (window != star)
                     & (tokens[window] != token)
                     & (~np.isin(tokens[window], list(banned)))
+                    & (~np.isin(tokens[window], layout_key_ids))
                     & predecessor_ok
                 ]
                 if eligible.size < 1:
