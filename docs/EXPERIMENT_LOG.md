@@ -7101,3 +7101,27 @@ threshold: `ap/ex` resolved throughout, `ex/ex` marginal throughout, `ex/ap` and
 `ap/ap` at half a standard error and falling. **L22's depth-controlled separation
 is resolved in one condition of four and that is its final form on this panel.**
 Further induction draws are not authorised; the statistic has stopped moving.
+
+### An operational defect repeated: the panel driver called a running item MISSING
+
+`d2c_panel_h200.sh` checked for each item's artefact **immediately** after the
+controller returned. Card 1's draw-20260728 campaign lost its tunnel at 8h25m
+with two of three arms written, the driver reported `gpt2-xl MISSING`, and the
+relaunch was **refused by the worker** — `GPU 1 is occupied; refusing to
+schedule`. The refusal was right and the verdict was wrong: `gpt2-xl` was still
+computing on cuda:1 from the original campaign package, four hours in, and is
+still running now.
+
+**This is the same defect I recorded and fixed this morning in
+`relaunch_lane.sh`, and I did not carry the fix to the pattern.** A controller
+that lost its tunnel has said nothing about the measurement, so absence has to be
+established against an *idle GPU*, not against a returned controller. The panel
+driver now polls: an item is ABSENT only once the GPU it was scheduled on is
+observed idle with no artefact, and UNRESOLVED at the time limit otherwise.
+
+*Two things went right and are worth separating from the thing that went wrong.*
+The worker refused to schedule onto an occupied card rather than running two jobs
+on one GPU — the guard doing exactly its job. And no measurement was corrupted:
+the wrong verdict cost a refused relaunch, not a result. **What it would have cost
+had the GPU been free is a duplicate run overwriting a live one**, which is the
+failure the refusal prevented rather than the driver.
