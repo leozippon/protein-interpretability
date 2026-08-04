@@ -6905,3 +6905,50 @@ that is precisely the path this repair closed.
 
 *K=1 on the "after" row.* Draw 20260801 is running on B; nothing above is
 quotable until K≥3.
+
+### EXP-R2-126 draw 20260728 — the first D2.c panel under both guards, at one matched condition
+
+Eight arms, ban 3 / n=600, width 192, layout guard **and** decoy guard, every item
+digest-verified against the manifest the worker wrote in the pod. **Every arm
+passes A1**, which is the first time that has been true of a D2.c panel — at
+n=200 both ProtGPT2 and dialogpt-small read FAIL and were quoted anyway.
+
+| arm | A1 | grid | all-grid ρ | within-layer | hit@20 | × chance |
+|---|---:|---:|---:|---:|---:|---:|
+| gpt2 | 65,473 | 144 | **+0.6130** | +0.4656 | 13/20 | 4.7× |
+| dialogpt-small | 40,946 | 144 | +0.6034 | +0.5141 | 10/20 | 3.6× |
+| gpt2-medium | 63,363 | 384 | +0.4735 | +0.3005 | 7/20 | 6.7× |
+| gpt2-large | 63,045 | 720 | +0.4603 | +0.3137 | 8/20 | **14.4×** |
+| **ProtGPT2** | 21,458 | 720 | **+0.0743** | −0.1561 | 5/20 | **9.0×** |
+| ProGen2-small | 90,936 | 192 | −0.1816 | −0.1082 | 2/20 | **1.0×** |
+| ProGen2-medium | 90,149 | 432 | −0.1951 | −0.1061 | 0/20 | **0.0×** |
+| ProGen2-base | 90,090 | 432 | −0.2208 | −0.0976 | 1/20 | **1.1×** |
+
+**The within-modality split survives both repairs, and ProtGPT2 changes sides.**
+Text +0.4603…+0.6130 against protein −0.2208…+0.0743: gap **+0.3860** against a
+within-protein spread of **+0.2951**, ratio **1.31**. ProtGPT2 remains distinct
+from the ProGen2 family — but where it previously sat nearer the text band
+(+0.1987, 0.251 from gpt2-large against ~0.38 from ProGen2), under both guards it
+sits **nearer the protein family**: 0.386 from gpt2-large and 0.256 from
+ProGen2-small. The decoy repair moved it across the midpoint. **The ProGen2 arms
+barely moved at all** — they are residue-tokenised, emit no line breaks, and
+their decoy pools were therefore already clean, so the guard is a no-op for them
+exactly as its mechanism predicts. That asymmetry is itself the check that the
+repair does what it claims.
+
+**And retrieval separates where the earlier one-draw reading said it did not.**
+Corrected for grid size, which `hit@20` requires: the text arms retrieve at
+**3.6× to 14.4×** chance and ProtGPT2 at **9.0×**, while **all three ProGen2 arms
+sit at chance — 1.1×, 1.0× and 0.0×**. On the statistic a census actually
+publishes, the ProGen2 censuses recover nothing, ProtGPT2's recovers well, and
+the matched pair differs by 14.4× against 9.0× rather than being
+indistinguishable. This is the shape EXP-R2-101 called *mode 2* — mediocre and
+failing to retrieve — and it lands on the **ProGen2 family**, not on ZymCTRL,
+which the contract excludes from this window.
+
+**K=1 on every arm and nothing above is quotable.** Draws 20260801 and 20260802
+are running; the matched pair is at K=1 post-fix on B with 20260801 in flight.
+The three claims this draw *would* support if it replicates — that the split
+survives both repairs, that ProtGPT2 crosses to the protein side, and that
+ProGen2 censuses retrieve at chance — are each a single-draw reading of the kind
+this log has now had to withdraw twice in three days.
