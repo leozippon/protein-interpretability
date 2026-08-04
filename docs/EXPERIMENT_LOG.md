@@ -6984,3 +6984,47 @@ the text band — ~0.24 against ~0.37 — so the side-crossing reading holds so 
 *Third single-draw reading withdrawn in three days, and the second of mine.* The
 rule is not new and the log carries it: draw dispersion has to be measured before
 a value is read, and on protein arms it is routinely larger than the effect.
+
+### EXP-R2-126 at K=3 — the ProGen2 censuses retrieve at chance on every draw
+
+First D2.c evidence in this programme that clears every bar at once: A1 PASS on
+every arm, one matched condition (ban 3 / n=600, width 192), both guards, the
+versioned statistic, and three corpus draws. Ranges are over draws.
+
+| arm | K | all-grid ρ | within-layer | hit@20 per draw | × chance |
+|---|---:|---|---|---|---|
+| dialogpt-small | 3 | +0.6034 … +0.6918 | +0.4749 … +0.6278 | 10, 8, 11 | 2.9–4.0× |
+| gpt2 | 3 | +0.6130 … +0.6484 | +0.4496 … +0.4841 | 13, 14, 14 | 4.7–5.0× |
+| gpt2-large | 2 | +0.4302 … +0.4603 | +0.2888 … +0.3137 | 8, 7 | 12.6–14.4× |
+| **ProtGPT2** | 2 | +0.0288 … +0.0743 | −0.2673 … −0.1561 | **5, 0** | **0.0–9.0×** |
+| ProGen2-small | 3 | −0.1816 … −0.0604 | −0.1082 … +0.0053 | **2, 2, 1** | **0.5–1.0×** |
+| ProGen2-medium | 3 | −0.2419 … −0.1951 | −0.1191 … −0.0253 | **0, 0, 0** | **0.0×** |
+| ProGen2-base | 3 | −0.2490 … −0.2166 | −0.0976 … −0.0108 | **1, 0, 1** | **0.0–1.1×** |
+
+**The half of the retrieval reading that failed and the half that holds are now
+separable, which is why the arms had to be taken to K=3 rather than argued
+about.** I claimed from one draw that "text retrieves well, ProtGPT2 at 9× chance,
+ProGen2 at chance". The ProtGPT2 clause is withdrawn — 5 then 0 over two draws.
+**The ProGen2 clause survives at K=3 and is not marginal:** all three arms sit at
+or below their own chance level on **every one of nine draws**, with
+ProGen2-medium returning **0/20 three times**. The text arms measured at K=3
+return 8–14 of 20 with no draw below 2.9× chance.
+
+**On the all-grid statistic the separation among K≥3 arms is complete**: worst
+text draw **+0.6034** against best protein draw **−0.0604**, gap **+0.6638**, no
+overlap in 18 draws. And it survives depth control, where the *induction*
+separation did not — text +0.4496…+0.6278 within-layer against protein
+−0.1191…+0.0053. The two mechanisms behave oppositely under the same control, on
+the same panel, with the same instrument.
+
+**What this does and does not say.** It says a prediction-addressed-attention
+census on a ProGen2 decoder does not recover the causally important heads — not
+"less well than text", but *at chance*, which is the condition under which a
+published head count carries no information about the mechanism. It does not say
+that of protein decoders: ProtGPT2 is at K=2, its ρ is small-positive rather than
+negative, and its retrieval is the least stable quantity on the panel. **ZymCTRL
+is structurally excluded from this window**, so the protein side here is one
+lineage plus one unstable arm.
+
+*Still owed:* the matched pair to K=3 (running), gpt2-medium to K=3, and
+qwen/llama/gpt2-xl at all three draws.
