@@ -37,7 +37,12 @@ import torch
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+# See 08_lens_family.py for why the stage directory is added explicitly.
+_STAGE_DIR = str(Path(__file__).resolve().parent)
+if _STAGE_DIR not in sys.path:
+    sys.path.insert(0, _STAGE_DIR)
 
+from panel_contract import stage_contract_record  # noqa: E402
 from src.transfer.io import write_json  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
     DEFAULT_CORPUS_DRAW_SEED,
@@ -59,6 +64,7 @@ from src.transfer.pathways import held_out_cohort  # noqa: E402
 from src.transfer.prediction_addressed import (  # noqa: E402
     MINIMUM_DRAWS_IN_TAIL,
     InstancePool,
+    a1_candidate_pool_verdict,
     build_instance_pool,
     cluster_bootstrap,
     coarsened_cells,
@@ -471,7 +477,7 @@ def census(
         "a1_candidate_pool": {
             **pool.cascade,
             "gate_minimum": int(args.a1_minimum),
-            "verdict": "PASS" if len(pool) >= args.a1_minimum else "FAIL",
+            "verdict": a1_candidate_pool_verdict(len(pool), args.a1_minimum),
             # Two denominators, both named. The first is the historical one and
             # its denominator is NOT "candidates": it is the induction-blocked
             # positions plus the ones that yielded an instance, which omits the
@@ -596,6 +602,19 @@ def causal(
     args: argparse.Namespace, out: Path, selection: dict[str, Any], arm_name: str
 ) -> dict[str, Any]:
     rows, pool = load_pool(out / f"pool_{arm_name}.npz")
+    # The A1 gate is enforced here because this is where a failing pool would
+    # otherwise become a published number. The verdict has existed in the census
+    # artefact since the stage was written and nothing read it; six retained runs
+    # went on to produce a `causal.json` from a pool the same file marks FAIL.
+    verdict = a1_candidate_pool_verdict(len(pool), args.a1_minimum)
+    if verdict == "FAIL":
+        raise SystemExit(
+            f"{arm_name}: A1 candidate pool is {len(pool)} instances against a gate "
+            f"of {args.a1_minimum}, so this arm is unmeasurable at this "
+            "configuration and no causal number may be produced from it. Raise "
+            "--census-sequences, or lower --a1-minimum deliberately so the choice "
+            "is recorded in the run's settings."
+        )
     arm = load_arm(
         arm_name,
         device=args.device,
@@ -1172,6 +1191,13 @@ def main() -> None:
     payload: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "created_utc": datetime.now(timezone.utc).isoformat(),
+        # Which arm this invocation measured, which of the stage's eligible arms
+        # it left out, and the module refusals -- so a run scoped to one arm is
+        # not indistinguishable from the panel. The census and causal stages are
+        # measured on --census-arm, so that is the arm the record names; --text-arm
+        # is a control the `match`/`query` stages consume and not a second
+        # measured arm.
+        "stage_contract": stage_contract_record("paa_census", [census_arm]),
         "stages_requested": list(args.stages),
         "settings": {
             key: (str(value) if isinstance(value, Path) else value)

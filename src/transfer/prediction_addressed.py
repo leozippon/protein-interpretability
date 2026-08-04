@@ -408,6 +408,34 @@ def unigram_percentiles(counts: np.ndarray) -> np.ndarray:
     return cumulative_mass[inverse]
 
 
+def a1_candidate_pool_verdict(n_instances: int, minimum: int) -> str:
+    """``PASS`` or ``FAIL`` for the A1 candidate-pool gate.
+
+    One declaration because the rule has two consumers that must not drift: the
+    census stage writes the verdict into its artefact, and the causal stage has
+    to refuse a pool that fails it.  Until now only the writer existed.  The
+    consequence was measured rather than supposed -- of the 61 retained census
+    artefacts, **eight carry ``verdict: FAIL`` and six of those have a
+    ``causal.json`` produced from them in the same invocation**: ProtGPT2 ban 3 /
+    n=200 at 9,958-10,040 instances and dialogpt-small ban 3 at 13,315-13,544,
+    both against a gate of 20,000.  Those six are the ProtGPT2 and dialogpt rows
+    of the published D2.c table, and EXP-R2-116 recorded quoting them "without
+    reading the gate verdict that sits in the artefact beside the number".
+
+    The design had predicted the failure before the runs happened -- the audit's
+    D2.c step 2 states that ProtGPT2 yields ~50 instances per sequence, so n=200
+    cannot reach 20,000 -- which is precisely why a verdict nothing reads is
+    worse than no verdict at all: it looks like the check was made.
+
+    An operator who wants a smaller pool lowers ``--a1-minimum`` explicitly, and
+    that choice is recorded in the run's ``settings``.  Evidence-discipline rule
+    2's shape applies: an under-powered arm is reported as unmeasurable at this
+    configuration, not as having produced a number.
+    """
+
+    return "PASS" if int(n_instances) >= int(minimum) else "FAIL"
+
+
 @torch.no_grad()
 def _batched_top_predictions(
     arm: Arm,

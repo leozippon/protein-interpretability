@@ -2818,3 +2818,51 @@ def test_paa_census_arm_refuses_incoherent_requests(argv, expected, tmp_path):
     )
     assert result.returncode != 0
     assert expected in result.stderr, result.stderr[-600:]
+
+
+def test_the_a1_gate_has_one_declaration_and_the_causal_stage_enforces_it():
+    """A verdict nothing reads is worse than no verdict: it looks like a check.
+
+    ``a1_candidate_pool.verdict`` has been written into every census artefact
+    since the stage was written, and until now no code anywhere read it. Of the
+    61 retained census artefacts eight carry ``FAIL`` and **six of those have a
+    ``causal.json`` produced from them in the same invocation** -- ProtGPT2 ban 3
+    / n=200 at 9,958-10,040 instances and dialogpt-small ban 3 at 13,315-13,544,
+    against a gate of 20,000. Those six are the ProtGPT2 and dialogpt rows of the
+    published D2.c table, and the D2.c design had predicted the failure before
+    the runs happened.
+
+    Two properties, because either alone is insufficient. The writer and the
+    enforcer must resolve the verdict through **one** declaration, or the rule
+    drifts silently between them; and the causal stage must actually refuse,
+    since that is the step at which an under-powered pool becomes a published
+    number.
+    """
+
+    from src.transfer.prediction_addressed import a1_candidate_pool_verdict
+
+    # The boundary is inclusive: a pool that exactly meets the gate passes.
+    assert a1_candidate_pool_verdict(20000, 20000) == "PASS"
+    assert a1_candidate_pool_verdict(19999, 20000) == "FAIL"
+    # The six retained runs that were quoted anyway.
+    assert a1_candidate_pool_verdict(10040, 20000) == "FAIL"
+    assert a1_candidate_pool_verdict(13544, 20000) == "FAIL"
+
+    census = _load_stage_module("14_paa_census.py")
+    assert census.a1_candidate_pool_verdict is a1_candidate_pool_verdict, (
+        "the stage must import the verdict rather than re-deriving it"
+    )
+    source = (
+        REPO_ROOT / "scripts/transfer" / "14_paa_census.py"
+    ).read_text(encoding="utf-8")
+    causal_body = source.split("\ndef causal(", 1)[1].split("\ndef ", 1)[0]
+    assert "a1_candidate_pool_verdict" in causal_body, (
+        "the causal stage does not consult the gate, which is how six FAIL pools "
+        "became published numbers"
+    )
+    assert 'verdict == "FAIL"' in causal_body and "raise SystemExit" in causal_body, (
+        "the causal stage must refuse a failing pool rather than record it and "
+        "carry on"
+    )
+    # And the rule must not be re-implemented beside the call it replaced.
+    assert "len(pool) >= args.a1_minimum" not in source
