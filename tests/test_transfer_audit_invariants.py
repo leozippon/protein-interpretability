@@ -2932,3 +2932,40 @@ def test_the_d2c_agreement_pins_its_reduction_and_refuses_a_selected_head_set():
     # And so is a set that reaches the right count by repeating a head.
     with pytest.raises(ValueError, match="every head in the grid"):
         census_causal_agreement(matched, per_head[:-1] + [dict(per_head[0])])
+
+
+def test_the_paa_stage_publishes_its_own_headline_statistic():
+    """The stage must emit the D2.c correlation, not leave it to analysis code.
+
+    Every D2.c figure this programme has quoted was produced by throwaway code
+    reading ``census_matrices.npz`` -- the provenance defect that cost it two
+    retracted figures on the induction side and that
+    ``path_patching.causal_census_agreement`` was written to close on the other
+    mechanism. Publishing it beside the effects it summarises also means reading
+    a panel needs the report rather than the 20 MB matrix file per item, which is
+    the difference between a minutes-long transfer and an hours-long one.
+
+    This is a *wiring* check: that the stage resolves the versioned function and
+    names its output in the causal payload. The statistic's behaviour is covered
+    by ``test_the_d2c_agreement_pins_its_reduction_and_refuses_a_selected_head_set``
+    against the function itself, and the withheld path matters because a
+    selective head set must produce a reason rather than a number.
+    """
+
+    from src.transfer.prediction_addressed import census_causal_agreement
+
+    census = _load_stage_module("14_paa_census.py")
+    assert census.census_causal_agreement is census_causal_agreement, (
+        "the stage must import the versioned statistic rather than re-deriving it"
+    )
+    source = (
+        REPO_ROOT / "scripts/transfer" / "14_paa_census.py"
+    ).read_text(encoding="utf-8")
+    body = source.split("\ndef causal(", 1)[1].split("\ndef ", 1)[0]
+    assert '"census_causal_agreement": agreement' in body, (
+        "the causal payload does not carry the statistic, so it stays derivable "
+        "only from the matrices"
+    )
+    assert "withheld_reason" in body, (
+        "a selective head set must yield a recorded reason, not a missing key"
+    )

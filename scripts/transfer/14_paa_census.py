@@ -65,6 +65,7 @@ from src.transfer.prediction_addressed import (  # noqa: E402
     MINIMUM_DRAWS_IN_TAIL,
     InstancePool,
     a1_candidate_pool_verdict,
+    census_causal_agreement,
     build_instance_pool,
     cluster_bootstrap,
     coarsened_cells,
@@ -734,11 +735,30 @@ def causal(
     del arm
     gc.collect()
     torch.cuda.empty_cache()
+    # The stage's own headline, published here rather than re-derived downstream.
+    # Every D2.c figure this programme has quoted came from throwaway analysis
+    # code reading `census_matrices.npz` -- the provenance defect that cost it two
+    # retracted figures on the induction side, and the reason
+    # `path_patching.causal_census_agreement` exists. Emitting it beside the
+    # effects it summarises also means reading a panel needs the report and not
+    # the 20 MB matrix file per item.
+    #
+    # Withheld rather than guessed when the head set is not the whole grid: the
+    # correlation is only defined against a census that scored every head, and a
+    # selective run is exactly the circular comparison standing rule 24 forbids.
+    matched_per_sequence = np.load(out / "census_matrices.npz")[
+        "paa_specific_matched_per_sequence"
+    ]
+    try:
+        agreement: dict[str, Any] = census_causal_agreement(matched_per_sequence, table)
+    except ValueError as exc:
+        agreement = {"withheld_reason": str(exc)}
     return {
         "n_instances": int(selected.size),
         "n_clusters": int(clusters.size),
         "bootstrap_replicates": int(args.bootstrap),
         "zero_mask_max_logit_difference": float(effects["zero_mask_max_logit_difference"]),
+        "census_causal_agreement": agreement,
         "heads": table,
         "a3_class_non_emptiness": {
             "n_heads_tested": len(heads),
