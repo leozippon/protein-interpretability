@@ -7081,3 +7081,23 @@ the matched pair identifies the contrast, it does not make it a population claim
 And the text side of this panel is still missing qwen, llama and gpt2-xl at K=3,
 which is the cross-lab control that killed the QK/OV finding and must be in before
 this is called a modality result rather than a matched-pair one.
+
+### gpt2-xl draw 20260826 — the two boundary arms reach equal K and the L22 depth result does not move
+
+Pulled and digest-verified after a nine-hour lane whose tunnel dropped and whose
+polling loop recovered it. **gpt2-xl and ProtGPT2 are now both at K=10**, which
+closes the K-imbalance caveat this log raised against its own min/max statistic
+in the two conditions they define.
+
+| condition | boundary arms | gap | in SE | at K=9/10 | at K=8/9 |
+|---|---|---:|---:|---:|---:|
+| ex/ex | gpt2-xl (10) vs ProtGPT2 (10) | +0.0284 | **+1.6** | +1.5 | +1.4 |
+| ex/ap | gpt2-large (8) vs ProtGPT2 (10) | +0.0116 | **+0.5** | +0.5 | +0.8 |
+| ap/ex | gpt2-xl (10) vs ProtGPT2 (10) | +0.0775 | **+3.9** | +3.7 | +3.4 |
+| ap/ap | gpt2-large (8) vs ProtGPT2 (10) | +0.0129 | **+0.5** | +0.5 | +1.0 |
+
+**Converged.** Three rounds of added draws have moved no condition across a
+threshold: `ap/ex` resolved throughout, `ex/ex` marginal throughout, `ex/ap` and
+`ap/ap` at half a standard error and falling. **L22's depth-controlled separation
+is resolved in one condition of four and that is its final form on this panel.**
+Further induction draws are not authorised; the statistic has stopped moving.
