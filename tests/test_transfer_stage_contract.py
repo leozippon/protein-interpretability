@@ -13,6 +13,7 @@ is limitation L18's shape and the most damaging defect class this programme has.
 from __future__ import annotations
 
 import ast
+import dataclasses
 import os
 import subprocess
 import sys
@@ -126,6 +127,122 @@ class ArmCanRunPredicate(unittest.TestCase):
             pc.arm_can_run("no_such_stage", "gpt2")
         with self.assertRaises(KeyError):
             pc.arm_can_run("lens_family", "no-such-arm")
+
+
+class PaaCensusEligibility(unittest.TestCase):
+    """`paa_census` (D2.c) -- the stage whose refusals are scientific decisions.
+
+    Every D2.c run to date was a hand-written local invocation, so the panel it
+    measured lived in a driver script rather than in a declaration. That is the
+    L18 shape: the arms a number is computed over could change with nothing
+    downstream looking wrong. These tests hold the two facts the audit settled
+    (§D2.c blocker 1) and the one property that keeps them honest -- that the
+    arm list is derived from `src/transfer/arms.py` rather than restated.
+    """
+
+    STAGE = "paa_census"
+
+    def test_the_stage_is_declared_and_dispatched_per_arm(self):
+        contract = pc.STAGE_CONTRACTS[self.STAGE]
+        self.assertEqual(contract.entry_point, "14_paa_census.py")
+        # per_arm, not panel_wide: the entry point takes one --census-arm and a
+        # fixed --text-arm control, so one process measures exactly one arm.
+        self.assertEqual(contract.scope, "per_arm")
+        self.assertIn(self.STAGE, pc.STAGE_ORDER)
+
+    def test_the_eligible_arms_are_derived_from_the_arm_declaration(self):
+        # Appendix B rule 12 was earned by a hand-written arm list. The predicate
+        # must be reproducible from ArmSpec alone: nothing here names an arm.
+        contract = pc.STAGE_CONTRACTS[self.STAGE]
+        self.assertIsNone(
+            contract.declared_arms,
+            "paa_census must not restate an arm list; its panel is a predicate",
+        )
+        expected = [
+            name
+            for name in pc.CAMPAIGN_PANEL
+            if contract.capabilities <= PANEL[name].capabilities
+            and PANEL[name].architecture in contract.architectures
+            and PANEL[name].input_format in contract.input_formats
+        ]
+        self.assertEqual(pc.stage_arms(self.STAGE)[0], expected)
+        self.assertTrue(expected, "the predicate admits nothing; it cannot be right")
+
+    def test_the_matched_pair_is_admitted(self):
+        # The whole point of the width route (EXP-R2-082/087/088): gpt2-large and
+        # ProtGPT2 are the only modality-identifying comparison this panel has,
+        # and a D2.c that excluded them could not be read against L22 at all.
+        for arm in ("gpt2-large", "protgpt2"):
+            verdict = pc.arm_can_run(self.STAGE, arm)
+            self.assertTrue(verdict.can_run, f"{arm}: {verdict.reason}")
+
+    def test_zymctrl_is_refused_on_its_rendering_and_not_on_its_name(self):
+        verdict = pc.arm_can_run(self.STAGE, "zymctrl")
+        self.assertFalse(verdict.can_run)
+        # The ground of the refusal is the declared input format, so any arm
+        # rendered the same way is refused the same way -- a name-keyed exclusion
+        # would admit the next EC-conditioned arm silently.
+        self.assertIn("ec_conditioned", verdict.reason)
+        for name, spec in PANEL.items():
+            if spec.input_format == "ec_conditioned":
+                self.assertFalse(pc.arm_can_run(self.STAGE, name).can_run, name)
+
+    def test_the_zymctrl_refusal_records_why_it_is_permanent(self):
+        # Not "unsupported for now": the audit measured that no width admits both
+        # ZymCTRL and ProtGPT2, and separately that the single-length window
+        # ZymCTRL would need breaks build_cohorts. A refusal that does not say
+        # which of those it is invites someone to widen the band and try again.
+        reason = pc.arm_can_run(self.STAGE, "zymctrl").reason
+        self.assertIn("No width admits", reason)
+        self.assertIn("build_cohorts", reason)
+
+    def test_the_bygpt5_arms_are_refused_on_their_declared_capabilities(self):
+        for arm in ("bygpt5-small-en", "bygpt5-base-en", "bygpt5-medium-en"):
+            verdict = pc.arm_can_run(self.STAGE, arm)
+            self.assertFalse(verdict.can_run, arm)
+            self.assertIn("circuits", verdict.reason, arm)
+            self.assertEqual(PANEL[arm].capabilities, frozenset({"budget", "lens"}))
+
+    def test_every_refusal_carries_a_reason(self):
+        eligible, refused = pc.stage_arms(self.STAGE, sorted(PANEL))
+        self.assertTrue(refused, "no arm exercises the refusal path")
+        for verdict in refused:
+            self.assertTrue(verdict.reason, verdict.arm)
+        self.assertNotIn("zymctrl", eligible)
+
+    def test_the_pool_width_is_declared_beside_the_arms_it_admits(self):
+        # The eligible list above is only true at a width that admits a full
+        # ProtGPT2 row inside the unchanged 520-800 census band. Declaring the
+        # arms without the width would make the declaration conditional on an
+        # argument nobody records.
+        self.assertEqual(pc.PAA_CENSUS_WIDTH, 192)
+        self.assertEqual(
+            pc.contract_payload()["paa_census_pool_width"], pc.PAA_CENSUS_WIDTH
+        )
+
+    def _refused_by_the_import_check(self, **overrides):
+        """`_check_stage_contracts` against a deliberately broken paa_census."""
+
+        original = pc.STAGE_CONTRACTS[self.STAGE]
+        pc.STAGE_CONTRACTS[self.STAGE] = dataclasses.replace(original, **overrides)
+        try:
+            with self.assertRaises(AssertionError) as caught:
+                pc._check_stage_contracts()
+            return str(caught.exception)
+        finally:
+            pc.STAGE_CONTRACTS[self.STAGE] = original
+
+    def test_an_input_format_no_arm_declares_is_refused_at_import(self):
+        # An allow-list fails in one way a deny-list does not: a typo refuses
+        # every arm and looks like a narrow stage rather than a broken one.
+        message = self._refused_by_the_import_check(
+            input_formats=frozenset({"raw", "typo"})
+        )
+        self.assertIn("typo", message)
+
+    def test_restricting_input_formats_without_a_reason_is_refused_at_import(self):
+        message = self._refused_by_the_import_check(input_format_reason="")
+        self.assertIn(self.STAGE, message)
 
 
 class StageDeclarationsMirrorTheirSource(unittest.TestCase):
@@ -576,6 +693,100 @@ class WorkerAndControllerBehaviour(unittest.TestCase):
                 'STAGE_EXTRA_ARGS["cohort_power"]="--dtype bfloat16"',
             )
         self.assertIn("--dtype", str(caught.exception))
+
+    def test_paa_census_builds_a_well_formed_per_arm_invocation(self):
+        command = self._build_command("paa_census", "protgpt2", "TEXT_ARM=gpt2-large")
+        self.assertTrue(command[1].endswith("14_paa_census.py"), command)
+        # Singular --census-arm plus the campaign's own text control, not the
+        # entry point's default: a run that anchored on a different control from
+        # the rest of the campaign would still look well-formed.
+        self.assertEqual(command[command.index("--census-arm") + 1], "protgpt2")
+        self.assertEqual(command[command.index("--text-arm") + 1], "gpt2-large")
+        self.assertEqual(command[command.index("--device") + 1], "cuda:3")
+        # --stages is fixed because the entry point REFUSES `match`/`query` when
+        # --census-arm differs from --text-arm, and its own default requests all
+        # five. The default would therefore fail every protein item outright.
+        stages = command[command.index("--stages") + 1 : command.index("--census-arm")]
+        self.assertEqual(stages, ["census", "causal"])
+        for consumed in ("match", "query", "gate0"):
+            self.assertNotIn(consumed, command)
+
+    def test_paa_census_items_do_not_share_one_output_directory(self):
+        # This stage names its principal artefacts after itself, not after the
+        # arm -- census.json, causal.json, selected_heads.json,
+        # paa_gate_report.json -- which no other per-arm stage does, and its own
+        # census() docstring states that arms must therefore run in separate
+        # --out directories. Sharing one, each arm would overwrite the previous
+        # arm's census and each item's resume manifest would checksum a file
+        # another arm wrote: an overwrite that verifies cleanly.
+        source = (STAGE_DIR / "14_paa_census.py").read_text(encoding="utf-8")
+        for shared in ('"census.json"', '"causal.json"', '"selected_heads.json"'):
+            self.assertIn(shared, source, "this test's premise no longer holds")
+        directories = set()
+        for arm in pc.stage_arms("paa_census")[0][:3]:
+            command = self._build_command("paa_census", arm, "TEXT_ARM=gpt2-large")
+            out = command[command.index("--out") + 1]
+            self.assertTrue(out.endswith(f"/{arm}"), out)
+            directories.add(out)
+        self.assertEqual(len(directories), 3, "two arms would write over each other")
+
+    def test_paa_census_width_is_read_from_the_contract_not_written_in_the_worker(self):
+        # The contract's eligible arm list is declared against this width:
+        # ProtGPT2 admits no full-width cohort row at the entry point's own
+        # default of 512, so a width the worker owned privately could drift from
+        # the width the arms were admitted at, and nothing would look wrong until
+        # a checkpoint was already on the GPU (EXP-R2-082).
+        command = self._build_command("paa_census", "protgpt2", "TEXT_ARM=gpt2-large")
+        self.assertEqual(
+            command[command.index("--width") + 1], str(pc.PAA_CENSUS_WIDTH)
+        )
+        moved = self._build_command(
+            "paa_census",
+            "protgpt2",
+            "TEXT_ARM=gpt2-large; TRANSFER_PAA_CENSUS_WIDTH=997",
+        )
+        self.assertEqual(moved[moved.index("--width") + 1], "997")
+
+    def test_paa_census_scale_knobs_pass_through_but_feasibility_flags_do_not(self):
+        # --census-sequences is what this campaign has to move (200 -> 600), and
+        # it is a scale knob. --width is not: overriding it silently would change
+        # which arms the run can serve, so it must be refused like --dtype is.
+        scaled = self._build_command(
+            "paa_census",
+            "protgpt2",
+            'TEXT_ARM=gpt2-large; STAGE_EXTRA_ARGS["paa_census"]="--census-sequences 600"',
+        )
+        self.assertEqual(scaled[scaled.index("--census-sequences") + 1], "600")
+        per_item = self._build_command(
+            "paa_census",
+            "gpt2-large",
+            'TEXT_ARM=gpt2-large; ITEM_EXTRA_ARGS["paa_census/gpt2-large"]="--cohort-draw-seed 20260801"',
+        )
+        self.assertIn("--cohort-draw-seed", per_item)
+        with self.assertRaises(AssertionError) as caught:
+            self._build_command(
+                "paa_census",
+                "protgpt2",
+                'TEXT_ARM=gpt2-large; STAGE_EXTRA_ARGS["paa_census"]="--width 512"',
+            )
+        self.assertIn("--width", str(caught.exception))
+
+    def test_the_command_preflight_covers_a_per_arm_stage_by_scope(self):
+        # It used to be one `case` arm per per-arm stage beneath a `*` fallback
+        # that built everything else as the literal item `panel`. A per-arm stage
+        # added to the contract and forgotten there was not a build failure but a
+        # silently WRONG build: `--census-arm panel` would have passed preflight.
+        body = _extract_function(STAGE_DIR / "h200_worker.sh", "verify_commands_buildable")
+        self.assertIn("TRANSFER_STAGE_SCOPE", body)
+        self.assertIn("per_arm", body)
+        for stage, contract in pc.STAGE_CONTRACTS.items():
+            if contract.scope == "per_arm":
+                self.assertNotIn(
+                    f"{stage})",
+                    body,
+                    f"{stage} is preflighted by name; a per-arm stage added to the "
+                    "contract must be covered by its declared scope instead",
+                )
 
     def test_import_preflight_covers_every_scheduled_entry_point(self):
         # It used to be a hand-written list of nine while the worker schedules

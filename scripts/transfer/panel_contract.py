@@ -75,8 +75,12 @@ SHELL_CONTRACT = Path(__file__).resolve().parent / "panel_contract.sh"
 #: complete declaration: a stage that draws more than one protein cohort declares
 #: every one of them, every declared band names the argparse pair that sets it,
 #: and ``matches_qualifying_stage: null`` now means "this stage declares no
-#: protein cohort" rather than "nobody filled this field in".
-SCHEMA_VERSION = "r2_transfer_panel_contract_v3"
+#: protein cohort" rather than "nobody filled this field in". v4 adds each
+#: stage's admitted ``ArmSpec.input_format`` set -- the declaration that refuses
+#: ZymCTRL from ``paa_census`` -- and :data:`PAA_CENSUS_WIDTH`, the pool width
+#: that stage is scheduled at, which is a *feasibility* parameter its eligible
+#: arm list is declared against rather than a scale knob.
+SCHEMA_VERSION = "r2_transfer_panel_contract_v4"
 
 
 # --------------------------------------------------------------- campaign panel
@@ -234,6 +238,15 @@ class StageContract:
     modalities: frozenset[str] | None = None
     tokenisations: frozenset[str] | None = None
     tokenisation_reason: str = ""
+    #: The ``ArmSpec.input_format`` values this stage's entry point can render
+    #: into its own cohort. Separate from :attr:`tokenisations` because the two
+    #: refuse different things: a tokenisation refusal is about how residues map
+    #: to tokens, an input-format refusal is about what the *rendering* wraps
+    #: them in. ``paa_census`` needs the second and not the first -- ZymCTRL is
+    #: residue-tokenised like the ProGen2 arms it runs beside, and what excludes
+    #: it is the conditioning prefix its rendering carries.
+    input_formats: frozenset[str] | None = None
+    input_format_reason: str = ""
     declared_arms: tuple[str, ...] | None = None
     declared_arms_source: str = ""
     #: EVERY protein residue band this stage draws a cohort on, as the stage's own
@@ -277,6 +290,34 @@ SCOPES = ("per_arm", "panel_wide", "control_anchored", "armless")
 #: stage below and written into each artefact rather than left to be discovered
 #: by comparing four argparse defaults.
 QUALIFYING_PROTEIN_BAND = (64, 246)
+
+#: The PAA instance-pool width ``paa_census`` is scheduled at, and the width its
+#: eligible arm list below is declared *against*.
+#:
+#: This is not a scale knob and it does not belong in ``ARGS_PAA_CENSUS``. It is
+#: the parameter that decides whether an arm can enter the stage at all:
+#: ``prediction_addressed.tokenised_rows`` drops every cohort record that does
+#: not reach exactly ``width`` tokens, so an arm whose tokeniser cannot put a
+#: full-width row inside the census band raises ``no cohort record reached
+#: <width> tokens`` -- after the checkpoint is on the GPU.
+#:
+#: 192 rather than ``14_paa_census.py``'s own default of 512 because the matched
+#: pair (§2's only modality-identifying comparison) exists at exactly one of the
+#: two. Measured, not argued: in the *unchanged* 520-800 census band ProtGPT2
+#: admits 400/400 rows at width 128, 320-355/400 at 192, 65/400 at 256 and **0 at
+#: width >= 320**, while gpt2-large admits 400/400 at every width (EXP-R2-082).
+#: The alternative route -- keeping width 512 and raising the band floor to
+#: ~1550 -- shares not one record with the band L22's protein arms were measured
+#: on and moves context information by 1.75-2.31 nats against L13's catalogued
+#: 1.01, so the width is what moves and the band is what is preserved. The
+#: attainability control was re-established at this width and passed against
+#: gpt2-large's own induction band: exhaustive matched rho +0.4515 [+0.401,
+#: +0.498] inside +0.428 to +0.535 (EXP-R2-087).
+#:
+#: Declared here rather than written into ``h200_worker.sh`` because the worker
+#: passing one width and this file admitting arms at another is precisely the
+#: kind of divergence that would make the refusal reasons below false.
+PAA_CENSUS_WIDTH = 192
 
 STAGE_CONTRACTS: dict[str, StageContract] = {
     "cohort_power": StageContract(
@@ -467,6 +508,62 @@ STAGE_CONTRACTS: dict[str, StageContract] = {
             "--protein-min-len/--protein-max-len and --repeat-min-len/--repeat-max-len"
         ),
     ),
+    "paa_census": StageContract(
+        name="paa_census",
+        entry_point="14_paa_census.py",
+        scope="per_arm",
+        capabilities=frozenset({"circuits"}),
+        architectures=frozenset(_CIRCUIT_ARCHITECTURES),
+        architecture_source="src.transfer.circuits._CIRCUIT_ARCHITECTURES",
+        input_formats=frozenset({"raw", "fasta_wrapped", "n_to_c_control"}),
+        input_format_reason=(
+            "an EC-conditioned rendering cannot enter a pool width SHARED with the "
+            "rest of the panel, and this is a permanent structural exclusion rather "
+            "than a parameter left untuned (transfer audit, D2.c blocker 1, "
+            "EXP-R2-082). ZymCTRL renders as {ec}<sep><start>{seq}<end>, a constant "
+            "10-token wrapper; tokenised_rows admits a record only when it reaches "
+            "exactly the pool width and circuits.content_bounds requires exactly one "
+            "<end> inside that window, so the admissible residue length is not a band "
+            "but the single point width - 10. No width admits ZymCTRL and ProtGPT2 at "
+            "once: ProtGPT2 would need tokens-per-residue >= width/(width - 10) > 1 "
+            "and never exceeds 0.40, and width - 10 >= 2.5*width has no positive "
+            "solution. And the single-length window ZymCTRL would need does not run "
+            "as specified: 14_paa_census.py's build_cohorts draws the reference "
+            "corpus from the same band with a skip, the largest single residue "
+            "length holds 959 records against a request of 4000, and a trial run "
+            "died on exactly that. "
+            "ZymCTRL's own configuration (--width 348, band 338-338) is therefore a "
+            "separately declared per-arm run that cannot contribute to a "
+            "common-cohort statement, so it is refused here rather than scheduled"
+        ),
+        protein_band_reason=(
+            "WIDER THAN THE QUALIFYING BAND, and it cannot be spelled as a "
+            "ProteinBand: the census cohort's floor and ceiling come from two "
+            "DIFFERENT argparse pairs -- --census-protein-min-len 520 with "
+            "--protein-max-len 800 -- so no single argument_prefix names it and a "
+            "declared one would point at a flag this entry point does not carry. The "
+            "worker dispatches --stages census causal only, so the gate0 band "
+            "(--protein-min-len 200 / --protein-max-len 800) is not drawn. 520-800 is "
+            "the band the width route exists to PRESERVE: admitting ProtGPT2 at width "
+            "512 instead would need the floor at ~1550, which shares not one record "
+            "with the band L22's protein arms were measured on, shrinks the eligible "
+            "stratum 12.6x and moves context information by 1.75-2.31 nats against "
+            "L13's catalogued 1.01 (EXP-R2-082)"
+        ),
+        notes=(
+            "per arm on --census-arm, with --text-arm held at the campaign's text "
+            "control; the worker fixes --stages census causal, because "
+            "14_paa_census.py refuses match and query whenever --census-arm differs "
+            "from --text-arm (both consume the text control's pool and unigram "
+            "counts, which only a census of that arm writes), and because gate0 is a "
+            "panel-wide go/no-go already discharged. It also fixes "
+            f"--width {PAA_CENSUS_WIDTH}, which is what makes this eligible arm list "
+            "true rather than aspirational -- see PAA_CENSUS_WIDTH. Every scale knob "
+            "(--census-sequences, --cohort-draw-seed, --census-ban-depth, --causal-*) "
+            "is left to ARGS_PAA_CENSUS, where an operator can move it without "
+            "moving what the stage can serve"
+        ),
+    ),
 }
 
 #: Campaign stage order. The worker's tier structure depends on it: cohort_power
@@ -486,6 +583,23 @@ def _check_stage_contracts() -> None:
                 f"stage {stage!r} restricts architectures without naming the module "
                 "declaration it mirrors"
             )
+        if contract.input_formats is not None:
+            if not contract.input_format_reason:
+                raise AssertionError(
+                    f"stage {stage!r} restricts input formats without saying why; a "
+                    "refusal an operator cannot read is indistinguishable from an arm "
+                    "nobody thought about"
+                )
+            # A typo in an allow-list refuses silently and refuses everything, which
+            # is the one failure mode an allow-list has that a deny-list does not.
+            declared = {spec.input_format for spec in PANEL.values()}
+            unknown_formats = sorted(contract.input_formats - declared)
+            if unknown_formats:
+                raise AssertionError(
+                    f"stage {stage!r} admits input formats {unknown_formats} that no "
+                    f"member of src.transfer.arms.PANEL declares; declared formats are "
+                    f"{sorted(declared)}"
+                )
         if contract.declared_arms is not None:
             unknown = [a for a in contract.declared_arms if a not in PANEL]
             if unknown:
@@ -602,6 +716,15 @@ def arm_can_run(stage: str, arm: str) -> Eligibility:
             False,
             f"tokenisation {spec.tokenisation!r} is not in "
             f"{sorted(contract.tokenisations)}: {contract.tokenisation_reason}",
+        )
+
+    if contract.input_formats is not None and spec.input_format not in contract.input_formats:
+        return Eligibility(
+            stage,
+            arm,
+            False,
+            f"input_format {spec.input_format!r} is not in "
+            f"{sorted(contract.input_formats)}: {contract.input_format_reason}",
         )
 
     return Eligibility(stage, arm, True)
@@ -999,6 +1122,9 @@ def contract_payload() -> dict[str, Any]:
             "required_tokenisations": (
                 None if contract.tokenisations is None else sorted(contract.tokenisations)
             ),
+            "required_input_formats": (
+                None if contract.input_formats is None else sorted(contract.input_formats)
+            ),
             "declared_arms": (
                 None if contract.declared_arms is None else list(contract.declared_arms)
             ),
@@ -1021,6 +1147,7 @@ def contract_payload() -> dict[str, Any]:
         },
         "panel_members_not_staged": dict(PANEL_MEMBERS_NOT_STAGED),
         "qualifying_protein_residue_band": list(QUALIFYING_PROTEIN_BAND),
+        "paa_census_pool_width": PAA_CENSUS_WIDTH,
         "stage_order": list(STAGE_ORDER),
         "stages": stages,
         "cohort_power_items": [
@@ -1060,6 +1187,9 @@ def render_shell() -> str:
         f"TRANSFER_CONTRACT_SCHEMA={_quote(SCHEMA_VERSION)}",
         f"TRANSFER_CAMPAIGN_PANEL={_quote(' '.join(payload['campaign_panel']))}",
         f"TRANSFER_STAGE_ORDER={_quote(' '.join(payload['stage_order']))}",
+        # Not a scale knob: the width paa_census's eligible arm list is declared
+        # against. See PAA_CENSUS_WIDTH in panel_contract.py.
+        f"TRANSFER_PAA_CENSUS_WIDTH={_quote(str(payload['paa_census_pool_width']))}",
         "declare -A TRANSFER_STAGE_SCOPE=()",
         "declare -A TRANSFER_STAGE_ENTRY=()",
         "declare -A TRANSFER_STAGE_ARMS=()",

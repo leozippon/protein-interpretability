@@ -44,7 +44,7 @@ set -euo pipefail
 # failure neither `bash -n` nor the controller's `--dry-run` can catch,
 # since neither executes Python.
 #
-# Dependency order (all eleven contract stages; tier 4 was added when
+# Dependency order (all twelve contract stages; tier 4 was added when
 # 10_homology_control.py and 11_induction_path_patching.py were wired and this
 # list was not updated with them, which is the same stale-enumeration class as
 # the hand-written import-preflight list below):
@@ -53,7 +53,10 @@ set -euo pipefail
 #   tier 3  04_circuit_primitives.py, 05_relational_channel.py,
 #           06_explanation_channel.py, 07_convergence_control.py,
 #           08_lens_family.py, 09_probe_and_erasure.py, in that order
-#   tier 4  10_homology_control.py, 11_induction_path_patching.py
+#   tier 4  10_homology_control.py, 11_induction_path_patching.py,
+#           14_paa_census.py -- three stages that consume nothing any other
+#           stage in this campaign produces, so their order within the tier is
+#           free and only the GPU wave shape decides it
 #
 # Per-stage invocation quirks (read from scripts/transfer/*.py at the time
 # this was written; re-verify with --help if a stage script changed):
@@ -161,6 +164,37 @@ set -euo pipefail
 #       path_patching.require_supported_layout, after the checkpoint is
 #       already on the GPU, which is why the contract filters the arm list
 #       here instead.
+#   14  --census-arm A (singular) --text-arm A --stages S [S ...] --width N
+#       --device --out DIR. Per arm: one census plus its causal readout for
+#       one arm, against the campaign's declared text control.
+#       Three of those flags are fixed here rather than left to
+#       ARGS_PAA_CENSUS, each for a reason that is not a preference:
+#       (a) --stages census causal. 14_paa_census.py's own default is all
+#           five stages, and it REFUSES outright when --census-arm differs
+#           from --text-arm while `match` or `query` is requested, because
+#           both read the text control's pool and unigram counts and only a
+#           census of that arm writes them. Its `gate0` is a panel-wide
+#           go/no-go already discharged (EXP-R2-087), not a per-arm
+#           measurement. So the default would fail every protein item and
+#           measure something else on the text one.
+#       (b) --width from the contract's TRANSFER_PAA_CENSUS_WIDTH. This is a
+#           feasibility parameter, not a scale knob: prediction_addressed.
+#           tokenised_rows keeps only rows reaching EXACTLY the pool width, and
+#           in the unchanged 520-800 census band ProtGPT2 admits 320-355 of 400
+#           rows at width 192 and 0 at width >= 320 (EXP-R2-082). At the entry
+#           point's own default of 512 the arm this stage exists to measure
+#           would raise inside tokenised_rows with the checkpoint already on the
+#           GPU. The contract's eligible arm list is declared against this
+#           width, so it is read from the contract and not written here.
+#       (c) --text-arm. The campaign's text control, from --text-arm, so a run
+#           cannot anchor on the entry point's own default while the rest of
+#           the campaign anchors elsewhere.
+#       Everything that only changes the SIZE of the measurement --
+#       --census-sequences, --cohort-draw-seed, --census-ban-depth and the
+#       --causal-* family -- is left to ARGS_PAA_CENSUS / ARGS_PAA_CENSUS__<ARM>.
+#       ZymCTRL is refused by the contract, permanently and with its reason: no
+#       pool width admits both its EC-conditioned rendering and ProtGPT2's
+#       multi-residue BPE, so it cannot enter a shared-window panel at all.
 #
 # Neither this worker nor the controller makes any later stage read 01's
 # unmeasurable-arms verdict automatically -- 01 only reports it.
@@ -1139,6 +1173,35 @@ build_command() {
             --arms "${PATH_PATCHING_ARMS[@]}" --device "cuda:${gpu}"
             --output-dir "${out_dir}")
       ;;
+    paa_census)
+      # Per arm on --census-arm; see the "14" entry in the header comment for
+      # why --stages, --width and --text-arm are fixed here and every scale knob
+      # is not. --width comes from the panel contract because the contract's
+      # eligible arm list is declared against it: ProtGPT2 admits no full-width
+      # cohort row at the entry point's own default of 512, so a width written
+      # here and a width admitted there could disagree without either looking
+      # wrong until a checkpoint was already on the GPU.
+      #
+      # --out gets a PER-ARM subdirectory, and this is not cosmetic. Unlike every
+      # other per-arm stage, 14_paa_census.py names its principal artefacts after
+      # the stage rather than after the arm -- census.json, causal.json,
+      # selected_heads.json, census_matrices.npz, causal_matrices.npz,
+      # paa_gate_report.json -- and its own census() docstring states the
+      # invariant: "Arms are run in separate --out directories, so the per-arm
+      # artefacts do not collide and need no renaming". Into one shared stage
+      # directory, each arm would overwrite the previous arm's census, and each
+      # item's resume manifest would then checksum a file some other arm wrote:
+      # a silent cross-arm overwrite that verifies cleanly. run_item_atomic moves
+      # produced files by their path relative to the temp directory and mkdir -p's
+      # each parent, so the subdirectory survives into the results root. The path
+      # does not reach provenance -- canonicalize_command normalizes --out out.
+      CMD+=("${TRANSFER_SCRIPTS}/14_paa_census.py"
+            --stages census causal
+            --census-arm "${item}" --text-arm "${TEXT_ARM}"
+            --width "${TRANSFER_PAA_CENSUS_WIDTH}"
+            --device "cuda:${gpu}"
+            --out "${out_dir}/${item}")
+      ;;
     *)
       echo "build_command: unknown stage ${stage}" >&2
       exit 2
@@ -1210,46 +1273,30 @@ verify_commands_buildable() {
   local stage item
   local -a CMD
   log "command preflight: building every scheduled command"
+  # The item namespace comes from the stage's DECLARED SCOPE, not from a branch
+  # per stage. It used to be one `case` arm per per-arm stage -- five identical
+  # bodies differing only in the stage name -- beneath a `*` fallback that built
+  # every unlisted stage as `panel`. A per-arm stage added to the contract and
+  # forgotten here was therefore not a build failure but a silently WRONG build:
+  # the preflight would have checked `--census-arm panel` and passed. cohort_power
+  # is the one stage whose items are not its arms (see TRANSFER_COHORT_ITEMS).
   for stage in "${REQUESTED_STAGES[@]}"; do
-    case "${stage}" in
-      cohort_power)
-        for item in "${COHORT_ITEMS[@]}"; do build_command "${stage}" "${item}" 0 "<pending>"; done
-        ;;
-      pathway_budget)
-        for item in ${STAGE_ARMS_FOR[pathway_budget]:-}; do
-          build_command "${stage}" "${item}" 0 "<pending>"
-        done
-        ;;
-      estimand_power)
-        for item in ${STAGE_ARMS_FOR[estimand_power]:-}; do
-          build_command "${stage}" "${item}" 0 "<pending>"
-        done
-        ;;
-      relational_channel)
-        for item in ${STAGE_ARMS_FOR[relational_channel]:-}; do
-          build_command "${stage}" "${item}" 0 "<pending>"
-        done
-        ;;
-      lens_family)
-        for item in ${STAGE_ARMS_FOR[lens_family]:-}; do
-          build_command "${stage}" "${item}" 0 "<pending>"
-        done
-        ;;
-      probe_and_erasure)
-        for item in ${STAGE_ARMS_FOR[probe_and_erasure]:-}; do
+    if [ "${stage}" = cohort_power ]; then
+      for item in "${COHORT_ITEMS[@]}"; do build_command "${stage}" "${item}" 0 "<pending>"; done
+      continue
+    fi
+    case "${TRANSFER_STAGE_SCOPE[${stage}]}" in
+      armless) build_command "${stage}" panel 0 "<pending>" ;;
+      per_arm|control_anchored)
+        for item in ${STAGE_ARMS_FOR[${stage}]:-}; do
           build_command "${stage}" "${item}" 0 "<pending>"
         done
         ;;
       *)
-        # Panel-wide and armless stages. A panel-wide stage whose arm list is
-        # empty is skipped at dispatch (run_panel_stage), so it is not built here.
-        case "${TRANSFER_STAGE_SCOPE[${stage}]}" in
-          armless) build_command "${stage}" panel 0 "<pending>" ;;
-          *)
-            [ -n "${STAGE_ARMS_FOR[${stage}]:-}" ] \
-              && build_command "${stage}" panel 0 "<pending>"
-            ;;
-        esac
+        # Panel-wide. One whose arm list is empty is skipped at dispatch
+        # (run_panel_stage), so it is not built here.
+        [ -n "${STAGE_ARMS_FOR[${stage}]:-}" ] \
+          && build_command "${stage}" panel 0 "<pending>"
         ;;
     esac
   done
@@ -1831,6 +1878,7 @@ read -r -a PROBE_ARMS <<< "${STAGE_ARMS_FOR[probe_and_erasure]:-}"
 read -r -a CIRCUIT_ARMS <<< "${STAGE_ARMS_FOR[circuit_primitives]:-}"
 read -r -a HOMOLOGY_ARMS <<< "${STAGE_ARMS_FOR[homology_control]:-}"
 read -r -a PATH_PATCHING_ARMS <<< "${STAGE_ARMS_FOR[induction_path_patching]:-}"
+read -r -a PAA_CENSUS_ARMS <<< "${STAGE_ARMS_FOR[paa_census]:-}"
 
 # cohort_power's four-way split, also from the contract: by vocabulary regime for
 # the truncation-curve guard, and the residue arms isolated further for their
@@ -1912,9 +1960,13 @@ dispatch_stage convergence_control run_convergence_control
 dispatch_stage lens_family run_stage_wave lens_family "${LENS_ARMS[@]}"
 dispatch_stage probe_and_erasure run_stage_wave probe_and_erasure "${PROBE_ARMS[@]}"
 
-log "tier 4: homology_control, induction_path_patching"
+log "tier 4: homology_control, induction_path_patching, paa_census"
 dispatch_stage homology_control run_homology_control
 dispatch_stage induction_path_patching run_induction_path_patching
+# Per arm, so it fills every GPU in the wave rather than holding one card the way
+# the two panel-scoped stages above do. Last in the tier for that reason: it is
+# the only stage here that can absorb the whole allocation.
+dispatch_stage paa_census run_stage_wave paa_census "${PAA_CENSUS_ARMS[@]}"
 
 record_host_state "after the campaign"
 

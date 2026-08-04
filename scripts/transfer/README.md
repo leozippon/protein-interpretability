@@ -18,7 +18,7 @@ The active campaign has 12 arms:
 
 `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `qwen2.5-0.5b`, `llama-3.2-3b`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium`, `progen2-small`.
 
-The contract declares 11 stages in this order:
+The contract declares 12 stages in this order:
 
 | Order | Stage | Entry point | Scope | Contract-eligible arms |
 |---:|---|---|---|---|
@@ -33,8 +33,11 @@ The contract declares 11 stages in this order:
 | 9 | `probe_and_erasure` | `09_probe_and_erasure.py` | per arm | all 12 |
 | 10 | `homology_control` | `10_homology_control.py` | panel-wide | `protgpt2`, `zymctrl`, `progen2-medium` |
 | 11 | `induction_path_patching` | `11_induction_path_patching.py` | panel-wide | all 12 |
+| 12 | `paa_census` | `14_paa_census.py` | per arm | `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `qwen2.5-0.5b`, `llama-3.2-3b`, `protgpt2`, `progen2-base`, `progen2-medium`, `progen2-small` |
 
-Eligibility is not uniform. Contract refusals are deliberate and include architecture, tokenization, modality, and stage-interface limits. Inspect them with `python scripts/transfer/panel_contract.py --json`; do not route around them.
+Eligibility is not uniform. Contract refusals are deliberate and include architecture, tokenization, modality, input-format, and stage-interface limits. Inspect them with `python scripts/transfer/panel_contract.py --json`; do not route around them.
+
+`paa_census` is the one stage whose eligible arm list depends on a scheduling parameter, so that parameter is declared in the contract (`PAA_CENSUS_WIDTH`, rendered as `TRANSFER_PAA_CENSUS_WIDTH`) and passed by the worker rather than left to `ARGS_PAA_CENSUS`. The instance pool admits only cohort rows reaching exactly that width; at the entry point's own default of 512 ProtGPT2 admits none. `zymctrl` is refused permanently: no width admits both its EC-conditioned rendering and ProtGPT2's multi-residue BPE, so it cannot enter a shared-window panel. Its separately declared configuration is a direct invocation, not a campaign item.
 
 This table is a hand-maintained copy of a generated declaration, which is the failure class `panel_contract.py` exists to end, so it is checked rather than trusted: `tests/test_h200_orchestration.py::ReadmeStageTableMatchesTheContract` parses it and fails if any row disagrees with the contract. It had already drifted — `induction_path_patching` was listed with seven eligible arms against the contract's nine, omitting both ProGen2 arms, whose `progen` layout `src.transfer.path_patching.SUPPORTED_ARCHITECTURES` declares.
 
@@ -121,7 +124,7 @@ GPUS=0,1 \
 bash scripts/transfer/run_transfer_h200.sh --dry-run
 ```
 
-`ARMS` defaults to the full 12-arm campaign panel and `STAGES` defaults to the full 11-stage order. The worker intersects requested arms with each stage contract and reports refusals; no unsupported arm is silently substituted.
+`ARMS` defaults to the full 12-arm campaign panel and `STAGES` defaults to the full 12-stage order. The worker intersects requested arms with each stage contract and reports refusals; no unsupported arm is silently substituted.
 
 ## Controller Environment
 
@@ -130,7 +133,7 @@ bash scripts/transfer/run_transfer_h200.sh --dry-run
 | `H200_POD` | Required shell-local pod selection |
 | `H200_ACCESS_ROOT` | External access-helper root; defaults to `~/hangzhou-remote` |
 | `ARMS` | Comma-separated requested arms; defaults to the 12-arm campaign panel |
-| `STAGES` | Comma-separated requested stages; defaults to all 11 contract stages |
+| `STAGES` | Comma-separated requested stages; defaults to all 12 contract stages |
 | `GPUS` | Comma-separated pod-relative GPU indices |
 | `TEXT_ARM` | Text control for control-anchored aggregation |
 | `ARGS_<STAGE>` | Extra arguments for every item in one stage |
