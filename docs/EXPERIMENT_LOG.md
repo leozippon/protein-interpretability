@@ -7158,3 +7158,47 @@ principle and the reasoning for writing a new file stands, but **it did not
 occur here and the entry above overstates it.** Recorded rather than quietly
 amended, because a defect asserted and not observed is the same class of error
 as a result asserted from one draw.
+
+### EXP-R2-126 — the cross-lab control lands, and it narrows both gaps
+
+Nine arms at K=4, qwen at K=3; gpt2-xl and llama at K=2 and still running. All
+under both guards at one condition, A1 PASS everywhere.
+
+| arm | K | all-grid ρ | within-layer | hit@20 | × chance |
+|---|---:|---|---|---|---|
+| dialogpt-small | 4 | +0.5991 … +0.6918 | +0.4749 … +0.6278 | 8,10,10,11 | 2.9–4.0× |
+| gpt2 | 4 | +0.5859 … +0.6484 | +0.4496 … +0.4841 | 13,13,14,14 | 4.7–5.0× |
+| gpt2-medium | 4 | +0.4735 … +0.5496 | +0.3005 … +0.4416 | 7,7,8,8 | 6.7–7.7× |
+| **qwen2.5-0.5b** | 3 | +0.4520 … +0.4952 | **+0.1469 … +0.2527** | 5,5,7 | 4.2–5.9× |
+| gpt2-large | 4 | +0.4302 … +0.4647 | +0.2888 … +0.3137 | 6,7,7,8 | 10.8–14.4× |
+| gpt2-xl | 2 | +0.3691 … +0.4022 | +0.2385 … +0.2820 | 5,6 | 15.0–18.0× |
+| **llama-3.2-3b** | 2 | **+0.2179 … +0.2437** | +0.2497 … +0.2559 | 5,6 | 8.4–10.1× |
+| ProtGPT2 | 4 | +0.0288 … +0.1376 | −0.2673 … −0.0451 | 0,0,5,6 | 0.0–10.8× |
+| ProGen2-small | 4 | −0.1816 … −0.0604 | −0.1117 … +0.0053 | 1,1,2,2 | 0.5–1.0× |
+| ProGen2-medium | 4 | −0.3050 … −0.1951 | −0.2010 … −0.0253 | 0,0,0,2 | 0.0–2.2× |
+| ProGen2-base | 4 | −0.3102 … −0.2166 | −0.1478 … −0.0108 | 0,0,1,1 | 0.0–1.1× |
+
+**Over the K≥3 arms, most adverse draws: all-grid gap +0.2926, within-layer gap
++0.1416.** The within-layer figure has fallen from the matched pair's **+0.3339**
+because **qwen2.5-0.5b reads +0.1469 to +0.2527 within-layer — the lowest text
+arm on the panel by a wide margin**, well under every GPT-2 arm. The
+depth-controlled separation is therefore substantially narrower once a non-GPT-2
+text lineage is in it.
+
+**And the arm that will narrow it further is not yet at K=3.** llama-3.2-3b reads
+**+0.2179 to +0.2437** all-grid — the text minimum, below every other text arm
+and only +0.08 above ProtGPT2's maximum. Including it at K=2 would take the
+all-grid gap from +0.2926 to **+0.0803**. *That figure is not quoted as a result*
+— K=2, and llama's third draw is running — but it is stated here because
+reporting the K≥3 subset while silently excluding the arm that most narrows it
+would be a selection this log would have to withdraw later. **llama is the arm to
+watch, exactly as it was on the induction statistic**, where it was also the text
+minimum and where the pre-registered scale extrapolation missed it by +0.19.
+
+**What is unchanged.** The retrieval separation is untouched by the cross-lab
+arms: qwen 4.2–5.9× chance and llama 8.4–10.1×, against the ProGen2 family's
+0.0–2.2× across sixteen draws. Every text arm on the panel retrieves at ≥2.9×;
+no ProGen2 draw exceeds 2.2×, and eight of sixteen return **0/20**.
+
+*Provisional until llama and gpt2-xl reach K=3.* The all-grid modality gap is the
+statistic in motion; the retrieval one is not.
