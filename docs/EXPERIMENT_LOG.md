@@ -6186,3 +6186,68 @@ configuration. At n=600 the same rate projects to ~21,400, which clears. **ProtG
 D2.c must therefore be re-run at n=600, and the n=200 condition is not available
 to it at all** under a correct content definition. That is a constraint discovered
 by the fix, not a choice.
+
+### EXP-R2-120 — the induction-side depth claim, reproduced: L22 survives depth control in sign but not in magnitude
+
+Reproduced on L22's own artefacts, every arm at K≥4, all four conditions, using
+two independent depth controls (rank-partialling on layer, and a Fisher-z average
+of per-layer Spearmans over layers with ≥4 heads).
+
+| arm | K | raw ρ | partialled | within-layer | **r(L, prefix-match)** | r(L, \|effect\|) |
+|---|---|---|---|---|---|---|
+| gpt2 | 4 | +0.699 | +0.569 | +0.609 | +0.500 | +0.774 |
+| dialogpt-small | 4 | +0.633 | +0.473 | +0.471 | +0.482 | +0.702 |
+| gpt2-medium | 4 | +0.604 | +0.470 | +0.433 | +0.438 | +0.653 |
+| qwen2.5-0.5b | 4 | +0.579 | +0.411 | +0.401 | +0.452 | +0.741 |
+| gpt2-large | 7 | +0.509 | +0.377 | +0.382 | +0.379 | +0.648 |
+| llama-3.2-3b | 4 | +0.505 | +0.510 | +0.413 | +0.139 | +0.508 |
+| gpt2-xl | 7 | +0.458 | +0.416 | +0.378 | +0.217 | +0.522 |
+| zymctrl * | 6 | +0.242 | +0.210 | +0.230 | +0.136 | +0.361 |
+| progen2-medium * | 4 | +0.160 | +0.174 | +0.205 | +0.027 | +0.537 |
+| progen2-small * | 4 | +0.157 | +0.203 | +0.262 | +0.000 | +0.634 |
+| progen2-base * | 5 | +0.131 | +0.148 | +0.201 | +0.017 | +0.568 |
+| **protgpt2 \*** | 8 | **−0.106** | **+0.285** | **+0.338** | **−0.387** | +0.733 |
+
+**Two premises confirmed.** The causal readout is depth-biased on every arm
+without exception — `r(L, |effect|)` runs +0.36 to +0.77 — which follows from the
+patch and metric acting at the query row only. And **ProtGPT2 is the sole arm whose
+census score *falls* with depth** (−0.387, against +0.00 to +0.50 everywhere else).
+An all-grid Spearman between a depth-rising readout and a depth-falling score must
+come out near zero, which is ProtGPT2's −0.106.
+
+**The predicted inversion does not reproduce.** The separation holds in **all four
+conditions** under depth control, not two:
+
+| condition | raw gap | within-layer: text min vs protein max | gap |
+|---|---|---|---|
+| ex/ex | +0.195 | +0.387 (gpt2-large) vs +0.357 (ProtGPT2) | **+0.030** |
+| ex/ap | +0.198 | +0.341 (gpt2-xl) vs +0.322 (ProtGPT2) | **+0.019** |
+| ap/ex | +0.248 | +0.394 (gpt2-large) vs +0.326 (ProtGPT2) | **+0.069** |
+| ap/ap | +0.224 | +0.382 (gpt2-xl) vs +0.348 (ProtGPT2) | **+0.034** |
+
+The review reported gpt2-large +0.274 against ProtGPT2 +0.340 on ex/ex; I get
++0.387 against +0.357. It read an older artefact set (`transfer_20260730`, the
+K=3–5 era) while this pools every run at current K.
+
+**But its substantive point stands and it is material. L22's margin is
+substantially a depth artefact.** The gap falls from **+0.195…+0.248 raw to
++0.019…+0.069 within-layer** — an 80–90% reduction — and gpt2-xl's own draw
+standard deviation on the raw statistic is 0.039–0.050 (EXP-R2-095). **A
+depth-controlled gap of +0.019 is smaller than the dispersion of a single boundary
+arm across draws.** The sign survives in all four conditions; the magnitude does
+not survive as a modality claim.
+
+**How L22 must now be stated.** The separation is real on the statistic as defined
+and is not identified against layer depth. Quoting it as "a head-prevalence
+census's selector ranks causal importance on text decoders and does not on protein
+decoders" overstates what a +0.02–0.07 depth-controlled gap supports. The honest
+form is narrower and, per §5's own organising distinction, more useful: **an
+all-grid rank correlation between a census score and a query-local causal readout
+is confounded with depth, and on this panel the modality separation it reports is
+largely that confound.** That is a *method* limitation, demonstrated on the text
+control as much as on the protein arms.
+
+**Not yet done, and it is the obvious next step:** the depth covariate belongs in
+`path_patching.py` beside `causal_census_agreement` so it is versioned rather than
+living in throwaway analysis code — which is the provenance defect the first review
+also raised and which has already cost this programme two retracted figures.
