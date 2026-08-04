@@ -7148,3 +7148,13 @@ Recorded because it is the fifth operational slip of this session and the only
 one that could have produced a wrong record rather than a refused action: a
 driver executing fragments could in principle have written a verdict line that
 nothing supported.
+
+*Correction to the entry above, 13 minutes later.* The gpt2-xl draw-20260802
+instance **did** print its verdict — `gpt2-xl PRESENT` at 14:07:14 — using the
+*new* polling loop. It had not been damaged by the edit; it was waiting for the
+artefact, which is exactly what the fix was written to make it do, and the
+silence I read as corruption was the poll interval. The hazard is real in
+principle and the reasoning for writing a new file stands, but **it did not
+occur here and the entry above overstates it.** Recorded rather than quietly
+amended, because a defect asserted and not observed is the same class of error
+as a result asserted from one draw.
