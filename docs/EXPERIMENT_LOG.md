@@ -6589,3 +6589,55 @@ measurement choice and not a wiring one:
    provenance keys on the command and has no draw axis. True of every stage; the
    lever is a per-draw `GPFS_RESULTS_ROOT`, which is what the existing drivers
    already do.
+
+### EXP-R2-122 read — the near-boundary arms do not take the boundary, and the depth-controlled gap does not move
+
+qwen2.5-0.5b and progen2-small are at **K=6** (from 4). All four artefacts pulled
+and digest-verified. The depth-controlled comparison is unchanged to four decimal
+places in every condition:
+
+| condition | text min | protein max | gap | in pooled boundary-arm sd |
+|---|---|---|---:|---:|
+| ex/ex | gpt2-xl +0.3850 | ProtGPT2 +0.3569 | +0.0281 | **+0.67** |
+| ex/ap | gpt2-xl +0.3480 | ProtGPT2 +0.3218 | +0.0262 | **+0.55** |
+| ap/ex | gpt2-large +0.3944 | ProtGPT2 +0.3257 | +0.0687 | **+1.39** |
+| ap/ap | gpt2-xl +0.3836 | ProtGPT2 +0.3481 | +0.0355 | **+0.86** |
+
+**This is the null the campaign was designed to be able to return.** qwen sat
++0.016 above gpt2-xl on ex/ap at K=4 and progen2-small +0.041 below ProtGPT2 on
+ap/ap; neither crossed with two further draws each, so the boundary is where it
+was and the depth-controlled separation is still inside one standard deviation in
+three of four conditions. The raw statistic is untouched at +5.08 to +7.18 sd.
+What can still move this is EXP-R2-123, which is adding draws to the boundary
+arms themselves.
+
+### The transport diagnosis in EXP-R2-122 was wrong, and the correction matters operationally
+
+Two lanes were recorded above as having failed. **Only one did.** The distinction
+is that the controller's *view* of a lane and the lane itself are different
+things, which is the L20 lesson one layer further out.
+
+- **GPU 0, first attempt: a genuine failure.** `scp: Connection closed` during the
+  code-snapshot push — no snapshot reached GPFS, so nothing ran. The driver's
+  `await_manifest` correctly observed an idle GPU with no manifest and said so.
+- **GPU 1, and GPU 0's retry: the tunnel dropped and the pod-side worker kept
+  running.** Both controller logs end mid-sentence inside the worker's own
+  pre-campaign `nvidia-smi` dump. Both runs **completed and their manifests
+  verify in the pod** — `qwen2.5-0.5b.json` at 3,971,278 and 3,971,902 bytes,
+  `sha256sum -c` OK on both. Both are now pulled.
+
+**My retry scripts were worse than the driver they replaced, and this is the
+lesson.** `boundary_draws.sh` treats a non-zero controller status as *unknown* and
+polls the pod until either a manifest appears or the GPU is observed idle.
+`depth_boundary_retry_g0.sh` and `relaunch_lane.sh` check `verified_in_pod` once,
+immediately after the controller returns — which is exactly when a dropped tunnel
+has *not* yet produced a manifest. I relaunched a lane whose result already
+existed, and the relaunch is now recomputing an artefact that was already on
+disk. **Any future single-lane helper must carry the polling loop**; a controller
+that lost its tunnel has said nothing about the measurement.
+
+One collision cause is worth naming because it is fixable by scheduling rather
+than by code: the four controllers push their snapshots through one shared
+Windows relay and collide on a single temp script path — GPU 1's log carries the
+relay's own "file is being used by another process" error. A 20-second stagger is
+not enough, because a push occupies the relay for minutes.
