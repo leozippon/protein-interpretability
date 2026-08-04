@@ -6748,3 +6748,54 @@ it argues the same conclusion: the separation lives in the unreported bulk.**
 draws, and no value above may be quoted until it lands. Every number is
 pre-decoy-fix. hit@20 is compared only within the shared 720-head grid, which is
 why the matched pair is the only comparison drawn.
+
+### EXP-R2-121 read — the rebuild reproduces, and one of my own readings is corrected
+
+Both lanes exit 0, both A1 PASS. Layout-guarded, ban 3, n=600, scored by the
+versioned `census_causal_agreement`:
+
+| arm | draw | A1 instances | all-grid ρ | within-layer | hit@20 |
+|---|---|---:|---:|---:|---:|
+| ProtGPT2 | 20260728 | 21,458 | **+0.1987** | −0.1103 | 7/20 |
+| ProtGPT2 | 20260801 | 21,064 | **+0.1778** | −0.1511 | **2/20** |
+| gpt2-large | 20260728 | 63,065 | +0.4495 | +0.3403 | 8/20 |
+| gpt2-large | 20260801 | 63,257 | +0.4255 | +0.3073 | 7/20 |
+
+**The withdrawal of EXP-R2-116 holds at K=2.** ProtGPT2 reads **+0.1778 to
++0.1987** where the offline one-sided correction predicted **−0.088 to −0.114**.
+The two draws agree to 0.021 and neither is within 0.27 of the offline figure, so
+this is not a draw that could go either way. `d2c_layoutfix.sh`'s pre-registered
+tie-break — *"If the two disagree, the rebuild is the one to believe"* — is
+discharged. Matched-pair gap at the most adverse draws: all-grid **+0.2268**,
+within-layer **+0.4176**.
+
+**And a reading of mine from one draw does not survive the second. Retracted
+here rather than left standing.** On draw 20260728 alone I recorded that
+retrieval "does not separate the matched pair at all — 8/20 against 7/20", and
+drew from it that the L22 "separation lives in the unreported bulk" shape
+reproduces on copy suppression. **At K=2 that is not supported.** ProtGPT2 reads
+**7/20 then 2/20** against gpt2-large's stable **8/20, 7/20**. The K=1 reading
+took ProtGPT2's favourable draw. What the second draw shows instead is that
+**ProtGPT2's census-top retrieval is draw-unstable where its matched control's is
+not** — a 5-of-20 swing against 1 — which is §5.05(b)'s protein-side cohort
+sensitivity appearing in a statistic it had not been measured on. That is a
+different observation from the one I made, and it needs K≥3 before it is one at
+all.
+
+*This is the second time in two days that a D2.c conclusion has been drawn from a
+single draw and had to be withdrawn.* The first was EXP-R2-116's; this one is
+mine. The failure is the same shape both times — a statistic quoted before its
+draw dispersion was known — and the rule that catches it, evidence-discipline
+rule 4, is one this document already carries.
+
+**What is still owed.** K=3 on both arms; the ProGen2 arms at the matched n=600
+condition; and all of it re-run under the *complete* guard, since every number in
+the table above is pre-decoy-fix.
+
+### Launched — EXP-R2-125 (B cards 1 and 3, `logs/drivers/d2c_decoyfix.sh`)
+
+The matched pair at draw 20260728 under the complete guard — same arms, same
+draw, same everything else, so it is a **paired** before/after against the two
+rows above rather than a fresh measurement to be compared across conditions. The
+advisory K=1 estimate of the decoy fix's size (ProtGPT2 +0.2015 → +0.0788,
+gpt2-large +0.4476 → +0.4522) is what this replaces; it is not adopted.
