@@ -6539,3 +6539,53 @@ above. Neither `prediction_addressed.py` nor `14_paa_census.py` is in
 `11_induction_path_patching.py`'s import closure, so the measurement is
 unchanged, but the code hash differs from EXP-R2-122's `c02b37464ea4` and is
 recorded rather than assumed equal.
+
+### `paa_census` becomes a campaign stage, and two defects surfaced in the wiring
+
+D2.c has only ever run as hand-written invocations on B's L20 cards.
+`14_paa_census.py` was never declared in `panel_contract.py` nor dispatched by
+`h200_worker.sh`, so the four H200 cards could not touch it. That is now the
+binding constraint: B is shared, six of its eight GPUs are held by other users,
+and the decoy repair above owes a re-run of the whole D2.c panel at n=600 across
+three draws — of order 75 L20-hours against a few on the H200.
+
+Declared with eligibility derived from `src/transfer/arms.py` alone (capabilities,
+architecture, input format) and naming no arm. Resolves to the eleven arms D2.c
+has actually been run on. **ZymCTRL is refused on its rendering, not its
+tokenisation** — it is residue-tokenised exactly like the ProGen2 arms it would
+run beside, and what excludes it is the constant 10-token EC wrapper that makes
+the admissible residue length the single point `width − 10`. The three ByGPT5
+arms are refused on their declared capabilities. `PAA_CENSUS_WIDTH = 192` lives
+in the contract rather than the worker because it is the parameter the eligible
+arm list is *true at*: at the entry point's own default of 512, ProtGPT2 admits
+0 of 400 rows in the unchanged band and would raise with the checkpoint already
+on the GPU.
+
+**Two defects found by the wiring rather than by the audit.**
+`14_paa_census.py` names its artefacts after the *stage* — `census.json`,
+`causal.json`, `paa_gate_report.json` — so a shared per-stage output directory
+would have had each arm overwrite the previous arm's census **while every resume
+manifest verified cleanly**. Items now get their own directory. And
+`verify_commands_buildable` was six hand-written per-stage branches over a `*`
+fallback that built any unlisted stage with the literal item `panel`: a per-arm
+stage added to the contract and forgotten there was not a build failure but a
+silently *wrong* build. It now dispatches on the declared scope.
+
+**Three operational questions recorded rather than decided**, because each is a
+measurement choice and not a wiring one:
+
+1. **ZymCTRL is refused, not scheduled.** Admitting it needs a declared per-arm
+   feasibility parameter in the contract; `ARGS_PAA_CENSUS__ZYMCTRL="--width 348"`
+   cannot do it, because `assert_no_duplicate_options` correctly refuses an
+   override of a flag the worker sets. No mechanism was invented.
+2. **There is no campaign default for `--census-ban-depth` or
+   `--census-sequences`.** A run with no `ARGS_PAA_CENSUS` takes the entry
+   point's own defaults and 200 sequences — a condition no published number was
+   measured in, and one in which ProtGPT2 now reads A1 FAIL and the causal stage
+   refuses outright. Choosing a default is choosing a measurement condition, so
+   the operator must pass it. **This is the first thing to set before the panel
+   campaign.**
+3. **Three corpus draws would overwrite each other**, because per-item resume
+   provenance keys on the command and has no draw axis. True of every stage; the
+   lever is a per-draw `GPFS_RESULTS_ROOT`, which is what the existing drivers
+   already do.
