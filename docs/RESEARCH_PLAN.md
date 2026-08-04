@@ -1,6 +1,6 @@
 # R2 research plan: text-to-protein interpretability transfer
 
-**Updated:** 2026-07-29 **Status:** active **Subordinate to:** `docs/INTERPRETABILITY_TRANSFER_AUDIT.md`. That document holds the findings, the retractions and the costed plan. This one holds scope, panel, measurement package, discipline and compute policy. Where they disagree, the audit document wins.
+**Updated:** 2026-08-04 **Status:** active **Subordinate to:** `docs/INTERPRETABILITY_TRANSFER_AUDIT.md`. That document holds the findings, the retractions and the costed plan. This one holds scope, panel, measurement package, discipline and compute policy. Where they disagree, the audit document wins.
 
 ## Objective
 
@@ -8,7 +8,7 @@
 2. **Transferability.** Analyse the limitations of text-derived interpretability methods applied to protein generative models.
 3. **Adapted methods.** Design and validate protein-adapted methods.
 
-Parts 2 and 3 are the deliverable. Part 1 is instrumental: a difference between model families matters here only insofar as it explains why a method transfers badly. Part 1 is closed to new measurement — see the audit document §9 Phase A.
+Parts 2 and 3 are the deliverable. Part 1 is instrumental: a difference between model families matters here only insofar as it explains why a method transfers badly. Part 1 is closed to new measurement — see the audit document §9 D1 (the Phase A/B/C names were retired on 2026-07-30; §9.0 holds the mapping).
 
 ## Scope
 
@@ -30,7 +30,7 @@ Twelve autoregressive decoders under one code path, each fed in the format it wa
 
 Design properties worth restating because they bound every inference drawn here:
 
-- **gpt2-large / protgpt2** is the matched modality pair — identical architecture, depth, width, vocabulary size and parameter count (773,891,840).
+- **gpt2-large / protgpt2** is the matched modality pair — identical architecture, depth, width, vocabulary size and parameter count (774,030,080, verified from both checkpoints; the 773,891,840 recorded here until 2026-08-04 was wrong by 138,240, though the identity it asserts is exact).
 - **gpt2 → gpt2-medium → gpt2-large → gpt2-xl** is a within-lineage scale ladder holding architecture, tokeniser and corpus fixed.
 - **progen2-base / progen2-medium** is the protein-side corpus contrast. The text-side corpus contrast (gpt2 / dialogpt-small) is **retracted**: dialogpt-small reads −4.08 nats context information on the evaluation corpus and cannot anchor a contrast (audit §5.05(a)).
 - **qwen2.5-0.5b, llama-3.2-3b** are the cross-lab lineage contrast. They are what distinguishes a modality effect from a GPT-2 idiosyncrasy; that distinction is what retracted the QK/OV finding and what supports the pathway budget result.

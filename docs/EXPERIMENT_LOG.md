@@ -6251,3 +6251,185 @@ control as much as on the protein arms.
 `path_patching.py` beside `causal_census_agreement` so it is versioned rather than
 living in throwaway analysis code — which is the provenance defect the first review
 also raised and which has already cost this programme two retracted figures.
+
+## 2026-08-04 — EXP-R2-115 and EXP-R2-119 read; EXP-R2-121 and EXP-R2-122 launched
+
+Both of the previous session's campaigns finished and neither was read. EXP-R2-115's
+four artefacts were verified inside the pod and left sitting in the pull queue;
+EXP-R2-119's two runs completed on B at 18:00–18:01 and produced no log entry. The
+work below is the reading of both, plus the depth-controlled recomputation
+EXP-R2-120 left owed.
+
+### EXP-R2-115 read — the boundary draws land, and the published most-adverse-draw range was already superseded
+
+All four pulled and admitted under the standing rule that a transfer counts only
+when the local bytes reproduce the digests the worker wrote in the pod
+(`logs/boundary_pull.log`, drained=4 failed=0). gpt2-xl reaches K=9 and ZymCTRL
+K=8 across the trees the versioned reader accepts.
+
+The claim under attack is L22's headline as EXP-R2-093/095 quote it: the separation
+holds in all four conditions **with each side taken at its most adverse draw**,
+gpt2-xl's worst above ZymCTRL's best by +0.108 to +0.142. Recomputed over every
+retained draw, before and after these four:
+
+| condition | before EXP-R2-115 | after | moved by |
+|---|---:|---:|---:|
+| ex/ex | +0.1103 | **+0.1044** | −0.0059 |
+| ex/ap | +0.0643 | **+0.0643** | 0 |
+| ap/ex | +0.1414 | **+0.1414** | 0 |
+| ap/ap | +0.1225 | **+0.0873** | −0.0351 |
+
+**Two things, and the first is not about this campaign.** The published range
+**+0.108 to +0.142 was already stale before these draws ran**: at ex/ap it stood at
++0.0643 on artefacts that had landed and been pooled since EXP-R2-095, which
+measured ZymCTRL at K=4. Nothing re-derived it as ZymCTRL gained draws. Second,
+EXP-R2-115 moved two of the four conditions and both downward, ap/ap by −0.0351,
+because ZymCTRL's draw 20260818 returned **+0.3094**, its highest value on any
+condition to date. **The separation still holds in all four conditions**; the range
+is now **+0.064 to +0.141**.
+
+gpt2-xl's four minima are all its *original* EXP-R2-072 draw. Nine draws have not
+produced a worse one, which is the same asymmetry EXP-R2-095 recorded when it took
+that arm from K=3 to K=7.
+
+*And this is the third time this statistic has had to be restated for the same
+reason.* An extremum over draws grows with the number of draws, so a min/max
+statement is partly a reading of how often each arm was measured. EXP-R2-095
+already corrected one sub-clause onto a K-invariant dispersion measure for exactly
+this. On that measure the raw separation is **5.08 to 7.18 pooled boundary-arm
+standard deviations** across the four conditions — which is the form that should be
+quoted, and it is untouched by these draws.
+
+### The depth-controlled gap on the same K-invariant measure — EXP-R2-120's narrowing is understated
+
+EXP-R2-120 reported the depth-controlled gap as +0.019…+0.069 against a raw
++0.195…+0.248, on per-arm values pooling draws. Recomputed here with the versioned
+`_depth_controlled` on every draw, and with the same pooled-standard-deviation
+normalisation applied to both statistics so they are read on one scale:
+
+| statistic | boundary arms | gap | **in pooled boundary-arm sd** |
+|---|---|---:|---:|
+| raw | gpt2-xl vs ZymCTRL | +0.189…+0.246 | **+5.08 to +7.18** |
+| within-layer | gpt2-xl / gpt2-large vs **ProtGPT2** | +0.026…+0.069 | **+0.55 to +1.39** |
+
+**The depth-controlled separation is inside one standard deviation of its own
+boundary arms in three of four conditions.** EXP-R2-120 said the magnitude does not
+survive as a modality claim; on the measure this programme already adopted for the
+raw statistic, it does not survive as a separation at all.
+
+**And the boundary arms change under depth control, which is the clearest single
+statement of the confound.** ProtGPT2 is the panel *minimum* on the raw statistic
+(−0.105 mean) and the protein *maximum* within-layer (+0.357) — a swing of +0.46 on
+one arm from holding depth fixed. That is exactly what its `r(layer, census score)`
+of −0.387 predicts, against +0.00 to +0.50 on every other arm.
+
+Under the most-adverse-draw convention the raw claim is quoted with, the
+depth-controlled gap is **negative in all four conditions** (−0.092 to −0.152).
+That convention is K-biased and is not the one to publish on; it is recorded
+because quoting a raw margin adversarially and a depth-controlled margin on means
+is not a like-for-like comparison, and the audit currently does both.
+
+*One provenance note.* The versioned `causal_census_agreement` **refuses 14 of the
+retained path-patching artefacts** — every file under `results/transfer_20260730/`
+— because their per-head records predate `effects_logits` and it will not publish a
+cross-arm magnitude without the un-normalised scale (Appendix B rule 27). Published
+K counts pool those files. The figures above are computed on the rank correlation
+alone, which needs neither, and the direct computation reproduces the library
+function to 0.00e+00 on an artefact where both run.
+
+### EXP-R2-119 read — the layout rebuild disagrees with the offline correction, and the offline correction is the artefact
+
+`logs/drivers/d2c_layoutfix.sh` rebuilt the ProtGPT2 and gpt2-large PAA pools under
+the guard EXP-R2-118 repaired, at ban 3 / n=600, draw 20260728. It pre-registered
+the tie-break in its own header, before the result existed:
+
+> "The offline re-analysis says ProtGPT2 should land near −0.09 to −0.11 … If the
+> two disagree, the rebuild is the one to believe and the offline figure is the
+> artefact."
+
+**They disagree.**
+
+| arm | A1 verdict | published raw (ban 3, n=200, K=3) | EXP-R2-116 offline | **EXP-R2-119 rebuild** |
+|---|---|---|---:|---:|
+| ProtGPT2 | 21458 instances, **PASS** | +0.183 … +0.226 | −0.088 | **+0.1806** |
+| gpt2-large | 63065 instances, **PASS** | +0.448 … +0.502 | +0.429 | **+0.4425** |
+
+**Why they disagree, measured rather than argued.** EXP-R2-116 recomputed "from the
+retained per-instance matrices". The causal side has one:
+`causal_matrices.npz::delta_m_gap` is `(720, 800)` per instance, so layout instances
+can be dropped from it. **The census side does not.**
+`census_matrices.npz::paa_specific_matched_per_sequence` is `(sequences, layers,
+heads)` — already averaged over the instances inside each sequence — so no layout
+instance can be removed from the census score after the run. The offline figure
+therefore correlated a layout-**contaminated** census score against a layout-**clean**
+causal effect.
+
+Reproduced exactly, on the same three artefacts:
+
+| draw | raw (both sides as run) | census(all) vs causal(non-layout) |
+|---|---:|---:|
+| 20260728 | +0.2260 | **−0.0953** |
+| 20260801 | +0.2169 | **−0.1213** |
+| 20260802 | +0.1833 | **−0.0708** |
+
+Mean −0.0958 against the −0.0880 EXP-R2-116 logged. That is the published sign flip,
+and it is a one-sided correction.
+
+**And ProtGPT2's contamination lives on precisely the side that could not be
+corrected.** Spearman between the contaminated and the rebuilt census score is
+**+0.447** on ProtGPT2 against **+0.936** on gpt2-large, whose layout share is 4.5%
+rather than 30.5%. The rebuilt pools carry **0** instances predicting a layout
+token; the old ones carried 3064/10040 and 979/21649.
+
+**What this withdraws.** EXP-R2-116's three conclusions rest on that correction and
+none of them is currently supported:
+
+- "**WITHDRAWN — D2.c has two answers inside one modality**" is itself withdrawn.
+  On the rebuild ProtGPT2 does not join the ProGen2 family.
+- "**STRENGTHENED — the modality separation** … gap +0.3643 … ratio 2.49" is
+  withdrawn. It was computed from the one-sided column.
+- The demotion of the ranking statistic that EXP-R2-116 reversed stands as it was
+  before EXP-R2-116 touched it, pending K≥3.
+
+**What survives untouched.** The *defect* EXP-R2-116 found is real and its repair
+(EXP-R2-118) is correct: `prediction_addressed.py` had no layout guard, ProtGPT2's
+PAA pool was 28–33% FASTA line breaks, and `circuits.layout_token_ids` is now the
+single declaration. The A1 discipline breach it recorded is also real. What fails is
+only the estimate of what the repair does to the statistic.
+
+**Nothing above may be quoted as a value yet.** K=1 on each arm, and
+evidence-discipline rule 4 admits no single-draw point estimate. The *mechanism* —
+that a per-sequence aggregate cannot be corrected post hoc — is structural and does
+not need draws; the *numbers* do.
+
+### Launched — EXP-R2-121 (B, 2 cards, `logs/drivers/d2c_lfix_panel.sh`)
+
+The matched pair to K≥2 under the repaired guard, ban 3 / n=600, draw 20260801.
+
+**B is contended and this is the reason the campaign is two lanes rather than six.**
+Two other users hold GPUs 0, 2, 4, 5, 6 and 7 with vLLM engines; 1 and 3 are free.
+Checked before allocating, per Appendix B rule 19.
+
+The ProGen2 arms are *also* owed a re-run and are not in this campaign. Their pools
+carry 0.0% layout tokens, so the guard is a no-op for them — but every ProGen2 D2.c
+number in the audit is at n=200, and EXP-R2-118 established that n=200 is not
+available to ProtGPT2 at all under a correct content definition. Comparing a
+forced-n=600 ProtGPT2 against an n=200 ProGen2 is the condition confound EXP-R2-099
+spent a campaign removing once already. They follow on the H200 once
+`14_paa_census.py` is wired into the campaign contract, which is in progress.
+
+### Launched — EXP-R2-122 (H200, four lanes, `logs/drivers/depth_boundary_draws.sh`)
+
+Four idle H200 cards, confirmed at 0 MiB in-pod before allocating. Two further
+draws each on **qwen2.5-0.5b** and **progen2-small**, `induction_path_patching`,
+exhaustive senders, fresh cohort-draw seeds 20260820–20260823. All four lanes froze
+the identical code hash `c02b37464ea4`, verified across their four controller logs.
+
+**Why these two arms and not the boundary arms themselves.** The depth-controlled
+boundary arms are already well measured — gpt2-xl K=9, gpt2-large K=7, ProtGPT2
+K=8. The two arms that could *take* the boundary with more draws are not:
+qwen2.5-0.5b reads +0.364 within-layer on ex/ap against gpt2-xl's +0.348, and
+progen2-small reaches +0.307 on ap/ap against ProtGPT2's +0.348 — both at K=4.
+Until they are at comparable K, any min/max statement over draws is partly a
+reading of how often each arm was measured, which is the defect this entry has now
+recorded twice.
