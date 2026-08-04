@@ -7125,3 +7125,26 @@ on one GPU — the guard doing exactly its job. And no measurement was corrupted
 the wrong verdict cost a refused relaunch, not a result. **What it would have cost
 had the GPU been free is a duplicate run overwriting a live one**, which is the
 failure the refusal prevented rather than the driver.
+
+### A hazard I created: editing a driver while instances of it were running
+
+The polling fix above was applied to `d2c_panel_h200.sh` at 13:33 while **four
+instances of that script were mid-run**, the oldest launched at 09:49. Bash reads
+a script incrementally rather than loading it whole, so an edit can move the byte
+offset a running instance resumes from and make it execute fragments of the new
+text. The gpt2-xl draw-20260802 instance printed its `controller rc=90` line and
+then nothing — no completion verdict at all, where either the old or the new code
+would have printed one.
+
+**No measurement is at risk and the distinction matters.** The driver is
+bookkeeping; the work runs in the pod under the worker, and `gpt2-xl` draw
+20260802 is still computing on cuda:2 with its artefact yet to appear. What was
+damaged is a shell process's ability to *report*, which is recoverable by looking
+at the pod — and looking at the pod is what the whole polling design already
+says to do.
+
+**The correct move was to write a new file**, not to edit one with live readers.
+Recorded because it is the fifth operational slip of this session and the only
+one that could have produced a wrong record rather than a refused action: a
+driver executing fragments could in principle have written a verdict line that
+nothing supported.
