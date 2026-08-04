@@ -6695,3 +6695,56 @@ three draws into one root would overwrite each other.
 the rebuild does not reproduce at K≥2, the withdrawal of EXP-R2-116 is not
 settled and a 33-run panel would be measuring the wrong question. ZymCTRL is
 excluded by the contract and does not appear.
+
+### The pre-decoy-fix D2.c panel, re-derived through the versioned statistic (CPU, existing artefacts)
+
+Every ban-3 artefact re-scored by `prediction_addressed.census_causal_agreement`
+rather than by throwaway code, so the baseline the post-fix panel will be compared
+against is reproducible. **All of it is superseded by the decoy repair; the point
+is that both conventions are now computable from one code path.**
+
+**The reduction convention was not the problem.** Across 35 runs the difference
+between the full 720-head grid and the historical 712 (controls dropped) has
+median **0.0070** and maximum **0.0249**. The ±0.05 spread the audit found on
+ProtGPT2 came from *weighting* choices — instance-weighted +0.2017, per-sequence
+median +0.2270 — not from the control block. The historical figures were computed
+under a defensible convention; what was missing was any record of which one.
+
+**The A1 gate, now read rather than written.** dialogpt-small and ProtGPT2 read
+**FAIL** at ban 3 / n=200 across all six runs — the six the audit quoted. At
+n=600 both matched-pair arms pass.
+
+**The one clean cell — matched pair, same 720-head grid, n=600, layout-guarded:**
+
+| statistic | gpt2-large | ProtGPT2 | gap |
+|---|---:|---:|---:|
+| all-grid ρ | **+0.4495** | **+0.1987** | +0.251 |
+| within-layer (depth-controlled) | **+0.3403** | **−0.1103** | **+0.451** |
+| hit@20 | **8/20** | **7/20** | **+1** |
+
+**Three things follow, and the third is the one that matters.**
+
+*Depth control moves D2.c the opposite way to L22.* On induction, holding depth
+fixed collapses the modality gap from +5.08…+7.18 pooled sd to +0.55…+1.39. Here
+it **widens** it, from +0.251 to +0.451. The two mechanisms do not share a
+confound structure, and a depth control cannot be assumed to act in one direction.
+
+*ProtGPT2's positive depth-controlled D2.c value was the layout tokens.* At ban 3
+/ n=200, pre-guard, it reads **+0.2046 to +0.2433**; layout-guarded at n=600 it
+reads **−0.1103**. This is the interaction EXP-R2-117 recorded from the other
+side — the second review's depth analysis was run on the data the first review
+showed to be 30% FASTA line breaks — now visible in one versioned statistic.
+
+*And retrieval does not separate the matched pair at all.* **8/20 against 7/20 on
+the same grid**, against a chance level of 0.56. EXP-R2-096 argued that retrieval
+of the causal top-k by the census top-k is the statistic a census actually
+publishes, and that an all-grid rank correlation answers a question no census
+asks. On the only clean cell available, the two arms are indistinguishable on the
+statistic that corresponds to what a census reports, and separate by +0.45 on the
+one that does not. **That is the L22 shape reproducing on a second mechanism, and
+it argues the same conclusion: the separation lives in the unreported bulk.**
+
+*Limits, and they are severe.* K=1 in the n=600 cell — EXP-R2-121 is adding
+draws, and no value above may be quoted until it lands. Every number is
+pre-decoy-fix. hit@20 is compared only within the shared 720-head grid, which is
+why the matched pair is the only comparison drawn.
