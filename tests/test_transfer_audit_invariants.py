@@ -2866,3 +2866,69 @@ def test_the_a1_gate_has_one_declaration_and_the_causal_stage_enforces_it():
     )
     # And the rule must not be re-implemented beside the call it replaced.
     assert "len(pool) >= args.a1_minimum" not in source
+
+
+def test_the_d2c_agreement_pins_its_reduction_and_refuses_a_selected_head_set():
+    """D2.c's headline had no versioned implementation, and the choice matters.
+
+    The census stage emits ``paa_specific_matched`` per *sequence*, the causal
+    stage emits ``delta_m_gap`` per head, and nothing joined them -- so every
+    published D2.c correlation came from throwaway code. It is not a formality:
+    on the rebuilt ProtGPT2 pool the unweighted mean gives +0.1806, an
+    instance-weighted mean +0.2017 and a per-sequence median +0.2270, while
+    gpt2-large's three agree to 0.005. The ambiguity is largest on the arm
+    carrying the modality claim.
+
+    Two properties. The reduction is the unweighted mean over sequences -- the
+    sequence is the bootstrap cluster everywhere else in this module, so
+    weighting by instance count would let a long record outvote a short one --
+    and the comparison refuses a head set that is not the whole grid, because a
+    correlation over census-selected heads reproduces the census's own ranking
+    and returns a plausible number that measures nothing (standing rule 24).
+    """
+
+    from src.transfer.prediction_addressed import (
+        census_causal_agreement,
+        census_head_scores,
+    )
+
+    rng = np.random.default_rng(11)
+    n_seq, n_layer, n_head_ = 5, 4, 3
+    matched = rng.normal(size=(n_seq, n_layer, n_head_))
+    # The reduction is the unweighted mean, not a weighted or median one.
+    assert np.allclose(census_head_scores(matched), matched.mean(axis=0))
+
+    grid = census_head_scores(matched)
+    per_head = [
+        {
+            "layer": layer,
+            "head_index": head,
+            # Effect made monotone in the census score so the correlation is a
+            # known +1 and the assertion is about the plumbing, not about noise.
+            "delta_m_gap": float(grid[layer, head]) + 10.0,
+            "is_control": False,
+        }
+        for layer in range(n_layer)
+        for head in range(n_head_)
+    ]
+    report = census_causal_agreement(matched, per_head)
+    assert report["n_heads"] == n_layer * n_head_
+    assert report["spearman_census_vs_causal_magnitude"] == pytest.approx(1.0)
+    assert "depth_controlled" in report, "the all-grid figure must carry its control"
+    assert report["retrieval"]["ceiling"] == report["retrieval"]["k"]
+
+    # A control-flagged head is kept and counted, not dropped: in an exhaustive
+    # configuration the flag marks the bottom of the census ranking, and dropping
+    # it truncates one end of the very ranking being correlated.
+    flagged = [dict(row) for row in per_head]
+    flagged[0]["is_control"] = True
+    report_flagged = census_causal_agreement(matched, flagged)
+    assert report_flagged["n_control_flagged_heads_kept"] == 1
+    assert report_flagged["n_heads"] == n_layer * n_head_
+
+    # A census-selected subset is refused, not scored.
+    with pytest.raises(ValueError, match="every head in the grid"):
+        census_causal_agreement(matched, per_head[:6])
+    # And so is a set that reaches the right count by repeating a head.
+    with pytest.raises(ValueError, match="every head in the grid"):
+        census_causal_agreement(matched, per_head[:-1] + [dict(per_head[0])])

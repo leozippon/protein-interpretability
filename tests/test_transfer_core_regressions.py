@@ -21,7 +21,6 @@ from src.transfer.circuits import content_bounds, layout_token_ids  # noqa: E402
 from src.transfer.induction_robustness import contrast_ratio_bootstrap  # noqa: E402
 from src.transfer.lenses import split_cohort  # noqa: E402
 from src.transfer.path_patching import (  # noqa: E402
-    _depth_controlled,
     attention_output_projection,
     causal_census_agreement,
     require_supported_layout,
@@ -32,7 +31,7 @@ from src.transfer.prediction_addressed import (  # noqa: E402
     unigram_percentiles,
 )
 from src.transfer.probes import skill_block  # noqa: E402
-from src.transfer.statistics import paired_group_bootstrap  # noqa: E402
+from src.transfer.statistics import depth_controlled_rank_correlation, paired_group_bootstrap  # noqa: E402
 
 
 class _ProGenAttention(nn.Module):
@@ -669,14 +668,14 @@ def test_depth_control_separates_a_pure_depth_trend_from_a_real_association() ->
     # nothing left once depth is held fixed.
     raw = stats.spearmanr(layer, layer * 2.0).statistic
     assert raw == pytest.approx(1.0)
-    spurious = _depth_controlled(layer, layer * 2.0, layer)
+    spurious = depth_controlled_rank_correlation(layer, layer * 2.0, layer)
     assert spurious["partial"] is None, "a variable that IS depth leaves no residual"
     assert "function of layer alone" in spurious["partial_withheld_reason"]
     assert spurious["within_layer"] is None or abs(spurious["within_layer"]) < 0.05
 
     # (b) A real within-layer association survives, and an opposing depth trend
     # in the score does not hide it -- which is exactly ProtGPT2's geometry.
-    genuine = _depth_controlled(-layer + within, layer + within, layer)
+    genuine = depth_controlled_rank_correlation(-layer + within, layer + within, layer)
     assert genuine["partial"] > 0.5
     assert genuine["within_layer"] > 0.9
     assert genuine["layers_used"] == 12
@@ -684,6 +683,6 @@ def test_depth_control_separates_a_pure_depth_trend_from_a_real_association() ->
     assert genuine["r_layer_causal_magnitude"] > 0.5
 
     # (c) Nothing to control for is reported as such rather than as a number.
-    flat = _depth_controlled(within[:6], within[:6], np.zeros(6))
+    flat = depth_controlled_rank_correlation(within[:6], within[:6], np.zeros(6))
     assert flat["partial"] is None and flat["layers_used"] == 0
     assert "single layer" in flat["withheld_reason"]

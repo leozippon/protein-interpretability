@@ -32,6 +32,7 @@ the retired CLT / dictionary-qualification scope.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from typing import Any
 
 import numpy as np
 from scipy import stats
@@ -368,3 +369,96 @@ def make_group_splits(
             "group fold construction did not test every sample exactly once"
         )
     return splits
+
+
+#: Heads a layer must contribute before it can supply a within-layer rank
+#: correlation. Three points make a Spearman that is +/-1 far too often to average.
+MINIMUM_HEADS_PER_LAYER_FOR_WITHIN = 4
+
+
+def depth_controlled_rank_correlation(
+    census_score: np.ndarray, magnitude: np.ndarray, layer: np.ndarray
+) -> dict[str, Any]:
+    """The same rank correlation, with layer depth held fixed.
+
+    The all-grid Spearman is taken over a flattened ``(layer, head)`` grid with no
+    depth term, and the causal readout it correlates against is depth-biased by
+    construction: the sender patch and every freeze hook act at the query row, and
+    the metric is read there, so a head that writes at ``q`` late in the stack
+    lands closer to the unembedding than one that writes early.  Measured on this
+    panel, ``r(layer, |effect|)`` runs +0.36 to +0.77 on *every* arm without
+    exception.
+
+    That alone would be a nuisance rather than a confound if the census score were
+    depth-neutral, and on ten of eleven arms it rises with depth (+0.00 to +0.50).
+    **ProtGPT2 is the exception at −0.387**, and an all-grid correlation between a
+    depth-rising readout and a depth-falling score must land near zero whatever the
+    heads are doing -- which is its published −0.106.  Controlling for depth left
+    the modality separation intact in sign in all four conditions and cut it from a
+    gap of +0.195…+0.248 to +0.019…+0.069, below the draw dispersion of the arm
+    that defines the boundary (EXP-R2-120).
+
+    Both controls are reported because they fail differently.  ``partial`` removes
+    a monotone depth trend from both variables and keeps the whole grid, so it is
+    exposed to a non-monotone depth profile.  ``within_layer`` assumes nothing
+    about the shape but discards every between-layer comparison and needs enough
+    heads per layer, so it is reported with the layers it could use.
+    """
+
+    finite = np.isfinite(census_score) & np.isfinite(magnitude) & np.isfinite(layer)
+    if finite.sum() < 3 or np.unique(layer[finite]).size < 2:
+        return {
+            "partial": None,
+            "within_layer": None,
+            "layers_used": 0,
+            "r_layer_census_score": None,
+            "r_layer_causal_magnitude": None,
+            "withheld_reason": (
+                "fewer than three finite heads, or a single layer: there is no "
+                "depth to control for"
+            ),
+        }
+    x, y, depth = census_score[finite], magnitude[finite], layer[finite]
+    rank_x, rank_y, rank_d = (stats.rankdata(x), stats.rankdata(y), stats.rankdata(depth))
+    residual_x = rank_x - np.polyval(np.polyfit(rank_d, rank_x, 1), rank_d)
+    residual_y = rank_y - np.polyval(np.polyfit(rank_d, rank_y, 1), rank_d)
+    # A variable that *is* depth leaves no residual, and `np.corrcoef` answers
+    # two all-but-zero vectors with 1.0 -- a perfect correlation between two
+    # quantities that carry no information, which is the worst possible way for
+    # this to fail. Withheld instead, with the reason, because a score that
+    # tracks depth exactly is precisely the case this function exists to detect.
+    scale = max(float(np.std(rank_d)), 1.0)
+    if np.std(residual_x) < 1e-9 * scale or np.std(residual_y) < 1e-9 * scale:
+        partial: float | None = None
+        partial_withheld: str | None = (
+            "one variable is a function of layer alone, so nothing remains once "
+            "depth is held fixed and a correlation of the residuals is undefined"
+        )
+    else:
+        partial = float(np.corrcoef(residual_x, residual_y)[0, 1])
+        partial_withheld = None
+
+    transformed: list[float] = []
+    weights: list[float] = []
+    for value in np.unique(depth):
+        block = depth == value
+        if block.sum() < MINIMUM_HEADS_PER_LAYER_FOR_WITHIN:
+            continue
+        rho = stats.spearmanr(x[block], y[block]).statistic
+        if not np.isfinite(rho):
+            continue
+        transformed.append(float(np.arctanh(np.clip(rho, -0.999, 0.999))))
+        weights.append(float(block.sum() - 3))
+    within = (
+        float(np.tanh(np.average(transformed, weights=weights))) if transformed else None
+    )
+    record = {
+        "partial": partial,
+        "within_layer": within,
+        "layers_used": len(transformed),
+        "r_layer_census_score": float(stats.spearmanr(depth, x).statistic),
+        "r_layer_causal_magnitude": float(stats.spearmanr(depth, y).statistic),
+    }
+    if partial_withheld is not None:
+        record["partial_withheld_reason"] = partial_withheld
+    return record

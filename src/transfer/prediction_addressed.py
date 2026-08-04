@@ -40,9 +40,11 @@ from __future__ import annotations
 import inspect
 import math
 from dataclasses import dataclass
+from collections.abc import Mapping
 from typing import Any, Callable, Sequence
 
 import numpy as np
+from scipy import stats
 import torch
 import torch.nn.functional as F
 
@@ -69,7 +71,11 @@ from .pathways import (
     smoothing_diagnostics,
 )
 from .scoring import target_rule
-from .statistics import MINIMUM_BOOTSTRAP_UNITS, bootstrap_unit_floor
+from .statistics import (
+    MINIMUM_BOOTSTRAP_UNITS,
+    bootstrap_unit_floor,
+    depth_controlled_rank_correlation,
+)
 
 #: Minimum bootstrap draws that must fall below the requested lower percentile
 #: for the resulting bound to be an estimate rather than an order statistic of
@@ -2207,3 +2213,172 @@ __all__ = [
     "top_set_jaccard",
     "unigram_percentiles",
 ]
+
+
+#: Census-rank strata the D2.c comparison is published on. The top 5% and the
+#: bulk 80% are the cuts EXP-R2-101 decomposed the modality gap into; 20% is the
+#: middle cut it also quotes. Swept rather than reported at one cut, per standing
+#: rule 17.
+CENSUS_RANK_FRACTIONS = (0.05, 0.20, 0.80)
+
+#: Floor on a census-rank stratum. 'The top 1% of heads' is one head on gpt2 and
+#: seven on ProtGPT2, so a per-arm proportion is not a comparable population
+#: (standing rule 21); below this a stratum correlation is not published.
+MINIMUM_STRATUM_HEADS = 8
+
+#: Depth of the retrieval statistic. ``hit@20`` has a grid-dependent ceiling of
+#: ``n/20`` and is comparable only within a grid size, which the record states.
+CENSUS_RETRIEVAL_K = 20
+
+
+def census_head_scores(matched_per_sequence: np.ndarray) -> np.ndarray:
+    """One census score per head, reduced from the per-sequence matrix.
+
+    **The reduction is the ambiguous step and that is why it lives here.** The
+    census stage emits ``paa_specific_matched`` per *sequence*; the causal stage
+    emits ``delta_m_gap`` per head; nothing in this repository joined them, so
+    every published D2.c correlation was produced by throwaway code -- the
+    provenance defect that cost this programme two retracted figures and that
+    ``path_patching.causal_census_agreement`` was written to close on the other
+    mechanism.  It is not a formality: on the rebuilt ProtGPT2 pool the
+    unweighted mean gives rho +0.1806, an instance-weighted mean +0.2017 and a
+    per-sequence median +0.2270, while gpt2-large's three agree to 0.005.  The
+    ambiguity is largest on the arm that carries the modality claim.
+
+    The unweighted mean over sequences is the convention, for the reason the
+    sequence is the bootstrap cluster everywhere else in this module: two
+    instances from one record are not independent draws, so weighting a sequence
+    by how many instances it happened to contribute would let a long record
+    outvote a short one.  It is also, as a matter of fact rather than of taste,
+    the reduction the census artefact already publishes -- it reproduces
+    ``knockout_matched_score.distribution`` exactly, which is how it was
+    identified.
+    """
+
+    array = np.asarray(matched_per_sequence, dtype=np.float64)
+    if array.ndim != 3 or array.shape[0] < 1:
+        raise ValueError(
+            "matched score must be (sequences, layers, heads); got "
+            f"{array.shape}"
+        )
+    return np.nanmean(array, axis=0)
+
+
+def census_causal_agreement(
+    matched_per_sequence: np.ndarray,
+    per_head: Sequence[Mapping[str, Any]],
+    *,
+    fractions: Sequence[float] = CENSUS_RANK_FRACTIONS,
+    retrieval_k: int = CENSUS_RETRIEVAL_K,
+) -> dict[str, Any]:
+    """Does the PAA census score order causal importance?  D2.c's statistic.
+
+    The mirror of ``path_patching.causal_census_agreement`` for the second
+    mechanism, and it carries the same two preconditions because the same two
+    failures are available.  The head set must be the whole grid, or the
+    correlation is computed over the heads the census itself selected and
+    measures nothing (standing rule 24).  And the all-grid figure is published
+    beside its depth control, because the causal readout here is depth-biased for
+    the same reason it is in path patching -- the knockout and the M-gap both act
+    at the query row -- so an all-grid rank correlation between it and a census
+    score confounds the two (EXP-R2-120, EXP-R2-117).
+
+    **Control-flagged heads are kept, and that is a decision the data forces.**
+    In an exhaustive configuration the flag is a labelling artefact rather than a
+    different population: ``--causal-heads 712 --control-heads 8
+    --control-offset 712`` partitions a 36x20 grid into 712 plus 8 with no
+    overlap, and the eight sit at census ranks 710 and 713-719 -- the bottom of
+    the very ranking being correlated.  Dropping them truncates one end of it.
+    Every historical D2.c figure was computed over the 712 and is therefore
+    slightly different from what this function returns; the difference is
+    measured rather than assumed, and is +0.0180 on ProtGPT2 (+0.1806 over the 712,
+    +0.1987 over the grid) and +0.0070 on gpt2-large (+0.4425 against +0.4495) at
+    n=600 / ban 3 / draw 20260728.  What the precondition actually
+    forbids is a *census-selected* head set, so it is checked on the union.
+
+    The census-rank strata are the reason this is not a single number.  On both
+    mechanisms the all-grid statistic is dominated by the heads a census never
+    reports, and EXP-R2-101 found the modality gap reversing inside every
+    stratum while the aggregate separated -- an aggregate can separate on
+    heterogeneity alone.  ``retrieval`` is the statistic that survived that: how
+    much of the causal top-k the census top-k actually recovers, which is
+    selection-free and has a computable chance level.
+    """
+
+    score_grid = census_head_scores(matched_per_sequence)
+    n_layer, n_head_ = score_grid.shape
+    records = list(per_head)
+    covered = {(int(row["layer"]), int(row["head_index"])) for row in records}
+    if len(covered) != n_layer * n_head_ or len(records) != len(covered):
+        raise ValueError(
+            "census-to-causal agreement needs a causal effect for every head in "
+            f"the grid exactly once: {len(records)} records covering "
+            f"{len(covered)} distinct heads against a {n_layer}x{n_head_} grid of "
+            f"{n_layer * n_head_}. A correlation over a census-selected subset "
+            "reproduces the census's own ranking and measures nothing "
+            "(standing rule 24)"
+        )
+    census = np.empty(len(records), dtype=np.float64)
+    magnitude = np.empty(len(records), dtype=np.float64)
+    layer = np.empty(len(records), dtype=np.float64)
+    for index, row in enumerate(records):
+        census[index] = score_grid[int(row["layer"]), int(row["head_index"])]
+        magnitude[index] = abs(float(row["delta_m_gap"]))
+        layer[index] = float(row["layer"])
+
+    order = np.argsort(census)[::-1]
+    strata: dict[str, Any] = {}
+    for fraction in fractions:
+        count = max(int(round(fraction * census.size)), MINIMUM_STRATUM_HEADS)
+        if count > census.size:
+            continue
+        top = order[:count]
+        strata[f"top_{fraction:g}"] = {
+            "n_heads": int(count),
+            "fraction_requested": float(fraction),
+            "spearman": _finite(
+                float(stats.spearmanr(census[top], magnitude[top]).statistic),
+                "stratum spearman",
+            ),
+            "floored_to_minimum": bool(count > round(fraction * census.size)),
+        }
+    bulk = order[max(int(round(fractions[0] * census.size)), MINIMUM_STRATUM_HEADS) :]
+
+    k = min(int(retrieval_k), census.size)
+    causal_top = set(int(i) for i in np.argsort(magnitude)[::-1][:k])
+    census_top = set(int(i) for i in order[:k])
+    return {
+        "n_heads": int(census.size),
+        "n_control_flagged_heads_kept": int(
+            sum(1 for row in records if row.get("is_control", False))
+        ),
+        "census_score": "paa_specific_matched, unweighted mean over sequences",
+        "spearman_census_vs_causal_magnitude": _finite(
+            float(stats.spearmanr(census, magnitude).statistic), "all heads"
+        ),
+        "depth_controlled": depth_controlled_rank_correlation(
+            census, magnitude, layer
+        ),
+        "rank_split": {
+            "split_by": "census_rank",
+            "strata": strata,
+            "bulk_spearman": _finite(
+                float(stats.spearmanr(census[bulk], magnitude[bulk]).statistic),
+                "bulk spearman",
+            ),
+            "note": (
+                "split by census rank rather than by causal magnitude, because "
+                "splitting on the outcome selects the heads whose effect is large"
+            ),
+        },
+        "retrieval": {
+            "k": int(k),
+            "hit_at_k": int(len(causal_top & census_top)),
+            "chance": float(k * k / census.size),
+            "ceiling": int(k),
+            "note": (
+                "hit@k has a grid-dependent ceiling and a grid-dependent chance "
+                "level, so it is comparable only between arms of the same grid size"
+            ),
+        },
+    }
