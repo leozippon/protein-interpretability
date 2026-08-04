@@ -6952,3 +6952,35 @@ The three claims this draw *would* support if it replicates — that the split
 survives both repairs, that ProtGPT2 crosses to the protein side, and that
 ProGen2 censuses retrieve at chance — are each a single-draw reading of the kind
 this log has now had to withdraw twice in three days.
+
+### The matched pair at K=2 under both guards — and ProtGPT2's retrieval reading fails a second time
+
+| arm | draw | A1 | all-grid ρ | within-layer | hit@20 |
+|---|---|---:|---:|---:|---:|
+| ProtGPT2 | 20260728 | 21,458 | +0.0743 | −0.1561 | 5/20 |
+| ProtGPT2 | 20260801 | 21,064 | **+0.0288** | −0.2673 | **0/20** |
+| gpt2-large | 20260728 | 63,045 | +0.4603 | +0.3137 | 8/20 |
+| gpt2-large | 20260801 | 63,234 | +0.4302 | +0.2888 | 7/20 |
+
+**Two of the three single-draw readings from the panel entry above are now
+contradicted, and the same one twice.** I recorded from draw 20260728 that
+ProtGPT2 retrieves at **9.0× chance** while the ProGen2 arms sit at chance, and
+offered it as mode 2 landing on the ProGen2 family. Draw 20260801 gives ProtGPT2
+**0/20** — *below* chance. Its four measured values across both guard conditions
+are **7, 2, 5, 0**, against gpt2-large's **8, 7, 8, 7** on the same 720-head grid.
+
+**What is actually stable is the instability.** ProtGPT2's census-top retrieval
+ranges over the full width of the statistic while its matched control moves by
+one. That is the protein-side cohort sensitivity §5.05(b) records on context
+information, EXP-R2-070(iv) records on far-band fractions and EXP-R2-077 records
+on case-set parity, now appearing on retrieval — a fifth statistic. It is a
+statement about measurement precision on protein arms, not about the census.
+
+**What does survive K=2.** The all-grid separation: ProtGPT2 **+0.0288 to
++0.0743** against gpt2-large **+0.4302 to +0.4603**, gap **+0.3559** at the most
+adverse draws. And ProtGPT2 remains nearer the ProGen2 band (−0.18 to −0.22) than
+the text band — ~0.24 against ~0.37 — so the side-crossing reading holds so far.
+
+*Third single-draw reading withdrawn in three days, and the second of mine.* The
+rule is not new and the log carries it: draw dispersion has to be measured before
+a value is read, and on protein arms it is routinely larger than the effect.
