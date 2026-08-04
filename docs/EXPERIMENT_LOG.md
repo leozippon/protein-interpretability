@@ -6859,3 +6859,49 @@ on gaps of +0.012 and +0.013). Adding draws moved the two weak conditions
 no reading of that asymmetry is offered.* It is one cell of four and the panel
 was not designed to resolve which sender/case pairing should be privileged; it is
 recorded because a result that holds in exactly one condition should say which.
+
+### EXP-R2-125 read — the decoy fix reproduces in a full pipeline run, and it widens the matched-pair gap
+
+Paired on draw 20260728: same arms, same draw, same everything but the guard.
+Both lanes exit 0.
+
+| arm | guard | A1 | all-grid ρ | within-layer | hit@20 | layout decoys |
+|---|---|---:|---:|---:|---:|---:|
+| ProtGPT2 | layout only | 21,458 | +0.1987 | −0.1103 | 7/20 | 4.30% |
+| ProtGPT2 | **layout + decoy** | 21,458 | **+0.0743** | −0.1561 | 5/20 | **0.00%** |
+| gpt2-large | layout only | 63,065 | +0.4495 | +0.3403 | 8/20 | 2.74% |
+| gpt2-large | **layout + decoy** | 63,045 | **+0.4603** | +0.3137 | 8/20 | **0.00%** |
+
+**The advisory estimate was accurate and is now replaced by a pipeline run.** It
+predicted ProtGPT2 +0.2015 → +0.0788 and gpt2-large +0.4476 → +0.4522, with the
+gap moving +0.246 → +0.373. Measured: **+0.1987 → +0.0743** and **+0.4495 →
++0.4603**, gap **+0.2508 → +0.3860**. The two agree to 0.005 and 0.008, which is
+the cross-check that a re-derivation from retained matrices and a rebuild from
+the corrected pool are computing the same thing — the check EXP-R2-116 could not
+pass, and for the reason it could not: its correction had no census-side
+counterpart, and this one does.
+
+**The guard costs essentially nothing.** A1 moves 21,458 → 21,458 and 63,065 →
+63,045: barring layout keys from the decoy window empties almost no decoy pool.
+The correction is to the *baseline*, not to the instance count.
+
+**And it changes the story about EXP-R2-116 in a way worth stating precisely.**
+That entry's *method* was wrong — a one-sided correction — and its *number*
+(−0.088) is not reproduced by anything. But its *direction* is partly vindicated
+by a defect it never found: ProtGPT2 does sit much lower than published, at
+**+0.0743** rather than the +0.2145 the audit carried, because of the decoy
+contamination rather than the instance contamination. Being right about the
+direction for the wrong reason is not the same as being right, and the reason
+matters here because the two defects have different sizes on the text control:
+the instance guard moved gpt2-large by −0.044 and the decoy guard by +0.011.
+
+**What is still open, and it is the interesting part.** ProtGPT2 at +0.0743 is
+still *positive* and still well above the ProGen2 arms' pre-fix −0.12 to −0.23.
+Whether "D2.c has two answers inside one modality" survives now depends entirely
+on where the ProGen2 arms land under the same two guards — which is what
+EXP-R2-126 is measuring on the H200 right now. Their pools carry **0.0%** layout
+tokens as *candidates*, but nothing had ever looked at their decoy pools, and
+that is precisely the path this repair closed.
+
+*K=1 on the "after" row.* Draw 20260801 is running on B; nothing above is
+quotable until K≥3.
