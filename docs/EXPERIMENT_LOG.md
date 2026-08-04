@@ -6433,3 +6433,109 @@ progen2-small reaches +0.307 on ap/ap against ProtGPT2's +0.348 — both at K=4.
 Until they are at comparable K, any min/max statement over draws is partly a
 reading of how often each arm was measured, which is the defect this entry has now
 recorded twice.
+
+### EXP-R2-124 — instrument audit of the PAA census and the path-patching comparison
+
+Scope frozen to `prediction_addressed.py`, `path_patching.py`, `circuits.layout_token_ids`
+and their tests. Three defects, all reproduced here before anything was changed.
+
+**(1) The layout guard stops at the predicted token. Layout tokens still enter as
+decoy keys.** `build_instance_pool` discards a *predicted* line break
+(EXP-R2-118), but the decoy window filters only on position ≠ `k*`, token ≠
+predicted, not-in-`banned`, and the predecessor rule — never on layout.
+`paa_specific_matched` is `antecedent_set_attention − decoy_mean × n_keys`, so
+the decoy draw is the **subtrahend** of every head's score: an anomalous key
+inflates the baseline subtracted from whichever heads attend to it. That is the
+argument the module already makes twenty lines earlier for excluding position 0,
+the attention sink, and it applies with the same force to an interior FASTA wrap,
+which `key_floor` can never reach.
+
+Measured on the **repaired** pools — post-EXP-R2-118, A1 PASS, n=600, ban 3, draw
+20260728:
+
+| arm | decoy keys that are layout | instances with ≥1 layout decoy | antecedents | predicted |
+|---|---:|---:|---:|---:|
+| ProtGPT2 | **4.30%** (3693/85832) | **16.1%** (3465/21458) | 0 | 0 |
+| gpt2-large | 2.74% (6903/252260) | 9.2% (5817/63065) | 0 | 0 |
+
+Antecedents are clean by construction — `k*` is a position holding the predicted
+token — and predicted tokens are clean, so the decoy pool was the one path left
+open. **The larger distortion falls on the arm whose rendering has the tokens**,
+which is the asymmetry EXP-R2-116 was written about. Repaired: the same
+`circuits.layout_token_ids` vocabulary is barred from the decoy window, and the
+artefact records `layout_tokens_excluded_from_decoys` beside the candidate field.
+
+*Every D2.c number is affected and none is restated here.* The advisory estimate
+of the size — ρ +0.2015 → +0.0788 on ProtGPT2 against +0.4476 → +0.4522 on
+gpt2-large, widening the matched-pair gap from +0.246 to +0.373 — is at K=1 and
+from a re-derivation rather than a pipeline run. **It is not adopted.** What is
+adopted is the defect, which needs no draws: the contamination rates above are
+read straight off the shipped pools.
+
+**(2) The guard had no behavioural test, and this was demonstrated rather than
+asserted.** Its three checks were a unit test of `layout_token_ids` against a
+stub, a source-text assertion that `prediction_addressed` mentions the symbol,
+and a cascade-closure test on a fixture carrying **no** layout tokens. Mutating
+the candidate guard to `if False and token in layout_tokens` — the guard never
+fires, every string the source-text test counts survives — left the suite at
+**151 passed, 4 skipped**, unchanged. The repair that withdrew a published result
+was protected by a `grep`. The new test builds a pool on a fixture whose
+tokenizer really does declare a layout token and asserts it reaches neither the
+prediction nor the decoy pool; verified to fail under **both** mutations and to
+pass on the restored source.
+
+**(3) `a1_candidate_pool.verdict` was written by one line and read by nothing.**
+Of the 61 retained census artefacts, **eight carry `FAIL` and six of those have a
+`causal.json` produced from them in the same invocation** — ProtGPT2 ban 3 /
+n=200 at 9,958–10,040 and dialogpt-small ban 3 at 13,315–13,544, against a gate
+of 20,000. Those six are the ProtGPT2 and dialogpt rows of the published D2.c
+table. The D2.c design had **predicted this failure before the runs happened**
+("at the census default of 200 sequences it returns 10037 and would read FAIL"),
+and EXP-R2-116 recorded quoting them "without reading the gate verdict that sits
+in the artefact beside the number". Repaired: one declaration,
+`a1_candidate_pool_verdict`, resolved by the census stage that writes it and the
+causal stage that now refuses on it. A verdict nothing reads is worse than no
+verdict, because it looks like the check was made.
+
+**(4) `_depth_controlled` is correct.** Verified against the closed-form partial
+Spearman and an independent per-layer loop on every artefact under
+`d2bprime_multidraw/`: agreement 0.00e+00 to 5.6e-16 on `partial`, exactly 0.0 on
+`within_layer`. Degenerate paths — single layer, constant covariate, NaN — all
+withhold with a reason. Two low-severity edges recorded and not repaired: the
+"variable is a function of layer alone" guard is linear-in-rank only and would
+pass a non-monotone exact dependence, and the all-layers-under-minimum path
+returns `within_layer: null` with no reason string where the other two withholding
+paths carry one. Neither is reachable on this panel — the minimum heads per layer
+across all twelve arms is 12.
+
+*One thing the audit did not settle and that is recorded rather than decided.*
+**The D2.c headline statistic still has no versioned implementation.** The census
+stage emits `paa_specific_matched` per *sequence*; the causal stage emits
+`delta_m_gap` per head; nothing in the repository joins them, so the published ρ
+has been produced by throwaway code every time — the provenance defect that cost
+this programme two retracted figures and that `path_patching.py` was fixed for.
+It matters here because defensible reductions disagree: on the same rebuilt
+ProtGPT2 artefact, unweighted mean over sequences gives **+0.1806**,
+instance-weighted **+0.2017**, per-sequence median **+0.2270**. The unweighted
+mean is the module's own convention — it reproduces the artefact's published
+`knockout_matched_score.distribution` exactly, which is how it was identified —
+but nothing in code says so. gpt2-large's reductions agree to 0.005, so the
+ambiguity is arm-specific and largest on the arm carrying the modality claim.
+**Versioning that statistic is the next instrument change owed**, and it must land
+before the post-decoy-fix D2.c panel is read.
+
+### Launched — EXP-R2-123 (H200 GPUs 2 and 3, `logs/drivers/depth_pair_draws.sh`)
+
+EXP-R2-122's two progen2-small lanes finished in ~22 minutes each and were pulled
+and digest-verified. The freed cards go to **the arms that define the
+depth-controlled boundary** rather than to more panel arms: gpt2-xl / gpt2-large
+against ProtGPT2, where the gap is +0.026…+0.069 against per-arm draw standard
+deviations of 0.022–0.050 and 0.032–0.056. Draws spent on progen2-medium
+(within-layer +0.160…+0.260) or gpt2-medium (+0.405…+0.478) cannot move a
+boundary neither is near. ProtGPT2 draw 20260824 and gpt2-large draw 20260825.
+
+*Provenance note.* These lanes freeze a snapshot taken after the two commits
+above. Neither `prediction_addressed.py` nor `14_paa_census.py` is in
+`11_induction_path_patching.py`'s import closure, so the measurement is
+unchanged, but the code hash differs from EXP-R2-122's `c02b37464ea4` and is
+recorded rather than assumed equal.

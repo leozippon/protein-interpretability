@@ -49,6 +49,39 @@ Bootstrap unit floors unified in `statistics` and applied where they were missin
 
 The retracted all-position residual spectrum is no longer the default-named field; seeded cohorts are consumed in seeded order rather than corpus-prefix order; a hard-coded host path and a stale constant imported from a retracted run were removed; stage eligibility moved from arm-name literals into the contract; every stage writes its cohort band.
 
+## Repaired, 2026-08-04 (EXP-R2-124)
+
+Audit of the PAA census and the path-patching comparison, scope frozen to
+`prediction_addressed.py`, `path_patching.py`, `circuits.layout_token_ids` and
+their tests. Scientific consequences are in `docs/INTERPRETABILITY_TRANSFER_AUDIT.md`.
+
+- **A guard that covered one of the two paths it had to cover.** EXP-R2-118 barred
+  a *predicted* layout token from the PAA candidate loop and left the decoy
+  window open. `paa_specific_matched` subtracts `decoy_mean × n_keys`, so a decoy
+  is the subtrahend of every head's score — the argument the module already makes
+  for excluding position 0. Measured on the repaired pools: 4.30% of ProtGPT2's
+  decoy keys and 2.74% of gpt2-large's were the FASTA wrap, reaching 16.1% and
+  9.2% of instances, with antecedents and predicted tokens clean at 0. Barred, and
+  the excluded vocabulary is now published for both paths.
+- **A repair protected by a `grep`.** The layout guard's three tests were a stub
+  unit test, a source-text assertion and a cascade-closure test on a fixture with
+  no layout tokens. Disabling the guard outright left the suite green. Replaced
+  by a behavioural test on a fixture that carries one, verified to fail under both
+  mutations.
+- **A gate verdict written by one line and read by nothing.**
+  `a1_candidate_pool.verdict` reached FAIL in eight of 61 retained census
+  artefacts and six of those went on to produce a `causal.json` in the same
+  invocation. One declaration now serves the writer and the enforcer, and the
+  causal stage refuses rather than recording and continuing.
+- **`_depth_controlled` verified**, against a closed-form partial Spearman and an
+  independent per-layer loop on every multidraw artefact; agreement 0.00e+00 to
+  5.6e-16. Two unreachable edges recorded, not repaired.
+
+Accepted, not repaired: the D2.c census-to-causal rank correlation still has no
+versioned implementation, so its published values come from throwaway code and
+defensible reductions of the per-sequence census matrix disagree by up to 0.05 on
+ProtGPT2. Recorded as the next instrument change owed.
+
 ## Remote Storage
 
 Intermediate checkpoints and optimizer-only recovery state were removed after final checkpoint hashes were preserved. The project CLT weights on OSS fell from about 2.85 TB to 90 GB; GPFS dictionary trees were reduced while retaining final weights, configurations, manifests, the 27 controls, exact cache, results, logs, and frozen code. Post-clean inventories are in `evidence/checkpoint_receipts_20260729/`. The separate `GlobalRAG` tree was not modified.
