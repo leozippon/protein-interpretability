@@ -933,6 +933,14 @@ qwen landed near prediction. **llama did not — predicted ≈+0.29 "within reac
 
 ### D2.c — the design pass, and the three things that have to be built first
 
+> **STATUS 2026-08-04 — NO NUMBER IN THIS SECTION OR IN THE NUMBERED ITEMS BELOW IT IS CURRENT.** Two independent repairs land between this text and any quotable value, and they act in opposite directions, so nothing here can be patched item by item.
+>
+> *First,* EXP-R2-116's and EXP-R2-117's layout corrections are **withdrawn** (EXP-R2-119): they were applied to the causal side only, because `paa_specific_matched_per_sequence` is a per-sequence aggregate and cannot be filtered after a run, so they correlated a contaminated census score against a clean causal effect. The rebuilt pools read ProtGPT2 **+0.1806** and gpt2-large **+0.4425**, not the −0.088 the offline pass reported. The mechanism is in §1's banner.
+>
+> *Second,* the layout guard itself was **incomplete** (EXP-R2-124): it barred a predicted line break and left the decoy window open, and the decoy mean is the subtrahend of every census score. Measured on the repaired pools, 4.30% of ProtGPT2's decoy keys and 2.74% of gpt2-large's were still the FASTA wrap. That is now fixed, and it invalidates **every** D2.c number on **every** arm — including the ProGen2 readings, whose *candidate* pools carry no layout tokens but whose decoy pools were never the question.
+>
+> **What this means for the items below.** The three-statistic table in item 6, the ~0.26 / ~0.43 decomposition in item 5, the ~12x matched-scale size gap, the valence enrichments in item 7 and the condition table are all the record of the reasoning and none is a current value. The two structural findings that do **not** depend on the layout arithmetic survive: that a selector-validity statistic and an effect-size statistic are not interchangeable evidence about a modality, and that the census's instance filter selects positions of very different difficulty in the two modalities (§8 item 0b). The panel re-run at ban 3 / n=600 is specified in the experiment log and is gated on EXP-R2-121.
+
 > **Status (2026-08-01): all three are cleared; one attainability check stands between this and the panel.** Blocker 3 was cleared in EXP-R2-078 (the positive control exists on the magnitude scale), blocker 2 closed in code in the same pass, and blocker 1 was re-measured in EXP-R2-082 — where the prescription written below turned out to be **wrong**, and the fix is the pool width rather than the cohort band. The section is left standing with its errors struck and corrected in place, because the reasoning that produced the wrong prescription is the point. Read the blocker-1 correction block and the revised order of work at the end.
 
 Costed at "~13 GPU-h" while it was one line in a table. A design pass
