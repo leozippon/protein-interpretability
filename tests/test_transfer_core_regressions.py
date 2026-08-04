@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from scipy import stats
 import torch
 from torch import nn
 
@@ -20,6 +21,7 @@ from src.transfer.circuits import content_bounds, layout_token_ids  # noqa: E402
 from src.transfer.induction_robustness import contrast_ratio_bootstrap  # noqa: E402
 from src.transfer.lenses import split_cohort  # noqa: E402
 from src.transfer.path_patching import (  # noqa: E402
+    _depth_controlled,
     attention_output_projection,
     causal_census_agreement,
     require_supported_layout,
@@ -342,6 +344,10 @@ def _rows(effects: list[float]) -> list[dict[str, object]]:
         {
             "label": s.label,
             "prefix_matching": s.prefix_matching,
+            # The agreement statistic now publishes a depth covariate beside the
+            # correlation, because the causal readout is depth-biased by
+            # construction, so every record must say which layer it came from.
+            "layer": s.layer,
             "effects": {"total": e},
             # A denominator of 10 logits, so the two scales are distinguishable and
             # a test cannot pass by reading the wrong one.
@@ -646,3 +652,38 @@ def test_a_stage_that_draws_a_cohort_records_which_draw_it_used(script: str) -> 
         f"{script} accepts --cohort-draw-seed but records neither it nor the full "
         "argument namespace, so its results cannot be traced to a draw"
     )
+
+
+def test_depth_control_separates_a_pure_depth_trend_from_a_real_association() -> None:
+    # Rule: the all-grid Spearman is taken over a flattened (layer, head) grid and
+    # the causal readout it correlates against is depth-biased by construction --
+    # the patch and metric act at the query row, so a head writing late sits
+    # closer to the unembedding. On this panel r(layer, |effect|) is +0.36 to
+    # +0.77 on every arm, and ProtGPT2 is the one arm whose census score falls
+    # with depth, which is enough to drive its all-grid value to zero on its own
+    # (EXP-R2-120). Two grids, same shape, opposite truths.
+    layer = np.repeat(np.arange(12, dtype=np.float64), 6)
+    within = np.tile(np.arange(6, dtype=np.float64), 12)
+
+    # (a) Both variables are depth and nothing else: strongly correlated raw,
+    # nothing left once depth is held fixed.
+    raw = stats.spearmanr(layer, layer * 2.0).statistic
+    assert raw == pytest.approx(1.0)
+    spurious = _depth_controlled(layer, layer * 2.0, layer)
+    assert spurious["partial"] is None, "a variable that IS depth leaves no residual"
+    assert "function of layer alone" in spurious["partial_withheld_reason"]
+    assert spurious["within_layer"] is None or abs(spurious["within_layer"]) < 0.05
+
+    # (b) A real within-layer association survives, and an opposing depth trend
+    # in the score does not hide it -- which is exactly ProtGPT2's geometry.
+    genuine = _depth_controlled(-layer + within, layer + within, layer)
+    assert genuine["partial"] > 0.5
+    assert genuine["within_layer"] > 0.9
+    assert genuine["layers_used"] == 12
+    assert genuine["r_layer_census_score"] < -0.5
+    assert genuine["r_layer_causal_magnitude"] > 0.5
+
+    # (c) Nothing to control for is reported as such rather than as a number.
+    flat = _depth_controlled(within[:6], within[:6], np.zeros(6))
+    assert flat["partial"] is None and flat["layers_used"] == 0
+    assert "single layer" in flat["withheld_reason"]
