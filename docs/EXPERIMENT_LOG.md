@@ -6799,3 +6799,39 @@ draw, same everything else, so it is a **paired** before/after against the two
 rows above rather than a fresh measurement to be compared across conditions. The
 advisory K=1 estimate of the decoy fix's size (ProtGPT2 +0.2015 → +0.0788,
 gpt2-large +0.4476 → +0.4522) is what this replaces; it is not adopted.
+
+### EXP-R2-123 read — the depth-controlled gap is not resolved in three of four conditions
+
+ProtGPT2 draw 20260824 and gpt2-large draw 20260825, both pulled and
+digest-verified. All three arms that define the depth-controlled boundary are now
+at **K≥8** — gpt2-xl 9, ProtGPT2 9, gpt2-large 8 — so the gap can be read against
+the standard error of its own difference rather than only against draw
+dispersion.
+
+| condition | boundary arms | gap | in pooled sd | **in SE of the difference** |
+|---|---|---:|---:|---:|
+| ex/ex | gpt2-xl vs ProtGPT2 | +0.0264 | +0.64 | **+1.4** |
+| ex/ap | gpt2-large vs ProtGPT2 | +0.0210 | +0.40 | **+0.8** |
+| ap/ex | gpt2-xl vs ProtGPT2 | +0.0720 | +1.60 | **+3.4** |
+| ap/ap | gpt2-large vs ProtGPT2 | +0.0239 | +0.49 | **+1.0** |
+
+Against the raw statistic on the same draws: **+10.4 to +15.1 SE**.
+
+**The depth-controlled separation is resolved in one of four conditions and not
+in the other three**, at K=8–9 on every arm that defines it. That is a sharper
+statement than the pooled-sd form because it accounts for how many draws each
+arm carries, and it is the form the claim should now be quoted in.
+
+*Two properties of this reading, both stated rather than assumed.* Taking the
+text **minimum** and the protein **maximum** makes the gap smaller, so selecting
+the extremes is conservative for the direction claimed. And the SE treats draws
+as independent and is computed between two post-hoc selected arms, so it is a
+descriptive scale for the gap rather than a test — no p-value is quoted from it.
+
+**What this does to L22.** EXP-R2-120 recorded that the sign survives depth
+control and the magnitude does not survive as a modality claim. At K≥8 the
+magnitude does not survive as a *separation* either, in three conditions of four.
+The re-scoping to a **method** limitation — an all-grid rank correlation between
+a census score and a query-local causal readout is confounded with depth, on
+every arm including the text controls — is what the evidence supports, and it
+does not depend on the residual gap being real.
