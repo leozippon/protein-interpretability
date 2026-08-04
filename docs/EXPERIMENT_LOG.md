@@ -6835,3 +6835,27 @@ The re-scoping to a **method** limitation — an all-grid rank correlation betwe
 a census score and a query-local causal readout is confounded with depth, on
 every arm including the text controls — is what the evidence supports, and it
 does not depend on the residual gap being real.
+
+### ProtGPT2 draw 20260827 (K=10) — two of the four depth-controlled conditions go to half a standard error
+
+Pulled and digest-verified. The lane's tunnel dropped again and the polling loop
+recovered it, which is the design change the entry above says was required.
+
+| condition | boundary arms | gap | in SE | was, at ProtGPT2 K=9 |
+|---|---|---:|---:|---:|
+| ex/ex | gpt2-xl vs ProtGPT2 | +0.0277 | +1.5 | +1.4 |
+| ex/ap | gpt2-large vs ProtGPT2 | **+0.0116** | **+0.5** | +0.8 |
+| ap/ex | gpt2-xl vs ProtGPT2 | +0.0775 | **+3.7** | +3.4 |
+| ap/ap | gpt2-large vs ProtGPT2 | **+0.0129** | **+0.5** | +1.0 |
+
+**The reading is now stable enough to state.** Depth-controlled, the modality
+separation is **resolved in one condition of four** (`ap/ex`, +3.7 SE), marginal
+in one (`ex/ex`, +1.5), and **absent in two** (`ex/ap` and `ap/ap`, both +0.5 SE
+on gaps of +0.012 and +0.013). Adding draws moved the two weak conditions
+*towards* zero, not away from it. The raw statistic on the same draws is +10.4 to
++15.1 SE.
+
+*The one condition that holds is `ap/ex` — approximate senders, exact cases — and
+no reading of that asymmetry is offered.* It is one cell of four and the panel
+was not designed to resolve which sender/case pairing should be privileged; it is
+recorded because a result that holds in exactly one condition should say which.
