@@ -216,10 +216,27 @@ def build_cohorts(args: argparse.Namespace, name: str) -> tuple[Cohort, Cohort]:
             with_ec=with_ec,
             seed=draw_seed,
         )
+        # The reference band defaults to the cohort band and may be widened,
+        # because the two bands answer different questions. The cohort band
+        # decides which records can be SCORED and is bound by `tokenised_rows`,
+        # which admits a record only at exactly the pool width. The reference
+        # band decides which records ESTIMATE the held-out unigram, and a
+        # unigram over an arm's own alphabet has no reason to be length-matched
+        # to the scored rows -- a wider draw is a better estimator, not a worse
+        # one (Appendix B rule 3 asks for held-out, not for matched).
+        #
+        # Coupling them made one arm unschedulable rather than merely narrow.
+        # ZymCTRL renders as a constant 10-token prefix plus the sequence, so
+        # `tokenised_rows` admits it only at the single residue length
+        # `width - 10`; drawing the reference from that same single length asks
+        # the corpus for 4000 records at one exact length, which it does not
+        # have, and the stage dies before it measures anything. Widening the
+        # reference is what makes the arm runnable, and it changes nothing for
+        # any arm that does not set it.
         reference = protein_cohort(
             args.reference_sequences,
-            args.census_protein_min_len,
-            args.protein_max_len,
+            args.reference_protein_min_len or args.census_protein_min_len,
+            args.reference_protein_max_len or args.protein_max_len,
             skip=args.census_sequences * 2,
             name="paa_protein_reference",
             with_ec=with_ec,
@@ -243,8 +260,16 @@ def make_pool(
         raise RuntimeError(
             f"{arm.name}: only {len(rows)} cohort records reached {args.width} tokens"
         )
+    # The truncation follows the REFERENCE band, not the cohort band. These were
+    # the same number until the two bands were allowed to differ, and leaving it
+    # coupled makes the new flag a trap: a reference drawn wider than the cohort
+    # is then truncated to the cohort's length, and a conditioned row cut before
+    # its <end> has no defined content span, so the stage dies on the first
+    # record rather than on the flag that caused it.
     unigram_counts = scored_target_counts(
-        arm, reference.input_strings(arm), max_len=args.protein_max_len + 32
+        arm,
+        reference.input_strings(arm),
+        max_len=(args.reference_protein_max_len or args.protein_max_len) + 32,
     )
     pool = build_instance_pool(
         arm,
@@ -409,12 +434,25 @@ def census(
     unigram = fit_unigram(
         arm, cohort.input_strings(arm), max_tokens=args.unigram_max_tokens
     )
+    # A conditioned arm needs a label to build its prompt prefix, and this stage
+    # never supplied one -- which is why ZymCTRL could not reach the census's
+    # induction decoy correction even when its instance pool built cleanly
+    # (137,262 instances, against an A1 gate of 20,000). The same resolution
+    # 04_circuit_primitives.py already uses: take it from the scored cohort, and
+    # refuse rather than invent one if the cohort carries none.
+    ec_label = None
+    if arm.spec.input_format == "ec_conditioned":
+        labels = cohort.metadata.get("ec_labels")
+        if not labels:
+            raise ValueError(f"{arm.name}: census cohort carries no EC labels")
+        ec_label = labels[0]
     probes: list[RepeatProbe] = synthetic_repeat_probes(
         arm,
         unigram,
         n_probes=args.synthetic_probes,
         copy_len=args.synthetic_copy_len,
         seed=args.seed,
+        ec_label=ec_label,
     )
     induction = decoy_corrected_prefix_matching(
         arm,
@@ -1127,6 +1165,10 @@ def main() -> None:
     parser.add_argument("--min-sequences", type=int, default=64)
     parser.add_argument("--census-text-min-chars", type=int, default=4000)
     parser.add_argument("--census-protein-min-len", type=int, default=520)
+    # Default None means "use the cohort band"; see build_cohorts for why the
+    # two are allowed to differ and why coupling them made ZymCTRL unrunnable.
+    parser.add_argument("--reference-protein-min-len", type=int, default=None)
+    parser.add_argument("--reference-protein-max-len", type=int, default=None)
     parser.add_argument("--width", type=int, default=512)
     parser.add_argument("--query-min", type=int, default=32)
     parser.add_argument("--top-k", type=int, default=20)

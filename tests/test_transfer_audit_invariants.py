@@ -2969,3 +2969,54 @@ def test_the_paa_stage_publishes_its_own_headline_statistic():
     assert "withheld_reason" in body, (
         "a selective head set must yield a recorded reason, not a missing key"
     )
+
+
+def test_the_paa_reference_band_defaults_to_the_cohort_band_and_may_be_widened():
+    """A single-length cohort band must not make the reference band unfillable.
+
+    The two bands answer different questions. The cohort band decides which
+    records can be *scored* and is bound by ``tokenised_rows``, which admits a
+    record only at exactly the pool width. The reference band decides which
+    records estimate the *held-out unigram*, and a unigram over an arm's own
+    alphabet has no reason to be length-matched to the scored rows.
+
+    Coupling them made ZymCTRL unschedulable rather than merely narrow: its
+    rendering is a constant 10-token prefix plus the sequence, so it is admitted
+    only at the single residue length ``width - 10``, and asking the corpus for
+    4,000 reference records at one exact length kills the stage before it
+    measures anything. The audit records the consequence — ZymCTRL is the one arm
+    that separates the tokenisation and architecture accounts of D2.c's protein
+    split, and it could not be run.
+
+    The default must stay ``None`` so that every invocation which does not set it
+    draws exactly the band it drew before.
+    """
+
+    census = _load_stage_module("14_paa_census.py")
+    parser_args = census.parse_args([
+        "--stages", "census", "--census-arm", "gpt2-large", "--out", "/tmp/unused",
+    ]) if hasattr(census, "parse_args") else None
+    source = (
+        REPO_ROOT / "scripts/transfer" / "14_paa_census.py"
+    ).read_text(encoding="utf-8")
+    assert '"--reference-protein-min-len", type=int, default=None' in source
+    assert '"--reference-protein-max-len", type=int, default=None' in source
+    body = source.split("\ndef build_cohorts(", 1)[1].split("\ndef ", 1)[0]
+    # The fallback is what keeps every existing invocation byte-identical.
+    assert "args.reference_protein_min_len or args.census_protein_min_len" in body
+    assert "args.reference_protein_max_len or args.protein_max_len" in body
+    # And the cohort draw itself must NOT consult the reference band.
+    cohort_call = body.split("cohort = protein_cohort(", 1)[1].split(")", 1)[0]
+    assert "reference_protein" not in cohort_call, (
+        "the scored cohort must keep its own band; widening the reference must "
+        "not widen the population that is measured"
+    )
+    # The truncation applied to the reference must follow the REFERENCE band.
+    # Left coupled to the cohort band, the new flag is a trap: a reference drawn
+    # wider is then cut to the cohort's length, and a conditioned row cut before
+    # its <end> has no defined content span, so the stage dies on the first
+    # record rather than on the flag that caused it. Measured: that is exactly
+    # how the first ZymCTRL launch failed.
+    pool_body = source.split("\ndef make_pool(", 1)[1].split("\ndef ", 1)[0]
+    assert "(args.reference_protein_max_len or args.protein_max_len) + 32" in pool_body
+    del parser_args
