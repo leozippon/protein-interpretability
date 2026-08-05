@@ -7327,3 +7327,62 @@ five. **The general form of the mistake is the session's recurring one** — fiv
 of six operational slips today were a check that looked like it verified
 something and did not, and in every case what actually stopped the damage was a
 guard inside the instrument rather than the shell around it.
+
+## 2026-08-05 — EXP-R2-128: ZymCTRL breaks the D2.c confound, and the answer is tokenisation, not architecture
+
+The completed panel left one confound standing and named the arm that resolves
+it. Across the four protein arms **architecture and tokenisation covary
+perfectly**: ProtGPT2 is gpt2-architecture with multi-residue BPE and retrieves at
+4.5× its own chance; the three ProGen2 arms are progen-architecture with residue
+tokenisation and retrieve at 0.0–1.1×. ZymCTRL is **gpt2-architecture with
+residue tokenisation** — the cell that separates the two accounts.
+
+| draw | A1 | gate | grid | all-grid ρ | within-layer | hit@20 | × own chance |
+|---|---:|---|---:|---:|---:|---:|---:|
+| 20260728 | 137,262 | PASS | 720 | **−0.1911** | −0.1330 | **0/20** | **0.0×** |
+| 20260801 | 137,293 | PASS | 720 | **−0.3358** | −0.2298 | **0/20** | **0.0×** |
+
+**The pattern tracks tokenisation and rules out architecture.**
+
+| arm | architecture | tokenisation | × own chance |
+|---|---|---|---:|
+| gpt2-large | gpt2 | BPE 50257 | 12.6× |
+| ProtGPT2 | gpt2 | multi-residue BPE 50257 | 4.5× |
+| **ZymCTRL** | **gpt2** | **residue 458** | **0.0×** |
+| ProGen2-base | progen | residue 32 | 1.1× |
+| ProGen2-small | progen | residue 32 | 0.5× |
+| ProGen2-medium | progen | residue 32 | 0.0× |
+
+**ZymCTRL shares ProtGPT2's architecture and sits at the opposite end of the
+panel; it differs from ProGen2 in architecture and agrees with it.** Whatever
+drives the census's failure, it is not the model family — it is whether the
+tokenizer maps one token to one residue. ZymCTRL is also the most negative
+all-grid ρ measured on any arm (−0.34).
+
+**And this comparison is grid-matched, which the retrieval statistic requires.**
+ZymCTRL, ProtGPT2 and gpt2-large all carry **720-head grids**, so their hit@20
+values are directly comparable without the cross-grid error this log had to
+correct on 2026-08-04: gpt2-large 6,7,7,8 — ProtGPT2 0,0,5,6 — ZymCTRL 0,0.
+
+**Three limits, stated rather than absorbed.**
+
+1. **K=2.** Draws 20260802 and 20260803 are running. No value above is settled.
+2. **ZymCTRL introduces a new confound as it removes the old one.** It is the
+   only arm with a conditioning prompt, priced at 1.73 nats (L15). So the
+   surviving alternatives are *residue tokenisation* and *conditioning*, not
+   *tokenisation* alone. What is **ruled out is architecture**, and that is the
+   claim this run supports.
+3. **Its cohort is its own.** Width 406, band [396,396], n=400 — no shared window
+   with any other arm exists, which is why it contributes to the within-arm
+   classification and to no cross-arm range. The grid match above is a property
+   of the head count, not of the cohort.
+
+**What this does to the D2.c statement.** The panel supported *"a PAA census on a
+ProGen2 decoder does not recover the causally important heads above its own
+chance level"* — a lineage claim. With ZymCTRL it is no longer about a lineage:
+**every residue-tokenised protein decoder measured fails, across two
+architectures, three parameter scales and three pretraining corpora, while the
+one subword-tokenised protein decoder does not.** That is a claim about the
+interface between the tokenizer and the census, which is a more useful object
+than a lineage — and it is exactly the fifth cause §5.2 argues the evidence
+demands, *protein-specific measurement substrate*, appearing on a sixth statistic.
