@@ -7307,3 +7307,23 @@ causally important heads above its own chance level, across three model sizes an
 two pretraining corpora, where every text decoder measured does.* That is the
 result. It is a claim about one protein lineage and one mechanism; the modality
 orderings on both rank correlations are real in sign and smaller than draw noise.
+
+### The auto-refill's idleness test was wrong, and the worker caught it
+
+A bounded auto-refill was left running to keep the four H200 cards busy after the
+panel completed. Its rule was "launch onto any card the pod reports under 1000
+MiB". **That is not idleness.** A launched job spends several minutes in snapshot
+push and preflight before it allocates anything, so three successive polls at
+90-second stagger all saw GPU 3 free and it put **three campaigns on one card in
+four minutes**.
+
+**The worker refused the duplicates** — `GPU N is occupied; refusing to schedule`
+— which is the same guard that caught the premature relaunch earlier today. Two
+queue entries were spent and no measurement was touched.
+
+Repaired with a per-card cooldown: a card this loop has launched onto is
+off-limits for 20 minutes, against a worst observed push-plus-preflight of about
+five. **The general form of the mistake is the session's recurring one** — five
+of six operational slips today were a check that looked like it verified
+something and did not, and in every case what actually stopped the damage was a
+guard inside the instrument rather than the shell around it.
