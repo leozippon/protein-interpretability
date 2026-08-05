@@ -7416,3 +7416,54 @@ the instrument has caught an operator error of mine before it reached a number.
 Re-running at `--res-min 64 --res-max 246 --max-len 288` into a separate results
 root, which admits 246 residues plus ZymCTRL's 10-token prefix with headroom. The
 first tree is retained as the record of the misconfiguration.
+
+### EXP-R2-127 read — the tuned lens's advantage is band-dependent on protein and not on text
+
+The check §5.05(e) has owed since 2026-07-30, run with a paired control so the
+band is the only thing that moves. Three trees: the original campaign
+(`transfer_20260729_instrument`), a fresh control at the same nominal
+configuration, and the qualifying band.
+
+**Mean KL reduction of the tuned lens over the logit lens (nats):**
+
+| arm | original 64–120 | control 64–120 | **qualifying 64–246** | qual/ctrl |
+|---|---:|---:|---:|---:|
+| gpt2-large | +1.4015 | +1.3677 | **+1.4249** | **1.04×** |
+| ProtGPT2 | +1.7378 | +1.6692 | **+0.5592** | **0.34×** |
+| ZymCTRL | +0.6817 | +0.6568 | **+0.3033** | **0.46×** |
+| ProGen2-base | +0.3789 | +0.4006 | **+0.0738** | **0.18×** |
+| ProGen2-medium | +1.0505 | +1.1440 | **+0.3765** | **0.33×** |
+| ProGen2-small | — | +0.6128 | **+0.2790** | **0.46×** |
+
+**The text control is the only arm that does not fall.** gpt2-large gains 4% on
+the wider band; every protein arm loses **54% to 82%** of the tuned lens's
+advantage, and ProGen2-base retains 0.07 nats of it. **This is the sixth
+statistic on which a protein arm's number moves with the cohort and the matched
+text arm's does not** — §5.05(b) in nats of context information, EXP-R2-070(iv)
+in far-band fractions, EXP-R2-077 in case-set parity, EXP-R2-121 in retrieval,
+and now in lens improvement.
+
+**What §5.05(e) claims, and what has to change.** It reports the tuned lens as
+"the only instrument in the campaign with a clean transfer", improving at every
+non-identity layer on every scored arm. That is **not withdrawn** — the advantage
+is real, positive on every arm at both bands, and the aggregate reproduces
+between two independent runs at the control band to within 0.10 nats on all five
+arms. What must be added is that **its size on protein is a function of a band
+chosen for compute**, and the band it was measured on is not the band its arms
+were qualified on.
+
+**The every-layer conjunction is fragile and should not carry the claim.** At the
+*same* band, the original run and my control disagree on ZymCTRL — Y against N,
+on one layer crossing the tolerance by −0.0325 nats against a mean improvement of
++0.66. A conjunction over ~36 layers flips on a single layer's noise while the
+aggregate it summarises is stable to 0.02 nats. **The defensible statement is the
+mean reduction with its band, not the boolean.** At the qualifying band the
+boolean also fails for ProGen2-base, which is a real band effect rather than draw
+noise (+0.40 → +0.07 nats), but the boolean is the wrong instrument for saying so.
+
+*Limits.* One draw per band per arm, except at the control band where the
+original campaign supplies a second and is what exposed the conjunction's
+fragility. `--max-len` was moved from 192 to 288 with the band, because leaving it
+truncates the widened band back to ~192 residues for a residue-tokenised arm;
+that is a necessary part of the configuration, not a second manipulation, and the
+first attempt without it is recorded above as discarded.
