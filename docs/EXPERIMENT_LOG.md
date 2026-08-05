@@ -7386,3 +7386,33 @@ one subword-tokenised protein decoder does not.** That is a claim about the
 interface between the tokenizer and the census, which is a more useful object
 than a lineage — and it is exactly the fifth cause §5.2 argues the evidence
 demands, *protein-specific measurement substrate*, appearing on a sixth statistic.
+
+### EXP-R2-127 — the lens qualifying-band check, misconfigured on the first attempt
+
+§5.05(e) reports the lens family as the only instrument in the campaign with a
+clean transfer, and EXP-R2-063 qualified it: the stage scores protein cohorts on
+residues 64–120 while `cohort_power` qualifies arms on 64–246. The check has been
+owed since 2026-07-30 and is worth running precisely because it tests a
+**positive** claim.
+
+**The first run set the band and not the token budget, so it did not ask the
+question it was written to ask.** `--res-min 64 --res-max 246` was applied — the
+artefacts carry `residue_length_range [64, 246]` — but `08_lens_family.py`
+truncates scoring at `--max-len`, default **192 tokens**. For a residue-tokenised
+arm 246 residues is ~246 tokens, so the widened band was cut back to ~192 and the
+comparison was only partly moved. ProtGPT2 is unaffected (2.8 residues per token,
+so 246 residues is ~88 tokens); the ProGen2 arms are not. **A band widened at one
+end and truncated at the other is not the qualifying band**, and the run is
+discarded rather than reported.
+
+**ZymCTRL refused rather than producing a number**, which is how the defect
+surfaced: `zymctrl: max_len=192 truncates the EC-conditioned prompt before its
+<end> boundary; the scored window would be undefined`. Its conditioning prompt is
+the same L15 wall that removes it from window-based estimands, and here the guard
+turned an under-specified configuration into a visible failure on one arm instead
+of a quiet truncation on four. That is the third time in two days a guard inside
+the instrument has caught an operator error of mine before it reached a number.
+
+Re-running at `--res-min 64 --res-max 246 --max-len 288` into a separate results
+root, which admits 246 residues plus ZymCTRL's 10-token prefix with headroom. The
+first tree is retained as the record of the misconfiguration.
