@@ -7202,3 +7202,71 @@ no ProGen2 draw exceeds 2.2×, and eight of sixteen return **0/20**.
 
 *Provisional until llama and gpt2-xl reach K=3.* The all-grid modality gap is the
 statistic in motion; the retrieval one is not.
+
+## 2026-08-04 (evening) — EXP-R2-126 complete: the cross-lab control narrows D2.c to one surviving statement
+
+llama-3.2-3b reached K=3. The panel is eleven arms under both guards at one
+condition, A1 PASS throughout, versioned statistic, K=3–5 per arm.
+
+| arm | K | all-grid ρ | within-layer | grid | hit@20 | × own chance |
+|---|---:|---|---|---:|---|---:|
+| dialogpt-small | 4 | +0.5991 … +0.6918 | +0.4749 … +0.6278 | 144 | 8,10,10,11 | 3.6× |
+| gpt2 | 4 | +0.5859 … +0.6484 | +0.4496 … +0.4841 | 144 | 13,13,14,14 | 4.9× |
+| gpt2-medium | 4 | +0.4735 … +0.5496 | +0.3005 … +0.4416 | 384 | 7,7,8,8 | 7.2× |
+| qwen2.5-0.5b | 3 | +0.4520 … +0.4952 | **+0.1469 … +0.2527** | 336 | 5,5,7 | 4.2× |
+| gpt2-large | 4 | +0.4302 … +0.4647 | +0.2888 … +0.3137 | 720 | 6,7,7,8 | 12.6× |
+| gpt2-xl | 2 | +0.3691 … +0.4022 | +0.2385 … +0.2820 | 1200 | 5,6 | 16.5× |
+| **llama-3.2-3b** | 3 | **+0.2179 … +0.2437** | +0.2497 … +0.2559 | 672 | 5,5,6 | 8.4× |
+| ProtGPT2 | 4 | +0.0288 … +0.1376 | −0.2673 … −0.0451 | 720 | 0,0,5,6 | 4.5× |
+| ProGen2-small | 5 | −0.2532 … −0.0604 | −0.2190 … +0.0053 | 192 | 1,1,1,2,2 | **0.5×** |
+| ProGen2-medium | 5 | −0.3050 … −0.1951 | −0.2010 … −0.0253 | 432 | 0,0,0,1,2 | **0.0×** |
+| ProGen2-base | 5 | −0.3102 … −0.2116 | −0.1478 … −0.0108 | 432 | 0,0,1,1,1 | **1.1×** |
+
+*(× own chance is the median over draws.)*
+
+**A comparison error of mine, corrected first because the rest depends on it.** I
+reported "every text arm retrieves at ≥2.9× chance against no ProGen2 draw above
+2.2×". **That is a cross-grid comparison and this document forbids it** —
+EXP-R2-101: `hit@20` has a grid-dependent ceiling of n/20 "and is compared only
+within a grid size". Grouped correctly, the panel has **exactly one** within-grid
+cross-modality retrieval comparison, the matched pair at 720 heads: gpt2-large
+**6,7,7,8** against ProtGPT2 **0,0,5,6**. Medians 7.0 against 2.5, **and the
+ranges overlap.** No other grid size holds both a text and a protein arm.
+
+**What survives the cross-lab control, and it is one statement.** Retrieval
+against each arm's *own* chance level is a within-arm property and needs no
+cross-grid comparison: **every text arm exceeds its own chance by ≥3.6× at the
+median, and all three ProGen2 arms sit at or below it — 1.1×, 0.5×, 0.0×.** That
+is a classification (beats chance / does not), not a magnitude ordering, and it is
+the form the claim has to take.
+
+**What does not survive as a resolved separation.** Most-adverse-draw gaps:
+
+| statistic | boundary arms | gap | boundary arm's own draw range |
+|---|---|---:|---:|
+| all-grid ρ | llama vs ProtGPT2 | **+0.0804** | ProtGPT2 **0.109** |
+| within-layer | qwen vs ProGen2-small | **+0.1416** | ProGen2-small **0.224** |
+
+**Both gaps are smaller than one boundary arm's own spread across draws** — the
+standard by which this session narrowed L22 this morning, applied to D2.c
+tonight. The all-grid gap fell from **+0.2926** to **+0.0804** when llama entered
+at K=3, and the depth-controlled gap from the matched pair's **+0.3339** to
+**+0.1416** when qwen did. The ordering survives in sign on every statistic; the
+separation does not.
+
+**So the cross-lab control did to D2.c what it has twice done to this
+programme's findings**, and the reason it was run before the result was announced
+is that it has twice before overturned one. Two GPT-2-lineage text arms and one
+protein family will separate on almost any statistic; qwen and llama are what
+turn that into a claim or refuse to.
+
+**The defensible position on D2.c is therefore narrow and worth having:** *a
+prediction-addressed-attention census on a ProGen2 decoder does not recover the
+causally important heads above its own chance level, on 15 draws across three
+arms and two pretraining corpora, where every text decoder measured does.* It is
+a lineage-and-mechanism claim, not a modality one. ProtGPT2 is intermediate and
+its retrieval is the least stable quantity on the panel (0,0,5,6). ZymCTRL is
+structurally excluded. And the all-grid correlation — the statistic L22 is built
+on, and the one this programme has spent the most compute on — separates the
+modalities by less than one arm's draw noise once a second text lineage is
+present.
