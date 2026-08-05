@@ -7270,3 +7270,40 @@ structurally excluded. And the all-grid correlation — the statistic L22 is bui
 on, and the one this programme has spent the most compute on — separates the
 modalities by less than one arm's draw noise once a second text lineage is
 present.
+
+### EXP-R2-126 final — every arm at K≥3, and the conclusions are unchanged
+
+gpt2-xl reached K=3 (its draw-20260803 transfer was rejected once as a partial
+file and admitted on the retry). The panel is complete: **eleven arms, seven text
+and four protein, K=3–5 each**, one condition, both guards, A1 PASS throughout.
+
+| arm | K | grid | all-grid ρ | within-layer | median × own chance |
+|---|---:|---:|---|---|---:|
+| dialogpt-small | 4 | 144 | +0.5991 … +0.6918 | +0.4749 … +0.6278 | 3.6× |
+| gpt2 | 5 | 144 | +0.5859 … +0.6484 | +0.4496 … +0.4841 | 5.0× |
+| gpt2-medium | 4 | 384 | +0.4735 … +0.5496 | +0.3005 … +0.4416 | 7.2× |
+| qwen2.5-0.5b | 3 | 336 | +0.4520 … +0.4952 | +0.1469 … +0.2527 | 4.2× |
+| gpt2-large | 4 | 720 | +0.4302 … +0.4647 | +0.2888 … +0.3137 | 12.6× |
+| gpt2-xl | 3 | 1200 | +0.3503 … +0.4022 | +0.2385 … +0.2820 | 15.0× |
+| llama-3.2-3b | 4 | 672 | +0.2179 … +0.2437 | +0.2199 … +0.2559 | 9.2× |
+| ProtGPT2 | 4 | 720 | +0.0288 … +0.1376 | −0.2673 … −0.0451 | 4.5× |
+| ProGen2-small | 5 | 192 | −0.2532 … −0.0604 | −0.2190 … +0.0053 | **0.5×** |
+| ProGen2-medium | 5 | 432 | −0.3050 … −0.1951 | −0.2010 … −0.0253 | **0.0×** |
+| ProGen2-base | 5 | 432 | −0.3102 … −0.2116 | −0.1478 … −0.0108 | **1.1×** |
+
+**Nothing moved.** all-grid gap **+0.0804** (llama vs ProtGPT2) against ProtGPT2's
+own draw range of 0.109; within-layer gap **+0.1416** (qwen vs ProGen2-small)
+against that arm's range of 0.224. gpt2-xl entering at K=3 did not take the
+boundary — it reads +0.3503 to +0.4022, above llama — which was the prediction and
+is now checked rather than assumed.
+
+**The surviving claim, in its final form.** Retrieval measured against each arm's
+own chance level, medians over draws: **every text arm ≥3.6×; ProGen2-base 1.1×,
+ProGen2-small 0.5×, ProGen2-medium 0.0×.** Twenty-two text arm-draws and fifteen
+ProGen2 arm-draws. ProtGPT2 sits at 4.5× with the widest spread on the panel.
+
+*A prediction-addressed-attention census on a ProGen2 decoder does not recover the
+causally important heads above its own chance level, across three model sizes and
+two pretraining corpora, where every text decoder measured does.* That is the
+result. It is a claim about one protein lineage and one mechanism; the modality
+orderings on both rank correlations are real in sign and smaller than draw noise.
