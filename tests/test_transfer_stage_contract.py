@@ -521,6 +521,53 @@ class DefaultsDoNotNarrowThePanel(unittest.TestCase):
         self.assertEqual(len(arms), 1 + sum(1 for a in pc.CAMPAIGN_PANEL if PANEL[a].modality == "protein"))  # one text control plus four protein arms
 
 
+class TheCensusDefaultsToTheWholeGrid(unittest.TestCase):
+    """An omitted --causal-heads must not silently produce a selective census.
+
+    It defaulted to 16 with a control offset of 120, which scores the census's own
+    top 16 heads; census_causal_agreement then refuses the result under standing
+    rule 24 and the run has cost a GPU to answer nothing. Every campaign
+    invocation had to supply the exhaustive count by hand, and nine driver scripts
+    grew the same per-arm table of head counts -- all of them n_layer * n_head
+    minus the control block, which the entry point can compute and a driver
+    cannot check.
+    """
+
+    def test_the_head_count_defaults_to_a_sentinel_not_to_a_small_literal(self):
+        source = (STAGE_DIR / "14_paa_census.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        defaults = {}
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and getattr(node.func, "attr", "") == "add_argument"):
+                continue
+            if not node.args or not isinstance(node.args[0], ast.Constant):
+                continue
+            for keyword in node.keywords:
+                if keyword.arg == "default" and isinstance(keyword.value, ast.Constant):
+                    defaults[node.args[0].value] = keyword.value.value
+        self.assertIsNone(
+            defaults.get("--causal-heads", "absent"),
+            "a numeric default here is a selective census that looks like a full one",
+        )
+        self.assertIsNone(defaults.get("--control-offset", "absent"))
+
+    def test_the_resolved_default_partitions_the_grid_with_the_control_block(self):
+        # The property the nine hand-maintained tables encoded: causal heads and
+        # the control offset are both grid - control_heads, so the two blocks
+        # partition the grid exactly and no head is scored twice or skipped.
+        for grid, control in ((720, 8), (192, 8), (1200, 8), (144, 8)):
+            with self.subTest(grid=grid):
+                causal = grid - control
+                offset = grid - control
+                self.assertEqual(causal + control, grid)
+                self.assertEqual(len(range(offset, grid)), control)
+
+    def test_an_over_large_request_is_refused_rather_than_truncated(self):
+        source = (STAGE_DIR / "14_paa_census.py").read_text(encoding="utf-8")
+        self.assertIn("exceed the", source)
+        self.assertIn("grid_size", source)
+
+
 class GuardsFireAtArgumentValidation(unittest.TestCase):
     """Every guard here reads only the command line, so none may need a checkpoint."""
 

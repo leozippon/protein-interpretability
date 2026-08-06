@@ -471,6 +471,21 @@ def census(
     stop = dissociation["partial_spearman"] > 0.5 or jaccard["jaccard"] > 0.3
 
     ranking = np.argsort(paa_mean, axis=None)[::-1]
+    # Resolve the exhaustive default now that the grid is known. The control
+    # block is the tail of the same ranking, so the two numbers are one number:
+    # taking the top `grid - control_heads` and drawing controls from position
+    # `grid - control_heads` onward partitions the grid exactly, which is the
+    # configuration every published D2.c figure was measured under.
+    grid_size = int(paa_mean.size)
+    if args.causal_heads is None:
+        args.causal_heads = grid_size - args.control_heads
+    if args.control_offset is None:
+        args.control_offset = grid_size - args.control_heads
+    if args.causal_heads + args.control_heads > grid_size:
+        raise SystemExit(
+            f"{arm_name}: --causal-heads {args.causal_heads} plus --control-heads "
+            f"{args.control_heads} exceed the {grid_size}-head grid"
+        )
     top_paa = [flat_head_index(paa_mean, int(flat)) for flat in ranking[: args.causal_heads]]
     rng = np.random.default_rng(args.seed + 3)
     control_pool = ranking[args.control_offset :]
@@ -1200,9 +1215,22 @@ def main() -> None:
     parser.add_argument("--synthetic-copy-len", type=int, default=64)
     parser.add_argument("--probe-batch", type=int, default=4)
 
-    parser.add_argument("--causal-heads", type=int, default=16)
+    # Default None means "the whole grid", resolved from the arm once its head
+    # count is known. It used to be 16 with an offset of 120, which is a
+    # *selective* census: the causal stage then scores the census's own top 16
+    # heads, `census_causal_agreement` refuses the result because a correlation
+    # over a census-selected subset reproduces the census's own ranking
+    # (standing rule 24), and the run costs a GPU and answers nothing. Every
+    # campaign invocation therefore had to pass the exhaustive count by hand, and
+    # nine driver scripts grew the same per-arm table of head counts -- `gpt2-xl`
+    # 1192, `gpt2-large` and `protgpt2` 712, `llama-3.2-3b` 664, and so on. All of
+    # them are `n_layer * n_head - control_heads`, which this script can compute
+    # and they could not check. An explicit value still works and is still
+    # recorded, so a deliberately selective run remains available and remains
+    # visible in the artefact.
+    parser.add_argument("--causal-heads", type=int, default=None)
     parser.add_argument("--control-heads", type=int, default=8)
-    parser.add_argument("--control-offset", type=int, default=120)
+    parser.add_argument("--control-offset", type=int, default=None)
     parser.add_argument("--causal-instances", type=int, default=800)
     parser.add_argument("--causal-per-sequence", type=int, default=4)
     parser.add_argument("--causal-batch", type=int, default=16)

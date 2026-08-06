@@ -173,3 +173,35 @@ Intermediate checkpoints and optimizer-only recovery state were removed after fi
 ## Verification
 
 The 2026-07-29 tree passed 205 tests plus 9 subtests. The 2026-07-30 tree passes **303 tests plus 34 subtests**, Ruff over `src`, `scripts` and `tests`, generated-panel verification (including under aliased environment variables), the TG stage contract, Shell syntax checks on both orchestration scripts, and live cluster checks of the worker-status and remote-predicate paths in both directions.
+
+### The census entry point's selective default (2026-08-06, same audit)
+
+`--causal-heads` defaulted to **16** and `--control-offset` to **120**, which is a
+*selective* census: the causal stage scores the census's own top 16 heads, and
+`census_causal_agreement` then refuses the result because a correlation over a
+census-selected subset reproduces the census's own ranking (standing rule 24). An
+omitted flag therefore cost a GPU and answered nothing, while writing artefacts
+that look like every other run's.
+
+The consequence was not the wasted run but the duplication it forced. Every
+campaign invocation had to supply the exhaustive count by hand, and **nine driver
+scripts grew the same per-arm table** — gpt2-xl 1192, gpt2-large and ProtGPT2 712,
+llama-3.2-3b 664, ProGen2-base and -medium 424, gpt2-medium 376, qwen2.5-0.5b 328,
+ProGen2-small 184, gpt2 and dialogpt-small 136. Every entry is
+`n_layer * n_head - control_heads`, a quantity the entry point can compute from
+the arm and a driver cannot check. Verified against all twelve: the derived value
+reproduces every hand-maintained entry exactly, including the newly admitted
+byte-level arm at 184.
+
+Both defaults are now `None`, resolved from the grid once the arm's head count is
+known, with the two blocks partitioning the grid exactly and an over-large request
+refused rather than truncated. An explicit value still works and is still recorded
+in `settings`, so a deliberately selective run remains available and remains
+visible in the artefact. Four tests, including a source-level pin that the default
+is a sentinel rather than a small literal.
+
+*Not changed, and the reason:* `--width` defaults to 512 while the contract
+declares `PAA_CENSUS_WIDTH = 192`. That default is not a silent-wrong-answer path
+— at width 512 ProtGPT2 admits no cohort rows at all and the run fails its
+`--min-sequences` gate explicitly — so it is a footgun rather than a defect, and
+the contract already passes the right value for every campaign item.
