@@ -8492,3 +8492,59 @@ wild-type subtraction, the "~80%" whose denominator is the CLT rather than the
 model, the "~60%" that is a sample-quality ratio between different sequences,
 and the `clt_direct` condition that replaces only layer 9 of 10. Those do not
 depend on the cohort and are unaffected.
+
+## 2026-08-06 — EXP-R2-135: the released PLT's faithfulness verdict is a function of the cohort band, and the band that passes it is the shortest one
+
+Four cohort bands, one per card, one frozen snapshot
+(`20260806144814_2dc002dd3c7d`), 128 sequences each, 1000 bootstrap replicates,
+everything else at the stage's declared defaults. All four pulled and
+digest-verified; cards idle before and after.
+
+| band (residues) | clean | ablated | NLL recovery | recovery 95% CI | NMSE sum | ceiling | attn ρ | attn CI | MoE ρ | verdicts |
+|---|---:|---:|---:|---|---:|---:|---:|---|---:|---|
+| 64–120 | 2.110 | 3.432 | **0.1750** | [0.155, 0.198] | 3.76 | 0.984 | **0.620** | [0.569, 0.650] | 0.491 | **PASS**/FAIL |
+| 64–246 | 1.857 | 3.279 | 0.1270 | [0.111, 0.144] | 4.45 | 0.985 | 0.489 | [0.452, 0.534] | 0.358 | FAIL/FAIL |
+| 246–600 | 1.815 | 3.068 | 0.0789 | [0.067, 0.093] | 4.56 | 0.994 | 0.331 | [0.291, 0.354] | 0.285 | FAIL/FAIL |
+| 600–1022 | 2.033 | 2.986 | **0.0425** | [0.031, 0.058] | 4.49 | 0.994 | 0.303 | [0.282, 0.334] | 0.224 | FAIL/FAIL |
+
+**Behavioural recovery spans 4.1× across bands — 0.0425 to 0.1750 — and the
+paired intervals do not overlap between any two bands.** The new paired bootstrap
+is what makes that readable: it resamples one sequence index set across clean,
+replacement and ablated together, so the interval is on the ratio rather than on
+three means reported side by side. The dependence is monotone in length, and so
+is the attention-head rank agreement (0.620 → 0.489 → 0.331 → 0.303).
+
+**The causal verdict flips.** At 64–120 the attention family **passes**: ρ 0.620
+with a lower bound of 0.569 against the 0.5 gate, and the exact hypergeometric
+control at p = 0.0078. At every longer band it fails. **Attainability passes on
+all four** (ceilings 0.984–0.994) and the original resolves all 60 heads above
+zero in every case, so these are facts about the replacement rather than about
+the cohort's resolving power.
+
+**What this establishes, and it is a method limitation rather than a fact about
+protein models.** EXP-R2-132's headline — the released PLT recovers 12.7% of the
+clean-to-ablated gap and fails the causal gate — was measured at **64–246, a
+band chosen for compute**. It sits in the middle of a 4× range, and a defensible
+alternative band would have reported that the same replacement *passes* its
+causal gate on the attention family. This is limitation **L13's shape** arriving
+on a replacement model: a per-stage band is a legitimate compute choice, and an
+undeclared one lets a verdict be read as covering a population it was never
+measured on. Standing rule 13 requires the band be declared against the band the
+arms were qualified on; this shows the cost of not doing so is a **reversed
+verdict**, not a shifted number.
+
+**Consequences, stated rather than left implicit.** No single-band faithfulness
+verdict on a replacement model should be quoted without its band and its
+sensitivity — including ours. EXP-R2-132's verdict stands *at its declared band*
+and is not withdrawn; what is withdrawn is any reading of it as a band-free
+property of the released PLT. And ProGenMech's own reported figures are measured
+on a different cohort again (Swiss-Prot clustered at 30% identity, up to 1022
+residues, 80% context), which this sweep now bounds: at the band closest to
+theirs the replacement is at its *worst* on our estimand, 0.0425.
+
+**One thing the exact-null repair earned immediately.** Two bands record a top-10
+overlap of 4 (p = 0.052) and two record 5 (p = 0.0078). Under the empirical q95
+threshold this stage used until today, those four cells would have been split by
+a cliff at exactly 4.0 rather than by a stated significance level, and the
+64–246 and 600–1022 rows would have carried an `exceeds_random_control` of False
+against 246–600's True with no p-value to show why.

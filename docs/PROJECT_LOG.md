@@ -1373,3 +1373,19 @@ on-condition predicate written out in two files, a stratification null that
 covered only the favourable stratum's sizes, and the absent interval on the
 behavioural recovery ratio — now a paired bootstrap resampling one index set
 across all three conditions rather than three marginal intervals on paired data.
+
+## 2026-08-06 (late) — the external baseline's faithfulness verdict is shown to be band-dependent
+
+EXP-R2-135 ran the replacement-faithfulness stage at four cohort bands on four
+cards. Behavioural recovery spans 4.1x across bands with non-overlapping paired
+intervals, and the causal gate flips to PASS on the shortest band while
+attainability passes throughout. EXP-R2-132's headline was measured at a band
+chosen for compute and sits mid-range; it stands at that band and is not
+withdrawn, but no band-free reading of it survives. The audit document and the
+status file were updated in the same pass.
+
+The paired bootstrap added earlier today is what made the band dependence
+readable as a difference rather than as four numbers, and the exact
+hypergeometric control replaced a threshold that would have split these four
+runs at a cliff rather than at a stated significance level. Both were audit
+repairs from this morning earning their place within hours.
