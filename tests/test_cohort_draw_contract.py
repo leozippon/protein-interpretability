@@ -58,6 +58,11 @@ NON_DRAWING_STAGES: dict[str, str] = {
     ),
     "12_induction_robustness.py": "reads artefacts from disk; loads no corpus",
     "panel_contract.py": "a declaration, not a measurement",
+    "paa_failure_audit.py": (
+        "stratifies retained census and causal artefacts that already exist; it "
+        "loads no model and constructs no cohort, and the draw each stratum "
+        "belongs to is whichever one the run it reads recorded"
+    ),
     "read_paa_panel.py": (
         "reads paa_gate_report.json files already on disk and recomputes their "
         "statistic through prediction_addressed.census_causal_agreement; it loads "

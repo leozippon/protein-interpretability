@@ -110,9 +110,10 @@ the record.
 
 | # | Claim, as it may be stated | Evidence | Status |
 |---|---|---|---|
-| F1 | A prediction-addressed-attention census on a **residue-tokenised protein decoder** does not recover that decoder's own causally important heads above its own chance level; every text decoder measured clears 3.6× and the one subword protein decoder reads 7.2× | `results/transfer_20260801/d2c_panel_dfix_draw*/`, `d2c_protgpt2_dfix_*`, `d2c_textctl_dfix_*`, `d2c_zymctrl_draw*`; ~55 arm-draws at one condition; read with `scripts/transfer/read_paa_panel.py` | **frozen** |
+| F1 | A prediction-addressed-attention census on a **residue-tokenised protein decoder** does not recover that decoder's own causally important heads above its own chance level; every text decoder measured clears 3.6×. **Sharpened by EXP-R2-131**: on ProGen2-small the census is not merely at chance but **below a selector that knows only a head's layer index** (1 hit against 4), so it is anti-informative relative to the head's own coordinates | `results/transfer_20260801/d2c_panel_dfix_draw*/`, `d2c_protgpt2_dfix_*`, `d2c_textctl_dfix_*`, `d2c_zymctrl_draw*`; ~55 arm-draws at one condition; read with `scripts/transfer/read_paa_panel.py` | **frozen, sharpened** |
+| F1b | **ProtGPT2's pass is substantially depth-carried and is not evidence that its census transfers.** Its within-layer partial ρ is negative on every draw (−0.2286 … −0.0682), and a trivial depth-only selector recovers 5 of the 6 heads its census does, where on gpt2-large the same baseline recovers 0 against the census's 7. What survives is that the arm sits above its own chance level; what does not is the inference that the *census* is doing the work | EXP-R2-131, reproduced independently from `causal.json` over the on-condition draws | **frozen** |
 | F2 | That failure is not explained by architecture, conditioning, scale, pretraining corpus, or symbol-level tokenisation — each excluded by a control built to exclude it, the last being a byte-level **text** decoder at 5.3× against ProGen2-small's 0.5× on an identical 192-head grid | EXP-R2-128 (ZymCTRL, K=4), EXP-R2-129 (ByGPT5-medium, K=4); `bygpt5_cohort_power_20260806` on GPFS qualifies the control arm at +2.462 nats | **frozen** |
-| F3 | The **proximal cause** of F1 is unmeasured. Every excluded factor above is arm-level; no instance-level or head-level cause has been identified | — | **open — D2.f, CPU only** |
+| F3 | **No proximal cause exists at the instance level, and the "causal target is noise" account is falsified rather than merely unsupported.** Best held-out stratification gain is +1 hit against a negative control ranging −3 to +1; and both rankings reproduce across independent draws on every failing arm — causal top-20 at 5.3–21.6× chance, census top-20 at 9.1–36×. They are two stable rankings that disagree. ProtGPT2 has the panel's *lowest* per-head SNR and passes; ZymCTRL has higher SNR on the same grid and reads chance | EXP-R2-131; `scripts/transfer/paa_failure_audit.py`, 62 on-condition arm-draws, pre-registered factors and discovery/held-out split | **closed — FAIL, as pre-registered** |
 | F4 | An all-grid rank correlation between a census score and a query-local causal readout does not measure census validity: it is confounded with layer depth on every arm (EXP-R2-120) **and** with tokenisation granularity (EXP-R2-129, where the byte arm is protein-like on the correlation and text-like on retrieval) | `results/transfer_20260801/d2bprime_multidraw/`, and the D2.c panel roots | **frozen** |
 | F5 | On induction, the analogous census-to-causal separation is depth-confounded on every arm including the text controls, so L22 is a limitation of the **method** rather than of the transfer. Converged at K=10 on both boundary arms; further draws not authorised | EXP-R2-115/120/122/123 | **frozen** |
 | F6 | The tuned lens improves on the logit lens on every scored arm at both bands, but **the size of that advantage on protein is a function of a cohort band chosen for compute**: the text control gains 4% on the qualifying band while every protein arm loses 54–82% | `results/lens_origband_20260805/`, `results/lens_qualband2_20260805/` | **frozen** |
@@ -1475,7 +1476,7 @@ behind it.
 
 | item | gate | cost |
 |---|---|---|
-| **D3.e** | **Protein-adapted PAA selector. Conditional on D2.f returning a cause**, and dead otherwise. Built on one ProGen2 arm, changing exactly one selector factor, validated out-of-sample on a second ProGen2 arm and ZymCTRL, with the ByGPT5 and gpt2-large controls retained so that a protein repair cannot be bought by breaking text. Pass: a held-out protein arm at ≥3× its own chance with a lower confidence bound above chance, at least double the current census, reproduced on a second arm, and needing causal labelling of ≤10% of the grid. A method that needs >20% exhaustive labelling is not a screen and is worth nothing | 10–30 GPU-h, zero if D2.f fails |
+| ~~**D3.e**~~ | **DEAD 2026-08-06. D2.f returned FAIL and the gate was pre-registered, so this item closes without being attempted.** No instance-level cause was found, and the finding that arrived instead removes the premise: a selector that loses to the head's layer index on the failing arms does not need adapting, and adapting it would be patching an instrument this document has now characterised twice. The item as written follows, for the record. **Protein-adapted PAA selector. Conditional on D2.f returning a cause**, and dead otherwise. Built on one ProGen2 arm, changing exactly one selector factor, validated out-of-sample on a second ProGen2 arm and ZymCTRL, with the ByGPT5 and gpt2-large controls retained so that a protein repair cannot be bought by breaking text. Pass: a held-out protein arm at ≥3× its own chance with a lower confidence bound above chance, at least double the current census, reproduced on a second arm, and needing causal labelling of ≤10% of the grid. A method that needs >20% exhaustive labelling is not a screen and is worth nothing | 10–30 GPU-h, zero if D2.f fails |
 | **D3.f** | **Distributed causal subspace pilot, one assay, one model.** Rationale from this document rather than from fashion: probes decode protein properties well (L16) while single-feature steering has never worked here, which is what a *distributed* representation predicts. DAS learns a rotation by interchange intervention. **It is admissible only where §7's standing rejection is not**: the high-level variable must be defined by a counterfactual on the model's own output distribution, never by a trained probe's direction — otherwise the object is the probe again and the item is rejected on arrival. Pass: held-out interchange accuracy ≥0.70 and ≥0.10 above a random-subspace floor, ≥65% sign agreement with measured DMS effects, <5% degradation on unrelated sequences, **and family-disjoint validation**. Any of: effect confined to training families, or interventions that damage everything, closes it | 5–15 GPU-h |
 | **D3.a** | Dictionary evaluation whose estimand is power-checked on the text control first, reporting loss recovered and KL rather than FVU; threshold frozen before any protein arm is scored. **Deferred behind D2.g and explicitly scoped against it**: if the ProGenMech reproduction already measures loss and KL recovery on a protein decoder against valid denominators, the overlap is most of this item and it shrinks to the matched-pair text control it was really about | 17–50 GPU-h, reassessed after D2.g |
 | **D3.b** | Aperture-functional attribution: after D2.a, within-arm descriptive only, no cross-arm coefficient | 3–5 GPU-h |
@@ -1720,6 +1721,26 @@ sign of the reported contrast was a free parameter of an unstated choice. The
 artefact recorded `symbols_per_token` in the same file and nothing consumed it. A
 band constant with no per-arm resolution is a cross-arm claim waiting to happen.
 (EXP-R2-073.)
+
+28. **A selector must be scored against the trivial baseline available from its
+own coordinates.** A head-prevalence census was compared against chance for
+months and never against *ranking heads by layer index alone*. Measured: that
+baseline recovers 0 of the causal top-20 on gpt2-large against the census's 7, so
+it is genuinely weak on text — and 5 of 6 on ProtGPT2, and 4 against the census's
+1 on ProGen2-small. Two published readings changed on contact with it: a "pass"
+that was substantially depth-carried, and a failure that is worse than chance
+because it loses to the head's own coordinates. Chance is not the only free
+baseline; anything computable from the unit's index without looking at the data is
+free, and a selector that does not beat it has not been shown to work.
+(EXP-R2-131.)
+
+29. **A smoke run must not be written into the results tree.** A 12-sequence
+interface check for a new arm was written to `results/transfer/`, and a later
+audit reading only local artefacts found it, read it as the arm's measurement, and
+reported the control at 1.9× its own chance against the campaign's 5.3×. The
+campaign draws were on GPFS and had never been pulled, so nothing local
+contradicted it. Smoke output goes to ignored `logs/smoke/`; a condition filter in
+the reader is a second line of defence and not the first. (EXP-R2-131.)
 
 27. **A statistic quoted across arms must state its denominator.** Per-head causal
 effects are normalised by each arm's own clean-minus-corrupt metric, and those

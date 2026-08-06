@@ -8149,3 +8149,106 @@ torch/transformers/numpy/scipy alone, because none of their entry points can run
 in a pod; we use their released weights with our own measurement code, which is
 what the gating requires in any case. That is now being built as
 `src/transfer/progen3.py` and `scripts/transfer/15_replacement_faithfulness.py`.
+
+## 2026-08-06 — EXP-R2-131 (D2.f): no instance-level cause, and a trivial baseline the census never had
+
+The stratified root-cause audit ran on CPU over 62 on-condition arm-draws from
+retained artefacts, pre-registered — factor list and predicted signs frozen in
+`scripts/transfer/paa_failure_audit.py`'s docstring before any stratified outcome
+was computed — with an alternating discovery/held-out split within each arm and a
+size-matched random-subset null behind every stratum.
+
+**Verdict: FAIL, as pre-registered.** No instance-level factor accounts for
+anything near half the retrieval gap on the failing protein arms, on held-out
+draws, above the null and above the noise floor the negative control sets. Best
+held-out gains are **+1.0 hit** (ProGen2-small on confidence/distance/margin,
+ProGen2-base on confidence/margin, ProGen2-medium on distance) against a
+`relative_position` negative control that itself ranges −3.0 to +1.0 across arms.
+Half the gap needs a sustained ≥ +2 replicated across arms; nothing comes close.
+The text positive controls stay above 3.6× under every adjustment, so this is an
+absence of effect rather than a guard violation. **Per the pre-registration this
+ends iterative patching of this census**, and D3.e — the protein-adapted selector —
+is dead rather than deferred.
+
+**The primary hypothesis is falsified, not merely unsupported, and that matters.**
+The cheap hypothesis was that the causal target on the failing arms is noise, in
+which case no selector could retrieve it and the finding would relocate to the
+evaluation interface. It does not. Measured as the overlap of the causal top-20
+between two independent draws of the same arm — which shares hit@20's chance level
+exactly — **both rankings are highly reproducible on every failing arm**: the
+causal top-20 at **5.3–21.6× chance** and the census top-20 at **9.1–36×**. Neither
+side is noise. They are two stable rankings that disagree. And the ordering is
+against the noise account outright: ProtGPT2 has the panel's **lowest** per-head
+SNR (median 0.90, 11.3% of heads above SNR 2) and passes, while ZymCTRL has higher
+SNR on the same 720-head grid and reads chance.
+
+### The result that outweighs the FAIL: a depth-only selector
+
+The audit compared the census against a baseline nobody had run — rank heads by
+**layer index alone**, break ties at random, take the top 20. I reproduced it
+independently from the artefacts before recording it, 25 seeded tie-breaks per
+draw, median over draws at the declared condition:
+
+| arm | K | census hit@20 | **depth-only hit@20** | chance |
+|---|---:|---:|---:|---:|
+| gpt2-large | 5 | 7.0 | **0.0** | 0.556 |
+| ProtGPT2 | 4 | 6.0 | **5.0** | 0.556 |
+| ProGen2-small | 7 | 1.0 | **4.0** | 2.083 |
+| ProGen2-base | 5 | 0.5 | **1.0** | 0.926 |
+| ProGen2-medium | 5 | 1.5 | **1.0** | 0.926 |
+
+**On gpt2-large the census does real work and depth alone does none** — 7 against
+0, so the baseline is genuinely weak on text and its successes elsewhere are not
+an artefact of an easy control. **On ProtGPT2 the census beats it by one hit**,
+6 against 5. **On ProGen2-small a selector that knows nothing but a head's layer
+index beats the census four to one**, 4 against 1, which is 1.9× chance against
+0.5×.
+
+Two claims in this document change as a result.
+
+1. **ProtGPT2's pass is substantially depth-carried and must stop being read as
+   "the subword protein arm transfers".** Its within-layer partial ρ is negative
+   on every draw — a fact already visible in the panel table (−0.2286 … −0.0682)
+   and never connected to what it implies — and a trivial depth ranking recovers
+   5 of the 6 heads its census does. What survives is that the arm is above its
+   own chance level; what does not survive is the inference that its *census* is
+   doing the work.
+2. **The ProGen2 failure is worse than "at chance".** The census is not merely
+   uninformative there, it is **below a baseline available from the head's
+   coordinates**. A screen that loses to the layer index is not a weak screen.
+
+Between arms the audit also falsified most of the predicted factor signs. Only
+`key_multiplicity` (1.14 / 2.69 / 8.98 on ProtGPT2 / gpt2-large / ProGen2-small)
+and `decoy_replacement` order the arms as expected, and both are mechanically
+determined by alphabet size, so between arms they are indistinguishable from
+modality itself — while *within* an arm they do nothing: stratifying ProtGPT2 to
+its low-multiplicity half costs **−5.0 hits** on held-out, the largest movement in
+the sweep and in the wrong direction. The mechanism they name does not operate.
+
+*Two limits the audit declared rather than approximated.* The eligible decoy-pool
+size per instance is not retained (only the four drawn decoys and run counters),
+so `decoy_replacement` stands as an explicit proxy; and the census artefact keeps
+per-sequence aggregates only, so every stratification is sequence-level on both
+sides.
+
+### A repository defect the audit surfaced, and its repair
+
+The audit reported that the byte-level control reads **1.9× own chance** and that
+the D2.c panel's 5.3× is unverifiable. **Both halves are artefacts of where things
+were written, and I checked before accepting or dismissing them.** The 1.9× is the
+**12-sequence interface smoke run** — `--census-sequences 12 --a1-minimum 1`,
+labelled at the time as an interface check and not a result — which had been
+written into `results/transfer/paa_gate_smoke_bygpt5/`, inside the results tree,
+where any reader picks it up beside real measurements. The campaign draws were on
+GPFS and had never been pulled to B, so a local audit could see only the smoke run.
+Verified directly against the pod: **eight ByGPT5 draws at the declared condition —
+600 sequences, ban 3, width 192, 184 causal heads, A1 PASS, 84,425–84,930
+instances — every one returning hit@20 = 11**, i.e. 5.28× own chance on eight
+independent corpus draws. The control stands and is now stronger than when it was
+recorded at K=4.
+
+The defect is real and is repaired at the root: the smoke tree is **moved** (rule
+18, not deleted) to ignored `logs/smoke/`, and the eight campaign draws are being
+pulled to B so the control is locally verifiable rather than pod-only. Note that
+`read_paa_panel.py` was never fooled — it filters on the declared condition and
+dropped the smoke run — which is precisely why that filter exists.
