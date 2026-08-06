@@ -454,6 +454,38 @@ def self_check(pg: ProGen3, *, batch_size: int = 8) -> dict[str, Any]:
 # ------------------------------------------------------- interventions and taps
 
 
+#: Tokens that are not residues. Padding and the two terminus markers are what a
+#: CLM batch actually contains; ``<mask>``, ``<bos_glm>``, ``<eos_span>`` and the
+#: hundred span tokens belong to the infilling objective and never appear in one,
+#: so the list is a subset of ProGen3's special tokens that coincides with it for
+#: every batch this repository builds.
+NON_RESIDUE_TOKENS = ("<pad>", "<bos>", "<eos>", "<mask>", "1", "2")
+
+
+def content_mask(pg: ProGen3, input_ids: torch.Tensor) -> torch.Tensor:
+    """Residue positions: everything but padding and the sequence markers.
+
+    The single copy of this decision. Both the replacement-faithfulness stage
+    and the transcoder trainer score reconstructions, and a reconstruction
+    scored on padding is scored on the easiest positions in the batch -- so the
+    two must not be allowed to disagree about which positions those are
+    (Appendix B rule 12).
+    """
+
+    vocabulary = pg.tokenizer.get_vocab()
+    absent = [name for name in NON_RESIDUE_TOKENS if name not in vocabulary]
+    if absent:
+        raise RuntimeError(
+            f"the ProGen3 tokenizer carries no {absent}; the residue mask cannot "
+            "be built and the reconstruction statistics would silently include "
+            "non-residue positions"
+        )
+    mask = torch.ones_like(input_ids, dtype=torch.bool)
+    for name in NON_RESIDUE_TOKENS:
+        mask &= input_ids != vocabulary[name]
+    return mask
+
+
 @contextmanager
 def moe_intercept(
     pg: ProGen3, fn: Callable[[int, torch.Tensor, torch.Tensor], torch.Tensor | None]

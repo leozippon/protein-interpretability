@@ -79,6 +79,13 @@ SWISSPROT_FASTA = env_path(
 ZYMCTRL_FASTA = env_path(
     "TRANSFER_ZYMCTRL_FASTA", REPO / "data/zymctrl/ec_labeled_swissprot.fasta"
 )
+#: ProGen3's own pretraining-scale corpus, and the one ProGenMech trains its
+#: transcoders on. ``TRANSFER_UNIREF50_FASTA`` was already exported to the pod
+#: and named in the resource manifest while no module declared it, so every
+#: caller resolved it by hand or not at all.
+UNIREF50_FASTA = env_path(
+    "TRANSFER_UNIREF50_FASTA", REPO / "data/uniref50/uniref50.fasta"
+)
 
 #: Named in the failure message when an arm's checkpoint is absent. Which of the
 #: three applies depends on the arm, and an operator needs the candidate list

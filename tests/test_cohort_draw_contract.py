@@ -69,6 +69,15 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "no model and constructs no cohort, so the draw it reports is whichever "
         "one the run it is reading recorded"
     ),
+    "17_train_transcoder.py": (
+        "trains on a stream of millions of UniRef50 records, which the cohort "
+        "constructors cannot serve: they count the whole corpus and then select, "
+        "which is right for a frozen 128-sequence cohort and not affordable for "
+        "a training run. It draws through its own seeded block-shuffled stream "
+        "instead, and answers rule 1 the same way -- UniRef50 is ordered by "
+        "cluster, so a prefix is a family, and the block size the shuffle "
+        "operates over is recorded in the artefact rather than left implicit"
+    ),
     "16_fitness_recovery.py": (
         "its units are DMS variants of one wild type, not corpus sequences, so it "
         "draws through src.transfer.fitness.load_assay rather than the FASTA "

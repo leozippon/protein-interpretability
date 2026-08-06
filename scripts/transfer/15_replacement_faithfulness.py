@@ -72,6 +72,7 @@ from src.transfer.arms import (  # noqa: E402
 from src.transfer.io import sha256_file, write_json  # noqa: E402
 from src.transfer.progen3 import (  # noqa: E402
     DROPPED_KEYS,
+    content_mask,
     Component,
     ablated,
     components,
@@ -280,7 +281,7 @@ def clean_pass(
 
     for start in range(0, len(sequences), batch_size):
         batch = pg.batch(sequences[start : start + batch_size])
-        scored["mask"] = _content_mask(pg, batch["input_ids"]).reshape(-1)
+        scored["mask"] = content_mask(pg, batch["input_ids"]).reshape(-1)
         with moe_intercept(pg, tap):
             pg.model(
                 input_ids=batch["input_ids"],
@@ -302,26 +303,6 @@ def clean_pass(
 #: named rather than filtered by presence, because a name this tokenizer does not
 #: carry means the vocabulary moved, and silently scoring the padding would move
 #: both the fully-ablated endpoint and the NMSE without moving anything visible.
-NON_RESIDUE_TOKENS = ("<pad>", "<bos>", "<eos>", "<mask>", "1", "2")
-
-
-def _content_mask(pg: Any, input_ids: torch.Tensor) -> torch.Tensor:
-    """Residue positions: everything but padding and the sequence markers."""
-
-    vocabulary = pg.tokenizer.get_vocab()
-    absent = [name for name in NON_RESIDUE_TOKENS if name not in vocabulary]
-    if absent:
-        raise RuntimeError(
-            f"the ProGen3 tokenizer carries no {absent}; the residue mask cannot "
-            "be built and the reconstruction statistics would silently include "
-            "non-residue positions"
-        )
-    mask = torch.ones_like(input_ids, dtype=torch.bool)
-    for name in NON_RESIDUE_TOKENS:
-        mask &= input_ids != vocabulary[name]
-    return mask
-
-
 def replacement_context(pg: Any, transcoder: PerLayerTranscoder) -> Callable[[], Any]:
     def factory() -> Any:
         return moe_intercept(pg, lambda layer, x, y: transcoder(layer, x))
