@@ -131,6 +131,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import sys
@@ -154,8 +155,8 @@ from src.transfer.prediction_addressed import (  # noqa: E402
 )
 
 
-def _declared_condition() -> dict[str, Any]:
-    """The panel condition, imported from the reader that defines it."""
+def _panel_reader() -> Any:
+    """The reader module that defines the panel condition and its predicate."""
 
     path = Path(__file__).resolve().with_name("read_paa_panel.py")
     spec = importlib.util.spec_from_file_location("_read_paa_panel", path)
@@ -163,7 +164,19 @@ def _declared_condition() -> dict[str, Any]:
         raise RuntimeError(f"cannot load the panel reader at {path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return dict(module.DECLARED_CONDITION)
+    return module
+
+
+def _declared_condition() -> dict[str, Any]:
+    """The panel condition, imported from the reader that defines it."""
+
+    return dict(_panel_reader().DECLARED_CONDITION)
+
+
+def off_condition_reasons(report: dict[str, Any], census: dict[str, Any]) -> list[str]:
+    """The reader's own predicate, imported rather than restated (rule 12)."""
+
+    return _panel_reader().off_condition_reasons(report, census)
 
 
 #: Bootstrap replicates for a per-head interval.  ``cluster_bootstrap`` refuses
@@ -211,7 +224,6 @@ FAILING_ARMS = frozenset({"progen2-small", "progen2-base", "progen2-medium", "zy
 def discover(root: Path, *, any_condition: bool) -> list[dict[str, Any]]:
     """Every arm-draw under ``root`` carrying the four artefacts this needs."""
 
-    condition = _declared_condition()
     found: list[dict[str, Any]] = []
     for report_path in sorted(root.rglob("paa_gate_report.json")):
         directory = report_path.parent
@@ -219,12 +231,7 @@ def discover(root: Path, *, any_condition: bool) -> list[dict[str, Any]]:
         census = report.get("census")
         if not census:
             continue
-        settings = report.get("settings", {})
-        on_condition = all(settings.get(key) == value for key, value in condition.items())
-        on_condition = on_condition and (
-            census.get("a1_candidate_pool", {}).get("layout_tokens_excluded_from_decoys")
-            is not None
-        )
+        on_condition = not off_condition_reasons(report, census)
         if not on_condition and not any_condition:
             continue
         arm = census["arm"]
@@ -327,11 +334,14 @@ def factor_table(draw: dict[str, Any]) -> dict[str, Any]:
     # Key multiplicity is retained per sequence only, by the census stage.
     keys = census["keys_per_instance"].astype(np.float64)
     per_sequence["key_multiplicity"] = np.where(counts > 0, keys, np.nan)
-    instance["key_multiplicity"] = keys[sequence]
 
     cascade = json.loads(str(pool["cascade"]))
     return {
-        "instance": instance,
+        # The per-instance factors are not returned. Every stratification here is
+        # sequence-level on both sides -- the census artefact keeps per-sequence
+        # aggregates only -- so `instance` exists to be reduced into
+        # `per_sequence` above and had no consumer. Returning it invited a reader
+        # to believe an instance-level analysis was available when it is not.
         "per_sequence": per_sequence,
         "instances_per_sequence": counts,
         "n_instances": int(sequence.size),
@@ -596,8 +606,14 @@ def stratified_sweep(draw: dict[str, Any], table: dict[str, Any], *, seed: int) 
         }
         factors[name] = entry
 
-    sizes = sorted({int(entry["n_favourable"]) for entry in factors.values()
-                    if "n_favourable" in entry})
+    # Both stratum sizes, not only the favourable one. The docstring promises
+    # that "every stratum is read against a size-matched random-subset null",
+    # and a median split with ties leaves the unfavourable half a different size
+    # -- which previously had no matched null to be read against at all.
+    sizes = sorted(
+        {int(entry[key]) for entry in factors.values()
+         for key in ("n_favourable", "n_unfavourable") if key in entry}
+    )
     null: dict[str, Any] = {}
     for size in sizes:
         hits = []
@@ -663,9 +679,25 @@ def main() -> int:
     per_arm = split_draws(draws)
     ordered = [draw for arm in sorted(per_arm) for draw in per_arm[arm]]
 
+    # Seeded by the draw's IDENTITY, not by its position in the discovery list.
+    # `args.seed + 97 * index` made every draw's randomness a function of what
+    # else happened to be in the results tree: pulling eight ByGPT5 draws to B
+    # shifted the index of every draw after them, and with it the depth-only
+    # baseline's tie-break jitter -- which moved that statistic on 8 of 62
+    # otherwise identical arm-draws while the deterministic census statistic
+    # stayed bit-identical. Frozen claim F1b quotes the depth-only figures, so a
+    # number that moves when an unrelated arm is added is not a number that can
+    # be frozen. Directory-derived, so a draw carries its own seed wherever the
+    # tree it sits in goes.
     payloads = [
-        (draw, args.seed + 97 * index, not args.no_sweep)
-        for index, draw in enumerate(ordered)
+        (
+            draw,
+            args.seed
+            + int(hashlib.sha256(str(draw["directory"]).encode()).hexdigest()[:8], 16)
+            % 1_000_003,
+            not args.no_sweep,
+        )
+        for draw in ordered
     ]
     if args.workers > 1:
         with ProcessPoolExecutor(max_workers=args.workers) as pool:

@@ -1344,3 +1344,32 @@ in a pod.
 
 Two new tests cover the gates and the draw that decide these verdicts; nothing
 in the external-baseline track had a test before. 567 tests pass, lint clean.
+
+## 2026-08-06 (evening) — the fitness finding is bounded by its own follow-up, and a seeding defect is repaired
+
+**Research.** EXP-R2-134 ran the free-baseline gate over all 217 ProteinGym
+substitution assays on four cards under one frozen snapshot. It corrects the
+strong reading of EXP-R2-133: the model *does* clear BLOSUM62 benchmark-wide
+(+0.0647 [+0.0386, +0.0909], 143 of 217 assays). The effect size is the same on
+ProGenMech's eight assays (+0.0637) and only the power differs, so the defensible
+statement is about their evaluation design rather than about the model — their
+panel cannot resolve the advantage their recovery ratios are quoted against.
+Both the audit document and the status file were corrected in the same pass; the
+superseded reading is kept in the log rather than removed.
+
+**A reproducibility defect the regression check found.** Verifying that the
+refactored failure audit still reproduced claim F1b showed the depth-only
+baseline moving on 8 of 62 arm-draws while the census statistic stayed
+bit-identical. The cause was seeding by **position in the discovery list**:
+pulling eight ByGPT5 draws to B renumbered every later draw. Seeds are now
+derived from a draw's directory, and the independence is verified by running a
+four-arm and a six-arm audit and confirming the 21 shared draws agree exactly.
+F1b's quoted comparisons survive unchanged; the byte-level control's 11-against-1
+is added, which removes the last reading in which the depth baseline's weakness
+on text could be a tokenisation artefact.
+
+**Remaining audit items cleared:** the dead per-instance factor table, the
+on-condition predicate written out in two files, a stratification null that
+covered only the favourable stratum's sizes, and the absent interval on the
+behavioural recovery ratio — now a paired bootstrap resampling one index set
+across all three conditions rather than three marginal intervals on paired data.

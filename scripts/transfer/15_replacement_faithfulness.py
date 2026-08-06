@@ -580,6 +580,47 @@ def causal_agreement(
 # --------------------------------------------------------------------- driver
 
 
+def _paired_recovery(
+    clean: np.ndarray,
+    replacement: np.ndarray,
+    ablated: np.ndarray,
+    *,
+    replicates: int,
+    seed: int,
+) -> dict[str, Any]:
+    """The recovery ratio with an interval, resampling sequences jointly.
+
+    The three conditions are measured on the *same* cohort sequences, so the
+    marginal Student-t intervals beside them support only the weaker unpaired
+    reading. One index set is drawn for all three per replicate, which is what
+    makes this an interval on the ratio rather than on three means that happen
+    to be reported together.
+    """
+
+    rng = np.random.default_rng(seed)
+    n = clean.size
+    gaps = np.empty(replicates, dtype=np.float64)
+    ratios = np.full(replicates, np.nan, dtype=np.float64)
+    for index in range(replicates):
+        pick = rng.integers(0, n, size=n)
+        c, r, a = clean[pick].mean(), replacement[pick].mean(), ablated[pick].mean()
+        gaps[index] = r - c
+        if a - c > 0:
+            ratios[index] = (a - r) / (a - c)
+    finite = ratios[np.isfinite(ratios)]
+    return {
+        "replacement_minus_clean": mean_interval((replacement - clean).tolist()),
+        "recovery_interval": (
+            [float(np.quantile(finite, 0.025)), float(np.quantile(finite, 0.975))]
+            if finite.size >= 0.95 * replicates
+            else None
+        ),
+        "recovery_replicates_used": int(finite.size),
+        "bootstrap_replicates": int(replicates),
+        "resampling_unit": "cohort sequence, one index set shared by all three conditions",
+    }
+
+
 def build_cohort(args: argparse.Namespace) -> Cohort:
     return protein_cohort(
         args.sequences,
@@ -761,6 +802,13 @@ def main() -> None:
         "per_sequence_nll_interval": {
             name: mean_interval(scores[name]["nll"].tolist()) for name in scores
         },
+        "paired_per_sequence": _paired_recovery(
+            scores["original"]["nll"],
+            scores["replacement"]["nll"],
+            scores["mean_ablated"]["nll"],
+            replicates=args.bootstrap,
+            seed=args.seed,
+        ),
         "reconstruction_nmse_per_layer": reference["reconstruction_nmse_per_layer"],
         "reconstruction_nmse_sum": float(
             sum(reference["reconstruction_nmse_per_layer"])

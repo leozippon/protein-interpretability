@@ -8439,3 +8439,56 @@ after 0 s on a run that completed normally — the idle-GPU test fired while the
 stage was still reading a 537k-row CSV, before the model reached the card — and
 it now carries a startup grace period. The measurement was unaffected; only the
 poll was wrong, and the artefact was pulled and digest-verified by hand.
+
+## 2026-08-06 — EXP-R2-134: the free-baseline gap is real and small, and ProGenMech's eight-assay panel cannot resolve it
+
+The same stage on the whole ProteinGym substitution benchmark — **217 assays of
+217**, none excluded, 1000 variants each, uniform seeded draw, sharded four ways
+across the pod's four cards under one frozen snapshot
+(`20260806135626_75896ecef73b`). All four shards pulled and digest-verified.
+Cards idle before and after. A CPU pre-screen ran first and confirmed every
+assay loads under the stage's own single-wildtype invariant, so no shard could
+die on a malformed assay.
+
+| | mean ρ | SD | median |
+|---|---:|---:|---:|
+| ProGen3-112M | **+0.2745** | 0.2039 | +0.2993 |
+| BLOSUM62 | **+0.2098** | 0.1107 | +0.2152 |
+
+**Paired difference +0.0647, 95% CI [+0.0386, +0.0909]; the model wins on 143 of
+217 assays, sign test p = 3.3e-06.** The shuffled-label negative control reads
++0.0017 mean with a maximum |ρ| of 0.140, so the pairing is doing the work.
+
+**This bounds EXP-R2-133 rather than repeating it, and the correction runs
+against my own earlier reading.** On the full benchmark the model *does* beat the
+free baseline, and the claim "ProGen3-112M's zero-shot fitness is not above
+BLOSUM62" is **false as a statement about the model**. What is true is narrower
+and more useful: **the effect size is the same on both cohorts — +0.0647 over
+217 assays and +0.0637 over ProGenMech's own eight — and only the power
+differs.** At n=8 that same advantage has a 95% interval of [−0.110, +0.241];
+at n=217 it is [+0.039, +0.091].
+
+**So the limitation is one of their evaluation design, not of the model.** A
+recovery ratio quoted against a base whose own advantage over a free baseline is
+*unresolvable on the panel it is measured on* cannot distinguish a circuit that
+captured the model's fitness computation from one that captured a substitution
+matrix. That is the L1 shape exactly — a ratio applied to an estimand with too
+small a footprint to carry it — and it is now measured rather than argued. Their
+eight assays are not unrepresentative in effect size; they are too few.
+
+**Two things worth recording that are not claims.** The model's advantage is
+unevenly distributed: it loses to BLOSUM62 by more than 0.45 on five assays,
+four of them Tsuboyama_2023 mega-scale stability assays on small domains, and
+wins by more than 0.42 on five others. And ProGen3-112M's benchmark-wide mean of
++0.2745 sits close to the 0.282 ProteinGym publishes for this checkpoint, which
+is a check on our scoring across 217 assays rather than eight — the residual
+disagreement with ProteinGym's per-assay values on the mutation-dense assays
+(EXP-R2-133) is therefore local to those assays and not a systematic difference
+in how we score.
+
+**What EXP-R2-133 keeps.** Every reading of ProGenMech's own estimands, taken
+from their released code: the mean-per-token bidirectional score with no
+wild-type subtraction, the "~80%" whose denominator is the CLT rather than the
+model, the "~60%" that is a sample-quality ratio between different sequences,
+and the `clt_direct` condition that replaces only layer 9 of 10. Those do not
+depend on the cohort and are unaffected.

@@ -55,6 +55,26 @@ if str(REPO_ROOT) not in sys.path:
 DECLARED_CONDITION = {"census_sequences": 600, "census_ban_depth": 3, "width": 192}
 
 
+def off_condition_reasons(report: dict[str, Any], census: dict[str, Any]) -> list[str]:
+    """Why this draw is not on the declared condition, or an empty list.
+
+    The single copy of the predicate. Its *values* were already single-sourced
+    through ``DECLARED_CONDITION``; the predicate itself -- including the layout
+    guard clause, which is not a settings key and so is easy to omit -- was
+    written out here and again in ``paa_failure_audit.py`` (Appendix B rule 12).
+    """
+
+    settings = report.get("settings", {})
+    reasons = [
+        f"{key}={settings.get(key)!r}"
+        for key, value in DECLARED_CONDITION.items()
+        if settings.get(key) != value
+    ]
+    if census.get("a1_candidate_pool", {}).get("layout_tokens_excluded_from_decoys") is None:
+        reasons.append("predates the decoy layout guard")
+    return reasons
+
+
 def _agreement(report: dict[str, Any], directory: Path, reports_only: bool) -> dict[str, Any] | None:
     """The versioned statistic, stored or recomputed through the module."""
 
@@ -94,19 +114,10 @@ def collect(root: Path, *, reports_only: bool, any_condition: bool) -> tuple[dic
         if not census:
             dropped.append(f"{directory.name}: no census section")
             continue
-        settings = report.get("settings", {})
         if not any_condition:
-            differs = [
-                f"{key}={settings.get(key)!r}"
-                for key, value in DECLARED_CONDITION.items()
-                if settings.get(key) != value
-            ]
+            differs = off_condition_reasons(report, census)
             if differs:
                 dropped.append(f"{directory.name}: off-condition ({', '.join(differs)})")
-                continue
-            pool = census.get("a1_candidate_pool", {})
-            if pool.get("layout_tokens_excluded_from_decoys") is None:
-                dropped.append(f"{directory.name}: predates the decoy layout guard")
                 continue
         agreement = _agreement(report, directory, reports_only)
         if agreement is None:
