@@ -8252,3 +8252,88 @@ The defect is real and is repaired at the root: the smoke tree is **moved** (rul
 pulled to B so the control is locally verifiable rather than pod-only. Note that
 `read_paa_panel.py` was never fooled — it filters on the declared condition and
 dropped the smoke run — which is precisely why that filter exists.
+
+## 2026-08-06 — EXP-R2-132 (D2.g, first result): the released PLT replacement is behaviourally poor and causally uninformative on our estimand
+
+First H200 campaign of the external-baseline audit. Three runs — two corpus draws
+in bfloat16 and one repeat of the first draw in float16 — at the stage's defaults:
+128 Swiss-Prot sequences at the qualifying band 64–246, 1000 bootstrap replicates,
+batch 8. `CODE_HASH 3f684b638e8a`, 43 frozen files, snapshot verified in the pod
+by the controller's own predicate; all four staged assets digest-verified in-pod,
+and the staged PLT's SHA-256 is bit-identical to the one the L20 smoke run
+measured. Artefacts pulled and all six local digests re-checked against their
+in-pod values. Cards idle before and after (rule 19).
+
+**The estimand, stated because the comparison to the paper depends on it.** The
+stage intercepts every MoE block and substitutes the transcoder's output while
+attention runs unchanged. That is the paper's **sequential replacement**
+condition — ground-truth attention, transcoder-reconstructed MoE — applied to
+their released **PLT**, which is their own baseline rather than their headline
+CLT (unobtainable, EXP-R2-130).
+
+**Behavioural: FAIL, and not marginally.**
+
+| | bf16 draw 20260728 | bf16 draw 20260806 | fp16 draw 20260728 |
+|---|---:|---:|---:|
+| NLL clean → replacement → fully ablated | 1.857 → 3.098 → 3.279 | 2.010 → 3.092 → 3.256 | 1.857 → 3.100 → 3.279 |
+| denominator (ablated − clean) | 1.422 | 1.246 | 1.423 |
+| **NLL recovery** | **0.127** | **0.132** | **0.126** |
+| **KL recovery** | 0.123 | 0.127 | 0.122 |
+| reconstruction NMSE, 10 layers | 4.446 | 4.206 | 4.450 |
+
+Spliced end to end the replacement sits far nearer the fully-ablated endpoint than
+the clean one, and the per-sequence 95% intervals at n=128 are nowhere near
+overlapping. **Reconstruction and behaviour are visibly different properties on
+the same run**: NMSE is 0.067 and 0.0024 in layers 0–1 and 0.55–0.80 in layers
+4–8, and those compound into the behavioural gap. That is L3's shape — a fidelity
+metric that does not track behaviour — arriving on someone else's dictionary.
+
+**Attainability: PASS, which is what makes the causal result readable.** Ceilings
+0.984–0.994 against a 0.5 gate, so a failing cross-model correlation is a fact
+about the replacement rather than about the cohort. The asymmetry underneath is
+stark and stable across draws and dtypes: **the original resolves every one of its
+60 attention heads and all 10 MoE blocks above zero; the replacement resolves
+about 34 and 5–7.** Half the components the original has causal structure in, the
+replacement simply does not.
+
+**Causal: FAIL in all six family × run cells.** Attention-head Spearman 0.489 and
+0.501 across draws, MoE 0.358 and 0.442, every 95% lower bound below the 0.5 gate,
+and top-k overlap 4–5 of 10 against a sparsity-matched control whose q95 is 4.0.
+
+**Rule 4 earns its place again.** The attention top-10 overlap is 4 on one draw
+and 5 on the other, which straddles the control's q95 of exactly 4 and flips
+`exceeds_random_control` from False to True. **A single draw would have produced a
+different sentence about the sparsity control.** The Spearman gate fails either
+way so the verdict is unchanged — but the underlying effect vectors are stable
+across draws (Spearman 0.98–0.99 on both models), so the movement is in the
+cross-model statistic, not in the measurement.
+
+**Rule 15b is satisfied, by the only substitute available.** fp32 does not exist
+for this checkpoint — ProGen3's attention is pinned to a flash kernel with no
+float32 path — so the control is bfloat16 against float16, 8 mantissa bits against
+11. Effect-vector agreement is Spearman 0.988–1.000, top-10 sets identical in
+three of four families, reported Spearman moves 0.007 on attention against a CI
+width of 0.08, and **every gate verdict is identical across dtypes**. The causal
+reading is not precision-limited. One qualification kept rather than smoothed: the
+MoE family ranks only 10 components, where one adjacent swap moves Spearman by
+~0.06, so its point estimate should not be read to two decimals — the verdict is
+what is stable.
+
+**What this does and does not say about ProGenMech.** It is a clean measurement of
+their released PLT under a declared estimand with every gate stated, and it is
+**not yet a discrepancy with their paper**, for three reasons that must travel
+together. Their headline is the **CLT**, which we cannot obtain. Their reported
+figures are for sparse **circuits** rather than full replacement. And their
+evaluation corpus is not ours: our forward is bit-identical to their own class on
+their weights, yet our reconstruction NMSE sums to 4.42 against the 3.54 their
+checkpoint filename records — so **the corpus and masking difference alone moves
+their own metric by about a quarter**, which bounds how much of our behavioural
+gap can be read as disagreement. Establishing correspondence needs their
+evaluation data, which is partly released, and is the next step rather than an
+assumption.
+
+**One operational limitation, recorded because it bears on how this cluster should
+be used.** The stage held ~15% utilisation per card: 142 ablation sweeps × 16
+batches of a 112M-parameter model, launch-bound rather than compute-bound, with
+three concurrent runs leaving the fourth card idle. For work of this shape more
+concurrency compresses wall time and more GPU does not.

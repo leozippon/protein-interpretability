@@ -1257,3 +1257,22 @@ Immediate operational consequence: add a loss-recovered splice metric to the P0-
 - **D2.f is the last foundational item and costs nothing**: a stratified
   root-cause audit of the census failure from retained matrices, whose cheapest
   hypothesis would move the finding from the census to the evaluation interface.
+- **D2.g returns its first measurement, and the discipline is what makes it
+  readable.** The released PLT, spliced as a sequential replacement, recovers
+  ~13% of the clean-to-ablated behavioural gap and its causal rankings do not
+  beat a sparsity-matched control. The attainability gate passing at 0.98–0.99 is
+  what licenses reading those failures as facts about the replacement rather than
+  about the cohort — the L1 shape built into the instrument instead of
+  remembered. Reconstruction and behaviour visibly come apart on the same run:
+  NMSE 0.0024 in layer 1 against 0.80 in layer 8.
+- **Two controls earned their keep.** A bfloat16-against-float16 comparison
+  settles rule 15b, fp32 being unavailable on this checkpoint; every gate verdict
+  is identical across dtypes. And a second corpus draw flipped
+  `exceeds_random_control` from False to True on the attention top-k, because the
+  overlap straddles the control's q95 exactly — a single draw would have produced
+  a different sentence.
+- **The result is deliberately not called a discrepancy with the paper.** Their
+  headline is the CLT the mirror refuses us, their figures are for sparse circuits
+  rather than full replacement, and our own reconstruction metric sits 25% off
+  their recorded value with a bit-identical forward, which bounds how much of the
+  gap can be read as disagreement rather than as corpus.
