@@ -8059,3 +8059,93 @@ is ~40 H200 GPU-hours, and CLAUDE.md requires making full use of the cluster and
 reducing idle time. These are reconciled by reading the cap as governing
 **committed scope** rather than utilisation: idle capacity goes to the next gated
 item in the queue, never to another draw of a closed instrument.
+
+## 2026-08-06 — EXP-R2-130: ProGen3-112M runs here without megablocks, and the checkpoint has a silent failure mode
+
+Feasibility for D2.g, on one L20 card, correctness only. **The blocker is
+resolved and the reproduction can proceed**, but the way it resolves is itself a
+finding.
+
+**The eager path works and needed three repairs, all confined to the ignored
+third-party copy.** `modeling.py` imported megablocks unconditionally at module
+level, so the eager `SparseMoeBlock` could not be reached at all; the import is
+now lazy, with a placeholder `dMoE` whose construction raises so `isinstance`
+still works and a megablocks request still fails loudly. flash-attn turned out to
+be needed for **one RMSNorm kernel and nothing else** — attention is plain torch
+SDPA and `_supports_flash_attn_2 = False` — so it is replaced by a pure-PyTorch
+fp32 equivalent that raises `NotImplementedError` on any argument combination
+ProGen3 does not use, rather than silently computing something else. A third,
+unrelated blocker: ProGen3 pins `transformers < 4.49` and this environment has
+4.57.3, where `GenerationMixin` moved.
+
+**The finding that matters is L24, and it would have poisoned everything
+downstream.** The released checkpoint is in megablocks packing — eight experts
+stacked along dim 0, `9216 = 8 × 1152`. Loading it into the eager path with
+`from_pretrained(..., moe_implementation="eager")` **succeeds**: it warns
+"newly initialized" and returns a model whose every expert and every router is
+random at std ≈ 0.02, while attention, embeddings and norms load correctly. Only
+scoring catches it — **NLL 17.15 random against 1.983 converted** on the same
+cohort. The upstream TODO saying the eager/megablocks substitution is
+unimplemented is accurate and nothing enforces it.
+
+**The conversion was derived from megablocks 0.7.0's own source** (downloaded
+read-only from PyPI, **not installed**): `MemoryOptimizedGroupedGLU.forward`
+computes `gmm(x, w1, trans_b=True)`, multiplies by `act(gmm(x, v1, trans_b=True))`
+and applies `gmm(·, w2)`, and `create_dmoe_expert_weights` fixes expert `e` at
+rows `[e·1152, (e+1)·1152)`. Four rules — split `w1`→`w1`, split `v1`→`w3`, split
+**and transpose** `w2`→`w2`, rename `router.layer.weight`→`gate.weight`, drop the
+unused `mlm_head` — give `load_state_dict(strict=True)` with missing=[] and
+unexpected=[].
+
+**It is validated four ways, and the negative controls are the important half.**
+
+| check | result |
+|---|---|
+| UniRef50, 64 sequences | NLL **2.588** against the paper's ≈2.50 |
+| SwissProt, 64 sequences | NLL **1.983** |
+| residue-shuffled control | 2.940 |
+| uniform over 20 residues | 2.996 |
+| **`w1`/`v1` swapped** (the one mapping shapes cannot disambiguate) | **3.201** |
+| **gate rows rolled by one expert** | **3.173** |
+| router | exactly top-2 of 8 — 293,500 = 14,675 × 10 × 2 — per-layer entropy 2.10–3.00 bits, specialised not collapsed |
+| megablocks reference math, reimplemented from raw tensors | relative error **1.4e-3** on real layer-0 activations |
+
+Both wrong mappings score **worse than shuffled protein**, so an error in the one
+step that shapes cannot check is unmissable rather than subtle.
+
+**Their released PLT weights load and work.** Readable with
+`torch.load(weights_only=True)` after allowlisting `argparse.Namespace`, so
+**pytorch_lightning is not needed to read tensors** — only to use their loader.
+The checkpoint embeds a frozen backbone **104/104 bit-identical** to
+`/Data/public/progen3-112m`. Driven by *our eager model's* activations the
+transcoder reconstructs the MoE outputs at val/loss **4.22** against the released
+checkpoint's own **3.54** on a different evaluation mix, and at **32.5** against
+the `w1`/`v1`-swapped backbone. **A transcoder trained on megablocks activations
+reconstructing eager activations that well is the strongest available evidence
+that the two paths compute the same function.**
+
+**Two limits, both irreducible here.** There is no direct megablocks A/B: the
+package needs compiled CUDA extensions, cannot be installed in an offline pod,
+and equivalence is therefore established against its *source definition* plus the
+transcoder round-trip rather than against the kernel. And the eager path softmaxes
+the router in fp32 where megablocks uses bf16, which flips the top-2 set on
+**3.26%** of tokens for an end-to-end cost of **±0.0003 nats** — quantified and
+accepted, not a defect.
+
+**Their CLT weights are unobtainable and this bounds D2.g.** The mirror returns
+HTTP **403** for the entire `ProGen3_CLT_L10_D4608/` directory while serving
+`ProGen3_PLT_L10_D4608/` with the same token; reconfirmed independently with a
+direct HEAD request (CLT 403, PLT 302), and B has no direct route to
+huggingface.co. A hypothesis that the checkpoint filenames embed a `val/loss`
+path separator, and that this broke the transfer, was tested and is **wrong** —
+the refusal is access, not escaping. **So the audit gates their *baseline* rather
+than their headline**, and that must be stated wherever the result is: the paper's
+central claim is that CLT circuits beat PLT circuits, and we can currently test
+the PLT arm of it. Training a CLT ourselves with their code is blocked on the same
+wall — `pytorch_lightning`, `polars` and `wandb` cannot be installed in a pod.
+
+**What this fixes about the plan.** The harness must depend on
+torch/transformers/numpy/scipy alone, because none of their entry points can run
+in a pod; we use their released weights with our own measurement code, which is
+what the gating requires in any case. That is now being built as
+`src/transfer/progen3.py` and `scripts/transfer/15_replacement_faithfulness.py`.
