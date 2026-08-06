@@ -13,6 +13,8 @@ is limitation L18's shape and the most damaging defect class this programme has.
 from __future__ import annotations
 
 import ast
+import json
+import tempfile
 import dataclasses
 import os
 import subprocess
@@ -1098,3 +1100,94 @@ if __name__ == "__main__":  # pragma: no cover
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
     unittest.main()
+
+
+class ThePanelReaderPoolsOneConditionAndNeverComputesTheStatistic(unittest.TestCase):
+    """`read_paa_panel.py` exists because pulling matrices to read a panel is what
+    left fourteen finished arm-draws unread. Two properties keep it honest: it
+    pools only artefacts sharing the declared condition, and it never computes the
+    agreement statistic itself -- it takes the stored one or calls the module.
+    """
+
+    def reader(self):
+        return _load_stage_module("read_paa_panel.py")
+
+    def write_run(self, directory: Path, *, arm: str, settings: dict, hit: int, stored=True):
+        directory.mkdir(parents=True, exist_ok=True)
+        agreement = {
+            "n_heads": 192,
+            "spearman_census_vs_causal_magnitude": 0.1,
+            "depth_controlled": {"within_layer": 0.0},
+            "retrieval": {"hit_at_k": hit, "chance": 400 / 192, "k": 20, "ceiling": 20},
+        }
+        report = {
+            "settings": settings,
+            "census": {
+                "arm": arm,
+                "a1_candidate_pool": {"layout_tokens_excluded_from_decoys": []},
+            },
+            "causal": {"census_causal_agreement": agreement} if stored else {},
+        }
+        (directory / "paa_gate_report.json").write_text(json.dumps(report), encoding="utf-8")
+
+    def test_an_off_condition_run_is_dropped_and_the_reason_is_stated(self):
+        module = self.reader()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            declared = dict(module.DECLARED_CONDITION)
+            self.write_run(root / "good", arm="protgpt2", settings=declared, hit=6)
+            self.write_run(
+                root / "thin", arm="protgpt2", settings={**declared, "census_sequences": 200}, hit=6
+            )
+            per_arm, dropped = module.collect(root, reports_only=True, any_condition=False)
+            self.assertEqual([d["source"] for d in per_arm["protgpt2"]], ["good"])
+            self.assertEqual(len(dropped), 1)
+            self.assertIn("census_sequences=200", dropped[0])
+
+    def test_a_pre_decoy_guard_run_is_dropped_because_it_is_a_different_instrument(self):
+        module = self.reader()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_run(root / "old", arm="protgpt2", settings=dict(module.DECLARED_CONDITION), hit=6)
+            report_path = root / "old" / "paa_gate_report.json"
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            del report["census"]["a1_candidate_pool"]["layout_tokens_excluded_from_decoys"]
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            per_arm, dropped = module.collect(root, reports_only=True, any_condition=False)
+            self.assertEqual(per_arm, {})
+            self.assertIn("decoy layout guard", dropped[0])
+
+    def test_reports_only_refuses_rather_than_recomputing(self):
+        module = self.reader()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self.write_run(
+                root / "pre", arm="protgpt2", settings=dict(module.DECLARED_CONDITION),
+                hit=6, stored=False,
+            )
+            per_arm, dropped = module.collect(root, reports_only=True, any_condition=False)
+            self.assertEqual(per_arm, {})
+            self.assertIn("no readable agreement statistic", dropped[0])
+
+    def test_the_statistic_is_never_reimplemented_here(self):
+        source = (STAGE_DIR / "read_paa_panel.py").read_text(encoding="utf-8")
+        self.assertIn("census_causal_agreement", source)
+        for forbidden in ("spearmanr", "argsort", "rankdata"):
+            self.assertNotIn(
+                forbidden,
+                source,
+                "this reader must take the module's statistic, not compute one beside it",
+            )
+
+    def test_chance_is_per_arm_so_the_summary_classifies_rather_than_ranks(self):
+        module = self.reader()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            declared = dict(module.DECLARED_CONDITION)
+            for index, hit in enumerate((1, 3, 5)):
+                self.write_run(root / f"d{index}", arm="progen2-small", settings=declared, hit=hit)
+            per_arm, _ = module.collect(root, reports_only=True, any_condition=False)
+            row = module.summarise(per_arm)[0]
+            self.assertEqual(row["k"], 3)
+            self.assertEqual(row["hit_at_k"], [1, 3, 5])
+            self.assertAlmostEqual(row["median_over_own_chance"], 3 / (400 / 192))

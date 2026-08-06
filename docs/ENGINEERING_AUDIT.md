@@ -152,7 +152,14 @@ Reported and adjudicated as **not** defects, with the evidence:
   representation of the difference — on 2026-08-06 that left fourteen completed
   arm-draws on GPFS, unread, four of them on the arm carrying a live claim. The
   fix is not a bigger script: it is that a reading step must be part of a
-  campaign's definition of done.
+  campaign's definition of done. **Half of it is now cheap**: the agreement
+  statistic lives in each run's own ~1 MB report, so
+  `scripts/transfer/read_paa_panel.py` reads a whole panel without moving the
+  ~20 MB of matrices per arm-draw that made pulling the default. It pools only
+  artefacts sharing the declared condition and states what it dropped, and it
+  takes the statistic from the module rather than computing one beside it. The
+  other half — a campaign that is not "done" until it has been read — is still
+  convention.
 
 ## Remote Storage
 
