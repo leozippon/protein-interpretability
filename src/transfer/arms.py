@@ -147,29 +147,43 @@ CAPABILITIES = frozenset({"budget", "lens", "pathway", "circuits", "relational"}
 #: differences a downstream fit has to be able to separate.
 _ROTARY_DECODERS = frozenset({"llama", "qwen2"})
 
-#: Where each architecture keeps a block's attention submodule. Declared per
-#: architecture rather than found by trying attribute names in turn: a panel
-#: member whose attention cannot be named is a panel change that must be
-#: declared, and a search would silently resolve a new architecture to whichever
-#: candidate attribute happened to exist on it.
-_ATTENTION_ATTRIBUTE: dict[str, str] = {
-    "gpt2": "attn",
-    "progen": "attn",
-    **{architecture: "self_attn" for architecture in _ROTARY_DECODERS},
+#: Where each architecture keeps a block's attention submodule, as the path from
+#: the block down to it. Declared per architecture rather than found by trying
+#: attribute names in turn: a panel member whose attention cannot be named is a
+#: panel change that must be declared, and a search would silently resolve a new
+#: architecture to whichever candidate attribute happened to exist on it.
+#:
+#: A path rather than a single attribute because ByGPT5's attention is not an
+#: attribute of its block at all: a ``ByGPT5Block`` holds a ``ModuleList`` whose
+#: first entry is the ``T5LayerSelfAttention`` wrapper and whose second is the
+#: ``nn.Identity`` that replaces cross-attention, and the module that computes
+#: the pattern is the ``T5Attention`` inside that wrapper. Integers index, strings
+#: are attributes.
+_ATTENTION_PATH: dict[str, tuple[str | int, ...]] = {
+    "gpt2": ("attn",),
+    "progen": ("attn",),
+    **{architecture: ("self_attn",) for architecture in _ROTARY_DECODERS},
+    "t5_decoder": ("layer", 0, "SelfAttention"),
 }
 
 #: Architectures whose per-sublayer decomposition is commensurate with a
-#: standard causal decoder, derived from :data:`_ATTENTION_ATTRIBUTE` so that the
-#: two cannot drift apart. Reformer is deliberately absent: LSH attention and
-#: reversible layers mean its "attention share" and "residual stream" are not
-#: the same quantities the rest of the panel measures, and ByGPT5's T5 decoder is
-#: absent for the same kind of reason, its relative position bias and gated
-#: feed-forward making its sublayers different objects. Grouped-query attention
-#: is not such a reason: sharing one value projection across a group of query
-#: heads changes how a per-head decomposition must be built but not what the
-#: attention pathway is, and the pathway measurements ablate a whole sublayer
-#: output rather than a head.
-_DECOMPOSABLE = frozenset(_ATTENTION_ATTRIBUTE)
+#: standard causal decoder.
+#:
+#: Declared explicitly rather than derived from :data:`_ATTENTION_PATH`, because
+#: the two questions have come apart and it is now their *difference* that has to
+#: be kept honest. Naming an architecture's attention submodule is what a pattern
+#: read needs; claiming its sublayers are the same objects the rest of the panel
+#: decomposes is a stronger statement, and ByGPT5's T5 decoder satisfies the first
+#: and not the second -- its relative position bias and gated feed-forward make
+#: its sublayers different objects, so it is reachable for a pattern and refused
+#: for a decomposition. Reformer is absent from both: LSH attention and reversible
+#: layers mean its "attention share" and "residual stream" are not the same
+#: quantities the rest of the panel measures. Grouped-query attention is not such
+#: a reason: sharing one value projection across a group of query heads changes
+#: how a per-head decomposition must be built but not what the attention pathway
+#: is, and the pathway measurements ablate a whole sublayer output rather than a
+#: head.
+_DECOMPOSABLE = frozenset({"gpt2", "progen", *_ROTARY_DECODERS})
 
 
 @dataclass(frozen=True)
@@ -571,10 +585,27 @@ TEXT_ARCHITECTURE_CONTRAST = ("qwen2.5-0.5b", "llama-3.2-3b")
 #
 # The cost is an architecture difference, declared here rather than in prose:
 # ByGPT5 is T5-derived (relative position bias, T5 layer norm, gated GELU) and
-# admits no GPT-2-style sublayer decomposition, so it carries budget and lens
-# capability only. Reformer uses LSH attention with reversible layers and is
-# restricted to budget alone -- its attention share and residual stream are not
+# admits no GPT-2-style sublayer decomposition, so it carries no `pathway`
+# capability and no arm of it may enter the per-head circuit decomposition of
+# `src.transfer.circuits`. Reformer uses LSH attention with reversible layers and
+# is restricted to budget alone -- its attention share and residual stream are not
 # the quantities the rest of the panel measures.
+#
+# Updated 2026-08-05: `circuits` granted, `pathway` still withheld, and the gap
+# between the two is the point. The prediction-addressed-attention census reads
+# and overrides *attention patterns*; it never splits a block into an attention
+# and an MLP term, never rebuilds an OV circuit and never touches a position
+# table, so the decomposition objection above does not reach it. Withholding
+# `circuits` on that objection left the D2.c census with no byte-level TEXT arm at
+# all, which is the one control that separates "symbol-level tokenisation" from
+# "protein model" in its head-retrieval result: every symbol-level arm in the
+# panel is otherwise a protein decoder (transfer audit, EXP-R2-114).
+#
+# What the grant admits and what it does not was checked rather than assumed.
+# `circuit_primitives` and `induction_path_patching` both gate on their own
+# module's architecture declaration -- `circuits._CIRCUIT_ARCHITECTURES` and
+# `path_patching.SUPPORTED_ARCHITECTURES` -- and neither contains `t5_decoder`,
+# so those stages still refuse these arms with their own reason attached.
 for _name, _layers, _width in (
     ("bygpt5-small-en", 4, 1472),
     ("bygpt5-base-en", 6, 1536),
@@ -590,13 +621,12 @@ for _name, _layers, _width in (
         tokenisation="byte",
         input_format="raw",
         evaluation_cohort_source="openwebtext",
-        # No ByGPT5 model card on this host states a pretraining corpus, and the
-        # rungs carry budget and lens capability only, so no corpus contrast is
-        # defined against them. A guess here would be a false fact in every
-        # artefact that records the panel.
+        # No ByGPT5 model card on this host states a pretraining corpus, so no
+        # corpus contrast is defined against these rungs. A guess here would be a
+        # false fact in every artefact that records the panel.
         pretraining_corpus=PRETRAINING_UNDECLARED,
         architecture="t5_decoder",
-        capabilities=frozenset({"budget", "lens"}),
+        capabilities=frozenset({"budget", "lens", "circuits"}),
     )
 
 # google/reformer-enwik8 was staged as an architecturally independent byte-level
@@ -787,14 +817,71 @@ class Arm:
             )
         return self.blocks()[layer].mlp
 
-    def attention(self, layer: int) -> torch.nn.Module:
-        """The attention submodule, named per architecture rather than searched for.
+    def _resolve_attention(self, layer: int) -> torch.nn.Module:
+        """Walk :data:`_ATTENTION_PATH` from the block to the attention submodule.
 
         Searching a block for the first plausible attribute would resolve a newly
         admitted architecture silently, which is the one failure this panel
-        cannot afford: an arm that reaches a pathway measurement through an
-        attribute nobody declared produces a number that looks like every other
-        number in the table.
+        cannot afford: an arm that reaches a measurement through an attribute
+        nobody declared produces a number that looks like every other number in
+        the table. One walker for both accessors, so the two cannot disagree
+        about which module an arm's attention *is* while disagreeing, as they
+        must, about what may be measured on it.
+        """
+
+        architecture = self.spec.architecture
+        path = _ATTENTION_PATH.get(architecture)
+        if path is None:
+            raise TypeError(
+                f"{self.name}: no attention submodule is declared for {architecture!r}; "
+                f"declared: {sorted(_ATTENTION_PATH)}"
+            )
+        module: object = self.blocks()[layer]
+        for step in path:
+            if isinstance(step, int):
+                try:
+                    module = module[step]  # type: ignore[index]
+                except (IndexError, TypeError) as error:
+                    raise TypeError(
+                        f"{self.name}: declared {architecture} but block {layer} has no "
+                        f"entry {step} on the path {path}"
+                    ) from error
+                continue
+            if not hasattr(module, step):
+                raise TypeError(
+                    f"{self.name}: declared {architecture} but block {layer} has no "
+                    f"{step} on the path {path}"
+                )
+            module = getattr(module, step)
+        return module  # type: ignore[return-value]
+
+    def attention_pattern_module(self, layer: int) -> torch.nn.Module:
+        """The attention submodule whose forward computes the pattern.
+
+        Reading or overriding an attention pattern needs the module and nothing
+        else. It does *not* need the block's sublayers to be commensurate with a
+        standard causal decoder, which is what :meth:`attention` additionally
+        asserts, and conflating the two kept ByGPT5 out of the prediction-addressed
+        census on a decomposition ground the census never relies on.
+
+        Gated on ``circuits`` rather than ``pathway``: everything that reads a
+        pattern through this accessor computes a *per-head* statistic, which is
+        the family ``circuits`` declares, while ``pathway`` declares that whole
+        sublayer outputs are commensurate -- a claim this accessor's callers
+        neither make nor need.
+        """
+
+        self.require("circuits")
+        return self._resolve_attention(layer)
+
+    def attention(self, layer: int) -> torch.nn.Module:
+        """The attention submodule, as one term of a commensurate sublayer split.
+
+        Same module as :meth:`attention_pattern_module`, stronger claim: callers
+        of this accessor read or ablate it *as the attention sublayer* of a
+        decomposition whose other term is the MLP, so an architecture whose
+        sublayers are not those objects is refused even though its attention
+        module can be named.
         """
         self.require("pathway")
         architecture = self.spec.architecture
@@ -802,13 +889,7 @@ class Arm:
             raise TypeError(
                 f"{self.name}: sublayer decomposition is not defined for {architecture!r}"
             )
-        block = self.blocks()[layer]
-        attribute = _ATTENTION_ATTRIBUTE[architecture]
-        if not hasattr(block, attribute):
-            raise TypeError(
-                f"{self.name}: declared {architecture} but block {layer} has no {attribute}"
-            )
-        return getattr(block, attribute)
+        return self._resolve_attention(layer)
 
 
 def load_arm(

@@ -29,7 +29,11 @@ if str(STAGE_DIR) not in sys.path:
 
 import panel_contract as pc  # noqa: E402
 from src.transfer import path_patching  # noqa: E402
+from src.transfer import prediction_addressed as pa  # noqa: E402
+from src.transfer import scaling  # noqa: E402
 from src.transfer.arms import PANEL  # noqa: E402
+from src.transfer.circuits import _CIRCUIT_ARCHITECTURES  # noqa: E402
+from src.transfer.path_patching import SUPPORTED_ARCHITECTURES  # noqa: E402
 
 
 def _load_stage_module(filename: str):
@@ -86,12 +90,30 @@ class ArmCanRunPredicate(unittest.TestCase):
 
     def test_lens_family_refuses_rmsnorm_arms_and_admits_every_other_campaign_arm(self):
         eligible, refused = pc.stage_arms("lens_family")
-        self.assertEqual({v.arm for v in refused}, {"qwen2.5-0.5b", "llama-3.2-3b"})
+        # Derived from the module's own architecture declaration rather than
+        # listed: the two rotary arms lack `nn.LayerNorm` at `transformer.ln_f`,
+        # and the byte-level control is refused on the same declaration for a
+        # different reason (a T5 decoder's final norm is not a LayerNorm either).
+        # A hard-coded pair made the second refusal read as a regression.
+        self.assertEqual(
+            {v.arm for v in refused},
+            {
+                arm
+                for arm in pc.CAMPAIGN_PANEL
+                if PANEL[arm].architecture not in scaling.LENS_ARCHITECTURES
+            },
+        )
+        self.assertIn("qwen2.5-0.5b", {v.arm for v in refused})
+        self.assertIn("bygpt5-medium-en", {v.arm for v in refused})
         # Derived, not restated: admitting ProGen2-small moved this from 9 to 10
         # and a hard-coded count made a legitimate panel change look like a defect.
         self.assertEqual(
             set(eligible),
-            {a for a in pc.CAMPAIGN_PANEL if a not in {"qwen2.5-0.5b", "llama-3.2-3b"}},
+            {
+                arm
+                for arm in pc.CAMPAIGN_PANEL
+                if PANEL[arm].architecture in scaling.LENS_ARCHITECTURES
+            },
         )
 
     def test_relational_channel_includes_progen2_base(self):
@@ -164,6 +186,7 @@ class PaaCensusEligibility(unittest.TestCase):
             if contract.capabilities <= PANEL[name].capabilities
             and PANEL[name].architecture in contract.architectures
             and PANEL[name].input_format in contract.input_formats
+            and name not in contract.excluded_arms
         ]
         self.assertEqual(pc.stage_arms(self.STAGE)[0], expected)
         self.assertTrue(expected, "the predicate admits nothing; it cannot be right")
@@ -196,12 +219,96 @@ class PaaCensusEligibility(unittest.TestCase):
         self.assertIn("No width admits", reason)
         self.assertIn("build_cohorts", reason)
 
-    def test_the_bygpt5_arms_are_refused_on_their_declared_capabilities(self):
-        for arm in ("bygpt5-small-en", "bygpt5-base-en", "bygpt5-medium-en"):
+    def test_the_byte_level_text_control_is_admitted(self):
+        # EXP-R2-114: every symbol-level-tokenised arm this stage measures is a
+        # protein decoder, so the census's head-retrieval failure cannot be
+        # attributed to tokenisation rather than to modality without a byte-level
+        # TEXT arm. bygpt5-medium-en is that arm, and the declaration that used to
+        # refuse it -- a per-head OV decomposition this stage never performs -- is
+        # not the declaration this stage depends on.
+        verdict = pc.arm_can_run(self.STAGE, "bygpt5-medium-en")
+        self.assertTrue(verdict.can_run, verdict.reason)
+        self.assertIn("circuits", PANEL["bygpt5-medium-en"].capabilities)
+        self.assertNotIn("pathway", PANEL["bygpt5-medium-en"].capabilities)
+
+    def test_the_stage_mirrors_the_module_that_actually_measures_it(self):
+        contract = pc.STAGE_CONTRACTS[self.STAGE]
+        self.assertEqual(
+            contract.architecture_source,
+            "src.transfer.prediction_addressed.PAA_ARCHITECTURES",
+        )
+        self.assertEqual(contract.architectures, frozenset(pa.PAA_ARCHITECTURES))
+        # Every admitted architecture must have a knockout path in that module,
+        # or the stage schedules a run that dies at the causal statistic.
+        self.assertIn("t5_decoder", pa.PAA_ARCHITECTURES)
+
+    def test_granting_circuits_to_bygpt5_widens_no_other_stage(self):
+        # A capability is an intent; a module declaration is what is deliverable.
+        # Both circuit stages gate on their own module's architecture set, so the
+        # grant must not reach them -- checked against those sets rather than
+        # against the refusal text, which is the thing that could go stale.
+        self.assertNotIn("t5_decoder", _CIRCUIT_ARCHITECTURES)
+        self.assertNotIn("t5_decoder", SUPPORTED_ARCHITECTURES)
+        for stage in ("circuit_primitives", "induction_path_patching"):
+            for arm in ("bygpt5-small-en", "bygpt5-base-en", "bygpt5-medium-en"):
+                verdict = pc.arm_can_run(stage, arm)
+                self.assertFalse(verdict.can_run, f"{stage}/{arm}")
+                self.assertIn("t5_decoder", verdict.reason)
+
+    def test_the_narrower_bygpt5_rungs_are_refused_on_their_head_grid(self):
+        # 4x6 = 24 heads and 6x12 = 72 heads. hit@k is comparable only within a
+        # grid size, and at 24 heads the chance level of hit@20 is 16.7 of a
+        # ceiling of 20, so the statistic cannot separate a census that retrieves
+        # the causally important heads from one that returns the grid. Nothing in
+        # ArmSpec declares a head count, so this cannot be a property rule and the
+        # refusal is a named exception that has to carry its own reason.
+        contract = pc.STAGE_CONTRACTS[self.STAGE]
+        for arm in ("bygpt5-small-en", "bygpt5-base-en"):
             verdict = pc.arm_can_run(self.STAGE, arm)
             self.assertFalse(verdict.can_run, arm)
-            self.assertIn("circuits", verdict.reason, arm)
-            self.assertEqual(PANEL[arm].capabilities, frozenset({"budget", "lens"}))
+            self.assertIn(arm, contract.excluded_arms)
+            self.assertEqual(verdict.reason, contract.excluded_arms[arm])
+            self.assertIn("heads", verdict.reason)
+            # Refused on the grid, not on anything they share with the admitted
+            # rung -- architecture, tokenisation and rendering are identical.
+            self.assertEqual(
+                (PANEL[arm].architecture, PANEL[arm].tokenisation, PANEL[arm].input_format),
+                ("t5_decoder", "byte", "raw"),
+            )
+
+    def test_a_named_exclusion_must_name_a_real_arm_and_say_why(self):
+        # An allow-list typo refuses everything and is noticed; a deny-list typo
+        # refuses nothing and is not.
+        self.assertIn(
+            "not in",
+            self._refused_by_the_import_check(
+                excluded_arms={"bygtp5-medium-en": "a transposed name"}
+            ),
+        )
+        self.assertIn(
+            "without saying why",
+            self._refused_by_the_import_check(excluded_arms={"bygpt5-medium-en": ""}),
+        )
+
+    def test_a_run_from_outside_the_campaign_panel_says_so_in_its_artefact(self):
+        # `eligible_for_this_stage` is resolved over CAMPAIGN_PANEL, so an arm
+        # measured from outside it does not appear there and the artefact reads as
+        # a contradiction with its own `measured` list. The wrong resolution of
+        # that contradiction -- "the stage refuses this arm and ran it anyway" --
+        # is the damaging one, so the field names the arm and says why it is not a
+        # campaign arm. bygpt5-medium-en held this role until 2026-08-06, when its
+        # staging was verified and it became one; bygpt5-base-en still does.
+        record = pc.stage_contract_record(self.STAGE, ["bygpt5-base-en"])
+        outside = record["arm_selection"]["measured_outside_campaign_panel"]
+        self.assertEqual(list(outside), ["bygpt5-base-en"])
+        self.assertTrue(outside["bygpt5-base-en"]["not_in_campaign_panel_because"])
+        self.assertNotIn(
+            "bygpt5-base-en", record["arm_selection"]["eligible_for_this_stage"]
+        )
+        # A campaign-panel arm leaves the field empty, so it cannot become noise
+        # every artefact carries.
+        campaign = pc.stage_contract_record(self.STAGE, ["gpt2-large"])
+        self.assertEqual(campaign["arm_selection"]["measured_outside_campaign_panel"], {})
 
     def test_every_refusal_carries_a_reason(self):
         eligible, refused = pc.stage_arms(self.STAGE, sorted(PANEL))
@@ -364,7 +471,16 @@ class DefaultsDoNotNarrowThePanel(unittest.TestCase):
     def test_cohort_power_default_arms_cover_every_eligible_campaign_arm(self):
         module = _load_stage_module("01_cohort_power.py")
         text = module.default_arms("text", False)
-        self.assertEqual(len(text), 7, "the campaign's text side is seven arms")
+        # Counted from the contract, not restated: admitting the byte-level
+        # control moved the text side from seven arms to eight, and a literal
+        # here would have made a declared panel change look like a defect --
+        # the same reason the eligible-set assertion below is derived.
+        self.assertEqual(
+            set(text),
+            {arm for arm in pc.CAMPAIGN_PANEL if PANEL[arm].modality == "text"},
+            "cohort_power qualifies every campaign text arm; an arm it silently "
+            "omits is an arm scored without its power check",
+        )
         protein_ec = module.default_arms("protein", True)
         self.assertEqual(len(protein_ec), sum(1 for a in pc.CAMPAIGN_PANEL if PANEL[a].modality == "protein"))
         self.assertIn("zymctrl", protein_ec)
@@ -383,7 +499,17 @@ class DefaultsDoNotNarrowThePanel(unittest.TestCase):
                 module = _load_stage_module(filename)
                 arms = getattr(module, attribute)()
                 self.assertNotIn("bygpt5-small-en", arms)
-                self.assertEqual(set(arms), set(pc.CAMPAIGN_PANEL))
+                # Every campaign arm the stage can actually measure, and no
+                # other. Both stages need the `pathway` capability, which the
+                # byte-level control does not carry, so it is absent here by the
+                # contract's own refusal rather than by omission -- which is the
+                # distinction this test exists to hold.
+                stage = "pathway_budget" if filename.startswith("02") else "estimand_power"
+                self.assertEqual(
+                    set(arms),
+                    {arm for arm in pc.CAMPAIGN_PANEL if pc.arm_can_run(stage, arm).can_run},
+                )
+                self.assertNotIn("bygpt5-medium-en", arms)
 
     def test_recommend_default_is_control_anchored_not_the_whole_panel(self):
         # `recommend` raises unless exactly one arm is text, so sorted(PANEL) was

@@ -50,7 +50,7 @@ import argparse
 import ast
 import json
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -61,6 +61,7 @@ if str(REPO_ROOT) not in sys.path:
 from src.transfer.arms import MODEL_ROOT, PANEL, TEXT_MODEL_BASE, TEXT_MODEL_ROOT  # noqa: E402
 from src.transfer.circuits import _CIRCUIT_ARCHITECTURES  # noqa: E402
 from src.transfer.path_patching import SUPPORTED_ARCHITECTURES  # noqa: E402
+from src.transfer.prediction_addressed import PAA_ARCHITECTURES  # noqa: E402
 from src.transfer.probes import concepts_for_modality  # noqa: E402
 from src.transfer.scaling import LENS_ARCHITECTURES  # noqa: E402
 
@@ -79,8 +80,11 @@ SHELL_CONTRACT = Path(__file__).resolve().parent / "panel_contract.sh"
 #: stage's admitted ``ArmSpec.input_format`` set -- the declaration that refuses
 #: ZymCTRL from ``paa_census`` -- and :data:`PAA_CENSUS_WIDTH`, the pool width
 #: that stage is scheduled at, which is a *feasibility* parameter its eligible
-#: arm list is declared against rather than a scale knob.
-SCHEMA_VERSION = "r2_transfer_panel_contract_v4"
+#: arm list is declared against rather than a scale knob. v5 adds each stage's
+#: ``excluded_arms`` -- the named per-arm refusals no declared property can
+#: express -- so that a reader of the payload can tell an arm nobody asked for
+#: from one this stage decided against.
+SCHEMA_VERSION = "r2_transfer_panel_contract_v5"
 
 
 # --------------------------------------------------------------- campaign panel
@@ -106,18 +110,46 @@ CAMPAIGN_PANEL: tuple[str, ...] = (
     "progen2-base",
     "progen2-medium",
     "progen2-small",
+    # The byte-level text control for D2.c (EXP-R2-129). Admitted 2026-08-06 on
+    # the staging fact its exclusion turned on: the checkpoint is on GPFS at
+    # models/bygpt5-medium-en, 1,156,247,841 bytes, and was load-tested in the pod
+    # at 12 layers, d_model 1536, vocab 384 during the EXP-R2-058 staging session
+    # (docs/analysis/H200_STAGING_20260728.md, item 2). Verified present again
+    # before admission.
+    #
+    # What membership widens, stated rather than discovered later. Three stages
+    # accept it and the rest refuse on their own architecture declarations.
+    # `paa_census` is what it is here for. `cohort_power` is not a widening but
+    # this arm's PREREQUISITE -- evidence-discipline rule 2 forbids scoring an arm
+    # whose cohort context-information has not been qualified, which is how
+    # dialogpt-small came to be reported unmeasurable rather than failing.
+    # `probe_and_erasure` also accepts it and is no part of this track; it is
+    # scheduled by naming STAGES, so nothing runs it by accident, and it is
+    # recorded here so that a later full-panel campaign finds the fact declared
+    # instead of inferring it from an artefact.
+    "bygpt5-medium-en",
 )
 
 #: Panel members deliberately outside :data:`CAMPAIGN_PANEL`, with the reason.
+#:
+#: These are two of the three ByGPT5 rungs. The third, ``bygpt5-medium-en``, was
+#: here until 2026-08-06 on a staging fact this file could not itself verify; the
+#: checkpoint was in fact staged and load-tested on the cluster during EXP-R2-058
+#: and it is now a campaign arm. The two that remain are excluded on a property of
+#: their head grid that no amount of staging repairs -- ``hit@k`` has a
+#: grid-dependent chance level, and on a 24-head grid the chance level of
+#: ``hit@20`` is 16.7 against a ceiling of 20 -- stated once in
+#: ``STAGE_CONTRACTS["paa_census"].excluded_arms`` and pointed at from here.
 PANEL_MEMBERS_NOT_STAGED: dict[str, str] = {
     "bygpt5-small-en": (
-        "carries budget and lens capability only and its t5_decoder architecture "
-        "is in no measuring module's architecture declaration, so it can enter "
-        "exactly one campaign stage (cohort_power) and none of the stages the "
-        "campaign exists to run"
+        "refused by paa_census on its 4x6 = 24-head grid; see "
+        "STAGE_CONTRACTS['paa_census'].excluded_arms. No other campaign stage "
+        "admits a t5_decoder arm, so there is nothing for it to run"
     ),
-    "bygpt5-base-en": "see bygpt5-small-en",
-    "bygpt5-medium-en": "see bygpt5-small-en",
+    "bygpt5-base-en": (
+        "refused by paa_census on its 6x12 = 72-head grid; see "
+        "STAGE_CONTRACTS['paa_census'].excluded_arms. Otherwise as bygpt5-small-en"
+    ),
 }
 
 #: Checkpoints that are staged on GPFS and load cleanly but are NOT declared in
@@ -249,6 +281,19 @@ class StageContract:
     input_format_reason: str = ""
     declared_arms: tuple[str, ...] | None = None
     declared_arms_source: str = ""
+    #: Arms this stage refuses for a reason none of the declared properties above
+    #: can express, keyed to that reason.
+    #:
+    #: Distinct from :attr:`declared_arms`, which is an allow-list that has to
+    #: restate a whole panel and goes stale the moment one is added. This is a
+    #: deny-list of named exceptions, and it exists because ``paa_census`` has one
+    #: that is genuine and unexpressible: its retrieval statistic ``hit@k`` is
+    #: comparable only between arms with the SAME number of heads, and an
+    #: ``ArmSpec`` declares depth and width but not a head count, so no property in
+    #: this file can decide it. A reason is mandatory -- see
+    #: :func:`_check_stage_contracts` -- because an unexplained name in a deny-list
+    #: is indistinguishable from a typo.
+    excluded_arms: dict[str, str] = field(default_factory=dict)
     #: EVERY protein residue band this stage draws a cohort on, as the stage's own
     #: argparse defaults set it. See :data:`QUALIFYING_PROTEIN_BAND`.
     #:
@@ -513,8 +558,35 @@ STAGE_CONTRACTS: dict[str, StageContract] = {
         entry_point="14_paa_census.py",
         scope="per_arm",
         capabilities=frozenset({"circuits"}),
-        architectures=frozenset(_CIRCUIT_ARCHITECTURES),
-        architecture_source="src.transfer.circuits._CIRCUIT_ARCHITECTURES",
+        # The measuring module is src.transfer.prediction_addressed, not
+        # src.transfer.circuits: this stage taps an attention pattern and removes a
+        # key from it before the softmax, and never rebuilds a per-head OV circuit.
+        # Mirroring the circuit declaration made those two questions one, and the
+        # answer to the stronger of them refused ByGPT5 -- the only byte-level TEXT
+        # arm in the panel, and therefore the only control that separates
+        # "symbol-level tokenisation" from "protein model" in this stage's own
+        # head-retrieval result (transfer audit, EXP-R2-114). The two declarations
+        # differ on exactly t5_decoder; circuit_primitives still mirrors
+        # _CIRCUIT_ARCHITECTURES and still refuses it.
+        architectures=frozenset(PAA_ARCHITECTURES),
+        architecture_source="src.transfer.prediction_addressed.PAA_ARCHITECTURES",
+        excluded_arms={
+            "bygpt5-small-en": (
+                "4 layers x 6 heads = 24 heads. census_causal_agreement's retrieval "
+                "statistic is hit@20, whose chance level on a 24-head grid is 16.7 "
+                "of a ceiling of 20: the measurement cannot distinguish a census "
+                "that retrieves the causally important heads from one that returns "
+                "the grid. hit@k is comparable only within a grid size, and no "
+                "ArmSpec field declares a head count, so this cannot be a property "
+                "rule. bygpt5-medium-en carries the same tokenisation, corpus and "
+                "architecture at 12 x 16 = 192 heads, which grid-matches "
+                "ProGen2-small exactly"
+            ),
+            "bygpt5-base-en": (
+                "6 layers x 12 heads = 72 heads; as bygpt5-small-en, and not "
+                "grid-matched to any protein arm this stage measures"
+            ),
+        },
         input_formats=frozenset({"raw", "fasta_wrapped", "n_to_c_control"}),
         input_format_reason=(
             "an EC-conditioned rendering cannot enter a pool width SHARED with the "
@@ -604,6 +676,19 @@ def _check_stage_contracts() -> None:
             unknown = [a for a in contract.declared_arms if a not in PANEL]
             if unknown:
                 raise AssertionError(f"stage {stage!r} declares unknown arms {unknown}")
+        for arm, reason in contract.excluded_arms.items():
+            if arm not in PANEL:
+                raise AssertionError(
+                    f"stage {stage!r} excludes {arm!r}, which is not in "
+                    "src.transfer.arms.PANEL; a deny-list entry that names nothing "
+                    "refuses nothing and reads exactly like one that works"
+                )
+            if not reason:
+                raise AssertionError(
+                    f"stage {stage!r} excludes {arm!r} without saying why. This "
+                    "deny-list exists for refusals no declared property can express, "
+                    "so the reason is the whole declaration"
+                )
         prefixes = [band.argument_prefix for band in contract.protein_bands]
         if len(set(prefixes)) != len(prefixes):
             raise AssertionError(
@@ -679,6 +764,12 @@ def arm_can_run(stage: str, arm: str) -> Eligibility:
             f"not in {contract.declared_arms_source}, which is this stage's own "
             f"declaration of the arms it measures ({list(contract.declared_arms)})",
         )
+
+    # Before the property gates, because a named exception is a decision about
+    # this arm and the property gates would otherwise report a reason that is true
+    # of the arm and not the reason it is refused.
+    if arm in contract.excluded_arms:
+        return Eligibility(stage, arm, False, contract.excluded_arms[arm])
 
     missing = sorted(contract.capabilities - spec.capabilities)
     if missing:
@@ -762,6 +853,13 @@ def stage_contract_record(stage: str, arms: list[str] | tuple[str, ...]) -> dict
     ``arm_selection``
         which arms ran, which panel members did not, and why. A stage that
         measures a subset of the panel and does not say so is the L18 shape.
+        ``eligible_for_this_stage`` is resolved over :data:`CAMPAIGN_PANEL`, so an
+        arm measured from outside that panel -- a deliberate per-arm run of a
+        checkpoint the cluster does not stage, which is how ``paa_census`` reaches
+        ZymCTRL and ``bygpt5-medium-en`` -- would otherwise read as an arm the
+        stage refuses. ``measured_outside_campaign_panel`` answers that directly,
+        with the stage's own verdict on the arm beside the reason it is not in the
+        campaign.
     ``cohort_band``
         the protein residue band this stage draws on, beside the band
         ``01_cohort_power.py`` *qualified* the arms on, and a flag for whether
@@ -785,6 +883,15 @@ def stage_contract_record(stage: str, arms: list[str] | tuple[str, ...]) -> dict
             "measured": measured,
             "campaign_panel": list(CAMPAIGN_PANEL),
             "eligible_for_this_stage": eligible,
+            "measured_outside_campaign_panel": {
+                name: {
+                    "eligible_for_this_stage": arm_can_run(stage, name).can_run,
+                    "eligibility_reason": arm_can_run(stage, name).reason,
+                    "not_in_campaign_panel_because": PANEL_MEMBERS_NOT_STAGED.get(name),
+                }
+                for name in measured
+                if name not in CAMPAIGN_PANEL
+            },
             "eligible_but_not_measured": [
                 name for name in eligible if name not in measured
             ],
@@ -1128,6 +1235,7 @@ def contract_payload() -> dict[str, Any]:
             "declared_arms": (
                 None if contract.declared_arms is None else list(contract.declared_arms)
             ),
+            "excluded_arms": dict(contract.excluded_arms),
             "cohort_band": cohort_band_record(contract),
             "eligible_arms": eligible,
             "refused_arms": {v.arm: v.reason for v in refused},

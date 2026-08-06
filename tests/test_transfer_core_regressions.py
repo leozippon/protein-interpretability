@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import dataclasses
 import inspect
 import sys
 from pathlib import Path
@@ -17,7 +18,12 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.transfer.arms import Arm, ArmSpec, Cohort, PANEL  # noqa: E402
-from src.transfer.circuits import content_bounds, layout_token_ids  # noqa: E402
+from src.transfer.circuits import (  # noqa: E402
+    content_bounds,
+    head_dim,
+    layout_token_ids,
+    n_head,
+)
 from src.transfer.induction_robustness import contrast_ratio_bootstrap  # noqa: E402
 from src.transfer.lenses import split_cohort  # noqa: E402
 from src.transfer.path_patching import (  # noqa: E402
@@ -27,6 +33,7 @@ from src.transfer.path_patching import (  # noqa: E402
     select_senders,
 )
 from src.transfer.prediction_addressed import (  # noqa: E402
+    install_knockout,
     tap_attention,
     unigram_percentiles,
 )
@@ -515,9 +522,30 @@ _HEADS, _TOKENS, _DHEAD = 3, 5, 2
 
 
 def _pattern():
-    return torch.arange(1 * _HEADS * _TOKENS * _TOKENS, dtype=torch.float32).reshape(
-        1, _HEADS, _TOKENS, _TOKENS
+    """A pattern, meaning row-stochastic and not merely pattern-shaped.
+
+    Softmaxed rather than left as the raw ``arange`` these fixtures used to
+    return: the tap identifies the pattern by *both* its shape and the fact that
+    its rows are a probability distribution, because on a T5 decoder the
+    position bias has the identical shape and the shape test alone is ambiguous.
+    A fixture that is not a distribution is not a pattern.
+    """
+
+    return torch.softmax(
+        torch.arange(1 * _HEADS * _TOKENS * _TOKENS, dtype=torch.float32).reshape(
+            1, _HEADS, _TOKENS, _TOKENS
+        ),
+        dim=-1,
     )
+
+
+def _position_bias():
+    """T5's shared relative bias: pattern-shaped, and nowhere near stochastic."""
+
+    bias = torch.zeros(1, _HEADS, _TOKENS, _TOKENS)
+    causal = torch.triu(torch.ones(_TOKENS, _TOKENS, dtype=torch.bool), diagonal=1)
+    bias[:, :, causal] = torch.finfo(torch.float32).min
+    return bias
 
 
 def _cache():
@@ -525,7 +553,7 @@ def _cache():
 
 
 def _tap_arm(module: nn.Module) -> Arm:
-    """An Arm whose only exercised surface is ``attention`` and the head count."""
+    """An Arm whose only exercised surface is its attention module and head count."""
 
     model = SimpleNamespace(config=SimpleNamespace(n_head=_HEADS))
     arm = Arm(
@@ -536,7 +564,10 @@ def _tap_arm(module: nn.Module) -> Arm:
         dtype="float32",
         attn_implementation="eager",
     )
+    # Both accessors, because gpt2-large legitimately has both and the tap now
+    # goes through the pattern accessor rather than the decomposition one.
     object.__setattr__(arm, "attention", lambda layer: module)
+    object.__setattr__(arm, "attention_pattern_module", lambda layer: module)
     return arm
 
 
@@ -606,6 +637,284 @@ def test_tap_leaves_an_architecture_that_needs_no_request_untouched() -> None:
     assert len(tap_attention(_tap_arm(_NoNegotiation()), 0, lambda layer, weights: None)) == 1
     assert len(tap_attention(_tap_arm(_AlwaysWeights()), 0, lambda layer, weights: None)) == 2
     assert torch.equal(_capture(_AlwaysWeights())[0], _pattern())
+
+
+def test_tap_separates_a_pattern_from_a_position_bias_of_the_same_shape() -> None:
+    # T5's contract, which is what admitted ByGPT5 to the census: the attention
+    # returns (output, position_bias) and appends the weights on request, and the
+    # position bias is four-dimensional with the head count on axis 1 and square
+    # trailing axes -- exactly the shape test the tap used to identify a pattern
+    # by. What separates them is that only one of the two is a distribution.
+    class _T5Contract(nn.Module):
+        def forward(self, hidden_states, output_attentions=False):
+            outputs = (hidden_states, _position_bias())
+            if output_attentions:
+                outputs += (_pattern(),)
+            return outputs
+
+    assert torch.equal(_capture(_T5Contract())[0], _pattern())
+
+
+def test_tap_refuses_a_pattern_shaped_tensor_that_is_not_a_distribution() -> None:
+    # The negative half of the same rule. A module that returns only the bias has
+    # one tensor of pattern shape and no pattern, and reporting the bias as a
+    # pattern would put a matrix of relative-position offsets into every per-head
+    # score downstream without anything failing.
+    class _BiasOnly(nn.Module):
+        def forward(self, hidden_states, output_attentions=False):
+            return hidden_states, _position_bias()
+
+    arm = _tap_arm(_BiasOnly())
+    handles = tap_attention(arm, 0, lambda layer, w: None)
+    try:
+        with pytest.raises(RuntimeError, match="found 0 of 1 with that shape"):
+            arm.attention_pattern_module(0)(torch.zeros(1, _TOKENS, 4))
+    finally:
+        for handle in handles:
+            handle.remove()
+
+
+# ---------------------------------------------------------------------------
+# Naming an attention module and claiming its block decomposes are two different
+# statements, and ByGPT5 satisfies exactly one of them. They used to be one
+# declaration in arms.py, which kept the byte-level TEXT arm out of a census that
+# only ever reads patterns -- and that arm is the sole control separating
+# "symbol-level tokenisation" from "protein model" in the D2.c result.
+
+
+class _T5SelfAttention(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.q = nn.Linear(4, 4, bias=False)
+
+
+class _T5LayerSelfAttention(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.SelfAttention = _T5SelfAttention()
+
+
+class _ByGPT5Block(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        # A ModuleList whose second entry is the Identity that replaces cross
+        # attention: the attention is at layer[0].SelfAttention and at no
+        # attribute of the block itself.
+        self.layer = nn.ModuleList([_T5LayerSelfAttention(), nn.Identity(), nn.Identity()])
+
+
+class _ByGPT5Decoder(nn.Module):
+    def __init__(self, layers: int) -> None:
+        super().__init__()
+        self.block = nn.ModuleList([_ByGPT5Block() for _ in range(layers)])
+
+
+class _ByGPT5Model(nn.Module):
+    def __init__(self, layers: int) -> None:
+        super().__init__()
+        self.decoder = _ByGPT5Decoder(layers)
+
+
+def _bygpt5_arm(**spec_overrides) -> Arm:
+    spec = PANEL["bygpt5-medium-en"]
+    if spec_overrides:
+        spec = dataclasses.replace(spec, **spec_overrides)
+    return Arm(
+        spec=spec,
+        model=_ByGPT5Model(spec.n_layer),
+        tokenizer=object(),
+        device="cpu",
+        dtype="float32",
+        attn_implementation="eager",
+    )
+
+
+def test_the_attention_path_resolves_a_nested_submodule() -> None:
+    arm = _bygpt5_arm()
+    resolved = arm.attention_pattern_module(3)
+    assert resolved is arm.model.decoder.block[3].layer[0].SelfAttention
+
+
+def test_the_pattern_accessor_does_not_claim_the_block_decomposes() -> None:
+    # The panel refuses the decomposition accessor on the capability it withholds,
+    # and the architecture declaration refuses it a second time underneath -- so
+    # granting `pathway` to a t5_decoder arm by hand would still not produce a
+    # sublayer split. The pattern accessor is unaffected by either, which is the
+    # whole point of separating them.
+    arm = _bygpt5_arm()
+    assert arm.spec.architecture == "t5_decoder"
+    with pytest.raises(ValueError, match="'pathway' measurement family"):
+        arm.attention(0)
+    granted = _bygpt5_arm(capabilities=arm.spec.capabilities | {"pathway"})
+    for accessor in (granted.attention, granted.mlp):
+        with pytest.raises(TypeError, match="sublayer decomposition is not defined"):
+            accessor(0)
+    assert arm.attention_pattern_module(0) is not None
+
+
+def test_the_pattern_accessor_refuses_an_arm_without_the_circuits_capability() -> None:
+    # It is a per-head measurement, so it is gated, and the gate is the panel's
+    # own refusal rather than an exception at whatever depth first indexes a head.
+    arm = _bygpt5_arm(capabilities=frozenset({"budget", "lens"}))
+    with pytest.raises(ValueError, match="'circuits' measurement family"):
+        arm.attention_pattern_module(0)
+
+
+def test_an_undeclared_architecture_is_refused_rather_than_searched_for() -> None:
+    arm = _bygpt5_arm(architecture="reformer")
+    with pytest.raises(TypeError, match="no attention submodule is declared"):
+        arm.attention_pattern_module(0)
+
+
+def test_head_width_comes_from_the_declaration_and_not_from_the_ratio() -> None:
+    # ByGPT5 is 1536 wide over 16 heads, which divides evenly and gives 96 -- while
+    # the true per-head width is d_kv = 64. Nothing would raise on the wrong
+    # answer, so the invariant is asserted here rather than left to a config
+    # attribute map that has changed between the two transformers versions this
+    # programme runs on.
+    from transformers import T5Config
+
+    config = T5Config(d_model=1536, num_heads=16, d_kv=64, num_layers=12)
+    arm = Arm(
+        spec=PANEL["bygpt5-medium-en"],
+        model=SimpleNamespace(config=config),
+        tokenizer=object(),
+        device="cpu",
+        dtype="float32",
+    )
+    assert n_head(arm) == 16
+    assert head_dim(arm) == 64
+    assert head_dim(arm) != arm.d_model // n_head(arm)
+
+
+# ---------------------------------------------------------------------------
+# The knockout has to reach the softmax, and where it enters is per architecture.
+
+
+class _AdditiveMaskAttention(nn.Module):
+    """GPT-2's contract: an additive attention mask the hook can add to."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.seen: list[torch.Tensor | None] = []
+
+    def forward(self, hidden_states, attention_mask=None, output_attentions=False):
+        self.seen.append(attention_mask)
+        return hidden_states, _pattern()
+
+
+class _SharedBiasAttention(nn.Module):
+    """T5's contract: no additive mask, and one position bias shared by the stack."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.has_relative_attention_bias = True
+        self.seen_bias: list[torch.Tensor | None] = []
+
+    def compute_bias(self, query_length, key_length, device=None, cache_position=None):
+        return torch.full((1, _HEADS, query_length, key_length), 0.25)
+
+    def forward(
+        self,
+        hidden_states,
+        mask=None,
+        position_bias=None,
+        output_attentions=False,
+        cache_position=None,
+    ):
+        self.seen_bias.append(position_bias)
+        if position_bias is None:
+            position_bias = self.compute_bias(_TOKENS, _TOKENS)
+            if mask is not None:
+                position_bias = position_bias + mask
+        outputs = (hidden_states, position_bias)
+        if output_attentions:
+            outputs += (_pattern(),)
+        return outputs
+
+
+def _knockout_arm(module: nn.Module, architecture: str) -> Arm:
+    arm = Arm(
+        spec=dataclasses.replace(PANEL["gpt2-large"], architecture=architecture),
+        model=SimpleNamespace(config=SimpleNamespace(n_head=_HEADS)),
+        tokenizer=object(),
+        device="cpu",
+        dtype="float32",
+        attn_implementation="eager",
+    )
+    object.__setattr__(arm, "attention_pattern_module", lambda layer: module)
+    return arm
+
+
+def _knock() -> torch.Tensor:
+    mask = torch.zeros(1, _HEADS, _TOKENS, _TOKENS)
+    mask[0, 1, 4, 2] = -1.0e30
+    return mask
+
+
+def test_the_additive_mask_knockout_is_unchanged_for_a_gpt_style_arm() -> None:
+    module = _AdditiveMaskAttention()
+    arm = _knockout_arm(module, "gpt2")
+    handles = install_knockout(arm, 0, _knock())
+    try:
+        module(torch.zeros(1, _TOKENS, 4))
+        module(torch.zeros(1, _TOKENS, 4), attention_mask=torch.zeros(1, 1, _TOKENS, _TOKENS))
+    finally:
+        for handle in handles:
+            handle.remove()
+    assert len(handles) == 1
+    # Injected where there was none, added to where there was one.
+    assert torch.equal(module.seen[0], _knock())
+    assert torch.equal(module.seen[1], _knock())
+
+
+def test_the_shared_bias_knockout_reaches_the_softmax_and_stays_at_one_layer() -> None:
+    # Both halves matter and both are silent if wrong. A T5 attention consults its
+    # `mask` argument only when no position bias was passed, so adding to the mask
+    # does nothing above layer 0; and the stack re-reads the bias from each
+    # block's output, so adding to the bias would knock the head out in every
+    # layer above the one asked for.
+    module = _SharedBiasAttention()
+    arm = _knockout_arm(module, "t5_decoder")
+    incoming = torch.zeros(1, _HEADS, _TOKENS, _TOKENS)
+    handles = install_knockout(arm, 5, _knock())
+    try:
+        propagated = module(torch.zeros(1, _TOKENS, 4), position_bias=incoming)[1]
+    finally:
+        for handle in handles:
+            handle.remove()
+    # The module saw the knockout ...
+    assert float(module.seen_bias[0][0, 1, 4, 2]) == pytest.approx(-1.0e30, rel=1e-6)
+    assert float(module.seen_bias[0][0, 0, 4, 2]) == 0.0
+    # ... and the stack was handed back the bias it started with.
+    assert torch.equal(propagated, incoming)
+
+
+def test_the_shared_bias_knockout_builds_the_bias_the_first_layer_lacks() -> None:
+    # Layer 0 receives no position bias at all, so the hook reproduces the two
+    # lines the attention itself would have run -- its own compute_bias plus the
+    # stack's own causal mask -- and still hands back the clean result.
+    module = _SharedBiasAttention()
+    arm = _knockout_arm(module, "t5_decoder")
+    causal = torch.zeros(1, 1, _TOKENS, _TOKENS)
+    causal[..., 3:] = -1.0e9
+    handles = install_knockout(arm, 0, _knock())
+    try:
+        propagated = module(torch.zeros(1, _TOKENS, 4), mask=causal)[1]
+    finally:
+        for handle in handles:
+            handle.remove()
+    clean = module.compute_bias(_TOKENS, _TOKENS) + causal
+    assert torch.equal(propagated, clean)
+    assert float(module.seen_bias[0][0, 1, 4, 2]) == pytest.approx(-1.0e30, rel=1e-6)
+    assert float(module.seen_bias[0][0, 0, 4, 2]) == float(clean[0, 0, 4, 2])
+
+
+def test_the_knockout_refuses_an_architecture_it_has_no_path_for() -> None:
+    module = _AdditiveMaskAttention()
+    arm = _knockout_arm(module, "reformer")
+    with pytest.raises(TypeError, match="no attention knockout is implemented"):
+        install_knockout(arm, 0, _knock())
 
 
 def _recorded_dicts(tree: ast.AST) -> list[ast.Dict]:

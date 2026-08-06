@@ -91,8 +91,11 @@ from src.transfer.pathways import (  # noqa: E402
     smoothing_diagnostics,
 )
 from src.transfer.prediction_addressed import cluster_bootstrap  # noqa: E402
+from src.transfer.circuits import _CIRCUIT_ARCHITECTURES  # noqa: E402
 from src.transfer.scaling import (  # noqa: E402
+    CIRCUITS_INPUT_FORMATS,
     DEFAULT_LADDER,
+    circuits_supported,
     nearest_neighbour_contrasts,
 )
 from src.transfer.scoring import (  # noqa: E402
@@ -195,6 +198,49 @@ def test_ladder_declares_both_corpora():
     for member in DEFAULT_LADDER:
         assert member.source == member.evaluation_cohort_source
         assert member.pretraining_corpus
+
+
+def test_the_ladder_and_the_panel_declare_the_same_capabilities():
+    """Two declarations of one fact must not drift, and one of them raises if they do.
+
+    ``register_arm_spec`` refuses a rung whose ladder declaration conflicts with
+    the frozen panel, so a capability granted in ``arms.py`` and not here does not
+    narrow this control -- it stops it. That is the right failure and it is also
+    the reason this equality is worth asserting without a checkpoint on disk.
+    """
+
+    for member in DEFAULT_LADDER:
+        spec = PANEL.get(member.name)
+        if spec is None:
+            continue
+        assert member.capabilities == spec.capabilities, member.name
+
+
+def test_the_circuits_axes_are_gated_on_the_module_and_not_only_on_the_intent():
+    """A capability is an intent; ``circuits._CIRCUIT_ARCHITECTURES`` is deliverable.
+
+    ByGPT5 declares ``circuits`` because its attention patterns are readable per
+    head, which is what the prediction-addressed census needs. ``circuits.py``
+    still has no ``t5_decoder`` branch for the final norm, the embedding or the
+    per-head projections, so reading the capability as though it guaranteed the
+    module would crash this control inside its attribution measurement rather
+    than record a skip.
+    """
+
+    for member in DEFAULT_LADDER:
+        supported, reason = circuits_supported(member)
+        assert supported == (
+            member.input_format in CIRCUITS_INPUT_FORMATS
+            and member.architecture in _CIRCUIT_ARCHITECTURES
+        ), member.name
+        assert supported or reason, member.name
+    byte_rungs = [m for m in DEFAULT_LADDER if m.architecture == "t5_decoder"]
+    assert byte_rungs, "the byte-level rungs are what this gate exists for"
+    for member in byte_rungs:
+        assert "circuits" in member.capabilities
+        supported, reason = circuits_supported(member)
+        assert not supported
+        assert "_CIRCUIT_ARCHITECTURES" in reason
 
 
 # --------------------------------------------------------- arms: cohort sampling

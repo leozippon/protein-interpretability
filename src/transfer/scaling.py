@@ -91,6 +91,7 @@ from .arms import (
     ArmSpec,
 )
 from .budget import MIN_CONTEXT_INFORMATION_NATS
+from .circuits import _CIRCUIT_ARCHITECTURES
 from .statistics import mean_interval
 
 SCHEMA_VERSION = "r2_transfer_convergence_control_v2"
@@ -289,6 +290,19 @@ LENS_ARCHITECTURES = ("gpt2", "progen")
 #: difference from :data:`src.transfer.arms.CAPABILITIES` is ``relational``,
 #: which the rotary arms do not carry.
 ROTARY_TEXT_CAPABILITIES = frozenset({"budget", "lens", "pathway", "circuits"})
+
+#: What a ByGPT5 rung may enter, and it must be the same frozenset
+#: ``arms.PANEL`` declares -- :func:`register_arm_spec` refuses the run outright
+#: when the ladder and the panel disagree about a member, which is the check that
+#: caught this file when the panel granted ``circuits`` and this one had not.
+#:
+#: ``circuits`` here means what it means in ``arms.py``: per-head attention
+#: statistics are readable, which is what the prediction-addressed census needs.
+#: It does NOT mean ``src.transfer.circuits`` can resolve the rung --
+#: :func:`circuits_supported` is the declaration that answers that, and it
+#: refuses ``t5_decoder`` on the module's own architecture set, so this control's
+#: induction and attribution axes stay recorded-as-skipped for these three rungs.
+BYTE_TEXT_CAPABILITIES = frozenset({"budget", "lens", "circuits"})
 
 
 @dataclass(frozen=True)
@@ -544,7 +558,7 @@ DEFAULT_LADDER: tuple[LadderMember, ...] = (
         cohort_min_symbols=TEXT_MIN_CHARS,
         cohort_max_symbols=0,
         architecture="t5_decoder",
-        capabilities=frozenset({"budget", "lens"}),
+        capabilities=BYTE_TEXT_CAPABILITIES,
     ),
     LadderMember(
         name="bygpt5-base-en",
@@ -558,7 +572,7 @@ DEFAULT_LADDER: tuple[LadderMember, ...] = (
         cohort_min_symbols=TEXT_MIN_CHARS,
         cohort_max_symbols=0,
         architecture="t5_decoder",
-        capabilities=frozenset({"budget", "lens"}),
+        capabilities=BYTE_TEXT_CAPABILITIES,
     ),
     LadderMember(
         name="bygpt5-medium-en",
@@ -572,7 +586,7 @@ DEFAULT_LADDER: tuple[LadderMember, ...] = (
         cohort_min_symbols=TEXT_MIN_CHARS,
         cohort_max_symbols=0,
         architecture="t5_decoder",
-        capabilities=frozenset({"budget", "lens"}),
+        capabilities=BYTE_TEXT_CAPABILITIES,
     ),
     LadderMember(
         name="protgpt2",
@@ -1053,30 +1067,51 @@ def renderable(member: LadderMember, corpus: str) -> tuple[bool, str | None]:
 
 
 def circuits_supported(member: LadderMember) -> tuple[bool, str | None]:
-    """Can ``src.transfer.circuits`` score this member's input format?
+    """Can ``src.transfer.circuits`` score this member at all?
 
-    The induction census and the attribution decomposition both route through
-    ``circuits.content_bounds``, which decides which token positions are modality
-    content rather than prompt syntax, and the census also routes through
-    ``circuits.prefix_ids``. Neither knows every format ``arms`` can render, and a
-    format they do not know is a hard error rather than a degraded measurement.
+    Two independent conditions, because two independent things can be missing.
 
-    Checking here keeps that an enumerated capability of the design instead of an
-    exception discovered halfway through a rung: the budget and pathway axes, which
-    do not touch ``circuits``, still complete for every member, and the metrics that
-    cannot be produced are recorded as absent with the reason naming the missing
-    branch.
+    *The rendering.* The induction census and the attribution decomposition both
+    route through ``circuits.content_bounds``, which decides which token positions
+    are modality content rather than prompt syntax, and the census also routes
+    through ``circuits.prefix_ids``. Neither knows every format ``arms`` can
+    render, and a format they do not know is a hard error rather than a degraded
+    measurement.
+
+    *The module layout.* ``circuits._CIRCUIT_ARCHITECTURES`` is that module's own
+    declaration of the architectures it can resolve, and the attribution
+    decomposition raises on anything outside it. That check used to be carried
+    here only by ``ArmSpec.capabilities``, which is an *intent* and not the same
+    statement -- ByGPT5 declares ``circuits`` because its attention patterns are
+    readable per head, which is what the prediction-addressed census needs, while
+    ``circuits.final_norm`` and ``circuits.head_ov_weights`` still have no
+    ``t5_decoder`` branch. Reading the capability as though it guaranteed the
+    module would have crashed this control inside ``measure_attribution`` on three
+    rungs.
+
+    Checking here keeps both an enumerated property of the design instead of an
+    exception discovered halfway through a rung: the budget and pathway axes,
+    which do not touch ``circuits``, still complete for every member, and the
+    metrics that cannot be produced are recorded as absent with the reason naming
+    what is missing.
     """
 
     if member.input_format not in INPUT_FORMATS:
         raise ValueError(f"{member.name}: unknown input format {member.input_format!r}")
-    if member.input_format in CIRCUITS_INPUT_FORMATS:
-        return True, None
-    return False, (
-        f"src.transfer.circuits.content_bounds and .prefix_ids have no "
-        f"{member.input_format!r} branch, so the induction census and the direct "
-        "logit attribution cannot be scored on this arm's native rendering"
-    )
+    if member.input_format not in CIRCUITS_INPUT_FORMATS:
+        return False, (
+            f"src.transfer.circuits.content_bounds and .prefix_ids have no "
+            f"{member.input_format!r} branch, so the induction census and the direct "
+            "logit attribution cannot be scored on this arm's native rendering"
+        )
+    if member.architecture not in _CIRCUIT_ARCHITECTURES:
+        return False, (
+            f"architecture {member.architecture!r} is not in "
+            f"src.transfer.circuits._CIRCUIT_ARCHITECTURES "
+            f"{sorted(_CIRCUIT_ARCHITECTURES)}, so that module cannot resolve this "
+            "rung's normalisation, embedding or per-head projections"
+        )
+    return True, None
 
 
 def lens_supported(member: LadderMember) -> tuple[bool, str | None]:

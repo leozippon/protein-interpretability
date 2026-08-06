@@ -813,10 +813,34 @@ def build_instance_pool(
 # --------------------------------------------------------------- attention taps
 
 
-def attention_module(arm: Arm, layer: int) -> torch.nn.Module:
-    """The attention submodule whose forward returns ``(output, weights)``."""
+#: Architectures whose pre-softmax attention this module can both read and
+#: override.
+#:
+#: Not the same set as ``circuits._CIRCUIT_ARCHITECTURES`` and deliberately so.
+#: That declaration answers "can a per-head OV circuit be rebuilt from the
+#: weights"; this one answers "can the attention pattern be tapped and can a key
+#: be removed from it before the softmax", which is all this census does. The
+#: sets happen to overlap on four architectures and differ on ``t5_decoder``,
+#: whose sublayer decomposition is not commensurate (``arms._DECOMPOSABLE``)
+#: while its pattern and its additive term are both addressable -- see
+#: :class:`_RelativeBiasKnockout` for what "addressable" costs there.
+#:
+#: ``scripts/transfer/panel_contract.py`` mirrors this rather than the circuit
+#: declaration, so a stage cannot be scheduled on an arm whose knockout this
+#: module has no path for.
+PAA_ARCHITECTURES = frozenset({"gpt2", "progen", "llama", "qwen2", "t5_decoder"})
 
-    return arm.attention(layer)
+
+def attention_module(arm: Arm, layer: int) -> torch.nn.Module:
+    """The attention submodule whose forward computes the pattern.
+
+    ``Arm.attention_pattern_module`` rather than ``Arm.attention``: this module
+    reads and overrides a pattern and never decomposes a block into sublayers, so
+    the decomposition claim the latter accessor carries is not one it needs. The
+    two resolve the same module for every arm that has both.
+    """
+
+    return arm.attention_pattern_module(layer)
 
 
 class _RequestAttentionWeights:
@@ -849,10 +873,25 @@ class _WeightTap:
     reading it blindly is a silent-wrong-answer path rather than a failure: a
     cache is ``(batch, head, token, d_head)``, which the previous
     ``output[1] is None`` check rejects only because ``use_cache`` happens to be
-    off at every call site today.  The tap therefore takes the one tensor whose
-    shape a pattern has -- four axes, the arm's head count on axis 1, square
-    trailing axes -- and refuses when the output does not contain exactly one.
+    off at every call site today.
+
+    The contract is two properties, and the second is not decoration.  A pattern
+    has four axes, the arm's head count on axis 1 and square trailing axes --
+    which is also, exactly, the shape of a T5 decoder's ``position_bias``, so on
+    ByGPT5 the shape test alone finds two candidates and the tap can only refuse.
+    What separates them is that a pattern's rows are a probability distribution
+    and a position bias's rows are not: the bias carries the causal mask, so its
+    masked entries are the dtype minimum and its row sums are large and negative.
+    Both properties are required and the tap refuses unless exactly one tensor has
+    them -- an output with two distributions of pattern shape is as unreadable as
+    an output with none.
     """
+
+    #: Slack on a row sum of one.  Generous because the row may be accumulated in
+    #: bfloat16 by the model that produced it: 192 weights each carrying up to
+    #: 2^-8 relative error sum to within 0.4% of one, and no position bias comes
+    #: anywhere near this band.
+    ROW_SUM_TOLERANCE = 1.0e-2
 
     def __init__(
         self,
@@ -865,22 +904,40 @@ class _WeightTap:
         self.layer = layer
         self.n_heads = n_heads
 
+    def _is_pattern(self, item: object) -> bool:
+        if (
+            not isinstance(item, torch.Tensor)
+            or item.ndim != 4
+            or item.shape[1] != self.n_heads
+            or item.shape[-1] != item.shape[-2]
+        ):
+            return False
+        # In float32 whatever the module's own dtype: a bfloat16 accumulation of
+        # the row sum would itself be worth several times the tolerance.
+        sums = item.detach().float().sum(dim=-1)
+        return bool(
+            torch.isfinite(sums).all()
+            and float((sums - 1.0).abs().max()) <= self.ROW_SUM_TOLERANCE
+        )
+
     def __call__(self, module, args, output):
         items = output if isinstance(output, tuple) else (output,)
-        found = [
-            item
-            for item in items
-            if isinstance(item, torch.Tensor)
-            and item.ndim == 4
-            and item.shape[1] == self.n_heads
-            and item.shape[-1] == item.shape[-2]
-        ]
+        found = [item for item in items if self._is_pattern(item)]
         if len(found) != 1:
+            shaped = sum(
+                1
+                for item in items
+                if isinstance(item, torch.Tensor)
+                and item.ndim == 4
+                and item.shape[1] == self.n_heads
+                and item.shape[-1] == item.shape[-2]
+            )
             raise RuntimeError(
                 f"layer {self.layer}: expected exactly one "
-                f"(batch, {self.n_heads}, query, key) attention pattern in the "
-                f"attention module's output, found {len(found)}; load the arm "
-                "with attn_implementation='eager'"
+                f"(batch, {self.n_heads}, query, key) tensor whose rows sum to one "
+                f"in the attention module's output, found {len(found)} of "
+                f"{shaped} with that shape; load the arm with "
+                "attn_implementation='eager'"
             )
         self.consume(self.layer, found[0])
         return None
@@ -1128,10 +1185,9 @@ class _AntecedentKnockout:
     therefore also accepts the full per-head shape.
     """
 
-    def __init__(self, head: int, mask: torch.Tensor) -> None:
+    def __init__(self, mask: torch.Tensor) -> None:
         if mask.ndim != 4:
             raise ValueError("knockout mask must be (batch, head, query, key)")
-        self.head = head
         self.mask = mask
 
     def __call__(self, module, args, kwargs):
@@ -1141,6 +1197,101 @@ class _AntecedentKnockout:
         else:
             kwargs["attention_mask"] = existing + self.mask
         return args, kwargs
+
+
+class _RelativeBiasKnockout:
+    """The same removal where the additive term is a *shared* relative position bias.
+
+    A T5-derived decoder has no per-layer additive attention mask to add to.  Its
+    attention takes the causal mask under the name ``mask`` and consults it only
+    when ``position_bias`` is absent, which is true at layer 0 and nowhere else:
+    layer 0 builds ``relative bias + causal mask`` once, returns it, and
+    ``T5Stack`` re-reads it from every block's output and hands it to the next.
+    Two failure modes follow from that sharing and neither announces itself.
+    Adding to ``mask`` above layer 0 changes nothing at all.  Adding to
+    ``position_bias`` at layer *L* changes every layer above *L* as well, so a
+    one-head knockout would silently run on the rest of the stack -- and the
+    residual-mass control could not see it, because the head it re-reads is the
+    one that was knocked out correctly.
+
+    The hook therefore holds the clean bias, hands the module ``clean + mask``,
+    and puts ``clean`` back into the output the stack propagates.  At layer 0 the
+    bias does not exist yet and is built from the module's own ``compute_bias``
+    and the causal mask the stack passed in -- reproducing ``T5Attention``'s own
+    two lines, not re-deriving the masking.  That reconstruction is exactly what
+    :func:`knockout_effects`' all-zero mask control checks: an inexact one moves
+    the logits and the control refuses the run.
+    """
+
+    def __init__(self, mask: torch.Tensor) -> None:
+        if mask.ndim != 4:
+            raise ValueError("knockout mask must be (batch, head, query, key)")
+        self.mask = mask
+        self._clean: torch.Tensor | None = None
+
+    def __call__(self, module, args, kwargs):
+        bias = kwargs.get("position_bias")
+        if bias is None:
+            bias = self._shared_bias(module, args, kwargs)
+        self._clean = bias
+        kwargs["position_bias"] = bias + self.mask.to(bias.dtype)
+        return args, kwargs
+
+    def _shared_bias(self, module, args, kwargs) -> torch.Tensor:
+        if not getattr(module, "has_relative_attention_bias", False):
+            raise RuntimeError(
+                "no position bias reached this attention module and it cannot "
+                "compute one, so there is no additive term for the knockout to "
+                "add to and the intervention would not happen"
+            )
+        hidden = args[0] if args else kwargs["hidden_states"]
+        length = int(hidden.shape[1])
+        bias = module.compute_bias(
+            length,
+            length,
+            device=hidden.device,
+            cache_position=kwargs.get("cache_position"),
+        )[:, :, -length:, :]
+        causal = kwargs.get("mask")
+        if causal is not None:
+            bias = bias + causal[:, :, :, :length]
+        return bias
+
+    def restore(self, module, args, output):
+        """Return the *clean* bias to the stack, so the knockout stays at one layer."""
+
+        if self._clean is None:
+            raise RuntimeError(
+                "the relative-bias knockout's output hook ran without its pre-hook, "
+                "so the poisoned bias would propagate to every layer above this one"
+            )
+        return (output[0], self._clean) + tuple(output[2:])
+
+
+def install_knockout(arm: Arm, layer: int, mask: torch.Tensor) -> list[Any]:
+    """Register the additive pre-softmax knockout for one layer, and return its handles.
+
+    Single declaration of *where* the intervention enters, because the answer is
+    per architecture and getting it wrong is not a crash on every architecture it
+    could be wrong on.  The four decoders whose attention takes an additive
+    ``attention_mask`` share one hook; ``t5_decoder`` does not have one and needs
+    :class:`_RelativeBiasKnockout`.
+    """
+
+    module = attention_module(arm, layer)
+    architecture = arm.spec.architecture
+    if architecture not in PAA_ARCHITECTURES:
+        raise TypeError(
+            f"{arm.name}: no attention knockout is implemented for {architecture!r}; "
+            f"implemented: {sorted(PAA_ARCHITECTURES)}"
+        )
+    if architecture == "t5_decoder":
+        hook = _RelativeBiasKnockout(mask)
+        return [
+            module.register_forward_pre_hook(hook, with_kwargs=True),
+            module.register_forward_hook(hook.restore),
+        ]
+    return [module.register_forward_pre_hook(_AntecedentKnockout(mask), with_kwargs=True)]
 
 
 def build_knockout_mask(
@@ -1303,15 +1454,14 @@ def knockout_effects(
         zero_mask = torch.zeros(
             (ids.shape[0], n_heads, width, width), device=arm.device, dtype=dtype
         )
-        handle = attention_module(arm, 0).register_forward_pre_hook(
-            _AntecedentKnockout(0, zero_mask), with_kwargs=True
-        )
+        zero_handles = install_knockout(arm, 0, zero_mask)
         try:
             null_logits = arm.model(input_ids=ids, attention_mask=mask).logits[
                 rows_index, queries
             ].float()
         finally:
-            handle.remove()
+            for handle in zero_handles:
+                handle.remove()
         exactness = max(exactness, float((null_logits - clean_logits).abs().max()))
         if exactness > zero_mask_tolerance:
             raise RuntimeError(
@@ -1356,9 +1506,7 @@ def knockout_effects(
                 _store["mass"] = (row_attention * _mask.unsqueeze(1)).sum(dim=-1)[:, _head]
 
             handles = [
-                attention_module(arm, layer).register_forward_pre_hook(
-                    _AntecedentKnockout(head, knock), with_kwargs=True
-                ),
+                *install_knockout(arm, layer, knock),
                 *tap_attention(arm, layer, consume_knocked),
             ]
             try:
