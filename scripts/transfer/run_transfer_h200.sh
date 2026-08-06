@@ -172,6 +172,14 @@ STAGES="${STAGES:-$(IFS=,; echo "${STAGE_NAMES[*]}")}"
 
 RUN_ID="${RUN_ID:-}"
 DRY_RUN=0
+# --freeze-only stops after the snapshot is on GPFS and verified, and prints the
+# run-id and snapshot path. It exists because a stage that measures a NON-PANEL
+# checkpoint cannot name a registered stage and so cannot reach this controller's
+# scheduling path at all -- and the alternative, a second copy of the freeze
+# walker in an external-baseline driver, is exactly the duplication Appendix B
+# rule 12 forbids. EXP-R2-132 hand-replicated freeze and push, which is why its
+# dispatch has no record.
+FREEZE_ONLY=0
 
 CONTROLLER_LOG_DIR="${PROJECT_ROOT}/logs/transfer_h200_controller"
 
@@ -179,7 +187,13 @@ CONTROLLER_LOG_DIR="${PROJECT_ROOT}/logs/transfer_h200_controller"
 
 usage() {
   cat <<'EOF'
-Usage: H200_POD=<pod> run_transfer_h200.sh [--dry-run] [--force]
+Usage: H200_POD=<pod> run_transfer_h200.sh [--dry-run] [--freeze-only] [--force]
+
+--freeze-only pushes and verifies the code snapshot, writes the run manifest,
+then prints RUN_ID and SNAPSHOT_DIR on stdout and exits without scheduling any
+stage. It is how an external-baseline stage -- one that measures a checkpoint
+which is not a panel arm, and therefore cannot name a registered stage -- gets a
+frozen, verified snapshot without a second copy of the freeze walker.
 
 Environment overrides: H200_POD (required except for --help), H200_ACCESS_ROOT,
 H200_STATUS_TIMEOUT_SECONDS (caller-side bound on the cluster health probe, in
@@ -914,6 +928,7 @@ invoke_worker() {
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
+    --freeze-only) FREEZE_ONLY=1; shift ;;
     --force) FORCE=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -1089,6 +1104,13 @@ fi
 
 write_run_manifest "${SCRATCH}"
 push_run_manifest
+
+if [ "${FREEZE_ONLY}" = "1" ]; then
+  log "freeze-only: snapshot verified on GPFS, no stage scheduled"
+  # stdout, not the log, so a caller can capture these two directly.
+  printf 'RUN_ID=%s\nSNAPSHOT_DIR=%s\n' "${RUN_ID}" "${SNAPSHOT_DIR}"
+  exit 0
+fi
 
 # `invoke_worker || status=$?`, not a bare call: errexit would otherwise end the
 # controller at the call itself and the diagnostic below would again be dead code.

@@ -70,6 +70,7 @@ from src.transfer.arms import (  # noqa: E402
 )
 from src.transfer.io import sha256_file, write_json  # noqa: E402
 from src.transfer.progen3 import (  # noqa: E402
+    DROPPED_KEYS,
     Component,
     ablated,
     components,
@@ -206,17 +207,29 @@ def backbone_identity(embedded: dict[str, torch.Tensor], released: dict[str, tor
     identical = sum(int(torch.equal(embedded[key], released[key])) for key in shared)
     only_embedded = sorted(set(embedded) - set(released))
     only_released = sorted(set(released) - set(embedded))
+    unexplained = sorted(set(only_released) - set(DROPPED_KEYS))
     return {
         "n_embedded": len(embedded),
         "n_released": len(released),
         "n_shared": len(shared),
         "n_bit_identical": int(identical),
         "keys_only_in_replacement_checkpoint": only_embedded,
-        "keys_only_in_released_checkpoint": only_released,
+        "keys_only_in_released_checkpoint": unexplained,
+        "released_keys_dropped_by_design": sorted(set(only_released) & set(DROPPED_KEYS)),
         "verdict": (
             "PASS"
-            if identical == len(shared) and not only_embedded and len(shared) > 0
+            if identical == len(shared)
+            and not only_embedded
+            and not unexplained
+            and len(shared) > 0
             else "FAIL"
+        ),
+        "note": (
+            "coverage is part of the gate, not only agreement: a replacement "
+            "embedding a strict subset of the backbone would otherwise PASS "
+            "while the weights it was actually fitted to went uncompared. The "
+            "only released tensors allowed to be absent are the ones "
+            "src.transfer.progen3 drops by design"
         ),
     }
 
@@ -477,8 +490,21 @@ def causal_agreement(
     seed: int,
     replicates: int,
     top_k: int,
+    alpha: float,
 ) -> dict[str, Any]:
-    """Do the two models rank the same components, and recover the same top-k?"""
+    """Do the two models rank the same components, and recover the same top-k?
+
+    The top-k control is read from the **exact** null rather than from a
+    resampled quantile. Overlap between a fixed top-k set and a uniform draw of
+    k from n is hypergeometric, and the empirical q95 of a discrete distribution
+    is a cliff: on the retained draws an overlap of 4 (p = 0.052) and one of 5
+    (p = 0.0078) sit either side of a q95 of exactly 4.0, so the flag moved
+    between draws for a reason that is arithmetic rather than evidential
+    (Appendix B rule 17). The cliff also ran at two undeclared levels, because
+    ``k`` is clamped to ``n // 3`` and the 10-component MoE family therefore
+    tested k=3 of 10, where only a perfect 3/3 could ever clear q95 -- the same
+    named gate at p=0.0083 for one family and p=0.05 for the other.
+    """
 
     n_components, n_sequences = original.shape
     rho = _spearman(original.mean(axis=1), replacement.mean(axis=1))
@@ -508,24 +534,46 @@ def causal_agreement(
         ],
         dtype=np.float64,
     )
+    null = stats.hypergeom(n_components, k, k)
+    p_value = float(null.sf(overlap - 1))
+    attainable = [j for j in range(k + 1) if null.sf(j - 1) <= alpha]
+    smallest_significant = attainable[0] if attainable else k + 1
     return {
         "spearman": rho,
         "spearman_interval": interval,
         "bootstrap_replicates": int(replicates),
         "bootstrap_draws_used": len(draws),
         "top_k": k,
+        "top_k_requested": int(top_k),
+        "top_k_clamped": bool(k != top_k),
         "top_k_overlap": int(overlap),
         "top_k_overlap_fraction": float(overlap / k),
         "sparsity_matched_random_control": {
             "description": (
                 f"{replicates} uniform draws of {k} of the {n_components} "
-                "components, matched to the observed top-k size"
+                "components, matched to the observed top-k size; reported as "
+                "description, while the verdict reads the exact null below"
             ),
             "mean_overlap": float(control.mean()),
             "q95_overlap": float(np.quantile(control, 0.95)),
             "exact_expected_overlap": float(k * k / n_components),
         },
-        "exceeds_random_control": bool(overlap > float(np.quantile(control, 0.95))),
+        "exact_null": {
+            "distribution": (
+                f"hypergeometric: overlap of a fixed top-{k} set with a uniform "
+                f"draw of {k} from {n_components}"
+            ),
+            "p_value_one_sided": p_value,
+            "alpha": float(alpha),
+            "smallest_significant_overlap": int(smallest_significant),
+            "note": (
+                "with a discrete null the attainable significance is coarse; "
+                "smallest_significant_overlap is the least overlap this family "
+                "could ever record as exceeding the control, and it differs "
+                "between families of different size"
+            ),
+        },
+        "exceeds_random_control": bool(p_value <= alpha),
     }
 
 
@@ -557,6 +605,15 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=20260806)
     parser.add_argument("--bootstrap", type=int, default=1000)
     parser.add_argument("--top-k", type=int, default=10)
+    parser.add_argument(
+        "--control-alpha",
+        type=float,
+        default=0.05,
+        help="significance level the top-k overlap is read against, under the "
+        "exact hypergeometric null. Declared here rather than implied by an "
+        "empirical q95, whose attainable level differs between families of "
+        "different size",
+    )
     parser.add_argument(
         "--gate-rho",
         type=float,
@@ -613,6 +670,23 @@ def main() -> None:
     transcoder, embedded, hyperparameters = load_replacement(args.replacement)
     transcoder.to(pg.device)
     released = released_state_dict(pg.checkpoint)
+    # The replacement is spliced in by positional layer index. A checkpoint
+    # covering a different depth or width -- or a layer subset -- would be
+    # applied to the wrong blocks without raising, and the run would emit a
+    # complete artefact for a misaligned replacement. This is the same failure
+    # class src.transfer.progen3 exists to make impossible, and the consumer has
+    # to carry its own half of it.
+    if int(hyperparameters.num_layers) != pg.n_layers:
+        raise RuntimeError(
+            f"the replacement covers {hyperparameters.num_layers} layers and this "
+            f"ProGen3 has {pg.n_layers}; splicing by positional index would "
+            "measure the wrong blocks"
+        )
+    if int(hyperparameters.d_model) != int(pg.config.hidden_size):
+        raise RuntimeError(
+            f"the replacement was fitted at d_model {hyperparameters.d_model} and "
+            f"this ProGen3 is {pg.config.hidden_size} wide"
+        )
     backbone_gate = backbone_identity(embedded, released)
     del embedded, released
     gc.collect()
@@ -630,9 +704,18 @@ def main() -> None:
             "d_hidden": int(hyperparameters.d_hidden),
             "k": int(hyperparameters.k),
         },
+        "backbone_sha256": sha256_file(pg.checkpoint / "model.safetensors"),
+        "backbone_loading": "eager MoE, converted from the released megablocks "
+        "packing by src.transfer.progen3; from_pretrained's own eager path "
+        "returns random experts without raising",
         "layers_replaced": "all MoE blocks",
         "scoring_direction": "N->C only (the reverse direction doubles every "
         "sweep and this stage runs one per component per model)",
+        "reconstruction_measured_under": "clean inputs, teacher-forced -- the "
+        "convention the release's own val/loss was measured under, and NOT the "
+        "sequential replacement that behaviour and causality are measured under. "
+        "A reconstruction figure from this artefact is comparable to theirs; a "
+        "behavioural one is not",
         "fully_ablated_endpoint": "every MoE block output replaced by its "
         "per-layer mean over this cohort's residue positions",
         "component_families": list(FAMILIES),
@@ -733,6 +816,7 @@ def main() -> None:
             seed=args.seed + 2,
             replicates=args.bootstrap,
             top_k=args.top_k,
+            alpha=args.control_alpha,
         )
         if attainability_gate[family]["verdict"] != "ATTAINABLE":
             agreement["verdict"] = "WITHHELD_UNATTAINABLE"
@@ -755,20 +839,24 @@ def main() -> None:
             f"  {family:15s} attainability {attainability_gate[family]['verdict']:13s} "
             f"ceiling {attainability_gate[family]['cross_model_rho_ceiling']}  "
             f"rho {agreement['spearman']}  top-{agreement['top_k']} overlap "
-            f"{agreement['top_k_overlap']} vs control q95 "
-            f"{agreement['sparsity_matched_random_control']['q95_overlap']}  "
+            f"{agreement['top_k_overlap']} exact p "
+            f"{agreement['exact_null']['p_value_one_sided']:.4g}  "
             f"{agreement['verdict']}"
         )
 
     gates = {
-        "loader": {**loader_gate, "verdict": "PASS"},
+        "loader": loader_gate,
         "backbone": backbone_gate,
         "behavioural": behavioural_gate,
         "attainability": attainability_gate,
         "causal": causal_gate,
     }
+    # The loader is a precondition, not a result: `check_nll` raises rather than
+    # returning FAIL, so including it here made its PASS unconditional, made
+    # `any(...)` unconditionally true, and made the FAIL branch below
+    # unreachable -- a run in which every substantive gate failed still reported
+    # PARTIAL. The roll-up therefore reads the gates that can actually fail.
     verdicts = [
-        gates["loader"]["verdict"],
         gates["backbone"]["verdict"],
         gates["behavioural"]["verdict"],
         *[record["verdict"] for record in attainability_gate.values()],

@@ -14,7 +14,7 @@ python tg99_summarize.py --root ../../results/transfer_gap_20260729_corrected
 
 ## Read this before quoting any number from `results/transfer_gap_20260724/`
 
-That results tree was produced by a version of `tg_common.py` whose `protein_input` returned the plain amino-acid sequence for ProtGPT2, against a model pretrained on end-of-text-separated, 60-column-wrapped FASTA. The rendering is worth **1.78 nats/token** on a matched cohort. Every ProtGPT2 row in that tree is contaminated. The pre-correction snapshot and a per-number status table are at `archive/legacy/r2_transfer_gap_precorrection_20260729/`.
+That results tree was produced by a version of `tg_common.py` whose `protein_input` returned the plain amino-acid sequence for ProtGPT2, against a model pretrained on end-of-text-separated, 60-column-wrapped FASTA. The rendering is worth **1.78 nats/token** on a matched cohort. Every ProtGPT2 row in that tree is contaminated. The pre-correction snapshot and a per-number status table are at `/Data2/lzp/bio_archive/legacy/r2_transfer_gap_precorrection_20260729/`.
 
 The corrected tree is `results/transfer_gap_20260729_corrected/`.
 

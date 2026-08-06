@@ -18,6 +18,15 @@ export TRANSFER_ALPHAFOLD_DIR="${TRANSFER_GPFS_ROOT}/data/alphafold"
 export TRANSFER_PROTEINGYM_DIR="${TRANSFER_GPFS_ROOT}/data/proteingym/DMS_ProteinGym_substitutions"
 export TRANSFER_UNIREF50_FASTA="${TRANSFER_GPFS_ROOT}/data/uniref50/uniref50.fasta"
 
+# External baseline (ProGenMech / ProGen3-112M). Declared here rather than left
+# to each caller: both defaults in src/transfer/progen3.py are B-local paths, and
+# the third-party source is staged WITHOUT the `baselines/` path segment it has
+# on B, so the default resolves to a directory that does not exist in the pod.
+# The loader checks for `<src>/progen3`, so this is the src/ directory itself.
+export TRANSFER_PROGEN3_DIR="${TRANSFER_MODEL_BASE_DIR}/progen3-112m"
+export TRANSFER_PROGEN3_SRC="${TRANSFER_PROJECT_ROOT}/external_resources/ProGenMech/external/progen3/src"
+export TRANSFER_PROGENMECH_PLT="${TRANSFER_MODEL_BASE_DIR}/ProGen3_PLT_L10_D4608/checkpoints/last.ckpt"
+
 export TRANSFER_DIAMOND_TARBALL="/oss-pvc/zhk_zip/biocc/external_resources/tools/diamond-linux64-v2.1.24.tar.gz"
 export TRANSFER_DIAMOND_CHECKSUM="/oss-pvc/zhk_zip/biocc/external_resources/tools/diamond-linux64-v2.1.24.tar.gz.sha256"
 export TRANSFER_DIAMOND_DIR="${TRANSFER_PROJECT_ROOT}/resources/tools/diamond"

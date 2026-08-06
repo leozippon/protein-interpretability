@@ -1,6 +1,6 @@
 # R2 research plan: text-to-protein interpretability transfer
 
-**Updated:** 2026-08-04 **Status:** active **Subordinate to:** `docs/INTERPRETABILITY_TRANSFER_AUDIT.md`. That document holds the findings, the retractions and the costed plan. This one holds scope, panel, measurement package, discipline and compute policy. Where they disagree, the audit document wins.
+**Updated:** 2026-08-06 **Status:** active **Subordinate to:** `docs/INTERPRETABILITY_TRANSFER_AUDIT.md`. That document holds the findings, the retractions and the costed plan. This one holds scope, panel, measurement package, discipline and compute policy. Where they disagree, the audit document wins.
 
 ## Objective
 
@@ -21,12 +21,9 @@ The prior conserved sparse-readout programme — atlas, EC steering, enzyme desi
 
 ## Model panel
 
-Twelve autoregressive decoders under one code path, each fed in the format it was trained on. Full table, with the identifying contrasts, in the audit document §2. `scripts/transfer/panel_contract.py` is the declaration; the lists below are a reading of it.
+Autoregressive decoders under one code path, each fed in the format it was trained on. Full table, with the identifying contrasts, in the audit document §2. `scripts/transfer/panel_contract.py` is the declaration; print it with `python scripts/transfer/panel_contract.py --json`.
 
-| modality | arms |
-|---|---|
-| text | gpt2, gpt2-medium, gpt2-large, gpt2-xl, dialogpt-small, qwen2.5-0.5b, llama-3.2-3b |
-| protein | protgpt2, zymctrl, progen2-base, progen2-medium, progen2-small |
+**The arm list is not restated here.** A count and a reading of it stood in this section, in the repository README and in `docs/methods/TRANSFER_MEASUREMENT_PROGRAMME.md` simultaneously, and all three fell behind the contract — this file's own most recent edit changed a stage row to describe the ByGPT5 admission while leaving the panel table two sections above without that arm in it.
 
 Design properties worth restating because they bound every inference drawn here:
 
@@ -74,6 +71,8 @@ Library `src/transfer/`, entry points `scripts/transfer/`:
 | `12_induction_robustness.py` | 1 | threshold robustness and scale/modality separation of the census, from artefacts on disk; no GPU |
 | `13_induction_probe_bootstrap.py` | 1 | probe-cluster bootstrap of the induction head fraction |
 | `14_paa_census.py` | 1, 4 | prediction-addressed-attention census and its exhaustive per-head knockout — the second mechanism (copy suppression). Written as a go/no-go gate; it is now the campaign stage `paa_census` that measured D2.c, and it emits its own census-to-causal agreement statistic rather than leaving it to analysis code |
+| `15_replacement_faithfulness.py` | 2, 4 | **outside the panel contract by design** — it measures ProGen3-112M, which is not a panel arm. Whether a released replacement model is faithful enough to carry a causal claim: behavioural recovery against a published clean-to-ablated denominator, attainability before any threshold, and whether ablations of the original and the replacement rank the same |
+| `16_fitness_recovery.py` | 3 | **outside the panel contract by design**, same reason. Whether the zero-shot fitness base a recovery ratio is quoted against is above what is free (BLOSUM62), on ProGenMech's own eight assays and under either their class-balanced sampling design or a uniform draw |
 
 `scripts/transfer/panel_contract.py` is the **single declaration** of which arms each stage may run and why not. `arm_can_run(stage, arm)` is the predicate; `panel_contract.sh` is its generated bash rendering, sourced by the controller and the worker, verified in preflight and by the test suite. Regenerate with `--emit` after any edit to `src/transfer/arms.py`. Never hand-write an arm list.
 

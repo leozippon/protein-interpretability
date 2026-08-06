@@ -2,7 +2,7 @@
 
 **Updated:** 2026-07-29 **Status:** methods only; asserts no results. **Scope:** this file states, per stage, the quantity estimated (the estimand) and how it is scored (the metric). Scope, panel, evidence discipline and compute policy are in `docs/RESEARCH_PLAN.md` and are **not** restated here. Findings and their status are in `docs/INTERPRETABILITY_TRANSFER_AUDIT.md`, which wins over both.
 
-The panel is eleven arms; `scripts/transfer/panel_contract.py::arm_can_run` decides which of them a given stage may run, and refuses the rest by name and reason. A stage's cohort band is declared in its own artefact beside the band its arms were qualified on — the bands differ per stage by design (64–246, 64–120, 600–2000) and an undeclared band lets a verdict be read as covering a population it was never measured on.
+`scripts/transfer/panel_contract.py::arm_can_run` decides which arms a given stage may run, and refuses the rest by name and reason; `python scripts/transfer/panel_contract.py --json` prints the current panel. The arm count is not restated here — the figure that stood in this sentence was written before two further arms were admitted and was three admissions out of date when it was found. A stage's cohort band is declared in its own artefact beside the band its arms were qualified on — the bands differ per stage by design (64–246, 64–120, 600–2000) and an undeclared band lets a verdict be read as covering a population it was never measured on.
 
 ---
 

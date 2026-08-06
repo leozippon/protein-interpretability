@@ -69,6 +69,13 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "no model and constructs no cohort, so the draw it reports is whichever "
         "one the run it is reading recorded"
     ),
+    "16_fitness_recovery.py": (
+        "its units are DMS variants of one wild type, not corpus sequences, so it "
+        "draws through src.transfer.fitness.load_assay rather than the FASTA "
+        "constructors. That draw is seeded and is a permutation of the eligible "
+        "rows, never a prefix -- a ProteinGym CSV is ordered by position, so the "
+        "hazard rule 1 names is present here and is answered in the same way"
+    ),
 }
 
 

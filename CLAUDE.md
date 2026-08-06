@@ -73,6 +73,7 @@ conda activate ct
 
 - **Local B workstation:** 8 NVIDIA L20 GPUs, 46068 MiB reported each. Use for validation, small cohorts, and interface checks.
 - **Remote H200 cluster:** 16 GPUs in total. A selected pod exposes only its current allocation; each H200 reports 143771 MiB in-pod. Use `scripts/transfer/run_transfer_h200.sh` for full campaigns. Make full use of H200 compute resources and reduce idle time.
+- Prioritize computations on H200 instead of L20. Reserve L20 exclusively for basic correctness verification only.
 
 #### H200 Access
 

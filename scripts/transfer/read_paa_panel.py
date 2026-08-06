@@ -131,6 +131,20 @@ def summarise(per_arm: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
     for arm, draws in per_arm.items():
         hits = sorted(draw["hit_at_k"] for draw in draws)
         rho = [draw["spearman"] for draw in draws]
+        # The declared condition constrains sequences, ban depth and width, but
+        # NOT the head-grid size, which is set per arm by --causal-heads. Two
+        # on-condition draws of one arm run at different grid sizes have
+        # different chance levels, and pooling them would divide one draw's hits
+        # by another draw's chance while printing a single grid -- the exact
+        # substitution this reader exists to prevent. Refuse instead.
+        grids = {draw["n_heads"] for draw in draws}
+        chances = {draw["chance"] for draw in draws}
+        if len(grids) != 1 or len(chances) != 1:
+            raise RuntimeError(
+                f"{arm}: draws span head grids {sorted(grids)} and chance levels "
+                f"{sorted(chances)}. hit@20 has a grid-dependent ceiling, so these "
+                "draws are not one population and must not be pooled"
+            )
         chance = draws[0]["chance"]
         rows.append(
             {

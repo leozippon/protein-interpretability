@@ -8337,3 +8337,105 @@ be used.** The stage held ~15% utilisation per card: 142 ablation sweeps × 16
 batches of a 112M-parameter model, launch-bound rather than compute-bound, with
 three concurrent runs leaving the fourth card idle. For work of this shape more
 concurrency compresses wall time and more GPU does not.
+
+## 2026-08-06 — EXP-R2-133 (D2.g): the base ProGenMech's recovery ratios are quoted against is not above a substitution matrix
+
+Second H200 campaign of the external-baseline audit, and the first to use
+`16_fitness_recovery.py`. Two conditions, one per sampling design, eight assays
+each at 1000 variants, 1000 bootstrap replicates. `RUN_ID`s
+`20260806133122_ca90d671a82a` and `20260806133649_ca90d671a82a`, same
+`CODE_HASH`. Loader self-check PASS on both (2.2884, 2.2889). Artefacts pulled
+and digest-verified against their in-pod values before admission. Cards idle
+before and after (rule 19).
+
+### Literature gate, run before the stage was written
+
+Required by the research plan before a track is designed. Queries covered MoE
+router and expert-level interpretability, protein MoE interpretability, causal
+audits of expert importance, DAS and causal abstraction on protein models, and
+ProteinGym baselines. What it established, and what it changed:
+
+- **arXiv:2606.16044 is ProGenMech.** Its fitness estimand, read from its
+  released code rather than its prose: full-sequence **mean** per-token
+  log-likelihood, bidirectionally averaged, special tokens scored, using
+  `mutated_sequence` directly. There is no wild-type subtraction anywhere in the
+  fitness path. Its "~95%" is 0.28/0.29 and its "~80%" is 0.23/**0.28** — the
+  latter's denominator is the CLT, not the model. Its "~60% likelihood recovery"
+  is `exp(NLL_orig − NLL_repl)`, confirmed by aggregating their released
+  generation JSONs (CLT sequential CLM 0.604), but it is a **sample-quality
+  ratio**: both likelihoods are computed by the true ProGen3 on *different*
+  sequences, each model scoring its own sampled continuations. It is not a
+  fixed-cohort recovery and must not be compared to one.
+- **Their `clt_direct` condition replaces only layer 9 of 10**, not the whole
+  model. That is the condition their strongest fitness number belongs to.
+- **A protein-MoE routing track would be largely pre-empted.** MoE-Bind
+  (bioRxiv 2026-06-13) already reports residue-level expert routing on an
+  8-expert top-2 protein decoder; BALM-MoE (2026-04-17) reports CDRH3 expert
+  specialisation; OmniGene-4 (2026-05-14) claims the first router-level
+  decomposition for a biological MoE. And arXiv:2604.09780 shows routing
+  similarity follows hidden-state similarity **because the router is a linear
+  map** — an argument that is architecture- and domain-agnostic, so it already
+  predicts the protein case. The planned track was re-scoped on this basis
+  rather than run.
+
+### Pre-registered before any number existed
+
+Standing rule 28 asks that a selector be scored against the trivial baseline
+available without looking at the data; the analogue for a fitness predictor is
+the score computable from the mutation string alone. Declared in the stage's
+docstring before it was run: **if the model's own zero-shot Spearman does not
+exceed BLOSUM62's, paired across assays with an interval excluding zero, then no
+recovery ratio computed against that base is interpretable, and the limitation
+belongs to the evaluation interface rather than to any dictionary built on it.**
+
+### Result: FAIL, in both sampling designs
+
+| condition | model | BLOSUM62 | paired difference, 95% CI | assays won | sign test |
+|---|---:|---:|---|---:|---:|
+| ProGenMech's stratified design | 0.3024 ± 0.1609 | 0.2368 ± 0.1305 | **+0.0656 [−0.1099, +0.2412]** | 5/8 | p=0.73 |
+| uniform seeded draw | 0.2951 ± 0.1414 | 0.2497 ± 0.1086 | **+0.0454 [−0.0994, +0.1902]** | 5/8 | p=0.73 |
+
+**Our reproduction of their base agrees with it.** They report 0.29; we measure
+0.3024 and 0.2951 on their eight assays. That agreement is what makes the rest
+readable — the estimand is matched, so the comparison is to their quantity and
+not to a different one that happens to share a name.
+
+**Set beside their own released per-fold numbers** (aggregated from their circuit
+JSONs: clean 0.291, `clt_direct` 0.263, `clt_sequential_freeze` 0.234,
+`plt_sequential_freeze` 0.217, `plt_sequential_unfreeze` 0.168), a BLOSUM62
+lookup at 0.2368–0.2500 sits above three of their four replacement conditions.
+Their "~80% performance recovery" describes a circuit scoring below a
+substitution matrix.
+
+**One inference of mine was falsified by the second arm, and it is recorded
+rather than quietly dropped.** ProteinGym's own benchmark records **0.497** for
+this identical checkpoint over six of these eight assays. I attributed the gap to
+their class-balanced sampling and pre-registered the uniform draw partly to
+confirm it. The uniform draw reads **0.2951** — essentially their number — so
+sampling design is *not* the explanation. The two largest per-assay
+discrepancies against ProteinGym are GFP (0.124 against 0.707) and CAPSD (0.171
+against 0.437), the two most mutation-dense assays in the set, which is where a
+difference in how multi-mutant variants are scored would show first. That is the
+open question this leaves, and it is not answered here.
+
+**What this does and does not say.** It does not say ProGen3-112M is a poor
+protein model; on single mutants of GRB2 it reads 0.502 against BLOSUM62's 0.339,
+and the aggregate is dragged by two assays. It says that **on the eight assays
+ProGenMech chose, at their sample size, the base is not separable from free** —
+so a ratio against it cannot distinguish a circuit that captured the model's
+fitness computation from one that captured a substitution matrix. BLOSUM62 is
+free of the model and of the method, which is what rule 28 asks; it is not free
+of biology, being estimated from aligned blocks, and no claim here treats it as
+uninformed.
+
+### Operational
+
+`scripts/transfer/run_external_baseline_h200.sh` is new and committed, which is
+the point of it: EXP-R2-132's dispatch was unrecorded anywhere, and a driver
+under ignored `logs/` is neither committed nor synchronised. It reuses the
+controller's freeze through a new `--freeze-only` flag rather than carrying a
+second copy of the freeze walker (rule 12). Its first run mis-declared ABSENT
+after 0 s on a run that completed normally — the idle-GPU test fired while the
+stage was still reading a 537k-row CSV, before the model reached the card — and
+it now carries a startup grace period. The measurement was unaffected; only the
+poll was wrong, and the artefact was pulled and digest-verified by hand.

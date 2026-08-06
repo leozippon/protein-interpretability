@@ -1276,3 +1276,71 @@ Immediate operational consequence: add a loss-recovered splice metric to the P0-
   rather than full replacement, and our own reconstruction metric sits 25% off
   their recorded value with a bit-identical forward, which bounds how much of the
   gap can be read as disagreement rather than as corpus.
+
+## 2026-08-06 (afternoon) — the external baseline's fitness base is audited, and the repository's own audit findings are cleared
+
+**Research.** EXP-R2-133 ran the D2.g fitness arm on H200 in two sampling
+conditions. ProGen3-112M's zero-shot fitness is not separable from a BLOSUM62
+lookup on ProGenMech's own eight assays, under their class-balanced design or a
+uniform draw, so no recovery ratio quoted against that base is interpretable —
+the consequence pre-registered before the run. Our reproduction of their base
+agrees with it, which is what makes that a statement about their quantity. One
+inference of mine was falsified by the run's own second arm and is recorded as
+such: their sampling design does not explain the gap to ProteinGym's published
+score for the same checkpoint.
+
+A literature gate was run before the stage was designed, as the plan requires.
+It re-scoped a planned protein-MoE routing track: three 2026 papers already
+report expert-level routing analysis on biological-sequence MoEs, and the
+geometry result the track would have tested holds by construction because a
+router is a linear map. The track is now a within-model diagnostic of whether
+the replacement's failure concentrates where routing is unusual, which needs no
+second MoE and follows from a measured failure.
+
+**Audit.** Four reviewers covered the D2.g code, the orchestration, the assets
+and the documentation. Every confirmed defect is fixed:
+
+- A smoke run was again sitting in the results tree, one commit after rule 29
+  was adopted for exactly that. Moved to ignored `logs/smoke/` (rule 18).
+- The top-k causal control was a bare threshold on an empirical q95 of a
+  discrete null, running at two undeclared significance levels in one artefact
+  because `top_k` is silently clamped for the 10-component family. Replaced by
+  the exact hypergeometric p-value against a declared alpha, with the clamp and
+  the attainable level recorded.
+- `paa_failure_audit` re-derived the census head score locally against its own
+  stated rule; it now imports `census_head_scores` (rule 12).
+- The backbone gate passed on agreement without coverage, so a replacement
+  embedding a strict subset of the backbone would have passed while the weights
+  it was fitted to went uncompared.
+- The stage's top-level `FAIL` was unreachable: the loader gate cannot fail (it
+  raises), so its unconditional PASS made `any(...)` always true.
+- No shape guard tied a replacement to the model it is spliced into by
+  positional layer index.
+- Provenance the frozen artefacts did not carry: backbone digest, the loading
+  path, that reconstruction is measured under clean inputs while behaviour and
+  causality are not, every resampling constant behind claim F3, and the arm
+  partition F3's criterion was pre-registered against.
+- `read_paa_panel` normalised every draw by the first draw's chance level with
+  nothing constraining grid size; it now refuses a heterogeneous pool.
+- The depth-only rival's direction was hard-coded, informed by an
+  already-measured correlation; the shallow-first baseline is now computed too
+  and both travel in the artefact.
+- Documentation: arm and stage counts were restated in three documents and all
+  three had fallen behind the contract; they are now pointers.
+  `docs/PROJECT_STATUS.md` predated the programme's own closure and asserted one
+  experiment was both done and still pending. A broken archive path, a stale
+  audit banner, and a resource manifest declaring 11 arms and 11 stages against
+  a 13-arm, 12-stage contract are corrected — the manifest by regenerating it
+  from the contract rather than by retyping it.
+
+**Operations.** EXP-R2-132's dispatch existed nowhere: no driver, no controller
+log, no invocation manifest. `scripts/transfer/run_external_baseline_h200.sh` is
+now committed for stages that measure a non-panel checkpoint, reusing the
+controller's freeze through a new `--freeze-only` flag rather than copying the
+freeze walker. Its first run mis-declared ABSENT on a run that had completed;
+the idle-GPU test now has a startup grace period. `h200_env.sh` gained the three
+ProGen3 resource variables, whose defaults are B-local paths that do not resolve
+in a pod.
+
+Two new tests cover the gates and the draw that decide these verdicts; nothing
+in the external-baseline track had a test before. 567 tests pass, lint clean.

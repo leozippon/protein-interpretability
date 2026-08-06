@@ -32,11 +32,15 @@ Frozen historical provenance, retired R0/R1 roots, old manuscripts, and retired 
 
 ## Campaign Contract
 
-The current contract contains 12 active model arms and 11 active stages. `scripts/transfer/panel_contract.py` is the source of truth; generated shell declarations and operator documentation must agree with it.
+`scripts/transfer/panel_contract.py` is the source of truth for which arms and which stages the campaign contains; generated shell declarations and operator documentation must agree with it.
 
-Active arms: `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `qwen2.5-0.5b`, `llama-3.2-3b`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium`, and `progen2-small`.
+**The arm and stage lists are deliberately not restated here.** They were, in three documents at once, and all three drifted: two arms and one stage were admitted while the counts stayed as written, so a reader who trusted them would have missed the byte-level control that decides a live claim. `scripts/transfer/README.md` carries the tables, and a test holds it to the contract. Print the current lists with:
 
-Active stages: `cohort_power`, `pathway_budget`, `estimand_power`, `circuit_primitives`, `relational_channel`, `explanation_channel`, `convergence_control`, `lens_family`, `probe_and_erasure`, `homology_control`, and `induction_path_patching`.
+```bash
+python scripts/transfer/panel_contract.py --json
+```
+
+Two stages are outside the contract by design, because they measure a checkpoint that is not a panel arm: `15_replacement_faithfulness.py` and `16_fitness_recovery.py`, the external-baseline audit of ProGenMech. They are launched through `scripts/transfer/run_external_baseline_h200.sh` and carry a `condition` block in their own artefacts instead of a stage-contract record.
 
 Validate the generated contract before scheduling:
 

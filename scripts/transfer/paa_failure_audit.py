@@ -399,6 +399,11 @@ def head_diagnostics(draw: dict[str, Any], *, seed: int) -> dict[str, Any]:
     fractions = (snr[head_boot] > 2.0).mean(axis=1)
     return {
         "n_heads": int(mean.size),
+        # median_snr and fraction_snr_gt_2 are computed over the heads whose SNR
+        # is defined, which is fewer than n_heads whenever a head's percentile
+        # interval has zero width. Both are quoted in frozen claim F3, so the
+        # denominator they were taken over travels with them.
+        "n_snr_defined": int(snr.size),
         "n_clusters": int((weights > 0).sum()),
         "median_snr": float(np.median(snr)),
         "median_snr_q_low": float(np.quantile(medians, 0.025)),
@@ -437,12 +442,27 @@ def retrieval_diagnostics(draw: dict[str, Any], *, seed: int) -> dict[str, Any]:
 
     n_layer, n_head = grid.shape
     layers = np.broadcast_to(np.arange(n_layer, dtype=np.float64)[:, None], (n_layer, n_head))
-    depth_hits = []
+    # census_causal_agreement ranks descending, so this baseline is "deepest
+    # layer first". That direction is not free of the data: r(layer, |effect|)
+    # was already measured positive on every arm (EXP-R2-120), and rule 28 asks
+    # for a baseline computable from the index WITHOUT looking at the data. The
+    # shallow-first baseline is therefore computed too, and both travel in the
+    # artefact so a reader can see which direction was favoured. The jitter
+    # stays below 1 so tie-breaks never cross a layer boundary.
+    depth_hits: list[float] = []
+    shallow_hits: list[float] = []
     for offset in range(DEPTH_ONLY_SEEDS):
         rng = np.random.default_rng(seed + 7919 * offset)
-        jittered = layers + rng.random((n_layer, n_head)) * 0.999
+        jitter = rng.random((n_layer, n_head)) * 0.999
         depth_hits.append(
-            census_causal_agreement(jittered[None, :, :], records)["retrieval"]["hit_at_k"]
+            census_causal_agreement((layers + jitter)[None, :, :], records)["retrieval"][
+                "hit_at_k"
+            ]
+        )
+        shallow_hits.append(
+            census_causal_agreement((-layers + jitter)[None, :, :], records)["retrieval"][
+                "hit_at_k"
+            ]
         )
     return {
         "hit_at_k": agreement["retrieval"]["hit_at_k"],
@@ -452,8 +472,11 @@ def retrieval_diagnostics(draw: dict[str, Any], *, seed: int) -> dict[str, Any]:
         "r_layer_census": agreement["depth_controlled"]["r_layer_census_score"],
         "r_layer_causal": agreement["depth_controlled"]["r_layer_causal_magnitude"],
         "causal_top20_census_rank_percentile": float(np.median(ranks[top])) / census.size,
+        "depth_only_direction": "deepest layer first",
         "depth_only_hit_at_k": float(np.median(depth_hits)),
         "depth_only_hit_at_k_range": [int(min(depth_hits)), int(max(depth_hits))],
+        "shallow_only_hit_at_k": float(np.median(shallow_hits)),
+        "shallow_only_hit_at_k_range": [int(min(shallow_hits)), int(max(shallow_hits))],
     }
 
 
@@ -471,7 +494,7 @@ def reliability(draws: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
         order = _head_order(records)
         magnitude = np.asarray([abs(float(records[i]["delta_m_gap"])) for i in order])
         matched = np.load(draw["paths"]["census"])["paa_specific_matched_per_sequence"]
-        grid = np.nanmean(matched, axis=0)
+        grid = census_head_scores(matched)
         score = np.asarray([grid[records[i]["layer"], records[i]["head_index"]] for i in order])
         loaded.append((draw, magnitude, score))
 
@@ -655,6 +678,25 @@ def main() -> int:
         "seed": args.seed,
         "declared_condition": _declared_condition(),
         "factor_signs": FACTOR_SIGNS,
+        # The arm partition the FAIL criterion was pre-registered against. It
+        # was declared in this module and consumed by nothing, so the partition
+        # actually reported existed only in prose; recording it here makes the
+        # artefact say which arms it was read as.
+        "declared_arm_partition": {
+            "text_positive_controls": sorted(TEXT_ARMS),
+            "failing_protein_arms": sorted(FAILING_ARMS),
+        },
+        # Every constant that moves a number in this file. Change one and the
+        # old and new artefacts would otherwise be indistinguishable, while
+        # frozen claim F3 rests on them.
+        "resampling_constants": {
+            "stratum_replicates": STRATUM_REPLICATES,
+            "snr_replicates": SNR_REPLICATES,
+            "null_subsets": NULL_SUBSETS,
+            "depth_only_seeds": DEPTH_ONLY_SEEDS,
+            "entropy_window": ENTROPY_WINDOW,
+        },
+        "selection": {"arms": args.arms, "any_condition": args.any_condition},
         "draws": results,
         "reliability": {
             arm: reliability(arm_draws) for arm, arm_draws in sorted(per_arm.items())
