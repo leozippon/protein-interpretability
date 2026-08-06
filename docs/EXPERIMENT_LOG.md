@@ -7986,3 +7986,76 @@ their grids is chance to within rounding. The separation the panel carries is
 therefore between arms that retrieve several times their chance level and arms
 that retrieve *at* it, and every arm in the second group is a residue-tokenised
 protein decoder while the byte-level text control sits in the first.
+
+## 2026-08-06 — the foundational programme is closed and the main line moves to an external baseline
+
+**The decision, and the reason it is not a change of subject.** D2.c is answered,
+its every arm-level alternative is excluded by a control built to exclude it, and
+the remaining question — *why* the census fails on those arms — is a CPU question
+about retained artefacts, not a sampling one. Another draw of an instrument this
+document has already characterised cannot change a conclusion. What the programme
+has never done is measure itself against the current external state of the art,
+and the objective's second direction is explicitly about where existing methods
+transfer. So the main line becomes **D2.g: reproduce ProGenMech and gate it**, the
+foundational work is frozen (§1.1) and terminated (§9.1), and the two remaining
+foundational items are the ones that cost nothing or decide something.
+
+**Vanilla PAA and induction draws are terminated.** The refill queue was stopped
+at 2026-08-06 07:0x. Four lanes were mid-flight and were allowed to finish rather
+than killed: the compute was already spent and killing them would leave partial
+artefacts on GPFS. They are the last draws of this census.
+
+**Feasibility was verified before the item was written**, because a plan whose
+core cannot be executed is worse than no plan:
+
+| dependency | state |
+|---|---|
+| ProGen3-112M weights | **available** on the mirror; 215 MB at `/Data/public/progen3-112m`; 10 layers, hidden 384, 6 heads, vocab 134 |
+| ProGenMech code | **public**, `github.com/amirgroup-codes/ProGenMech` at `e24d911`, cloned to ignored `external_resources/baselines/` (CC BY-NC-ND: local research use, not vendored, not redistributed) |
+| their trained CLT/PLT weights | **released** — `darintsui/ProGenMechModels`, 1.9 GB, pulled. This removes the retraining branch and with it the 50–100 GPU-h estimate |
+| their data | **released** — `darintsui/ProGenMechData`, 968 MB, pulled |
+| ProteinGym, UniRef50 | already staged on GPFS |
+
+**One blocker is real and is being resolved before any GPU time is booked.**
+ProGen3-112M is a genuine sparse MoE — 8 experts, top-2, `moe_implementation:
+"megablocks"` — and `megablocks`, `grouped_gemm`, `stk` and `flash_attn` are
+absent from the `ct` environment. They cannot be installed in an H200 pod: the
+pods are offline and the rule against installing in them is not negotiable, and
+these packages need compiled CUDA extensions so they cannot be staged as files
+either. Their vendored source does contain an eager `SparseMoeBlock` and a
+`MOE_CLASSES` registry, but `modeling.py` imports megablocks unconditionally at
+module level, so the eager path cannot currently be reached at all — and the same
+file carries a TODO saying eager/megablocks **state-dict substitutions are not
+implemented**, which is the most likely failure point. Establishing whether the
+eager path loads the released checkpoint and computes correctly is a
+correctness-verification task, is running on one L20 card, and its honest failure
+is a complete answer that changes the plan.
+
+**What the reproduction is for.** Re-deriving an author's headline number adds
+nothing this catalogue does not already have. The contribution is the gates: their
+fitness Spearman is **0.28 ± 0.12** for the full CLT and **0.23 ± 0.13** for the
+circuit, quoted as ~95% and ~80% "performance recovery", with ~60% likelihood
+recovery. A recovery ratio on a weak base is the exact shape L1 was earned on. So
+the questions are whether the denominator is valid (L4), whether the gate is
+attainable on a positive control (rule 2), whether behavioural recovery implies
+**causal** recovery, whether it survives recomputed attention and free-running
+generation rather than frozen attention and teacher forcing (L7), and whether it
+holds on family-disjoint assays. **The symmetric outcome is what makes it worth
+doing:** if behaviour reproduces and causality does not, a protein replacement
+model imitates a model it cannot explain — this programme's own thesis arriving on
+someone else's method.
+
+**Also opened, CPU only: D2.f**, the stratified root-cause audit of the D2.c
+failure from retained per-instance matrices, pre-registered, with a
+discovery/held-out draw split and grid-matched comparisons only. Its cheapest
+hypothesis would relocate the finding entirely — if almost no head on the failing
+arms has a causal effect distinguishable from noise, the causal target is a
+ranking of noise and no selector could retrieve it, which is an evaluation-interface
+limitation rather than a census one. EXP-R2-096 measured this for induction and it
+has never been done for copy suppression.
+
+*Budget note, recorded because it is a real tension.* The proposed first-round cap
+is ~40 H200 GPU-hours, and CLAUDE.md requires making full use of the cluster and
+reducing idle time. These are reconciled by reading the cap as governing
+**committed scope** rather than utilisation: idle capacity goes to the next gated
+item in the queue, never to another draw of a closed instrument.

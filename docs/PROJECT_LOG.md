@@ -1241,3 +1241,19 @@ Immediate operational consequence: add a loss-recovered splice metric to the P0-
   that hid them was fixed rather than repeated: the census statistic lives in each
   run's own report, so a panel can be read in the pod with only the answer
   crossing the tunnel, instead of moving 20 MB of matrices per arm-draw first.
+- **The foundational programme is closed and the main line moves outward.** D2.c
+  is answered and every arm-level alternative to it is excluded by a purpose-built
+  control, so further draws of that census cannot change a conclusion; the refill
+  queue was stopped with four lanes left to finish. §1.1 freezes the nine claims
+  that are citable with their artefacts, §9.1 records what is terminated and why,
+  and D2.d — completing a TG campaign for file completeness — is withdrawn rather
+  than funded, because no claim rests on the missing stages.
+- **D2.g is the new main line: reproduce ProGenMech and subject it to this
+  repository's gates.** Feasibility was verified before the item was written, and
+  one finding materially changed its cost: the authors released their trained CLT
+  and PLT weights, which removes the retraining branch. One blocker remains and is
+  under test — ProGen3-112M is a sparse MoE whose reference implementation needs
+  megablocks, which cannot be installed in an offline pod.
+- **D2.f is the last foundational item and costs nothing**: a stratified
+  root-cause audit of the census failure from retained matrices, whose cheapest
+  hypothesis would move the finding from the census to the evaluation interface.
