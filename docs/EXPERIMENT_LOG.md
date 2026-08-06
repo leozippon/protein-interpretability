@@ -7874,3 +7874,65 @@ again separates by modality rather than by anything else, on a statistic where t
 text side is now represented by an arm whose alphabet is smaller than ZymCTRL's.
 Whatever makes a protein arm's number move with the draw, it is not the size of
 the symbol set.
+
+### The EXP-R2-126 ProtGPT2 discrepancy is discharged — the record was right and my reading of it was a subset
+
+Recomputed every retained ProtGPT2 and gpt2-large artefact at the declared
+condition through `prediction_addressed.census_causal_agreement` — the module,
+not analysis code — filtering on `census_sequences == 600`, `census_ban_depth ==
+3`, `width == 192` and **both** layout guards present in the artefact:
+
+| source | hit@20 | ρ |
+|---|---:|---:|
+| `d2c_protgpt2_dfix_draw20260728` | 5 | +0.0743 |
+| `d2c_protgpt2_dfix_draw20260801` | 0 | **+0.0288** |
+| panel root, draw 20260802 | 0 | **+0.1376** |
+| panel root, draw 20260803 | 6 | +0.0944 |
+
+**That is EXP-R2-126's row exactly**: hit@20 `0, 0, 5, 6` and ρ range `+0.0288 …
++0.1376`, both endpoints reproduced to the digit. The `+0.0743` also reproduces
+EXP-R2-125's post-decoy-fix figure for that draw independently. **So the earlier
+entry's "two readings of one arm disagree and I cannot yet say which artefacts
+each read" is withdrawn: there was no disagreement.** EXP-R2-126 pooled four
+corpus draws at one condition across two result roots — two from the single-arm
+`d2c_protgpt2_dfix_*` runs and two from the panel root — which is legitimate, and
+I had read the panel root alone and called the difference an ambiguity. The defect
+was in my reading. What survives from that entry is the narrower and still-true
+observation that pre-versioned artefacts carry no `census_causal_agreement` key
+and must be recomputed through the module rather than compared against numbers
+produced by code that no longer exists — which is exactly what was done here.
+
+**Assembled over every qualifying artefact, and the useful finding is the shape
+rather than the value.**
+
+| arm | K | hit@20 | median | × own chance |
+|---|---:|---|---:|---:|
+| gpt2-large | 7 | 6,7,7,7,7,8,8 | 7 | **12.6×** |
+| ProtGPT2 | 8 | 0,0,1,2,5,5,6,7 | 3.5 | **6.3×** |
+
+**ProtGPT2's retrieval is bimodal across draws, not merely wide.** Four draws sit
+at 0–2 and four at 5–7, with nothing between 2 and 5. That is why its published
+median has moved with K rather than converging — 4.5× at EXP-R2-126's K=4, 6.3×
+at K=8 — and it is a sharper statement than "the widest spread on the panel". **The
+classification is unaffected at every K**: the arm is above its own chance level
+on the median at K=4, 6 and 8, and its worst draws sit at chance rather than below
+it. What must not be quoted is a point value; what can be quoted is the side of
+the line. gpt2-large, on the same grid and the same condition, spans 6 to 8 over
+nine draws and does not do this.
+
+*Method note, because it decides the numbers above.* Draws at `n=200`, and
+gpt2-large's `lfix` draws, are excluded: `n=200` is a different condition, and
+`lfix` predates the decoy repair that moved ProtGPT2 +0.1987 → +0.0743 and
+gpt2-large +0.4495 → +0.4603 on an identical draw (EXP-R2-125). Including a
+pre-decoy-fix draw beside a post-fix one would pool two instruments.
+
+*Supersession, stated so the tables above are not read as current.* The
+whole-panel table in the K=4 entry lists ProtGPT2 at 9.0x over seven panel-root
+draws, and the entry before it lists 9.0x over five. Both are panel-root reads
+and both are superseded by the assembled figure above, which spans every
+qualifying artefact in both result roots. The three values — 4.5x at K=4, 9.0x
+over the panel root, 6.3x assembled at K=8 — are one bimodal arm read at three
+draw counts, not three measurements in disagreement. **For this arm, quote the
+classification and the bimodality; do not quote a median.** Every other arm in
+that table is unaffected: their draws sit in one root and their retrieval is not
+bimodal.
