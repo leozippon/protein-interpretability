@@ -1132,3 +1132,112 @@ Immediate operational consequence: add a loss-recovered splice metric to the P0-
   difficulty-matched instance selection, with a stated gate and a null result
   declared a complete answer. Proposed, not implemented — the instrument is frozen
   and this changes its instance selection.
+
+## 2026-08-04 — the D2.c panel completes, and both layout defects are repaired at the root
+
+- **EXP-R2-116's correction is withdrawn, and the reason is structural
+  (EXP-R2-119).** It recomputed D2.c from retained matrices with ProtGPT2's FASTA
+  line-break instances excluded, and reported a sign flip. That pass could only
+  ever have been one-sided: the causal side retains a per-instance matrix and can
+  be filtered, while `paa_specific_matched_per_sequence` is already averaged over
+  the instances inside each sequence, so no layout instance can be removed from a
+  census score after a run. The figure correlated a contaminated census against a
+  clean causal effect. The pre-registered tie-break in the driver — "the rebuild
+  is the one to believe" — decided it before the result existed.
+- **A second layout path was open and is now closed (EXP-R2-124/125).** The first
+  repair covered the predicted token and left the **decoy pool**, whose mean is
+  the subtrahend of every census score: 4.30% of ProtGPT2's decoy keys and 2.74%
+  of gpt2-large's were still the wrap. Paired on one draw the arithmetic moves
+  ProtGPT2 +0.1987 → +0.0743 and gpt2-large +0.4495 → +0.4603. Every earlier D2.c
+  number is invalidated, the text control's included.
+- **The audit of the instrument found three further defects and reported them**:
+  the layout guard had no behavioural test (mutating it to a no-op left the suite
+  green); `a1_candidate_pool.verdict` was written by one line and read by nothing,
+  with 8 of 61 census artefacts FAIL and 6 of those carrying a causal stage from
+  the same invocation; and the D2.c headline statistic had no versioned
+  implementation, so three defensible reductions disagreed on ProtGPT2. All three
+  are repaired, and the statistic is now `prediction_addressed.census_causal_agreement`.
+- **The eleven-arm panel then ran under both guards (EXP-R2-126), K=3–5 per arm.**
+  What survives the cross-lab control is one statement, and it is a *within-arm*
+  one: a PAA census on a ProGen2 decoder does not recover its own causally
+  important heads above its own chance level, where every text decoder exceeds its
+  own by ≥3.6×. Both rank-correlation separations fail — each gap at the most
+  adverse draws is smaller than one boundary arm's own spread — and the arms that
+  collapsed them are the cross-lab ones. The control that could have made the
+  claim is the control that refused it.
+- **L22's depth result converged and stopped moving (EXP-R2-122/123).** At K=10 on
+  both boundary arms the depth-controlled gap is resolved in one condition of four
+  and absent in two. Further induction draws are not authorised.
+
+## 2026-08-05 — a positive claim is qualified, and the arm that breaks D2.c's last architectural confound runs
+
+- **The tuned lens's clean transfer is qualified rather than withdrawn
+  (EXP-R2-127).** The qualifying-band check owed since 2026-07-30 finally ran, with
+  a paired control so the band was the only thing that moved. The text control
+  gains 4% on the wider band; every protein arm loses 54–82% of the tuned lens's
+  advantage. The advantage is real at both bands; its *size* on protein is a
+  function of a band chosen for compute. The every-layer boolean is retired as the
+  carrier of the claim — it flips on one layer's noise while the aggregate it
+  summarises is stable to 0.02 nats.
+- **The first attempt at that check was discarded rather than reported.** Setting
+  the band without the token budget truncates a widened band back to ~192 residues
+  for a residue-tokenised arm. ZymCTRL refused outright rather than producing a
+  number, which is how the misconfiguration surfaced — the third time in two days
+  that a guard inside the instrument caught an operator error before it reached a
+  number.
+- **ZymCTRL enters D2.c and breaks the confound (EXP-R2-128).** Across the four
+  protein arms architecture and tokenisation had covaried perfectly. ZymCTRL is
+  gpt2-architecture with residue tokenisation, and it sits at the opposite end of
+  the panel from ProtGPT2, which shares its architecture. The exclusion that had
+  kept it out was real but was being applied to the wrong question: no width admits
+  both it and ProtGPT2, which bars a *shared-window* comparison and does not bar a
+  *within-arm* classification against the arm's own chance level.
+
+## 2026-08-06 — the tokenisation account is stated, and the control that decides it is designed
+
+- **EXP-R2-128 read at K=4.** Two draws had completed the previous day and were
+  never read. ZymCTRL's median retrieval is 0.9× its own chance, inside the
+  ProGen2 band, on the 720-head grid it shares with gpt2-large (12.6×) and
+  ProtGPT2 (4.5×).
+- **One of that entry's own limits is corrected.** It recorded conditioning as a
+  surviving alternative to tokenisation. Conditioning is a property of ZymCTRL
+  alone, and the three unconditioned ProGen2 arms fail too, so it cannot be the
+  account of the class. Architecture is ruled out by ZymCTRL, conditioning by
+  ProGen2, scale and corpus by the three ProGen2 rungs. What remains collinear is
+  residue tokenisation with protein modality, and this panel cannot separate them.
+- **Fourteen completed arm-draws were found sitting unpulled on GPFS**, four of
+  them ProtGPT2 — the arm carrying the subword side of the account and the panel's
+  least stable retrieval. Cause: the controller pulls nothing automatically, three
+  lanes died mid-campaign on a TLS transport drop, and the pull for the lanes that
+  did finish was never run. A campaign that has produced its artefact and one whose
+  artefact has been read are different states, and the repository has no
+  representation of the difference.
+- **EXP-R2-129 designed, with its literature gate run first**: a byte-level text
+  decoder in the PAA census. `bygpt5-medium-en` is text modality with one token per
+  character and a 192-head grid that matches ProGen2-small's exactly. The gate is
+  pre-registered in both directions, and the instrument extension it needs is
+  scoped to `paa_census` alone.
+- **EXP-R2-129 ran, and refuted the account it was built to test.** The
+  instrument was extended to a T5-derived decoder for the census alone — a nested
+  attention path, a pattern tap that must now tell a pattern from a position bias
+  of the same shape, and a knockout that had to be rebuilt because T5's additive
+  term is a *shared* relative bias that leaks a one-head intervention to every
+  layer above it. The arm's cohort qualified at +2.462 nats. Then, on a 192-head
+  grid identical to ProGen2-small's, at the same condition and within 7% on
+  instance count, the byte-level **text** decoder retrieved at **5.3× its own
+  chance** against ProGen2-small's **0.5×**. The pre-registered gate said that
+  branch means the failure is protein-specific and tokenisation is not the
+  operative property. **The tokenisation account written into the canonical
+  document that morning is therefore withdrawn the same day**, and what remains is
+  the set of exclusions each control earned: not architecture, not conditioning,
+  not scale, not corpus, not symbol granularity.
+- **The same arm produced a second result that is more portable than the first.**
+  It is text-like on retrieval and protein-like on both rank correlations
+  (all-grid +0.0001 to +0.0355). Symbol-level tokenisation depresses that
+  correlation without impairing the census, so the statistic is now known to be
+  confounded with tokenisation as well as with depth — direct evidence for a
+  conclusion §8 item 0 had reached by argument.
+- **Fourteen finished arm-draws had been sitting unpulled**, and the reading habit
+  that hid them was fixed rather than repeated: the census statistic lives in each
+  run's own report, so a panel can be read in the pod with only the answer
+  crossing the tunnel, instead of moving 20 MB of matrices per arm-draw first.

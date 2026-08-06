@@ -73,7 +73,7 @@ Library `src/transfer/`, entry points `scripts/transfer/`:
 | `11_induction_path_patching.py` | 4 | how much of the induction heads' logit effect is written directly |
 | `12_induction_robustness.py` | 1 | threshold robustness and scale/modality separation of the census, from artefacts on disk; no GPU |
 | `13_induction_probe_bootstrap.py` | 1 | probe-cluster bootstrap of the induction head fraction |
-| `14_paa_census.py` | 1 | go/no-go gate for a prediction-addressed-attention census — the second mechanism (copy suppression) |
+| `14_paa_census.py` | 1, 4 | prediction-addressed-attention census and its exhaustive per-head knockout — the second mechanism (copy suppression). Written as a go/no-go gate; it is now the campaign stage `paa_census` that measured D2.c, and it emits its own census-to-causal agreement statistic rather than leaving it to analysis code |
 
 `scripts/transfer/panel_contract.py` is the **single declaration** of which arms each stage may run and why not. `arm_can_run(stage, arm)` is the predicate; `panel_contract.sh` is its generated bash rendering, sourced by the controller and the worker, verified in preflight and by the test suite. Regenerate with `--emit` after any edit to `src/transfer/arms.py`. Never hand-write an arm list.
 

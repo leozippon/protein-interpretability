@@ -7467,3 +7467,410 @@ fragility. `--max-len` was moved from 192 to 288 with the band, because leaving 
 truncates the widened band back to ~192 residues for a residue-tokenised arm;
 that is a necessary part of the configuration, not a second manipulation, and the
 first attempt without it is recorded above as discarded.
+
+## 2026-08-06 — EXP-R2-128 read at K=4: ZymCTRL retrieves at its own chance level on every draw
+
+Draws 20260802 and 20260803 were launched on 2026-08-05 and the entry above
+records them as running; both **exited 0 at 12:38 and 12:42 that day** and were
+never read. Read now through the versioned
+`prediction_addressed.census_causal_agreement` in each run's own
+`paa_gate_report.json`, so no analysis code computes the statistic:
+
+| draw | A1 instances | all-grid rho | within-layer | top 5% | hit@20 | x own chance |
+|---|---:|---:|---:|---:|---:|---:|
+| 20260728 | 137,262 | −0.1911 | −0.1330 | +0.2538 | 0/20 | 0.0x |
+| 20260801 | 137,293 | −0.3358 | −0.2298 | +0.0059 | 0/20 | 0.0x |
+| 20260802 | 137,297 | −0.2492 | −0.2246 | +0.0847 | 1/20 | 1.8x |
+| 20260803 | 137,283 | −0.3326 | −0.2065 | −0.0486 | 1/20 | 1.8x |
+
+**The K=2 reading holds and is now four draws.** Median hit@20 is **0.5 of a
+chance level of 0.5556** on the 720-head grid — **0.9x its own chance** — against
+gpt2-large's 12.6x and ProtGPT2's 4.5x on that same grid, and inside the
+ProGen2 band of 0.0-1.1x. All-grid rho spans **[−0.336, −0.191]**, the most
+negative of any arm on the panel, and the depth-controlled statistic is negative
+on all four draws. Nothing here needed a new gate: the classification is
+within-arm, against the arm's own chance level.
+
+**One statement in the EXP-R2-128 entry above is more cautious than the evidence
+requires, and the correction is worth making because it changes what the result
+is about.** That entry gives as limit 2 that ZymCTRL "introduces a new confound
+as it removes the old one" — its EC conditioning prompt — so that "the surviving
+alternatives are *residue tokenisation* and *conditioning*, not *tokenisation*
+alone". That is right about **ZymCTRL taken alone** and wrong about the class.
+The three ProGen2 arms are residue-tokenised, **unconditioned**, and fail; ZymCTRL
+is residue-tokenised, conditioned, and fails; ProtGPT2 is subword-tokenised,
+unconditioned, and does not. Conditioning is therefore not a property shared by
+the failing arms, and cannot be the account of the class. What conditioning
+remains is a caveat on ZymCTRL's individual number — its 1.73-nat leak (L15) is a
+reason not to read its *magnitude* against another arm's — not an alternative
+explanation for the pattern. **Architecture is ruled out by ZymCTRL; conditioning
+is ruled out by ProGen2; scale and pretraining corpus were already ruled out
+across the three ProGen2 rungs.**
+
+**What is *not* ruled out, and it is the whole remaining confound.** Every
+symbol-level-tokenised arm in this panel is a protein model, and every text arm
+is subword-tokenised. "Residue tokenisation" and "protein modality" are still
+perfectly collinear across the failing set. The panel cannot separate them, and
+saying it can would be the same error §2's structural limit records for the
+modality coefficient. The arm that separates them is a **byte-level text
+decoder**, which the audit already names at EXP-R2-114 and which is designed as
+EXP-R2-129 below.
+
+*Cost: zero. Both draws already existed.*
+
+### Fourteen completed arm-draws were sitting unpulled on GPFS
+
+Found while reconciling the panel's K counts against the pod. `d2c_panel_dfix`
+roots on GPFS carry per-arm artefact sets that were never pulled to B and
+therefore never entered any reading:
+
+| draw | arms present on GPFS and absent on B |
+|---|---|
+| 20260804 | gpt2-large, gpt2-xl, protgpt2 |
+| 20260805 | dialogpt-small, gpt2-large, gpt2-medium, gpt2, llama-3.2-3b, protgpt2, qwen2.5-0.5b |
+| 20260806 | gpt2-large, progen2-small, protgpt2 |
+| 20260807 | protgpt2 |
+
+Four of the fourteen are **ProtGPT2**, the arm EXP-R2-126 records as carrying the
+panel's least stable retrieval (0, 0, 5, 6 over four draws) and the arm whose
+"does not fail" reading now carries the subword side of the tokenisation account.
+The cause is operational rather than scientific and is the shape L20 warns about:
+the controller pulls nothing automatically, three lanes died mid-campaign on a
+TLS transport drop (`worker failed with status 90`, 2026-08-04), and the pull
+step for the lanes that *did* finish was never run. Being pulled and verified
+against the worker's own digests now.
+
+**The lesson is recorded rather than absorbed:** a campaign that has produced its
+artefact and a campaign whose artefact has been read are different states, and
+this repository has no representation of the difference. The K counts published
+in EXP-R2-126 are therefore lower bounds on the measurement that exists, which is
+the benign direction, but the same gap would hide a *finished* arm as easily as
+an unread one.
+
+## 2026-08-06 — EXP-R2-129 designed: the byte-level text control for the D2.c census failure
+
+### Literature gate, run before the track was designed
+
+The plan's gate requires the search to name the **mechanism being ported**, not
+the domain being ported into, because searching by domain is what let an entire
+induction track be built without finding Pomerants et al. Queries run, 2026-08-06:
+
+1. *copy suppression heads attention head census causal validity tokenization granularity language model interpretability*
+2. *byte-level vs subword tokenization mechanistic interpretability attention heads circuit differences 2025 2026*
+3. *character-level byte-level language model induction heads circuit analysis attention head retrieval validity*
+4. *protein language model interpretability attention head census copy suppression ProGen2 ProtGPT2 2026*
+
+What the searches returned, and what each already establishes:
+
+- **McDougall et al., "Copy Suppression: Comprehensively Understanding an
+  Attention Head" (arXiv:2310.04625)** — establishes the mechanism this census
+  screens for, on GPT-2-small, and is the source of the convention that a
+  positive ΔM-gap means suppression. It does not measure whether a *prevalence
+  census* recovers the causally important heads, on any model.
+- **"Word Recovery in Large Language Models Enables Character-Level Tokenization
+  Robustness" (arXiv:2603.10771)** — the closest neighbour. It studies how a
+  model whose token boundaries are removed reconstructs word-level units
+  internally. It is about representation recovery, not about whether a
+  head-selection instrument remains valid at that granularity, and it uses no
+  causal head census.
+- **"UTF-8 Plumbing: Byte-level Tokenizers Unavoidably ..." (OpenReview)** and
+  the ICLR-2025 exact-byte-level-probabilities and hierarchical-autoregressive
+  work — establish that byte-level and subword models differ in likelihood
+  accounting and compute profile. None reports an interpretability instrument's
+  validity as a function of granularity.
+- **InterPLM (arXiv:2412.12101), ProtSAE (arXiv:2509.05309), automated neuron
+  labelling (arXiv:2507.06458), "Toward the Explainability of Protein Language
+  Models" (arXiv:2506.19532)** — the protein-side interpretability corpus is
+  sparse-autoencoder and neuron-labelling work on encoders. No head-prevalence
+  census, no copy-suppression measurement, no causal head ranking.
+- **Pomerants et al. (arXiv:2602.23179)**, already recorded here, establishes
+  induction heads in protein LMs; it is about a different mechanism and does not
+  test selector validity.
+
+**What this track adds beyond them:** nobody has measured a head-prevalence
+census's selector-to-causal agreement as a function of the tokenizer's symbol
+granularity, and nobody has supplied a byte-level **text** control for a
+protein-side interpretability failure. That control is the whole design.
+
+### The question, and why only this arm can answer it
+
+D2.c now reads: every residue-tokenised protein decoder measured fails to
+recover its own causally important heads, across two architectures, three
+scales, three corpora and both conditioning states, while the one
+subword-tokenised protein decoder does not (EXP-R2-126, EXP-R2-128). Architecture
+and conditioning are ruled out. **Residue tokenisation and protein modality are
+still perfectly collinear**, because every symbol-level arm in the panel is a
+protein model and every text arm is subword-tokenised. No arm now in the panel
+can break that; a byte-level text decoder can, and is the arm §2 records as
+reachable only through an instrument change (EXP-R2-114).
+
+`bygpt5-medium-en`: text modality, 384-symbol byte vocabulary, one token per
+character, 12 layers x 16 heads = **exactly 192 heads**, which grid-matches
+ProGen2-small — and `hit@20` is comparable only within a grid size. The other two
+rungs are refused for that same reason: on `bygpt5-small-en`'s 24-head grid the
+chance level of hit@20 is 16.7 against a ceiling of 20.
+
+### Pre-registered before the instrument was touched
+
+- **≥3.6x own chance** (the floor every subword text arm clears): the census
+  failure is protein-specific and residue tokenisation is not the operative
+  property. The D2.c statement then narrows back to a modality-and-lineage claim
+  and this item closes.
+- **at or below own chance** (the band every residue-tokenised protein arm sits
+  in): the failure is a property of symbol-level tokenisation interacting with
+  the census's instance filter. Under §5's organising rule a limitation
+  demonstrated on the text control is a property of the **method**, so L22's
+  sibling would be re-scoped from transfer to interface, on a second mechanism.
+- **between the two bands**: reported as unresolved for this arm. It is not
+  rounded toward either account.
+
+### Declared costs and failure modes, before any number exists
+
+- At pool width 192 a byte-level arm sees 192 characters where gpt2-large sees
+  ~845. That is **matched in symbols** to the residue-tokenised arms, which is
+  the comparison the question needs, and **unmatched in content** to the BPE text
+  arms. Standing rule 26 requires the unit be declared: it is, and both readings
+  are reported.
+- A 384-symbol alphabet may be ban-depth-pathological the way the 32-symbol
+  residue tokenisers are (L6: a top-20 ban covers a 20-letter alphabet and
+  emptied ProGen2-medium's decoy pool for 93% of eligible positions). If the A1
+  cascade shows that at ban depth 3, the arm is reported **unmeasurable** rather
+  than failing — Appendix B rule 2 in the direction it is usually violated.
+- The instrument extension is real work and is scoped to it: a t5_decoder
+  attention-module declaration, `n_head` reading `num_heads`, and a pattern tap
+  that must now disambiguate T5's `position_bias` from the pattern itself. The
+  arm gets `circuits` capability and `paa_census` eligibility and **nothing
+  else**; `circuit_primitives` and `induction_path_patching` must continue to
+  refuse it on their own architecture declarations.
+
+### Reading the panel off GPFS, and a provenance ambiguity in EXP-R2-126's ProtGPT2 row
+
+The full pull moves ~20 MB of matrices per arm-draw and is the reason fourteen
+finished measurements went unread. **The statistic does not need them**: since
+EXP-R2-124 every run writes `census_causal_agreement` into its own
+`paa_gate_report.json`, so the panel can be read in the pod and only the answer
+crosses the tunnel. Done for every `d2c_panel_dfix` arm-draw on GPFS:
+
+| arm | K | grid | all-grid ρ | within-layer | hit@20 | median × own chance |
+|---|---:|---:|---|---|---|---:|
+| gpt2-xl | 3 | 1200 | +0.3503 … +0.4022 | +0.2460 … +0.2820 | 5,5,7 | 15.0× |
+| gpt2-large | 4 | 720 | +0.4513 … +0.4706 | +0.2765 … +0.3480 | 7,7,7,8 | 12.6× |
+| **ProtGPT2** | **5** | 720 | +0.0510 … +0.1458 | −0.2286 … −0.0682 | **1,2,5,6,7** | **9.0×** |
+| llama-3.2-3b | 3 | 672 | +0.1745 … +0.2407 | +0.2199 … +0.2559 | 5,5,6 | 8.4× |
+| gpt2-medium | 2 | 384 | +0.5316 … +0.5496 | +0.4138 … +0.4416 | 8,8 | 7.7× |
+| qwen2.5-0.5b | 3 | 336 | +0.4167 … +0.4567 | +0.0864 … +0.2119 | 3,5,5 | 4.2× |
+| gpt2 | 2 | 144 | +0.5859 … +0.6003 | +0.3628 … +0.4548 | 13,14 | 4.9× |
+| dialogpt-small | 2 | 144 | +0.5967 … +0.5991 | +0.4994 … +0.5393 | 10,11 | 3.8× |
+| ProGen2-medium | 2 | 432 | −0.3050 … −0.2519 | −0.2010 … −0.1890 | 1,2 | 1.6× |
+| ProGen2-base | 2 | 432 | −0.3102 … −0.2116 | −0.1478 … −0.0773 | 0,1 | 0.5× |
+| ProGen2-small | 3 | 192 | −0.2532 … −0.1186 | −0.2190 … −0.1117 | 0,1,1 | 0.5× |
+
+**This is not the same population EXP-R2-126 reported and the difference must not
+be smoothed over.** Seventeen further arm-draws exist on GPFS whose reports
+predate `census_causal_agreement` and carry no such key — every arm at draws
+20260728 and 20260801, and the whole 20260802 wave. They are readable only by
+recomputing through the module from `census_matrices.npz` and `causal.json`,
+which needs the matrices pulled. So the K counts above are the **versioned-statistic
+panel**, and EXP-R2-126's are a **mixed** population: some draws read through the
+versioned function and some through the advisory re-derivation that preceded it.
+
+The ambiguity is visible on the row that matters. EXP-R2-126 records ProtGPT2 at
+**K=4, ρ +0.0288 … +0.1376, hit@20 0,0,5,6, median 4.5× chance**. Per draw, the
+versioned statistic on the panel root reads:
+
+| draw | ρ | within-layer | hit@20 |
+|---|---:|---:|---:|
+| 20260803 | +0.0944 | −0.1208 | 6 |
+| 20260804 | +0.0896 | −0.1273 | 1 |
+| 20260805 | +0.0510 | −0.2286 | 2 |
+| 20260806 | +0.0771 | −0.1789 | 7 |
+| 20260807 | +0.1458 | −0.0682 | 5 |
+
+Neither the recorded ρ endpoints nor the recorded hit counts reproduce, and
+20260806/20260807 were not available when EXP-R2-126 was written. **Two readings
+of one arm disagree and I cannot yet say which artefacts each read**, which is
+precisely the state Appendix B rule 27 exists to prevent one level down: a
+statistic quoted across arms must state its denominator, and a statistic quoted
+across draws must state its artefact set.
+
+**No restatement is made on this basis.** What is recorded now is the defect and
+the resolution: the authoritative population is the panel root under the declared
+condition, read through `census_causal_agreement`, and every pre-versioned draw
+must be recomputed through the module rather than compared to a number produced by
+code that no longer exists. That recomputation needs the matrices, which the pull
+now running is fetching. **Direction of the discrepancy, stated because it runs
+against the tidier story:** on the versioned panel root ProtGPT2 retrieves
+*better* than recorded — 9.0× its own chance against 4.5×, with its worst draw at
+1.8× still above chance — which **strengthens** the subword side of the
+tokenisation account rather than weakening it, and makes the ProtGPT2/ProGen2
+separation wider, not narrower. A correction that helps the current hypothesis is
+exactly the kind to hold until it is verified, so it is held.
+
+### EXP-R2-129 prerequisite — the byte-level control qualifies, and its cohort is not the problem
+
+Evidence-discipline rule 2 first: an arm is not scored before its cohort's
+context-derived information is qualified, which is why dialogpt-small is recorded
+as **unmeasurable** at −4.08 nats rather than as an arm that failed. Run on the
+H200 as its own campaign before any census reading exists
+(`results/bygpt5_cohort_power_20260806`, `STAGES=cohort_power`,
+`ARMS=bygpt5-medium-en`):
+
+| quantity | value |
+|---|---:|
+| context information | **+2.462 nats** (Miller–Madow 2.460, plug-in 2.459) |
+| verdict against the 0.30-nat threshold | **measurable** |
+| clean CE | 0.768 nats/token = **1.114 bits/character** |
+| context information per symbol | 3.573 bits |
+| scored tokens / distinct symbols | 76,600 / **106** |
+| sequences | 200 |
+
+**The arm is in distribution and the number is the right size independently.** A
+byte-level English decoder at 1.11 bits per character sits where a competent
+character-level language model sits, so the cohort is doing what it should; and
+106 distinct bytes actually occur out of a declared vocabulary of 384, which is
+the figure that matters for the decoy-pool question rather than the vocabulary
+size. The artefact records `cross_arm_comparable: false` of its own accord — a
+bits-per-symbol figure over bytes is not the same quantity as one over BPE
+tokens — so nothing here licenses a cross-arm information comparison, and none is
+made.
+
+**What this closes.** The two ways EXP-R2-129 could have returned an
+uninterpretable answer were an off-distribution cohort and an alphabet-pathological
+decoy pool. The first is now excluded on this arm's own qualification. The second
+was excluded at smoke scale before the campaign: the empty-decoy-pool loss is
+**22.4%** of eligible positions at ban depth 20 and **0.5%** at ban depth 3, against
+ProGen2-medium's **93.0%** at ban 20 (L6, EXP-R2-088). A 384-symbol byte vocabulary
+with ~106 symbols in use behaves like the subword arms on this gate, not like the
+residue arms. **So whatever the census returns for this arm, it will be a
+measurement rather than a refusal** — which is the state a control has to be in
+before it can decide anything.
+
+## 2026-08-06 — EXP-R2-129 read at K=2: the byte-level text control clears the text floor, and the tokenisation account is refuted by its own pre-registration
+
+`bygpt5-medium-en` entered the PAA census at the panel's declared condition —
+width 192, ban depth 3, 600 sequences, exhaustive 184+8 over its 12x16 grid, 800
+causal instances — on two corpus draws matching the panel's own seeds.
+
+**The grid-matched comparison, which is the only one `hit@k` permits.** Both arms
+carry 192-head grids, so their chance level is identical at 2.0833:
+
+| | ByGPT5-medium (byte, **text**) | ProGen2-small (residue, **protein**) |
+|---|---:|---:|
+| draws | 2 | 4 |
+| positions scored | 96,000 | 96,000 |
+| instances retained | 84,713 / 84,667 | 90,936 – 91,323 |
+| candidates lost to an empty decoy pool | 266 / 306 (**0.3%**) | 3,401 – 3,716 (**3.7%**) |
+| A1 / A3 | PASS / PASS | PASS / PASS |
+| zero-mask control | 0.0 | 0.0 |
+| **hit@20** | **11, 11** | **0, 1, 1, 2** |
+| **x own chance** | **5.3x** | **0.5x** |
+| all-grid rho | +0.0001, +0.0355 | −0.2532 … −0.1186 |
+| top-5% rho | −0.079, −0.067 | −0.782 … −0.273 |
+| bulk rho | −0.120, −0.102 | −0.248 … −0.117 |
+
+**The pre-registered gate is met on the ">= 3.6x" branch, and that branch says
+the tokenisation account is wrong.** Written before the arm could run: *"at or
+above 3.6x own chance — the floor every subword text arm clears — the census
+failure is protein-specific and residue tokenisation is not the operative
+property."* 5.3x clears it. **A decoder with one token per symbol, a 384-symbol
+vocabulary of which 106 occur, and an alphabet no larger than ZymCTRL's, recovers
+its own causally important heads at five times its chance level while every
+residue-tokenised protein decoder measured does not.**
+
+**So the statement recorded in this log and in the audit earlier today — that the
+D2.c failure "tracks whether the tokenizer maps one token to one residue" — is
+withdrawn.** It was the best available reading of EXP-R2-126 plus EXP-R2-128, it
+was written with its confound named, and the control built to test it has
+refuted it. What EXP-R2-128 established stands unchanged: architecture is not the
+operative property, and neither is conditioning. What it cannot support is the
+positive account it offered in their place.
+
+**The comparison is matched where it needs to be, and the three obvious
+objections are answered from the artefacts rather than argued.** *Instance count*:
+84.7k against 91.1k, a 7% difference, where tripling instances moves this family
+of statistics by 0.002–0.038 (EXP-R2-096). *Alphabet pathology*: the byte arm
+loses 0.3% of eligible candidates to an empty decoy pool against ProGen2-small's
+3.7% and ProGen2-medium's 93.0% at ban 20 (L6), so the byte arm is the *least*
+affected of the three. *Cohort qualification*: +2.462 nats of context
+information, measurable, recorded above.
+
+**A dissociation the run also produces, and it is the more useful half.** On
+**retrieval** the byte arm is text-like (5.3x). On both **rank correlations** it is
+protein-like: all-grid +0.0001 to +0.0355 against the subword text arms' +0.17 to
++0.65, and its top-5% and bulk strata are negative like ProGen2-small's. So the
+two statistics answer different questions, and this arm separates them cleanly:
+**symbol-level tokenisation does depress the all-grid rank correlation, and it does
+not stop a census from recovering the causally important heads.** That is
+independent, and now causal rather than inferential, evidence for the conclusion
+§8 item 0 reached on other grounds — an all-grid rank correlation between a census
+score and a query-local causal readout is not a measure of census validity. It
+was already known to be depth-confounded on every arm (EXP-R2-120); it is now also
+known to be tokenisation-confounded.
+
+**Limits, stated before anyone quotes this.** *K=2*, against evidence-discipline
+rule 4; draws 20260802 and 20260803 are queued and no value here is settled,
+though the two draws agree exactly on the statistic that carries the claim (11 and
+11). *Grid-matching binds the comparison*: `hit@k` has a grid-dependent chance
+level, so this arm speaks to ProGen2-small at 192 heads and to no other arm — it
+is not comparable with the matched pair at 720. *Context length is not matched to
+the BPE text arms*: at width 192 this arm sees 192 characters where gpt2-large
+sees ~845. It is matched in **symbols** to ProGen2-small, which is the axis the
+question is about, and unmatched in **content** to the text arms, which is why the
+claim is made against ProGen2-small rather than against gpt2-large. *One rung*:
+ByGPT5-medium is a single byte-level decoder, so "byte-level text" here is n=1 in
+exactly the way §2 records for the protein modality coefficient.
+
+### EXP-R2-129 at K=4 — the control returns the identical count on every draw
+
+Draws 20260802 and 20260803 landed. `bygpt5-medium-en` reads **hit@20 = 11, 11,
+11, 11** across four independent corpus draws — the same integer four times —
+against ProGen2-small's **0, 1, 1, 2** on the identical 192-head grid at the
+identical condition. **5.28x its own chance against 0.48x.** The K=2 reading is
+unchanged and evidence rule 4 is now satisfied on the statistic that carries it.
+
+**The dissociation sharpens at K=4 rather than softening.** The byte arm's
+all-grid rho spans **−0.1159 to +0.1355**, straddling zero and sitting inside the
+protein band, while its retrieval does not move at all. An arm can therefore have
+a rank correlation indistinguishable from a protein decoder's and a census that
+recovers the causally important heads five times better than chance, on the same
+run. Two statistics computed from one artefact disagree about the same census
+that completely, which is the strongest form the §8 item 0 conclusion has taken.
+
+**The whole panel on the retrieval statistic, each arm against its own chance
+level.** `hit@k`'s chance level is `k²/n_heads`, so it *falls* with grid size and
+the x-chance column is not a cross-arm ranking — it is a per-arm classification,
+and the only grid-matched cross-modality comparisons are the 192-head pair and the
+720-head trio:
+
+| arm | modality / tokenisation | K | grid | hit@20 | x own chance |
+|---|---|---:|---:|---|---:|
+| gpt2-xl | text / BPE | 3 | 1200 | 5,5,7 | 15.0x |
+| gpt2-large | text / BPE | 6 | 720 | 6,7,7,7,7,8 | 12.6x |
+| **ProtGPT2** | **protein / multi-residue BPE** | 7 | 720 | 1,2,4,5,6,7,8 | **9.0x** |
+| llama-3.2-3b | text / BPE | 3 | 672 | 5,5,6 | 8.4x |
+| gpt2-medium | text / BPE | 2 | 384 | 8,8 | 7.7x |
+| **ByGPT5-medium** | **text / byte** | 4 | 192 | **11,11,11,11** | **5.3x** |
+| gpt2 | text / BPE | 2 | 144 | 13,14 | 4.9x |
+| qwen2.5-0.5b | text / BPE | 3 | 336 | 3,5,5 | 4.2x |
+| dialogpt-small | text / BPE | 2 | 144 | 10,11 | 3.8x |
+| ProGen2-medium | protein / residue | 2 | 432 | 1,2 | 1.6x |
+| ProGen2-base | protein / residue | 3 | 432 | 0,1,1 | 1.1x |
+| ProGen2-small | protein / residue | 4 | 192 | 0,1,1,2 | 0.5x |
+| ZymCTRL | protein / residue | 4 | 720 | 0,0,1,1 | 0.9x |
+
+*(ZymCTRL is listed for the classification only; its cohort is its own — width
+406, band [396,396], n=400 — so it enters no cross-arm range.)*
+
+**Every text arm clears 3.8x. Every residue-tokenised protein arm is at or below
+1.6x. The one subword protein arm is at 9.0x.** The classification is binary, it
+is made against each arm's own chance level so no cross-grid comparison enters it,
+and the two grid-matched comparisons agree with it: 5.3x against 0.5x at 192
+heads, and 12.6x / 9.0x against 0.9x at 720.
+
+**An incidental worth recording because it is the seventh instance.** The byte
+arm's retrieval is the most stable on the panel — four draws, one value — while
+ProtGPT2's is the least, spanning 1 to 8 over seven draws. Cohort sensitivity
+again separates by modality rather than by anything else, on a statistic where the
+text side is now represented by an arm whose alphabet is smaller than ZymCTRL's.
+Whatever makes a protein arm's number move with the draw, it is not the size of
+the symbol set.
