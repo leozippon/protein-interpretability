@@ -23,6 +23,9 @@ Measurements, by the stage whose transfer they probe:
 ``probes``               stage 3: decodability and concept erasure
 ``channels``             stage 3: bits of explanation the annotation channel holds
 ``relational``           stage 3: whether pair structure is per-position readable
+``progen3``              external baseline: ProGen3-112M, loaded so that its
+                         released megablocks-packed experts cannot come back
+                         silently random
 ``homology``             control: is a measured mechanism memorisation?
 ``induction_robustness`` control: does the induction result survive threshold and probe choice
 ``scaling``              cross-arm reading: scale, lineage and modality decomposition
@@ -58,6 +61,7 @@ __all__ = [
     "pathways",
     "prediction_addressed",
     "probes",
+    "progen3",
     "relational",
     "scaling",
     "scoring",
