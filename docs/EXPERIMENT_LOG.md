@@ -7936,3 +7936,53 @@ draw counts, not three measurements in disagreement. **For this arm, quote the
 classification and the bimodality; do not quote a median.** Every other arm in
 that table is unaffected: their draws sit in one root and their retrieval is not
 bimodal.
+
+### ProtGPT2 at K=13 — the bimodality does not survive the draws run to test it
+
+The entry above records ProtGPT2's retrieval as bimodal on the strength of eight
+draws — four at 0–2, four at 5–7, nothing between — and says the median should
+therefore not be quoted. Six further draws were run for exactly that question.
+At **K=13** the distribution is
+
+`0, 1, 2, 2, 3, 3, 4, 5, 6, 6, 7, 7, 8`
+
+which is broad and roughly uniform over 0–8, not bimodal. **The gap between 2 and
+5 was a hole in a sample of eight, and it is gone.** Median 4, **7.2x its own
+chance**, with **12 of 13 draws at or above chance** (chance is 0.556 on a
+720-head grid, so a single hit already clears it) and the one 0 below it.
+
+**What this changes and what it does not.** The bimodality claim is withdrawn —
+it was mine, it was made at K=8, and the six draws that tested it refuted it. The
+classification it was attached to is unaffected and is now much better powered:
+ProtGPT2 recovers its own causally important heads well above its own chance
+level, on thirteen draws. What replaces the bimodality is the plainer and better
+supported statement that **this arm's retrieval is broadly dispersed across corpus
+draws** — and that has a matched control, because gpt2-large sits on the *same
+720-head grid* at the same condition and reads `6, 7, 7, 7, 7, 8, 8` over seven
+draws, a range of 2 against ProtGPT2's 8.
+
+That comparison is the protein-side cohort-sensitivity asymmetry (§5.05(b),
+Appendix B rule 22) on a seventh statistic, and for once on arms matched in grid,
+architecture, depth, width and vocabulary size — the designed matched pair. **It
+is also the reason the further gpt2-large draws now running matter**: a range of 2
+over seven draws against a range of 8 over thirteen is not yet a fair comparison
+of dispersion, because the arm with more draws has more opportunity to show its
+tails. The control is being taken to comparable K before the asymmetry is quoted
+as a measurement rather than an observation.
+
+**The panel at this K, one condition, versioned statistic:**
+
+| arm | K | grid | hit@20 | median x own chance |
+|---|---:|---:|---|---:|
+| gpt2-large | 7 | 720 | 6,7,7,7,7,8,8 | 12.6x |
+| ProtGPT2 | 13 | 720 | 0,1,2,2,3,3,4,5,6,6,7,7,8 | **7.2x** |
+| ByGPT5-medium | 4 | 192 | 11,11,11,11 | 5.3x |
+| ProGen2-base | 6 | 432 | 0,1,1,1,1,1 | 1.1x |
+| ProGen2-medium | 6 | 432 | 0,0,1,1,1,2 | 1.1x |
+| ProGen2-small | 7 | 192 | 0,1,1,1,1,1,2 | **0.5x** |
+
+The three ProGen2 arms now sit at a median of exactly **one hit** apiece, which on
+their grids is chance to within rounding. The separation the panel carries is
+therefore between arms that retrieve several times their chance level and arms
+that retrieve *at* it, and every arm in the second group is a residue-tokenised
+protein decoder while the byte-level text control sits in the first.
