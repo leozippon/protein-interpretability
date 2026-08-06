@@ -1327,5 +1327,107 @@ class EveryArmDispatchedStageDeclaresWhatItMeasured(unittest.TestCase):
         )
 
 
+class TheWorkerInvocationIsConstructedOnce(unittest.TestCase):
+    """--dry-run must print the command the real path sends, not a second copy of it.
+
+    The controller used to build POD_COMMAND for the dry run and re-list every
+    flag inside invoke_worker. Nothing held the two in agreement, so a flag added
+    to one and not the other makes --dry-run describe a campaign that does not
+    happen -- a checking tool reporting something other than what runs, which is
+    the L20 failure class one layer up.
+    """
+
+    def test_invoke_worker_sends_pod_command_rather_than_relisting_its_flags(self):
+        source = extract_function(CONTROLLER, "invoke_worker")
+        self.assertIn('"${POD_COMMAND[@]}"', source)
+        relisted = [
+            flag
+            for flag in ("--run-id", "--snapshot-dir", "--results-root", "--arms", "--stages")
+            if flag in source
+        ]
+        self.assertEqual(
+            relisted,
+            [],
+            "these flags are listed a second time inside invoke_worker; the "
+            "invocation is declared once, as POD_COMMAND, and --dry-run prints "
+            "that same array",
+        )
+
+    def test_the_dry_run_prints_the_array_it_would_send(self):
+        source = CONTROLLER.read_text(encoding="utf-8")
+        self.assertIn('log "[dry-run]   ${POD_COMMAND[*]}"', source)
+
+
+class ArmsForItemDispatchesOnDeclaredScope(unittest.TestCase):
+    """The arms a (stage, item) pair touches are decided by the stage's declared
+    SCOPE, not by its name.
+
+    verify_commands_buildable decided the same question from a name list once, and
+    a stage absent from that list fell through to a catch-all and was built with
+    the literal item "panel" as though it were an arm. That was repaired to read
+    TRANSFER_STAGE_SCOPE and arms_for_item was left with the identical shape --
+    which matters because its consumer is the data-path preflight: a panel-wide
+    stage misread as per-arm resolves model variables for an arm called "panel",
+    finds none, and passes having checked nothing.
+    """
+
+    def run_dispatch(self, stage: str, item: str, *, scope: str | None = None) -> subprocess.CompletedProcess[str]:
+        functions = worker_functions("arms_for_item")
+        override = f"TRANSFER_STAGE_SCOPE['{stage}']='{scope}'" if scope is not None else ""
+        script = f"""
+        set -uo pipefail
+        source {pc.SHELL_CONTRACT}
+        declare -A COHORT_ITEM_ARMS_FOR=([text]='gpt2 gpt2-large')
+        declare -A STAGE_ARMS_FOR=([circuit_primitives]='gpt2-large protgpt2')
+        {override}
+        {functions}
+        arms_for_item {stage} {item}
+        """
+        return subprocess.run(["bash", "-c", script], capture_output=True, text=True)
+
+    def test_a_per_arm_stage_touches_the_item_itself(self):
+        result = self.run_dispatch("pathway_budget", "protgpt2")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.split(), ["protgpt2"])
+
+    def test_a_panel_wide_stage_touches_its_contract_arm_list_not_the_item(self):
+        result = self.run_dispatch("circuit_primitives", "panel")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.split(), ["gpt2-large", "protgpt2"])
+        self.assertNotIn("panel", result.stdout.split())
+
+    def test_an_armless_stage_touches_nothing(self):
+        result = self.run_dispatch("explanation_channel", "panel")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "")
+
+    def test_cohort_power_uses_its_declared_item_space(self):
+        # Panel-wide, yet its items are neither "panel" nor arm names.
+        result = self.run_dispatch("cohort_power", "text")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.split(), ["gpt2", "gpt2-large"])
+
+    def test_a_stage_with_no_declared_scope_is_refused_rather_than_guessed(self):
+        result = self.run_dispatch("pathway_budget", "protgpt2", scope="")
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("no declared scope", result.stderr)
+
+    def test_the_dispatch_is_not_a_hand_maintained_stage_name_list(self):
+        source = extract_function(WORKER, "arms_for_item")
+        self.assertIn("TRANSFER_STAGE_SCOPE", source)
+        named = [
+            stage
+            for stage in pc.STAGE_CONTRACTS
+            if stage != "cohort_power" and f"{stage})" in source
+        ]
+        self.assertEqual(
+            named,
+            [],
+            "these stages are dispatched by name; a stage's arm shape is its "
+            "declared scope, and cohort_power is the one exception because its "
+            "item space is declared separately as TRANSFER_COHORT_ITEM_ARMS",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

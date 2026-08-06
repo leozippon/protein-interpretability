@@ -511,8 +511,11 @@ fi
 # never leak into another's -- this makes the check test what it claims to
 # test ("does this file import in a clean interpreter"), not "does it
 # import after eight others have already been imported into the same
-# one". See verify_entry_points_importable_selftest below for a
-# reproduction of exactly this contamination class. The cost is one
+# one". No self-test reproduces the contamination class: the fault is
+# visible only across two entry points sharing one interpreter, which
+# subprocess isolation now makes unconstructible, and a check pointing at
+# a function that does not exist was the only thing recording that. The
+# cost of the isolation is one
 # python/torch/transformers startup per entry point instead of one shared
 # process; still seconds, not minutes, and far cheaper than a GPU
 # scheduled against a false negative.
@@ -772,19 +775,42 @@ stage_eligible_arms() {
 }
 
 # The arm(s) a given (stage, item) pair actually touches, for data-path
-# scoping. Stages with no arm concept (06, 07) print nothing, so only
-# extra_vars_for_stage applies to them.
+# scoping.
+#
+# Dispatch is on the stage's DECLARED SCOPE, not on its name. Naming the stages
+# one by one is how this file previously decided the same question in
+# verify_commands_buildable, where a stage absent from the list fell through to
+# a catch-all and was built with the literal item "panel" as though it were an
+# arm; that was repaired to read the contract and this function was left behind
+# with the identical shape. Under a name list a newly declared panel-wide stage
+# lands in the per-arm branch, and the data-path check for it then resolves
+# model variables for an arm called "panel" -- a preflight that passes because
+# it checked nothing. The scope is declared once, in panel_contract.py, and is
+# read here.
+#
+# cohort_power stays a named case, and is the only one: it is panel-wide yet its
+# item space is neither "panel" nor an arm name but the four cohort labels the
+# contract declares in TRANSFER_COHORT_ITEM_ARMS, which is where its arm lists
+# come from. An unknown scope is refused rather than guessed.
 arms_for_item() {
   local stage="$1" item="$2" arm
-  case "${stage}" in
-    cohort_power)
-      for arm in ${COHORT_ITEM_ARMS_FOR[${item}]:-}; do printf '%s\n' "${arm}"; done
+  if [ "${stage}" = cohort_power ]; then
+    for arm in ${COHORT_ITEM_ARMS_FOR[${item}]:-}; do printf '%s\n' "${arm}"; done
+    return 0
+  fi
+  if [ -z "${TRANSFER_STAGE_SCOPE[${stage}]:-}" ]; then
+    echo "stage ${stage} has no declared scope in the panel contract; this worker cannot resolve its arms" >&2
+    exit 2
+  fi
+  case "${TRANSFER_STAGE_SCOPE[${stage}]}" in
+    armless) : ;;
+    per_arm|control_anchored) printf '%s\n' "${item}" ;;
+    *)
+      # Panel-wide: the item is the literal "panel" and the arms are the
+      # stage's own contract-eligible list, the same list run_panel_stage
+      # passes to the entry point.
+      for arm in ${STAGE_ARMS_FOR[${stage}]:-}; do printf '%s\n' "${arm}"; done
       ;;
-    circuit_primitives) printf '%s\n' "${CIRCUIT_ARMS[@]}" ;;
-    induction_path_patching) printf '%s\n' "${PATH_PATCHING_ARMS[@]}" ;;
-    homology_control) printf '%s\n' "${HOMOLOGY_ARMS[@]}" ;;
-    explanation_channel|convergence_control) : ;;
-    *) printf '%s\n' "${item}" ;;
   esac
 }
 

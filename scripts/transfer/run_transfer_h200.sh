@@ -202,7 +202,7 @@ manifest; see `redact`.
 EOF
 }
 
-# Pod-name redaction, applied to everything this script emits.
+# Pod-name redaction, applied to this script's log lines and to the worker stream.
 #
 # Standing rule: never persist pod names in repository files or durable run
 # records. It used to be
@@ -212,10 +212,19 @@ EOF
 # the operator to pipe the run through `sed` makes the guarantee depend on how the
 # script was invoked, which is not a guarantee.
 #
-# So redaction is structural: `redact` is applied to this script's own log lines
-# and, in invoke_worker, to the worker's entire merged stdout/stderr before it
-# reaches either the terminal or the controller log. H200_POD is exported for the
-# access-layer tools (which need it) but is never itself printed.
+# So redaction is structural on the two paths that carry a run's narrative:
+# `redact` is applied to this script's own log lines and, in invoke_worker, to the
+# worker's entire merged stdout/stderr before it reaches either the terminal or
+# the controller log. H200_POD is exported for the access-layer tools (which need
+# it) but is never itself printed.
+#
+# The limit, stated rather than implied by the word "everything": the fatal
+# `echo ... >&2` diagnostics in this file do not pass through `redact`. They
+# report a missing local path, an unreadable tool or an unknown argument, none of
+# which carries the pod name unless an operator has named a path after a pod. That
+# is the residual exposure, it is bounded by the operator's own naming, and it is
+# recorded in docs/ENGINEERING_AUDIT.md rather than covered by a claim this
+# function does not deliver.
 redact() {
   if [ -z "${H200_POD:-}" ]; then
     cat
@@ -819,27 +828,17 @@ push_run_manifest() {
 # the run-id and the log pointer at exactly the moment the operator needs them.
 # An `if` condition is exempt from errexit, and PIPESTATUS survives into the
 # branch because branch selection runs no command of its own.
+# Runs POD_COMMAND, which is built once further down and is the same array
+# --dry-run prints. It used to re-list every flag here, so the two could drift
+# and a dry run would describe a command the real path did not send -- a
+# checking tool that reports something other than what happens is the failure
+# class this campaign already paid for once at L20.
 invoke_worker() {
-  local force_flag=()
-  [ "${FORCE}" = "1" ] && force_flag=(--force)
   mkdir -p "${CONTROLLER_LOG_DIR}"
   local controller_log="${CONTROLLER_LOG_DIR}/${RUN_ID}.log"
   log "invoking worker inside pod, run_id=${RUN_ID}; controller-side copy: ${controller_log}"
   local worker_status=0
-  if "${H200_POD_EXEC}" -- \
-    bash "${SNAPSHOT_DIR}/scripts/transfer/h200_worker.sh" \
-    --run-id "${RUN_ID}" \
-    --snapshot-dir "${SNAPSHOT_DIR}" \
-    --results-root "${GPFS_RESULTS_ROOT}" \
-    --logs-root "${GPFS_LOGS_ROOT}/${RUN_ID}" \
-    --arms "${ARMS}" \
-    --gpus "${GPUS}" \
-    --text-arm "${TEXT_ARM}" \
-    --stages "${STAGES}" \
-    --expected-gpu-count "${EXPECTED_GPU_COUNT}" \
-    --min-free-mem-mib "${MIN_FREE_MEM_MIB}" \
-    "${STAGE_ARGS_FLAGS[@]}" \
-    "${force_flag[@]}" \
+  if "${POD_COMMAND[@]}" \
     2>&1 | redact | tee "${controller_log}"
   then
     worker_status=0

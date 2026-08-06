@@ -77,10 +77,82 @@ their tests. Scientific consequences are in `docs/INTERPRETABILITY_TRANSFER_AUDI
   independent per-layer loop on every multidraw artefact; agreement 0.00e+00 to
   5.6e-16. Two unreachable edges recorded, not repaired.
 
-Accepted, not repaired: the D2.c census-to-causal rank correlation still has no
+Accepted, not repaired ~~: the D2.c census-to-causal rank correlation still has no
 versioned implementation, so its published values come from throwaway code and
 defensible reductions of the per-sequence census matrix disagree by up to 0.05 on
-ProtGPT2. Recorded as the next instrument change owed.
+ProtGPT2. Recorded as the next instrument change owed.~~ **Discharged the same
+day**: the statistic is `prediction_addressed.census_causal_agreement`, emitted
+into each run's own `paa_gate_report.json`, and the 720-versus-712 grid
+convention was measured rather than argued (median 0.0070, max 0.0249 over 35
+runs). One consequence is recorded here because it affects how a panel is read:
+artefacts written **before** that function existed carry no
+`census_causal_agreement` key, so a reader must recompute them from
+`census_matrices.npz` and `causal.json` through the module rather than treat them
+as missing. On the D2.c panel that is every arm-draw at draws 20260728 and
+20260801.
+
+## Repaired, 2026-08-06
+
+Audit of the H200 orchestration pair, scope frozen to `run_transfer_h200.sh`,
+`h200_worker.sh` and their tests. Scientific consequences: none — these are
+scheduling and provenance defects, and none of them altered a measured number.
+
+- **A repair left half-applied, in the shape it was repaired from.**
+  `verify_commands_buildable` used to decide a stage's item space from a list of
+  stage names, and a stage absent from that list fell through to a catch-all and
+  was built with the literal item `panel` as though it were an arm. That was
+  repaired to read `TRANSFER_STAGE_SCOPE`; `arms_for_item`, whose consumer is the
+  data-path preflight, was left with the identical shape. A panel-wide stage
+  misread as per-arm resolves model variables for an arm named `panel`, finds
+  none, and passes having checked nothing. Now dispatches on the declared scope,
+  refuses a stage with no declared scope, and keeps `cohort_power` as the one
+  named exception because its item space is separately declared as
+  `TRANSFER_COHORT_ITEM_ARMS`. Six tests, including the negative path and a
+  source-level pin that the dispatch is not a stage-name list.
+- **`--dry-run` described a command the real path did not send.** The controller
+  built `POD_COMMAND` for the dry run and re-listed every flag inside
+  `invoke_worker`; nothing held them in agreement. `invoke_worker` now runs
+  `POD_COMMAND`, so the array printed is the array sent. Two tests pin it.
+- **A guarantee stated more broadly than it is delivered.** The redaction comment
+  claimed `redact` is "applied to everything this script emits"; it is applied to
+  the log lines and to the worker stream, and the fatal `echo … >&2` diagnostics
+  bypass it. The claim is corrected to what the code does and the residual
+  exposure is recorded below rather than papered over.
+- **A comment pointing at a function that does not exist.**
+  `verify_entry_points_importable_selftest` is referenced and was never written.
+  The reference is replaced by the reason no such self-test can exist: the
+  contamination class it named is only constructible when two entry points share
+  one interpreter, which the subprocess isolation removed.
+
+Reported and adjudicated as **not** defects, with the evidence:
+
+- `collect_stage_args` builds its allow-list from the whole contract rather than
+  the requested `ARMS`, so an `ARGS_<STAGE>__<ARM>` for an arm this invocation
+  does not run is accepted and never applied. The dangerous case — a *misspelt*
+  arm — is already refused with exit 2, because the misspelling is not in the
+  allow-list at all. The remaining case is a declared override for an arm that is
+  simply not scheduled, which is inert.
+- `git rev-parse HEAD … || echo unknown` records `unknown` in the run manifest
+  rather than refusing. The authoritative provenance is `CODE_HASH`, the content
+  hash of the frozen snapshot, which cannot be `unknown`; the git revision is
+  supplementary and recording it as unknown is honest rather than false.
+
+## Accepted Limitations added 2026-08-06
+
+- Fatal `echo … >&2` diagnostics in the controller are not redacted. They report a
+  missing local path, an unreadable tool or an unknown argument, so they carry a
+  pod name only if an operator has named a path after a pod. Bounded by operator
+  naming, not by the code.
+- `tests/test_path_patching_statistics.py` skips two tests that pin published
+  numbers when the host lacks `results/transfer_20260730/d2bprime/`. Those
+  artefacts are outside Git by policy, so the pin is host-local by construction.
+  pytest reports the skip, so it is visible rather than silent.
+- The controller pulls no results. A campaign that has produced its artefact and
+  one whose artefact has been read are different states and the repository has no
+  representation of the difference — on 2026-08-06 that left fourteen completed
+  arm-draws on GPFS, unread, four of them on the arm carrying a live claim. The
+  fix is not a bigger script: it is that a reading step must be part of a
+  campaign's definition of done.
 
 ## Remote Storage
 
