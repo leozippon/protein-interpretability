@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import os
 import sys
 from contextlib import nullcontext
 from datetime import datetime, timezone
@@ -89,10 +90,17 @@ DEFAULT_OUT = REPO / "results/transfer/replacement_faithfulness"
 #: The released ProGenMech per-layer transcoder. Under ``external_resources``,
 #: which is git-ignored and CC BY-NC-ND: this stage reads its tensors and imports
 #: none of its code.
-DEFAULT_REPLACEMENT = (
-    REPO
-    / "external_resources/baselines/ProGenMechModels/ProGen3_PLT_L10_D4608"
-    / "checkpoints/last.ckpt"
+#: Overridable, because the staged copy does not sit where the B-local one does:
+#: the pod's tree carries no ``baselines/`` segment, so a hard-coded default
+#: resolves to a path that does not exist there and the run dies after the
+#: process is already up. ``h200_env.sh`` exports the pod-side location.
+DEFAULT_REPLACEMENT = Path(
+    os.environ.get(
+        "TRANSFER_PROGENMECH_PLT",
+        REPO
+        / "external_resources/baselines/ProGenMechModels/ProGen3_PLT_L10_D4608"
+        / "checkpoints/last.ckpt",
+    )
 )
 
 #: Component families, each scored on its own. Pooling them would let the ten
