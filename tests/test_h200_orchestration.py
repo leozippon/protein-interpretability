@@ -1431,3 +1431,99 @@ class ArmsForItemDispatchesOnDeclaredScope(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExternalBaselineDispatchTests(unittest.TestCase):
+    """The four ways an external-baseline dispatch has silently reported success.
+
+    Each of these happened. A stale snapshot ran code that predated a flag the
+    caller passed; the launcher reported LAUNCHED over four stages that had
+    already died; a bare ``wait`` printed "campaign complete" over a lane whose
+    artefact was never pulled; and the access layer under all of it returns 0 for
+    a remote command that exited non-zero.
+    """
+
+    DRIVER = TRANSFER_DIR / "run_external_baseline_h200.sh"
+
+    def test_the_driver_refuses_a_run_id_minted_from_different_code(self):
+        """The defect that produced four dead launches in one session."""
+
+        result = subprocess.run(
+            [
+                "bash", str(self.DRIVER),
+                "--run-id", "20260101000000_deadbeefcafe",
+                "--snapshot-dir", "/gpfs/nowhere/packages/20260101000000_deadbeefcafe",
+                "--stage", "15_replacement_faithfulness.py",
+                "--label", "stale", "--gpu", "0",
+            ],
+            capture_output=True, text=True, cwd=str(REPO_ROOT),
+            env={**os.environ, "H200_POD": "unused", "H200_POD_BASH": str(LOCAL_POD_BASH)},
+            timeout=600,
+        )
+        self.assertNotEqual(result.returncode, 0, "a stale run-id must not be adopted")
+        self.assertIn("minted from different code", result.stderr)
+
+    def test_the_controller_prints_a_code_hash_without_touching_the_pod(self):
+        """The reuse check has to be answerable offline, or it will be skipped."""
+
+        result = subprocess.run(
+            ["bash", str(CONTROLLER), "--print-code-hash"],
+            capture_output=True, text=True, cwd=str(REPO_ROOT),
+            env={**os.environ, "H200_POD": "unused",
+                 "H200_ACCESS_ROOT": "/nonexistent-access-root"},
+            timeout=600,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr[-2000:])
+        printed = re.search(r"^CODE_HASH=([0-9a-f]{64})$", result.stdout, re.M)
+        self.assertIsNotNone(printed, f"no CODE_HASH on stdout: {result.stdout[-500:]}")
+
+    def test_run_id_and_snapshot_dir_must_be_given_together(self):
+        """One alone writes this run's results beside another run's code."""
+
+        result = subprocess.run(
+            ["bash", str(self.DRIVER), "--run-id", "20260101000000_deadbeefcafe",
+             "--stage", "15_replacement_faithfulness.py", "--label", "x", "--gpu", "0"],
+            capture_output=True, text=True, cwd=str(REPO_ROOT),
+            env={**os.environ, "H200_POD": "unused"}, timeout=600,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must be given together", result.stderr)
+
+    def test_a_bare_wait_cannot_tell_a_failed_lane_from_a_successful_one(self):
+        """Why the operator guide requires per-PID waiting.
+
+        Pinned as an executable fact rather than left as advice, because the
+        advice is what was ignored: a driver using bare ``wait`` reported a
+        campaign complete while one lane had exited 7 with its artefact still on
+        GPFS.
+        """
+
+        bare = subprocess.run(
+            ["bash", "-c", "( exit 7 ) & ( exit 0 ) & wait; echo rc=$?"],
+            capture_output=True, text=True, timeout=60,
+        )
+        self.assertIn("rc=0", bare.stdout, "bare wait no longer masks failure; update the guide")
+
+        aggregated = subprocess.run(
+            ["bash", "-c",
+             "pids=(); ( exit 7 ) & pids+=($!); ( exit 0 ) & pids+=($!); "
+             "failed=0; for p in \"${pids[@]}\"; do wait \"$p\" || failed=$((failed+1)); done; "
+             "echo failed=$failed"],
+            capture_output=True, text=True, timeout=60,
+        )
+        self.assertIn("failed=1", aggregated.stdout, "per-PID waiting must see the failure")
+
+    def test_the_operator_guide_documents_the_states_that_mean_different_things(self):
+        text = README.read_text(encoding="utf-8")
+        for token in ("DIED AT DISPATCH", "ADMITTED", "ABSENT", "--print-code-hash"):
+            self.assertIn(token, text, f"the operator guide does not document {token}")
+
+    def test_every_external_baseline_stage_appears_in_the_research_plan(self):
+        """The stage table fell behind by three stages before this test existed."""
+
+        plan = (REPO_ROOT / "docs" / "RESEARCH_PLAN.md").read_text(encoding="utf-8")
+        entry_points = sorted(
+            p.name for p in TRANSFER_DIR.glob("[0-9][0-9]_*.py")
+        )
+        missing = [name for name in entry_points if f"`{name}`" not in plan]
+        self.assertEqual(missing, [], f"stages absent from the measurement package table: {missing}")

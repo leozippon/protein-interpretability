@@ -151,6 +151,49 @@ The controller binds each run ID to a content hash. Reusing `RUN_ID` is allowed 
 
 Results roots are shared, ignored, and not backed up by Git. Never delete or recreate a results root, never use `git clean -fdx` or `git clean -fdX`, and never treat an orphaned temporary directory as a completed result. Promote only compact, cited receipts to `evidence/`.
 
+## External Baseline Stages
+
+Stages 15, 16, 17 and 19 measure ProGen3-112M, which is not a panel arm. They cannot name a registered stage and so cannot reach the controller's scheduling path; they launch through `run_external_baseline_h200.sh`, which freezes through the controller (never reimplementing the freeze) and then dispatches one stage to one GPU.
+
+**Snapshot reuse, and the rule that governs it.** Several conditions of one comparison should share one snapshot: four controllers freezing at once collide on the shared relay's single temp script path, and the arms of one comparison must run one code hash or they are not the controlled comparison they are reported as. Freeze once, then pass `--run-id` and `--snapshot-dir` to each invocation:
+
+```bash
+eval "$(scripts/transfer/run_transfer_h200.sh --freeze-only)"   # sets RUN_ID, SNAPSHOT_DIR
+scripts/transfer/run_external_baseline_h200.sh --run-id "$RUN_ID" --snapshot-dir "$SNAPSHOT_DIR" \
+    --stage 17_train_transcoder.py --label clt --gpu 0 -- --architecture clt &
+```
+
+**A reused snapshot runs the code it was frozen with, not the code on disk.** Editing a stage after freezing and then reusing the old run-id runs the old stage: four launches once died on `error: unrecognized arguments` for a flag added after the freeze. The driver now refuses this — it asks the controller for the current hash (`--print-code-hash`, local only, no network) and requires the run-id's trailing segment to match, which is `resolve_run_id`'s rule applied at the one other place a snapshot can be adopted. **Edit a stage, freeze again.**
+
+**The state vocabulary, because two of these mean very different things.**
+
+| state | meaning |
+|---|---|
+| `LAUNCHED` | the launcher returned. It is not evidence the stage is running: the access layer returns 0 whatever the remote command did (L20) |
+| `DIED AT DISPATCH` | the stage's own log shows a start-up failure. Nothing was scheduled. Exit 6 |
+| `PRESENT` | a result JSON exists in the pod-side output directory |
+| `ABSENT` | the GPU went idle and no result appeared — a *measurement* outcome, "ran and wrote nothing". Exit 4 |
+| `ADMITTED` | pulled to B and the per-file digests taken on each side agree. **Only an ADMITTED result may be read.** Exit 5 on mismatch |
+
+**A completed run whose pull fails is not a failed run.** The tunnel drops; `Connection timed out during banner exchange` during the pull leaves the artefact intact on GPFS and absent on B. Check the pod-side log for `[done]` before re-running anything, then re-pull and verify by hand:
+
+```bash
+R=<pod result dir>; L=<local result dir>
+~/hangzhou-remote/ssh_tunnel/h200_pod_bash.sh "cd '$R' && find . -type f -printf '%P\n' | sort | xargs sha256sum" > /tmp/sums
+~/hangzhou-remote/ssh_tunnel/h200_sync.sh pull "$R" "$L"
+( cd "$L" && sha256sum -c /tmp/sums )
+```
+
+**Waiting on several conditions.** `wait` with no arguments returns 0 regardless of what its children exited with, so a driver that uses it prints "complete" over a lane that failed — which has happened, on a lane whose artefact had not been pulled. Wait per PID and aggregate:
+
+```bash
+pids=(); for spec in "${conditions[@]}"; do launch "$spec" & pids+=($!); done
+failed=0; for pid in "${pids[@]}"; do wait "$pid" || failed=$((failed + 1)); done
+[ "$failed" -eq 0 ] && echo "campaign complete" || echo "campaign INCOMPLETE: ${failed} lane(s) failed"
+```
+
+**One claim about health checks, stated here because the external README cannot be edited from this repository.** `Health=ok` is the probe's own terminal verdict and the controller is right to read that line rather than the probe's exit status. But the probe reports its GPFS check over the same channel that returns 0 for a remote command that exited 7, so `PodGPFS=read-write` is evidence that the check *ran*, not proof that a write succeeded. Treat it as a smoke signal; the thing that actually establishes a result crossed the boundary intact is the ADMITTED digest comparison above.
+
 ## Operator Checklist
 
 1. Run `python scripts/transfer/panel_contract.py --verify`.

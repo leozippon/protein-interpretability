@@ -180,6 +180,7 @@ DRY_RUN=0
 # rule 12 forbids. EXP-R2-132 hand-replicated freeze and push, which is why its
 # dispatch has no record.
 FREEZE_ONLY=0
+PRINT_CODE_HASH=0
 
 CONTROLLER_LOG_DIR="${PROJECT_ROOT}/logs/transfer_h200_controller"
 
@@ -187,13 +188,20 @@ CONTROLLER_LOG_DIR="${PROJECT_ROOT}/logs/transfer_h200_controller"
 
 usage() {
   cat <<'EOF'
-Usage: H200_POD=<pod> run_transfer_h200.sh [--dry-run] [--freeze-only] [--force]
+Usage: H200_POD=<pod> run_transfer_h200.sh [--dry-run] [--freeze-only]
+                                          [--print-code-hash] [--force]
 
 --freeze-only pushes and verifies the code snapshot, writes the run manifest,
 then prints RUN_ID and SNAPSHOT_DIR on stdout and exits without scheduling any
 stage. It is how an external-baseline stage -- one that measures a checkpoint
 which is not a panel arm, and therefore cannot name a registered stage -- gets a
 frozen, verified snapshot without a second copy of the freeze walker.
+
+--print-code-hash stages and hashes the snapshot locally, prints CODE_HASH and
+exits without touching the pod or the network. A caller reusing an existing
+snapshot uses it to check that the run-id it is about to reuse was minted from
+the code now on disk -- the same rule resolve_run_id enforces for a resumed
+run-id, applied at the one other place a snapshot can be adopted.
 
 Environment overrides: H200_POD (required except for --help), H200_ACCESS_ROOT,
 H200_STATUS_TIMEOUT_SECONDS (caller-side bound on the cluster health probe, in
@@ -929,6 +937,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
     --freeze-only) FREEZE_ONLY=1; shift ;;
+    --print-code-hash) PRINT_CODE_HASH=1; shift ;;
     --force) FORCE=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -963,8 +972,13 @@ require_local_path "scripts/transfer" "${PROJECT_ROOT}/scripts/transfer"
 require_local_path "worker script" "${PROJECT_ROOT}/scripts/transfer/h200_worker.sh"
 require_local_path "07_convergence_control.py ladder table" \
   "${PROJECT_ROOT}/docs/analysis/MODEL_LADDER_20260728.md"
+# --print-code-hash never reaches the cluster, so it must not require the access
+# layer to be installed. Demanding it there would make the snapshot-reuse check
+# unrunnable on any host without the tunnel -- including a test host -- and a
+# check that cannot run is a check that gets skipped.
 for tool in "${H200_STATUS_CHECK}" "${H200_SYNC}" "${H200_GPFS_PUSH}" \
   "${H200_POD_BASH}" "${H200_POD_EXEC}"; do
+  if [ "${PRINT_CODE_HASH}" = "1" ]; then break; fi
   if [ ! -x "${tool}" ]; then
     echo "required access-layer tool not found or not executable: ${tool}" >&2
     exit 2
@@ -1066,6 +1080,18 @@ log "DRY_RUN:           ${DRY_RUN}"
 log "staging and hashing the complete runtime snapshot"
 freeze_manifest "${SCRATCH}"
 stage_snapshot "${SCRATCH}"
+
+# --print-code-hash stops here, before anything touches the network or the pod.
+# It exists so a caller reusing an existing snapshot can apply resolve_run_id's
+# rule -- a run-id's trailing segment must be the current code hash -- without a
+# second implementation of the freeze walker and without a relay push. It is
+# deliberately placed after stage_snapshot and before resolve_run_id, because it
+# reports what the code IS, not what run-id that would mint.
+if [ "${PRINT_CODE_HASH}" = "1" ]; then
+  printf 'CODE_HASH=%s\n' "${CODE_HASH}"
+  exit 0
+fi
+
 resolve_run_id
 log "run_id=${RUN_ID} code_hash=${CODE_HASH} snapshot_dir=${SNAPSHOT_DIR}"
 

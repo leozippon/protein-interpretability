@@ -105,7 +105,26 @@ if [ -n "${RUN_ID}" ] || [ -n "${SNAPSHOT_DIR}" ]; then
   # another run's directory.
   [ -n "${RUN_ID}" ] && [ -n "${SNAPSHOT_DIR}" ] || {
     echo "--run-id and --snapshot-dir must be given together" >&2; exit 3; }
-  # A snapshot that is not on the pod is the failure this option could otherwise
+  # The run-id's trailing segment must be the hash of the code on disk right
+  # now. This is resolve_run_id's rule, applied at the one other place a
+  # snapshot can be adopted, and asked of the controller rather than
+  # reimplemented (Appendix B rule 12). Without it this option silently runs
+  # stale code: --replacement-kind was added to a stage after its snapshot was
+  # frozen, four launches died on `unrecognized arguments`, and each was
+  # reported LAUNCHED and then polled for ten minutes.
+  CURRENT_HASH="$(cd "${REPO_ROOT}" && bash scripts/transfer/run_transfer_h200.sh \
+      --print-code-hash 2>/dev/null | sed -n 's/^CODE_HASH=//p')"
+  [ -n "${CURRENT_HASH}" ] || { echo "could not compute the current code hash" >&2; exit 3; }
+  case "${RUN_ID}" in
+    *_"${CURRENT_HASH:0:12}") ;;
+    *)
+      echo "refusing to reuse ${RUN_ID}: it was minted from different code than is" >&2
+      echo "on disk now (current hash ${CURRENT_HASH:0:12}). Freeze a new snapshot;" >&2
+      echo "a reused snapshot runs the code it was frozen with, not the code you edited." >&2
+      exit 3
+      ;;
+  esac
+  # A snapshot that is not on the pod is the other failure this option could
   # hide: the launch would start, find no stage file, and the poll loop would
   # report ABSENT as though the measurement had failed.
   "${H200_POD_BASH}" "test -f '${SNAPSHOT_DIR}/scripts/transfer/${STAGE}' && echo FOUND" \
@@ -113,7 +132,7 @@ if [ -n "${RUN_ID}" ] || [ -n "${SNAPSHOT_DIR}" ]; then
     echo "reused snapshot ${SNAPSHOT_DIR} does not carry ${STAGE} on the pod; refusing" >&2
     exit 3
   }
-  log "reusing snapshot run_id=${RUN_ID} (no freeze, no relay push)"
+  log "reusing snapshot run_id=${RUN_ID} (verified against the code on disk; no relay push)"
 else
   log "freezing and pushing the code snapshot via the controller"
   FREEZE_OUT="$(cd "${REPO_ROOT}" && bash scripts/transfer/run_transfer_h200.sh --freeze-only)"
@@ -171,6 +190,28 @@ log "launching ${STAGE} on cuda:${GPU}"
   disown
   echo LAUNCHED
 "
+
+# ------------------------------------------------------------- liveness check
+
+# A stage that dies in its first seconds -- a bad flag, a missing checkpoint, an
+# import error -- printed LAUNCHED and was then polled for the full grace period
+# before the idle-GPU test called it ABSENT. ABSENT is the verdict for "ran and
+# wrote nothing", which is a measurement outcome; this is a dispatch failure and
+# must not be reported as one. Checked after a short settle rather than by
+# tracking a pid, because the access layer returns 0 whatever the remote command
+# did (L20), so a sentinel read out of the stage's own log is the only signal
+# that can say no.
+sleep "${LIVENESS_SETTLE_SECONDS:-45}"
+EARLY="$("${H200_POD_BASH}" \
+  "tail -n 40 '${POD_LOG}' 2>/dev/null | grep -c -E 'Traceback|error: unrecognized arguments|error: argument|No such file or directory|ModuleNotFoundError|CUDA out of memory' || true" \
+  2>/dev/null | tr -dc '0-9')"
+if [ -n "${EARLY}" ] && [ "${EARLY}" -gt 0 ]; then
+  log "${LABEL} DIED AT DISPATCH"
+  "${H200_POD_BASH}" "tail -n 20 '${POD_LOG}'" 2>/dev/null >&2 || true
+  echo "the stage exited during start-up; this is a dispatch failure, not an ABSENT" >&2
+  echo "measurement. Nothing was scheduled on cuda:${GPU}." >&2
+  exit 6
+fi
 
 # --------------------------------------------------------------------- poll
 
