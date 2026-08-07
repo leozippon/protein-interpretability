@@ -35,6 +35,21 @@ set -euo pipefail
 #   Repeat --gpu/--label pairs by invoking once per condition; each condition
 #   gets its own results directory, because a resume key has no condition axis
 #   and two conditions in one root would overwrite each other.
+#
+#   To run several conditions of ONE comparison concurrently, freeze once and
+#   hand every invocation the same snapshot:
+#
+#     eval "$(scripts/transfer/run_transfer_h200.sh --freeze-only)"   # RUN_ID, SNAPSHOT_DIR
+#     scripts/transfer/run_external_baseline_h200.sh --run-id "$RUN_ID" \
+#         --snapshot-dir "$SNAPSHOT_DIR" --stage ... --label ... --gpu 0 -- ... &
+#
+#   Two reasons, one operational and one scientific. Four controllers freezing at
+#   once collide on the shared relay's single temp script path -- a hazard
+#   EXP-R2-122 recorded and a 20-second stagger did not fix, because a push
+#   occupies the relay for minutes. And the arms of one comparison must run the
+#   same code: a CLT and a PLT frozen from two snapshots are not the controlled
+#   comparison they are reported as. Reusing a snapshot is refused unless it is
+#   present on the pod, so this cannot silently run against nothing.
 
 H200_ACCESS_ROOT="${H200_ACCESS_ROOT:-${HOME}/hangzhou-remote}"
 H200_SYNC="${H200_SYNC:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_sync.sh}"
@@ -51,6 +66,8 @@ GPFS_PROJECT_ROOT="${GPFS_PROJECT_ROOT:-}"
 STAGE=""
 LABEL=""
 GPU="0"
+RUN_ID=""
+SNAPSHOT_DIR=""
 POLL_SECONDS="${POLL_SECONDS:-120}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-57600}"
 STAGE_ARGS=()
@@ -64,6 +81,8 @@ while [ $# -gt 0 ]; do
     --stage) STAGE="$2"; shift 2 ;;
     --label) LABEL="$2"; shift 2 ;;
     --gpu) GPU="$2"; shift 2 ;;
+    --run-id) RUN_ID="$2"; shift 2 ;;
+    --snapshot-dir) SNAPSHOT_DIR="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     --) shift; STAGE_ARGS=("$@"); break ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -80,16 +99,33 @@ log() { printf '[external-baseline] %s %s\n' "$(date -Is)" "$*"; }
 
 # ------------------------------------------------------------------- freeze
 
-log "freezing and pushing the code snapshot via the controller"
-FREEZE_OUT="$(cd "${REPO_ROOT}" && bash scripts/transfer/run_transfer_h200.sh --freeze-only)"
-RUN_ID="$(printf '%s\n' "${FREEZE_OUT}" | sed -n 's/^RUN_ID=//p')"
-SNAPSHOT_DIR="$(printf '%s\n' "${FREEZE_OUT}" | sed -n 's/^SNAPSHOT_DIR=//p')"
-[ -n "${RUN_ID}" ] && [ -n "${SNAPSHOT_DIR}" ] || {
-  echo "the controller did not report a run id and snapshot dir; refusing" >&2
-  printf '%s\n' "${FREEZE_OUT}" >&2
-  exit 3
-}
-log "run_id=${RUN_ID}"
+if [ -n "${RUN_ID}" ] || [ -n "${SNAPSHOT_DIR}" ]; then
+  # Reuse. Both or neither -- one alone would silently write this condition's
+  # results beside another run's snapshot, or run this snapshot's code into
+  # another run's directory.
+  [ -n "${RUN_ID}" ] && [ -n "${SNAPSHOT_DIR}" ] || {
+    echo "--run-id and --snapshot-dir must be given together" >&2; exit 3; }
+  # A snapshot that is not on the pod is the failure this option could otherwise
+  # hide: the launch would start, find no stage file, and the poll loop would
+  # report ABSENT as though the measurement had failed.
+  "${H200_POD_BASH}" "test -f '${SNAPSHOT_DIR}/scripts/transfer/${STAGE}' && echo FOUND" \
+      2>/dev/null | grep -q FOUND || {
+    echo "reused snapshot ${SNAPSHOT_DIR} does not carry ${STAGE} on the pod; refusing" >&2
+    exit 3
+  }
+  log "reusing snapshot run_id=${RUN_ID} (no freeze, no relay push)"
+else
+  log "freezing and pushing the code snapshot via the controller"
+  FREEZE_OUT="$(cd "${REPO_ROOT}" && bash scripts/transfer/run_transfer_h200.sh --freeze-only)"
+  RUN_ID="$(printf '%s\n' "${FREEZE_OUT}" | sed -n 's/^RUN_ID=//p')"
+  SNAPSHOT_DIR="$(printf '%s\n' "${FREEZE_OUT}" | sed -n 's/^SNAPSHOT_DIR=//p')"
+  [ -n "${RUN_ID}" ] && [ -n "${SNAPSHOT_DIR}" ] || {
+    echo "the controller did not report a run id and snapshot dir; refusing" >&2
+    printf '%s\n' "${FREEZE_OUT}" >&2
+    exit 3
+  }
+  log "run_id=${RUN_ID}"
+fi
 
 if [ -z "${GPFS_PROJECT_ROOT}" ]; then
   # Derive it from the snapshot path the controller just reported rather than

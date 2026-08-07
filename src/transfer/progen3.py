@@ -273,6 +273,21 @@ class ProGen3:
 
         return [layer.block_sparse_moe for layer in self.model.model.layers]
 
+    @property
+    def attention_blocks(self) -> list[torch.nn.Module]:
+        """The per-layer attention modules, in layer order.
+
+        The counterpart of :attr:`moe_blocks`: one declaration of where a layer's
+        attention lives, so :func:`ablated` addresses ``o_proj`` through it rather
+        than by walking the module tree itself. The released config sets
+        ``fused_attention_norm`` false, so the attention sits directly on the
+        decoder layer; a checkpoint that set it true would put the attention under
+        ``norm_attn_norm`` and this property would raise ``AttributeError`` rather
+        than silently address the wrong module.
+        """
+
+        return [layer.self_attn for layer in self.model.model.layers]
+
     def batch(self, sequences: list[str], *, reverse: bool = False) -> dict[str, torch.Tensor]:
         """Model kwargs for a batch of raw residue strings, on this model's device."""
 
@@ -531,6 +546,47 @@ def moe_intercept(
             handle.remove()
 
 
+def router_probabilities(pg: ProGen3, layer: int, block_input: torch.Tensor) -> torch.Tensor:
+    """The router distribution a MoE block **selects on**, recomputed in float32.
+
+    The block returns a distribution alongside its hidden states, and that one is
+    not this one: it is ``softmax`` in the hidden states' dtype, while the
+    ``topk`` that picks the experts runs on a float32 ``softmax`` of the same
+    logits. EXP-R2-130 measured the two disagreeing on the selected pair for 3.3%
+    of tokens. Anything that labels a token by which experts ran must therefore
+    recompute rather than read, which is what this does -- through the block's own
+    ``gate``, so there is one declaration of where the router lives.
+
+    Returns ``(..., num_experts)`` on ``block_input``'s leading shape.
+    """
+
+    gate = pg.moe_blocks[layer].gate
+    return torch.softmax(gate(block_input).float(), dim=-1)
+
+
+def router_probabilities_agree(pg: ProGen3, layer: int, block_input: torch.Tensor, returned: torch.Tensor) -> dict[str, Any]:
+    """Whether the recomputed router matches the one the block handed back.
+
+    Not a duplicate of the computation but a check on the *addressing*: if
+    :attr:`ProGen3.moe_blocks` or the gate's name ever moved, the recomputation
+    would silently describe a different module, and every routing cell derived
+    from it would be a label for something else. The two are expected to differ
+    only by the dtype of their softmax, so the tolerance is a dtype tolerance and
+    the selected-set disagreement is reported rather than asserted away.
+    """
+
+    recomputed = router_probabilities(pg, layer, block_input).reshape(-1, returned.shape[-1])
+    reference = returned.float().reshape(-1, returned.shape[-1])
+    top_k = int(pg.config.num_experts_per_tok)
+    chosen = recomputed.topk(top_k, dim=-1).indices.sort(dim=-1).values
+    reference_choice = reference.topk(top_k, dim=-1).indices.sort(dim=-1).values
+    return {
+        "max_absolute_difference": float((recomputed - reference).abs().max()),
+        "selected_set_disagreement": float((chosen != reference_choice).any(dim=-1).float().mean()),
+        "n_tokens": int(reference.shape[0]),
+    }
+
+
 @dataclass(frozen=True)
 class Component:
     """One ablatable unit, named the same way in the original and a replacement.
@@ -592,7 +648,7 @@ def ablated(pg: ProGen3, component: Component) -> Iterator[None]:
     head_dim = pg.config.hidden_size // pg.n_heads
     low = component.index * head_dim
     high = low + head_dim
-    projection = pg.model.model.layers[component.layer].self_attn.o_proj
+    projection = pg.attention_blocks[component.layer].o_proj
 
     def pre(module: torch.nn.Module, inputs: tuple[Any, ...]) -> tuple[Any, ...]:
         masked = inputs[0].clone()

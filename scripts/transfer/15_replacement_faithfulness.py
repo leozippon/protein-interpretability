@@ -47,7 +47,6 @@ from __future__ import annotations
 
 import argparse
 import gc
-import os
 import sys
 from contextlib import nullcontext
 from datetime import datetime, timezone
@@ -84,129 +83,21 @@ from src.transfer.progen3 import (  # noqa: E402
     token_nll,
 )
 from src.transfer.statistics import bootstrap_unit_floor, mean_interval  # noqa: E402
+from src.transfer.transcoders import (  # noqa: E402
+    DEFAULT_REPLACEMENT,
+    PerLayerTranscoder,
+    load_replacement,
+)
 
 SCHEMA_VERSION = "r2_transfer_replacement_faithfulness_v1"
 DEFAULT_OUT = REPO / "results/transfer/replacement_faithfulness"
 
-#: The released ProGenMech per-layer transcoder. Under ``external_resources``,
-#: which is git-ignored and CC BY-NC-ND: this stage reads its tensors and imports
-#: none of its code.
-#: Overridable, because the staged copy does not sit where the B-local one does:
-#: the pod's tree carries no ``baselines/`` segment, so a hard-coded default
-#: resolves to a path that does not exist there and the run dies after the
-#: process is already up. ``h200_env.sh`` exports the pod-side location.
-DEFAULT_REPLACEMENT = Path(
-    os.environ.get(
-        "TRANSFER_PROGENMECH_PLT",
-        REPO
-        / "external_resources/baselines/ProGenMechModels/ProGen3_PLT_L10_D4608"
-        / "checkpoints/last.ckpt",
-    )
-)
 
 #: Component families, each scored on its own. Pooling them would let the ten
 #: MoE blocks -- whose ablation effects are an order of magnitude larger than a
 #: single head's -- carry the rank correlation on their own and report it as a
 #: property of the seventy.
 FAMILIES = ("attention_head", "moe_block")
-
-
-# ------------------------------------------------------- the released transcoder
-
-
-class PerLayerTranscoder:
-    """ProGenMech's released per-layer transcoder, re-implemented from its weights.
-
-    Their class lives in a CC BY-NC-ND tree and imports ``pytorch_lightning``,
-    which is absent here and not installable in the offline pods. The weights
-    themselves need neither: ``torch.load(weights_only=True)`` reads them once
-    ``argparse.Namespace`` is allowlisted. So the forward pass is restated here,
-    line for line against ``training_transcoder/plt_model.py``:
-
-        centre and scale over the feature axis, subtract ``b_pre``, encode,
-        keep the top ``k`` pre-activations under ReLU, decode, add ``b_pre``,
-        undo the scaling.
-
-    The scale is ``Tensor.std``'s **unbiased** estimate and the epsilon is added
-    to it rather than inside the square root, because that is what their code
-    does and this is a re-implementation, not an improvement. Each layer is
-    independent, so a per-layer hook reproduces it exactly.
-    """
-
-    def __init__(self, state: dict[str, torch.Tensor], hyperparameters: Any) -> None:
-        self.num_layers = int(hyperparameters.num_layers)
-        self.d_model = int(hyperparameters.d_model)
-        self.d_hidden = int(hyperparameters.d_hidden)
-        self.k = int(hyperparameters.k)
-        expected = {"stats_last_nonzero"}
-        for layer in range(self.num_layers):
-            expected |= {
-                f"encoders.{layer}.weight",
-                f"encoders.{layer}.bias",
-                f"decoders.{layer}",
-                f"b_pre.{layer}",
-            }
-        missing = sorted(expected - set(state))
-        unexpected = sorted(set(state) - expected)
-        if missing or unexpected:
-            raise RuntimeError(
-                "released transcoder state dict does not match the declared "
-                f"architecture (L={self.num_layers}, d_model={self.d_model}, "
-                f"d_hidden={self.d_hidden}, k={self.k}).\n"
-                f"  missing ({len(missing)}): {missing}\n"
-                f"  unexpected ({len(unexpected)}): {unexpected}"
-            )
-        self.encoder_weight = [state[f"encoders.{i}.weight"] for i in range(self.num_layers)]
-        self.encoder_bias = [state[f"encoders.{i}.bias"] for i in range(self.num_layers)]
-        self.decoder = [state[f"decoders.{i}"] for i in range(self.num_layers)]
-        self.b_pre = [state[f"b_pre.{i}"] for i in range(self.num_layers)]
-        for name, tensors, shape in (
-            ("encoders", self.encoder_weight, (self.d_hidden, self.d_model)),
-            ("decoders", self.decoder, (self.d_hidden, self.d_model)),
-            ("b_pre", self.b_pre, (self.d_model,)),
-        ):
-            wrong = [i for i, t in enumerate(tensors) if tuple(t.shape) != shape]
-            if wrong:
-                raise RuntimeError(
-                    f"released transcoder {name} at layers {wrong} do not have "
-                    f"shape {shape}; the hyper-parameters and the weights disagree"
-                )
-
-    def to(self, device: torch.device) -> PerLayerTranscoder:
-        for group in (self.encoder_weight, self.encoder_bias, self.decoder, self.b_pre):
-            group[:] = [tensor.to(device=device, dtype=torch.float32) for tensor in group]
-        return self
-
-    def __call__(self, layer: int, x: torch.Tensor) -> torch.Tensor:
-        source = x.float()
-        mu = source.mean(dim=-1, keepdim=True)
-        centred = source - mu
-        std = centred.std(dim=-1, keepdim=True)
-        normalised = centred / (std + 1e-5) - self.b_pre[layer]
-        pre = F.linear(normalised, self.encoder_weight[layer], self.encoder_bias[layer])
-        top = torch.topk(pre, k=self.k, dim=-1, sorted=False)
-        latents = torch.zeros_like(pre).scatter_(-1, top.indices, F.relu(top.values))
-        recon = latents @ self.decoder[layer] + self.b_pre[layer]
-        return (recon * std + mu).to(x.dtype)
-
-
-def load_replacement(path: Path) -> tuple[PerLayerTranscoder, dict[str, torch.Tensor], Any]:
-    """The released checkpoint's transcoder weights and its embedded backbone."""
-
-    torch.serialization.add_safe_globals([argparse.Namespace])
-    checkpoint = torch.load(path, map_location="cpu", weights_only=True)
-    state = checkpoint["state_dict"]
-    hyperparameters = checkpoint["hyper_parameters"]["args"]
-    transcoder = PerLayerTranscoder(
-        {key[len("plt.") :]: value for key, value in state.items() if key.startswith("plt.")},
-        hyperparameters,
-    )
-    backbone = {
-        key[len("progen3_model.") :]: value
-        for key, value in state.items()
-        if key.startswith("progen3_model.")
-    }
-    return transcoder, backbone, hyperparameters
 
 
 def backbone_identity(embedded: dict[str, torch.Tensor], released: dict[str, torch.Tensor]) -> dict[str, Any]:

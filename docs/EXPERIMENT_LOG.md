@@ -8548,3 +8548,280 @@ threshold this stage used until today, those four cells would have been split by
 a cliff at exactly 4.0 rather than by a stated significance level, and the
 64–246 and 600–1022 rows would have carried an `exceeds_random_control` of False
 against 246–600's True with no p-value to show why.
+
+## 2026-08-06 (late) — EXP-R2-136: four CLT/PLT runs existed unlogged, and the defect inside them is asymmetric across the arms they compare
+
+Four completed 20,000-step training runs were found on disk with **no entry in
+this log**: `results/transfer/external_baseline/20260806164130_4d009a18b0b8/{clt,plt}_seed{20260806,20260807}/`,
+finished 2026-08-07T01:43–03:14 UTC. They are recorded here rather than
+discarded, and they are **not quotable**, for the reason below.
+
+| arm | parameters | decoders | held-out NMSE sum, seed 20260806 | seed 20260807 |
+|---|---:|---:|---:|---:|
+| CLT | 115,065,600 | 55 | 2.1740 | 2.2606 |
+| PLT | 35,439,360 | 10 | 2.4655 | 2.5495 |
+
+Directionally this is ProGenMech's claim reproducing. Three findings say it
+cannot be reported.
+
+**One: the auxiliary loss compared a prediction in normalised space against a
+target in raw activation space.** Their `training/clt_model.py` and
+`training_transcoder/plt_model.py` both compute `aux_out = (acts @ w_dec) + b_pre[l]`
+and then `aux_out = aux_out * std + mu` before the MSE. Ours did neither — read
+directly from their source, not inferred. The consequence, reproduced here on one
+real 16-sequence UniRef50 batch through ProGen3-112M, as the gradient of the
+auxiliary term with respect to the self-layer decoder, ours against theirs:
+
+| layer | std(MoE input) | ‖g_ours‖ | ‖g_theirs‖ | ratio | cosine |
+|---|---:|---:|---:|---:|---:|
+| 0 | 0.0800 | 0.1280 | 0.0050 | **25.5×** | **0.652** |
+| 2 | 0.2335 | 0.0866 | 0.0105 | 8.3× | 0.830 |
+| 5 | 0.3261 | 0.1704 | 0.0447 | 3.8× | 0.908 |
+| 9 | 0.6000 | 18.6880 | 10.2340 | 1.8× | 0.999 |
+
+So the auxiliary gradient was up to twenty-five times too large **and pointing
+somewhere else** — worst in the early layers, where the activation scale is
+smallest. It is not a uniform rescale that training could absorb. It fired in
+every one of the four runs, which record `n_dead` between 647 and 5,944 at every
+evaluation. And it is **asymmetric across the two arms under test**: the
+self-layer decoder is the PLT's only contributor to its layer's reconstruction
+and one of up to ten in the CLT, so the arm with fewer decoders took the larger
+share of a corrupted gradient. A defect that acts differently on the two sides of
+a comparison cannot be argued away as common-mode.
+
+**Two: the held-out cohort was a head-of-file prefix and a different population
+from the training stream.** The block shuffle permutes *within* an 8192-record
+window read in file order, which answers Appendix B rule 1 for the training
+*order* and not for the evaluation *draw*. Measured on UniRef50 at the runs' own
+seed: the held-out 256 mean **394** residues, blocks 2–7 mean **878**, and the
+runs' own records give a training mean of **932** (298,285,105 tokens over
+320,000 sequences). Evaluation was on a population 2.4× shorter than training.
+EXP-R2-135 priced this model's band sensitivity at 4.1× in NLL recovery, so this
+is a live axis rather than a hypothetical one.
+
+**Three: the checkpoints cannot reach the gate the stage exists to feed.** The
+stage's docstring claimed the checkpoint is written in the shape
+`15_replacement_faithfulness.py` can load. Reproduced: `load_replacement` raises
+`KeyError: 'hyper_parameters'`; the state dict's `b_pre` is one `(L, d)` tensor
+against the released layout's per-layer keys; and `PerLayerTranscoder.__call__`
+is per-layer by construction, so **a CLT has no evaluation path through that
+stage at all**. The four runs therefore delivered reconstruction NMSE only —
+which is precisely the quantity EXP-R2-132 established is insufficient, and
+which the released PLT's own record already shows can be good while faithfulness
+is poor.
+
+**A fourth point is not a defect but a missing control.** The CLT carries 3.25×
+the PLT's parameters at equal `d_hidden`, and took 1.78× the wall clock. Their
+own scripts share the confound — both arms at `D_HIDDEN=4608` — so matching them
+is defensible, but "cross-layer connectivity is what wins" is not established by
+a comparison in which one arm is also three times larger. Standing rule 28 asks
+for the baseline available from the design's own coordinates, and here that is a
+**parameter-matched PLT**.
+
+### Repairs, and the test that would have caught the first one
+
+The auxiliary term now de-normalises. The regression test is a *construction*
+rather than a scaling argument, because a scaling argument does not discriminate
+here — the raw-space target dominates the MSE and carries the activation scale
+whichever space the prediction is in, and a first attempt at a `c²` homogeneity
+test passed on both forms. With every decoder and `b_pre` zeroed the
+reconstruction is exactly the input's per-token mean; choosing the target as
+twice that mean makes the residual equal the mean, so a correctly de-normalised
+prediction hits it exactly and the auxiliary loss is **zero**, while a
+normalised-space prediction misses by the whole mean. Verified against the
+defective code by reintroducing it: **aux 101.382 where the fix gives 0**.
+
+The held-out draw now starts past everything the training stream reaches
+(`skip = steps × batch + eval_sequences`) and refuses rather than overlapping if
+the corpus runs out. `dead_steps` is derived from the batch size — their
+threshold is in sequences, so a fixed step count silently meant different things
+at different batch sizes. `auxk` moves to 192, their *effective* value
+(`min(d_model // 2, n_dead)`); the 128 in their scripts is dead code their model
+never reads. The duplicate final evaluation is gone (it re-ran a 256-sequence
+sweep to reproduce a number the loop had just computed). And
+`deviations_from_released_code` now lists **six** entries rather than two —
+decoder initialisation is tied-and-unit-normed in theirs and independent here,
+their PLT optimiser is Adam against our AdamW, their precision is bf16-mixed
+against our fp32, their batches mix roughly one third GLM/infilling instances
+against our pure causal-LM, and the 32–1022 residue band is **ours**, not
+theirs: their data module's truncation is commented out and 1022 appears only in
+their activation-collection script. All six are symmetric across the arms, so
+none threatens CLT-minus-PLT; each blocks comparison to their published number,
+which the stage already disclaims.
+
+`PerLayerTranscoder` and `load_replacement` moved from
+`15_replacement_faithfulness.py` into `src/transfer/transcoders.py`. A module
+whose name begins with a digit cannot be imported, so a second stage needing the
+same checkpoint would have had to carry a second copy of the forward pass —
+Appendix B rule 12's exact shape, caught before it happened rather than after.
+
+Nine tests were added over 598 lines of numerical code that had none.
+
+### The campaign now running
+
+Six arms, **one** frozen snapshot `20260806224403_0af210a7f74d`: CLT and PLT at
+`d_hidden` 4608, plus a PLT at `d_hidden` **14963** — the width at which its
+parameter count matches the CLT's to 3.2e-5 relative — each at corpus seeds
+20260806 and 20260807. What the matched arm cannot also match is declared: `k=64`
+is 1.39% of a 4608-wide dictionary and 0.43% of a 14963-wide one, and no PLT can
+match the CLT on parameters and on relative sparsity at once.
+
+`run_external_baseline_h200.sh` gained `--run-id`/`--snapshot-dir` so one freeze
+serves a whole campaign. Two reasons: four controllers freezing at once collide
+on the shared relay's single temp script path — the hazard EXP-R2-122 recorded
+and a 20-second stagger did not fix — and, scientifically, the arms of one
+comparison must run one code hash. Reuse is refused unless the snapshot is
+verified present on the pod, so the option cannot silently run against nothing.
+
+## 2026-08-06 (late) — literature gate for the phase-2 method tracks, and D3.f closes on it
+
+Run before any of the tracks below was built, as the plan requires. Queries,
+works and verdicts are in the gate's own record; four things changed a decision.
+
+**A second protein CLT paper exists and this repository had not catalogued it.**
+arXiv:2602.12026 (ProtoMech) trains cross-layer transcoders on **ESM2** from the
+same group as ProGenMech. "A CLT on a protein model" is now doubly occupied —
+encoder and decoder — so no track whose contribution is that construction is
+worth running.
+
+**A named mechanism arrived for an effect already measured here.** Lange et al.
+(2026-02-02) argue that a CLT's sparsity penalty makes *depth collapse* cheaper
+than faithful multi-hop structure, so A→B→C is rewritten as parallel A→B, A→C,
+and report a CLT showing 3× higher early-layer L0 than late-layer where a PLT
+distributes evenly. Depth collapse predicts a dependence on sequence length,
+which is the band dependence EXP-R2-135 measured at 4.1× and did not explain. The
+diagnostic is a weight-and-activation statistic and costs nothing beside a
+training run this campaign is already doing.
+
+**The field's own critique says reconstruction is not faithfulness.** CIRCUS
+(arXiv:2603.00523) shows a pruned circuit is an artefact of the analyst's
+threshold; Lange et al. exhibit perfect CLT reconstruction over a computation the
+CLT entirely skips. Both corroborate this repository's position and both are
+citable rather than re-derivable.
+
+**D3.f — the DAS pilot — is closed rather than run**, on two independent grounds
+that agree.
+
+*From the literature.* Sutter et al. (arXiv:2507.08802) obtain **100% interchange
+accuracy on a randomly initialised model that cannot do the task**, absent a
+linearity constraint; Makelov et al. (arXiv:2311.17030) show subspace
+interventions succeeding through a dormant parallel pathway. An interchange
+accuracy reported without those controls is uninterpretable, and reported with
+them is their experiment. Méloux et al. (arXiv:2607.00267) then find most
+validity metrics, interchange accuracy included, fail to separate valid from
+invalid abstractions across 10 systems and 30 metrics. **No application of DAS to
+any protein, DNA or RNA model was found**, so the track is unrun — but unrun is
+not the same as promising.
+
+*From the code, audited before the literature verdict arrived and agreeing with
+it.* `18_das_subspace.py` cannot build its protein arm at its committed defaults:
+the corpus census under the exact-repeat criterion returns **48 matching records
+out of 203,063 eligible** against `--records 96`, reproduced in 13 s, and a
+second ceiling survives lowering it, since 48 probes at 3 cases each cannot reach
+`--cases 192`. Worse, and this is the part that would have mattered if the first
+had been fixed: the **unembedding-difference baseline collapses in rank exactly
+on the protein arms**. Its rows are differences of unembedding rows over the
+arm's alphabet, so on a 31-token residue vocabulary the basis has rank ≤ 19
+whatever dimension is requested, and the requested-dimension field is written to
+the artefact regardless. The one control whose job is to stop a learned subspace
+being credited when it has only found the copy channel is weakest precisely where
+a positive protein claim would be made. Third, an all-NaN basis passes the
+orthonormality guard — `argmax` of an all-NaN logit row returns token 0 — so a
+diverged run writes an interchange accuracy of ~0.0 to disk as a measurement.
+
+None of this is a criticism of the DAS *implementation*, whose rotation algebra
+is correct: the basis is orthonormal to 2.4e-7, gradients flow through the QR,
+and the counterfactual label is the high-level model's output rather than the
+base model's. The item closes because its statistic cannot carry the claim, which
+is the same reason §8 item 0 closed.
+
+**What the gate leaves open and cheap.** Two methods target the half of this
+programme's objective that currently has no instrument at all — whether a protein
+generative model acquires knowledge or memorises. The Log-Alignment Ratio
+(arXiv:2605.28975) is probe-free and a single forward pass; a pseudoperplexity
+memorisation protocol (bioRxiv 2026.06.08.730685) is already validated on a
+protein LM and would run on both modalities under one procedure. Neither routes
+through a trained probe, so neither meets §7's standing rejection.
+
+**On the MoE track the gate found genuinely open ground**, and bounded it: no work
+on any MoE links routing to a downstream replacement model's fidelity, and no
+routing analysis exists for any protein model — ProGenMech's paper contains none,
+confirmed by reading it. But two 2026 results predict a null: arXiv:2606.10703
+finds observational routing statistics do not predict causal ablation importance
+across three architectures and 60 metric-layer combinations, and arXiv:2604.09780
+argues expert specialisation is hidden-state geometry rather than domain
+expertise. The null exit is therefore pre-registered below, before the numbers
+exist.
+
+## 2026-08-06 (late) — EXP-R2-137 pre-registered: does the replacement's error live where the router decides? (D2.g item 4)
+
+Written before the measurement exists, and before the stage was pointed at a
+full cohort. ProGenMech's transcoder abstracts ProGen3's router away by
+construction and says so; a transcoder is a continuous function of a MoE block's
+input while the block is piecewise, because which two of eight experts run is a
+`topk`. The question is whether the replacement's residual is **structured by the
+routing decision** or diffuse.
+
+**The statistic is a correction, not a correlation.** Tokens are grouped into
+cells; a per-cell mean residual is fitted on sequence-disjoint folds and
+subtracted on the folds it was not fitted on; how much held-out error a grouping
+removes is how much that grouping knew. A rank correlation between a per-token
+error and a router statistic was rejected at design time — that is the shape this
+programme retracted twice (F4, EXP-R2-120), and it is confounded with everything
+that varies down the stack.
+
+**Three groupings, roles declared.** `routing` is the token's selected expert set
+(28 cells at 8 experts, top-2) and is the hypothesis. `random` is a seeded
+assignment to the **same number** of cells: it costs identical degrees of freedom
+and knows nothing, which is standing rule 28's free baseline. `residue` is the
+amino acid, and it is the **confound rather than the control** — if this model's
+routing is largely a lookup on the current residue then routing and residue are
+one grouping under two names, so the accuracy of predicting the expert set from
+the residue alone is measured directly rather than left to be inferred, and a
+second comparison asks what routing adds *after* the residue has been corrected
+for.
+
+**Attainability first.** A layer whose routing is concentrated in one expert set
+has no variation for a per-cell mean to fit and is reported **unmeasurable**, not
+failing (standing rule 2, declared at a 0.95 largest-cell share). Every held-out
+reduction is reported beside the in-sample reduction at the same cardinality,
+which is the arithmetic ceiling and is never a result: on pure noise with 28 cells
+over 2000 training tokens the held-out reduction is **−1.4%** while the in-sample
+ceiling is **+1.4%**, a near mirror image at `n_cells / n_train`, and that
+symmetry is pinned by a test.
+
+**The router being read is recomputed, not taken from the block.** The block
+returns a distribution in the hidden states' dtype while selecting on a float32
+one, and EXP-R2-130 measured those disagreeing on the selected pair for 3.3% of
+tokens. Reading the returned tensor would mislabel that many cells. A gate
+recomputes through the block's own `gate` module and compares: on the L20
+interface check, max |difference| **1.953e-03** with a selected-set disagreement
+of **0.0032**, which is the dtype difference behaving as EXP-R2-130 describes.
+
+**Pre-registered verdicts.** A layer **PASSes** if the routing grouping removes
+more held-out residual than the matched random grouping with a paired
+sequence-bootstrap interval excluding zero, **and** still does so after the
+residue has been corrected for first. **FAIL means the replacement's error at
+that layer is not localised by the routing decision** — and that is a complete
+answer, not a failed experiment: it would make "the router was abstracted away"
+the wrong account of why the replacement fails, and relocate the question. Two
+2026 results predict exactly this null (arXiv:2606.10703, arXiv:2604.09780) and
+the exit is declared here so the null cannot be reported as a surprise.
+
+**A text MoE arm is not admitted, and the condition for admitting one is stated
+now.** The question as posed is within-model and needs no second MoE. A text MoE
+becomes earned only on a PASS, where the finding would be ambiguous between a
+property of sparse MoE replacement (method) and a property of protein models
+(transfer) — which is the distinction §5's organising rule turns on. The
+literature gate's only verified candidate is `ibm-granite/granite-3.0-1b-a400m-base`
+(24 layers, d_model 1024, 32 experts, top-8, native `transformers`, no custom
+kernels), and its 9× parameter and 4× expert-count mismatch against ProGen3-112M
+would be an irreducible limitation to record rather than a detail to gloss. No
+genuinely-trained open text MoE at 100–300M appears to exist; the small ones found
+were dense-model merges with no trained router.
+
+**Interface check, L20, 24 sequences, not a result.** All ten layers measurable,
+loader and router gates PASS. At that size every grouping's held-out reduction is
+negative because the overfit penalty dominates at 28 cells over ~2000 tokens,
+which is the machinery behaving as its own test predicts. The campaign condition
+is 256 sequences at band 64–246 with 1000 bootstrap replicates and 4 folds.

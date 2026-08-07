@@ -40,16 +40,50 @@ recorded rather than smoothed:
 The estimand a downstream stage measures is the same either way: the transcoder
 reads a MoE block's **input** (the output of ``post_attention_layernorm``) and
 predicts that block's **output** before the residual add.
+
+**The released PLT lives here too**, in :class:`PerLayerTranscoder`. It was
+written inside ``15_replacement_faithfulness.py`` and could not leave it: a
+module whose name begins with a digit cannot be imported, so the second stage
+that needed to load the same checkpoint would have had to carry its own copy of
+the forward pass -- which is the shape of the rendering defect Appendix B rule 12
+exists to stop. One declaration of what a transcoder is, trained or released.
 """
 
 from __future__ import annotations
 
+import argparse
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import torch
 import torch.nn.functional as F
 from torch import nn
+
+from .arms import REPO
+
+#: The released ProGenMech per-layer transcoder. Under ``external_resources``,
+#: which is git-ignored and CC BY-NC-ND: this repository reads its tensors and
+#: imports none of its code.
+#: Overridable, because the staged copy does not sit where the B-local one does:
+#: the pod's tree carries no ``baselines/`` segment, so a hard-coded default
+#: resolves to a path that does not exist there and a run dies after the process
+#: is already up. ``h200_env.sh`` exports the pod-side location.
+DEFAULT_REPLACEMENT = Path(
+    os.environ.get(
+        "TRANSFER_PROGENMECH_PLT",
+        REPO
+        / "external_resources/baselines/ProGenMechModels/ProGen3_PLT_L10_D4608"
+        / "checkpoints/last.ckpt",
+    )
+)
+
+#: Their dead-latent threshold, in the unit their config states it in. The model
+#: divides by the batch size to reach a step count, so a trainer that hard-codes
+#: the step count makes ``--batch-size`` silently change how long a latent may
+#: stay silent. Declared here once and divided where the batch is known.
+DEAD_STEPS_SEQUENCES = 10_000
 
 
 @dataclass(frozen=True)
@@ -60,14 +94,38 @@ class TranscoderConfig:
     d_model: int = 384
     d_hidden: int = 4608
     k: int = 64
-    auxk: int = 128
+    #: Dead latents revived per layer per step. Their *scripts* declare 128 and
+    #: their *models* never read it: ``clt_model.py`` and ``plt_model.py`` both
+    #: use ``min(d_model // 2, n_dead)``, which is 192 here. The effective value
+    #: is the one reproduced, because the declared one is dead code in their
+    #: repository and reproducing it would be reproducing a file rather than a
+    #: computation.
+    auxk: int = 192
     #: Steps a latent may stay silent before the auxiliary loss revives it.
-    #: Their ``dead_steps_threshold`` is in sequences and is divided by the batch
-    #: size to reach steps; the quotient is what matters, so it is declared here
-    #: in the unit it is used in.
+    #: Their ``dead_steps_threshold`` is in *sequences*; the quotient with the
+    #: batch size is what the model uses, so the trainer derives this from the
+    #: batch it actually runs (see :data:`DEAD_STEPS_SEQUENCES`) rather than
+    #: letting a fixed step count silently mean different things at different
+    #: batch sizes.
     dead_steps: int = 625
     aux_weight: float = 1.0 / 32.0
     cross_layer: bool = True
+
+    def n_parameters(self) -> int:
+        """Trainable parameters, in closed form, so an arm can be sized before it runs.
+
+        Encoders ``L*(d*h + h)``, decoders ``pairs*h*d``, ``b_pre`` ``L*d``. The
+        CLT's ``pairs`` is ``L(L+1)/2`` against the PLT's ``L`` -- a 3.25x
+        parameter advantage at ``L=10``, which is why a parameter-matched PLT is
+        a control this comparison needs rather than a refinement it can skip.
+        """
+
+        pairs = (
+            self.num_layers * (self.num_layers + 1) // 2 if self.cross_layer else self.num_layers
+        )
+        encoders = self.num_layers * (self.d_model * self.d_hidden + self.d_hidden)
+        decoders = pairs * self.d_hidden * self.d_model
+        return encoders + decoders + self.num_layers * self.d_model
 
     def record(self) -> dict[str, Any]:
         return {
@@ -79,6 +137,9 @@ class TranscoderConfig:
             "auxk": self.auxk,
             "dead_steps": self.dead_steps,
             "aux_weight": self.aux_weight,
+            "n_parameters": self.n_parameters(),
+            "active_latents_per_token": self.k,
+            "active_fraction_of_dictionary": self.k / self.d_hidden,
         }
 
 
@@ -228,7 +289,23 @@ class Transcoder(nn.Module):
                     revived = topk_relu(masked, k_aux)
                     # Self-layer decoder only: a dead latent is revived where it
                     # was read, not by borrowing another layer's output.
-                    predicted = revived @ self.decoders[f"{layer}_{layer}"]
+                    #
+                    # The bias and the de-normalisation are not decoration. The
+                    # target is a residual in raw activation space; a decoder
+                    # output is in the normalised space the encoder read from, and
+                    # the two differ by this layer's own scale. Comparing them
+                    # directly -- which this did until the defect was measured --
+                    # makes the auxiliary gradient 1.8x to 19.3x too large and
+                    # points it in the wrong direction (cosine 0.70-0.94 against
+                    # the correct gradient in the first six layers), worst where
+                    # the activation scale is smallest. It is also asymmetric
+                    # across the comparison this module exists for: this decoder
+                    # is the PLT's only contributor to its layer and one of up to
+                    # ten in the CLT. Their ``clt_model.py`` and ``plt_model.py``
+                    # both de-normalise here, and so does this now.
+                    predicted = (
+                        revived @ self.decoders[f"{layer}_{layer}"] + self.b_pre[layer]
+                    ) * stds[layer] + means[layer]
                     aux = aux + F.mse_loss(predicted, residual[layer])
 
         return {
@@ -257,3 +334,101 @@ class TrainingRecord:
             "sequences": self.sequences,
             "history": self.history,
         }
+
+
+# ------------------------------------------------------- the released transcoder
+
+
+class PerLayerTranscoder:
+    """ProGenMech's released per-layer transcoder, re-implemented from its weights.
+
+    Their class lives in a CC BY-NC-ND tree and imports ``pytorch_lightning``,
+    which is absent here and not installable in the offline pods. The weights
+    themselves need neither: ``torch.load(weights_only=True)`` reads them once
+    ``argparse.Namespace`` is allowlisted. So the forward pass is restated here,
+    line for line against ``training_transcoder/plt_model.py``:
+
+        centre and scale over the feature axis, subtract ``b_pre``, encode,
+        keep the top ``k`` pre-activations under ReLU, decode, add ``b_pre``,
+        undo the scaling.
+
+    The scale is ``Tensor.std``'s **unbiased** estimate and the epsilon is added
+    to it rather than inside the square root, because that is what their code
+    does and this is a re-implementation, not an improvement. Each layer is
+    independent, so a per-layer hook reproduces it exactly.
+    """
+
+    def __init__(self, state: dict[str, torch.Tensor], hyperparameters: Any) -> None:
+        self.num_layers = int(hyperparameters.num_layers)
+        self.d_model = int(hyperparameters.d_model)
+        self.d_hidden = int(hyperparameters.d_hidden)
+        self.k = int(hyperparameters.k)
+        expected = {"stats_last_nonzero"}
+        for layer in range(self.num_layers):
+            expected |= {
+                f"encoders.{layer}.weight",
+                f"encoders.{layer}.bias",
+                f"decoders.{layer}",
+                f"b_pre.{layer}",
+            }
+        missing = sorted(expected - set(state))
+        unexpected = sorted(set(state) - expected)
+        if missing or unexpected:
+            raise RuntimeError(
+                "released transcoder state dict does not match the declared "
+                f"architecture (L={self.num_layers}, d_model={self.d_model}, "
+                f"d_hidden={self.d_hidden}, k={self.k}).\n"
+                f"  missing ({len(missing)}): {missing}\n"
+                f"  unexpected ({len(unexpected)}): {unexpected}"
+            )
+        self.encoder_weight = [state[f"encoders.{i}.weight"] for i in range(self.num_layers)]
+        self.encoder_bias = [state[f"encoders.{i}.bias"] for i in range(self.num_layers)]
+        self.decoder = [state[f"decoders.{i}"] for i in range(self.num_layers)]
+        self.b_pre = [state[f"b_pre.{i}"] for i in range(self.num_layers)]
+        for name, tensors, shape in (
+            ("encoders", self.encoder_weight, (self.d_hidden, self.d_model)),
+            ("decoders", self.decoder, (self.d_hidden, self.d_model)),
+            ("b_pre", self.b_pre, (self.d_model,)),
+        ):
+            wrong = [i for i, t in enumerate(tensors) if tuple(t.shape) != shape]
+            if wrong:
+                raise RuntimeError(
+                    f"released transcoder {name} at layers {wrong} do not have "
+                    f"shape {shape}; the hyper-parameters and the weights disagree"
+                )
+
+    def to(self, device: torch.device) -> PerLayerTranscoder:
+        for group in (self.encoder_weight, self.encoder_bias, self.decoder, self.b_pre):
+            group[:] = [tensor.to(device=device, dtype=torch.float32) for tensor in group]
+        return self
+
+    def __call__(self, layer: int, x: torch.Tensor) -> torch.Tensor:
+        source = x.float()
+        mu = source.mean(dim=-1, keepdim=True)
+        centred = source - mu
+        std = centred.std(dim=-1, keepdim=True)
+        normalised = centred / (std + 1e-5) - self.b_pre[layer]
+        pre = F.linear(normalised, self.encoder_weight[layer], self.encoder_bias[layer])
+        top = torch.topk(pre, k=self.k, dim=-1, sorted=False)
+        latents = torch.zeros_like(pre).scatter_(-1, top.indices, F.relu(top.values))
+        recon = latents @ self.decoder[layer] + self.b_pre[layer]
+        return (recon * std + mu).to(x.dtype)
+
+
+def load_replacement(path: Path) -> tuple[PerLayerTranscoder, dict[str, torch.Tensor], Any]:
+    """The released checkpoint's transcoder weights and its embedded backbone."""
+
+    torch.serialization.add_safe_globals([argparse.Namespace])
+    checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+    state = checkpoint["state_dict"]
+    hyperparameters = checkpoint["hyper_parameters"]["args"]
+    transcoder = PerLayerTranscoder(
+        {key[len("plt.") :]: value for key, value in state.items() if key.startswith("plt.")},
+        hyperparameters,
+    )
+    backbone = {
+        key[len("progen3_model.") :]: value
+        for key, value in state.items()
+        if key.startswith("progen3_model.")
+    }
+    return transcoder, backbone, hyperparameters
