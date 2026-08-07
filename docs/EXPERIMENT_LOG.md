@@ -8749,3 +8749,50 @@ An audit of the H200 scripts raised nine items. Four were real defects that can 
 **Not built, and the audit agrees**: automatic retries for full directory pulls (a failed pull leaves the verified artefact intact and re-pulling by hand is a documented four-line recipe), per-phase health-check timeouts and retries (the controller already treats a timeout as inconclusive rather than unhealthy, and a second state machine beside it is redundant logic), longer health timeouts (180 s already timed out under concurrent transfer; the cause is tunnel contention, not the bound), and additional GPU/storage/network probes (no evidence any is needed).
 
 Six negative tests were added: a stale run-id is refused, `--print-code-hash` answers without the access layer installed, `--run-id` and `--snapshot-dir` must be given together, bare `wait` demonstrably masks a failure while per-PID waiting does not, the operator guide documents the state vocabulary, and every numbered entry point appears in the measurement-package table. 599 passed.
+
+## 2026-08-07 — EXP-R2-139: the free baseline rule 28 required, and it is decisively beaten
+
+`15_replacement_faithfulness.py` scored three conditions from the day it was written: the original, the method, and the mean-ablated floor that is the *denominator*. Nothing stood between the floor and the method, so standing rule 28 — a method is scored against the trivial baseline available from its own coordinates — had never been applied to this stage at all. Twice before, applying that rule changed what a result meant (EXP-R2-131's depth-only selector, EXP-R2-133/134's BLOSUM62). It is applied here, at band 64–246 on 128 sequences, identical to EXP-R2-138.
+
+The baseline is one affine map per block, `y ≈ (x − μx)W + μy`, solved in closed form from streamed Gram matrices on a cohort **disjoint from the scored one**. It carries **1,478,400** parameters against a cross-layer transcoder's 115,065,600 — a factor of 78 — with no dictionary, no sparsity, no latents and no training loop.
+
+| replacement | fit sequences | parameters | NLL recovery | reconstruction NMSE sum |
+|---|---:|---:|---:|---:|
+| linear map | 1,024 | 1,478,400 | **−1.6381** | 5.856 |
+| linear map | 4,096 | 1,478,400 | **−1.6112** | 5.803 |
+| linear map | 16,384 | 1,478,400 | **−1.6352** | 5.792 |
+| PLT, released | (trained) | 35,439,360 | +0.1270 | 4.446 |
+| PLT, width 4608 | (trained) | 35,439,360 | +0.1142 | 4.427 |
+| CLT, width 4608 | (trained) | 115,065,600 | +0.1466 | 4.223 |
+| PLT, width 14963 | (trained) | 115,069,310 | +0.1577 | 3.919 |
+
+**The free baseline is not merely beaten, it is far worse than doing nothing.** A recovery of −1.6 means the linear replacement drives NLL to 5.61 where the *fully ablated* model sits at 3.28 — substituting a least-squares map for every MoE block is worse than substituting each block's mean. Under sequential replacement the per-layer errors compound, and a map whose reconstruction NMSE exceeds 1.0 at several layers is predicting worse than the mean there.
+
+**And it is not underfitting, which is the objection that would otherwise void the comparison.** A sixteenfold increase in fitting data — 1,024 to 16,384 sequences — moves recovery by **0.003** and reconstruction by **0.06**. The baseline has saturated, so its failure is a statement about how non-linear these blocks are, not about how much data the fit saw.
+
+**What this establishes, and it is the first positive result for the dictionary approach in this programme.** Every transcoder measured, ours and ProGenMech's, is doing something a least-squares map of the same input cannot do. Rule 28 is now satisfied at this stage, and satisfied *in the method's favour* — which is worth stating plainly given how often applying that rule here has gone the other way.
+
+**What it does not establish.** The transcoders still recover 0.11–0.16 of a gap against an 0.80 gate, still fail their causal gates, and are still PARTIAL. "Better than free" and "good enough to carry a causal claim" are different questions with different answers, and EXP-R2-138's verdict is untouched. The baseline is also at a parameter disadvantage of 78×, which is the point of a *free* baseline rather than a defect in it: what rule 28 asks is whether the method beats what costs nothing, and the answer is yes.
+
+## 2026-08-07 — EXP-R2-140: the routing question, asked about the boundary this time
+
+An adversarial review found the strongest objection to EXP-R2-137: `router_dispersion` computes the margin between the last selected expert's gate weight and the first unselected one, its docstring calls that "the quantity a piecewise-function account is about", and **nothing consumed it**. The tested grouping was the selected expert *set*, which is a different variable — a residual concentrated at routing boundaries would have been invisible to it. The gap is closed by binning tokens by margin quantile into the same 28 cells and scoring that grouping against the same random control.
+
+| layer | NMSE | routing removed | **boundary removed** | random removed | boundary − random (95% CI) |
+|---:|---:|---:|---:|---:|---|
+| 0 | 0.0692 | +0.00168 | −0.00007 | −0.00059 | +0.00052 [+0.00039, +0.00066] |
+| 1 | 0.0024 | +0.01227 | +0.00286 | +0.00005 | +0.00280 [+0.00255, +0.00309] |
+| 2 | 0.3847 | +0.00018 | −0.00065 | −0.00073 | +0.00008 [+0.00003, +0.00014] |
+| 3 | 0.2876 | +0.00052 | −0.00054 | −0.00069 | +0.00015 [+0.00007, +0.00024] |
+| 4 | 0.5708 | −0.00003 | −0.00079 | −0.00085 | +0.00006 [−0.00002, +0.00015] |
+| 5 | 0.6511 | −0.00013 | −0.00070 | −0.00080 | +0.00010 [+0.00003, +0.00018] |
+| 6 | 0.6964 | −0.00039 | −0.00080 | −0.00087 | +0.00007 [+0.00000, +0.00014] |
+| 7 | 0.7821 | −0.00068 | −0.00089 | −0.00089 | +0.00001 [−0.00006, +0.00008] |
+| 8 | 0.7316 | −0.00036 | −0.00082 | −0.00076 | −0.00006 [−0.00036, +0.00025] |
+| 9 | 0.1800 | +0.00860 | +0.00129 | +0.00007 | +0.00123 [+0.00079, +0.00168] |
+
+**The boundary grouping is weaker than the selected-set grouping at every single layer**, and at the five layers where the replacement genuinely fails it removes nothing at all (−0.00089 to −0.00070), sitting within 0.0001 of a grouping that knows nothing. Where the selected-set grouping found something — layers 1 and 9, the two with almost no residual — the boundary grouping finds a quarter to a seventh as much.
+
+**So the objection is answered and the null is strengthened rather than qualified.** The account the design was accused of being blind to has now been tested on the same tokens, at matched cardinality, against the same control, and it is the weaker of the two. Neither which experts fired nor how close the router came to firing differently accounts for the replacement's error where that error lives.
+
+Two limits stand unchanged and are restated rather than quietly dropped: the correction is a per-cell **mean**, so a routing dependence expressed in the residual's covariance rather than its location remains untested; and the gate weights themselves — the mixture coefficients, as opposed to the identity of the pair and the distance to the boundary — are still not a grouping here.
