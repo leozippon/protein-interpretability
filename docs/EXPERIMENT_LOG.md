@@ -8687,3 +8687,31 @@ Six arms, one frozen snapshot `20260806224403_0af210a7f74d`, 20,000 steps each, 
 **One descriptive result stands on its own and belongs to part 1 rather than part 2.** The accuracy of predicting a token's selected expert set from its amino acid alone falls monotonically with depth, from **0.889 at layer 0 to 0.177 at layer 9** against a 28-cell alphabet. ProGen3's early routing is very nearly a lookup on the current residue, and becomes contextual with depth. That is measured on held-out folds, needs no dictionary, and explains the one negative incremental in the table: at layer 0 the routing and residue groupings are so nearly the same partition that correcting for residue first leaves routing doing worse than a fresh random grouping. It also bears on how "expert specialisation" should be read in a protein MoE — at the first layer it is substantially amino-acid identity wearing an expert's name.
 
 **Bounds.** One cohort band, one model, one released replacement, 256 sequences. The statistic is a per-cell *mean* correction, so a routing dependence that is not a location shift — a change in the residual's covariance, say — would not be seen by it; that is a real limit of the design and not a claim that no such dependence exists.
+
+## 2026-08-07 — EXP-R2-138: the reconstruction ordering does not survive into faithfulness, and the CLT/PLT question goes quiet on the properties that matter
+
+All six trained transcoders plus the released PLT through `15_replacement_faithfulness.py` at band 64–246, 128 sequences, 1000 paired bootstrap replicates, one frozen snapshot `20260807070352_2937953986ae`. This is the pass EXP-R2-136 could not have had: until the cross-layer replacement path existed, a CLT had no route through this stage at all.
+
+| arm | NLL recovery | 95% CI | KL recovery | attn ρ | attn ρ CI | top-10 | exact p | MoE ρ | verdict |
+|---|---:|---|---:|---:|---|---:|---:|---:|---|
+| CLT s06 | 0.1466 | [0.1300, 0.1648] | 0.1441 | 0.5206 | [0.437, 0.570] | 5/10 | 0.00776 | 0.7818 | PARTIAL |
+| CLT s07 | 0.1462 | [0.1293, 0.1641] | 0.1386 | 0.4561 | [0.401, 0.502] | 5/10 | 0.00776 | 0.6485 | PARTIAL |
+| PLT-wide s06 | 0.1577 | [0.1405, 0.1764] | 0.1548 | 0.4960 | [0.450, 0.534] | 5/10 | 0.00776 | 0.8303 | PARTIAL |
+| PLT-wide s07 | 0.1323 | [0.1167, 0.1490] | 0.1295 | 0.5039 | [0.455, 0.558] | 7/10 | 0.00003 | 0.6485 | PARTIAL |
+| PLT s06 | 0.1142 | [0.1002, 0.1292] | 0.1098 | 0.3380 | [0.311, 0.381] | 4/10 | 0.05202 | 0.2364 | PARTIAL |
+| PLT s07 | 0.1314 | [0.1164, 0.1472] | 0.1361 | 0.4727 | [0.417, 0.517] | 4/10 | 0.05202 | 0.7576 | PARTIAL |
+| **released PLT** | **0.1270** | [0.1111, 0.1435] | 0.1228 | **0.4891** | [0.452, 0.534] | 4/10 | 0.05202 | 0.3576 | PARTIAL |
+
+**A pipeline check first, because it is what licenses reading the rest.** The released PLT returns NLL recovery **0.1270** and attention ρ **0.4891**, against EXP-R2-132's 0.127 and 0.489 at the same band. That is a bit-level agreement across a re-freeze, a moved module, a new loader path and a day of edits, and it is the reason the six new rows can be compared to a body of existing work rather than only to each other.
+
+**The reconstruction ordering does not survive.** EXP-R2-136 put the parameter-matched PLT clearly ahead of the CLT on held-out NMSE — 2.058 against 2.184, with no overlap between draws. On behavioural recovery the two are **indistinguishable**: 0.1450 against 0.1464 on the mean, with PLT-wide's own seed spread at 0.0254, sixty times the 0.0004 difference between them. On attention-head rank agreement they are indistinguishable again, 0.4999 against 0.4884. On MoE-block rank agreement, 0.739 against 0.715, with per-arm seed spreads of 0.18 and 0.13 that swallow the difference whole.
+
+**So a 6% reconstruction advantage buys nothing on either property a circuit claim actually needs.** This is limitation **L3's shape** — a reconstruction metric not tracking behavioural fidelity — arriving on the CLT-versus-PLT question specifically, and it is sharper here than L3's original form because the two architectures are separable on the metric and not separable on the properties.
+
+**The plain PLT is lowest on average and not separably so.** Its mean NLL recovery is 0.1228 against the CLT's 0.1464, but its seed spread is 0.0172 and its second seed reaches 0.1314, whose interval [0.1164, 0.1472] overlaps both CLT draws. At two seeds per arm this programme's own evidence rule 4 admits the ordering as descriptive and not as a separation.
+
+**Every arm is PARTIAL, and the reason is the same for all seven.** Behavioural recovery of 0.11–0.16 sits far below the 0.80 gate, and no arm's attention-family ρ clears 0.5 on its lower bound. Attainability passed throughout — ceilings 0.97–0.99, the original resolving every component — so these are facts about the replacements and not about the cohort. The MoE family's top-3 overlap is 2 of 3 on **every** arm including the released one, which at ten components is a statistic with almost no resolution; it separates nothing and should not be read as agreement.
+
+**What EXP-R2-136 and this entry say together.** Trained under one protocol at one budget: the CLT beats the PLT on reconstruction at equal dictionary width, loses to a parameter-matched PLT on reconstruction, and is indistinguishable from it on behaviour and on causal rank agreement — while all of them, and the released PLT, fail the same gates in the same way. The defensible summary is that **at this budget the cross-layer/per-layer choice is not what determines whether a replacement can carry a causal claim**, because none of them can, and the differences that do exist live in a metric that does not predict the ones that matter.
+
+**Bounds.** One band, 128 sequences, two seeds per arm, a bounded 20,000-step training budget, and one model. Nothing here is a statement about ProGenMech's own checkpoint (audit §5.3).
