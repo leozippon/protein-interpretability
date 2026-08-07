@@ -118,6 +118,17 @@ class Assay:
             dtype=np.float64,
         )
 
+    @property
+    def substitutions(self) -> list[tuple[tuple[str, int, str], ...]]:
+        """Each variant's substitutions as ``(wild, 1-based position, mutant)``.
+
+        The parse ``Assay.blosum`` performs inline, exposed once so that a
+        second predictor over the same variants cannot disagree with the first
+        about what a mutation string means (Appendix B rule 12).
+        """
+
+        return [parse_mutant(mutant) for mutant in self.mutants]
+
     def record(self) -> dict:
         return {
             "assay": self.name,
@@ -130,12 +141,73 @@ class Assay:
         }
 
 
+def parse_mutant(mutant: str) -> tuple[tuple[str, int, str], ...]:
+    """``"A12G:C40W"`` to ``(("A", 12, "G"), ("C", 40, "W"))``.
+
+    One declaration of the mutation-string grammar. ``_revert`` and
+    ``Assay.blosum`` each carried their own slicing of it, and a third consumer
+    -- a position-specific profile, which needs the position and both residues at
+    once -- is the point at which two spellings become a disagreement about which
+    residue a variant carries.
+    """
+
+    tokens = mutant.split(":")
+    if not tokens or any(len(token) < 3 for token in tokens):
+        raise ValueError(f"{mutant!r} is not a substitution string")
+    parsed: list[tuple[str, int, str]] = []
+    for token in tokens:
+        position = token[1:-1]
+        if not position.isdigit():
+            raise ValueError(f"{mutant!r}: token {token!r} carries no position")
+        parsed.append((token[0], int(position), token[-1]))
+    return tuple(parsed)
+
+
+def available_assays(directory: Path | None = None) -> tuple[str, ...]:
+    """Every ProteinGym substitution assay staged on this host, sorted.
+
+    Read from the directory rather than declared, because the benchmark is the
+    population and a hand-maintained list is the shape Appendix B rule 12 warns
+    about: EXP-R2-134's whole-benchmark result is a statement about *all* 217
+    assays, and a list that drifts from the directory would quietly narrow it.
+    """
+
+    root = Path(directory) if directory is not None else PROTEINGYM_ROOT
+    if not root.is_dir():
+        raise FileNotFoundError(
+            f"{root} does not exist; set TRANSFER_PROTEINGYM_DIR to its location"
+        )
+    names = tuple(sorted(path.stem for path in root.glob("*.csv")))
+    if not names:
+        raise RuntimeError(f"no ProteinGym assay files under {root}")
+    return names
+
+
+def wildtype_of(name: str, directory: Path | None = None) -> str:
+    """The wild type of one assay, from its first row alone.
+
+    :func:`load_assay` also returns it, but only after reading and checking every
+    row of a file that runs to hundreds of thousands of variants. Enumerating the
+    benchmark's distinct wild types is a catalogue operation over 217 files and
+    has to cost one row each; the single-wildtype invariant is still enforced,
+    where it belongs, by :func:`load_assay` on the assays actually scored.
+    """
+
+    root = Path(directory) if directory is not None else PROTEINGYM_ROOT
+    path = root / f"{name}.csv"
+    if not path.is_file():
+        raise FileNotFoundError(f"no ProteinGym assay at {path}")
+    with path.open() as handle:
+        for row in csv.DictReader(handle):
+            return _revert(row["mutated_sequence"], row["mutant"])
+    raise RuntimeError(f"{name}: assay file holds no rows")
+
+
 def _revert(sequence: str, mutant: str) -> str:
     """The wild type implied by one variant, reverting every substitution in it."""
 
     out = list(sequence)
-    for token in mutant.split(":"):
-        wild, position, mutated = token[0], int(token[1:-1]), token[-1]
+    for wild, position, mutated in parse_mutant(mutant):
         if out[position - 1] != mutated:
             raise ValueError(
                 f"{mutant}: variant carries {out[position - 1]!r} at position "

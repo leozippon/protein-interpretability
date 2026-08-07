@@ -194,6 +194,23 @@ DIAMOND_FIELDS: tuple[str, ...] = (
     "bitscore",
 )
 
+#: :data:`DIAMOND_FIELDS` plus the two aligned strings. A stratification needs
+#: only the counts above; building a position-specific profile from the same
+#: search needs the alignment itself, and re-deriving it from the counts is not
+#: possible. Declared here rather than at the one call site that asks for it so
+#: that the fields, their order and their parse stay in one place -- the search
+#: command, the parser and the ``Hit`` record all read this module.
+#:
+#: ``qseq_gapped``/``sseq_gapped`` and not ``qseq``/``sseq``: DIAMOND's ``qseq``
+#: is the aligned part of the query *with its gaps removed*, so on any alignment
+#: carrying an indel the two strings have different lengths and cannot be walked
+#: together. Measured on the first real search run through this module -- a
+#: 541-column HSP returned a 485-character ``qseq`` against a 512-character
+#: ``sseq`` -- and caught by :func:`~.profiles.build_profile`'s length check
+#: rather than by reading the manual, which is the only reason it is recorded
+#: here as a fact instead of shipped as a silent column shift.
+ALIGNMENT_FIELDS: tuple[str, ...] = (*DIAMOND_FIELDS, "qseq_gapped", "sseq_gapped")
+
 #: The one documented failure of :func:`.circuits.natural_repeat_probes` that is
 #: a property of the record rather than of the configuration.  That function
 #: raises ``RuntimeError`` in exactly one place and ``ValueError``/``TypeError``
@@ -560,6 +577,13 @@ class Hit:
     slen: int
     evalue: float
     bitscore: float
+    #: The aligned query and subject strings *including* gap characters, so the
+    #: two are the same length and can be walked column by column. Present only
+    #: when the search was asked for :data:`ALIGNMENT_FIELDS`; optional because
+    #: every existing caller stratifies on the counts above and pays nothing for
+    #: an alignment it does not read, and a consumer that needs them must check.
+    qseq_gapped: str | None = None
+    sseq_gapped: str | None = None
 
     @property
     def identity_over_query(self) -> float:
@@ -585,6 +609,7 @@ def run_diamond_blastp(
     sensitivity: str,
     evalue: float,
     max_target_seqs: int,
+    fields: Sequence[str] = DIAMOND_FIELDS,
 ) -> tuple[list[str], str]:
     """Search the cohort against the corpus; return the command and the log tail.
 
@@ -610,6 +635,13 @@ def run_diamond_blastp(
     test.  The bias is also the reverse of the upward bias the module docstring
     declares, and it grows with repeat content, the one property the cohort is
     selected on.
+
+    ``fields`` selects the tabular columns and defaults to
+    :data:`DIAMOND_FIELDS`, which is what a stratification consumes. A caller
+    that needs the alignments themselves -- a position-specific profile cannot
+    be rebuilt from the counts -- passes :data:`ALIGNMENT_FIELDS`. The same list
+    has to reach :func:`parse_hits`, so it is a parameter of both rather than a
+    literal in either.
     """
 
     query_fasta = Path(query_fasta)
@@ -618,6 +650,7 @@ def run_diamond_blastp(
         raise FileNotFoundError(f"{query_fasta} does not exist")
     if threads < 1 or evalue <= 0 or max_target_seqs < 1:
         raise ValueError("invalid DIAMOND search parameters")
+    _checked_fields(fields)
     allowed = {"fast", "default", "sensitive", "mid-sensitive", "more-sensitive",
                "very-sensitive", "ultra-sensitive"}
     if sensitivity not in allowed:
@@ -634,7 +667,7 @@ def run_diamond_blastp(
         str(output_tsv),
         "--outfmt",
         "6",
-        *DIAMOND_FIELDS,
+        *fields,
         "--evalue",
         repr(evalue),
         "--max-target-seqs",
@@ -654,36 +687,78 @@ def run_diamond_blastp(
     return command, "\n".join(log[-12:])
 
 
-def parse_hits(output_tsv: Path) -> list[Hit]:
-    """Read the tabular output, failing on any row that is not the declared shape."""
+#: How each DIAMOND column becomes a :class:`Hit` attribute. One table, so the
+#: search command, the parser and the record cannot drift apart.
+_FIELD_ATTRIBUTES: dict[str, tuple[str, Any]] = {
+    "qseqid": ("query", str),
+    "sseqid": ("subject", str),
+    "pident": ("pident", float),
+    "length": ("length", int),
+    "nident": ("nident", int),
+    "qstart": ("qstart", int),
+    "qend": ("qend", int),
+    "qlen": ("qlen", int),
+    "slen": ("slen", int),
+    "evalue": ("evalue", float),
+    "bitscore": ("bitscore", float),
+    "qseq_gapped": ("qseq_gapped", str),
+    "sseq_gapped": ("sseq_gapped", str),
+}
 
+
+def _checked_fields(fields: Sequence[str]) -> tuple[str, ...]:
+    """Refuse a field list this module cannot parse into a complete ``Hit``.
+
+    Every column in :data:`DIAMOND_FIELDS` is required because every consumer
+    reads them; anything outside :data:`_FIELD_ATTRIBUTES` has no home on the
+    record and would be silently discarded, which is the shape that lets a
+    search be asked for a column nothing ever reads.
+    """
+
+    requested = tuple(str(field) for field in fields)
+    if len(set(requested)) != len(requested):
+        raise ValueError(f"duplicate DIAMOND output fields in {requested}")
+    unknown = [field for field in requested if field not in _FIELD_ATTRIBUTES]
+    if unknown:
+        raise ValueError(
+            f"DIAMOND fields {unknown} have no place on a Hit; known fields are "
+            f"{sorted(_FIELD_ATTRIBUTES)}"
+        )
+    missing = [field for field in DIAMOND_FIELDS if field not in requested]
+    if missing:
+        raise ValueError(
+            f"DIAMOND fields {missing} are required by every consumer of a Hit and "
+            "are not in the requested output"
+        )
+    return requested
+
+
+def parse_hits(output_tsv: Path, *, fields: Sequence[str] = DIAMOND_FIELDS) -> list[Hit]:
+    """Read the tabular output, failing on any row that is not the declared shape.
+
+    ``fields`` must be the list the search was run under; it defaults to
+    :data:`DIAMOND_FIELDS`, so an existing caller reads exactly what it did
+    before.
+    """
+
+    requested = _checked_fields(fields)
     rows: list[Hit] = []
     with Path(output_tsv).open(encoding="utf-8") as handle:
         for number, line in enumerate(handle, start=1):
-            line = line.strip()
-            if not line:
+            line = line.rstrip("\r\n")
+            if not line.strip():
                 continue
             parts = line.split("\t")
-            if len(parts) != len(DIAMOND_FIELDS):
+            if len(parts) != len(requested):
                 raise ValueError(
                     f"{output_tsv}:{number} has {len(parts)} fields, expected "
-                    f"{len(DIAMOND_FIELDS)}"
+                    f"{len(requested)}"
                 )
-            rows.append(
-                Hit(
-                    query=parts[0],
-                    subject=parts[1],
-                    pident=float(parts[2]),
-                    length=int(parts[3]),
-                    nident=int(parts[4]),
-                    qstart=int(parts[5]),
-                    qend=int(parts[6]),
-                    qlen=int(parts[7]),
-                    slen=int(parts[8]),
-                    evalue=float(parts[9]),
-                    bitscore=float(parts[10]),
-                )
-            )
+            values = {}
+            for field, part in zip(requested, parts):
+                attribute, cast = _FIELD_ATTRIBUTES[field]
+                values[attribute] = cast(part)
+            rows.append(Hit(**values))
     return rows
 
 
@@ -769,6 +844,68 @@ TRUNCATION_LENGTH_TOLERANCE = 0.02
 TRUNCATION_PIDENT_FLOOR = 99.0
 
 
+#: How :func:`assign_homology` responds to a truncated-looking alignment.
+#:
+#: ``any``
+#:     stop on any hit at any rank that :func:`truncated_alignment` flags. The
+#:     original behaviour and the default, so no existing caller moves.
+#: ``stratum_changing``
+#:     stop only on a flagged hit whose repair *could* move its record into a
+#:     higher stratum, by :func:`truncation_raises_stratum`.
+#:
+#: **The second rule exists because the first one's premise was measured false.**
+#: :func:`truncated_alignment`'s docstring argues that an alignment which is
+#: exact over a length-matched subject and covers well under the whole query
+#: "does not describe any biological relationship". At 48 queries against 100
+#: targets that held. At 12 ProteinGym wild types against 5000 targets each
+#: (2026-08-07, 22399 HSPs, ``--masking 0`` throughout) it does not: **11 of the
+#: 22399 alignments are flagged, all of them against one query -- human
+#: calmodulin -- and every one is ordinary biology.** They are other calmodulin
+#: entries of length 147-151 that are 100% identical over 139 of the query's 149
+#: residues with a terminal offset of about ten residues, which is exactly what a
+#: hyper-conserved protein with variable termini looks like. The same query's own
+#: verbatim corpus record, ``UniRef50_P0DP23``, is found at 100% identity over all
+#: 149 residues in the same search, so nothing was truncated and the run would
+#: have stopped on a false alarm.
+#:
+#: The refinement keeps every case the guard was earned on. EXP-R2-061's record
+#: aligned 607 of 732 residues against a 732-residue subject, giving observed
+#: identity 82.9 in ``id70_to_70..95`` against a potential 100.0 in
+#: ``ge95_near_duplicate`` -- a stratum change, so it still stops the run under
+#: both rules.
+TRUNCATION_RULES = ("any", "stratum_changing")
+
+
+def potential_identity_over_query(hit: Hit) -> float:
+    """Identity over the query this alignment would reach if it were not truncated.
+
+    An upper bound, and deliberately the most generous one: every query residue
+    the alignment does not cover is assumed to have matched. That is what makes
+    it safe to compare against a stratum boundary -- a truncation that cannot
+    reach a higher stratum even under the most favourable repair cannot have
+    caused a mis-binning.
+    """
+
+    if hit.qlen < 1:
+        raise ValueError("a hit against a zero-length query has no identity")
+    aligned = hit.qend - hit.qstart + 1
+    if aligned < 1 or aligned > hit.qlen:
+        raise ValueError(
+            f"alignment covers {aligned} of a {hit.qlen}-residue query, which is not "
+            "a query span"
+        )
+    return 100.0 * (hit.nident + hit.qlen - aligned) / hit.qlen
+
+
+def truncation_raises_stratum(hit: Hit, observed_identity: float) -> bool:
+    """Could repairing this truncation move its record into a higher stratum?"""
+
+    potential = potential_identity_over_query(hit)
+    if potential <= observed_identity:
+        return False
+    return assign_stratum(potential) != assign_stratum(observed_identity)
+
+
 def truncated_alignment(hit: Hit) -> bool:
     """Does this alignment look truncated rather than partial?
 
@@ -801,6 +938,7 @@ def assign_homology(
     hits: Sequence[Hit],
     *,
     max_target_seqs: int | None = None,
+    truncation_rule: str = "any",
 ) -> list[HomologyAssignment]:
     """Join hits back onto the cohort and band every record.
 
@@ -818,8 +956,20 @@ def assign_homology(
     this control exists to test. It is refused rather than flagged because a
     stratification built on truncated alignments is not a weaker measurement, it
     is a different one.
+
+    ``truncation_rule`` selects which flagged alignments stop the run; see
+    :data:`TRUNCATION_RULES`. The default is the original behaviour, so no
+    existing caller changes. ``"stratum_changing"`` is for a caller that searches
+    thousands of targets per query, where the flag's measured false-positive
+    class -- a hyper-conserved protein whose relatives are exact over a
+    terminally-offset span -- makes the strict rule unrunnable without weakening
+    what it protects.
     """
 
+    if truncation_rule not in TRUNCATION_RULES:
+        raise ValueError(
+            f"unknown truncation rule {truncation_rule!r}; rules are {list(TRUNCATION_RULES)}"
+        )
     if len(identifiers) != len(cohort.records):
         raise ValueError("identifier list does not match the cohort length")
     repeats = cohort.metadata.get("repeats")
@@ -905,11 +1055,17 @@ def assign_homology(
     # is not the truncated one. Inspecting only the best hit therefore looked
     # hardest at the cases that need it least. The 2026-07-29 unmasked run has no
     # truncated alignment at any rank, so no published stratification moves.
+    observed = {assignment.query_id: assignment.max_identity_over_query
+                for assignment in assignments}
     truncated = [
         (identifier, hit.subject, hit.identity_over_query)
         for identifier in identifiers
         for hit in by_query[identifier]
         if truncated_alignment(hit)
+        and (
+            truncation_rule == "any"
+            or truncation_raises_stratum(hit, observed[identifier])
+        )
     ]
     if truncated:
         raise RuntimeError(
@@ -919,7 +1075,7 @@ def assign_homology(
             "a truncated alignment, not a partial homologue, and it under-bins a "
             "verbatim corpus member. Re-run the search with --masking 0: DIAMOND masks "
             "repetitive query regions by default and this cohort is selected for "
-            "internal tandem repeats"
+            f"internal tandem repeats (truncation_rule={truncation_rule!r})"
         )
     return assignments
 

@@ -40,6 +40,7 @@ from src.transfer import (  # noqa: E402
     pathways,
     prediction_addressed,
     probes,
+    profiles,
     relational,
     statistics,
 )
@@ -1729,6 +1730,29 @@ FLOOR_RESPECTING_RESAMPLERS: dict[str, dict[str, object]] = {
         "refusal": "degenerate",
         "below": lambda n: circuits._case_resampled_interval(
             *_case_flags(n), np.random.default_rng(0), 200
+        ),
+    },
+    # The unit is a wild-type family at 50% identity, and the count of families a
+    # cohort resolves into is itself the finding, so a below-floor run publishes
+    # its point estimate and its unit count with no interval rather than raising
+    # in the middle of a campaign stage.
+    "profiles.cluster_bootstrap": {
+        "refusal": "degenerate",
+        "below": lambda n: profiles.cluster_bootstrap(
+            list(np.linspace(0.1, 0.5, n)), list(range(n)), resamples=200, seed=0
+        ),
+    },
+    # Same unit, same reason, and additionally the ratio it publishes is the
+    # quantity a reader takes away, so a below-floor interval on it would be the
+    # most quotable unpublishable number in the artefact.
+    "profiles.share_bootstrap": {
+        "refusal": "degenerate",
+        "below": lambda n: profiles.share_bootstrap(
+            list(np.linspace(0.1, 0.5, n)),
+            list(np.linspace(1.0, 2.0, n)),
+            list(range(n)),
+            resamples=200,
+            seed=0,
         ),
     },
 }
