@@ -11,12 +11,14 @@ dimensional checks find.
 
 from __future__ import annotations
 
+import pytest
 import torch
 
 from src.transfer.transcoders import (
     DEAD_STEPS_SEQUENCES,
     Transcoder,
     TranscoderConfig,
+    TranscoderReplacement,
     normalise,
     topk_relu,
 )
@@ -172,6 +174,69 @@ def test_the_dead_step_threshold_is_stated_in_sequences() -> None:
     assert DEAD_STEPS_SEQUENCES == 10_000
     assert DEAD_STEPS_SEQUENCES // 16 == 625  # the value the four completed runs used
     assert DEAD_STEPS_SEQUENCES // 32 == 312  # and what doubling the batch must give
+
+
+def test_the_spliced_replacement_reproduces_the_batched_model_exactly() -> None:
+    """A CLT evaluated one block at a time must be the CLT that was trained.
+
+    The faithfulness stage substitutes one MoE block at a time, in layer order,
+    while the training objective decodes every layer at once. For a per-layer
+    transcoder those are trivially the same computation; for a cross-layer one
+    they are only the same if the accumulated source latents are complete at
+    every target. Equality is asserted exactly rather than to a tolerance --
+    both paths run the same matmuls in the same dtype, so anything but equality
+    means they are different objects.
+    """
+
+    for cross_layer in (True, False):
+        config = _tiny(cross_layer=cross_layer, num_layers=4)
+        torch.manual_seed(0)
+        model = Transcoder(config)
+        generator = torch.Generator().manual_seed(1)
+        activations = torch.randn(
+            config.num_layers, 5, 3, config.d_model, generator=generator
+        )
+
+        batched = model(
+            activations.reshape(config.num_layers, -1, config.d_model)
+        ).reshape(activations.shape)
+        replacement = TranscoderReplacement(model)
+        spliced = torch.stack(
+            [replacement(layer, activations[layer]) for layer in range(config.num_layers)]
+        )
+        assert torch.equal(batched, spliced), (
+            f"{'CLT' if cross_layer else 'PLT'}: spliced and batched disagree by "
+            f"{float((batched - spliced).abs().max()):.3e}"
+        )
+
+
+def test_a_cross_layer_target_refuses_to_decode_before_its_sources_have_fired() -> None:
+    """Silently reconstructing from a subset would look like a better transcoder."""
+
+    config = _tiny(cross_layer=True)
+    replacement = TranscoderReplacement(Transcoder(config))
+    with pytest.raises(KeyError, match="source layer 0"):
+        replacement(2, torch.randn(4, config.d_model))
+
+
+def test_beginning_a_new_forward_pass_clears_the_accumulated_latents() -> None:
+    """Layer 0 firing IS the start of a pass; stale latents would mix two batches."""
+
+    config = _tiny(cross_layer=True, num_layers=3)
+    torch.manual_seed(0)
+    replacement = TranscoderReplacement(Transcoder(config))
+    generator = torch.Generator().manual_seed(2)
+    first = torch.randn(config.num_layers, 6, config.d_model, generator=generator)
+    second = torch.randn(config.num_layers, 6, config.d_model, generator=generator)
+
+    run = lambda batch: torch.stack(  # noqa: E731
+        [replacement(layer, batch[layer]) for layer in range(config.num_layers)]
+    )
+    run(first)
+    repeated = run(second)
+    replacement.reset()
+    fresh = run(second)
+    assert torch.equal(repeated, fresh), "the second pass depended on the first"
 
 
 def test_a_checkpoint_round_trips_into_the_class_that_wrote_it() -> None:

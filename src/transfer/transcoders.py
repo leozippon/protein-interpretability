@@ -214,15 +214,61 @@ class Transcoder(nn.Module):
             out.setdefault(source, []).append(target)
         return out
 
+    def encode_layer(
+        self, layer: int, inputs: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """One layer's pre-activations and normalisation statistics.
+
+        The single place a layer is encoded. :meth:`encode` calls it for the
+        batched training path and :class:`TranscoderReplacement` calls it one
+        block at a time inside a live forward pass, so a replacement cannot come
+        to disagree with the objective it was trained against.
+        """
+
+        hat, mean, std = normalise(inputs)
+        return self.encoders[layer](hat - self.b_pre[layer]), mean, std
+
+    def decode_target(
+        self,
+        target: int,
+        latents: dict[int, torch.Tensor],
+        mean: torch.Tensor,
+        std: torch.Tensor,
+    ) -> torch.Tensor:
+        """One target layer's reconstruction, from whichever sources have fired.
+
+        ``latents`` is keyed by source layer. Every pair reaching ``target`` must
+        be present: a CLT source that has not been encoded yet would silently
+        contribute nothing and the reconstruction would be a different, better-
+        looking object than the one that was trained. Since every pair runs
+        ``source <= target`` and MoE blocks execute in layer order, a live
+        forward pass always has them -- so a missing one is a defect, and it
+        raises.
+        """
+
+        total = None
+        for source, other in self.pairs:
+            if other != target:
+                continue
+            if source not in latents:
+                raise KeyError(
+                    f"decoding layer {target} needs source layer {source}, which has "
+                    "not been encoded; a cross-layer reconstruction missing a source "
+                    "is not the model that was trained"
+                )
+            contribution = latents[source] @ self.decoders[f"{source}_{target}"]
+            total = contribution if total is None else total + contribution
+        assert total is not None
+        return (total + self.b_pre[target]) * std + mean
+
     def encode(self, inputs: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """``inputs`` is ``(L, tokens, d_model)``; returns latents and statistics."""
 
-        normed, means, stds = [], [], []
+        means, stds = [], []
         pre_activations = []
         for layer in range(self.config.num_layers):
-            hat, mean, std = normalise(inputs[layer])
-            pre_activations.append(self.encoders[layer](hat - self.b_pre[layer]))
-            normed.append(hat)
+            pre_layer, mean, std = self.encode_layer(layer, inputs[layer])
+            pre_activations.append(pre_layer)
             means.append(mean)
             stds.append(std)
         pre = torch.stack(pre_activations)
@@ -234,18 +280,13 @@ class Transcoder(nn.Module):
     ) -> torch.Tensor:
         """Reconstruct every layer's MoE output from the latents that may reach it."""
 
-        outputs = []
-        for target in range(self.config.num_layers):
-            total = None
-            for source, other in self.pairs:
-                if other != target:
-                    continue
-                contribution = latents[source] @ self.decoders[f"{source}_{target}"]
-                total = contribution if total is None else total + contribution
-            assert total is not None
-            total = total + self.b_pre[target]
-            outputs.append(total * stds[target] + means[target])
-        return torch.stack(outputs)
+        by_source = {layer: latents[layer] for layer in range(self.config.num_layers)}
+        return torch.stack(
+            [
+                self.decode_target(target, by_source, means[target], stds[target])
+                for target in range(self.config.num_layers)
+            ]
+        )
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
         latents, _, means, stds = self.encode(inputs)
@@ -334,6 +375,98 @@ class TrainingRecord:
             "sequences": self.sequences,
             "history": self.history,
         }
+
+
+# -------------------------------------------------- a trained transcoder, spliced
+
+
+class TranscoderReplacement:
+    """A locally trained CLT or PLT, callable one MoE block at a time.
+
+    The faithfulness stage substitutes a block's output through
+    ``moe_intercept``, which sees one layer at a time and in layer order. A PLT
+    fits that shape directly. A **CLT does not**, because layer ``t``'s
+    reconstruction needs the latents of every source ``s <= t`` -- which is why
+    the trained checkpoints had no path through that stage at all, and why the
+    only thing the first four runs could deliver was reconstruction NMSE, the one
+    quantity EXP-R2-132 established is not sufficient.
+
+    The resolution is that ``s <= t`` for every pair by construction, so a
+    forward pass has already encoded every source it needs by the time a target
+    fires. This accumulates them and :meth:`decode_target` refuses if one is
+    missing rather than quietly reconstructing from a subset.
+
+    **The accumulator clears itself when layer 0 fires**, because that is what
+    beginning a forward pass *is* on this model: MoE blocks execute in layer
+    order and every pass starts at layer 0. That is the same fact the
+    accumulation already depends on for correctness, so using it here adds no
+    new assumption -- whereas requiring every caller to remember an explicit
+    reset would add a way to be silently wrong. Stale latents from a previous
+    batch usually differ in token count and would raise on the matmul, but two
+    batches of equal length would not, and the reconstruction would quietly mix
+    them. :meth:`reset` remains available for a caller that wants to be explicit.
+    """
+
+    def __init__(self, model: Transcoder) -> None:
+        self.model = model.eval()
+        self.config = model.config
+        self._latents: dict[int, torch.Tensor] = {}
+
+    @property
+    def num_layers(self) -> int:
+        return self.config.num_layers
+
+    def to(self, device: torch.device | str) -> TranscoderReplacement:
+        self.model = self.model.to(device=device, dtype=torch.float32)
+        return self
+
+    def reset(self) -> None:
+        self._latents.clear()
+
+    @torch.no_grad()
+    def __call__(self, layer: int, x: torch.Tensor) -> torch.Tensor:
+        if layer == 0:
+            self._latents.clear()
+        shape = x.shape
+        flat = x.reshape(-1, shape[-1]).float()
+        pre, mean, std = self.model.encode_layer(layer, flat)
+        self._latents[layer] = topk_relu(pre, self.config.k)
+        reconstruction = self.model.decode_target(layer, self._latents, mean, std)
+        return reconstruction.reshape(shape).to(x.dtype)
+
+
+def load_trained_transcoder(path: Path) -> tuple[TranscoderReplacement, dict[str, Any]]:
+    """Read a checkpoint written by ``17_train_transcoder.py``.
+
+    Separate from :func:`load_replacement` because they are different objects:
+    that one reads a third-party Lightning checkpoint carrying an embedded
+    backbone, this one reads ours, which carries none. Conflating them behind one
+    function would mean guessing which is on disk, and a wrong guess produces a
+    shape error a long way from its cause.
+    """
+
+    checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+    missing = sorted({"config", "state_dict"} - set(checkpoint))
+    if missing:
+        raise RuntimeError(
+            f"{path} is not a checkpoint from 17_train_transcoder.py (missing "
+            f"{missing}). A released ProGenMech checkpoint is read by "
+            "load_replacement instead."
+        )
+    recorded = checkpoint["config"]
+    config = TranscoderConfig(
+        num_layers=int(recorded["num_layers"]),
+        d_model=int(recorded["d_model"]),
+        d_hidden=int(recorded["d_hidden"]),
+        k=int(recorded["k"]),
+        auxk=int(recorded["auxk"]),
+        dead_steps=int(recorded["dead_steps"]),
+        aux_weight=float(recorded["aux_weight"]),
+        cross_layer=recorded["architecture"] == "CLT",
+    )
+    model = Transcoder(config)
+    model.load_state_dict(checkpoint["state_dict"], strict=True)
+    return TranscoderReplacement(model), recorded
 
 
 # ------------------------------------------------------- the released transcoder

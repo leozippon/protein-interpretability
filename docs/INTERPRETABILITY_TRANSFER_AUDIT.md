@@ -673,6 +673,42 @@ Drawn from all **574,627** eligible Swiss-Prot entries and all **23,586** AlphaF
 
 **Two further corrections this run forces.** First, **the previously recorded trio 9% / 34% / 50% is not reproducible from the retained artefacts.** Their far-band eligible fractions are 0.250 (gpt2-large), 0.219 (ProtGPT2), 0.500 (ProGen2-medium) and 0.062 (ZymCTRL); only ProGen2-medium's matches, and the accompanying "2–16 eligible far-band cases" matches the counts 8 / 7 / 16 / 2 exactly. The figures should be read as superseded rather than confirmed. Second, **ZymCTRL cannot enter this measurement at all.** `build_patch_cases` cuts every row to the patching window, and a conditioned rendering puts the `<end>` marker that delimits scored content hundreds of tokens beyond a 128-token window, so no valid content span exists. `build_patch_cases` now refuses the arm up front from the declaration (`patch_seq_len_refusal`); when this was measured it was `content_bounds` refusing one row at a time inside the loop, after the checkpoint was already on the GPU. Reaching it needs an ~816-token window at roughly 2.5 GPU-h, or a short protein band incommensurable with the other three. This is the conditioning prompt (L15) removing an arm from a window-based estimand — recorded, not worked around. Artefacts: `results/transfer_20260730/b6_nonlocal_propagation/`.
 
+### 5.3 What a ProGenMech reproduction cannot settle, stated as a standing posture
+
+Recorded as a posture rather than as a finding, because it governs how every
+D2.g result may be worded and it does not change when a new number arrives.
+
+**Their headline is not reproducible here, and probably not anywhere outside
+their group.** Their CLT weights return HTTP 403 while the PLT directory serves
+on the same token; their trainer needs packages an offline pod cannot install;
+and the two sentences that would settle how their CLT and PLT were matched could
+not be attributed to a paper by the literature gate. Training both architectures
+locally (EXP-R2-136) makes the *claim* testable — it does not make *their model*
+testable. Nothing measured here licenses a statement about their checkpoint, and
+a local CLT beating a local PLT is evidence about cross-layer transcoders trained
+under one declared protocol at a declared budget, not a confirmation of their
+numbers. The converse holds with equal force: a local CLT failing is not a
+refutation of theirs.
+
+**So the default reading of their reported results is unverified, not
+corroborated.** Three things sharpen that rather than merely asserting it. Their
+recovery ratios are quoted against a base whose advantage over a substitution
+matrix is real but unresolvable on their own eight-assay panel (EXP-R2-133/134) —
+an evaluation-interface limitation measured on their own material. Their
+comparison is confounded with capacity, because both arms run at `d_hidden` 4608
+and the CLT is 3.25x the parameters (L25). And the field's own 2026 work holds
+that a transcoder's reconstruction score is not evidence of circuit faithfulness
+at all — CIRCUS (arXiv:2603.00523) shows a pruned circuit is an artefact of the
+analyst's threshold, and Lange et al. (2026-02-02) exhibit perfect CLT
+reconstruction over a computation the CLT entirely skips, by a sparsity-driven
+depth-collapse mechanism that also predicts the cohort-length dependence
+EXP-R2-135 measured at 4.1x and did not explain.
+
+**The consequence for wording.** Results from this line are stated as properties
+of *a* replacement model measured under *this* repository's gates, with the band,
+the budget and the parameter count attached. "ProGenMech's CLT does X" is not a
+sentence this programme can currently write.
+
 ### 5.2 A fifth cause the evidence demands
 
 The four candidate causes named for this programme — insufficient pretraining, limited output interface, divergent pathways, method-intrinsic non-transferability — do not cover where several retractions actually came from. A fifth is required:
@@ -735,6 +771,23 @@ No proposal is advanced here that is not traceable to a catalogued limitation. T
 3. **From L8** — a readout that does not route through the unembedding, since the rank-(V−1) aperture is a hard vocabulary-conditional algebraic constraint and small residue vocabularies make it especially restrictive.
 
 Any method that is built is benchmarked against SAE, CLT, probes, dense low-rank and random controls, on fidelity, causal selectivity, cross-seed stability and generalisation to disjoint protein families.
+
+**Construction order, and it is a sequence rather than a preference: dense
+first, then MoE, then a unified method — and there is no requirement to reach
+the third.** A method that works on a dense decoder is testable against this
+programme's whole existing panel, where every arm is dense and where the text
+controls that scope a limitation as method-intrinsic or transfer-specific
+already live. A method built for MoE first has exactly one model to be tested on
+(ProGen3-112M, which is not a panel arm), so its failures cannot be attributed to
+method, model, data or interface — which is the attribution this programme
+exists to make. Unification is attempted only if a dense method and an MoE method
+both work and their difference is understood; a "universal" method proposed
+before either is speculative generality with an architecture diagram.
+
+This is a rule about **constructed methods**, not about measurement. Measuring a
+MoE model to characterise a failure — D2.g, and EXP-R2-137's routing question —
+is part 2 work and is not gated behind a dense construction, because it is
+diagnosing an external artefact rather than proposing ours.
 
 ---
 

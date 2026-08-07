@@ -86,7 +86,9 @@ from src.transfer.statistics import bootstrap_unit_floor, mean_interval  # noqa:
 from src.transfer.transcoders import (  # noqa: E402
     DEFAULT_REPLACEMENT,
     PerLayerTranscoder,
+    TranscoderReplacement,
     load_replacement,
+    load_trained_transcoder,
 )
 
 SCHEMA_VERSION = "r2_transfer_replacement_faithfulness_v1"
@@ -143,7 +145,11 @@ def _masked_sequence_mean(values: torch.Tensor, mask: torch.Tensor) -> torch.Ten
 
 @torch.no_grad()
 def clean_pass(
-    pg: Any, transcoder: PerLayerTranscoder, sequences: list[str], *, batch_size: int
+    pg: Any,
+    transcoder: PerLayerTranscoder | TranscoderReplacement,
+    sequences: list[str],
+    *,
+    batch_size: int,
 ) -> dict[str, Any]:
     """One clean sweep: the per-layer mean MoE output, and the transcoder's NMSE.
 
@@ -194,7 +200,9 @@ def clean_pass(
 #: named rather than filtered by presence, because a name this tokenizer does not
 #: carry means the vocabulary moved, and silently scoring the padding would move
 #: both the fully-ablated endpoint and the NMSE without moving anything visible.
-def replacement_context(pg: Any, transcoder: PerLayerTranscoder) -> Callable[[], Any]:
+def replacement_context(
+    pg: Any, transcoder: PerLayerTranscoder | TranscoderReplacement
+) -> Callable[[], Any]:
     def factory() -> Any:
         return moe_intercept(pg, lambda layer, x, y: transcoder(layer, x))
 
@@ -516,6 +524,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument("--replacement", type=Path, default=DEFAULT_REPLACEMENT)
+    parser.add_argument(
+        "--replacement-kind",
+        default="released",
+        choices=("released", "local"),
+        help="'released' reads ProGenMech's Lightning checkpoint, which embeds a "
+        "backbone the backbone gate compares against ours. 'local' reads a "
+        "checkpoint from 17_train_transcoder.py, which embeds none -- that gate "
+        "is then withheld with its reason rather than passed by default. A CLT "
+        "is only reachable through this second path, because a cross-layer "
+        "reconstruction needs every source layer at or below its target and the "
+        "released reader is per-layer by construction",
+    )
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--dtype", default="bfloat16", choices=("bfloat16", "float16"))
@@ -587,10 +607,31 @@ def main() -> None:
     loader_gate = self_check(pg)
     print(f"  self-check NLL {loader_gate['nll']:.4f} in {loader_gate['band']}")
 
-    print("[backbone] reading the released replacement and its embedded backbone")
-    transcoder, embedded, hyperparameters = load_replacement(args.replacement)
-    transcoder.to(pg.device)
-    released = released_state_dict(pg.checkpoint)
+    if args.replacement_kind == "local":
+        # A transcoder trained here by 17_train_transcoder.py. It carries no
+        # embedded backbone, because it was fitted against the backbone this
+        # stage loads rather than shipped beside a copy of one -- so the backbone
+        # gate has nothing to compare and is *withheld with its reason recorded*
+        # rather than passed by default. Withholding is the honest verdict: the
+        # gate exists to catch a replacement fitted to different weights, and for
+        # a local checkpoint that question is answered by provenance instead.
+        print("[backbone] reading a locally trained replacement (no embedded backbone)")
+        transcoder, recorded = load_trained_transcoder(args.replacement)
+        transcoder.to(pg.device)
+        hyperparameters = argparse.Namespace(**recorded)
+        backbone_gate = {
+            "verdict": "WITHHELD",
+            "reason": "a locally trained transcoder embeds no backbone; it was "
+            "fitted against the checkpoint this stage loads, whose own conversion "
+            "is gated by the loader self-check",
+            "architecture": recorded["architecture"],
+        }
+        embedded = released = None
+    else:
+        print("[backbone] reading the released replacement and its embedded backbone")
+        transcoder, embedded, hyperparameters = load_replacement(args.replacement)
+        transcoder.to(pg.device)
+        released = released_state_dict(pg.checkpoint)
     # The replacement is spliced in by positional layer index. A checkpoint
     # covering a different depth or width -- or a layer subset -- would be
     # applied to the wrong blocks without raising, and the run would emit a
@@ -608,16 +649,25 @@ def main() -> None:
             f"the replacement was fitted at d_model {hyperparameters.d_model} and "
             f"this ProGen3 is {pg.config.hidden_size} wide"
         )
-    backbone_gate = backbone_identity(embedded, released)
+    if args.replacement_kind == "released":
+        backbone_gate = backbone_identity(embedded, released)
+        print(
+            f"  {backbone_gate['n_bit_identical']}/{backbone_gate['n_shared']} tensors "
+            f"bit-identical  {backbone_gate['verdict']}"
+        )
+    else:
+        print(f"  backbone gate {backbone_gate['verdict']}: {backbone_gate['reason']}")
     del embedded, released
     gc.collect()
-    print(
-        f"  {backbone_gate['n_bit_identical']}/{backbone_gate['n_shared']} tensors "
-        f"bit-identical  {backbone_gate['verdict']}"
-    )
 
     condition = {
-        "replacement": "ProGenMech ProGen3_PLT_L10_D4608 (per-layer transcoder)",
+        "replacement": (
+            "ProGenMech ProGen3_PLT_L10_D4608 (per-layer transcoder)"
+            if args.replacement_kind == "released"
+            else f"locally trained {backbone_gate.get('architecture', '?')} "
+            f"(17_train_transcoder.py), d_hidden {int(hyperparameters.d_hidden)}"
+        ),
+        "replacement_kind": args.replacement_kind,
         "replacement_sha256": sha256_file(args.replacement),
         "replacement_hyperparameters": {
             "num_layers": int(hyperparameters.num_layers),
