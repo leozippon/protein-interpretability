@@ -61,7 +61,9 @@
 | 进行中的实验 | 判定什么 | 判定规则（已预先声明） |
 |---|---|---|
 | **最小归因对照**：gpt2-large、protgpt2（匹配模态对，架构/深度/宽度/词表/参数量完全相同）、gpt2、ProGen3 各训练一个 PLT，再通过同一套忠实度门控 | replacement 的失败属于模态、架构、方法还是评价接口 | 蛋白 Dense 与 MoE 都失败而文本通过 → residue/interface 或扩展 PAA 方向；文本 MoE 与蛋白 MoE 失败而 Dense 通过 → expert/router/path 方向；全部失败 → 通用 replacement 或因果评价接口方向；**只有 ProGen3 失败 → 优先排查模型、数据与任务队列，不提出通用新方法** |
-| **训练语料检索上界**：MODEL − LOOKUP，其中 LOOKUP 是对该 arm 自身声明的预训练语料做的位点独立 profile，对照 217 个 ProteinGym 湿实验 assay，按野生型同源簇聚合 | ProGen3 的 fitness 优势是否超过对自身语料的同源检索 | 若不超过，则任何以该 fitness 为分母的 recovery ratio（包括 ProGenMech 的与本项目的）都不能支撑机制主张 |
+| **训练语料检索上界**：MODEL − LOOKUP，其中 LOOKUP 是对该 arm 自身声明的预训练语料做的位点独立 profile，对照 217 个 ProteinGym 湿实验 assay。**重采样单位是 50% 同源簇而非 assay**：187 个野生型聚为 174 簇，其中 73 个是 UniRef50 的逐字节相同记录（已实测）。 | ProGen3 的 fitness 优势是否超过对自身语料的同源检索 | 若不超过，则任何以该 fitness 为分母的 recovery ratio（包括 ProGenMech 的与本项目的）都不能支撑机制主张。正控制下限取本仓库自身冻结的 BLOSUM62 全benchmark均值 +0.2098（本地独立复现为 +0.2124），而非无法在本机核实的已发表数值。 |
+
+**已知的不可消除限制，先记录再测量：** ProGen3-112M 的模型卡未声明训练语料，ProGen2-medium 的 BFD30 未落盘，因此这两个 arm 的 LOOKUP 只能以 UniRef50 作代理，**系统性低估其语料支持度，偏向于让模型通过**。ProtGPT2 是唯一语料被精确识别的 arm（其声明语料就是已落盘的 UniRef50），因此它的结果权重最高。
 
 **当前最可能的分支，需说明而非回避：** 上表“只有 ProGen3 失败”一支目前是活假设而非边缘情形。本项目全部 replacement 数字都来自这一个模型，且 EXP-R2-139 已表明它的块是强非线性的。最小归因对照正是用来把这一支与其余三支分开的。
 
