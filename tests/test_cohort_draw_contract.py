@@ -70,13 +70,23 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "one the run it is reading recorded"
     ),
     "17_train_transcoder.py": (
-        "trains on a stream of millions of UniRef50 records, which the cohort "
-        "constructors cannot serve: they count the whole corpus and then select, "
-        "which is right for a frozen 128-sequence cohort and not affordable for "
-        "a training run. It draws through its own seeded block-shuffled stream "
-        "instead, and answers rule 1 the same way -- UniRef50 is ordered by "
-        "cluster, so a prefix is a family, and the block size the shuffle "
+        "trains on a stream of millions of records -- UniRef50 for ProGen3, and "
+        "for a panel arm the corpus its own evaluation cohort is drawn from -- "
+        "which the cohort constructors cannot serve: they count the whole corpus "
+        "and then select, which is right for a frozen 128-sequence cohort and not "
+        "affordable for a training run. It draws through its own seeded "
+        "block-shuffled stream instead, and answers rule 1 the same way -- a "
+        "biological corpus is ordered by cluster and a web corpus by shard, so a "
+        "prefix is a region rather than a sample, and the block size the shuffle "
         "operates over is recorded in the artefact rather than left implicit"
+    ),
+    "20_retrieval_bound.py": (
+        "its units are the 187 distinct wild types of the ProteinGym substitution "
+        "benchmark and the DMS variants of each, not corpus sequences, so it draws "
+        "through src.transfer.fitness.load_assay under a seed and never as a "
+        "prefix. It reads the corpus itself in full -- background frequencies, "
+        "record count and byte-identical membership are census quantities over "
+        "every record, so there is nothing to sample and no order to be biased by"
     ),
     "16_fitness_recovery.py": (
         "its units are DMS variants of one wild type, not corpus sequences, so it "

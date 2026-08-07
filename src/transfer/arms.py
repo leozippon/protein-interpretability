@@ -18,6 +18,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Iterator
 
 import torch
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
@@ -1279,6 +1280,103 @@ def _eligible_text_documents(min_chars: int):
             if document is None or len(document) < min_chars:
                 continue
             yield document
+
+
+#: The corpus each declared source name streams from, and the variable that
+#: relocates it. Read by :func:`iter_corpus_records`, which serves the stages
+#: that need more records than a frozen cohort holds -- a transcoder trainer
+#: consumes millions, which the cohort constructors cannot supply because they
+#: count the whole corpus before selecting.
+#:
+#: The names are the ones :attr:`ArmSpec.evaluation_cohort_source` already uses,
+#: plus ``uniref50``, which no arm evaluates on and ProGen3's transcoders are
+#: trained on.
+CORPUS_SOURCES: dict[str, tuple[Path, str]] = {
+    "uniref50": (UNIREF50_FASTA, "TRANSFER_UNIREF50_FASTA"),
+    "swissprot": (SWISSPROT_FASTA, "TRANSFER_SWISSPROT_FASTA"),
+    "openwebtext": (OPENWEBTEXT, "TRANSFER_OPENWEBTEXT_DIR"),
+}
+
+
+def corpus_location(source: str, *, path: Path | None = None) -> Path:
+    """Where one corpus source lives, checked to exist before anything loads a model.
+
+    ``path`` overrides the declared location for ``uniref50`` only, which is the
+    one source a stage flag has ever relocated. The others refuse an override
+    rather than accept and ignore one: ``swissprot`` is read through the same
+    eligibility generator :func:`protein_cohort` uses and ``openwebtext`` through
+    the parquet reader, and neither consults a caller's path -- so an accepted
+    override would silently stream the declared corpus under the name of another.
+    """
+
+    if source not in CORPUS_SOURCES:
+        raise KeyError(f"unknown corpus source {source!r}; declared: {sorted(CORPUS_SOURCES)}")
+    declared, variable = CORPUS_SOURCES[source]
+    if path is None:
+        return require_input_path(declared, variable)
+    if source != "uniref50":
+        raise ValueError(
+            f"the {source!r} stream is read through this module's own reader and "
+            f"cannot be relocated by a caller's path; set {variable} instead"
+        )
+    return require_input_path(Path(path), variable)
+
+
+def iter_corpus_records(
+    source: str,
+    *,
+    min_symbols: int,
+    max_symbols: int | None = None,
+    path: Path | None = None,
+) -> Iterator[str]:
+    """Every eligible record of one corpus, in file order, in its own symbol unit.
+
+    Symbols are residues for a protein corpus and characters for a text one, so
+    one band argument means the thing the corpus is made of rather than a token
+    count that would differ between arms (Appendix B rule 21's shape, one level
+    down: a band declared in tokens is not the same band on two tokenisers).
+
+    **Eligibility is not uniform across the three, and the difference is
+    deliberate.** ``swissprot`` applies the canonical-alphabet filter
+    :func:`protein_cohort` applies, so a stage streaming it and a stage drawing a
+    cohort from it see one population. ``uniref50`` applies the length band only,
+    because that is what the ProGen3 transcoder campaign streamed and its
+    published runs must stay reproducible. ``openwebtext`` takes a floor and no
+    ceiling, because the text path truncates at tokenisation rather than
+    discarding long documents -- which is what :func:`text_cohort` does, and a
+    ceiling here would select a different population from the cohort a
+    replacement is later scored on.
+
+    File order is the *stream* order, not a sampling decision: the callers shuffle
+    it. The hazard Appendix B rule 1 names is theirs to answer, and
+    ``17_train_transcoder.py`` answers it with a seeded block shuffle whose block
+    size it records.
+    """
+
+    location = corpus_location(source, path=path)
+    if source == "openwebtext":
+        if max_symbols is not None:
+            raise ValueError(
+                "the openwebtext stream takes no upper bound: a text record is "
+                "truncated at tokenisation rather than filtered out, and a "
+                "character ceiling here would select a different population from "
+                "the one text_cohort draws"
+            )
+        return _eligible_text_documents(min_symbols)
+    if max_symbols is None:
+        raise ValueError(f"the {source!r} stream needs an upper residue bound")
+    if source == "swissprot":
+        return (
+            sequence
+            for sequence, _ in _eligible_protein_records(
+                min_symbols, max_symbols, with_ec=False
+            )
+        )
+    return (
+        sequence
+        for _, sequence in iter_fasta(location)
+        if min_symbols <= len(sequence) <= max_symbols
+    )
 
 
 def protein_cohort(

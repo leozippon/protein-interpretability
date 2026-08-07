@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Train a CLT and a PLT on ProGen3-112M under identical conditions.
+"""Train a CLT and a PLT on one decoder's blocks under identical conditions.
 
 ProGenMech's central claim is that a cross-layer transcoder beats a per-layer one
 at replacing ProGen3's MoE blocks. Their CLT weights are unobtainable (HTTP 403
@@ -20,11 +20,26 @@ difference at equal budget together with the curve that shows whether the
 comparison had converged enough to carry it. An absolute NMSE against their
 published 2.46 is not claimed and would not be meaningful at this scale.
 
-Activations are captured from the eager ProGen3 whose conversion
-``src.transfer.progen3`` verifies, at the tensors ProGenMech's own collector
-uses: the MoE block's input, and its output before the residual add. Special
-tokens are excluded from the objective, as in theirs, because a transcoder
-scored on padding is scored on the easiest positions in the batch.
+Activations are captured at the tensors ProGenMech's own collector uses: the
+block's input, and its output before the residual add. Special tokens are
+excluded from the objective, as in theirs, because a transcoder scored on padding
+is scored on the easiest positions in the batch.
+
+**``--arm`` selects which decoder is read, and that is why this stage is not
+ProGen3-only.** Every replacement number this programme owns was measured on one
+sparse-MoE protein decoder, so a failure has no attribution: protein, MoE and
+transcoder replacement are collinear at n=1. A dense arm supplies the two
+missing controls -- ``gpt2-large`` is the text control standing rule 2 requires a
+gate be shown attainable on, and ``protgpt2`` is a dense *protein* decoder of
+identical architecture, depth, width, vocabulary and parameter count (audit §2's
+matched modality pair). :mod:`src.transfer.replaceable` holds the one adapter
+that makes those arms present the interface this stage already consumed, and
+verifies that a dense block carries the same estimand rather than assuming it.
+
+Each arm streams the corpus its own evaluation cohort is drawn from, rendered in
+the format it was trained on, both through the panel declaration in
+``src/transfer/arms.py``. ProGen3 keeps UniRef50, which is what its published
+runs used.
 
 Output is a checkpoint plus a JSON record, and the checkpoint is written in the
 shape ``15_replacement_faithfulness.py`` can load, so a trained transcoder goes
@@ -38,7 +53,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 import numpy as np
 import torch
@@ -46,15 +61,20 @@ import torch
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+# The stage directory itself, so `panel_contract` imports under every invocation
+# rather than only when the caller happens to run from scripts/transfer.
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from src.transfer.arms import REPO, UNIREF50_FASTA, iter_fasta  # noqa: E402
+from panel_contract import CAMPAIGN_PANEL  # noqa: E402
+from src.transfer.arms import REPO, corpus_location, iter_corpus_records  # noqa: E402
 from src.transfer.io import write_json  # noqa: E402
-from src.transfer.progen3 import (  # noqa: E402
-    ProGen3,
-    content_mask,
-    load_progen3,
-    moe_intercept,
-    self_check,
+from src.transfer.replaceable import (  # noqa: E402
+    PROGEN3_ARM,
+    ReplaceableModel,
+    arm_training_corpus,
+    eligible_arms,
+    load_replaceable,
 )
 from src.transfer.transcoders import (  # noqa: E402
     DEAD_STEPS_SEQUENCES,
@@ -62,6 +82,11 @@ from src.transfer.transcoders import (  # noqa: E402
     TranscoderConfig,
     TrainingRecord,
 )
+
+#: Records buffered before each shuffle. The held-out draw must clear a whole
+#: number of these, so the block size and the offset that skips past it cannot be
+#: allowed to disagree -- it was a literal in two places and they did.
+SHUFFLE_BLOCK = 8192
 
 SCHEMA_VERSION = "r2_transfer_transcoder_training_v1"
 DEFAULT_OUT = REPO / "results/transfer/transcoder_training"
@@ -75,33 +100,55 @@ DEFAULT_OUT = REPO / "results/transfer/transcoder_training"
 MAX_RESIDUES = 1022
 MIN_RESIDUES = 32
 
+#: The floor of this stage's text band, in characters -- the unit an English
+#: corpus is made of, as residues are the unit a protein corpus is made of.
+#: Deliberately :func:`src.transfer.arms.text_cohort`'s own floor, so that the
+#: population a text transcoder is trained on is the population the faithfulness
+#: stage later scores it on. There is no ceiling: a long document is truncated at
+#: tokenisation, which is what the cohort path does, and discarding it instead
+#: would be a different corpus (see :func:`iter_corpus_records`).
+MIN_CHARACTERS = 800
 
-def stream_sequences(
-    path: Path, *, seed: int, skip: int, limit: int | None = None
+#: The eligibility band each corpus is streamed under, in that corpus's own
+#: symbol unit. One declaration keyed by the source names
+#: :data:`src.transfer.arms.CORPUS_SOURCES` uses, rather than a modality branch
+#: at the point of use.
+CORPUS_BAND: dict[str, tuple[int, int | None]] = {
+    "uniref50": (MIN_RESIDUES, MAX_RESIDUES),
+    "swissprot": (MIN_RESIDUES, MAX_RESIDUES),
+    "openwebtext": (MIN_CHARACTERS, None),
+}
+
+
+def stream_records(
+    records: Callable[[], Iterator[str]], *, seed: int, skip: int, limit: int | None = None
 ) -> Iterator[str]:
-    """UniRef50 records within the declared band, in a seeded shuffled order.
+    """Eligible corpus records in a seeded shuffled order.
 
-    The corpus is ordered by cluster, so consecutive records are homologues and a
-    prefix is a family rather than a sample (Appendix B rule 1). A full seeded
-    permutation of 60M records is not affordable here, so the draw is a shuffled
-    reservoir: records are read in file order into blocks and each block is
-    permuted before it is emitted. That breaks the local homology ordering, which
-    is what the rule is about, and the block size is recorded so the residual
-    correlation is a declared property rather than an unstated one.
+    A biological corpus is ordered by cluster and a web corpus by shard, so in
+    both cases consecutive records are related and a prefix is a region rather
+    than a sample (Appendix B rule 1). A full seeded permutation of 60M records
+    is not affordable here, so the draw is a shuffled reservoir: records are read
+    in file order into blocks and each block is permuted before it is emitted.
+    That breaks the local ordering, which is what the rule is about, and the
+    block size is recorded so the residual correlation is a declared property
+    rather than an unstated one.
+
+    ``records`` is a factory rather than an iterator because this is called twice
+    -- once for the held-out draw and once for training -- and the two must be
+    independent passes over the corpus rather than two halves of one.
     """
 
     rng = np.random.default_rng(seed)
     block: list[str] = []
     emitted = 0
     seen = 0
-    for _, sequence in iter_fasta(path):
-        if not MIN_RESIDUES <= len(sequence) <= MAX_RESIDUES:
-            continue
+    for record in records():
         seen += 1
         if seen <= skip:
             continue
-        block.append(sequence)
-        if len(block) < 8192:
+        block.append(record)
+        if len(block) < SHUFFLE_BLOCK:
             continue
         for index in rng.permutation(len(block)):
             yield block[index]
@@ -117,35 +164,30 @@ def stream_sequences(
 
 
 @torch.no_grad()
-def capture(pg: ProGen3, sequences: list[str]) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """MoE block inputs, outputs and a scored-token mask for one batch.
+def capture(
+    model: ReplaceableModel, records: list[str]
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Block inputs, outputs and a scored-token mask for one batch.
 
     Returns ``(inputs, outputs, mask)`` with the layer axis first. The mask
-    excludes every non-residue position: ProGen3's terminus markers and its
-    special tokens are trivially predictable and would flatter any transcoder
-    scored on them.
+    excludes every non-content position: terminus and padding tokens are
+    trivially predictable and would flatter any transcoder scored on them.
     """
 
-    batch = pg.batch(sequences, reverse=False)
+    batch = model.batch(model.render(records))
     captured: dict[int, tuple[torch.Tensor, torch.Tensor]] = {}
 
     def tap(layer: int, block_input: torch.Tensor, block_output: torch.Tensor) -> None:
         captured[layer] = (block_input.detach(), block_output.detach())
         return None
 
-    with moe_intercept(pg, tap):
-        pg.model(
-            input_ids=batch["input_ids"],
-            position_ids=batch["position_ids"],
-            sequence_ids=batch["sequence_ids"],
-            use_cache=False,
-            return_dict=True,
-        )
+    with model.block_intercept(tap):
+        model.run(batch)
 
     layers = sorted(captured)
     inputs = torch.stack([captured[layer][0] for layer in layers])
     outputs = torch.stack([captured[layer][1] for layer in layers])
-    return inputs, outputs, content_mask(pg, batch["input_ids"])
+    return inputs, outputs, model.content_mask(batch)
 
 
 def flatten(
@@ -161,7 +203,11 @@ def flatten(
 
 
 def evaluate(
-    model: Transcoder, pg: ProGen3, sequences: list[str], *, batch_size: int
+    model: Transcoder,
+    decoder: ReplaceableModel,
+    sequences: list[str],
+    *,
+    batch_size: int,
 ) -> dict[str, Any]:
     """Held-out NMSE, on sequences the run never trains on."""
 
@@ -173,7 +219,7 @@ def evaluate(
             chunk = sequences[start : start + batch_size]
             if not chunk:
                 continue
-            x, y, mask = capture(pg, chunk)
+            x, y, mask = capture(decoder, chunk)
             x, y = flatten(x, y, mask)
             if x.shape[1] == 0:
                 continue
@@ -193,6 +239,24 @@ def evaluate(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--architecture", choices=("clt", "plt"), required=True)
+    parser.add_argument(
+        "--arm",
+        default=PROGEN3_ARM,
+        choices=eligible_arms(CAMPAIGN_PANEL),
+        help="which decoder's blocks to train against. The eligible set is "
+        "composed by src.transfer.replaceable.eligible_arms from three "
+        "declarations -- the campaign panel, the architectures that carry this "
+        "estimand, and the arms with a measured loader band -- and is not a list "
+        "this stage keeps",
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=512,
+        help="token cap a dense arm's inputs are truncated to. ProGen3 ignores it: "
+        "its batch preparer pads to the longest record and its residue band is "
+        "declared in residues",
+    )
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--device", default="cuda:0")
@@ -225,21 +289,34 @@ def main() -> None:
     args.out.mkdir(parents=True, exist_ok=True)
     torch.manual_seed(args.seed)
 
-    corpus = args.corpus if args.corpus is not None else UNIREF50_FASTA
-    if not Path(corpus).is_file():
-        raise FileNotFoundError(f"no UniRef50 FASTA at {corpus}")
+    # The corpus is resolved and checked before anything reaches a GPU, so a host
+    # that has not staged it fails in a second rather than after a checkpoint is
+    # loaded. `--corpus` relocates ProGen3's UniRef50 and is refused for the
+    # other sources, which are read through their own declared variables.
+    source = arm_training_corpus(args.arm)
+    low, high = CORPUS_BAND[source]
+    corpus = corpus_location(source, path=args.corpus)
 
-    print("[loader] loading ProGen3-112M and self-checking the conversion")
-    load_kwargs: dict[str, Any] = {"device": args.device, "dtype": torch.bfloat16}
-    if args.checkpoint is not None:
-        load_kwargs["checkpoint"] = args.checkpoint
-    pg = load_progen3(**load_kwargs)
-    loader_gate = self_check(pg)
+    def records() -> Iterator[str]:
+        return iter_corpus_records(
+            source, min_symbols=low, max_symbols=high, path=args.corpus
+        )
+
+    print(f"[loader] loading {args.arm} and running its self-check")
+    model_handle: ReplaceableModel = load_replaceable(
+        args.arm,
+        campaign_panel=CAMPAIGN_PANEL,
+        device=args.device,
+        dtype="bfloat16",
+        max_tokens=args.max_tokens,
+        checkpoint=args.checkpoint,
+    )
+    loader_gate = model_handle.self_check()
     print(f"  self-check NLL {loader_gate['nll']:.4f} PASS")
 
     config = TranscoderConfig(
-        num_layers=pg.n_layers,
-        d_model=int(pg.config.hidden_size),
+        num_layers=model_handle.n_layers,
+        d_model=model_handle.width,
         d_hidden=args.d_hidden,
         k=args.k,
         auxk=args.auxk,
@@ -248,6 +325,7 @@ def main() -> None:
         # latent may stay silent while every other declared setting is unmoved.
         dead_steps=max(1, DEAD_STEPS_SEQUENCES // args.batch_size),
         cross_layer=args.architecture == "clt",
+        arm=args.arm,
     )
     model = Transcoder(config).to(args.device).float()
     n_parameters = sum(p.numel() for p in model.parameters())
@@ -275,10 +353,33 @@ def main() -> None:
     # Skipping past the whole training budget costs one extra corpus scan and
     # removes both the overlap and the mismatch (Appendix B rule 1, applied to
     # the evaluation draw and not only to the training order).
-    held_out_offset = args.steps * args.batch_size + args.eval_sequences
+    #
+    # **What it does not remove, stated rather than implied.** The skip is in
+    # file order and the shuffle permutes *within* an 8192-record block, so the
+    # two sets are disjoint only when the training budget consumes whole blocks.
+    # The skip is counted in records read, and the shuffle permutes *within* a
+    # block, so an offset that lands mid-block leaves the two sets overlapping: a
+    # partially consumed final block hands training a random subset of it while
+    # the held-out pool starts partway into that same block. At the campaign's
+    # own setting -- 20000 steps of batch 16, so 320,000 records against a block
+    # of 8192 -- training emitted 512 records of the 40th block uniformly at
+    # random, each held-out record from that block was available to it with
+    # probability 512/8192, and the expectation was 16 of the 256 held-out
+    # sequences: 6.25% evaluated on what was trained on.
+    #
+    # Rounding the skip up to a whole number of blocks removes it exactly,
+    # because a block is emitted only once it is complete. **EXP-R2-136 and
+    # EXP-R2-138 were run before this repair** and carry the leak; it is
+    # symmetric across their arms -- same corpus, seed, stream and offset -- so
+    # it does not touch the CLT-minus-PLT comparison they claim, and their
+    # independent Swiss-Prot replication does not share the cohort at all. It
+    # does bound their absolute held-out NMSE, which those entries already
+    # decline to compare against any published figure.
+    blocks_touched = -(-(args.steps * args.batch_size) // SHUFFLE_BLOCK)
+    held_out_offset = blocks_touched * SHUFFLE_BLOCK
     held_out = list(
-        stream_sequences(
-            Path(corpus), seed=args.corpus_seed, skip=held_out_offset,
+        stream_records(
+            records, seed=args.corpus_seed, skip=held_out_offset,
             limit=args.eval_sequences,
         )
     )
@@ -289,7 +390,7 @@ def main() -> None:
             "Lower --steps or --eval-sequences rather than evaluating on a "
             "population the training stream also reaches."
         )
-    training = stream_sequences(Path(corpus), seed=args.corpus_seed, skip=0, limit=None)
+    training = stream_records(records, seed=args.corpus_seed, skip=0, limit=None)
 
     record = TrainingRecord()
     final: dict[str, Any] | None = None
@@ -297,7 +398,7 @@ def main() -> None:
     print(f"[train] {args.steps} steps, batch {args.batch_size}")
     for step in range(1, args.steps + 1):
         chunk = [next(training) for _ in range(args.batch_size)]
-        x, y, mask = capture(pg, chunk)
+        x, y, mask = capture(model_handle, chunk)
         x, y = flatten(x, y, mask)
         if x.shape[1] == 0:
             continue
@@ -311,7 +412,7 @@ def main() -> None:
         record.tokens += int(x.shape[1])
         record.sequences += len(chunk)
         if step % args.eval_every == 0 or step == args.steps:
-            held = evaluate(model, pg, held_out, batch_size=args.batch_size)
+            held = evaluate(model, model_handle, held_out, batch_size=args.batch_size)
             if step == args.steps:
                 final = held
             entry = {
@@ -354,19 +455,27 @@ def main() -> None:
         "training": record.record(),
         "held_out": final,
         "condition": {
+            "arm": args.arm,
             "corpus": str(corpus),
-            "residue_band": [MIN_RESIDUES, MAX_RESIDUES],
+            "corpus_source": source,
+            "symbol_band": [low, high],
+            "symbol_unit": "characters" if source == "openwebtext" else "residues",
+            "input_rendering": (
+                "src.transfer.arms.Cohort.input_strings, the panel's one "
+                "declaration of what string each arm is fed"
+            ),
             "draw": "block-shuffled stream, 8192-record blocks, seeded; a prefix "
-            "of UniRef50 is a family rather than a sample",
+            "of a corpus grouped by cluster or shard is a region rather than a "
+            "sample",
             "held_out_draw": (
                 f"drawn at a skip of {held_out_offset} eligible records, past "
                 "everything the training stream reaches at this step budget, so "
                 "the evaluation cohort is both disjoint from training and from "
                 "the same region of the corpus rather than from its head"
             ),
-            "scored_positions": "residue tokens only; ProGen3's special and "
-            "terminus tokens are excluded from the objective",
-            "estimand": "reads the MoE block input, predicts the MoE block "
+            "scored_positions": "content tokens only; padding, terminus and "
+            "special tokens are excluded from the objective",
+            "estimand": "reads the replaced block's input, predicts that block's "
             "output before the residual add",
             "bounded_reproduction": "a declared step budget, not ProGenMech's "
             "5M-sequence epoch; the deliverable is CLT minus PLT at equal "
@@ -399,9 +508,24 @@ def main() -> None:
                 "choice. Their data module's length truncation is commented out, "
                 "and 1022 appears only in their activation-collection script",
             ],
+            "cross_arm_comparability": (
+                "an arm's corpus, rendering, symbol band and block estimand are "
+                "each declared once and resolved per arm, so two arms differ in "
+                "the model and in what its own corpus is -- not in how either was "
+                "read. What they do NOT share is a token budget: a residue band "
+                "and a character floor are bands in different units, which is why "
+                "symbol_unit is recorded beside symbol_band (Appendix B rule 21)"
+            ),
         },
     }
+    # ProGen3's stem is unchanged, so the campaign already on disk keeps its file
+    # names; a panel arm carries its own name because several arms of one
+    # comparison are written into one directory and would otherwise overwrite each
+    # other under identical hyper-parameters -- which is exactly the configuration
+    # the matched pair runs in.
     stem = f"{args.architecture}_d{args.d_hidden}_k{args.k}_s{args.corpus_seed}"
+    if args.arm != PROGEN3_ARM:
+        stem = f"{args.arm}_{stem}"
     torch.save(
         {"config": config.record(), "state_dict": model.state_dict(), "record": payload},
         args.out / f"{stem}.pt",

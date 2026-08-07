@@ -41,6 +41,15 @@ The estimand a downstream stage measures is the same either way: the transcoder
 reads a MoE block's **input** (the output of ``post_attention_layernorm``) and
 predicts that block's **output** before the residual add.
 
+**Nothing in this module is specific to a MoE block, and that is now used.** The
+objective, the normalisation and the splicing see a ``(layers, tokens, d_model)``
+tensor pair and never ask what produced it, so the same code trains a transcoder
+for a dense decoder's feed-forward -- ``GPT2Block`` reads ``ln_2``'s output and
+adds the result to the residual, which is the same two tensors.
+:mod:`src.transfer.replaceable` holds the adapter and verifies that identity on
+the loaded model. What that buys is a text control and a dense protein control
+for a replacement result that until now had neither.
+
 **The released PLT lives here too**, in :class:`PerLayerTranscoder`. It was
 written inside ``15_replacement_faithfulness.py`` and could not leave it: a
 module whose name begins with a digit cannot be imported, so the second stage
@@ -110,6 +119,16 @@ class TranscoderConfig:
     dead_steps: int = 625
     aux_weight: float = 1.0 / 32.0
     cross_layer: bool = True
+    #: Which model this transcoder was trained against, as ``--arm`` names it.
+    #:
+    #: ``None`` for the four ProGen3 checkpoints written before the trainer could
+    #: reach any other model, and the faithfulness stage says so rather than
+    #: assuming. It matters because the shape checks a replacement is spliced
+    #: under -- depth and width -- do not separate the arms this now covers:
+    #: gpt2-large and ProtGPT2 are both 36 layers of width 1280, so a transcoder
+    #: trained on one would splice into the other without raising and produce a
+    #: complete artefact for a replacement fitted to a different model.
+    arm: str | None = None
 
     def n_parameters(self) -> int:
         """Trainable parameters, in closed form, so an arm can be sized before it runs.
@@ -130,6 +149,7 @@ class TranscoderConfig:
     def record(self) -> dict[str, Any]:
         return {
             "architecture": "CLT" if self.cross_layer else "PLT",
+            "arm": self.arm,
             "num_layers": self.num_layers,
             "d_model": self.d_model,
             "d_hidden": self.d_hidden,
@@ -592,6 +612,11 @@ def load_trained_transcoder(path: Path) -> tuple[TranscoderReplacement, dict[str
         dead_steps=int(recorded["dead_steps"]),
         aux_weight=float(recorded["aux_weight"]),
         cross_layer=recorded["architecture"] == "CLT",
+        # Absent from the four checkpoints written before the trainer could reach
+        # a second model. Read back as None rather than defaulted to ProGen3, so
+        # that the consumer can say "this checkpoint does not declare its arm"
+        # instead of being told an arm nobody recorded.
+        arm=recorded.get("arm"),
     )
     model = Transcoder(config)
     model.load_state_dict(checkpoint["state_dict"], strict=True)

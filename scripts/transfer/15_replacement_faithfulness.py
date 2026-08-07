@@ -8,16 +8,36 @@ and reports its reconstruction loss. Reconstruction is not the property the
 downstream claims need, and neither is behavioural agreement. This stage
 measures all three separately and refuses to collapse them.
 
+**``--arm`` decides which decoder is measured, and that is what makes the result
+readable.** Measured on ProGen3 alone, "the replacement recovers 11-16% of the
+ablation gap and fails the causal gate" is not attributable: protein,
+mixture-of-experts and transcoder replacement are collinear at n=1. The same
+measurement on ``gpt2-large`` is the text control standing rule 2 requires a gate
+be shown attainable on, and on ``protgpt2`` it is a dense protein decoder of
+identical architecture, depth, width, vocabulary and parameter count -- audit
+§2's matched modality pair. §5's organising rule then applies: a limitation that
+appears on the text control is a property of the METHOD, one that appears only on
+protein arms is a property of the TRANSFER.
+
 Gates, in the order they can kill the claim:
 
-``loader``         the backbone is really loaded. ``from_pretrained`` returns a
-                   ProGen3 whose every expert is random *without raising*, so
-                   this is a gate and not a formality (see
-                   ``src.transfer.progen3``).
+``loader``         the backbone is really loaded, and is really the thing the
+                   estimand is defined on. ``from_pretrained`` returns a ProGen3
+                   whose every expert is random *without raising* (see
+                   ``src.transfer.progen3``); a dense arm loads cleanly and can
+                   still be fed the wrong rendering, worth 1.42 nats/token on
+                   ProtGPT2, so it is scored against its own measured band and
+                   its block identity is verified (see
+                   ``src.transfer.replaceable``).
 ``backbone``       the replacement was trained against the backbone we loaded,
                    checked tensor by tensor against the weights embedded in the
                    released checkpoint. A replacement fitted to a different
-                   backbone measures that other backbone.
+                   backbone measures that other backbone. **Only the released
+                   ProGen3 replacement embeds one**; every other condition --
+                   a locally trained transcoder, the free linear baseline, and
+                   every dense arm, none of which has a released counterpart --
+                   withholds this gate with its reason recorded rather than
+                   passing it by default.
 ``behavioural``    NLL and KL of the replacement against the original, with the
                    clean and fully-ablated endpoints emitted beside every
                    ratio. Standing rule 27: a "recovery ratio" whose denominator
@@ -35,9 +55,9 @@ Gates, in the order they can kill the claim:
                    replacement recovers the original's causal top-k above a
                    sparsity-matched random control.
 
-The component set is every attention head and every MoE block -- the units that
-exist unchanged in both models. Experts are excluded on purpose: a transcoder
-replacement has none, so an expert ablation has no counterpart.
+The component set is every attention head and every replaced block -- the units
+that exist unchanged in both models. Experts are excluded on purpose: a
+transcoder replacement has none, so an expert ablation has no counterpart.
 
 Not in this pass, deliberately: the DMS/fitness arm and the family-disjoint
 split. They extend a behavioural-plus-causal core that has to be right first.
@@ -61,26 +81,32 @@ from scipy import stats
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+# The stage directory itself, so `panel_contract` imports under every invocation
+# rather than only when the caller happens to run from scripts/transfer.
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from panel_contract import CAMPAIGN_PANEL  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
     DEFAULT_CORPUS_DRAW_SEED,
     REPO,
     Cohort,
     protein_cohort,
+    text_cohort,
 )
 from src.transfer.io import sha256_file, write_json  # noqa: E402
 from src.transfer.progen3 import (  # noqa: E402
     DROPPED_KEYS,
-    content_mask,
     Component,
-    ablated,
-    components,
-    load_progen3,
-    moe_intercept,
     released_state_dict,
-    scored_logits,
-    self_check,
     token_nll,
+)
+from src.transfer.replaceable import (  # noqa: E402
+    PROGEN3_ARM,
+    ReplaceableModel,
+    arm_evaluation_cohort_source,
+    eligible_arms,
+    load_replaceable,
 )
 from src.transfer.statistics import bootstrap_unit_floor, mean_interval  # noqa: E402
 from src.transfer.transcoders import (  # noqa: E402
@@ -97,11 +123,19 @@ SCHEMA_VERSION = "r2_transfer_replacement_faithfulness_v1"
 DEFAULT_OUT = REPO / "results/transfer/replacement_faithfulness"
 
 
-#: Component families, each scored on its own. Pooling them would let the ten
-#: MoE blocks -- whose ablation effects are an order of magnitude larger than a
-#: single head's -- carry the rank correlation on their own and report it as a
-#: property of the seventy.
-FAMILIES = ("attention_head", "moe_block")
+def families(grid: list[Component]) -> tuple[str, ...]:
+    """Component families, each scored on its own, in grid order.
+
+    Pooling them would let the ten MoE blocks -- whose ablation effects are an
+    order of magnitude larger than a single head's -- carry the rank correlation
+    on their own and report it as a property of the seventy.
+
+    Derived from the grid the model declares rather than named here, because the
+    replaced block is called ``moe_block`` on ProGen3 and ``mlp_block`` on a
+    dense arm, and a constant would have had to be right about both.
+    """
+
+    return tuple(dict.fromkeys(component.kind for component in grid))
 
 
 def backbone_identity(embedded: dict[str, torch.Tensor], released: dict[str, torch.Tensor]) -> dict[str, Any]:
@@ -147,23 +181,28 @@ def _masked_sequence_mean(values: torch.Tensor, mask: torch.Tensor) -> torch.Ten
 
 @torch.no_grad()
 def clean_pass(
-    pg: Any,
+    model: ReplaceableModel,
     transcoder: PerLayerTranscoder | TranscoderReplacement | LinearReplacement,
-    sequences: list[str],
+    inputs: list[str],
     *,
     batch_size: int,
 ) -> dict[str, Any]:
-    """One clean sweep: the per-layer mean MoE output, and the transcoder's NMSE.
+    """One clean sweep: the per-layer mean block output, and the transcoder's NMSE.
 
     The mean is the fully-ablated endpoint every recovery ratio is divided by,
     so it is measured on this cohort rather than assumed to be zero. The NMSE is
     the number the release itself reports, recomputed here so that the artefact
     can put reconstruction, behaviour and causality side by side and show that
     they are three different things.
+
+    The scored positions are the model's own content mask: padding, sequence
+    delimiters and direction markers are excluded, because silently scoring the
+    padding would move both the fully-ablated endpoint and the NMSE without
+    moving anything visible.
     """
 
-    n_layers = pg.n_layers
-    total = torch.zeros(n_layers, pg.config.hidden_size, dtype=torch.float64)
+    n_layers = model.n_layers
+    total = torch.zeros(n_layers, model.width, dtype=torch.float64)
     count = torch.zeros(n_layers, dtype=torch.float64)
     nmse = torch.zeros(n_layers, dtype=torch.float64)
     batches = 0
@@ -178,17 +217,11 @@ def clean_pass(
         nmse[layer] += float(F.mse_loss(recon, flat) / (flat.var() + 1e-8))
         return None
 
-    for start in range(0, len(sequences), batch_size):
-        batch = pg.batch(sequences[start : start + batch_size])
-        scored["mask"] = content_mask(pg, batch["input_ids"]).reshape(-1)
-        with moe_intercept(pg, tap):
-            pg.model(
-                input_ids=batch["input_ids"],
-                position_ids=batch["position_ids"],
-                sequence_ids=batch["sequence_ids"],
-                use_cache=False,
-                return_dict=True,
-            )
+    for start in range(0, len(inputs), batch_size):
+        batch = model.batch(inputs[start : start + batch_size])
+        scored["mask"] = model.content_mask(batch).reshape(-1)
+        with model.block_intercept(tap):
+            model.run(batch)
         batches += 1
     return {
         "moe_output_mean": (total / count[:, None]).float(),
@@ -197,26 +230,21 @@ def clean_pass(
     }
 
 
-#: Tokens the reconstruction statistics exclude: padding, the sequence
-#: delimiters and the N->C / C->N direction markers ``1`` and ``2``. They are
-#: named rather than filtered by presence, because a name this tokenizer does not
-#: carry means the vocabulary moved, and silently scoring the padding would move
-#: both the fully-ablated endpoint and the NMSE without moving anything visible.
 def replacement_context(
-    pg: Any, transcoder: PerLayerTranscoder | TranscoderReplacement | LinearReplacement
+    model: ReplaceableModel,
+    transcoder: PerLayerTranscoder | TranscoderReplacement | LinearReplacement,
 ) -> Callable[[], Any]:
     def factory() -> Any:
-        return moe_intercept(pg, lambda layer, x, y: transcoder(layer, x))
+        return model.block_intercept(lambda layer, x, y: transcoder(layer, x))
 
     return factory
 
 
-def mean_ablation_context(pg: Any, means: torch.Tensor) -> Callable[[], Any]:
-    resident = means.to(pg.device)
+def mean_ablation_context(model: ReplaceableModel, means: torch.Tensor) -> Callable[[], Any]:
+    resident = means.to(model.device)
 
     def factory() -> Any:
-        return moe_intercept(
-            pg,
+        return model.block_intercept(
             lambda layer, x, y: resident[layer].to(y.dtype).expand_as(y),
         )
 
@@ -225,8 +253,8 @@ def mean_ablation_context(pg: Any, means: torch.Tensor) -> Callable[[], Any]:
 
 @torch.no_grad()
 def behavioural_scores(
-    pg: Any,
-    sequences: list[str],
+    model: ReplaceableModel,
+    inputs: list[str],
     conditions: dict[str, Callable[[], Any] | None],
     *,
     batch_size: int,
@@ -243,12 +271,12 @@ def behavioural_scores(
     collected: dict[str, dict[str, list[torch.Tensor]]] = {
         name: {"nll": [], "kl": []} for name in conditions
     }
-    for start in range(0, len(sequences), batch_size):
-        batch = pg.batch(sequences[start : start + batch_size])
+    for start in range(0, len(inputs), batch_size):
+        batch = model.batch(inputs[start : start + batch_size])
         reference: torch.Tensor | None = None
         for name, factory in conditions.items():
             with (factory() if factory is not None else nullcontext()):
-                logits, targets, mask = scored_logits(pg, batch)
+                logits, targets, mask = model.scored_logits(batch)
             collected[name]["nll"].append(
                 _masked_sequence_mean(token_nll(logits, targets), mask)
             )
@@ -269,8 +297,8 @@ def behavioural_scores(
 
 @torch.no_grad()
 def component_effects(
-    pg: Any,
-    sequences: list[str],
+    model: ReplaceableModel,
+    inputs: list[str],
     grid: list[Component],
     *,
     batch_size: int,
@@ -284,13 +312,15 @@ def component_effects(
 
     def sweep(component: Component | None) -> np.ndarray:
         rows: list[torch.Tensor] = []
-        for start in range(0, len(sequences), batch_size):
-            batch = pg.batch(sequences[start : start + batch_size])
+        for start in range(0, len(inputs), batch_size):
+            batch = model.batch(inputs[start : start + batch_size])
             outer = wrapper() if wrapper is not None else nullcontext()
             with outer:
-                inner = ablated(pg, component) if component is not None else nullcontext()
+                inner = (
+                    model.ablated(component) if component is not None else nullcontext()
+                )
                 with inner:
-                    logits, targets, mask = scored_logits(pg, batch)
+                    logits, targets, mask = model.scored_logits(batch)
             rows.append(_masked_sequence_mean(token_nll(logits, targets), mask))
         return torch.cat(rows).numpy()
 
@@ -511,19 +541,85 @@ def _paired_recovery(
     }
 
 
-def build_cohort(args: argparse.Namespace) -> Cohort:
-    return protein_cohort(
-        args.sequences,
-        args.protein_min_len,
-        args.protein_max_len,
-        skip=args.cohort_skip,
-        name="progen3_replacement",
-        seed=args.cohort_draw_seed or None,
+def require_matching_arm(declared: str | None, arm: str) -> bool:
+    """Refuse a replacement trained against a different model. Returns whether it said.
+
+    Depth and width do not identify an arm, and on this panel they positively
+    fail to: ``gpt2-large`` and ``protgpt2`` are both 36 layers of width 1280, so
+    a transcoder trained on one splices into the other, passes the two shape
+    checks this stage has always carried, and produces a complete artefact for a
+    replacement fitted to a different model. The trainer records which arm it
+    read; a checkpoint written before it did says so rather than being assumed to
+    be ProGen3.
+    """
+
+    if declared is None:
+        return False
+    if declared != arm:
+        raise RuntimeError(
+            f"the replacement was trained against {declared!r} and this run "
+            f"measures {arm!r}; depth and width do not separate them"
+        )
+    return True
+
+
+def build_cohort(args: argparse.Namespace, *, skip: int = 0, name: str | None = None) -> Cohort:
+    """The cohort this arm is scored on, drawn from the corpus the panel declares.
+
+    One dispatch on the arm's declared cohort source rather than a branch at each
+    draw: this stage draws twice (the scored cohort, and the disjoint cohort the
+    free linear baseline is fitted on) and the two must be the same population.
+    """
+
+    source = arm_evaluation_cohort_source(args.arm)
+    label = name or f"{args.arm}_replacement"
+    if source == "openwebtext":
+        return text_cohort(
+            args.sequences,
+            args.text_min_chars,
+            skip=args.cohort_skip + skip,
+            name=label,
+            seed=args.cohort_draw_seed or None,
+        )
+    if source == "swissprot":
+        return protein_cohort(
+            args.sequences,
+            args.protein_min_len,
+            args.protein_max_len,
+            skip=args.cohort_skip + skip,
+            name=label,
+            seed=args.cohort_draw_seed or None,
+        )
+    raise ValueError(
+        f"{args.arm} draws its cohort from {source!r}, which this stage cannot build"
     )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--arm",
+        default=PROGEN3_ARM,
+        choices=eligible_arms(CAMPAIGN_PANEL),
+        help="which decoder to measure. The eligible set is composed by "
+        "src.transfer.replaceable.eligible_arms from the campaign panel, the "
+        "architectures that carry this estimand, and the arms with a measured "
+        "loader band; it is not a list this stage keeps",
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=int,
+        default=512,
+        help="token cap a dense arm's inputs are truncated to; ProGen3 ignores it",
+    )
+    parser.add_argument(
+        "--text-min-chars",
+        type=int,
+        default=800,
+        help="floor of the text cohort a text arm is scored on, in characters. "
+        "src.transfer.arms.text_cohort's own default, so that the population is "
+        "the one every other text measurement in this repository uses",
+    )
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument("--replacement", type=Path, default=DEFAULT_REPLACEMENT)
     parser.add_argument(
@@ -531,14 +627,16 @@ def main() -> None:
         default="released",
         choices=("released", "local", "linear"),
         help="'released' reads ProGenMech's Lightning checkpoint, which embeds a "
-        "backbone the backbone gate compares against ours. 'local' reads a "
-        "checkpoint from 17_train_transcoder.py, which embeds none -- that gate "
-        "is then withheld with its reason rather than passed by default. A CLT "
-        "is only reachable through this second path, because a cross-layer "
-        "reconstruction needs every source layer at or below its target and the "
-        "released reader is per-layer by construction. 'linear' needs no "
-        "checkpoint at all: it solves the free per-layer affine map standing "
-        "rule 28 requires, on a cohort disjoint from the scored one",
+        "backbone the backbone gate compares against ours; it exists for ProGen3 "
+        "only, and is refused for a panel arm rather than silently measuring the "
+        "wrong model. 'local' reads a checkpoint from 17_train_transcoder.py, "
+        "which embeds none -- that gate is then withheld with its reason rather "
+        "than passed by default. A CLT is only reachable through this second "
+        "path, because a cross-layer reconstruction needs every source layer at "
+        "or below its target and the released reader is per-layer by "
+        "construction. 'linear' needs no checkpoint at all: it solves the free "
+        "per-layer affine map standing rule 28 requires, on a cohort disjoint "
+        "from the scored one, and works on every arm",
     )
     parser.add_argument(
         "--linear-fit-sequences",
@@ -613,18 +711,31 @@ def main() -> None:
 
     print("[cohort] drawing")
     cohort = build_cohort(args)
-    sequences = list(cohort.records)
 
-    print("[loader] loading ProGen3-112M and self-checking the conversion")
-    load_kwargs: dict[str, Any] = {
-        "device": args.device,
-        "dtype": getattr(torch, args.dtype),
-    }
-    if args.checkpoint is not None:
-        load_kwargs["checkpoint"] = args.checkpoint
-    pg = load_progen3(**load_kwargs)
-    loader_gate = self_check(pg)
+    print(f"[loader] loading {args.arm} and running its self-check")
+    model = load_replaceable(
+        args.arm,
+        campaign_panel=CAMPAIGN_PANEL,
+        device=args.device,
+        dtype=args.dtype,
+        max_tokens=args.max_tokens,
+        checkpoint=args.checkpoint,
+    )
+    loader_gate = model.self_check()
     print(f"  self-check NLL {loader_gate['nll']:.4f} in {loader_gate['band']}")
+    # Rendered once, through the arm's own declaration, and passed to every sweep
+    # below. Re-rendering per sweep is how two conditions of one comparison come
+    # to be fed different strings (audit §0.1).
+    scored_inputs = model.render(cohort.records)
+
+    if args.replacement_kind == "released" and args.arm != PROGEN3_ARM:
+        raise ValueError(
+            "--replacement-kind released reads ProGenMech's ProGen3 checkpoint, "
+            f"which is not a replacement for {args.arm}. A dense arm reaches this "
+            "stage through 'local' (a transcoder trained by 17_train_transcoder.py "
+            "against that arm) or 'linear' (the free baseline, which needs no "
+            "checkpoint at all)"
+        )
 
     if args.replacement_kind == "linear":
         # The free baseline of standing rule 28, which this stage has never had:
@@ -638,14 +749,11 @@ def main() -> None:
         # against the baseline rather than for it: if a map fitted on a
         # thousandth of the data matches them, the finding is stronger, not weaker.
         print("[baseline] fitting the free per-layer affine map on a disjoint cohort")
-        fit_cohort = protein_cohort(
-            args.linear_fit_sequences,
-            args.protein_min_len,
-            args.protein_max_len,
-            skip=args.cohort_skip + len(sequences),
-            seed=args.cohort_draw_seed or None,
-        )
-        fitter = LinearReplacementFitter(pg.n_layers, int(pg.config.hidden_size))
+        fit_args = argparse.Namespace(**vars(args))
+        fit_args.sequences = args.linear_fit_sequences
+        fit_cohort = build_cohort(fit_args, skip=len(cohort.records), name="linear_fit")
+        fit_inputs = model.render(fit_cohort.records)
+        fitter = LinearReplacementFitter(model.n_layers, model.width)
         scored_mask: dict[str, torch.Tensor] = {}
 
         def accumulate(layer: int, x: torch.Tensor, y: torch.Tensor) -> None:
@@ -659,25 +767,19 @@ def main() -> None:
             return None
 
         with torch.no_grad():
-            for start in range(0, len(fit_cohort.records), args.batch_size):
-                chunk = list(fit_cohort.records)[start : start + args.batch_size]
-                batch = pg.batch(chunk)
-                scored_mask["mask"] = content_mask(pg, batch["input_ids"]).reshape(-1)
-                with moe_intercept(pg, accumulate):
-                    pg.model(
-                        input_ids=batch["input_ids"],
-                        position_ids=batch["position_ids"],
-                        sequence_ids=batch["sequence_ids"],
-                        use_cache=False,
-                        return_dict=True,
-                    )
-        transcoder = fitter.solve(ridge=args.linear_ridge).to(pg.device)
+            for start in range(0, len(fit_inputs), args.batch_size):
+                batch = model.batch(fit_inputs[start : start + args.batch_size])
+                scored_mask["mask"] = model.content_mask(batch).reshape(-1)
+                with model.block_intercept(accumulate):
+                    model.run(batch)
+        transcoder = fitter.solve(ridge=args.linear_ridge).to(model.device)
         recorded = transcoder.record()
         hyperparameters = argparse.Namespace(
             num_layers=transcoder.num_layers,
-            d_model=int(pg.config.hidden_size),
+            d_model=model.width,
             d_hidden=0,
             k=0,
+            arm=args.arm,
         )
         backbone_gate = {
             "verdict": "WITHHELD",
@@ -700,7 +802,7 @@ def main() -> None:
         # a local checkpoint that question is answered by provenance instead.
         print("[backbone] reading a locally trained replacement (no embedded backbone)")
         transcoder, recorded = load_trained_transcoder(args.replacement)
-        transcoder.to(pg.device)
+        transcoder.to(model.device)
         hyperparameters = argparse.Namespace(**recorded)
         backbone_gate = {
             "verdict": "WITHHELD",
@@ -713,25 +815,28 @@ def main() -> None:
     else:
         print("[backbone] reading the released replacement and its embedded backbone")
         transcoder, embedded, hyperparameters = load_replacement(args.replacement)
-        transcoder.to(pg.device)
-        released = released_state_dict(pg.checkpoint)
+        transcoder.to(model.device)
+        released = released_state_dict(model.checkpoint)
     # The replacement is spliced in by positional layer index. A checkpoint
     # covering a different depth or width -- or a layer subset -- would be
     # applied to the wrong blocks without raising, and the run would emit a
     # complete artefact for a misaligned replacement. This is the same failure
     # class src.transfer.progen3 exists to make impossible, and the consumer has
     # to carry its own half of it.
-    if int(hyperparameters.num_layers) != pg.n_layers:
+    if int(hyperparameters.num_layers) != model.n_layers:
         raise RuntimeError(
-            f"the replacement covers {hyperparameters.num_layers} layers and this "
-            f"ProGen3 has {pg.n_layers}; splicing by positional index would "
+            f"the replacement covers {hyperparameters.num_layers} layers and "
+            f"{args.arm} has {model.n_layers}; splicing by positional index would "
             "measure the wrong blocks"
         )
-    if int(hyperparameters.d_model) != int(pg.config.hidden_size):
+    if int(hyperparameters.d_model) != model.width:
         raise RuntimeError(
             f"the replacement was fitted at d_model {hyperparameters.d_model} and "
-            f"this ProGen3 is {pg.config.hidden_size} wide"
+            f"{args.arm} is {model.width} wide"
         )
+    replacement_arm_declared = require_matching_arm(
+        getattr(hyperparameters, "arm", None), args.arm
+    )
     if args.replacement_kind == "released":
         backbone_gate = backbone_identity(embedded, released)
         print(
@@ -743,7 +848,10 @@ def main() -> None:
     del embedded, released
     gc.collect()
 
+    grid = model.components()
+    grid_families = families(grid)
     condition = {
+        "arm": args.arm,
         "replacement": (
             "ProGenMech ProGen3_PLT_L10_D4608 (per-layer transcoder)"
             if args.replacement_kind == "released"
@@ -758,33 +866,33 @@ def main() -> None:
             "d_hidden": int(hyperparameters.d_hidden),
             "k": int(hyperparameters.k),
         },
-        "backbone_sha256": sha256_file(pg.checkpoint / "model.safetensors"),
-        "backbone_loading": "eager MoE, converted from the released megablocks "
-        "packing by src.transfer.progen3; from_pretrained's own eager path "
-        "returns random experts without raising",
-        "layers_replaced": "all MoE blocks",
-        "scoring_direction": "N->C only (the reverse direction doubles every "
-        "sweep and this stage runs one per component per model)",
+        "replacement_declares_its_arm": bool(replacement_arm_declared),
+        "backbone_sha256": model.weights_digest(),
+        "backbone_loading": model.loading_note,
+        "layers_replaced": f"every {model.block_kind}, in every layer",
+        "scoring_direction": model.scoring_note,
         "reconstruction_measured_under": "clean inputs, teacher-forced -- the "
         "convention the release's own val/loss was measured under, and NOT the "
         "sequential replacement that behaviour and causality are measured under. "
         "A reconstruction figure from this artefact is comparable to theirs; a "
         "behavioural one is not",
-        "fully_ablated_endpoint": "every MoE block output replaced by its "
-        "per-layer mean over this cohort's residue positions",
-        "component_families": list(FAMILIES),
+        "fully_ablated_endpoint": f"every {model.block_kind} output replaced by its "
+        "per-layer mean over this cohort's content positions",
+        "input_rendering": "src.transfer.arms.Cohort.input_strings, the panel's "
+        "one declaration of what string each arm is fed",
+        "component_families": list(grid_families),
         "ablation": "zero the component's contribution to the residual stream",
         "resampling_unit": "cohort sequence",
     }
 
     print("[behavioural] clean sweep, reconstruction NMSE and the ablation endpoint")
-    reference = clean_pass(pg, transcoder, sequences, batch_size=args.batch_size)
+    reference = clean_pass(model, transcoder, scored_inputs, batch_size=args.batch_size)
     conditions: dict[str, Callable[[], Any] | None] = {
         "original": None,
-        "replacement": replacement_context(pg, transcoder),
-        "mean_ablated": mean_ablation_context(pg, reference["moe_output_mean"]),
+        "replacement": replacement_context(model, transcoder),
+        "mean_ablated": mean_ablation_context(model, reference["moe_output_mean"]),
     }
-    scores = behavioural_scores(pg, sequences, conditions, batch_size=args.batch_size)
+    scores = behavioural_scores(model, scored_inputs, conditions, batch_size=args.batch_size)
     clean_nll = float(scores["original"]["nll"].mean())
     replacement_nll = float(scores["replacement"]["nll"].mean())
     ablated_nll = float(scores["mean_ablated"]["nll"].mean())
@@ -841,17 +949,16 @@ def main() -> None:
     print(f"  KL(original||replacement) {replacement_kl:.4f} vs ablated {ablated_kl:.4f}")
 
     print("[causal] ablating every component in both models")
-    grid = components(pg)
     effects = {
         "original": component_effects(
-            pg, sequences, grid, batch_size=args.batch_size
+            model, scored_inputs, grid, batch_size=args.batch_size
         ),
         "replacement": component_effects(
-            pg,
-            sequences,
+            model,
+            scored_inputs,
             grid,
             batch_size=args.batch_size,
-            wrapper=replacement_context(pg, transcoder),
+            wrapper=replacement_context(model, transcoder),
         ),
     }
     labels = [component.label for component in grid]
@@ -865,7 +972,7 @@ def main() -> None:
 
     attainability_gate: dict[str, Any] = {}
     causal_gate: dict[str, Any] = {}
-    for family in FAMILIES:
+    for family in grid_families:
         rows = [index for index, component in enumerate(grid) if component.kind == family]
         left, right = effects["original"][rows], effects["replacement"][rows]
         attainability_gate[family] = attainability(
@@ -928,16 +1035,23 @@ def main() -> None:
             "condition": condition,
             "cohort": {
                 "name": cohort.name,
+                "kind": cohort.kind,
                 "digest": cohort.digest,
                 "provenance_digest": cohort.provenance_digest,
                 "sampling": cohort.sampling,
                 "n_sequences": len(cohort),
+                # The residue band is what a protein cohort is drawn under and is
+                # meaningless for a text one, which is drawn under a character
+                # floor. Both are reported, and which one applies is decided by
+                # the cohort kind above rather than by the reader.
                 "residue_band": [args.protein_min_len, args.protein_max_len],
+                "text_min_chars": args.text_min_chars,
             },
             "model": {
-                "checkpoint": str(pg.checkpoint),
-                "n_layers": pg.n_layers,
-                "n_heads": pg.n_heads,
+                "arm": args.arm,
+                "checkpoint": str(model.checkpoint),
+                "n_layers": model.n_layers,
+                "n_heads": model.n_heads,
                 "n_components": len(grid),
                 "dtype": args.dtype,
             },

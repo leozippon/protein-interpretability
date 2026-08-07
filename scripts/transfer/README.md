@@ -155,6 +155,8 @@ Results roots are shared, ignored, and not backed up by Git. Never delete or rec
 
 Stages 15, 16, 17 and 19 measure ProGen3-112M, which is not a panel arm. They cannot name a registered stage and so cannot reach the controller's scheduling path; they launch through `run_external_baseline_h200.sh`, which freezes through the controller (never reimplementing the freeze) and then dispatches one stage to one GPU.
 
+Stages 15 and 17 additionally take `--arm`, which defaults to `progen3` and otherwise names a **dense** panel arm — the text control and the dense protein arm a replacement result needs before it can be attributed to protein, to mixture-of-experts, or to transcoder replacement in general. The eligible set is composed by `src.transfer.replaceable.eligible_arms` from `CAMPAIGN_PANEL`, the architectures that carry this estimand, and the arms with a measured loader band; run either stage with `--help` to see it. They are still not registered stages, so a dense-arm run is a direct invocation and not a campaign item.
+
 **Snapshot reuse, and the rule that governs it.** Several conditions of one comparison should share one snapshot: four controllers freezing at once collide on the shared relay's single temp script path, and the arms of one comparison must run one code hash or they are not the controlled comparison they are reported as. Freeze once, then pass `--run-id` and `--snapshot-dir` to each invocation:
 
 ```bash

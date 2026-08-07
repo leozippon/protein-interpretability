@@ -360,6 +360,26 @@ def load_progen3(
 # --------------------------------------------------------------------- scoring
 
 
+def forward(pg: ProGen3, batch: dict[str, torch.Tensor]) -> Any:
+    """One forward pass on a prepared batch: the single spelling of these kwargs.
+
+    ``sequence_ids`` and ``position_ids`` are not optional on this model and are
+    not what a generic decoder call passes, so every place that ran the model
+    used to restate them -- scoring here, and two capture sweeps in
+    ``15_replacement_faithfulness.py``. Three copies of one call is three places
+    a keyword can be dropped, and a dropped ``sequence_ids`` is a plausible
+    number rather than an error.
+    """
+
+    return pg.model(
+        input_ids=batch["input_ids"],
+        position_ids=batch["position_ids"],
+        sequence_ids=batch["sequence_ids"],
+        use_cache=False,
+        return_dict=True,
+    )
+
+
 def scored_logits(
     pg: ProGen3, batch: dict[str, torch.Tensor]
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -372,13 +392,7 @@ def scored_logits(
     convention the checkpoint's published figures were measured under.
     """
 
-    output = pg.model(
-        input_ids=batch["input_ids"],
-        position_ids=batch["position_ids"],
-        sequence_ids=batch["sequence_ids"],
-        use_cache=False,
-        return_dict=True,
-    )
+    output = forward(pg, batch)
     labels = batch["labels"]
     targets = labels[..., 1:]
     mask = (labels != pg.config.pad_token_id)[..., 1:]
@@ -608,16 +622,30 @@ class Component:
         return f"{self.kind}.L{self.layer}H{self.index}"
 
 
-def components(pg: ProGen3) -> list[Component]:
-    """Every attention head, then every MoE block, in layer order."""
+def component_grid(n_layers: int, n_heads: int, *, block_kind: str) -> list[Component]:
+    """Every attention head, then every replaceable block, in layer order.
+
+    Architecture-neutral because the grid is: what differs between a MoE decoder
+    and a dense one is the *name* of the block being replaced, not the shape of
+    the set. Declared once here, beside :class:`Component`, so that the dense
+    adapter in :mod:`src.transfer.replaceable` builds the same object rather than
+    a parallel copy of it that could come to disagree about the ordering the
+    saved effect matrices are indexed by.
+    """
 
     heads = [
         Component("attention_head", layer, head)
-        for layer in range(pg.n_layers)
-        for head in range(pg.n_heads)
+        for layer in range(n_layers)
+        for head in range(n_heads)
     ]
-    blocks = [Component("moe_block", layer) for layer in range(pg.n_layers)]
+    blocks = [Component(block_kind, layer) for layer in range(n_layers)]
     return heads + blocks
+
+
+def components(pg: ProGen3) -> list[Component]:
+    """Every attention head, then every MoE block, in layer order."""
+
+    return component_grid(pg.n_layers, pg.n_heads, block_kind="moe_block")
 
 
 @contextmanager
