@@ -1389,3 +1389,15 @@ readable as a difference rather than as four numbers, and the exact
 hypergeometric control replaced a threshold that would have split these four
 runs at a cliff rather than at a stated significance level. Both were audit
 repairs from this morning earning their place within hours.
+
+## 2026-08-06 (night)
+
+Four completed CLT/PLT training runs were found on disk with no entry in the experiment log, and an audit of the trainer that produced them found the defect that makes them unquotable: the auxiliary loss compared a prediction in normalised space against a target in raw activation space, distorting its gradient by up to 25.5x and misdirecting it, asymmetrically across the two arms the runs exist to compare. Reproduced against their released source and against a real ProGen3 batch before anything was changed. Repaired with five smaller findings from the same audit, including a held-out cohort drawn from the corpus head that averaged 394 residues against a 932-residue training stream.
+
+A six-arm campaign now runs under one frozen snapshot, and it carries the control ProGenMech's own scripts do not: their CLT holds 3.25x the PLT's parameters at equal dictionary width, so a parameter-matched PLT is the free baseline standing rule 28 asks for. Recorded as limitation L25.
+
+The trained checkpoints also had no path to the faithfulness gate — a cross-layer target needs every source at or below it and the released reader is per-layer — so the headline arm could deliver only reconstruction NMSE, the quantity this programme already established is insufficient. That bridge is built, verified exactly equal to the batched model on both architectures, and demonstrated end to end on a trained CLT.
+
+A literature gate run before any track was designed closed D3.f unrun: an interchange accuracy is obtainable at 100% from a randomly initialised model absent a linearity constraint, so the statistic cannot carry the claim. An independent code audit reached the same conclusion by a different route — the protein arm cannot be built at the committed defaults, and the one baseline that would separate a causal subspace from the copy channel collapses in rank exactly on the protein arms. The gate also found a second protein CLT paper this repository had not catalogued, and a named mechanism (sparsity-driven depth collapse) for the cohort-length dependence EXP-R2-135 measured and did not explain.
+
+EXP-R2-137 is pre-registered with its null exit declared in advance, because two 2026 results predict that null. Two positions were added to the audit document at the user's direction: what a ProGenMech reproduction cannot settle, and that constructed methods go dense first, then MoE, then unified, with no requirement to reach the third.
