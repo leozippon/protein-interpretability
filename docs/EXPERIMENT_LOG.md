@@ -8632,3 +8632,58 @@ Written before the measurement exists, and before the stage was pointed at a ful
 **A text MoE arm is not admitted, and the condition for admitting one is stated now.** The question as posed is within-model and needs no second MoE. A text MoE becomes earned only on a PASS, where the finding would be ambiguous between a property of sparse MoE replacement (method) and a property of protein models (transfer) — which is the distinction §5's organising rule turns on. The literature gate's only verified candidate is `ibm-granite/granite-3.0-1b-a400m-base` (24 layers, d_model 1024, 32 experts, top-8, native `transformers`, no custom kernels), and its 9× parameter and 4× expert-count mismatch against ProGen3-112M would be an irreducible limitation to record rather than a detail to gloss. No genuinely-trained open text MoE at 100–300M appears to exist; the small ones found were dense-model merges with no trained router.
 
 **Interface check, L20, 24 sequences, not a result.** All ten layers measurable, loader and router gates PASS. At that size every grouping's held-out reduction is negative because the overfit penalty dominates at 28 cells over ~2000 tokens, which is the machinery behaving as its own test predicts. The campaign condition is 256 sequences at band 64–246 with 1000 bootstrap replicates and 4 folds.
+
+## 2026-08-07 — EXP-R2-136 result: the CLT beats the PLT at equal width and loses to it at equal parameters
+
+Six arms, one frozen snapshot `20260806224403_0af210a7f74d`, 20,000 steps each, bit-identical token budgets within a corpus seed (298,139,631 at seed 20260806; 298,137,440 at seed 20260807). Five pulled and digest-verified by the driver; the sixth completed on the pod and lost its tunnel during the pull, and was pulled and verified by hand — the "produced is not read" gap this repository has hit before, caught this time because the driver records a dispatch and the poll loop distinguishes ABSENT from a transport failure.
+
+| arm | parameters | active fraction | wall clock | held-out NMSE sum, s20260806 | s20260807 | mean |
+|---|---:|---:|---:|---:|---:|---:|
+| CLT, `d_hidden` 4608 | 115,065,600 | 1.39% | 3.46 h | 2.2047 | 2.1636 | **2.1841** |
+| PLT, `d_hidden` 4608 | 35,439,360 | 1.39% | 1.93 h | 2.4952 | 2.4496 | **2.4724** |
+| PLT, `d_hidden` 14963 | 115,069,310 | 0.43% | 4.33 h | 2.0752 | 2.0408 | **2.0580** |
+
+**At equal dictionary width the CLT wins, by 0.288 — 11.7%.** That is ProGenMech's comparison and it reproduces in direction under a protocol where the two arms share their data, their order, their seed, their step budget and their optimiser, and differ in exactly one thing: whether a latent may write to layers downstream of the one it was read from.
+
+**At equal parameters the CLT loses, by 0.126.** A per-layer transcoder made wide enough to match the CLT's parameter count — 14963 against 4608, matching to 3.2e-5 relative — reaches 2.058 against the CLT's 2.184. Both seeds agree and the draws do not overlap: every CLT draw (2.2047, 2.1636) is worse than every parameter-matched PLT draw (2.0752, 2.0408), against seed spreads of 0.041 and 0.035, so the 0.126 gap is about three times the larger spread. The per-layer profile says the same thing without aggregation — the wide PLT is better at nine of ten layers, including all five middle layers that carry the reconstruction.
+
+**So the CLT's advantage over the PLT is a capacity effect on this objective, not a cross-layer-connectivity effect.** L25 was written yesterday as a confound this comparison could not resolve; it is now measured, and it resolves against the architecture. The claim that survives is narrow and worth stating exactly: *given a parameter budget, spending it on cross-layer decoders is worse than spending it on a wider per-layer dictionary, for reconstruction of ProGen3-112M's MoE blocks at this budget.*
+
+**Four things this does not say, and the first is the most important.**
+
+*It is reconstruction, not faithfulness.* The whole point of EXP-R2-132 and EXP-R2-135 is that a replacement can reconstruct well and still fail to carry a causal claim, and the field's own 2026 work now says the same — Lange et al. exhibit perfect CLT reconstruction over a computation the CLT entirely skips. This result bounds the *training objective*, which is what ProGenMech's NMSE and our NMSE both are. The faithfulness gate on these same checkpoints is running and is a separate question with a possibly different answer: a cross-layer transcoder could in principle be worse at reconstruction and better at supporting interventions, and nothing here rules that out.
+
+*It is not a statement about their checkpoint* (audit §5.3). This is a bounded reproduction at a declared budget — 20,000 steps and ~298M tokens against their 5M-sequence epoch — with six recorded deviations from their trainer. Their CLT weights remain unobtainable.
+
+*The matched arm cannot match everything, and what it gives up is declared.* `k = 64` is 1.39% of a 4608-wide dictionary and 0.43% of a 14963-wide one, so the parameter-matched PLT is sparser in relative terms. No PLT matches a CLT on parameters and on active fraction at once; that is a property of the design space, not an oversight. Wall clock differs too — 4.33 h against 3.46 h at identical steps and tokens — so the arms are matched on data and parameters and not on compute.
+
+*Two seeds is two seeds.* The gap is large against the observed spread, but the spread is estimated from two draws per arm.
+
+## 2026-08-07 — EXP-R2-137 result: routing localises the replacement's error only where the error is negligible
+
+256 Swiss-Prot sequences, band 64–246, 41,155 scored residue positions, 4 sequence-disjoint folds, 1000 bootstrap replicates, released PLT. Loader gate PASS. Router-addressing gate PASS with a selected-set disagreement of **0.0467** between the float32 router the block selects on and the bfloat16 distribution it returns — so recomputing rather than reading was worth doing, and EXP-R2-130's 3.3% was if anything an underestimate at this cohort.
+
+| layer | NMSE | cells occupied | largest cell | expert set predicted from residue | routing − random (95% CI) | incremental over residue (95% CI) | verdict |
+|---:|---:|---:|---:|---:|---|---|---|
+| 0 | 0.0692 | 27 | 0.151 | **0.889** | +0.0023 [+0.0015, +0.0029] | **−0.0024** [−0.0029, −0.0019] | FAIL |
+| 1 | 0.0024 | 28 | 0.116 | 0.414 | +0.0122 [+0.0117, +0.0128] | +0.0100 [+0.0096, +0.0105] | PASS |
+| 2 | 0.3848 | 24 | 0.244 | 0.615 | +0.0009 [+0.0008, +0.0010] | +0.0004 [+0.0003, +0.0005] | PASS |
+| 3 | 0.2876 | 26 | 0.238 | 0.395 | +0.0012 [+0.0010, +0.0014] | +0.0008 [+0.0006, +0.0009] | PASS |
+| 4 | 0.5708 | 26 | 0.422 | 0.452 | +0.0008 [+0.0002, +0.0016] | +0.0005 [−0.0001, +0.0011] | FAIL |
+| 5 | 0.6511 | 28 | 0.159 | 0.323 | +0.0007 [+0.0003, +0.0011] | +0.0002 [−0.0002, +0.0005] | FAIL |
+| 6 | 0.6964 | 28 | 0.252 | 0.336 | +0.0005 [+0.0002, +0.0008] | +0.0002 [−0.0001, +0.0005] | FAIL |
+| 7 | 0.7821 | 28 | 0.230 | 0.235 | +0.0002 [−0.0001, +0.0005] | +0.0001 [−0.0002, +0.0004] | FAIL |
+| 8 | 0.7316 | 23 | 0.500 | 0.446 | +0.0004 [+0.0001, +0.0007] | +0.0004 [+0.0001, +0.0007] | PASS |
+| 9 | 0.1800 | 22 | 0.182 | 0.177 | +0.0086 [+0.0074, +0.0098] | +0.0085 [+0.0074, +0.0097] | PASS |
+
+**No layer is unmeasurable** — every one has 22 to 28 of 28 expert-set cells occupied and a largest cell at or below 0.50, so the attainability gate never had to withhold a verdict and the FAILs are about routing rather than about resolving power.
+
+**The panel verdict is MIXED and the magnitudes are what matter.** Routing beats a random grouping of identical cardinality on five layers with intervals excluding zero, and survives correcting for residue identity first on those same five. Taken as a count that looks like partial support. Read against where the replacement actually fails, it is the opposite: **the two layers where routing removes a materially non-zero share of the residual — layer 1 at +0.0122 and layer 9 at +0.0086 — are the two layers where there is almost no residual to remove**, NMSE 0.0024 and 0.1800. Across layers 4 through 8, where NMSE runs 0.57 to 0.78 and the replacement is genuinely failing, routing removes between **+0.0002 and +0.0008** of the error, and the incremental term over residue identity is indistinguishable from zero on four of those five.
+
+**So the pre-registered null holds in the sense that was pre-registered.** "Their CLT abstracts the router away by construction" is a true description of the method and **not** an account of why the replacement fails: where the replacement fails, knowing exactly which two of eight experts fired buys under one part in a thousand of the error. The two 2026 results that predicted this null (arXiv:2606.10703, arXiv:2604.09780) are corroborated on a protein MoE, which is a model class neither of them measured.
+
+**A text MoE control arm is therefore not earned, on the condition stated in advance.** It was to be admitted only on a PASS, where the finding would have been ambiguous between a property of sparse-MoE replacement and a property of protein models. There is no such finding to disambiguate. `ibm-granite/granite-3.0-1b-a400m-base` stays unadmitted.
+
+**One descriptive result stands on its own and belongs to part 1 rather than part 2.** The accuracy of predicting a token's selected expert set from its amino acid alone falls monotonically with depth, from **0.889 at layer 0 to 0.177 at layer 9** against a 28-cell alphabet. ProGen3's early routing is very nearly a lookup on the current residue, and becomes contextual with depth. That is measured on held-out folds, needs no dictionary, and explains the one negative incremental in the table: at layer 0 the routing and residue groupings are so nearly the same partition that correcting for residue first leaves routing doing worse than a fresh random grouping. It also bears on how "expert specialisation" should be read in a protein MoE — at the first layer it is substantially amino-acid identity wearing an expert's name.
+
+**Bounds.** One cohort band, one model, one released replacement, 256 sequences. The statistic is a per-cell *mean* correction, so a routing dependence that is not a location shift — a change in the residual's covariance, say — would not be seen by it; that is a real limit of the design and not a claim that no such dependence exists.
