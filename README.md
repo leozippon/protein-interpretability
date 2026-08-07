@@ -66,9 +66,11 @@ The resource interface is recorded in `external_resources/manifests/interpretabi
 4. `docs/PROJECT_LOG.md` - repository and operations chronology.
 5. `docs/REPOSITORY_STRUCTURE.md` - repository, naming, storage, and provenance rules.
 6. `docs/DOCUMENT_INDEX.md` - navigation for live and frozen material.
-7. `CLAUDE.md` and `AGENTS.md` - identical agent and operator instructions.
+7. `SUMMARY.md` - non-canonical research conclusions and core experiment index derived from the audit.
+8. `CLAUDE.md` and `AGENTS.md` - identical agent and operator instructions.
 
-`check.md` is frozen and superseded by the canonical audit. Do not use it as the current claim source.
+`SUMMARY.md` is a reader-oriented summary, not a second claim source. The canonical
+audit wins whenever the two differ.
 
 ## Storage Safety
 

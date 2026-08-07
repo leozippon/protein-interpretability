@@ -1,6 +1,6 @@
 # Interpretability transfer audit: text to protein generative models
 
-**Status:** active; canonical analysis document **Supersedes:** repository-root `check.md`, which is frozen and no longer maintained **Updated:** 2026-08-06 (through EXP-R2-136; EXP-R2-137 pre-registered)
+**Status:** active; canonical analysis document **Supersedes:** the historical exploratory contents of repository-root `check.md`; repository-root `SUMMARY.md` is a non-canonical reader summary **Updated:** 2026-08-06 (through EXP-R2-136; EXP-R2-137 pre-registered)
 
 ---
 
