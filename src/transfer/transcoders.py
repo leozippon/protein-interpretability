@@ -377,6 +377,135 @@ class TrainingRecord:
         }
 
 
+# ------------------------------------------------------------- the free baseline
+
+
+class LinearReplacement:
+    """The replacement that needs no dictionary: one affine map per block.
+
+    **Why this exists.** Standing rule 28 says a method is scored against the
+    trivial baseline available from its own coordinates, and it has never been
+    applied to the replacement stage -- which scored exactly three conditions,
+    the original, the transcoder, and the mean-ablated floor that is the
+    *denominator*. Nothing stood between the floor and the method. Twice before,
+    applying this rule changed what a result meant: a selector that knows only a
+    head's layer index beat a census (EXP-R2-131), and a BLOSUM62 lookup was
+    not separable from a model's zero-shot fitness on the panel its recovery
+    ratios were quoted against (EXP-R2-133/134).
+
+    A per-layer least-squares map ``y ~= (x - mu_x) W + mu_y`` carries
+    ``d_model^2 + d_model`` parameters -- **147,840** against a cross-layer
+    transcoder's 115,065,600, a factor of 778 -- has no sparsity, no latents, no
+    training loop and no hyper-parameters beyond a ridge term. It is what a MoE
+    block would be if it were a linear function of its input.
+
+    If this recovers what the transcoders recover, then nothing measured on this
+    estimand is evidence that a sparse dictionary captured anything: the
+    quantity would be a property of how linear the block is, not of the method.
+    That is the outcome this class exists to be able to report.
+    """
+
+    def __init__(self, weight: torch.Tensor, x_mean: torch.Tensor, y_mean: torch.Tensor) -> None:
+        self.weight = weight  # (layers, d_model, d_model)
+        self.x_mean = x_mean  # (layers, d_model)
+        self.y_mean = y_mean
+        self.num_layers = int(weight.shape[0])
+
+    @property
+    def n_parameters(self) -> int:
+        layers, d_model, _ = self.weight.shape
+        return layers * (d_model * d_model + d_model)
+
+    def to(self, device: torch.device | str) -> LinearReplacement:
+        self.weight = self.weight.to(device=device, dtype=torch.float32)
+        self.x_mean = self.x_mean.to(device=device, dtype=torch.float32)
+        self.y_mean = self.y_mean.to(device=device, dtype=torch.float32)
+        return self
+
+    def reset(self) -> None:
+        """No cross-token or cross-layer state. Present so callers need not care."""
+
+    @torch.no_grad()
+    def __call__(self, layer: int, x: torch.Tensor) -> torch.Tensor:
+        shape = x.shape
+        flat = x.reshape(-1, shape[-1]).float()
+        out = (flat - self.x_mean[layer]) @ self.weight[layer] + self.y_mean[layer]
+        return out.reshape(shape).to(x.dtype)
+
+    def record(self) -> dict[str, Any]:
+        return {
+            "architecture": "LINEAR",
+            "num_layers": self.num_layers,
+            "d_model": int(self.weight.shape[1]),
+            "n_parameters": self.n_parameters,
+            "note": "per-layer affine least-squares map from block input to block "
+            "output; the free baseline standing rule 28 requires, carrying no "
+            "dictionary, no sparsity and no trained latents",
+        }
+
+
+class LinearReplacementFitter:
+    """Accumulates the Gram matrices one affine map per layer is solved from.
+
+    Streaming rather than storing activations: the normal equations need only
+    ``X^T X`` and ``X^T Y`` per layer, which are ``d_model`` square regardless of
+    how many tokens are seen. Accumulated in float64 because ``X^T X`` on
+    activations whose scale spans two orders of magnitude across layers loses
+    conditioning in float32 long before it loses it in float64.
+    """
+
+    def __init__(self, num_layers: int, d_model: int) -> None:
+        self.num_layers, self.d_model = num_layers, d_model
+        self.xtx = torch.zeros(num_layers, d_model, d_model, dtype=torch.float64)
+        self.xty = torch.zeros(num_layers, d_model, d_model, dtype=torch.float64)
+        self.x_sum = torch.zeros(num_layers, d_model, dtype=torch.float64)
+        self.y_sum = torch.zeros(num_layers, d_model, dtype=torch.float64)
+        self.count = torch.zeros(num_layers, dtype=torch.float64)
+
+    def update(self, layer: int, x: torch.Tensor, y: torch.Tensor) -> None:
+        """``x`` and ``y`` are ``(tokens, d_model)``, already masked to scored positions."""
+
+        xd, yd = x.double(), y.double()
+        self.xtx[layer] += (xd.T @ xd).cpu()
+        self.xty[layer] += (xd.T @ yd).cpu()
+        self.x_sum[layer] += xd.sum(0).cpu()
+        self.y_sum[layer] += yd.sum(0).cpu()
+        self.count[layer] += float(x.shape[0])
+
+    def solve(self, *, ridge: float = 1e-6) -> LinearReplacement:
+        """Centred normal equations, one layer at a time.
+
+        The ridge is relative to each layer's own scale (a fraction of
+        ``trace(X^T X)/d``), not absolute, because block-input scale varies by a
+        factor of seven across ProGen3's depth and one absolute constant would be
+        a different regulariser at every layer.
+        """
+
+        if float(self.count.min()) <= self.d_model:
+            raise ValueError(
+                f"a layer saw {float(self.count.min()):.0f} tokens for {self.d_model} "
+                "features; the normal equations are underdetermined and the fit "
+                "would be memorising the cohort rather than estimating a map"
+            )
+        weights, x_means, y_means = [], [], []
+        for layer in range(self.num_layers):
+            n = self.count[layer]
+            mu_x = self.x_sum[layer] / n
+            mu_y = self.y_sum[layer] / n
+            centred_xtx = self.xtx[layer] - n * torch.outer(mu_x, mu_x)
+            centred_xty = self.xty[layer] - n * torch.outer(mu_x, mu_y)
+            scale = float(torch.diagonal(centred_xtx).mean())
+            regularised = centred_xtx + ridge * scale * torch.eye(self.d_model, dtype=torch.float64)
+            weights.append(torch.linalg.solve(regularised, centred_xty))
+            x_means.append(mu_x)
+            y_means.append(mu_y)
+        return LinearReplacement(
+            torch.stack(weights).float(),
+            torch.stack(x_means).float(),
+            torch.stack(y_means).float(),
+        )
+
+
 # -------------------------------------------------- a trained transcoder, spliced
 
 

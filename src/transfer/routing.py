@@ -121,6 +121,30 @@ def router_dispersion(router_probs: np.ndarray, *, top_k: int) -> dict[str, Any]
     }
 
 
+def boundary_cells(router_probs: np.ndarray, *, top_k: int, n_cells: int) -> np.ndarray:
+    """Group tokens by how close the router came to choosing differently.
+
+    The piecewise-function account this module was written to test is about
+    *proximity to a routing boundary*, not about which experts were selected:
+    a transcoder is a continuous function and the MoE is discontinuous exactly
+    where the margin crosses zero. :func:`router_dispersion` computes that margin
+    and, until this existed, nothing consumed it — the statistic the design
+    called decisive was recorded and never tested, while the tested grouping was
+    the selected *set*, which is a different variable.
+
+    Tokens are binned by margin quantile into ``n_cells`` groups so the cardinality
+    matches the expert-set grouping exactly and the two are directly comparable
+    against the same random control. Quantile bins rather than fixed-width ones
+    because the margin distribution is heavily skewed and fixed bins would leave
+    most cells empty.
+    """
+
+    ordered = -np.sort(-router_probs, axis=1)
+    margin = ordered[:, top_k - 1] - ordered[:, top_k]
+    edges = np.quantile(margin, np.linspace(0.0, 1.0, n_cells + 1)[1:-1])
+    return np.searchsorted(edges, margin, side="right").astype(np.int64)
+
+
 def cell_occupancy(cells: np.ndarray, n_cells: int) -> dict[str, Any]:
     """How the tokens are spread over the cells, and whether that is usable."""
 

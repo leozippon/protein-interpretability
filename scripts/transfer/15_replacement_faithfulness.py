@@ -85,6 +85,8 @@ from src.transfer.progen3 import (  # noqa: E402
 from src.transfer.statistics import bootstrap_unit_floor, mean_interval  # noqa: E402
 from src.transfer.transcoders import (  # noqa: E402
     DEFAULT_REPLACEMENT,
+    LinearReplacement,
+    LinearReplacementFitter,
     PerLayerTranscoder,
     TranscoderReplacement,
     load_replacement,
@@ -146,7 +148,7 @@ def _masked_sequence_mean(values: torch.Tensor, mask: torch.Tensor) -> torch.Ten
 @torch.no_grad()
 def clean_pass(
     pg: Any,
-    transcoder: PerLayerTranscoder | TranscoderReplacement,
+    transcoder: PerLayerTranscoder | TranscoderReplacement | LinearReplacement,
     sequences: list[str],
     *,
     batch_size: int,
@@ -201,7 +203,7 @@ def clean_pass(
 #: carry means the vocabulary moved, and silently scoring the padding would move
 #: both the fully-ablated endpoint and the NMSE without moving anything visible.
 def replacement_context(
-    pg: Any, transcoder: PerLayerTranscoder | TranscoderReplacement
+    pg: Any, transcoder: PerLayerTranscoder | TranscoderReplacement | LinearReplacement
 ) -> Callable[[], Any]:
     def factory() -> Any:
         return moe_intercept(pg, lambda layer, x, y: transcoder(layer, x))
@@ -527,14 +529,31 @@ def main() -> None:
     parser.add_argument(
         "--replacement-kind",
         default="released",
-        choices=("released", "local"),
+        choices=("released", "local", "linear"),
         help="'released' reads ProGenMech's Lightning checkpoint, which embeds a "
         "backbone the backbone gate compares against ours. 'local' reads a "
         "checkpoint from 17_train_transcoder.py, which embeds none -- that gate "
         "is then withheld with its reason rather than passed by default. A CLT "
         "is only reachable through this second path, because a cross-layer "
         "reconstruction needs every source layer at or below its target and the "
-        "released reader is per-layer by construction",
+        "released reader is per-layer by construction. 'linear' needs no "
+        "checkpoint at all: it solves the free per-layer affine map standing "
+        "rule 28 requires, on a cohort disjoint from the scored one",
+    )
+    parser.add_argument(
+        "--linear-fit-sequences",
+        type=int,
+        default=256,
+        help="sequences the free linear baseline is solved on, drawn past the "
+        "scored cohort so the map is never fitted on what it is measured on",
+    )
+    parser.add_argument(
+        "--linear-ridge",
+        type=float,
+        default=1e-6,
+        help="ridge as a fraction of each layer's own mean squared feature scale; "
+        "relative rather than absolute because block-input scale varies "
+        "sevenfold across depth",
     )
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--device", default="cuda:0")
@@ -607,7 +626,71 @@ def main() -> None:
     loader_gate = self_check(pg)
     print(f"  self-check NLL {loader_gate['nll']:.4f} in {loader_gate['band']}")
 
-    if args.replacement_kind == "local":
+    if args.replacement_kind == "linear":
+        # The free baseline of standing rule 28, which this stage has never had:
+        # it scored the original, the method, and the mean-ablated floor that is
+        # the denominator, with nothing between the floor and the method.
+        #
+        # Fitted on a cohort DISJOINT from the one it is scored on, drawn by
+        # skipping past it, so the map is never solved on the tokens it is
+        # measured on. The fit sees a few hundred sequences against the
+        # transcoders' ~298M tokens, which makes the comparison conservative
+        # against the baseline rather than for it: if a map fitted on a
+        # thousandth of the data matches them, the finding is stronger, not weaker.
+        print("[baseline] fitting the free per-layer affine map on a disjoint cohort")
+        fit_cohort = protein_cohort(
+            args.linear_fit_sequences,
+            args.protein_min_len,
+            args.protein_max_len,
+            skip=args.cohort_skip + len(sequences),
+            seed=args.cohort_draw_seed or None,
+        )
+        fitter = LinearReplacementFitter(pg.n_layers, int(pg.config.hidden_size))
+        scored_mask: dict[str, torch.Tensor] = {}
+
+        def accumulate(layer: int, x: torch.Tensor, y: torch.Tensor) -> None:
+            keep = scored_mask["mask"]
+            width = y.shape[-1]
+            fitter.update(
+                layer,
+                x.reshape(-1, width)[keep].float(),
+                y.reshape(-1, width)[keep].float(),
+            )
+            return None
+
+        with torch.no_grad():
+            for start in range(0, len(fit_cohort.records), args.batch_size):
+                chunk = list(fit_cohort.records)[start : start + args.batch_size]
+                batch = pg.batch(chunk)
+                scored_mask["mask"] = content_mask(pg, batch["input_ids"]).reshape(-1)
+                with moe_intercept(pg, accumulate):
+                    pg.model(
+                        input_ids=batch["input_ids"],
+                        position_ids=batch["position_ids"],
+                        sequence_ids=batch["sequence_ids"],
+                        use_cache=False,
+                        return_dict=True,
+                    )
+        transcoder = fitter.solve(ridge=args.linear_ridge).to(pg.device)
+        recorded = transcoder.record()
+        hyperparameters = argparse.Namespace(
+            num_layers=transcoder.num_layers,
+            d_model=int(pg.config.hidden_size),
+            d_hidden=0,
+            k=0,
+        )
+        backbone_gate = {
+            "verdict": "WITHHELD",
+            "reason": "the free linear baseline is solved against the backbone "
+            "this stage loads, so there is no second backbone to compare",
+            "architecture": "LINEAR",
+        }
+        embedded = released = None
+        print(
+            f"  fitted on {len(fit_cohort.records)} disjoint sequences; "
+            f"{transcoder.n_parameters:,} parameters"
+        )
+    elif args.replacement_kind == "local":
         # A transcoder trained here by 17_train_transcoder.py. It carries no
         # embedded backbone, because it was fitted against the backbone this
         # stage loads rather than shipped beside a copy of one -- so the backbone

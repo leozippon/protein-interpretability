@@ -88,6 +88,7 @@ from src.transfer.progen3 import (  # noqa: E402
     self_check,
 )
 from src.transfer.routing import (  # noqa: E402
+    boundary_cells,
     cell_occupancy,
     expert_set_from_residue,
     expert_sets,
@@ -111,6 +112,12 @@ GROUPING_ROLES = {
     "same degrees of freedom (standing rule 28)",
     "residue": "confound, not control: if routing is a lookup on the amino acid "
     "then routing and residue are one grouping under two names",
+    "boundary": "the second hypothesis, and the one the piecewise-function "
+    "account is actually about: how close the router came to choosing "
+    "differently, binned by margin quantile at matched cardinality. A "
+    "transcoder is continuous and the MoE is discontinuous where this margin "
+    "crosses zero, so a residual concentrated at boundaries would be invisible "
+    "to a grouping over selected-set identity",
 }
 
 
@@ -290,6 +297,12 @@ def layer_record(
 
     assignments = {
         "routing": (cells, n_expert_cells),
+        "boundary": (
+            boundary_cells(
+                data["router_probabilities"][layer], top_k=top_k, n_cells=n_expert_cells
+            ),
+            n_expert_cells,
+        ),
         "random": (rng.integers(0, n_expert_cells, size=cells.size), n_expert_cells),
         "residue": (
             np.unique(residues, return_inverse=True)[1],
@@ -316,6 +329,10 @@ def layer_record(
     record["routing_over_random"] = compare(
         uncorrected, corrected["routing"], corrected["random"], groups,
         seed=seed + 100 * layer, replicates=replicates,
+    )
+    record["boundary_over_random"] = compare(
+        uncorrected, corrected["boundary"], corrected["random"], groups,
+        seed=seed + 100 * layer + 3, replicates=replicates,
     )
 
     # What routing adds beyond the residue: correct for the residue first, then
@@ -529,7 +546,8 @@ def main() -> None:
         print(
             f"  L{row['layer']:<2d} nmse {row['nmse']:.4f}  removed routing "
             f"{removed['routing']:+.4f} random {removed['random']:+.4f} residue "
-            f"{removed['residue']:+.4f}  routing-random {difference['difference']:+.4f} "
+            f"{removed['residue']:+.4f} boundary {removed['boundary']:+.4f}  "
+            f"routing-random {difference['difference']:+.4f} "
             f"{difference['difference_ci95']}  incremental {increment['difference']:+.4f} "
             f"{increment['difference_ci95']}  {row['verdict']}"
         )

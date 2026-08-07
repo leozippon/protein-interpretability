@@ -206,7 +206,12 @@ def main() -> None:
     parser.add_argument("--grad-clip", type=float, default=1.0)
     parser.add_argument("--d-hidden", type=int, default=4608)
     parser.add_argument("--k", type=int, default=64)
-    parser.add_argument("--auxk", type=int, default=128)
+    # Defaulted from the config declaration rather than restated. A literal 128
+    # stood here and silently shadowed TranscoderConfig's 192 at every
+    # invocation, so the campaign that reported moving to their effective value
+    # ran at the value it was moving away from -- two authoritative defaults for
+    # one fact, and the wrong one won (Appendix B rule 12).
+    parser.add_argument("--auxk", type=int, default=TranscoderConfig.auxk)
     parser.add_argument("--seed", type=int, default=20260806)
     parser.add_argument(
         "--corpus-seed",
