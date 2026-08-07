@@ -246,6 +246,7 @@ class EveryCorpusDrawDeclaresItsSeed(unittest.TestCase):
                 "13_induction_probe_bootstrap.py",
                 "14_paa_census.py",
                 "15_replacement_faithfulness.py",
+                "18_das_subspace.py",
             },
         )
 
