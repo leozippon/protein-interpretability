@@ -8864,3 +8864,51 @@ Holding *sequences* fixed across arms does not hold *tokens* fixed: at 125 token
 | progen3-112m | linear | 0.0264 | 0.0788 | 4/10 FAIL; 1/3 FAIL |
 
 The block-family correlations invert against the behavioural ordering — gpt2's trained PLT ranks mlp blocks *worse* than its own linear baseline (0.021 vs 0.608) while ProGen3's ranks MoE blocks at 0.891 despite recovering only 0.134 of the behavioural gap. Both are computed over very few resolved components (4 and 3 respectively), which is why every top-k overlap fails its exact test regardless of ρ. **These numbers are reported and not read**: a rank correlation over three or four components is not a measurement this programme will interpret, and the resolved-component count, not the correlation, is the thing to fix.
+
+## 2026-08-07 — EXP-R2-142 (pre-registered): how the retrained ProtGPT2 arm may be read
+
+Recorded **before** the retrained dictionary exists, because the result decides a branch and the reading rule must not be chosen after seeing it.
+
+**What forced the retrain.** EXP-R2-141's ProtGPT2 dictionary was 75.1% dead at 20M tokens. `tc_protgpt2_tok65m` retrains it at 65,000 steps × batch 8 ≈ 65M tokens, against gpt2's 72,971,083 — an 11% shortfall, and the largest the corpus permits.
+
+**Why 65M and not the 80M first attempted.** The first launch asked for 80,000 steps and died explicitly on `the corpus ran out at the held-out offset: 0 of 256 sequences past a skip of 647168`. ProtGPT2 trains on Swiss-Prot, which holds **547,921** eligible records in the 32–1022 residue band; ProGen3 trains on UniRef50's 60M. The two protein arms therefore cannot be given equal token budgets on their own declared corpora, and this is a property of the corpora, not a choice. 65,000 steps consumes 520,000 records and block-aligns the held-out draw at 524,288, leaving 23,633 records the training stream never reaches.
+
+**The bias this introduces, and its direction.** The scoring band (64–246 residues) holds **213,034** records, all inside the training band. Consuming 520,000 of 547,921 records means the stage-15 cohort is drawn almost entirely from sequences the dictionary was fitted on, where gpt2's cohort is ~98% unseen because OpenWebText is far larger than its training budget. `--cohort-skip` cannot repair this: under a draw seed the cohort is a window of a seeded permutation of the *whole* eligible corpus, not a file-order prefix, so a skip selects a different window rather than a later one. **The contamination therefore runs toward ProtGPT2 passing.**
+
+**The reading rule, fixed now.**
+
+- If the retrained ProtGPT2 **still fails** the behavioural gate, the conclusion is *strengthened* by the contamination rather than weakened: an arm scored largely on its own training data still could not reconstruct its model's behaviour. Read as evidence that the failure is the protein modality, since a dense GPT-2-architecture arm and a sparse-MoE arm then fail together while text passes.
+- If the retrained ProtGPT2 **passes**, the result is **ambiguous and may not be read as architecture-attribution**, because passing is exactly what the contamination predicts. It would then require a cohort provably disjoint from the training stream before it could support any branch.
+
+**A measurement that will be made either way.** The cohort's 128 records will be intersected against the reproduced 520,000-record training stream to report the *exact* contaminated fraction rather than the ~95% estimated here.
+
+## 2026-08-07 — EXP-R2-143: two protein decoders' fitness advantage is entirely accounted for by retrieval from their training corpus
+
+**The question.** R1.6 asks whether a protein decoder's zero-shot fitness prediction reflects acquired biology or retrieval of homologues it was trained on. Beating BLOSUM62 does not separate those, because a substitution matrix knows nothing about *this* protein's family. LOOKUP is the channel that does: a position-independent profile built from the arm's own declared pretraining corpus, scored on the same 217 ProteinGym substitution assays, with the same variant draw (enforced — the stage refuses to compare two channels whose `mutant_digest` differs).
+
+**Units and controls.** 187 distinct wild types clustered at 50% identity give **174 families**; every interval resamples families, never assays. Three controls, all passing:
+
+| control | measured | reading |
+|---|---|---|
+| positive | LOOKUP +0.3537 against the frozen floor +0.2098 | PASS; BLOSUM62 re-measured here at **+0.20982** against EXP-R2-134's frozen +0.2098, so this pipeline reproduces the number it is gated against |
+| mismatched profile | −0.0132 against BLOSUM62 +0.2097 | PASS; a length- and support-matched profile from a *different* wild type loses badly, so the channel reads this protein's columns rather than generic composition |
+| label shuffle | max \|z\| 3.13 against 4.15 over 1518 values | PASS (see the defect below) |
+
+**The result.**
+
+| arm | corpus identification | MODEL | LOOKUP | **MODEL − LOOKUP** (174-family bootstrap) | MODEL − BLOSUM62 | **retrieval share** | verdict |
+|---|---|---:|---:|---|---:|---|---|
+| protgpt2 | **exact** | +0.3436 | +0.3537 | **−0.0143** [−0.0381, +0.0101] | +0.1343 | **1.107** [0.940, 1.344] | retrieval_bounded |
+| progen2-medium | lower bound | +0.3595 | +0.3574 | **−0.0043** [−0.0303, +0.0216] | +0.1522 | **1.029** [0.878, 1.220] | retrieval_bounded |
+
+Both models are genuinely far better than a substitution matrix — +0.134 and +0.152, separable from zero. **All of that advantage is accounted for by a position-independent lookup over their own training corpus.** The retrieval share is the ratio of what LOOKUP recovers to what the model gains over BLOSUM62, and both intervals contain 1.0. Neither model's interval on MODEL − LOOKUP excludes zero in either direction, and each is contained inside ±50% of that arm's own BLOSUM advantage, which is the declared equivalence bound.
+
+**Which arm carries the weight.** ProtGPT2 is the only arm whose declared pretraining corpus *is* the staged UniRef50, so MODEL − LOOKUP is identified there rather than bounded. Its one caveat runs **against** the retrieval reading and is therefore not a rescue: the local snapshot is newer than the 2021_04 release the model saw, so LOOKUP has access to homologues the model never did. ProGen2-medium's UniRef90 and BFD30 are not staged, so its LOOKUP *under*-counts and its bias runs the other way — toward the model looking acquired. It still only ties.
+
+**What this does not say.** It does not say these models memorised. A position-independent profile is itself a weak statistical object, and matching it is not the same as reproducing it by lookup. It says the *evaluation* cannot distinguish them: on this benchmark, at this resolution, fitness Spearman does not license a claim about acquired biology, and any recovery ratio using this fitness as its denominator inherits that. `alpha_sweep_sign_invariant` is True for ProtGPT2 and **False** for ProGen2-medium, whose point estimate (−0.0043) changes sign across the pseudocount sweep — as a near-zero difference should, and a further reason to read that arm as equivalence rather than as a negative advantage.
+
+**No gradient with homology.** Kendall τ of MODEL − LOOKUP against maximum identity to the corpus is +0.004 (p=0.95) for ProtGPT2 and −0.134 (p=0.023) for ProGen2-medium; against log10 Neff, +0.017 and +0.025 (p=0.74, p=0.64). The threshold-free statistic finds no stratum where the model pulls ahead.
+
+**A control that failed on correct data, found and repaired.** The label-shuffle gate took the maximum |ρ| over every assay and channel and compared it to a constant 0.2. A Spearman correlation under permuted labels has null scale 1/√(n−1) and these assays span n = 63 to 1000, so that maximum measures the smallest assay's null width. It read 0.2467 and FAILED — every one of the top values from `NPC1_HUMAN_Erwood_2022_RPE1`, the single smallest assay, at **1.9 of its own standard deviations**. Standardising all 1518 values by the assay that produced each gives max |z| **3.13** against a Bonferroni quantile of 4.15, and against an expected maximum of ~3.83 for that many standard normals — the shuffled distribution is quieter than the null, not louder. A gate that fails correct data is worse than no gate, because the failure gets waved through. Repaired, pinned by two tests (one asserting the raw maximum still exceeds 0.2, so the premise cannot silently expire), and the pre-repair artefact retained as `retrieval_bound.pre_shufflegate_fix.json`.
+
+**Still to come.** ProGen3-112M is scoring; its corpus is undeclared, so its LOOKUP is the weakest of the three and its bias runs hardest toward "acquired".
