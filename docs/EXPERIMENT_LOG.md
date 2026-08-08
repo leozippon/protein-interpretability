@@ -8948,3 +8948,15 @@ ProtGPT2's dictionary carries **five times** gpt2's latents, because the arm is 
 **The consequence for how EXP-R2-141 must be read: gpt2 was never ProtGPT2's comparator, and gpt2-large is.** gpt2-large is 36 × 1280 — the same depth, width and vocabulary-independent shape as ProtGPT2 — so its dictionary has the same 552,960 latents, and at 132 against 118 tokens per latent the two are matched to within 12%. That is the controlled modality contrast this panel was built to make; gpt2-versus-ProGen3 is the secondary comparison and is unmatched on three axes at once. The reading rule of EXP-R2-142 is unchanged but now attaches to the gpt2-large ↔ protgpt2 pair.
 
 **Also worth stating plainly:** ProtGPT2's 65M retrain still reaches only 118 tokens per latent, below the 181 at which a *text* dictionary already lost half its latents to death. Swiss-Prot cannot supply more. If the retrained arm fails, "the protein dictionary was starved" therefore remains a live alternative to "the protein modality is harder", and separating them would need either a smaller expansion ratio on both 36-layer arms or a protein corpus larger than Swiss-Prot.
+
+**The reciprocal control landed, and the token budget is not what makes the protein arm hard.** `s15_gpt2_tok20m` measures the 20M-token gpt2 dictionary through the same gate:
+
+| dictionary | tokens | tokens per latent | dead | **behavioural recovery** | attention_head ρ |
+|---|---:|---:|---:|---:|---:|
+| gpt2, EXP-R2-141 | 73M | 660 | 8.3% | **+0.9091** [+0.9037, +0.9136] | 0.7032 PASS |
+| gpt2, 20M control | 20M | 181 | 18.2% | **+0.8316** | 0.6425 PASS (p=0.023) |
+| protgpt2, EXP-R2-141 | 20M | 36 | 75.1% | **+0.0542** [+0.0341, +0.0738] | 0.0016 FAIL |
+
+Starving a text dictionary to ProtGPT2's exact token count costs **0.078 of recovery** and it still clears the 0.80 gate, where the protein arm at the same 20M tokens reaches 0.054. At matched tokens the two differ by a factor of fifteen. So "ProtGPT2 saw only 20M tokens" does not by itself explain its failure.
+
+What the pair does **not** settle is tokens per *latent*, which still differs 181 to 36 because the two dictionaries differ fivefold in size. That is exactly the axis the gpt2-large ↔ ProtGPT2 pair holds fixed, and it is the reason that pair, not this one, carries the modality claim.
