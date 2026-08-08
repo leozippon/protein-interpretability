@@ -9003,3 +9003,30 @@ That narrows the open question to exactly one axis. ProGen3 fails for a reason t
 **What it does not mean.** Recovery is normalised by each arm's own clean-to-ablated gap, and those gaps differ (6.91 nats for gpt2-large, 4.30 for ProtGPT2). The ratio is the comparable quantity by this repository's convention and the raw per-token NLLs are not comparable across arms (L23), but the denominators are not matched and a ratio with a smaller denominator is easier to drive negative. It also does not by itself explain the transcoder results: "the blocks are more non-linear" predicts that a *linear* replacement fails, and a sparse dictionary is not a linear replacement. It makes the dictionary's job harder rather than impossible, which is consistent with the trained transcoders beating their free baselines on every arm while still failing the gate on the protein ones.
 
 **Why it matters for the open question.** The remaining axis after EXP-R2-141 was protein modality versus sparse-MoE architecture. This result speaks to it from a direction that needs no dictionary at all, and it puts the dense protein arm with the MoE protein arm rather than with the shape-identical text arm. That is evidence for the modality reading — obtained before the ProtGPT2 retrain that was supposed to deliver it, and immune to the starvation caveat that retrain still carries.
+
+## 2026-08-07 — EXP-R2-145: the dead-latent fraction is not comparable across these arms, and I had been comparing it
+
+**What I found, while watching the retrain.** A latent is called dead when it has been silent for `dead_steps = DEAD_STEPS_SEQUENCES // batch_size` optimisation steps. The threshold is declared in **sequences** — which is what the released code does, and is unobjectionable there, because a single corpus at a fixed rendering makes sequences proportional to tokens. This panel renders five arms at between 125 and 932 tokens per sequence, so the same 10,000-sequence window is a different amount of evidence on every arm:
+
+| arm | batch | tokens per sequence | dead_steps | **tokens in the dead window** | reported dead |
+|---|---:|---:|---:|---:|---:|
+| gpt2 | 8 | 456 | 1250 | 4,560,000 | 8.3% |
+| gpt2, 20M control | 8 | 456 | 1250 | 4,560,000 | 18.2% |
+| gpt2-large | 8 | 456 | 1250 | 4,560,000 | 0.36% |
+| **protgpt2** | 8 | **125** | 1250 | **1,250,000** | **75.1%** |
+| progen3-112m | 16 | 932 | 625 | 9,320,000 | 0.6% |
+
+**ProtGPT2's window holds 3.6× fewer tokens than the text arms' and 7.5× fewer than ProGen3's.** A latent firing once per two million tokens is *alive* on gpt2-large and *dead* on ProtGPT2. The statistic is therefore biased against exactly the arm I used it against, and I used it prominently: in EXP-R2-141 to withdraw the ProtGPT2 row, in the EXP-R2-142 addendum, and in the retraction earlier this evening.
+
+**It is not only a reporting artefact, and the second effect runs the other way.** `dead_steps` also gates the auxiliary revival loss, so ProtGPT2 declares latents dead after less evidence *and* pushes harder to revive them. Its 75.1% is measured under more revival pressure, not less. The net direction is not derivable from the definitions, which is precisely why the number cannot carry a cross-arm comparison.
+
+**What survives and what does not.**
+
+- **Survives — the decision to withdraw ProtGPT2 from EXP-R2-141.** That rested on 36 tokens per latent against gpt2's 660, a training-budget quantity with no window in it, and on a held-out NMSE of 0.359 per layer against gpt2's 0.194. Both are window-free.
+- **Survives — ProGen3 has no data-budget explanation.** That rested on 6,470 tokens per latent, again window-free. Its 0.6% dead is measured on the *largest* window of any arm and should simply be dropped from that argument; the tokens-per-latent figure alone carries it.
+- **Survives — this evening's retraction of the starvation caveat.** It rested on gpt2-large reconstructing at 0.275 per layer against ProtGPT2's 0.359 and passing its loader gate. But it *also* leaned on "0.36% dead, the healthiest in the panel", and that clause is withdrawn: gpt2-large and ProtGPT2 are not comparable on that statistic.
+- **Does not survive — any claim ordering arms by dead fraction.** There are three such sentences in this log and they are superseded by this entry rather than deleted, so the reasoning that produced them stays visible.
+
+**Not repaired in code, deliberately.** Redefining the window in tokens is the principled fix and it is the right change for a panel that renders arms this differently. It is not being made now, because `dead_steps` drives training and not just reporting: changing it would make the running ProtGPT2 retrain incomparable to the four dictionaries already frozen, and the comparison those four support is the one this campaign is for. Recorded here as a known limitation of the panel's training instrument, to be fixed before any future campaign that trains a new set of dictionaries from scratch.
+
+**How the ProtGPT2 retrain must therefore be read.** Its dead fraction may be reported but may not be compared to gpt2-large's. The comparable quantities are held-out NMSE per layer, and the behavioural recovery the replacement gate measures — which is the number the matched pair was built to produce and is unaffected by any of this.
