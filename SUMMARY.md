@@ -22,7 +22,7 @@
 | R1.6 | 1. 比较模型家族 | 蛋白知识与新颖性 | ProGen3 的 fitness 预测优于简单替换矩阵，但尚不能确认它超过训练语料同源检索，也没有证明模型能生成真正新颖且有效的蛋白质。 | **部分成立** | Retrieval bound、独立 fitness 和新颖性验证尚未完成。 |
 | R2.1 | 2. 评估方法迁移 | 能够迁移的方法 | Tuned Lens、Activation Patching、部分 Probe 和 Concept Erasure 能够应用于蛋白模型并产生稳定结果。 | **已确认** | 这些方法多数只能回答局部问题，不能单独形成完整机制解释。 |
 | R2.2 | 2. 评估方法迁移 | Attention selector 迁移 | 本项目 PAA 在文本模型上能够找回因果重要 heads，但在多数蛋白模型上失败；原有 induction census 的全层统计又受到深度混淆。Attention 模式不能直接当成蛋白模型的因果机制。 | **核心迁移结果** | PAA 的蛋白失败尚未定位到具体 selector 因素。 |
-| R2.3 | 2. 评估方法迁移 | SAE、Transcoder 与 CLT | 稀疏 replacement 确实学到了廉价线性映射学不到的非线性结构（自由基线被明确超越），但良好重建既不保证行为忠实也不保证因果忠实：重建排序在忠实度门控下完全消失。CLT 的等宽优势是容量效应而非跨层连接效应——且该结论只在参数预算或墙钟预算下成立，在推理 FLOP 预算下反转。 | **核心负面结果** | Dense 文本/蛋白正式对照进行中，尚不能判断失败属于蛋白、MoE 还是方法本身。 |
+| R2.3 | 2. 评估方法迁移 | SAE、Transcoder 与 CLT | 稀疏 replacement 确实学到了廉价线性映射学不到的非线性结构（自由基线被明确超越），但良好重建既不保证行为忠实也不保证因果忠实：重建排序在忠实度门控下完全消失。CLT 的等宽优势是容量效应而非跨层连接效应——且该结论只在参数预算或墙钟预算下成立，在推理 FLOP 预算下反转。**方法本身已被排除：** 同一协议在 GPT-2 上行为恢复 0.909，首次越过 0.80 门控（EXP-R2-141）。 | **核心负面结果；方法侧已排除** | 失败属于模态还是 MoE 架构，取决于 ProtGPT2 的重训结果——原 ProtGPT2 字典 75% 死亡，已撤出该比较。 |
 | R2.4 | 2. 评估方法迁移 | 统一因果审计 | 重建率、probe accuracy、attention pattern 和 performance recovery 都不足以单独支持机制解释；必须同时检查 attainability、fidelity、causal retrieval、分母有效性和独立数据稳定性。 | **主要方法学贡献** | 需要把同一套门控扩展到更多新一代方法。 |
 | R2.5 | 2. 评估方法迁移 | 蛋白测量基底 | 蛋白实验对输入渲染、序列区间、同源性、文件顺序、tokenization 和小字母表更敏感；很多表面模态差异实际来自这些接口。 | **已确认** | 需要把这些控制固化为统一蛋白评价协议。 |
 | R3.1 | 3. 开发适配方法 | PAA | PAA 是本研究提出并完成验证的方法：它在文本上有效，并揭示了蛋白 attention selector 的迁移失败；但它尚不是成功的蛋白特异方法。 | **方法创新已完成；蛋白适配失败** | 没有发现足够具体、可复现的失败因子，因此暂不应继续堆叠启发式特征。 |
@@ -47,12 +47,12 @@
 | Replacement 自由基线 | ProGen3-112M：逐层仿射最小二乘映射 vs 全部 transcoder | 自由基线（rule 28）的行为恢复率 | 线性映射恢复 −1.61 至 −1.64，比均值消融地板还差，且在 16 倍拟合数据范围内饱和（变化 0.003），说明这是块非线性的性质而非欠拟合。全部 transcoder 明确胜出。 | **已完成；本项目字典方向的首个正面结果** | R2.3、R2.4 |
 | ProGen3 Loader Audit | ProGen3-112M MegaBlocks 权重 vs eager 路径 | checkpoint 加载后的真实计算 | 直接 eager 加载的 MoE experts 保持随机；严格转换后的 scored self-check 恢复合理 NLL。 | **已完成** | R2.4、R2.5 |
 | CLT/PLT Capacity Match | ProGen3 上的 CLT、等宽 PLT、参数匹配 PLT，各 2 个语料 seed | 重建误差在不同资源匹配下的排序，以及该排序是否进入忠实度 | 等宽 CLT 比 PLT 好 11.7%；匹配参数后宽 PLT 反而好 0.126（按 seed 配对差 +0.1294/+0.1228，95% CI [0.084, 0.168]，并在独立 Swiss-Prot cohort 上复现）。但该排序**不进入忠实度**：行为恢复 0.1450 vs 0.1464，两个配对差符号相反，本设计的最小可检测差 0.0546 大于全部七个 arm 的总极差 0.0436。 | **已完成；等宽比较为嵌套模型类** | R2.3 |
-| Replacement Faithfulness | ProGen3 正式结果；GPT-2/ProtGPT2 Dense 冒烟 | sequential replacement 的行为恢复和 causal retrieval | ProGen3 replacements 恢复约 11–16% 的行为差距并失败因果门控；Dense 目前只有端到端冒烟。 | **ProGen3 完成；Dense 进行中** | R2.3、R2.4、R3.2 |
+| Replacement Faithfulness | 同一冻结快照、同一协议（12× 扩展、k=64、20000 步）下的 gpt2、ProtGPT2、ProGen3，各自对照自身自由线性基线 | sequential replacement 的行为恢复和 causal retrieval | 行为恢复：gpt2 **+0.9091** [+0.9037, +0.9136]（越过 0.80 门控），ProGen3 +0.1337 [+0.1180, +0.1503]，ProtGPT2 +0.0542（**已撤出**，见下）。三者都胜过自身自由基线（+0.263 / −1.611 / −0.716），attainability 全部 ATTAINABLE，区间互不重叠。 | **文本控制完成并通过；ProGen3 完成并失败；ProtGPT2 因字典欠训练撤回** | R2.3、R2.4、R3.2 |
 | MoE Routing Audit | ProGen3-112M；随机分组（等基数自由基线）与残基身份（混淆项） | selected-set 与 boundary-margin 分组对 replacement residual 的留出解释量 | 在 replacement 真正失败的第 4–8 层，selected-set 分组**不减少任何留出误差**（−0.0007 至 −0.00002），只是比等基数随机分组少亏 +0.0002–0.0008，算术上限 0.0022–0.0034；boundary-margin 分组在每一层都更弱。 | **已完成；预注册 null 成立** | R1.5、R2.3、R3.2 |
 | Frozen-attention Check | GPT-2-large vs ZymCTRL | 冻结 attention 后保留的上下文信息 | 两个模型均保留约 77%，没有出现蛋白侧额外下降。 | **已完成的负结果** | R1.1、R2.4 |
 | Fitness Baseline | ProGen3-112M vs BLOSUM62，ProteinGym | Zero-shot fitness Spearman 优势 | 完整 benchmark 上模型优势为 +0.0647，置信区间高于零；论文的小面板无法单独解析该优势。 | **已完成** | R1.6 |
 | Homology Control | Dense 蛋白模型与 UniRef50 同源层 | induction 指标随训练集同源性的变化 | 没有真实低同源层；head count 未随同源层分离，峰值强度与记忆解释一致。 | **受数据覆盖限制** | R1.3、R1.6 |
-| Retrieval Bound | ProGen3-112M vs UniRef50 profile/nearest-neighbour baseline | 模型 fitness 是否超过自身训练语料 lookup | 暂无正式科学结果。 | **进行中** | R1.6 |
+| Retrieval Bound | 217 个 ProteinGym assay；LOOKUP（UniRef50 位点独立 profile）vs BLOSUM62 vs 三个 arm | 模型 fitness 是否超过对自身训练语料的同源检索 | LOOKUP 通道本身已测定：全 benchmark 平均 Spearman **+0.3537**（中位 +0.3560），明显高于本仓库冻结的 BLOSUM62 基线 +0.2098；六个通道的打乱标签对照全部落在 ±0.006 内，说明统计量已校准。187 个野生型聚为 174 个 50% 同源簇，其中 73 个是 UniRef50 的逐字节相同记录。模型侧 Spearman 与 MODEL − LOOKUP 判定仍在计算。 | **LOOKUP 已完成；模型对比进行中** | R1.6 |
 
 ## 当前进行中
 
@@ -60,11 +60,13 @@
 
 | 进行中的实验 | 判定什么 | 判定规则（已预先声明） |
 |---|---|---|
-| **最小归因对照**：gpt2-large、protgpt2（匹配模态对，架构/深度/宽度/词表/参数量完全相同）、gpt2、ProGen3 各训练一个 PLT，再通过同一套忠实度门控 | replacement 的失败属于模态、架构、方法还是评价接口 | 蛋白 Dense 与 MoE 都失败而文本通过 → residue/interface 或扩展 PAA 方向；文本 MoE 与蛋白 MoE 失败而 Dense 通过 → expert/router/path 方向；全部失败 → 通用 replacement 或因果评价接口方向；**只有 ProGen3 失败 → 优先排查模型、数据与任务队列，不提出通用新方法** |
-| **训练语料检索上界**：MODEL − LOOKUP，其中 LOOKUP 是对该 arm 自身声明的预训练语料做的位点独立 profile，对照 217 个 ProteinGym 湿实验 assay。**重采样单位是 50% 同源簇而非 assay**：187 个野生型聚为 174 簇，其中 73 个是 UniRef50 的逐字节相同记录（已实测）。 | ProGen3 的 fitness 优势是否超过对自身语料的同源检索 | 若不超过，则任何以该 fitness 为分母的 recovery ratio（包括 ProGenMech 的与本项目的）都不能支撑机制主张。正控制下限取本仓库自身冻结的 BLOSUM62 全benchmark均值 +0.2098（本地独立复现为 +0.2124），而非无法在本机核实的已发表数值。 |
+| **最小归因对照（收尾中）**：gpt2 与 ProGen3 已完成，**ProtGPT2 按匹配 token 预算重训**（80000 步 ≈ 80M token，对齐 gpt2 的 73M），反向对照 gpt2 在 ProtGPT2 原预算（20M token）下重训；gpt2-large 的 PLT 仍在训练 | replacement 的失败属于模态、架构、方法还是评价接口 | 方法一支已排除（gpt2 恢复 0.909）。**剩余判定完全落在重训后的 ProtGPT2 上**：重训后仍失败 → 模态（蛋白 Dense 与 MoE 都失败）→ residue/interface 或扩展 PAA 方向；重训后通过 → 架构（只有 MoE 失败）→ expert/router/path 方向。gpt2-large 只用于排除深度混淆（36 层文本对照 ProtGPT2 的 36 层）。 |
+| **训练语料检索上界（收尾中）**：LOOKUP 通道已完成（+0.3537），三个 arm 的 zero-shot fitness 打分正在 H200 上运行，随后是 MODEL − LOOKUP 的等价性判定。**重采样单位是 50% 同源簇而非 assay**：187 个野生型聚为 174 簇，其中 73 个是 UniRef50 的逐字节相同记录（已实测）。 | 各 arm 的 fitness 优势是否超过对自身语料的同源检索 | 若不超过，则任何以该 fitness 为分母的 recovery ratio（包括 ProGenMech 的与本项目的）都不能支撑机制主张。正控制下限取本仓库自身冻结的 BLOSUM62 全benchmark均值 +0.2098（本地独立复现为 +0.2124），而非无法在本机核实的已发表数值。**LOOKUP 已经高于该下限 0.14，因此这条上界是有约束力的，不是形式检查。** |
 
 **已知的不可消除限制，先记录再测量：** ProGen3-112M 的模型卡未声明训练语料，ProGen2-medium 的 BFD30 未落盘，因此这两个 arm 的 LOOKUP 只能以 UniRef50 作代理，**系统性低估其语料支持度，偏向于让模型通过**。ProtGPT2 是唯一语料被精确识别的 arm（其声明语料就是已落盘的 UniRef50），因此它的结果权重最高。
 
-**当前最可能的分支，需说明而非回避：** 上表“只有 ProGen3 失败”一支目前是活假设而非边缘情形。本项目全部 replacement 数字都来自这一个模型，且 EXP-R2-139 已表明它的块是强非线性的。最小归因对照正是用来把这一支与其余三支分开的。
+**分支状态更新（EXP-R2-141）：** “全部失败”一支已被排除——GPT-2 在同一协议下恢复 0.909，是本项目第一个越过 0.80 行为门控的 arm，因此失败不属于方法本身。“只有 ProGen3 失败”一支仍然存活，但不再是最可能的一支：它现在与“蛋白模态失败”并列，二者只能由重训后的 ProtGPT2 分开。
+
+**本对照自身暴露的设计缺陷，记录而非掩盖：** 三个 arm 匹配的是*序列数*而不是 *token 数*。由于每个 arm 的渲染方式不同（每序列 125 / 456 / 932 token），ProtGPT2 实际只看到 20M token 却要拟合 8.3 倍于 gpt2 的字典参数，训练结束时 **75.1% 的 latent 已死亡**（gpt2 为 8.3%，ProGen3 为 0.6%）。这样的字典没有测量它的 arm，因此 ProtGPT2 的 0.054 被撤出模态判定，而不是当作模态证据报告。修正方式是把 token 预算而非序列数声明为匹配量。
 
 当前最有根据的建设方向依次是：因果忠实的 replacement 目标、层内因果校准的 selector，以及 tokenization 匹配的 pathway 分析。DAS/causal abstraction、完整新一代 circuit tracing、完整蛋白 attribution graph 和文本 MoE 对照尚无完成实验，不写成已有成果。

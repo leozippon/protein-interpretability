@@ -8822,3 +8822,45 @@ Two corruptions that raise nothing, measured on the same inputs: **ProtGPT2 rend
 **A defect in existing code, found and not repaired.** `17_train_transcoder.py` draws its held-out set past `steps * batch + eval_sequences` records and its docstring claims disjointness. The skip is in *file order* while the stream shuffles within an 8192-record block, so the two are disjoint only when the training budget consumes whole blocks. At the campaign's own setting (20000 steps × batch 16 = 320,000 records) training emits 512 records of the 40th block uniformly at random, each held-out record from that block was available to it with probability 512/8192, and the expectation is **16 of the 256 held-out sequences (6.25%)** having been trained on. Pinned by `tests/test_replaceable_arms.py::HeldOutStream`, which asserts both the property that holds and the leak that remains, and recorded in the stage. Not repaired: the fix moves the held-out draw and would make the published EXP-R2-136/138 runs irreproducible.
 
 **One new gate worth naming.** Depth and width do not identify an arm, and on this panel they positively fail to: gpt2-large and ProtGPT2 are both 36 × 1280. `TranscoderConfig` now records the arm it was trained against and stage 15 refuses a mismatch; verified live, a gpt2-large transcoder offered to `--arm protgpt2` is refused rather than measured. Checkpoints written before the field exists declare `null` and the artefact says the check did not run.
+
+## 2026-08-07 — EXP-R2-141: the minimal attribution control, and the confound it exposed in one of its own arms
+
+**Why.** Every replacement number this programme owned came from ProGen3-112M, where protein, mixture-of-experts and transcoder replacement are collinear at n=1. `17_train_transcoder.py` and `15_replacement_faithfulness.py` now take `--arm`, so the same protocol — per-layer transcoder, 12× expansion, k=64, 20,000 steps, corpus seed 20260806 — was run on three arms and each was scored against its own free linear baseline (standing rule 28) under one frozen snapshot, `20260807122347_c08643f75830`.
+
+**Behavioural recovery, the fraction of the clean-to-fully-ablated NLL gap the replacement closes.** Gate 0.80. Intervals are paired per-sequence bootstraps over 128 cohort sequences, 1000 replicates.
+
+| arm | family | modality | clean → replacement → ablated | **recovery (trained PLT)** | free linear baseline |
+|---|---|---|---|---:|---:|
+| gpt2 | dense | text | 3.117 → 3.694 → 9.468 | **+0.9091** [+0.9037, +0.9136] | +0.2630 [+0.2461, +0.2794] |
+| protgpt2 | dense | protein | 5.363 → 9.432 → 9.665 | **+0.0542** [+0.0341, +0.0738] | −0.7158 [−0.7885, −0.6560] |
+| progen3-112m | MoE | protein | 1.857 → 3.089 → 3.279 | **+0.1337** [+0.1180, +0.1503] | −1.6112 [−1.7704, −1.4773] |
+
+Every arm beats its own free baseline and every interval is tight and disjoint from the others, so the ordering is not a resolution artefact. Every attainability gate reads ATTAINABLE, so no failing number here is excused by an unattainable ceiling. All three verdicts are PARTIAL.
+
+**The reading that is available.** GPT-2 clears the 0.80 gate at 0.909; ProGen3-112M, under the same protocol and with the healthiest dictionary of the three, reaches 0.134. The replacement-model method is therefore **not** globally broken — it works on the text control at full strength — and its failure on ProGen3 is not attributable to the method alone. That is §5's organising rule discharged for this stage: the limitation lives in the transfer, not in the method.
+
+**The reading that is NOT available, and the arm that was supposed to supply it.** ProtGPT2 is the arm that separates modality from architecture — a GPT-2 block structure trained on protein. Its 0.054 cannot carry that weight, because its dictionary is a training failure rather than a measurement:
+
+| arm | training tokens | latents | dead at final step | dead % | dictionary params per token |
+|---|---:|---:|---:|---:|---:|
+| gpt2 | 72,971,083 | 110,592 | 9,179 | 8.3% | 2.33 |
+| protgpt2 | 20,042,346 | 552,960 | 415,446 | **75.1%** | **70.66** |
+| progen3-112m | 298,139,631 | 46,080 | 273 | 0.6% | 0.12 |
+
+Holding *sequences* fixed across arms does not hold *tokens* fixed: at 125 tokens per rendered sequence ProtGPT2 saw 3.6× fewer tokens than gpt2 while fitting 8.3× more dictionary parameters. Three quarters of its latents were dead when training stopped, and its held-out NMSE runs 0.5–0.79 across the deep half of the model where gpt2 peaks at 0.32. **A dictionary that is 75% dead has not measured its arm**, so ProtGPT2 is withdrawn from the modality-versus-architecture comparison rather than reported as evidence for it. The confound was found in this stage's own diagnostics, not in review.
+
+**What is running to repair it.** `tc_protgpt2_tokmatched` retrains the same architecture at 80,000 steps × batch 8 ≈ 80M tokens, matching gpt2's 73M to within 10% with every other hyperparameter byte-identical (the trainer is the same file in both snapshots, verified by sha256). The reciprocal control `tc_gpt2_tok20m` trains gpt2 at 5,500 steps ≈ 20M tokens — ProtGPT2's original budget — because if text still recovers at that budget then the token count is not what makes the protein arms hard. Neither result is in hand; nothing above depends on them except the ProtGPT2 row, which is withheld until they are.
+
+**A note on what "same protocol" bought and did not buy.** Expansion ratio (12×), k (64), auxk, dead-latent revival, corpus seed and step count were matched by construction. Token budget and dictionary-parameters-per-token were not, and are not derivable from the matched quantities because they depend on each arm's own rendering. That is a defect in how this comparison was specified, and the fix is to declare the token budget as the matched quantity rather than the sequence count.
+
+**Causal rank agreement, recorded but not yet interpretable.** Gate 0.50, top-k overlap against the exact hypergeometric null at α=0.05.
+
+| arm | replacement | attention_head ρ | block family ρ | top-k overlap |
+|---|---|---:|---:|---|
+| gpt2 | trained PLT | **0.7032** PASS | 0.0210 | 5/10 attn PASS (p=1.1e-4); 2/4 mlp FAIL |
+| gpt2 | linear | 0.0917 | 0.6084 | 4/10 FAIL; 2/4 FAIL |
+| protgpt2 | trained PLT | 0.0016 | 0.2088 | 0/10 FAIL; 4/10 FAIL |
+| progen3-112m | trained PLT | 0.4804 | **0.8909** | 4/10 FAIL (p=0.052); 2/3 FAIL |
+| progen3-112m | linear | 0.0264 | 0.0788 | 4/10 FAIL; 1/3 FAIL |
+
+The block-family correlations invert against the behavioural ordering — gpt2's trained PLT ranks mlp blocks *worse* than its own linear baseline (0.021 vs 0.608) while ProGen3's ranks MoE blocks at 0.891 despite recovering only 0.134 of the behavioural gap. Both are computed over very few resolved components (4 and 3 respectively), which is why every top-k overlap fails its exact test regardless of ρ. **These numbers are reported and not read**: a rank correlation over three or four components is not a measurement this programme will interpret, and the resolved-component count, not the correlation, is the thing to fix.
