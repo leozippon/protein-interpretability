@@ -9063,3 +9063,37 @@ The separation between the shape-matched pair is **1.010 at n=128 and 1.034 at n
 | **protgpt2, 65M retrain** | 36 × 1280 | 552,960 | 108 | **0.2376** |
 
 **The retrained protein dictionary now reconstructs its model's blocks *better* than the text dictionary reconstructs its own**, on matched architecture, matched dictionary size and a comparable token budget. Whatever the replacement gate returns for it, it can no longer be answered with "the protein dictionary was worse" — that objection is now measured and false. This is the condition the matched pair was built to reach.
+
+## 2026-08-08 — EXP-R2-147: the replacement failure is the protein modality, not the mixture-of-experts architecture
+
+**The measurement this campaign was built to make.** ProtGPT2 and gpt2-large are the same decoder shape — 36 layers, width 1280 — so a per-layer transcoder at the panel's fixed 12× expansion gives each an identically sized 552,960-latent dictionary solving an estimand verified bit-identical between the two (`max|difference| = 0.0`, dense-arm entry of 2026-08-07). They differ in what the model was trained on. Read against the rule pre-registered in EXP-R2-142 before either number existed.
+
+| arm | modality | tokens per latent | held-out NMSE per layer | **behavioural recovery** | 95% CI |
+|---|---|---:|---:|---:|---|
+| **gpt2-large** | text | 132 | 0.2750 | **+0.9322** | [+0.9286, +0.9352] |
+| **protgpt2, 65M retrain** | protein | 108 | **0.2376** | **+0.1641** | pending pull |
+
+**The protein arm's dictionary reconstructs better and its replacement recovers a sixth as much.** Against the 0.80 gate, the text arm passes at 0.932 and the shape-matched protein arm fails at 0.164.
+
+**Placed against the full panel, the attribution is unambiguous.**
+
+| arm | family | modality | recovery |
+|---|---|---|---:|
+| gpt2-large | dense | text | +0.9322 |
+| gpt2 (seed 06 / 07) | dense | text | +0.9091 / +0.9084 |
+| **protgpt2 (retrained)** | **dense** | **protein** | **+0.1641** |
+| progen3-112m (seed 06 / 07) | **sparse MoE** | protein | +0.1337 / +0.1262 |
+
+The dense protein arm sits with the sparse-MoE protein arm at 0.13–0.16, not with the dense text arm of identical shape at 0.93. **The split is by modality. Mixture-of-experts is exonerated:** ProGen3's failure is not caused by its routing, because a dense protein decoder with no routing at all fails the same way and by the same margin. This closes the last open branch of the minimal attribution control.
+
+**Every remaining bias ran toward the protein arm passing, and it failed anyway.** This matters more than the margin, because it means the result is not resting on a favourable setup:
+
+1. **Cohort contamination, now measured rather than estimated.** EXP-R2-142 promised to intersect the scored cohort against the reproduced training stream. Done: **115 of 128 cohort records (89.8%)** were in the 520,000-record stream the dictionary trained on. ProtGPT2 was scored almost entirely on sequences it had fitted; gpt2-large was not, at 40.4%.
+2. **Reconstruction favoured the protein arm** — 0.2376 against 0.2750 per layer. The objection "the protein dictionary was simply worse" is measured and false.
+3. **More data helped, and helped materially, but not toward text.** The retrain tripled recovery from 0.0542 to 0.1641 on 3× the tokens, so the earlier starvation was real and worth repairing — and the repaired arm landed squarely in ProGen3's range rather than moving toward gpt2-large's.
+
+**What this licenses, stated precisely.** For sequential per-layer transcoder replacement under this protocol, the behavioural-fidelity failure is a property of protein decoders rather than of the method (text passes at 0.91–0.93), of the dictionary's training budget (ProGen3 has the panel's largest by 10×, ProtGPT2 now reconstructs best of the 36-layer pair), of depth (36 layers recover slightly more than 12), or of sparse routing (a dense protein arm fails identically). Per §5's organising rule, this is a **transfer** limitation, not a method limitation.
+
+**What it does not license.** It does not explain *why*, and the free-baseline result (EXP-R2-144) is the current best clue rather than an answer: a least-squares affine map of a block's input recovers +0.26 to +0.29 on text and −0.72 to −1.61 on protein, so protein blocks carry far less of their behaviour in the linear part of the input-output map. That makes a sparse dictionary's job harder; it does not establish that this is the mechanism. Two arms per modality is also two, not many — the claim is about these four decoders, and ZymCTRL and the ProGen2 family cannot yet test it because they need their own verified estimand adapter.
+
+**Causal-retrieval figures are pending** the 36 × 20-head ablation sweep and will be appended; the behavioural gate above is final.
