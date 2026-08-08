@@ -1489,6 +1489,82 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("must be given together", result.stderr)
 
+    def _poll_verdict(self, staged: str, expect: str | None) -> str:
+        """Run one dispatch to the point of its poll verdict and return it.
+
+        The pull is never reached: this exercises the completion test alone,
+        which is the part that decides whether a directory is finished.
+        """
+
+        root = Path(tempfile.mkdtemp(prefix="expect_"))
+        run_id_hash = subprocess.run(
+            ["bash", str(CONTROLLER), "--print-code-hash"],
+            capture_output=True, text=True, cwd=str(REPO_ROOT),
+            env={**os.environ, "H200_POD": "unused",
+                 "H200_ACCESS_ROOT": "/nonexistent-access-root"},
+            timeout=600,
+        ).stdout
+        code_hash = re.search(r"^CODE_HASH=([0-9a-f]{64})$", run_id_hash, re.M).group(1)
+        run_id = f"20260101000000_{code_hash[:12]}"
+
+        snapshot = root / "packages" / run_id
+        (snapshot / "scripts" / "transfer").mkdir(parents=True)
+        (snapshot / "scripts" / "transfer" / "20_retrieval_bound.py").write_text("", encoding="utf-8")
+        out_dir = root / "results" / "external_baseline" / run_id / "score"
+        out_dir.mkdir(parents=True)
+        (out_dir / staged).write_text("{}", encoding="utf-8")
+
+        pod_exec = root / "pod_exec.sh"
+        pod_exec.write_text('#!/usr/bin/env bash\necho LAUNCHED\n', encoding="utf-8")
+        pod_exec.chmod(0o755)
+
+        command = [
+            "bash", str(self.DRIVER), "--run-id", run_id,
+            "--snapshot-dir", str(snapshot), "--stage", "20_retrieval_bound.py",
+            "--label", "score", "--gpu", "0",
+        ]
+        if expect is not None:
+            command += ["--expect", expect]
+
+        result = subprocess.run(
+            command, capture_output=True, text=True, cwd=str(REPO_ROOT),
+            env={**os.environ, "H200_POD": "unused",
+                 "H200_POD_BASH": str(LOCAL_POD_BASH), "H200_POD_EXEC": str(pod_exec),
+                 "GPFS_PROJECT_ROOT": str(root),
+                 "LIVENESS_SETTLE_SECONDS": "0", "GRACE_SECONDS": "0",
+                 "POLL_SECONDS": "1", "TIMEOUT_SECONDS": "3"},
+            timeout=600,
+        )
+        verdict = re.search(r"score (PRESENT|ABSENT|UNRESOLVED) after", result.stdout)
+        self.assertIsNotNone(verdict, f"no poll verdict on stdout: {result.stdout[-800:]}")
+        return verdict.group(1)
+
+    def test_a_staged_input_does_not_read_as_a_finished_measurement(self):
+        """The false success --expect exists to prevent.
+
+        20_retrieval_bound.py's score stage reads wildtypes.json from the
+        directory it writes score.json into. Under the default completion test
+        -- any .json in the output directory -- the staged input satisfies the
+        poll on its first tick, so the controller pulls a directory holding no
+        measurement and reports it ADMITTED.
+        """
+
+        self.assertEqual(
+            self._poll_verdict(staged="wildtypes.json", expect=None), "PRESENT",
+            "the default test no longer accepts any .json; this test's premise is stale",
+        )
+        self.assertEqual(
+            self._poll_verdict(staged="wildtypes.json", expect="score.json"), "UNRESOLVED",
+            "a staged input satisfied --expect; a partial pull would be admitted",
+        )
+
+    def test_expect_accepts_the_artefact_it_names(self):
+        """The guard must still recognise a real completion, or it is a hang."""
+
+        self.assertEqual(
+            self._poll_verdict(staged="score.json", expect="score.json"), "PRESENT",
+        )
+
     def test_a_bare_wait_cannot_tell_a_failed_lane_from_a_successful_one(self):
         """Why the operator guide requires per-PID waiting.
 

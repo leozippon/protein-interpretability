@@ -36,6 +36,15 @@ set -euo pipefail
 #   gets its own results directory, because a resume key has no condition axis
 #   and two conditions in one root would overwrite each other.
 #
+#   --expect <basename> names the artefact that means "done". Completion is
+#   otherwise read as "any .json appeared in the output directory", which is
+#   right for a stage that writes into a directory it alone owns. A stage that
+#   READS an input staged into that same directory -- 20_retrieval_bound.py's
+#   score stage reads wildtypes.json from --out -- must name its artefact, or
+#   the input reads as completion and the controller pulls a partial result and
+#   admits it. The default is unchanged, so this is required only where the
+#   output directory is not empty at launch.
+#
 #   To run several conditions of ONE comparison concurrently, freeze once and
 #   hand every invocation the same snapshot:
 #
@@ -68,6 +77,7 @@ LABEL=""
 GPU="0"
 RUN_ID=""
 SNAPSHOT_DIR=""
+EXPECT=""
 POLL_SECONDS="${POLL_SECONDS:-120}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-57600}"
 STAGE_ARGS=()
@@ -83,6 +93,7 @@ while [ $# -gt 0 ]; do
     --gpu) GPU="$2"; shift 2 ;;
     --run-id) RUN_ID="$2"; shift 2 ;;
     --snapshot-dir) SNAPSHOT_DIR="$2"; shift 2 ;;
+    --expect) EXPECT="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     --) shift; STAGE_ARGS=("$@"); break ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -167,6 +178,7 @@ mkdir -p "$(dirname "${LOCAL_RECORD}")"
   printf 'label\t%s\n' "${LABEL}"
   printf 'gpu\t%s\n' "${GPU}"
   printf 'out\t%s\n' "${OUT_DIR}"
+  printf 'expect\t%s\n' "${EXPECT:-any .json}"
   printf 'stage_args\t%s\n' "${STAGE_ARGS[*]-}"
   printf 'dispatched_utc\t%s\n' "$(date -u -Is)"
 } > "${LOCAL_RECORD}"
@@ -215,6 +227,20 @@ fi
 
 # --------------------------------------------------------------------- poll
 
+# What "done" looks like in the output directory. Declared once and asked twice
+# below, because the two call sites must agree: a poll that accepted a file the
+# confirming re-poll rejected would turn a finished run into an ABSENT.
+if [ -n "${EXPECT}" ]; then
+  PRESENT_PATTERN="^${EXPECT}\$"
+else
+  PRESENT_PATTERN="\\.json\$"
+fi
+present() {
+  "${H200_POD_BASH}" \
+    "ls -1 '${OUT_DIR}' 2>/dev/null | grep -q '${PRESENT_PATTERN}' && echo PRESENT" \
+    2>/dev/null | grep -q PRESENT
+}
+
 # An item is absent only once the GPU it was scheduled on is observed idle.
 # Checking for the artefact the moment the launcher returns reports MISSING on
 # work that is still running -- the lesson logs/drivers/d2c_panel_h200.sh
@@ -230,8 +256,7 @@ sleep "${GRACE_SECONDS}"
 waited="${GRACE_SECONDS}"
 status="UNRESOLVED"
 while [ "${waited}" -lt "${TIMEOUT_SECONDS}" ]; do
-  if "${H200_POD_BASH}" "ls -1 '${OUT_DIR}' 2>/dev/null | grep -q '\.json$' && echo PRESENT" \
-      2>/dev/null | grep -q PRESENT; then
+  if present; then
     status="PRESENT"; break
   fi
   busy="$("${H200_POD_BASH}" \
@@ -239,8 +264,7 @@ while [ "${waited}" -lt "${TIMEOUT_SECONDS}" ]; do
   if [ -n "${busy}" ] && ! printf '%s\n' "${busy}" \
       | awk -F', *' -v g="${GPU}" '$1==g && $2>1000{f=1}END{exit !f}'; then
     sleep 45
-    if "${H200_POD_BASH}" "ls -1 '${OUT_DIR}' 2>/dev/null | grep -q '\.json$' && echo PRESENT" \
-        2>/dev/null | grep -q PRESENT; then
+    if present; then
       status="PRESENT"; break
     fi
     status="ABSENT"; break
