@@ -8960,3 +8960,16 @@ ProtGPT2's dictionary carries **five times** gpt2's latents, because the arm is 
 Starving a text dictionary to ProtGPT2's exact token count costs **0.078 of recovery** and it still clears the 0.80 gate, where the protein arm at the same 20M tokens reaches 0.054. At matched tokens the two differ by a factor of fifteen. So "ProtGPT2 saw only 20M tokens" does not by itself explain its failure.
 
 What the pair does **not** settle is tokens per *latent*, which still differs 181 to 36 because the two dictionaries differ fivefold in size. That is exactly the axis the gpt2-large ↔ ProtGPT2 pair holds fixed, and it is the reason that pair, not this one, carries the modality claim.
+
+**And the same table settles the starvation question for ProGen3 outright, using numbers already in hand.** Ordering the panel by data per latent rather than by token count:
+
+| dictionary | tokens | latents | **tokens per latent** | dead | behavioural recovery |
+|---|---:|---:|---:|---:|---:|
+| progen3-112m | 298,139,631 | 46,080 | **6,470** | **0.6%** | **+0.1337** |
+| gpt2, EXP-R2-141 | 72,971,083 | 110,592 | 660 | 8.3% | +0.9091 |
+| gpt2, 20M control | 20,035,238 | 110,592 | 181 | 18.2% | +0.8316 |
+| protgpt2, EXP-R2-141 | 20,042,346 | 552,960 | 36 | 75.1% | +0.0542 |
+
+**ProGen3's dictionary is the best-fed in the panel by an order of magnitude and the healthiest by every available measure — ten times gpt2's data per latent, and a dead fraction thirteen times lower — and it recovers a seventh as much of the behavioural gap.** Recovery is, if anything, *inversely* ordered with data per latent across these four runs. No data-budget explanation of ProGen3's failure survives this, and none needs to be entertained again.
+
+That narrows the open question to exactly one axis. ProGen3 fails for a reason that is not the method (gpt2 passes at 0.909 under the identical protocol) and not the dictionary's training budget (it has the most). What remains is whether the cause is the **protein modality** or the **sparse-MoE architecture** — and ProtGPT2, a dense GPT-2-shaped arm on protein, is the only member of this panel that separates them. That is what the 65M retrain is for, and why its own starvation had to be repaired before it could be read.
