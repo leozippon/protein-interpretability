@@ -9030,3 +9030,36 @@ That narrows the open question to exactly one axis. ProGen3 fails for a reason t
 **Not repaired in code, deliberately.** Redefining the window in tokens is the principled fix and it is the right change for a panel that renders arms this differently. It is not being made now, because `dead_steps` drives training and not just reporting: changing it would make the running ProtGPT2 retrain incomparable to the four dictionaries already frozen, and the comparison those four support is the one this campaign is for. Recorded here as a known limitation of the panel's training instrument, to be fixed before any future campaign that trains a new set of dictionaries from scratch.
 
 **How the ProtGPT2 retrain must therefore be read.** Its dead fraction may be reported but may not be compared to gpt2-large's. The comparable quantities are held-out NMSE per layer, and the behavioural recovery the replacement gate measures — which is the number the matched pair was built to produce and is unaffected by any of this.
+
+## 2026-08-08 — EXP-R2-146: the stability and robustness checks the conclusions were required to pass
+
+Retained constraint (1) of this campaign is that no conclusion stands without a stability check. Three were run and all three pass.
+
+**Corpus-seed stability, paired on the two arms that carry the contrast.** A second dictionary was trained on each from a different corpus seed under identical code, and scored through the same gate:
+
+| arm | seed 20260806 | seed 20260807 | difference |
+|---|---:|---:|---:|
+| gpt2 | +0.9091 [+0.9037, +0.9136] | +0.9084 [+0.9028, +0.9128] | **0.0007** |
+| progen3-112m | +0.1337 [+0.1180, +0.1503] | +0.1262 [+0.1113, +0.1420] | **0.0075** |
+
+The gap the campaign turns on is 0.78. Seed variation is **0.0007 to 0.0075**, so the contrast is two to three orders of magnitude larger than the noise it would have to be explained by. This is the check that EXP-R2-138's CLT-versus-PLT comparison famously failed, where the between-arm difference was smaller than the seed range; here it is not close.
+
+**Cohort-size robustness of the free-baseline modality separation (EXP-R2-144).** The scored cohort was quadrupled from 128 to 512 sequences:
+
+| arm | n=128 | n=512 | difference |
+|---|---:|---:|---:|
+| gpt2-large, linear | +0.2941 [+0.2857, +0.3017] | +0.2874 [+0.2832, +0.2916] | 0.0067 |
+| protgpt2, linear | −0.7158 [−0.7885, −0.6560] | −0.7460 [−0.7822, −0.7089] | 0.0302 |
+
+The separation between the shape-matched pair is **1.010 at n=128 and 1.034 at n=512**, and every interval narrows as it should. The modality separation is not a property of a small cohort.
+
+**Depth, which had not been excluded and now is.** Sequential replacement compounds error layer by layer, so a 36-layer arm could fail where a 12-layer one succeeds for reasons having nothing to do with modality. It does not: **gpt2-large recovers +0.9322 [+0.9286, +0.9352] across 36 layers, slightly more than gpt2's +0.9091 across 12.** ProtGPT2's failure cannot be attributed to its depth.
+
+**And the retrained ProtGPT2 dictionary, which is the setup for the decisive measurement.** `tc_protgpt2_tok65m` finished at 59,796,506 tokens — 108 per latent against gpt2-large's 132, an 18% shortfall rather than the 11% projected, because the rendered sequences averaged 115 tokens rather than 125. Dead latents fell from 75.1% to 33.5%; the loader gate passes. The number that matters:
+
+| dictionary | shape | latents | tokens per latent | **held-out NMSE per layer** |
+|---|---|---:|---:|---:|
+| gpt2-large | 36 × 1280 | 552,960 | 132 | 0.2750 |
+| **protgpt2, 65M retrain** | 36 × 1280 | 552,960 | 108 | **0.2376** |
+
+**The retrained protein dictionary now reconstructs its model's blocks *better* than the text dictionary reconstructs its own**, on matched architecture, matched dictionary size and a comparable token budget. Whatever the replacement gate returns for it, it can no longer be answered with "the protein dictionary was worse" — that objection is now measured and false. This is the condition the matched pair was built to reach.
