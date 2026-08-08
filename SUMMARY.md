@@ -2,7 +2,7 @@
 
 **状态：** 官方进度总览。对科学结论而言仍是支持性汇总，不是权威来源；结论以权威审计为准，本文负责让当前进度一眼可读，并在新结果产出时同步更新。
 
-**更新：** 2026-08-07
+**更新：** 2026-08-08
 
 **权威来源：** [`docs/INTERPRETABILITY_TRANSFER_AUDIT.md`](docs/INTERPRETABILITY_TRANSFER_AUDIT.md)
 
@@ -28,7 +28,7 @@
 | R3.1 | 3. 开发适配方法 | PAA | PAA 是本研究提出并完成验证的方法：它在文本上有效，并揭示了蛋白 attention selector 的迁移失败；但它尚不是成功的蛋白特异方法。 | **方法创新已完成；蛋白适配失败** | 没有发现足够具体、可复现的失败因子，因此暂不应继续堆叠启发式特征。 |
 | R3.2 | 3. 开发适配方法 | 因果忠实 replacement | 现有结果支持设计直接优化 intervention consistency 或 causal-rank consistency 的 replacement，而不是继续只优化重建误差。 | **方向已获得；方法未完成** | 需要先完成 Dense 对照，再决定是否加入 residue interface 或 routing path。 |
 | R3.3 | 3. 开发适配方法 | 新一代方法 | DAS、causal abstraction、完整 circuit tracing 和 routing-path interventions 尚未形成完成实验，不能写成已有成果。 | **未完成** | 必须通过负控制和统一因果门控后才能进入结论。 |
-| S.1 | 整体结论 | 研究贡献 | 当前最稳固的贡献是建立了文本可解释性方法向蛋白生成模型迁移的因果审计框架，并区分了可迁移方法、方法固有限制、蛋白评价接口问题和真实迁移失败。 | **论文主线基本形成** | 尚缺正式 Dense replacement 对照、retrieval bound，以及一个经过验证的蛋白适配方法或生物学发现。 |
+| S.1 | 整体结论 | 研究贡献 | 当前最稳固的贡献是建立了文本可解释性方法向蛋白生成模型迁移的因果审计框架，并区分了可迁移方法、方法固有限制、蛋白评价接口问题和真实迁移失败。**两项此前缺失的关键对照现已完成**：最小归因对照把 replacement 的失败定位到蛋白模态（排除方法、字典预算、深度与 MoE 路由），训练语料检索上界表明三个蛋白解码器的 fitness 优势都不超过对自身语料的检索。 | **论文主线基本形成，两项核心对照完成** | 尚缺一个经过验证的蛋白适配方法或生物学发现；每个模态仅两个 arm。 |
 
 ## 核心实验与结果索引
 
@@ -47,7 +47,7 @@
 | Replacement 自由基线 | 四个 arm 的逐层仿射最小二乘映射；其中 gpt2-large 与 ProtGPT2 为 36×1280 完全同构、基线参数量同为 59,028,480 | 自由基线（rule 28）的行为恢复率 | **文本 +0.2630 / +0.2941，蛋白 −0.7158 / −1.6112，两组区间完全不重叠**；同构匹配对相差 **1.010**。线性映射在蛋白上比均值消融地板还差，且在 16 倍拟合数据范围内饱和（变化 0.003），说明是块非线性的性质而非欠拟合。全部 transcoder 明确胜出自身基线。 | **已完成；不依赖任何训练字典，因而不受 token/latent 混淆影响** | R1.2、R2.3、R2.4 |
 | ProGen3 Loader Audit | ProGen3-112M MegaBlocks 权重 vs eager 路径 | checkpoint 加载后的真实计算 | 直接 eager 加载的 MoE experts 保持随机；严格转换后的 scored self-check 恢复合理 NLL。 | **已完成** | R2.4、R2.5 |
 | CLT/PLT Capacity Match | ProGen3 上的 CLT、等宽 PLT、参数匹配 PLT，各 2 个语料 seed | 重建误差在不同资源匹配下的排序，以及该排序是否进入忠实度 | 等宽 CLT 比 PLT 好 11.7%；匹配参数后宽 PLT 反而好 0.126（按 seed 配对差 +0.1294/+0.1228，95% CI [0.084, 0.168]，并在独立 Swiss-Prot cohort 上复现）。但该排序**不进入忠实度**：行为恢复 0.1450 vs 0.1464，两个配对差符号相反，本设计的最小可检测差 0.0546 大于全部七个 arm 的总极差 0.0436。 | **已完成；等宽比较为嵌套模型类** | R2.3 |
-| Replacement Faithfulness | 同一协议（12× 扩展、k=64、20000 步）下的 gpt2、gpt2-large、ProtGPT2、ProGen3，各自对照自身自由线性基线；gpt2 与 ProGen3 各有第二个语料 seed | sequential replacement 的行为恢复和 causal retrieval | 行为恢复：**gpt2-large +0.9322**、gpt2 **+0.9091** [+0.9037, +0.9136]（seed 07 为 **+0.9084**，差 0.0007），ProGen3 +0.1337 [+0.1180, +0.1503]，ProtGPT2 +0.0542（**已撤出**，见下）。三者都胜过自身自由基线，attainability 全部 ATTAINABLE。**深度混淆已排除**：36 层的 gpt2-large 恢复率反而略高于 12 层的 gpt2，因此顺序替换的误差累积不是蛋白 arm 失败的原因。 | **文本控制完成并通过（含 seed 复现）；ProGen3 完成并失败；ProtGPT2 因字典欠训练撤回，重训中** | R2.3、R2.4、R3.2 |
+| Replacement Faithfulness（**归因已完成**） | 同一协议（12× 扩展、k=64）下的 gpt2、gpt2-large、ProtGPT2、ProGen3；**gpt2-large 与 ProtGPT2 构成 36×1280 同构匹配对**；gpt2 与 ProGen3 各有第二个语料 seed | sequential replacement 的行为恢复和 causal retrieval | **文本 gpt2-large +0.9322 [+0.9286, +0.9352]、gpt2 +0.9091（seed 07 +0.9084，差 0.0007）；蛋白 ProtGPT2 重训后 +0.1641、ProGen3 +0.1337（seed 07 +0.1262，差 0.0075）。** dense 蛋白与 sparse-MoE 蛋白同处 0.13–0.16，与同构文本 arm 的 0.93 相距甚远。关键在于**蛋白字典的重建反而更好**（每层 NMSE 0.2376 对 0.2750），且其 cohort 污染率实测 **89.8%**（gpt2-large 为 40.4%）——所有残余偏置都指向让蛋白 arm 通过，它仍然失败。深度亦已排除（36 层反而略高于 12 层）。 | **全部完成；预注册判定规则于结果产出前写定** | R2.3、R2.4、R3.2 |
 | MoE Routing Audit | ProGen3-112M；随机分组（等基数自由基线）与残基身份（混淆项） | selected-set 与 boundary-margin 分组对 replacement residual 的留出解释量 | 在 replacement 真正失败的第 4–8 层，selected-set 分组**不减少任何留出误差**（−0.0007 至 −0.00002），只是比等基数随机分组少亏 +0.0002–0.0008，算术上限 0.0022–0.0034；boundary-margin 分组在每一层都更弱。 | **已完成；预注册 null 成立** | R1.5、R2.3、R3.2 |
 | Frozen-attention Check | GPT-2-large vs ZymCTRL | 冻结 attention 后保留的上下文信息 | 两个模型均保留约 77%，没有出现蛋白侧额外下降。 | **已完成的负结果** | R1.1、R2.4 |
 | Fitness Baseline | ProGen3-112M vs BLOSUM62，ProteinGym | Zero-shot fitness Spearman 优势 | 完整 benchmark 上模型优势为 +0.0647，置信区间高于零；论文的小面板无法单独解析该优势。 | **已完成** | R1.6 |
