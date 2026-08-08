@@ -22,7 +22,7 @@
 | R1.6 | 1. 比较模型家族 | 蛋白知识与新颖性 | **三个蛋白解码器无一超过对其自身训练语料的位点独立 profile 检索，最小的那个还明显低于它。** ProtGPT2 −0.0143 [−0.0381, +0.0101]、ProGen2-medium −0.0043 [−0.0303, +0.0216]（均为 **retrieval_bounded**，retrieval share 1.107 / 1.029），ProGen3-112M **−0.0808 [−0.1139, −0.0481]**，share **2.186**，判定为 **retrieval_dominated**。跨 112M–774M 参数、三种 tokenization。因此 ProteinGym 替换 benchmark 上的 fitness Spearman 不足以支撑“模型习得生物学知识”的主张，本项目与 ProGenMech 中以该 fitness 为分母的 recovery ratio 都继承这一限制。 | **核心负面结果；ProtGPT2 一支语料精确识别** | 这不等于“模型在记忆”——只说明该评价接口无法区分二者。生成新颖蛋白的验证尚未开始。 |
 | R2.1 | 2. 评估方法迁移 | 能够迁移的方法 | Tuned Lens、Activation Patching、部分 Probe 和 Concept Erasure 能够应用于蛋白模型并产生稳定结果。 | **已确认** | 这些方法多数只能回答局部问题，不能单独形成完整机制解释。 |
 | R2.2 | 2. 评估方法迁移 | Attention selector 迁移 | 本项目 PAA 在文本模型上能够找回因果重要 heads，但在多数蛋白模型上失败；原有 induction census 的全层统计又受到深度混淆。Attention 模式不能直接当成蛋白模型的因果机制。 | **核心迁移结果** | PAA 的蛋白失败尚未定位到具体 selector 因素。 |
-| R2.3 | 2. 评估方法迁移 | SAE、Transcoder 与 CLT | 稀疏 replacement 确实学到了廉价线性映射学不到的非线性结构（自由基线被明确超越），但良好重建既不保证行为忠实也不保证因果忠实：重建排序在忠实度门控下完全消失。CLT 的等宽优势是容量效应而非跨层连接效应——且该结论只在参数预算或墙钟预算下成立，在推理 FLOP 预算下反转。**方法本身已被排除：** 同一协议在 GPT-2 上行为恢复 0.909，首次越过 0.80 门控（EXP-R2-141）。 | **核心负面结果；方法侧已排除** | 失败属于模态还是 MoE 架构，取决于 ProtGPT2 的重训结果——原 ProtGPT2 字典 75% 死亡，已撤出该比较。 |
+| R2.3 | 2. 评估方法迁移 | SAE、Transcoder 与 CLT | **sequential replacement 的行为忠实失败属于蛋白模态，不属于方法、字典预算、深度或 MoE 路由（EXP-R2-147）。** 匹配对 gpt2-large 与 ProtGPT2 同为 36×1280、字典同为 552,960 个 latent、estimand 逐位相同：文本恢复 **0.9322**，蛋白恢复 **0.1641**，而蛋白字典的重建反而更好（每层 NMSE 0.2376 对 0.2750）。dense 蛋白 arm 与 sparse-MoE 蛋白 arm 同处 0.13–0.16，与同构文本 arm 的 0.93 相距甚远，**MoE 由此被排除**。良好重建既不保证行为忠实也不保证因果忠实这一结论因此得到最强形式的确认。 | **核心负面结果；归因已完成，属于迁移限制而非方法限制** | 尚未解释「为什么」。自由基线（EXP-R2-144）是目前最好的线索而非答案；且每个模态只有两个 arm。 |
 | R2.4 | 2. 评估方法迁移 | 统一因果审计 | 重建率、probe accuracy、attention pattern 和 performance recovery 都不足以单独支持机制解释；必须同时检查 attainability、fidelity、causal retrieval、分母有效性和独立数据稳定性。 | **主要方法学贡献** | 需要把同一套门控扩展到更多新一代方法。 |
 | R2.5 | 2. 评估方法迁移 | 蛋白测量基底 | 蛋白实验对输入渲染、序列区间、同源性、文件顺序、tokenization 和小字母表更敏感；很多表面模态差异实际来自这些接口。 | **已确认** | 需要把这些控制固化为统一蛋白评价协议。 |
 | R3.1 | 3. 开发适配方法 | PAA | PAA 是本研究提出并完成验证的方法：它在文本上有效，并揭示了蛋白 attention selector 的迁移失败；但它尚不是成功的蛋白特异方法。 | **方法创新已完成；蛋白适配失败** | 没有发现足够具体、可复现的失败因子，因此暂不应继续堆叠启发式特征。 |
@@ -60,8 +60,7 @@
 
 | 进行中的实验 | 判定什么 | 判定规则（已预先声明） |
 |---|---|---|
-| **最小归因对照（收尾中）**：gpt2 与 ProGen3 已完成，**ProtGPT2 按匹配 token 预算重训**（80000 步 ≈ 80M token，对齐 gpt2 的 73M），反向对照 gpt2 在 ProtGPT2 原预算（20M token）下重训；gpt2-large 的 PLT 仍在训练 | replacement 的失败属于模态、架构、方法还是评价接口 | 方法一支已排除（gpt2 恢复 0.909）。**剩余判定完全落在重训后的 ProtGPT2 上**：重训后仍失败 → 模态（蛋白 Dense 与 MoE 都失败）→ residue/interface 或扩展 PAA 方向；重训后通过 → 架构（只有 MoE 失败）→ expert/router/path 方向。gpt2-large 只用于排除深度混淆（36 层文本对照 ProtGPT2 的 36 层）。 |
-| **ProtGPT2 字典重训（tok65m，约 9 小时）与 gpt2-large 字典训练**：两者都是 36×1280、字典均为 552,960 个 latent，token/latent 分别为 118 与 132（相差 12%），构成本面板真正匹配的模态对 | replacement 的失败属于蛋白模态还是 MoE 架构 | 与 EXP-R2-142 预注册规则一致：重训后的 ProtGPT2 仍失败 → 模态；通过 → 因 cohort 污染（94.9% vs gpt2-large 40.4%）而**不可用于归因**。另有不可消除的残余：即使重训，ProtGPT2 也只有 118 token/latent，低于文本字典已经死掉一半 latent 的 181，Swiss-Prot 无法提供更多。 |
+| **causal retrieval 收尾**：ProtGPT2 重训 arm 的 36×20 head 消融扫描仍在运行；n=512 的 cohort 规模稳健性检查覆盖余下两个 arm | 因果排序指标是否与行为门控给出一致的模态划分 | 行为门控已终局（0.9322 对 0.1641），因果数字只作补充记录，不改变 EXP-R2-147 的归因。 |
 
 **已知的不可消除限制，先记录再测量：** ProGen3-112M 的模型卡未声明训练语料，ProGen2-medium 的 BFD30 未落盘，因此这两个 arm 的 LOOKUP 只能以 UniRef50 作代理，**系统性低估其语料支持度，偏向于让模型通过**。ProtGPT2 是唯一语料被精确识别的 arm（其声明语料就是已落盘的 UniRef50），因此它的结果权重最高。
 
