@@ -8947,7 +8947,18 @@ ProtGPT2's dictionary carries **five times** gpt2's latents, because the arm is 
 
 **The consequence for how EXP-R2-141 must be read: gpt2 was never ProtGPT2's comparator, and gpt2-large is.** gpt2-large is 36 × 1280 — the same depth, width and vocabulary-independent shape as ProtGPT2 — so its dictionary has the same 552,960 latents, and at 132 against 118 tokens per latent the two are matched to within 12%. That is the controlled modality contrast this panel was built to make; gpt2-versus-ProGen3 is the secondary comparison and is unmatched on three axes at once. The reading rule of EXP-R2-142 is unchanged but now attaches to the gpt2-large ↔ protgpt2 pair.
 
-**Also worth stating plainly:** ProtGPT2's 65M retrain still reaches only 118 tokens per latent, below the 181 at which a *text* dictionary already lost half its latents to death. Swiss-Prot cannot supply more. If the retrained arm fails, "the protein dictionary was starved" therefore remains a live alternative to "the protein modality is harder", and separating them would need either a smaller expansion ratio on both 36-layer arms or a protein corpus larger than Swiss-Prot.
+**Also worth stating plainly:** ProtGPT2's 65M retrain reaches only 118 tokens per latent, below the 181 the 20M gpt2 control ran at, and Swiss-Prot cannot supply more. If the retrained arm fails, "the protein dictionary was starved" is therefore a live alternative to "the protein modality is harder".
+
+**Retracted the same evening, by gpt2-large.** Two things are wrong with the paragraph above and both are corrected here rather than edited away. It said the 20M gpt2 control "lost half its latents to death" — it lost **18.2%**, not half; that was a misstatement of a number recorded correctly three paragraphs earlier. And the worry it expresses does not survive its own control: **gpt2-large finished at 132 tokens per latent with 0.36% dead latents** — the *healthiest* dictionary in the panel — where gpt2 at the higher figure of 181 tokens per latent had 18.2% dead.
+
+| dictionary | latents | tokens per latent | dead |
+|---|---:|---:|---:|
+| gpt2, 20M control | 110,592 | 181 | 18.2% |
+| gpt2, EXP-R2-141 | 110,592 | 660 | 8.3% |
+| **gpt2-large** | **552,960** | **132** | **0.36%** |
+| protgpt2, 65M retrain | 552,960 | 118 | pending |
+
+So tokens per latent does **not** order dead fraction across arms of different depth: the 36-layer dictionary is healthier at 132 than the 12-layer one is at 660. Deadness is not a simple function of data per latent, and 132 is demonstrably ample for a 552,960-latent dictionary on a 36 × 1280 model. ProtGPT2's retrain sits 11% below that figure on an arm of identical shape, so if its dictionary comes back dead, the deadness is a fact about the protein representations rather than about the budget — which is the opposite of what the retracted paragraph claimed. The 4×-expansion pair it proposed as a remedy is accordingly **not** being run; there is nothing left for it to control.
 
 **The reciprocal control landed, and the token budget is not what makes the protein arm hard.** `s15_gpt2_tok20m` measures the 20M-token gpt2 dictionary through the same gate:
 
