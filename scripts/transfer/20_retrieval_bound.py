@@ -47,8 +47,12 @@ Four gates can stop a reading before it is made:
                         length and support, must lose to BLOSUM62. If it does
                         not, the channel is reading generic protein composition
                         and the run reports a defect.
-``label_shuffle``       both channels against permuted labels, which must be
-                        indistinguishable from zero.
+``label_shuffle``       every channel against permuted labels, standardised by
+                        each assay's own null scale ``1/sqrt(n-1)`` and read
+                        against the Bonferroni normal quantile for the number of
+                        values taken. Standardised because assay sizes span 63 to
+                        1000 variants, so a raw maximum measures the smallest
+                        assay's null width rather than any channel's calibration.
 
 **Unit of analysis.** 217 assays carry 187 distinct wild types, which are
 clustered at 50% identity; differences are averaged within cluster and every
@@ -896,6 +900,17 @@ def _channel_controls(lookup: dict[str, Any], args: argparse.Namespace) -> dict[
         ]
         for key in every
     }
+    #: The variant count each shuffled correlation was computed on, in the same
+    #: order. A Spearman correlation under permuted labels has null scale
+    #: 1/sqrt(n-1), so a correlation cannot be read without the n that produced it.
+    shuffled_n = {
+        key: [
+            row["n_variants"]
+            for row in rows
+            if key in row["shuffled_label_spearman"]
+        ]
+        for key in every
+    }
     coverage = {key: len(values) for key, values in spearman.items()}
 
     means = {key: float(np.mean(values)) for key, values in spearman.items()}
@@ -985,13 +1000,42 @@ def _channel_controls(lookup: dict[str, Any], args: argparse.Namespace) -> dict[
         "composition rather than this protein's columns and the run reports a defect"
     )
 
+    # A maximum of raw correlations is dominated by the smallest assay, because
+    # the null scale of a Spearman correlation is 1/sqrt(n-1) and the assays here
+    # span n = 63 to 1000. Read against a constant, that maximum fails a
+    # correctly calibrated channel whenever one small assay is present: this
+    # cohort's smallest (n=63, null scale 0.127) reaches |rho| 0.247 under
+    # permuted labels, which is 1.9 of its own standard deviations and nothing at
+    # all. Each value is therefore standardised by the scale of the assay that
+    # produced it, and the maximum is read against the two-sided Bonferroni
+    # normal quantile for the number of values actually taken -- a reference the
+    # data's own sizes determine rather than a constant (Appendix B rule 17).
+    z_by_channel = {
+        key: [
+            abs(value) * math.sqrt(max(n - 1, 1))
+            for value, n in zip(shuffled[key], shuffled_n[key])
+        ]
+        for key in every
+    }
+    z_values = [value for values in z_by_channel.values() for value in values]
+    critical_z = float(stats.norm.ppf(1.0 - 0.05 / (2.0 * len(z_values))))
     shuffle = {
         "max_abs_spearman": float(
             max(abs(value) for values in shuffled.values() for value in values)
         ),
+        "max_abs_z": float(max(z_values)),
+        "critical_z": critical_z,
+        "n_values": len(z_values),
+        "familywise_alpha": 0.05,
+        "max_abs_z_by_channel": {key: float(max(values)) for key, values in z_by_channel.items()},
         "mean_by_channel": {key: float(np.mean(values)) for key, values in shuffled.items()},
+        "note": (
+            "standardised because the raw maximum is a statement about the "
+            "smallest assay's null width, not about whether any channel reads "
+            "signal from permuted labels"
+        ),
     }
-    shuffle["passes"] = bool(shuffle["max_abs_spearman"] < 0.2)
+    shuffle["passes"] = bool(shuffle["max_abs_z"] < critical_z)
 
     return {
         "anchor": "checked and enforced in the search stage; see search.json",
@@ -1193,7 +1237,9 @@ def _report(payload: dict[str, Any]) -> None:
             f"{'PASS' if mismatch['passes'] else 'DEFECT'}"
         )
     print(
-        f"[gate label_shuffle] max |rho| {gates['label_shuffle']['max_abs_spearman']:.4f}: "
+        f"[gate label_shuffle] max |z| {gates['label_shuffle']['max_abs_z']:.2f} against "
+        f"{gates['label_shuffle']['critical_z']:.2f} over {gates['label_shuffle']['n_values']} "
+        f"values (max |rho| {gates['label_shuffle']['max_abs_spearman']:.4f}): "
         f"{'PASS' if gates['label_shuffle']['passes'] else 'FAIL'}"
     )
     for arm, block in payload["arms"].items():

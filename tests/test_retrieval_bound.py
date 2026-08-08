@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import dataclasses
 import importlib.util
+import math
 import sys
 from pathlib import Path
 
@@ -756,3 +757,54 @@ def test_the_positive_control_floor_is_a_locally_measured_number():
     assert P.FROZEN_BLOSUM62_MEAN_SPEARMAN == pytest.approx(0.2098)
     assert P.FROZEN_MODEL_MINUS_BLOSUM == pytest.approx(0.0647)
     assert 0.0 < P.EQUIVALENCE_FRACTION < 1.0
+
+
+def test_the_label_shuffle_gate_reads_a_correlation_against_its_own_assay_size():
+    """The defect: a raw maximum measures the smallest assay, not calibration.
+
+    A Spearman correlation under permuted labels has null scale 1/sqrt(n-1), and
+    this cohort's assays span n = 63 to 1000. The real run's largest shuffled
+    correlation, 0.2467, came from its single smallest assay (n=63, null scale
+    0.127) and is 1.9 of its own standard deviations -- nothing at all. Compared
+    to a constant 0.2 it failed the gate and would have blocked a correctly
+    calibrated run.
+    """
+
+    import argparse
+
+    stage = _stage()
+    args = argparse.Namespace(bootstrap=200, seed=1)
+
+    payload = _lookup_payload()
+    small = payload["assays"][0]
+    small["n_variants"] = 63
+    small["shuffled_label_spearman"]["lookup"] = 0.2467
+
+    controls = stage._channel_controls(payload, args)
+    shuffle = controls["label_shuffle"]
+
+    # The raw quantity that produced the spurious failure is still reported...
+    assert shuffle["max_abs_spearman"] == pytest.approx(0.2467)
+    assert shuffle["max_abs_spearman"] > 0.2
+    # ...and standardising it by the assay's own null scale clears the gate.
+    assert shuffle["max_abs_z"] == pytest.approx(0.2467 * math.sqrt(62), rel=1e-6)
+    assert shuffle["max_abs_z"] < shuffle["critical_z"]
+    assert shuffle["passes"] is True
+
+
+def test_the_label_shuffle_gate_still_fails_a_channel_that_reads_permuted_labels():
+    """The guard must keep its teeth: a large assay carrying real signal fails."""
+
+    import argparse
+
+    stage = _stage()
+    args = argparse.Namespace(bootstrap=200, seed=1)
+
+    payload = _lookup_payload()
+    loud = payload["assays"][0]
+    loud["n_variants"] = 1000
+    loud["shuffled_label_spearman"]["lookup"] = 0.30
+
+    shuffle = stage._channel_controls(payload, args)["label_shuffle"]
+    assert shuffle["max_abs_z"] > shuffle["critical_z"]
+    assert shuffle["passes"] is False
