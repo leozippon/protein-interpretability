@@ -8923,3 +8923,23 @@ Both models are genuinely far better than a substitution matrix — +0.134 and +
 **A control that failed on correct data, found and repaired.** The label-shuffle gate took the maximum |ρ| over every assay and channel and compared it to a constant 0.2. A Spearman correlation under permuted labels has null scale 1/√(n−1) and these assays span n = 63 to 1000, so that maximum measures the smallest assay's null width. It read 0.2467 and FAILED — every one of the top values from `NPC1_HUMAN_Erwood_2022_RPE1`, the single smallest assay, at **1.9 of its own standard deviations**. Standardising all 1518 values by the assay that produced each gives max |z| **3.13** against a Bonferroni quantile of 4.15, and against an expected maximum of ~3.83 for that many standard normals — the shuffled distribution is quieter than the null, not louder. A gate that fails correct data is worse than no gate, because the failure gets waved through. Repaired, pinned by two tests (one asserting the raw maximum still exceeds 0.2, so the premise cannot silently expire), and the pre-repair artefact retained as `retrieval_bound.pre_shufflegate_fix.json`.
 
 **Still to come.** ProGen3-112M is scoring; its corpus is undeclared, so its LOOKUP is the weakest of the three and its bias runs hardest toward "acquired".
+
+**Addendum to EXP-R2-142, recorded before either retrain lands: which arm is ProtGPT2's comparator.**
+
+The 20M-token gpt2 control finished and it settles what the ProtGPT2 pathology was. At ProtGPT2's own budget gpt2 reaches **18.2%** dead latents and 0.2696 mean held-out NMSE, against ProtGPT2's **75.1%** and 0.3593 at the same 20M tokens. So a starved budget does degrade a text dictionary, but not remotely to ProtGPT2's degree, and the token count alone does not explain it.
+
+What does explain it is the quantity neither the token budget nor the sequence count captures — **tokens per latent**:
+
+| dictionary | tokens | latents | tokens per latent | dead |
+|---|---:|---:|---:|---:|
+| gpt2, EXP-R2-141 | 72,971,083 | 110,592 | 660 | 8.3% |
+| gpt2, 20M control | 20,035,238 | 110,592 | 181 | 18.2% |
+| protgpt2, EXP-R2-141 | 20,042,346 | 552,960 | **36** | **75.1%** |
+| protgpt2, 65M retrain | ~65,000,000 | 552,960 | 118 | running |
+| gpt2-large | ~72,900,000 | 552,960 | 132 | 0.6% at step 14,000 |
+
+ProtGPT2's dictionary carries **five times** gpt2's latents, because the arm is 36 × 1280 where gpt2 is 12 × 768 and the 12× expansion ratio is held fixed across the panel. At equal tokens it therefore gets a fifth of the data per latent.
+
+**The consequence for how EXP-R2-141 must be read: gpt2 was never ProtGPT2's comparator, and gpt2-large is.** gpt2-large is 36 × 1280 — the same depth, width and vocabulary-independent shape as ProtGPT2 — so its dictionary has the same 552,960 latents, and at 132 against 118 tokens per latent the two are matched to within 12%. That is the controlled modality contrast this panel was built to make; gpt2-versus-ProGen3 is the secondary comparison and is unmatched on three axes at once. The reading rule of EXP-R2-142 is unchanged but now attaches to the gpt2-large ↔ protgpt2 pair.
+
+**Also worth stating plainly:** ProtGPT2's 65M retrain still reaches only 118 tokens per latent, below the 181 at which a *text* dictionary already lost half its latents to death. Swiss-Prot cannot supply more. If the retrained arm fails, "the protein dictionary was starved" therefore remains a live alternative to "the protein modality is harder", and separating them would need either a smaller expansion ratio on both 36-layer arms or a protein corpus larger than Swiss-Prot.
