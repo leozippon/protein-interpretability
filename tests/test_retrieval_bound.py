@@ -808,3 +808,58 @@ def test_the_label_shuffle_gate_still_fails_a_channel_that_reads_permuted_labels
     shuffle = stage._channel_controls(payload, args)["label_shuffle"]
     assert shuffle["max_abs_z"] > shuffle["critical_z"]
     assert shuffle["passes"] is False
+
+
+def _interval(point, low, high):
+    return {"point": point, "interval": [low, high]}
+
+
+def test_a_lookup_that_beats_the_model_is_resolved_not_indeterminate():
+    """ProGen3-112M's measured case, which the original vocabulary had no room for.
+
+    MODEL - LOOKUP -0.0808 [-0.1139, -0.0481] against an equivalence bound of
+    0.0340. It fell through to `indeterminate`, whose reason asserted the
+    interval spanned zero -- it does not -- and whose documented meaning is that
+    the cohort could not resolve the question, when it had.
+    """
+
+    verdict = P.equivalence_verdict(
+        _interval(-0.0808, -0.11387776, -0.04812502),
+        _interval(0.0681, 0.03671601, 0.09638934),
+    )
+    assert verdict["verdict"] == "retrieval_dominated"
+    assert "wholly below" in verdict["reason"]
+    assert "spans zero" not in verdict["reason"]
+
+
+def test_the_three_original_readings_are_unchanged():
+    """The added category must not have moved any boundary that already existed."""
+
+    bounded = P.equivalence_verdict(
+        _interval(-0.0143, -0.03808299, 0.01014614),
+        _interval(0.1343, 0.10558444, 0.16073318),
+    )
+    assert bounded["verdict"] == "retrieval_bounded"
+
+    acquired = P.equivalence_verdict(_interval(0.09, 0.05, 0.13), _interval(0.10, 0.08, 0.12))
+    assert acquired["verdict"] == "acquired"
+
+    # Spans zero and leaves the bound: genuinely unresolved, and still says so.
+    unresolved = P.equivalence_verdict(_interval(0.0, -0.30, 0.30), _interval(0.10, 0.08, 0.12))
+    assert unresolved["verdict"] == "indeterminate"
+    assert "spans zero" in unresolved["reason"]
+
+    # No separable advantage to partition: withheld, with its own reason.
+    no_base = P.equivalence_verdict(_interval(-0.5, -0.6, -0.4), _interval(0.01, -0.05, 0.07))
+    assert no_base["verdict"] == "indeterminate"
+    assert "not itself separable" in no_base["reason"]
+
+
+def test_an_interval_below_zero_but_astride_the_bound_is_still_indeterminate():
+    """The gap between 'equivalent' and 'resolved against' must not be papered over."""
+
+    verdict = P.equivalence_verdict(
+        _interval(-0.05, -0.09, -0.01), _interval(0.10, 0.08, 0.12)
+    )
+    assert verdict["verdict"] == "indeterminate"
+    assert "not wholly below" in verdict["reason"]

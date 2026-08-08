@@ -1074,8 +1074,6 @@ def equivalence_verdict(
 ) -> dict[str, Any]:
     """The pre-registered reading of the interval, including what a null says.
 
-    Three outcomes, declared before any number exists:
-
     ``acquired``
         the MODEL - LOOKUP interval lies wholly above zero. The model carries
         fitness information a site-independent lookup of its own corpus does not.
@@ -1087,10 +1085,28 @@ def equivalence_verdict(
         everything the model has over a free baseline is also available from the
         corpus lookup, so the acquired component is bounded and small.
 
+    ``retrieval_dominated``
+        the interval lies wholly below minus that bound. The lookup beats the
+        model by more than the equivalence bound, so the question is resolved
+        *against* the model.
+
+        **Added after the fact, and that is recorded rather than hidden.** The
+        first three outcomes were declared before any number existed and did not
+        cover this case; ProGen3-112M produced it (-0.0808 [-0.1139, -0.0481]
+        against a bound of 0.0340) and fell through to ``indeterminate``, whose
+        stated reason -- "the interval spans zero" -- was false of that interval
+        and whose documented meaning is that the cohort could not resolve the
+        question, when it had resolved it decisively. A category that can only
+        ever make an arm look worse cannot be a category chosen to favour a
+        hypothesis, which is why adding it after seeing the data is admissible
+        here; the three original readings are unchanged.
+
     ``indeterminate``
-        the interval spans zero and leaves the equivalence bound. Not a null:
-        a statement that this cohort cannot resolve the question, reported with
-        the cluster count that could not resolve it.
+        the interval spans zero and leaves the equivalence bound, or the arm's
+        own MODEL - BLOSUM62 advantage is not separable from zero so there is no
+        advantage to partition. Not a null: a statement that this cohort cannot
+        resolve the question, reported with the cluster count that could not
+        resolve it.
 
     The bound is a fraction of the arm's *own* advantage rather than a fixed
     Spearman, because the arms differ in how much they beat a free baseline at
@@ -1122,14 +1138,28 @@ def equivalence_verdict(
             f"the MODEL - LOOKUP interval is contained in +/-{bound:.4f}, which is "
             f"{EQUIVALENCE_FRACTION:.0%} of this arm's own MODEL - BLOSUM62 advantage"
         )
+    elif base_separable and interval[1] < -bound:
+        verdict = "retrieval_dominated"
+        reason = (
+            f"the MODEL - LOOKUP interval lies wholly below -{bound:.4f}: the corpus "
+            "lookup beats this arm by more than the equivalence bound, so the "
+            "question is resolved against the model rather than left unresolved"
+        )
+    elif not base_separable:
+        verdict = "indeterminate"
+        reason = (
+            "this arm's MODEL - BLOSUM62 advantage is not itself separable from "
+            "zero, so there is no advantage to partition and no equivalence bound "
+            "is defined"
+        )
     else:
         verdict = "indeterminate"
         reason = (
             "the interval spans zero and leaves the equivalence bound"
-            if base_separable
-            else "this arm's MODEL - BLOSUM62 advantage is not itself separable from "
-            "zero, so there is no advantage to partition and no equivalence bound "
-            "is defined"
+            if interval[0] <= 0.0 <= interval[1]
+            else f"the interval is wholly below zero but not wholly below "
+            f"-{bound:.4f}, so it is neither an equivalence nor a resolved "
+            f"advantage for the lookup"
         )
     return {
         "verdict": verdict,
