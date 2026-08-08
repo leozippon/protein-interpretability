@@ -44,7 +44,7 @@
 | Probe and Erasure | GPT-2-large 控制 vs 多个 Dense 蛋白模型 | 属性 decodability 与线性 erasure 后的行为效应 | 蛋白属性的 probe skill 与 erasure 后行为依赖可以方向相反。 | **部分 cohort 结论受限** | R2.1、R2.4 |
 | Output Aperture / J-Lens | Dense 文本模型 vs 不同词表的 Dense 蛋白模型 | 输出 Jacobian 秩及性质方向的定义 | ProGen2 的 aperture 被小词表限制，ProtGPT2 接近文本模型；非输出函数的生物属性没有可靠 J-Space 定义。 | **已完成，J-Space 关闭** | R1.4、R2.4 |
 | Dictionary Fidelity | GPT-2-large 与多个 Dense 蛋白字典 | FVU、重建与 behavioural recovery 的对应关系 | FVU 与重建排序不能认证行为或因果忠实（Spearman 约为 0）。 | **已完成** | R2.3、R2.4 |
-| Replacement 自由基线 | ProGen3-112M：逐层仿射最小二乘映射 vs 全部 transcoder | 自由基线（rule 28）的行为恢复率 | 线性映射恢复 −1.61 至 −1.64，比均值消融地板还差，且在 16 倍拟合数据范围内饱和（变化 0.003），说明这是块非线性的性质而非欠拟合。全部 transcoder 明确胜出。 | **已完成；本项目字典方向的首个正面结果** | R2.3、R2.4 |
+| Replacement 自由基线 | 四个 arm 的逐层仿射最小二乘映射；其中 gpt2-large 与 ProtGPT2 为 36×1280 完全同构、基线参数量同为 59,028,480 | 自由基线（rule 28）的行为恢复率 | **文本 +0.2630 / +0.2941，蛋白 −0.7158 / −1.6112，两组区间完全不重叠**；同构匹配对相差 **1.010**。线性映射在蛋白上比均值消融地板还差，且在 16 倍拟合数据范围内饱和（变化 0.003），说明是块非线性的性质而非欠拟合。全部 transcoder 明确胜出自身基线。 | **已完成；不依赖任何训练字典，因而不受 token/latent 混淆影响** | R1.2、R2.3、R2.4 |
 | ProGen3 Loader Audit | ProGen3-112M MegaBlocks 权重 vs eager 路径 | checkpoint 加载后的真实计算 | 直接 eager 加载的 MoE experts 保持随机；严格转换后的 scored self-check 恢复合理 NLL。 | **已完成** | R2.4、R2.5 |
 | CLT/PLT Capacity Match | ProGen3 上的 CLT、等宽 PLT、参数匹配 PLT，各 2 个语料 seed | 重建误差在不同资源匹配下的排序，以及该排序是否进入忠实度 | 等宽 CLT 比 PLT 好 11.7%；匹配参数后宽 PLT 反而好 0.126（按 seed 配对差 +0.1294/+0.1228，95% CI [0.084, 0.168]，并在独立 Swiss-Prot cohort 上复现）。但该排序**不进入忠实度**：行为恢复 0.1450 vs 0.1464，两个配对差符号相反，本设计的最小可检测差 0.0546 大于全部七个 arm 的总极差 0.0436。 | **已完成；等宽比较为嵌套模型类** | R2.3 |
 | Replacement Faithfulness | 同一冻结快照、同一协议（12× 扩展、k=64、20000 步）下的 gpt2、ProtGPT2、ProGen3，各自对照自身自由线性基线 | sequential replacement 的行为恢复和 causal retrieval | 行为恢复：gpt2 **+0.9091** [+0.9037, +0.9136]（越过 0.80 门控），ProGen3 +0.1337 [+0.1180, +0.1503]，ProtGPT2 +0.0542（**已撤出**，见下）。三者都胜过自身自由基线（+0.263 / −1.611 / −0.716），attainability 全部 ATTAINABLE，区间互不重叠。 | **文本控制完成并通过；ProGen3 完成并失败；ProtGPT2 因字典欠训练撤回** | R2.3、R2.4、R3.2 |
@@ -67,7 +67,9 @@
 
 **分支状态更新（EXP-R2-141 至 144）：** “全部失败”一支已被排除——GPT-2 在同一协议下恢复 **0.909**，是本项目第一个越过 0.80 行为门控的 arm；把它饿到 ProtGPT2 的 20M token 预算后仍恢复 **0.832**，依然通过。因此失败既不属于方法，也不属于字典的数据预算。
 
-**ProGen3 的失败已排除数据预算解释。** 按 token/latent 排序：ProGen3 为 **6,470**、死亡 latent 仅 **0.6%**，是全面板喂得最饱、最健康的字典（gpt2 为 660 / 8.3%），恢复率却只有 0.134——恢复率与 token/latent 在四次训练中甚至呈反序。剩下的唯一开放轴是**蛋白模态 vs 稀疏 MoE 架构**，而本面板中只有 ProtGPT2（dense、GPT-2 结构、蛋白数据）能把二者分开。
+**ProGen3 的失败已排除数据预算解释。** 按 token/latent 排序：ProGen3 为 **6,470**、死亡 latent 仅 **0.6%**，是全面板喂得最饱、最健康的字典（gpt2 为 660 / 8.3%），恢复率却只有 0.134——恢复率与 token/latent 在四次训练中甚至呈反序。剩下的唯一开放轴是**蛋白模态 vs 稀疏 MoE 架构**。
+
+**该轴已有一份不依赖字典的独立证据（EXP-R2-144）。** 自由线性基线不需要训练任何字典，因此完全不受 token/latent、死亡 latent 与语料规模的影响。它在文本上恢复 +0.2630 / +0.2941，在蛋白上恢复 −0.7158 / −1.6112，两组不重叠；而 gpt2-large 与 ProtGPT2 是同深度同宽度、基线参数量完全相同（59,028,480）的匹配对，相差 1.010。**它把 dense 蛋白 arm 归到 MoE 蛋白 arm 一侧，而不是归到与它同构的文本 arm 一侧**，因此支持模态解释，且早于本该给出该判定的 ProtGPT2 重训。需要注意的保留：recovery 以各 arm 自身的 clean→ablated 间隔归一，而两者的分母并不相同（6.91 对 4.30）。
 
 **本对照自身暴露的设计缺陷，记录而非掩盖：** 三个 arm 匹配的是*序列数*而不是 *token 数*，更不是 *token/latent*。ProtGPT2 只看到 20M token 却要拟合 552,960 个 latent（gpt2 为 110,592，因为 36×1280 对 12×768 而扩展比固定为 12×），即每 latent 仅 36 个 token，训练结束时 **75.1% 的 latent 已死亡**。这样的字典没有测量它的 arm，因此 ProtGPT2 的 0.054 被撤出模态判定。**由此也重新指认了对照组：gpt2 从来不是 ProtGPT2 的对照，gpt2-large 才是**——同为 36×1280、字典同为 552,960 个 latent，token/latent 为 132 对 118，相差 12%。
 
