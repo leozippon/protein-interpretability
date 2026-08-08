@@ -8873,7 +8873,18 @@ Recorded **before** the retrained dictionary exists, because the result decides 
 
 **Why 65M and not the 80M first attempted.** The first launch asked for 80,000 steps and died explicitly on `the corpus ran out at the held-out offset: 0 of 256 sequences past a skip of 647168`. ProtGPT2 trains on Swiss-Prot, which holds **547,921** eligible records in the 32–1022 residue band; ProGen3 trains on UniRef50's 60M. The two protein arms therefore cannot be given equal token budgets on their own declared corpora, and this is a property of the corpora, not a choice. 65,000 steps consumes 520,000 records and block-aligns the held-out draw at 524,288, leaving 23,633 records the training stream never reaches.
 
-**The bias this introduces, and its direction.** The scoring band (64–246 residues) holds **213,034** records, all inside the training band. Consuming 520,000 of 547,921 records means the stage-15 cohort is drawn almost entirely from sequences the dictionary was fitted on, where gpt2's cohort is ~98% unseen because OpenWebText is far larger than its training budget. `--cohort-skip` cannot repair this: under a draw seed the cohort is a window of a seeded permutation of the *whole* eligible corpus, not a file-order prefix, so a skip selects a different window rather than a later one. **The contamination therefore runs toward ProtGPT2 passing.**
+**The bias this introduces, and its direction.** The scoring band (64–246 residues) holds **213,034** records, all inside the training band. Consuming 520,000 of 547,921 records means the stage-15 cohort is drawn almost entirely from sequences the dictionary was fitted on. `--cohort-skip` cannot repair this: under a draw seed the cohort is a window of a seeded permutation of the *whole* eligible corpus, not a file-order prefix, so a skip selects a different window rather than a later one. **The contamination therefore runs toward the retrained ProtGPT2 passing.**
+
+**Measured rather than assumed, and it corrected a claim first written here.** This entry originally said gpt2's cohort was "~98% unseen because OpenWebText is far larger than its training budget". That was an assumption and it is wrong: the staged OpenWebText is **4 shards of 80** on both hosts, holding **396,133** eligible records at the 800-character floor, so gpt2's 160,000 training sequences consumed **40.4%** of the pool it is also scored on.
+
+| dictionary | training sequences | eligible pool | share of the pool consumed |
+|---|---:|---:|---:|
+| gpt2 (EXP-R2-141) | 160,000 | 396,133 | **40.4%** |
+| gpt2 20M-token control | 44,000 | 396,133 | 11.1% |
+| protgpt2 (EXP-R2-141) | 160,000 | 547,921 | 29.2% |
+| protgpt2 65M-token retrain | 520,000 | 547,921 | **94.9%** |
+
+Two consequences. First, **EXP-R2-141's headline comparison was not confounded by a contamination asymmetry** — gpt2 was the *more* contaminated of the two arms (40.4% against 29.2%), so its 0.909 against ProGen3's 0.134 cannot be explained by gpt2 being scored on fresher data. Second, this is a limitation of *every* replacement number in EXP-R2-141 and it was not previously recorded: each arm is scored on a cohort drawn from a pool its dictionary partly trained on, which biases every recovery figure upward by an unmeasured amount. The reading rule below is unchanged, because it turns on the retrain's 94.9% against gpt2's 40.4%, and that gap is if anything wider than the one first claimed.
 
 **The reading rule, fixed now.**
 
