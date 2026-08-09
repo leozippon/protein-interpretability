@@ -1,6 +1,6 @@
 # Interpretability transfer audit: text to protein generative models
 
-**Status:** active; canonical analysis document **Supersedes:** the exploratory contents of the *historical* repository-root `check.md`, to which the section-numbered `check.md §…` citations in the experiment and project logs still refer **Not to be confused with:** the *current* repository-root `check.md`, a non-canonical reader summary renamed from `SUMMARY.md` on 2026-08-09 **Updated:** 2026-08-09 (catalogue through EXP-R2-148; the plan's narrative sections are current to EXP-R2-140, and `docs/EXPERIMENT_LOG.md` is the chronological register)
+**Status:** active; canonical analysis document **Supersedes:** the exploratory contents of the retired repository-root `check.md`, to which the section-numbered `check.md §…` citations in the experiment and project logs still refer; repository-root `SUMMARY.md` is a non-canonical reader summary **Updated:** 2026-08-09 (catalogue through EXP-R2-148; the plan's narrative sections are current to EXP-R2-140, and `docs/EXPERIMENT_LOG.md` is the chronological register)
 
 ---
 

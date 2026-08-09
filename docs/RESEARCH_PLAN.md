@@ -125,4 +125,4 @@ Total remaining budget, phased and costed, is the audit document §9. That docum
 - Chronological record: `docs/EXPERIMENT_LOG.md`
 - Dictionary receipts behind L1 and C1: `docs/analysis/P0_2B_DICTIONARY_FIDELITY_RESULTS_20260727.md`, `evidence/p0_2_adjudication_20260727/`, `evidence/p0_2b_fidelity_20260727/`
 - Retired scope, frozen: `/Data2/lzp/bio_archive/legacy/r2_retired_scope_20260729/`
-- Non-canonical progress overview, do not cite as a claim source: repository-root `check.md`
+- Non-canonical progress overview, do not cite as a claim source: repository-root `SUMMARY.md`
