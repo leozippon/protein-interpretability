@@ -1,3 +1,13 @@
+# Research Objective
+
+Study how and under what conditions mechanistic-interpretability methods developed on text decoders transfer to protein generative models. Meanwhile, analyses can also be performed from the interpretability perspective to examine the differences between protein‑generative models and language‑generative models, as well as whether protein‑generative models can truly acquire knowledge and generate novel proteins. Follow three directions in order:
+
+1. **Compare model families.** Identify meaningful differences between text and protein generative models.
+2. **Evaluate method transfer.** Determine where existing methods transfer, where they fail, and whether each limitation belongs to the method, model, data, or evaluation interface.
+3. **Develop adapted methods.** Design and validate protein-specific methods only when the preceding evidence identifies a concrete failure mode. If feasible, leverage interpretability methods to uncover scientifically meaningful findings learned by the models, which correspond to real‑world phenomena or yield novel scientific insights.
+
+`docs/INTERPRETABILITY_TRANSFER_AUDIT.md` is canonical for findings, limitations, retractions, and the current plan.
+
 # Repository Guidelines
 
 ## Development Principles
@@ -30,6 +40,7 @@ When these principles conflict, preserve explicit requirements, correctness, and
 - Give each document a coherent hierarchy and reader-oriented flow. Use headings only for meaningful divisions at the same level, group related ideas together, and move from overview to detail and normal use to exceptions where that order fits.
 - Apply the Single-Source Principle across documents. Keep each fact, design decision, and procedure in one authoritative section. Use links or brief pointers elsewhere; when sections overlap, clarify their boundaries instead of repeating the same content.
 - Prefer concise, plain language. Use lists or tables for genuinely parallel information, keep prose when it carries a sequence or argument, and mention identifiers or abbreviations only when readers need the exact name.
+- Write Markdown prose as logical lines; do not hard-wrap it at 80 columns.
 - Keep documentation aligned with current behavior. Verify commands and examples that readers may execute, and update or remove stale guidance with the related change.
 
 ## Git and Delivery
@@ -45,16 +56,6 @@ When these principles conflict, preserve explicit requirements, correctness, and
 - Keep `main` as the only long-lived branch. Temporary branches are allowed when useful and must ultimately be merged into `main`.
 
 ## Repository-Specific Guidelines
-
-### Research Objective
-
-Study how and under what conditions mechanistic-interpretability methods developed on text decoders transfer to protein generative models. Meanwhile, analyses can also be performed from the interpretability perspective to examine the differences between protein‑generative models and language‑generative models, as well as whether protein‑generative models can truly acquire knowledge and generate novel proteins. Follow three directions in order:
-
-1. **Compare model families.** Identify meaningful differences between text and protein generative models.
-2. **Evaluate method transfer.** Determine where existing methods transfer, where they fail, and whether each limitation belongs to the method, model, data, or evaluation interface.
-3. **Develop adapted methods.** Design and validate protein-specific methods only when the preceding evidence identifies a concrete failure mode. If feasible, leverage interpretability methods to uncover scientifically meaningful findings learned by the models, which correspond to real‑world phenomena or yield novel scientific insights.
-
-`docs/INTERPRETABILITY_TRANSFER_AUDIT.md` is canonical for findings, limitations, retractions, and the current plan.
 
 ### Environment
 
@@ -86,10 +87,7 @@ export H200_POD=<running-pod-name>
 ~/hangzhou-remote/ssh_tunnel/h200_pod_exec.sh -- nvidia-smi
 ```
 
-The end-to-end status probe normally takes 40–50 seconds because it crosses
-several SSH and Kubernetes boundaries. Give `h200_status.sh` a caller-side
-timeout of at least 90 seconds. A timeout before its terminal `Health=` line is
-inconclusive, not a failed cluster-health result.
+The end-to-end status probe normally takes 40–50 seconds because it crosses several SSH and Kubernetes boundaries. Give `h200_status.sh` a caller-side timeout of at least 90 seconds. A timeout before its terminal `Health=` line is inconclusive, not a failed cluster-health result.
 
 Cluster allocation is not GPU utilization: `16/16` means all GPUs are assigned to pods, not necessarily computing. Inspect `nvidia-smi` inside the selected pod. Never persist pod names in repository files, manifests, or durable logs; status commands naturally display current names, and `H200_POD` is shell-local. Do not install dependencies in a pod or read the mode-600 `~/hangzhou-remote/config.sh`. Stage code and dependencies from B; the external README is authoritative for access, transfer, and recovery.
 
@@ -119,3 +117,4 @@ Record each experiment's date, configuration or command, and result in `docs/EXP
 
 - Treat resource checks and logging as mandatory steps, not optional cleanup.
 - Include the Research Objective in every sub-agent task prompt in addition to the Development Principles.
+- If experiments entail lengthy waiting periods, spawn a background task that retrieves experimental results and resumes this conversation once the projected experiment completion time arrives.
