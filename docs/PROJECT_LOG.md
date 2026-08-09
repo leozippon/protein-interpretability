@@ -1,6 +1,6 @@
 # Research Status Log
 
-Last updated: 2026-07-29 CST
+Last updated: 2026-08-09 CST
 
 Append-only. Historical entries record the paths and framings that existed when they were written and are not normalized to the current layout.
 
@@ -1411,3 +1411,17 @@ Two results followed from findings the review and a design pass surfaced. The re
 Storage on the cluster was surveyed and tidied: 276 MiB of regenerable byte-code caches removed from frozen snapshots after verifying no manifest references them, snapshot checksums re-verified afterwards, and eighteen empty result directories from aborted lanes of the closed programme quarantined rather than deleted (rule 18). The filesystem is at 18% and was never under pressure; this was hygiene.
 
 Two tracks are now building in parallel: the minimal attribution control, which generalises the replacement gate to dense arms so the matched modality pair can be scored through it, and the training-corpus retrieval bound, which asks whether the model's fitness advantage over a substitution matrix survives comparison with a profile over its own training corpus.
+
+## 2026-08-08
+
+The minimal attribution control closed. ProtGPT2's dictionary was retrained to 59,796,506 tokens, 108 per latent against gpt2-large's 132, and the arm that had been withdrawn for a starved dictionary came back at +0.1641 against the text control's +0.9322 on an identical 36x1280 backbone with an identically sized dictionary. Its held-out reconstruction is *better* than the text arm's, 0.2376 per layer against 0.2750, so the objection that the protein dictionary was simply worse is now measured and false. A dense protein decoder with no routing at all fails the way the sparse-MoE protein decoder fails, which exonerates mixture-of-experts and leaves the protein modality as the attribution.
+
+## 2026-08-09
+
+A review of the repository against its own records found three gaps and closed them.
+
+The experiment log had stopped a day behind the cluster. Results admitted between 2026-08-08 03:55 and 23:50 were unrecorded: the completed 720-head causal sweep on every arm, and the cohort-size checks on the two free-baseline arms EXP-R2-146 had not covered. One artefact, `s15_gpt2-large_local_n512`, had been launched and never pulled at all; its driver log stopped at LAUNCHED while the run had in fact finished on the cluster. It was pulled and digest-verified before being read, and is now ADMITTED.
+
+Reading those figures produced a result that narrows the programme rather than extending it, recorded as EXP-R2-148. The causal-rank gate fails on the matched text control: on the 720-head grid ProtGPT2 shares with gpt2-large, the text arm that recovers 93% of the behavioural gap reads ρ +0.4119 against a 0.50 threshold, and the only arm that passes is gpt2, whose grid is five times smaller. Every cell is attainable, so these are measured failures rather than an unattainable specification. Under §5's organising rule that makes causal-rank a **method** limitation, and it may no longer be quoted as evidence that protein replacements are causally unfaithful. It is the third estimand in this programme whose apparent modality separation did not survive its own text control.
+
+`SUMMARY.md` was renamed to `check.md`, which is the name the progress overview is asked for by. It is not the historical `check.md`: that document's exploratory contents were superseded by the canonical audit, and the section-numbered `check.md §…` citations in this log and the experiment log still refer to that older file. The index records the distinction so the two cannot be confused.

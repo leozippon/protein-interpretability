@@ -9071,7 +9071,7 @@ The separation between the shape-matched pair is **1.010 at n=128 and 1.034 at n
 | arm | modality | tokens per latent | held-out NMSE per layer | **behavioural recovery** | 95% CI |
 |---|---|---:|---:|---:|---|
 | **gpt2-large** | text | 132 | 0.2750 | **+0.9322** | [+0.9286, +0.9352] |
-| **protgpt2, 65M retrain** | protein | 108 | **0.2376** | **+0.1641** | pending pull |
+| **protgpt2, 65M retrain** | protein | 108 | **0.2376** | **+0.1641** | [+0.1444, +0.1836] |
 
 **The protein arm's dictionary reconstructs better and its replacement recovers a sixth as much.** Against the 0.80 gate, the text arm passes at 0.932 and the shape-matched protein arm fails at 0.164.
 
@@ -9096,4 +9096,88 @@ The dense protein arm sits with the sparse-MoE protein arm at 0.13–0.16, not w
 
 **What it does not license.** It does not explain *why*, and the free-baseline result (EXP-R2-144) is the current best clue rather than an answer: a least-squares affine map of a block's input recovers +0.26 to +0.29 on text and −0.72 to −1.61 on protein, so protein blocks carry far less of their behaviour in the linear part of the input-output map. That makes a sparse dictionary's job harder; it does not establish that this is the mechanism. Two arms per modality is also two, not many — the claim is about these four decoders, and ZymCTRL and the ProGen2 family cannot yet test it because they need their own verified estimand adapter.
 
-**Causal-retrieval figures are pending** the 36 × 20-head ablation sweep and will be appended; the behavioural gate above is final.
+**Causal-retrieval figures were pending** the 36 × 20-head ablation sweep when this entry was written; the behavioural gate above is final and unchanged. The sweep completed the same day and is reported in EXP-R2-148, where it turns out not to supplement this attribution but to withdraw its own estimand from modality use: the matched text control fails the causal gate too.
+
+## 2026-08-09 — EXP-R2-148: the causal-rank gate fails on the matched text control, so it cannot separate the modalities
+
+**What this closes.** EXP-R2-147 ended with its causal figures declared pending. The 36 × 20-head ablation sweep and the remaining cohort-size checks completed on the cluster later the same day; the last of them (`s15_gpt2-large_local_n512`) was launched but never pulled, and was admitted today under the documented digest check before anything below was read. All figures here come from one snapshot, `20260807194343_dd65eb7be08c`.
+
+**The behavioural gate is unchanged and the reading of EXP-R2-147 stands.** Nothing below moves a behavioural number. What moves is what the *causal* half of the gate is allowed to be used for.
+
+**The causal-retrieval panel, with every denominator stated (Appendix B rule 27).** Gate is Spearman ρ ≥ 0.50 against the arm's own randomly drawn control, on trained per-layer transcoders:
+
+| arm | modality | grid | attention ρ | 95% CI | top-10 of grid | exact p | ceiling | verdict |
+|---|---|---:|---:|---|---:|---:|---:|---|
+| gpt2 | text | 144 | **+0.7096** | [+0.660, +0.725] | 5 (expect 0.694) | 0.0001 | 0.9751 | **PASS** |
+| **gpt2-large** | **text** | **720** | **+0.4119** | [+0.317, +0.449] | 4 (expect 0.139) | 0.0000 | 0.8120 | **FAIL** |
+| gpt2-large, n=512 | text | 720 | +0.4161 | [+0.364, +0.446] | 4 | 0.0000 | 0.9338 | FAIL |
+| **protgpt2, 65M retrain** | **protein** | **720** | **+0.2024** | [+0.061, +0.296] | 0 | 1.0000 | 0.6949 | FAIL |
+| progen3-112m | protein | 60 | +0.4236 | [+0.406, +0.462] | 4 (expect 1.667) | 0.0520 | 0.9823 | FAIL |
+
+Every cell is ATTAINABLE — every ceiling sits above the 0.50 gate — so each FAIL is a measured failure and not an unattainable specification. The MLP/block family fails on every arm including both text controls (gpt2 −0.0140, gpt2-large −0.0700 and −0.0803, protgpt2 +0.1650) and is not read further.
+
+**The finding: on the grid where the comparison is matched, the text control fails too.** ProtGPT2's comparator is gpt2-large, not gpt2 — that reassignment was already forced in EXP-R2-143 on dictionary grounds, and Appendix B rule 21 forces it again here, because gpt2's 144-head grid and gpt2-large's 720-head grid are not the same number of sampling units and hit@k is comparable only within a grid size. On the identical 720-head grid the text arm reads **+0.4119** and the protein arm **+0.2024**, and **both are below the gate**. The one arm that passes is the arm whose grid is five times smaller.
+
+**So the causal-rank gate is a method limitation under §5's organising rule, not a transfer one**, and it joins L1 and F5 as a third estimand in this programme whose apparent modality separation does not survive its own text control. It may not be quoted as evidence that protein replacements are causally unfaithful, because the text replacement that recovers 93% of the behavioural gap is causally unfaithful by the same test. This experiment was run to supplement EXP-R2-147's attribution and instead removes its own estimand from that use.
+
+**What is not resolved.** Whether gpt2's pass and gpt2-large's failure differ by depth (12 against 36) or by grid size (144 against 720) is not separated by this design, and no arm here separates them. Recorded as open rather than attributed.
+
+**What still separates at matched grid, recorded descriptively and not as a claim.** Top-10 overlap on the 720-head grid is 4 for gpt2-large against 0 for ProtGPT2, against an expected overlap of 0.139. Two asymmetries run against reading that as a modality difference, and both are in the same direction: ProtGPT2 has the panel's lowest attainability ceiling at **0.6949** against gpt2-large's 0.8120, and its original model resolves only **153 of 720** heads above zero effect against gpt2-large's **480 of 720**, so most of ProtGPT2's grid is ties and its rank correlation is attenuated by that before any modality effect is reached. The overlap difference is real; its cause is not established.
+
+**Cohort-size robustness of the free linear baseline, now complete on all four arms.** EXP-R2-146 quadrupled the cohort on two arms; the other two landed afterwards:
+
+| arm | modality | n=128 | n=512 | difference |
+|---|---|---:|---:|---:|
+| gpt2 | text | +0.2630 | **+0.2658** | 0.0028 |
+| gpt2-large | text | +0.2941 | +0.2874 | 0.0067 |
+| protgpt2 | protein | −0.7158 | −0.7460 | 0.0302 |
+| progen3-112m | protein | −1.6112 | **−1.7808** | 0.1696 |
+
+Text holds at +0.27 to +0.29 and protein at −0.75 to −1.78, non-overlapping at both cohort sizes, so EXP-R2-144's modality separation is not a small-cohort artefact on any arm. ProGen3 moves most, by 0.17, which is expected rather than anomalous: its clean-to-ablated denominator is **1.33 nats** against gpt2-large's **6.91**, so the same absolute error is five times larger as a ratio on that arm. The matched-pair separation is 1.010 at n=128 and 1.034 at n=512.
+
+**Bounds.** One snapshot, one protocol, one cohort band (64–246 residues). The causal statistic is a rank correlation between per-component ablation effects in the original and the replacement, and this programme has twice retracted readings built on rank correlations against per-token quantities; the correction here is that the gate is being withdrawn from a use, not extended to a new one. Nothing in this entry changes the behavioural attribution in EXP-R2-147, which rests on its own pre-registered rule.
+
+## 2026-08-09 — ZymCTRL admitted as a dense replacement arm: the band, the estimand, and what its EC prompt does to a recovery ratio
+
+**Why.** EXP-R2-147's attribution rests on two arms per modality, and its only shape-matched protein arm is ProtGPT2 — so **protein modality and multi-residue BPE tokenisation are confounded on the matched pair**. ZymCTRL is the one checkpoint that separates them: gpt2 architecture, 36 × 1280, 20 heads, protein, and **residue-tokenised** (vocab 458). `src/transfer/replaceable.py` refused it, and the refusal was correct as written — its EC prompt is a conditioning span, and every scored position in the stage's convention sat inside it. This entry is the readiness audit that removed the refusal, plus the measurements it required. **No campaign was launched.**
+
+**The estimand transfers exactly, verified rather than argued.** `DenseReplaceable.estimand_identity` on ZymCTRL, bfloat16, one L20: `max|difference| = 0.0` across all 36 layers — the same exact-equality result gpt2, gpt2-large and ProtGPT2 give.
+
+**The loader band, measured by the same code path that later checks it.** Text arms score eight frozen English paragraphs and unconditioned protein arms the eight Swiss-Prot records ProGen3 is checked on. **Neither set can gate a conditioned arm**: only two of those eight sequences carry an EC number at all, so six could be conditioned only by inventing an enzyme class — a false fact inside the gate that exists to catch false facts, and off the arm's own distribution (Appendix B rule 4). ZymCTRL therefore has its own eight `(EC, sequence)` literals, drawn under a **seeded permutation** (seed 20260809, 85–138 residues, seven distinct EC classes) and disjoint from both cohorts stage 15 draws at the default seed.
+
+| ZymCTRL, 869 residue targets | nats/token |
+|---|---:|
+| **native rendering `{ec}<sep><start>{seq}<end>`, bf16 batch 4** | **0.7292** |
+| batch 1 / batch 8 / float16 batch 4 | 0.7287 / 0.7294 / 0.7284 |
+| **EC tag dropped** (`<start>{seq}<end>`, same targets) | **3.1779** |
+| randomly initialised from its config | 6.2108 |
+
+Spread across everything the environment can change is **0.0010**; the nearest silent failure is **+2.4487** away. The ±0.30 half-width is therefore 300× the spread and two nats clear of the corruption, consistent with how the other three were sized.
+
+**Two things that measurement settles.** First, **L15's conditioning leak on this gate's own inputs is 2.4487 nats/token**, against EXP-R2-034's 1.73 on the cohort it was priced on — the tag is worth more on an all-enzyme set than on a mixed one. Second, a flat corruption table is now actively misleading: **ZymCTRL stripped of its EC tag reads 3.1779 and a perfectly healthy gpt2-large reads 3.1706**, 0.0073 apart. `MEASURED_DENSE_SELF_CHECK_CORRUPTIONS` is now keyed by arm and a gate reports only its own arm's corruptions.
+
+**What the scored span is, and why it had to change.** ZymCTRL's `<sep>`, `<start>` and `<end>` are ordinary vocabulary entries, not tokenizer special tokens, so the unconditioned content mask would have kept all three *and* the seven tokens of the EC number — ten positions of a ~197-token cohort record — inside the transcoder objective, the reconstruction NMSE, the per-layer mean that is the ablation endpoint, and the likelihood. Both masks now resolve `src.transfer.scoring.target_rule`, which already declared `between_boundaries` for this input format; the residues are scored and nothing else. **On every unconditioned arm the shared rule reproduces the previous mask bit-identically** (`attention_mask[:,1:] & attention_mask[:,:-1]` equals `attention_mask[:,1:]` under right padding), so no frozen number moves — pinned by a test.
+
+**Corpus accounting, measured on `data/zymctrl/ec_labeled_swissprot.fasta`.** 244,343 records; 242,850 pass the canonical-alphabet and marker filter in the **32–1014** residue band. That ceiling is `1024 − 10`, not the other protein sources' 1022: ZymCTRL's context is 1024 and its rendering spends ten tokens on the prompt and terminator, and a record whose `<end>` is truncated away has **no scored span at all**. It costs 118 records (0.05%).
+
+| budget (batch 8) | records | residue tokens | tokens/latent | held-out offset | held-out mean vs train mean |
+|---|---:|---:|---:|---:|---|
+| 19,674 steps | 157,392 | 59,744,045 | 108.0 | 163,840 | 333 vs 380 |
+| **22,000 steps** | **176,000** | **66,758,421** | **120.7** | **180,224** | **352 vs 379** |
+| 24,046 steps | 192,368 | 72,980,714 | 132.0 | 196,608 | 476 vs 379 |
+
+552,960 latents at 12× expansion. **22,000 × 8 lands at 120.7 tokens/latent, between gpt2-large's 132 and the ProtGPT2 retrain's 108**, and its held-out draw is 1.08× the training mean — against the 2.4× train/eval length gap EXP-R2-136 had to repair on UniRef50. Full-corpus capacity is 166.6 tokens/latent, so the budget is 0.72 of an epoch and no record is seen twice.
+
+**`dead_steps` is still declared in sequences and still not cross-arm comparable (EXP-R2-145).** ZymCTRL renders ~379 tokens/sequence, so its dead window holds ~3.79M tokens — between ProtGPT2's 1.25M and gpt2-large's 4.56M. That is not worked around: its dead fraction may be reported and **may not be compared to any other arm's**, and because `dead_steps` also gates the auxiliary revival loss it is a small uncontrolled difference in the training instrument, of the same kind already accepted between gpt2-large and ProtGPT2. The comparable quantities remain held-out NMSE per layer and behavioural recovery.
+
+**Cohort contamination, computed before the run rather than after.** At the 176,000-record budget, **98 of 128** scored-cohort records (76.6%) and 197 of 256 linear-fit records fall in the training stream — against ProtGPT2's 89.8% and gpt2-large's 40.4%. Unlike ProtGPT2 this arm *could* be made clean: **16,475 records of the 64–246 band sit in the corpus tail past the held-out draw**, enough for a disjoint cohort many times over. It is not made clean by default, because a tail-drawn cohort is a file-order region of a family-grouped corpus (Appendix B rule 1) and would give the two protein arms different cohort protocols. Contamination runs *toward* the protein arm passing, so the default setting stays the conservative one; a disjoint-cohort sensitivity is the cheap check if the arm passes.
+
+**Which direction the EC prompt biases the recovery ratio.** With `C`, `Rp`, `A` the clean, replacement and fully-ablated NLL and `δ` each one's gain from the tag, `R = (A − Rp)/(A − C)` exceeds its unconditioned value **iff `(δ_Rp − δ_A)/(δ_C − δ_A) > R₀`** — that is, iff the replacement preserves the *conditioning benefit* better than it preserves behaviour in general. Since `R₀` on protein arms is 0.13–0.16, that threshold is very low, and the tag's effect is carried by attention, which sequential MLP replacement leaves intact. **The presumption is therefore that the prompt biases ZymCTRL toward passing** — which makes a ZymCTRL *failure* decisive and a ZymCTRL *pass* confounded, and that asymmetry is pre-registered here before the number exists.
+
+**Smoke, one L20, `logs/smoke/zymctrl/` (Appendix B rule 29 — nothing written into `results/`).** `17_train_transcoder.py --arm zymctrl --architecture plt --steps 20 --batch-size 2 --d-hidden 512 --k 32 --auxk 32 --eval-sequences 4 --eval-every 10 --max-tokens 1024`: loader gate PASS at 0.7292, 47.3M parameters, 36 decoders, held-out NMSE sum 39.91 → 37.26. That checkpoint through `15_replacement_faithfulness.py --arm zymctrl --replacement-kind local --sequences 16 --batch-size 4 --bootstrap 100`: clean **1.2161** → replacement 3.0080 → fully ablated 2.9632, denominator **1.7470**, verdict PARTIAL.
+
+*These are smoke figures at a 512-latent dictionary and twenty steps. They establish that both stages run end to end on a conditioned arm and that the gate fires; they establish nothing about the arm.* Two facts from them do carry, because they are properties of the arm and not of the dictionary: ZymCTRL's clean cross-entropy on the 64–246 band is **1.22 nats/residue** with its tag, and its **clean-to-ablated denominator is 1.75 nats** — in ProGen3's range (1.33) rather than gpt2-large's (6.91), which is what Appendix B rule 27 requires to be published beside any ratio.
+
+**What is still confounded, stated plainly.** ZymCTRL differs from ProtGPT2 in **two** respects, not one: residue tokenisation *and* EC conditioning. A three-arm result therefore separates modality from "tokenisation-or-conditioning", not from tokenisation alone. The control that would split them is an unconditioned ZymCTRL rendering, which is off its training distribution by the 2.4487 nats measured above and would need its own band; it is not built here. Per EXP-R2-148, the deliverable from this arm is the **behavioural** recovery figure — the causal-rank half of the gate has been withdrawn from modality use because the matched text control fails it too.
+
+**Validation.** `python -m pytest -q` — 714 passed, 7 skipped before the last edit and re-run after it. New tests pin the conditions that must hold without a GPU: the scored targets and content positions are the residues and nothing else, the EC digits are provably not removable as special tokens, an unconditioned arm's mask is unchanged, a render without labels and a render with labels the arm cannot use both raise, each arm's band is narrower than the distance to *its own* corruption, and the declared band ceiling plus the wrapper equals the context.

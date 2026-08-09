@@ -25,11 +25,9 @@
 | `docs/REPOSITORY_STRUCTURE.md` | Naming, version-control, and storage rules |
 | `docs/ENGINEERING_AUDIT.md` | Current repository audit and accepted limitations |
 | `docs/ARCHIVE.md` | External frozen-provenance location and verification |
-| `SUMMARY.md` | Non-canonical research conclusions and core experiment index derived from the scientific audit |
+| `check.md` | Non-canonical progress overview: research conclusions and core experiment index derived from the scientific audit |
 
-The historical exploratory contents of `check.md` were superseded by the
-canonical audit. `SUMMARY.md` is the current reader-oriented summary; it does not
-replace or amend the audit.
+`check.md` carries the reader-oriented progress overview; it does not replace or amend the audit. It is not the earlier file of that name: the original `check.md` was an exploratory document whose contents the canonical audit superseded, and the section-numbered `check.md §…` citations in the experiment and project logs are historical references to that document, not to this one.
 
 ## External
 

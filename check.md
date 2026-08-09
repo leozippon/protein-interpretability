@@ -2,7 +2,7 @@
 
 **状态：** 官方进度总览。对科学结论而言仍是支持性汇总，不是权威来源；结论以权威审计为准，本文负责让当前进度一眼可读，并在新结果产出时同步更新。
 
-**更新：** 2026-08-08
+**更新：** 2026-08-09
 
 **权威来源：** [`docs/INTERPRETABILITY_TRANSFER_AUDIT.md`](docs/INTERPRETABILITY_TRANSFER_AUDIT.md)
 
@@ -23,7 +23,7 @@
 | R2.1 | 2. 评估方法迁移 | 能够迁移的方法 | Tuned Lens、Activation Patching、部分 Probe 和 Concept Erasure 能够应用于蛋白模型并产生稳定结果。 | **已确认** | 这些方法多数只能回答局部问题，不能单独形成完整机制解释。 |
 | R2.2 | 2. 评估方法迁移 | Attention selector 迁移 | 本项目 PAA 在文本模型上能够找回因果重要 heads，但在多数蛋白模型上失败；原有 induction census 的全层统计又受到深度混淆。Attention 模式不能直接当成蛋白模型的因果机制。 | **核心迁移结果** | PAA 的蛋白失败尚未定位到具体 selector 因素。 |
 | R2.3 | 2. 评估方法迁移 | SAE、Transcoder 与 CLT | **sequential replacement 的行为忠实失败属于蛋白模态，不属于方法、字典预算、深度或 MoE 路由（EXP-R2-147）。** 匹配对 gpt2-large 与 ProtGPT2 同为 36×1280、字典同为 552,960 个 latent、estimand 逐位相同：文本恢复 **0.9322**，蛋白恢复 **0.1641**，而蛋白字典的重建反而更好（每层 NMSE 0.2376 对 0.2750）。dense 蛋白 arm 与 sparse-MoE 蛋白 arm 同处 0.13–0.16，与同构文本 arm 的 0.93 相距甚远，**MoE 由此被排除**。良好重建既不保证行为忠实也不保证因果忠实这一结论因此得到最强形式的确认。 | **核心负面结果；归因已完成，属于迁移限制而非方法限制** | 尚未解释「为什么」。自由基线（EXP-R2-144）是目前最好的线索而非答案；且每个模态只有两个 arm。 |
-| R2.4 | 2. 评估方法迁移 | 统一因果审计 | 重建率、probe accuracy、attention pattern 和 performance recovery 都不足以单独支持机制解释；必须同时检查 attainability、fidelity、causal retrieval、分母有效性和独立数据稳定性。 | **主要方法学贡献** | 需要把同一套门控扩展到更多新一代方法。 |
+| R2.4 | 2. 评估方法迁移 | 统一因果审计 | 重建率、probe accuracy、attention pattern 和 performance recovery 都不足以单独支持机制解释；必须同时检查 attainability、fidelity、causal retrieval、分母有效性和独立数据稳定性。**该门控中的 causal-rank 一项已被本项目自己撤出模态用途**（EXP-R2-148）：在同为 720 head 的网格上，行为恢复 0.93 的文本对照 gpt2-large 自身也失败（ρ +0.4119），因此它不能证明蛋白 replacement 在因果上不忠实。 | **主要方法学贡献；其中一项估计量已自我限缩** | 需要把同一套门控扩展到更多新一代方法；causal-rank 需要一个能在文本对照上达标的替代统计量。 |
 | R2.5 | 2. 评估方法迁移 | 蛋白测量基底 | 蛋白实验对输入渲染、序列区间、同源性、文件顺序、tokenization 和小字母表更敏感；很多表面模态差异实际来自这些接口。 | **已确认** | 需要把这些控制固化为统一蛋白评价协议。 |
 | R3.1 | 3. 开发适配方法 | PAA | PAA 是本研究提出并完成验证的方法：它在文本上有效，并揭示了蛋白 attention selector 的迁移失败；但它尚不是成功的蛋白特异方法。 | **方法创新已完成；蛋白适配失败** | 没有发现足够具体、可复现的失败因子，因此暂不应继续堆叠启发式特征。 |
 | R3.2 | 3. 开发适配方法 | 因果忠实 replacement | 现有结果支持设计直接优化 intervention consistency 或 causal-rank consistency 的 replacement，而不是继续只优化重建误差。 | **方向已获得；方法未完成** | 需要先完成 Dense 对照，再决定是否加入 residue interface 或 routing path。 |
@@ -49,6 +49,7 @@
 | CLT/PLT Capacity Match | ProGen3 上的 CLT、等宽 PLT、参数匹配 PLT，各 2 个语料 seed | 重建误差在不同资源匹配下的排序，以及该排序是否进入忠实度 | 等宽 CLT 比 PLT 好 11.7%；匹配参数后宽 PLT 反而好 0.126（按 seed 配对差 +0.1294/+0.1228，95% CI [0.084, 0.168]，并在独立 Swiss-Prot cohort 上复现）。但该排序**不进入忠实度**：行为恢复 0.1450 vs 0.1464，两个配对差符号相反，本设计的最小可检测差 0.0546 大于全部七个 arm 的总极差 0.0436。 | **已完成；等宽比较为嵌套模型类** | R2.3 |
 | Replacement Faithfulness（**归因已完成**） | 同一协议（12× 扩展、k=64）下的 gpt2、gpt2-large、ProtGPT2、ProGen3；**gpt2-large 与 ProtGPT2 构成 36×1280 同构匹配对**；gpt2 与 ProGen3 各有第二个语料 seed | sequential replacement 的行为恢复和 causal retrieval | **文本 gpt2-large +0.9322 [+0.9286, +0.9352]、gpt2 +0.9091（seed 07 +0.9084，差 0.0007）；蛋白 ProtGPT2 重训后 +0.1641、ProGen3 +0.1337（seed 07 +0.1262，差 0.0075）。** dense 蛋白与 sparse-MoE 蛋白同处 0.13–0.16，与同构文本 arm 的 0.93 相距甚远。关键在于**蛋白字典的重建反而更好**（每层 NMSE 0.2376 对 0.2750），且其 cohort 污染率实测 **89.8%**（gpt2-large 为 40.4%）——所有残余偏置都指向让蛋白 arm 通过，它仍然失败。深度亦已排除（36 层反而略高于 12 层）。 | **全部完成；预注册判定规则于结果产出前写定** | R2.3、R2.4、R3.2 |
 | MoE Routing Audit | ProGen3-112M；随机分组（等基数自由基线）与残基身份（混淆项） | selected-set 与 boundary-margin 分组对 replacement residual 的留出解释量 | 在 replacement 真正失败的第 4–8 层，selected-set 分组**不减少任何留出误差**（−0.0007 至 −0.00002），只是比等基数随机分组少亏 +0.0002–0.0008，算术上限 0.0022–0.0034；boundary-margin 分组在每一层都更弱。 | **已完成；预注册 null 成立** | R1.5、R2.3、R3.2 |
+| Causal-rank 门控（**自我限缩**） | 同一快照下的 gpt2（144 head）、gpt2-large（720）、ProtGPT2（720）、ProGen3（60）；ProtGPT2 的匹配对照是 gpt2-large | 原模型与 replacement 的逐部件消融效应秩相关，门槛 ρ ≥ 0.50 | **只有网格最小的 gpt2 通过（+0.7096）。在与 ProtGPT2 完全同网格的 720 head 上，gpt2-large 失败（+0.4119，n=512 为 +0.4161），ProtGPT2 也失败（+0.2024）。** 全部 arm 的 attainability ceiling 均高于门槛（0.695–0.984），所以这些失败是实测失败而非规格缺陷。深度（12 对 36）与网格规模（144 对 720）在本设计中未分离。 | **已完成；结论是把该估计量撤出模态用途** | R2.2、R2.4 |
 | Frozen-attention Check | GPT-2-large vs ZymCTRL | 冻结 attention 后保留的上下文信息 | 两个模型均保留约 77%，没有出现蛋白侧额外下降。 | **已完成的负结果** | R1.1、R2.4 |
 | Fitness Baseline | ProGen3-112M vs BLOSUM62，ProteinGym | Zero-shot fitness Spearman 优势 | 完整 benchmark 上模型优势为 +0.0647，置信区间高于零；论文的小面板无法单独解析该优势。 | **已完成** | R1.6 |
 | Homology Control | Dense 蛋白模型与 UniRef50 同源层 | induction 指标随训练集同源性的变化 | 没有真实低同源层；head count 未随同源层分离，峰值强度与记忆解释一致。 | **受数据覆盖限制** | R1.3、R1.6 |
@@ -60,7 +61,7 @@
 
 | 进行中的实验 | 判定什么 | 判定规则（已预先声明） |
 |---|---|---|
-| **causal retrieval 收尾**：ProtGPT2 重训 arm 的 36×20 head 消融扫描仍在运行；n=512 的 cohort 规模稳健性检查覆盖余下两个 arm | 因果排序指标是否与行为门控给出一致的模态划分 | 行为门控已终局（0.9322 对 0.1641），因果数字只作补充记录，不改变 EXP-R2-147 的归因。 |
+| *（本节暂空，下一项实验启动后填入）* | | |
 
 **已知的不可消除限制，先记录再测量：** ProGen3-112M 的模型卡未声明训练语料，ProGen2-medium 的 BFD30 未落盘，因此这两个 arm 的 LOOKUP 只能以 UniRef50 作代理，**系统性低估其语料支持度，偏向于让模型通过**。ProtGPT2 是唯一语料被精确识别的 arm（其声明语料就是已落盘的 UniRef50），因此它的结果权重最高。
 
