@@ -68,6 +68,23 @@ H200_POD_EXEC="${H200_POD_EXEC:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_pod_exec.sh}
 CONTROLLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "${CONTROLLER_DIR}/../.." && pwd)}"
 
+# Where this driver's own local output goes: the dispatch record it writes
+# before launching, and the directory it pulls an admitted result into.
+#
+# Separate from REPO_ROOT, which answers a different question. REPO_ROOT is
+# where the *code* is: it is what the stage-file check reads and what the
+# code-hash comparison is computed over, so it must be the real checkout and a
+# test cannot move it. Output location is not that question, and while one
+# variable answered both, exercising the dispatch path wrote a `.dispatch`
+# record for a run that never happened into the operational log directory an
+# operator reads to see what was actually launched -- twice, once on
+# 2026-08-07 and once on 2026-08-09, each naming a pytest temporary directory
+# as its snapshot. That is Appendix B rule 29's failure ("a smoke run must not
+# be written into the results tree") reaching the dispatch ledger, and it is
+# fixed here by giving the two roles two names rather than by asking callers
+# to remember.
+LOCAL_OUTPUT_ROOT="${LOCAL_OUTPUT_ROOT:-${REPO_ROOT}}"
+
 # The GPFS project root. Overridable so no site layout is hard-wired into a
 # committed file beyond the default the environment script already carries.
 GPFS_PROJECT_ROOT="${GPFS_PROJECT_ROOT:-}"
@@ -169,7 +186,7 @@ POD_LOG="${GPFS_PROJECT_ROOT}/logs/external_baseline/${RUN_ID}_${LABEL}.log"
 
 # The record EXP-R2-132 does not have. Written before the launch, so a run that
 # dies still leaves its own dispatch behind.
-LOCAL_RECORD="${REPO_ROOT}/logs/external_baseline/${RUN_ID}_${LABEL}.dispatch"
+LOCAL_RECORD="${LOCAL_OUTPUT_ROOT}/logs/external_baseline/${RUN_ID}_${LABEL}.dispatch"
 mkdir -p "$(dirname "${LOCAL_RECORD}")"
 {
   printf 'run_id\t%s\n' "${RUN_ID}"
@@ -276,7 +293,7 @@ log "${LABEL} ${status} after ${waited}s"
 
 # --------------------------------------------------------- pull and verify
 
-LOCAL_OUT="${REPO_ROOT}/results/transfer/external_baseline/${RUN_ID}/${LABEL}"
+LOCAL_OUT="${LOCAL_OUTPUT_ROOT}/results/transfer/external_baseline/${RUN_ID}/${LABEL}"
 REMOTE_SUMS="$(mktemp)"
 trap 'rm -f "${REMOTE_SUMS}"' EXIT
 "${H200_POD_BASH}" "cd '${OUT_DIR}' && find . -type f -printf '%P\n' | sort | xargs sha256sum" \

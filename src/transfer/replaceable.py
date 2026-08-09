@@ -59,9 +59,10 @@ from typing import Any, Callable, Iterator, Sequence
 
 import torch
 
-from .arms import PANEL, Arm, Cohort, load_arm, tokenize_batch
+from .arms import PANEL, Arm, Cohort, conditioning_boundary_ids, load_arm, tokenize_batch
 from .io import sha256_file
 from .path_patching import attention_output_projection
+from .scoring import sequence_target_mask, target_rule
 from .progen3 import (
     PROGEN3_CHECKPOINT,
     SELF_CHECK_SEQUENCES,
@@ -166,7 +167,10 @@ class ReplaceableModel(ABC):
     :meth:`render` is the only place a record becomes a model input. Rendering
     is worth 1.42 nats/token on ProtGPT2 and a duplicated copy of that decision
     already caused one retraction (audit §0.1), so a stage renders through this
-    and never by hand.
+    and never by hand. ``ec_labels`` carries the conditioning prompt an
+    ``ec_conditioned`` arm cannot be rendered without; every implementation
+    refuses labels it would silently drop and refuses to render without labels it
+    needs, because both failures are invisible in the numbers that follow.
 
     :meth:`block_intercept` is the only place a block's input and output are
     read or substituted. ``fn(layer, block_input, block_output)`` returns a
@@ -226,7 +230,9 @@ class ReplaceableModel(ABC):
     # -- inputs ------------------------------------------------------------
 
     @abstractmethod
-    def render(self, records: Sequence[str]) -> list[str]:
+    def render(
+        self, records: Sequence[str], *, ec_labels: Sequence[str | None] | None = None
+    ) -> list[str]:
         """Cohort or corpus records as this model's own input strings."""
 
     @abstractmethod
@@ -322,9 +328,16 @@ class ProGen3Replaceable(ReplaceableModel):
     def weights_digest(self) -> str:
         return sha256_file(self.pg.checkpoint / "model.safetensors")
 
-    def render(self, records: Sequence[str]) -> list[str]:
+    def render(
+        self, records: Sequence[str], *, ec_labels: Sequence[str | None] | None = None
+    ) -> list[str]:
         # ProGen3's batch preparer adds the terminus and direction tokens itself,
         # so a record IS the input string and wrapping it here would render twice.
+        if ec_labels is not None and any(label is not None for label in ec_labels):
+            raise ValueError(
+                "ProGen3 has no conditioning prompt; EC labels handed to it would "
+                "be dropped and the run would look like a conditioned one"
+            )
         return list(records)
 
     def batch(self, inputs: Sequence[str]) -> dict[str, torch.Tensor]:
@@ -398,8 +411,70 @@ SELF_CHECK_DOCUMENTS: tuple[str, ...] = (
     "apparent difference had been a consequence of it.",
 )
 
+#: What :func:`dense_self_check` scores on an **EC-conditioned** arm: eight
+#: ``(ec_number, sequence)`` pairs, frozen as literals for the same reason the
+#: other two sets are.
+#:
+#: A third set, and it is not a preference. ZymCTRL's rendering carries an EC tag
+#: and :data:`src.transfer.progen3.SELF_CHECK_SEQUENCES` carries none -- only two
+#: of those eight records appear in the EC-labelled corpus at all, so six of them
+#: could only be conditioned by inventing an enzyme class for a protein that has
+#: none. That is a false fact in the gate that exists to catch false facts, and
+#: it would put the model off its own training distribution while claiming to
+#: check that it is on it (Appendix B rule 4).
+#:
+#: Drawn under a seeded permutation of the EC-labelled corpus rather than from
+#: its head (Appendix B rule 1): seed 20260809 over the 6740 records of
+#: ``data/zymctrl/ec_labeled_swissprot.fasta`` whose sequence length is 85-138
+#: residues, which is the length range of the unconditioned protein set so that
+#: the two gates score comparable amounts of evidence. Seven distinct EC classes,
+#: and disjoint from both cohorts ``15_replacement_faithfulness.py`` draws at
+#: :data:`src.transfer.arms.DEFAULT_CORPUS_DRAW_SEED`.
+SELF_CHECK_EC_RECORDS: tuple[tuple[str, str], ...] = (
+    (
+        "1.3.7.7",
+        "KRLLQNLGIEINQVIPEGGFIEDLQNLPKAWFNFVPYREIGLMTAVYLEKEFGMPYVSITPMGIVDTAE"
+        "CIRQIQKHINELAVVSLEETVDYEPYIYQQTKFV",
+    ),
+    (
+        "5.4.99.62",
+        "MKKTGILNSHLAKLADDLGHTDRVCIGDLGLPVPNGIPKIDLSLTSGIPSFQEVLDIYLENILVEKVIL"
+        "AEEIKEANPDQLSRLLAKLDNSVSIEYVSHNHLKQMTQDVKAVIRTGENTPYSNIILQSGVII",
+    ),
+    (
+        "3.6.1.31",
+        "MSDTLTRLAEVLEARKGAAPDSSYVASLYHKGLNKILEKVGEESVETILAAKDAAVSGDSSDLIYETAD"
+        "LWFHSLVMLAALGQHPQAVLDELDRRFGLSGHAEKAARPQT",
+    ),
+    (
+        "3.5.1.135",
+        "MQPNDITFFQRFQNDILAGRKTITIRDASESHFKAGDVLRVGRFEDDGYFCTIEVTGTSTVTLDTLNEK"
+        "HAQQENMSLDELKRVIAEIYPNQTQFYVIDFKCL",
+    ),
+    (
+        "4.2.1.96",
+        "MARNRLTESEMNEALRALDGWQKVDGREAITRSFKFKDFSTAFGFMAQAALYAEKLDHHPEWFNAYNRV"
+        "DVTLATHSENGVTELDIKMARKMNAIAG",
+    ),
+    (
+        "1.5.3.24",
+        "MMLIECPNCGPRNENEFKYGGEAHVAYPEDPNALSDKEWSRYLFYRGNKKGIFAERWVHSGGCRKWFNA"
+        "LRDTVSYEFKAVYRAGEARPQLDSTEGGTR",
+    ),
+    (
+        "3.6.1.31",
+        "MARFTLHDLAATVDARAASGGESSYTKKLLDKGPEHCAKKFGEEAVEMVIAAVENDRGHLISETADVLF"
+        "HMLVLLKSRGVKLEEVEAALAQRTSMSGLEEKASRKRD",
+    ),
+    (
+        "3.1.26.5",
+        "MNTYAFNRELRLLTPEHYQNVFQQAHRAGSPHFTIIARNNKLSHPRLGLAVPKKQIKTAVGRNRFKRLA"
+        "RESFRNNQHQLPNKDFVVIAKKSAQDLSNEELFKLFDKLWHRLSRPSRG",
+    ),
+)
+
 #: The token cap the self-check tokenises under, declared here rather than taken
-#: from the run's own ``--max-tokens``. Both frozen sets fit inside it, so the
+#: from the run's own ``--max-tokens``. All three frozen sets fit inside it, so the
 #: check scores the same tokens whatever a campaign is configured to do; a check
 #: that moved with the configuration would be measuring the configuration.
 SELF_CHECK_MAX_TOKENS = 256
@@ -420,37 +495,61 @@ MEASURED_DENSE_SELF_CHECK_NLL: dict[str, float] = {
     "gpt2": 3.7651,
     "gpt2-large": 3.1706,
     "protgpt2": 5.2006,
+    "zymctrl": 0.7292,
 }
 
-#: What the same measurement gives when the arm is broken in the two ways that do
-#: not raise. Recorded so that the band below is sized against a measured
-#: distance rather than against taste, exactly as ProGen3's is:
+#: What the same measurement gives when an arm is broken in a way that does not
+#: raise, **keyed by the arm it was measured on**. Recorded so that the band below
+#: is sized against a measured distance rather than against taste, exactly as
+#: ProGen3's is.
 #:
-#: * ``protgpt2_rendered_raw`` -- the FASTA wrapping removed, which is L11's
+#: Keyed by arm rather than flat, because a corruption of one arm says nothing
+#: about another and reading the table as a cross-product is actively misleading
+#: here: ZymCTRL rendered without its EC tag scores 3.1779 and gpt2-large scores
+#: **3.1706** when it is perfectly healthy. A flat table invited the comparison,
+#: and the two numbers are 0.0073 apart.
+#:
+#: * ``rendered_raw`` on ProtGPT2 -- the FASTA wrapping removed, which is L11's
 #:   defect, the one that cost a retraction. Worth 1.42 nats/token on the 600-2000
 #:   residue cohort it was priced on and **4.38** on these eight short records,
 #:   where the missing end-of-text prefix is a larger share of the sequence.
-#: * ``gpt2_randomly_initialised`` -- the same architecture and tokenizer built
-#:   from its config with no weights read, which is L24's shape on a dense arm.
-MEASURED_DENSE_SELF_CHECK_CORRUPTIONS: dict[str, float] = {
-    "protgpt2_rendered_raw": 9.5802,
-    "gpt2_randomly_initialised": 11.0789,
+#: * ``randomly_initialised`` -- the same architecture and tokenizer built from
+#:   the arm's config with no weights read, which is L24's shape on a dense arm.
+#:   ZymCTRL's 6.2108 is ln(458) to two decimals, its vocabulary being 458.
+#: * ``rendered_without_its_ec_tag`` on ZymCTRL -- ``<start>{seq}<end>`` with the
+#:   EC number and its separator dropped, scored on exactly the same 869 residue
+#:   targets. This is L11's shape on a conditioned arm and it is the nearest
+#:   silent failure this arm has, at **+2.4487 nats/token**: that figure is L15's
+#:   conditioning leak measured on this gate's own inputs, against EXP-R2-034's
+#:   1.73 on the cohort it was priced on.
+MEASURED_DENSE_SELF_CHECK_CORRUPTIONS: dict[str, dict[str, float]] = {
+    "gpt2": {"randomly_initialised": 11.0789},
+    "protgpt2": {"rendered_raw": 9.5802},
+    "zymctrl": {
+        "rendered_without_its_ec_tag": 3.1779,
+        "randomly_initialised": 6.2108,
+    },
 }
 
 #: Half-width of the band :func:`check_dense_nll` accepts, in nats/token.
 #:
 #: Sized from two measurements, like ProGen3's. The **spread of a correct arm**
 #: across what an environment can change is at most 0.015 nats: over batch sizes
-#: 1, 4 and 8 at bfloat16, gpt2 moves 3.7537/3.7651/3.7685, gpt2-large 0.0008 and
-#: ProtGPT2 0.0049, and float16 moves each by less than 0.011. The **distance to
-#: the nearest corruption that raises nothing** is 4.38 nats -- ProtGPT2 rendered
-#: raw. A half-width of 0.30 is therefore 20x the observed spread and still leaves
-#: four nats of clearance below the nearest silent failure.
+#: 1, 4 and 8 at bfloat16, gpt2 moves 3.7537/3.7651/3.7685, gpt2-large 0.0008,
+#: ProtGPT2 0.0049 and ZymCTRL 0.0007, and float16 moves each by less than 0.011.
+#: The **distance from each arm to its own nearest corruption that raises
+#: nothing** is 4.38 nats on ProtGPT2 (rendered raw), 7.31 on gpt2 and 2.45 on
+#: ZymCTRL (its EC tag dropped). A half-width of 0.30 is therefore at least 20x
+#: the observed spread on every arm and still leaves two nats of clearance below
+#: the nearest silent failure on the tightest of them.
 #:
 #: The lower end is not a numerical tolerance either. A value materially below the
 #: measured one means the scored-target convention moved -- a mask that stopped
 #: scoring the hard positions, say -- which corrupts everything downstream while
-#: looking like an improvement.
+#: looking like an improvement. On ZymCTRL that end is load-bearing rather than
+#: theoretical: a mask that let the conditioning prompt's near-deterministic
+#: ``<sep>``/``<start>`` positions into the likelihood would pull the average
+#: *down*, and 0.7292 is already low enough that there is little room beneath it.
 DENSE_SELF_CHECK_HALF_WIDTH = 0.30
 
 #: Panel arms this module could otherwise admit and does not, with the reason.
@@ -458,19 +557,11 @@ DENSE_SELF_CHECK_HALF_WIDTH = 0.30
 #: is the discipline ``panel_contract.PANEL_MEMBERS_NOT_STAGED`` applies to the
 #: campaign panel; :func:`_check_dense_arms` makes it an import-time failure here.
 DENSE_ARMS_WITHOUT_A_BAND: dict[str, str] = {
-    "zymctrl": (
-        "its rendering carries an EC conditioning tag worth 1.73 nats of leak "
-        "(L15), and every scored position in this stage's convention is inside "
-        "the conditioned span. Admitting it needs "
-        "arms.conditioning_boundary_ids applied to the scored-target mask, which "
-        "neither stage carries; a band measured without that would be a band on "
-        "the leak"
-    ),
     "gpt2-medium": (
         "no band measured. The ladder rungs are admissible in principle and each "
-        "costs one short scoring run; only the three arms the matched-pair "
-        "comparison needs (gpt2-large, protgpt2) and its cheap smoke arm (gpt2) "
-        "were measured"
+        "costs one short scoring run; only the arms a comparison needs -- the "
+        "matched pair (gpt2-large, protgpt2), the tokenisation control (zymctrl) "
+        "and the cheap smoke arm (gpt2) -- were measured"
     ),
     "gpt2-xl": "no band measured; as gpt2-medium",
     "dialogpt-small": "no band measured; as gpt2-medium",
@@ -504,6 +595,13 @@ def _check_dense_arms() -> None:
             raise AssertionError(f"{name} is refused but is not a panel arm")
         if not reason:
             raise AssertionError(f"{name} is refused without a reason")
+    # A corruption filed under a name with no band is data nobody reads:
+    # check_dense_nll resolves the arm's corruptions by key and would report an
+    # empty set rather than raise, which is the silent shape this table exists
+    # to make impossible.
+    orphans = sorted(set(MEASURED_DENSE_SELF_CHECK_CORRUPTIONS) - set(MEASURED_DENSE_SELF_CHECK_NLL))
+    if orphans:
+        raise AssertionError(f"{orphans} declare corruptions but have no self-check band")
 
 
 _check_dense_arms()
@@ -526,11 +624,15 @@ def check_dense_nll(arm: str, value: float) -> dict[str, Any]:
     low = reference - DENSE_SELF_CHECK_HALF_WIDTH
     high = reference + DENSE_SELF_CHECK_HALF_WIDTH
     inside = low <= value <= high
+    # This arm's own corruptions, never the whole table: ZymCTRL rendered without
+    # its EC tag reads 3.1779 and a healthy gpt2-large reads 3.1706, so a reader
+    # handed both arms' corruptions can draw a comparison that means nothing.
+    corruptions = dict(MEASURED_DENSE_SELF_CHECK_CORRUPTIONS.get(arm, {}))
     record = {
         "nll": float(value),
         "band": [float(low), float(high)],
         "reference": float(reference),
-        "corruptions": dict(MEASURED_DENSE_SELF_CHECK_CORRUPTIONS),
+        "corruptions": corruptions,
         "verdict": "PASS" if inside else "FAIL",
     }
     if not inside:
@@ -538,8 +640,8 @@ def check_dense_nll(arm: str, value: float) -> dict[str, Any]:
             f"{arm} self-check NLL {value:.4f} nats/token is outside the declared "
             f"band [{low:.4f}, {high:.4f}]. Above the band the most likely cause is "
             "a wrong rendering or a checkpoint that did not load its weights, "
-            f"neither of which raises; reference corruptions: "
-            f"{MEASURED_DENSE_SELF_CHECK_CORRUPTIONS}. Below it, the scored-target "
+            f"neither of which raises; corruptions measured on this arm: "
+            f"{corruptions}. Below it, the scored-target "
             "convention moved. Either way the model must not be measured."
         )
     return record
@@ -561,7 +663,25 @@ class DenseReplaceable(ReplaceableModel):
         "with the checkpoint's depth and width checked against the panel "
         "declaration and the loaded dtype read back from the parameters"
     )
-    scoring_note = "left to right, every non-padding target after the first"
+
+    @property
+    def scoring_note(self) -> str:
+        """What this arm actually scored, for the artefact's condition block.
+
+        A property rather than a constant because the two conditioned and
+        unconditioned rules genuinely differ, and a stage that recorded one
+        sentence for both would put a false statement about the scored span into
+        the artefact of the arm whose scored span is the thing at issue.
+        """
+
+        if self.arm.spec.input_format == "ec_conditioned":
+            return (
+                "left to right, residue targets only: the EC conditioning prompt "
+                "and the terminator are excluded "
+                "(src.transfer.scoring.target_rule -> 'between_boundaries'), so "
+                "the 1.73-nat conditioning leak (L15) is not scored as content"
+            )
+        return "left to right, every non-padding target after the first"
 
     def __init__(self, arm: Arm, *, max_tokens: int) -> None:
         if arm.spec.architecture not in DENSE_ARCHITECTURES:
@@ -638,15 +758,42 @@ class DenseReplaceable(ReplaceableModel):
 
     # -- inputs ------------------------------------------------------------
 
-    def render(self, records: Sequence[str]) -> list[str]:
-        """Through :meth:`src.transfer.arms.Cohort.input_strings`, never by hand."""
+    def render(
+        self, records: Sequence[str], *, ec_labels: Sequence[str | None] | None = None
+    ) -> list[str]:
+        """Through :meth:`src.transfer.arms.Cohort.input_strings`, never by hand.
 
+        The two ways a conditioning prompt can be got wrong are both silent, so
+        both raise. Rendering an ``ec_conditioned`` arm without labels would drop
+        the prompt the model was trained behind -- the L11 failure, on the arm
+        whose prompt is additionally worth 1.73 nats (L15). Handing labels to an
+        arm that has no prompt would discard them while the caller believed a
+        conditioned rendering had been produced.
+        """
+
+        labels = None if ec_labels is None else list(ec_labels)
+        conditioned = self.arm.spec.input_format == "ec_conditioned"
+        if conditioned:
+            if labels is None or len(labels) != len(records) or any(
+                label is None for label in labels
+            ):
+                raise ValueError(
+                    f"{self.arm.name} renders an EC-conditioned prompt, so every "
+                    "record must arrive with its EC label; rendering without one "
+                    "would feed the model a format it was not trained on"
+                )
+        elif labels is not None and any(label is not None for label in labels):
+            raise ValueError(
+                f"{self.arm.name} has no conditioning prompt, so the EC labels "
+                "handed to it would be silently dropped"
+            )
         return Cohort(
             name=f"{self.arm.name}_render",
             kind=self.cohort_kind,
             records=list(records),
             min_symbols=0,
             max_symbols=0,
+            metadata={"ec_labels": labels} if conditioned else {},
         ).input_strings(self.arm)
 
     def batch(
@@ -658,18 +805,61 @@ class DenseReplaceable(ReplaceableModel):
         device = self.device
         return {"input_ids": ids.to(device), "attention_mask": mask.to(device)}
 
-    def content_mask(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
-        """Non-padding, non-special positions.
+    def _target_mask(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        """Which next-token targets belong to this arm's content, over ``T - 1``.
 
-        The pad token *is* the end-of-text token on every GPT-2-lineage arm, so
-        the mask cannot be built from the ids alone -- padding and ProtGPT2's
-        end-of-text prefix carry the same id, and one of them is a position the
-        model was trained to predict from. The validity mask separates them; the
-        special-token ids then remove the marker itself, which is the counterpart
-        of ProGen3 excluding its terminus tokens.
+        Resolved from :func:`src.transfer.scoring.target_rule` and
+        :func:`src.transfer.scoring.sequence_target_mask` -- the repository's one
+        declaration of what a conditioned rendering scores -- rather than by an
+        arm name or a second copy of the rule (Appendix B rule 12). For every
+        unconditioned arm the rule is ``all_valid`` and the result is
+        ``attention_mask[:, 1:] & attention_mask[:, :-1]``, which under right
+        padding is bit-identical to the ``attention_mask[..., 1:]`` this stage
+        scored before, so no frozen number moves.
+        """
+
+        start, end = conditioning_boundary_ids(self.arm)
+        return sequence_target_mask(
+            batch["input_ids"],
+            batch["attention_mask"],
+            rule=target_rule(self.arm.spec.input_format),
+            start_token_id=start,
+            end_token_id=end,
+        )
+
+    def content_mask(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        """Positions carrying content: for a conditioned arm, the residues only.
+
+        **Unconditioned arms: non-padding, non-special positions.** The pad token
+        *is* the end-of-text token on every GPT-2-lineage arm, so the mask cannot
+        be built from the ids alone -- padding and ProtGPT2's end-of-text prefix
+        carry the same id, and one of them is a position the model was trained to
+        predict from. The validity mask separates them; the special-token ids then
+        remove the marker itself, which is the counterpart of ProGen3 excluding
+        its terminus tokens.
+
+        **A conditioned arm cannot use that rule**, and this is the reason ZymCTRL
+        was refused here until now. Its ``<sep>``, ``<start>`` and ``<end>``
+        markers are ordinary vocabulary entries rather than tokenizer special
+        tokens, so the rule above would keep every one of them *and* the seven
+        tokens of the EC number -- ten positions of a ~197-token cohort record.
+        Those positions would then enter the per-layer mean that is the ablation
+        endpoint, the reconstruction NMSE, and the transcoder's own objective,
+        which would make the arm's replacement estimand a different object from
+        the other arms'. The conditioned branch keeps exactly the positions
+        strictly inside ``<start>`` and ``<end>``: the residues, which is what the
+        other protein arms' content mask keeps.
         """
 
         ids = batch["input_ids"]
+        if self.arm.spec.input_format == "ec_conditioned":
+            # Target column q governs input position q + 1, so the residue
+            # *positions* are the residue *targets* shifted by one. Derived from
+            # the one target rule rather than restated, so the objective and the
+            # likelihood cannot come to disagree about what content is.
+            inside = torch.zeros_like(batch["attention_mask"], dtype=torch.bool)
+            inside[:, 1:] = self._target_mask(batch)
+            return inside
         mask = batch["attention_mask"].bool()
         special = [
             token for token in self.arm.tokenizer.all_special_ids if token is not None
@@ -700,6 +890,16 @@ class DenseReplaceable(ReplaceableModel):
         terminus tokens: they are positions the model predicts, and excluding
         them from the likelihood while including them in the context would be a
         third scoring convention.
+
+        **An ``ec_conditioned`` arm is the one exception, and it is not a third
+        convention but the one the repository already declares.** Its EC number,
+        ``<sep>`` and ``<start>`` are a *conditioning prompt* rather than content:
+        the tag supplies 1.73 nats of label information (L15), so scoring the
+        prompt would put that leak into the clean cross-entropy, into the
+        fully-ablated endpoint and therefore into both ends of the recovery
+        ratio. :func:`src.transfer.scoring.target_rule` selects
+        ``between_boundaries`` for exactly that reason, and this method reads it
+        rather than deciding again.
         """
 
         output = self.run(batch)
@@ -707,7 +907,7 @@ class DenseReplaceable(ReplaceableModel):
         return (
             output.logits[..., :-1, :].float(),
             ids[..., 1:],
-            batch["attention_mask"][..., 1:].bool(),
+            self._target_mask(batch),
         )
 
     def _blocks(self) -> list[torch.nn.Module]:
@@ -844,9 +1044,17 @@ class DenseReplaceable(ReplaceableModel):
             contribution[layer] = y.detach()
             return None
 
+        records, labels = self._self_check_records()
         try:
             with self.block_intercept(tap):
-                self.run(self.batch(self.render(self._self_check_records()[:2])))
+                self.run(
+                    self.batch(
+                        self.render(
+                            records[:2],
+                            ec_labels=None if labels is None else labels[:2],
+                        )
+                    )
+                )
         finally:
             for handle in handles:
                 handle.remove()
@@ -870,11 +1078,17 @@ class DenseReplaceable(ReplaceableModel):
             )
         return record
 
-    def _self_check_records(self) -> tuple[str, ...]:
+    def _self_check_records(self) -> tuple[tuple[str, ...], tuple[str, ...] | None]:
+        """The frozen inputs this arm's gate scores, and their labels if it has any."""
+
+        if self.arm.spec.input_format == "ec_conditioned":
+            return (
+                tuple(sequence for _, sequence in SELF_CHECK_EC_RECORDS),
+                tuple(ec for ec, _ in SELF_CHECK_EC_RECORDS),
+            )
         return (
-            SELF_CHECK_DOCUMENTS
-            if self.cohort_kind == "text"
-            else SELF_CHECK_SEQUENCES
+            SELF_CHECK_DOCUMENTS if self.cohort_kind == "text" else SELF_CHECK_SEQUENCES,
+            None,
         )
 
     @torch.no_grad()
@@ -884,7 +1098,7 @@ class DenseReplaceable(ReplaceableModel):
         estimand = self.estimand_identity()
         record = check_dense_nll(self.arm.name, dense_self_check_nll(self))
         record["estimand"] = estimand
-        record["n_records"] = len(self._self_check_records())
+        record["n_records"] = len(self._self_check_records()[0])
         record["scored_under"] = (
             f"{self.arm.spec.input_format} rendering, {SELF_CHECK_MAX_TOKENS}-token cap"
         )
@@ -900,8 +1114,8 @@ def dense_self_check_nll(model: DenseReplaceable, *, batch_size: int = 4) -> flo
     that implementation.
     """
 
-    records = model._self_check_records()
-    inputs = model.render(records)
+    records, labels = model._self_check_records()
+    inputs = model.render(records, ec_labels=labels)
     total = 0.0
     count = 0
     for start in range(0, len(inputs), batch_size):

@@ -1294,6 +1294,7 @@ def _eligible_text_documents(min_chars: int):
 CORPUS_SOURCES: dict[str, tuple[Path, str]] = {
     "uniref50": (UNIREF50_FASTA, "TRANSFER_UNIREF50_FASTA"),
     "swissprot": (SWISSPROT_FASTA, "TRANSFER_SWISSPROT_FASTA"),
+    "zymctrl_ec": (ZYMCTRL_FASTA, "TRANSFER_ZYMCTRL_FASTA"),
     "openwebtext": (OPENWEBTEXT, "TRANSFER_OPENWEBTEXT_DIR"),
 }
 
@@ -1328,7 +1329,7 @@ def iter_corpus_records(
     min_symbols: int,
     max_symbols: int | None = None,
     path: Path | None = None,
-) -> Iterator[str]:
+) -> Iterator[tuple[str, str | None]]:
     """Every eligible record of one corpus, in file order, in its own symbol unit.
 
     Symbols are residues for a protein corpus and characters for a text one, so
@@ -1336,16 +1337,25 @@ def iter_corpus_records(
     count that would differ between arms (Appendix B rule 21's shape, one level
     down: a band declared in tokens is not the same band on two tokenisers).
 
-    **Eligibility is not uniform across the three, and the difference is
-    deliberate.** ``swissprot`` applies the canonical-alphabet filter
-    :func:`protein_cohort` applies, so a stage streaming it and a stage drawing a
-    cohort from it see one population. ``uniref50`` applies the length band only,
-    because that is what the ProGen3 transcoder campaign streamed and its
-    published runs must stay reproducible. ``openwebtext`` takes a floor and no
-    ceiling, because the text path truncates at tokenisation rather than
-    discarding long documents -- which is what :func:`text_cohort` does, and a
-    ceiling here would select a different population from the cohort a
-    replacement is later scored on.
+    Each record is yielded as ``(record, conditioning_label)``. The label is
+    ``None`` for every corpus whose arms take an unconditional rendering and is
+    the EC number for ``zymctrl_ec``, because :meth:`Cohort.input_strings` cannot
+    render an ``ec_conditioned`` arm without it. Carrying the pair rather than
+    the bare record is what keeps the conditioned arm on the panel's one
+    rendering declaration instead of a second copy inside a stage (Appendix B
+    rule 12).
+
+    **Eligibility is not uniform across the four, and the difference is
+    deliberate.** ``swissprot`` and ``zymctrl_ec`` apply the canonical-alphabet
+    filter :func:`protein_cohort` applies -- and ``zymctrl_ec`` additionally
+    requires the ``<start>``/``<end>`` markers its records carry -- so a stage
+    streaming either and a stage drawing a cohort from it see one population.
+    ``uniref50`` applies the length band only, because that is what the ProGen3
+    transcoder campaign streamed and its published runs must stay reproducible.
+    ``openwebtext`` takes a floor and no ceiling, because the text path truncates
+    at tokenisation rather than discarding long documents -- which is what
+    :func:`text_cohort` does, and a ceiling here would select a different
+    population from the cohort a replacement is later scored on.
 
     File order is the *stream* order, not a sampling decision: the callers shuffle
     it. The hazard Appendix B rule 1 names is theirs to answer, and
@@ -1362,18 +1372,15 @@ def iter_corpus_records(
                 "character ceiling here would select a different population from "
                 "the one text_cohort draws"
             )
-        return _eligible_text_documents(min_symbols)
+        return ((document, None) for document in _eligible_text_documents(min_symbols))
     if max_symbols is None:
         raise ValueError(f"the {source!r} stream needs an upper residue bound")
-    if source == "swissprot":
-        return (
-            sequence
-            for sequence, _ in _eligible_protein_records(
-                min_symbols, max_symbols, with_ec=False
-            )
+    if source in ("swissprot", "zymctrl_ec"):
+        return _eligible_protein_records(
+            min_symbols, max_symbols, with_ec=source == "zymctrl_ec"
         )
     return (
-        sequence
+        (sequence, None)
         for _, sequence in iter_fasta(location)
         if min_symbols <= len(sequence) <= max_symbols
     )

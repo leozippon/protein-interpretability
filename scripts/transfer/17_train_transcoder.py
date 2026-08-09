@@ -100,6 +100,23 @@ DEFAULT_OUT = REPO / "results/transfer/transcoder_training"
 MAX_RESIDUES = 1022
 MIN_RESIDUES = 32
 
+#: The same band, lowered to what an EC-conditioned arm can actually render.
+#:
+#: ZymCTRL's context is 1024 positions and its rendering spends ten of them on
+#: the prompt and terminator -- seven for the EC number, then ``<sep>``,
+#: ``<start>`` and ``<end>`` -- so a 1022-residue record needs 1032 and cannot be
+#: fed whole. Truncating it instead is not an option that stays quiet: the
+#: scored-content span is delimited by ``<end>``, so a record that loses its
+#: terminator has no span, and :func:`src.transfer.scoring.sequence_target_mask`
+#: raises. The ceiling is therefore ``1024 - 10``, which is the largest band this
+#: arm can carry and is within 0.05% of the residue band the other protein
+#: sources use (118 of 242,968 eligible records fall outside it). Declared here,
+#: beside the band it modifies, because Appendix B rule 13 asks a stage to say
+#: which population it drew rather than to leave it inferable from a token cap.
+ZYMCTRL_WRAPPER_TOKENS = 10
+ZYMCTRL_CONTEXT = 1024
+ZYMCTRL_MAX_RESIDUES = ZYMCTRL_CONTEXT - ZYMCTRL_WRAPPER_TOKENS
+
 #: The floor of this stage's text band, in characters -- the unit an English
 #: corpus is made of, as residues are the unit a protein corpus is made of.
 #: Deliberately :func:`src.transfer.arms.text_cohort`'s own floor, so that the
@@ -116,13 +133,14 @@ MIN_CHARACTERS = 800
 CORPUS_BAND: dict[str, tuple[int, int | None]] = {
     "uniref50": (MIN_RESIDUES, MAX_RESIDUES),
     "swissprot": (MIN_RESIDUES, MAX_RESIDUES),
+    "zymctrl_ec": (MIN_RESIDUES, ZYMCTRL_MAX_RESIDUES),
     "openwebtext": (MIN_CHARACTERS, None),
 }
 
 
 def stream_records(
-    records: Callable[[], Iterator[str]], *, seed: int, skip: int, limit: int | None = None
-) -> Iterator[str]:
+    records: Callable[[], Iterator[Any]], *, seed: int, skip: int, limit: int | None = None
+) -> Iterator[Any]:
     """Eligible corpus records in a seeded shuffled order.
 
     A biological corpus is ordered by cluster and a web corpus by shard, so in
@@ -140,7 +158,7 @@ def stream_records(
     """
 
     rng = np.random.default_rng(seed)
-    block: list[str] = []
+    block: list[Any] = []
     emitted = 0
     seen = 0
     for record in records():
@@ -165,16 +183,26 @@ def stream_records(
 
 @torch.no_grad()
 def capture(
-    model: ReplaceableModel, records: list[str]
+    model: ReplaceableModel, records: list[tuple[str, str | None]]
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Block inputs, outputs and a scored-token mask for one batch.
 
     Returns ``(inputs, outputs, mask)`` with the layer axis first. The mask
     excludes every non-content position: terminus and padding tokens are
-    trivially predictable and would flatter any transcoder scored on them.
+    trivially predictable and would flatter any transcoder scored on them, and on
+    a conditioned arm the EC prompt is excluded for the stronger reason that it
+    is not content at all.
+
+    A record arrives as ``(record, conditioning_label)`` from
+    :func:`src.transfer.arms.iter_corpus_records`; the label is ``None`` for every
+    unconditioned corpus and the renderer refuses either half of the mismatch.
     """
 
-    batch = model.batch(model.render(records))
+    batch = model.batch(
+        model.render(
+            [record for record, _ in records], ec_labels=[label for _, label in records]
+        )
+    )
     captured: dict[int, tuple[torch.Tensor, torch.Tensor]] = {}
 
     def tap(layer: int, block_input: torch.Tensor, block_output: torch.Tensor) -> None:
@@ -205,7 +233,7 @@ def flatten(
 def evaluate(
     model: Transcoder,
     decoder: ReplaceableModel,
-    sequences: list[str],
+    sequences: list[tuple[str, str | None]],
     *,
     batch_size: int,
 ) -> dict[str, Any]:
@@ -255,7 +283,10 @@ def main() -> None:
         default=512,
         help="token cap a dense arm's inputs are truncated to. ProGen3 ignores it: "
         "its batch preparer pads to the longest record and its residue band is "
-        "declared in residues",
+        "declared in residues. A conditioned arm needs a cap that covers its "
+        "declared band plus its rendering wrapper -- zymctrl_ec is 1014 residues "
+        "plus 10 tokens, so pass --max-tokens 1024; below that the terminator "
+        "that delimits the scored span is truncated away and the run refuses",
     )
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
@@ -297,7 +328,7 @@ def main() -> None:
     low, high = CORPUS_BAND[source]
     corpus = corpus_location(source, path=args.corpus)
 
-    def records() -> Iterator[str]:
+    def records() -> Iterator[tuple[str, str | None]]:
         return iter_corpus_records(
             source, min_symbols=low, max_symbols=high, path=args.corpus
         )
@@ -474,7 +505,10 @@ def main() -> None:
                 "the same region of the corpus rather than from its head"
             ),
             "scored_positions": "content tokens only; padding, terminus and "
-            "special tokens are excluded from the objective",
+            "special tokens are excluded from the objective, and on an "
+            "ec_conditioned arm so is the whole conditioning prompt -- the "
+            "objective is fitted on residue positions alone, which is what the "
+            "unconditioned protein arms' content mask keeps",
             "estimand": "reads the replaced block's input, predicts that block's "
             "output before the residual add",
             "bounded_reproduction": "a declared step budget, not ProGenMech's "

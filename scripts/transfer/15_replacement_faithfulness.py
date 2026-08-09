@@ -581,13 +581,17 @@ def build_cohort(args: argparse.Namespace, *, skip: int = 0, name: str | None = 
             name=label,
             seed=args.cohort_draw_seed or None,
         )
-    if source == "swissprot":
+    if source in ("swissprot", "zymctrl_ec"):
+        # Same band, same draw, same seed for both protein sources; the
+        # EC-labelled one additionally carries the conditioning labels its arm
+        # cannot be rendered without, which travel on the cohort's metadata.
         return protein_cohort(
             args.sequences,
             args.protein_min_len,
             args.protein_max_len,
             skip=args.cohort_skip + skip,
             name=label,
+            with_ec=source == "zymctrl_ec",
             seed=args.cohort_draw_seed or None,
         )
     raise ValueError(
@@ -725,8 +729,12 @@ def main() -> None:
     print(f"  self-check NLL {loader_gate['nll']:.4f} in {loader_gate['band']}")
     # Rendered once, through the arm's own declaration, and passed to every sweep
     # below. Re-rendering per sweep is how two conditions of one comparison come
-    # to be fed different strings (audit §0.1).
-    scored_inputs = model.render(cohort.records)
+    # to be fed different strings (audit §0.1). A conditioned arm's labels travel
+    # with the cohort; every other cohort carries none and the renderer refuses
+    # the mismatch either way rather than dropping a prompt silently.
+    scored_inputs = model.render(
+        cohort.records, ec_labels=cohort.metadata.get("ec_labels")
+    )
 
     if args.replacement_kind == "released" and args.arm != PROGEN3_ARM:
         raise ValueError(
@@ -752,7 +760,9 @@ def main() -> None:
         fit_args = argparse.Namespace(**vars(args))
         fit_args.sequences = args.linear_fit_sequences
         fit_cohort = build_cohort(fit_args, skip=len(cohort.records), name="linear_fit")
-        fit_inputs = model.render(fit_cohort.records)
+        fit_inputs = model.render(
+            fit_cohort.records, ec_labels=fit_cohort.metadata.get("ec_labels")
+        )
         fitter = LinearReplacementFitter(model.n_layers, model.width)
         scored_mask: dict[str, torch.Tensor] = {}
 

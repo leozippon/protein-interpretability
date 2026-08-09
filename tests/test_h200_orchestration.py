@@ -1531,13 +1531,42 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
             env={**os.environ, "H200_POD": "unused",
                  "H200_POD_BASH": str(LOCAL_POD_BASH), "H200_POD_EXEC": str(pod_exec),
                  "GPFS_PROJECT_ROOT": str(root),
+                 # Not REPO_ROOT: the driver reads the stage file and computes the
+                 # code hash from that, so it has to stay the real checkout.
+                 "LOCAL_OUTPUT_ROOT": str(root),
                  "LIVENESS_SETTLE_SECONDS": "0", "GRACE_SECONDS": "0",
                  "POLL_SECONDS": "1", "TIMEOUT_SECONDS": "3"},
             timeout=600,
         )
         verdict = re.search(r"score (PRESENT|ABSENT|UNRESOLVED) after", result.stdout)
         self.assertIsNotNone(verdict, f"no poll verdict on stdout: {result.stdout[-800:]}")
+        self._dispatch_root = root
         return verdict.group(1)
+
+    def test_a_dispatch_under_test_does_not_write_the_operational_record(self):
+        """A test run must not leave a dispatch record for a run that never happened.
+
+        The driver writes `logs/external_baseline/<run-id>_<label>.dispatch`
+        before launching, and that directory is what an operator reads to see
+        what was actually dispatched. It was keyed on REPO_ROOT, which a test
+        cannot move -- REPO_ROOT is where the stage file and the code hash are
+        read from -- so exercising the dispatch path wrote into the live log
+        twice. The location is now its own declaration; this pins it.
+        """
+
+        live = REPO_ROOT / "logs" / "external_baseline"
+        before = set(live.glob("*.dispatch")) if live.exists() else set()
+        self._poll_verdict(staged="wildtypes.json", expect="score.json")
+        after = set(live.glob("*.dispatch")) if live.exists() else set()
+        self.assertEqual(
+            after - before, set(),
+            "a dispatch under test wrote into the operational log directory",
+        )
+        written = list((self._dispatch_root / "logs" / "external_baseline").glob("*.dispatch"))
+        self.assertEqual(
+            len(written), 1,
+            f"the dispatch record did not land under LOCAL_OUTPUT_ROOT: {written}",
+        )
 
     def test_a_staged_input_does_not_read_as_a_finished_measurement(self):
         """The false success --expect exists to prevent.
