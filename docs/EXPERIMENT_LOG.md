@@ -9535,3 +9535,68 @@ That makes the cost of protein adaptation to the text mode a **within-lineage di
 **Placed beside EXP-R2-151, the five checkpoints order by how much adaptation they received**, and the ordering is monotone: no protein adaptation at all (+5.52), protein as under 1% of a joint pretraining corpus (+4.64), LoRA continued pretraining (+0.83), LoRA plus instruction tuning (+0.74), full continued pretraining plus instruction tuning (−16.00). **This is a dose–response between adaptation extent and text-mode retention**, and it is the first quantitative statement this programme has about joint models. It is also the reason the two EXP-R2-151 failures now read as two ends of one axis rather than as two unrelated defects.
 
 **Bounds, and the first is load-bearing.** **The protein magnitudes are per token at 1.533 residues per token and are NOT comparable with the per-residue figures of Galactica, InstructProtein or any panel protein arm** (rule 26, L23); the artefact marks every one of them `NOT_COMPARABLE_ACROSS_ARMS` and they may not be converted by division. **The within-lineage text comparison is exact** — one tokenizer, one architecture, one cohort, one unigram — but the **cross-family** text ordering in the paragraph above spans three tokenizers of different vocabulary size, so it is a qualitative ordering and its spacing carries no claim. LoRA adaptation touches roughly 10% of parameters, so this lineage measures **the cost of adaptation** and not the properties of a from-scratch joint model. ProLLaMA's protein corpus is UniRef50, which contains the Swiss-Prot cohort scored here, so the protein figure is contamination-exposed and unmeasured on that axis; it is a measurability verdict, not a capability claim. Clearing a qualification gate admits an arm to measurement and asserts nothing about what it knows. The naive-rendering control is withheld with its reason on all three, because this family declares no per-residue escape. Neither checkpoint is admitted to `arms.py` or the campaign panel on this entry alone.
+
+> **EXP-R2-152 corrected 2026-08-10 by a literature review of the arm's own training scripts. The outcome stands; the mechanism I attributed it to is wrong and the corrected one is sharper.**
+>
+> The entry describes stage 1 as "LoRA continued pretraining ... roughly 10% of parameters" and concludes that "parameter-limited adaptation preserves the text mode". Reading `repos/prollama/scripts/run_pt.sh` and `run_it.sh` directly:
+>
+> | stage | LoRA | `modules_to_save` | trainable | text cost |
+> |---|---|---|---:|---:|
+> | 1, protein CPT | r=128, α=256, all 7 projections | **`embed_tokens,lm_head`** | 582.0 M = **8.6%** | **−4.69 nats** |
+> | 2, instruction | r=64, α=128, all 7 projections | **none** | LoRA only | −0.10 nats |
+>
+> **Stage 1 fully retrains the embedding and the output head.** At Llama-2-7b's 32000 × 4096 that is 131.1 M each, 262.1 M together — **45.0% of the entire trainable budget**, and not low-rank at all. ProLLaMA's own "about 8%" is arithmetically right and reads as parameter-limited; nearly half of it is the vocabulary interface being retrained without constraint.
+>
+> **So the stage that costs 4.69 nats of text is exactly the stage that retrains the embedding and unembedding, and the stage that costs 0.10 nats does not touch them.** That is a much more specific attribution than the entry's "the protein continued-pretraining stage", and it points at the **input/output vocabulary interface** rather than at the transformer body. It is also consistent with L8, where the output aperture is the algebraically constrained part of these models.
+>
+> **What survives unchanged:** both modes are measurable on stages 1 and 2, so D1.d still has a bridge and the first pre-registered branch still fires; the reversal control still shows directional protein structure absent before adaptation and present after; the stage localisation still holds and is now sharper. **What is withdrawn:** the phrase "parameter-limited adaptation preserves the text mode" as an explanation. The adaptation was not parameter-limited where it mattered, and the correct reading is that a text mode survives *despite* the embedding and head being retrained — which makes the 85% loss easier to understand, not harder.
+>
+> **This is now a testable mechanism rather than a description**, and it changes what the next joint experiment should be: if the cost is at the vocabulary interface, a checkpoint whose residues occupy a token set disjoint from text, with text ids left byte-identical to its base, should pay far less of it.
+>
+> Two further facts from the same review, recorded because they bound how much weight this arm can carry. ProLLaMA's stage-2 instruction split is derived independently from the same UniRef50 rep_ids as the stage-1 CPT corpus, so its 67.1% superfamily figure has **no disjointness guarantee against continued pretraining**. And its novelty claim is measured against PDB, never against UniRef50, which is the corpus that would matter. Neither affects our qualification measurement, which is a likelihood on our own cohort.
+
+> **EXP-R2-151 independently confirmed by Galactica's own reported perplexities, from the same review.** Table 16 of the Galactica paper reports protein-sequence validation perplexity across four cohorts that differ in decontamination, at five model sizes. Converted to nats/residue against a Swiss-Prot amino-acid unigram, GAL-1.3B reads roughly **+0.02** on the cohort with ≥50% identity removed and **+0.13** on a random split. **Our measured +0.0481 for the same checkpoint sits between the authors' own identity-controlled and uncontrolled readings** — an independent confirmation from a source with no reason to produce one.
+>
+> Two consequences. **Scale does not rescue it, at 92x our range:** GAL-120B reaches only about +0.04 on the identity-controlled cohort, so the flatness we measured from 125M to 1.3B continues to 120B in the authors' own data. And the apparent scaling of Galactica's protein ability lives almost entirely on the cohorts its authors explicitly flag as having no sequence-identity constraint — which is a homology-retrieval gradient, not a capability gradient.
+>
+> **Recorded as a derived cross-check, not as a measurement.** The conversion uses a composition unigram rather than a held-out one on their cohorts, and the paper does not define its perplexity denominator or state whether sequences were scored inside their surrounding UniProt annotation. If they were annotation-conditioned, the isolated-sequence figure would be lower still, so the derivation errs in the direction that weakens rather than manufactures the agreement.
+
+## 2026-08-10 — EXP-R2-155: the vocabulary-collision objection to the induction tail statement, arbitrated — it exempts the matched pair and bites the panel
+
+**Where the objection came from.** A literature review of `2026-kesten-pomeranz` and Anthropic's HeadVis raised a specific threat to §4's induction result. HeadVis states in text that a token-space prefix-matching score *"does not track fuzzy induction, as it only matches prefixes in token space"*. The sharper form of the objection is arithmetic: a head that matches on **single-token identity** must spread its attention across every earlier position holding that token, and on a 20-letter alphabet there are far more such positions than in a 50,257-token vocabulary. A mechanically identical induction head would then score lower on protein **for reasons of alphabet size alone**, and the predicted shortfall is of the same order as our measured 5.46x matched-pair gap.
+
+**What our instrument actually does, checked first.** `circuits.py::prefix_matching` scores attention from `probe.query_positions` to `probe.key_positions` — explicit repeat-aligned position pairs, the same construction Pomerants et al. use. It does **not** ask "attend to any previous copy of this token", so the objection does not apply to the numerator. It survives one step further in, though: the *head* still has to find the position, and if it disambiguates on token identity it cannot know which of many copies is the aligned one. The dilution is in the mechanism, not in the metric.
+
+**Measured directly, CPU only, no model.** Mean number of earlier positions holding the same token as the query, over the first 256 tokens, on each arm's own tokenizer and its own evaluation corpus:
+
+| arm | tokenisation | corpus | mean earlier same-token positions |
+|---|---|---|---:|
+| gpt2-large | BPE 50257 | OpenWebText | **1.387** |
+| **protgpt2** | **multi-residue BPE 50257** | Swiss-Prot | **0.068** |
+| zymctrl | residue 458 | Swiss-Prot | **8.081** |
+| progen2-medium | residue 32 | Swiss-Prot | **8.081** |
+
+**The objection is correct in general and inapplicable to the arm that carries the claim, because it runs backwards there.** ProtGPT2's multi-residue BPE makes exact token recurrence **twenty times rarer than in the text control**, not more common. On the matched pair — gpt2-large against ProtGPT2, the only pair holding architecture, depth, width, head count and vocabulary size fixed — a single-token-identity head has *less* to disambiguate on the protein side. The confound therefore predicts ProtGPT2 should score **higher**, and it scores 5.46x lower. **The matched-pair ratio is not threatened by this objection; it is strengthened by surviving it.**
+
+**On the residue-tokenised arms the objection stands and is quantitatively live.** ZymCTRL and ProGen2 sit at 8.081 against the text control's 1.387 — a **5.8x** dilution, the same order as the panel-level effect. Any statement that pools those arms into a modality contrast against a text control is exposed, and the exposure runs in the direction of the observed effect.
+
+**Consequence for §4, stated as a scope change rather than a retraction.** §1 and §9's D1 already say *"the defensible statements are the matched-pair ratio (5.46x) and the panel-level pattern, not the worst-text-above-best-protein ordering."* That sentence now splits: **the matched-pair half survives this objection and is reinforced by it; the panel-level half is placed at risk pending a collision null** and must not be quoted as a modality contrast until one is run. The natural null is per-arm and cheap — score the same heads on a length- and composition-matched probe carrying no planted repeat, and read every arm's prefix-matching score against its own null rather than against a uniform-attention baseline, which does not correct for collision at all.
+
+**Bounds.** This is a corpus and tokenizer statistic, not a model measurement: no GPU, no attention, no heads. It bounds what a single-token-identity mechanism *could* score; it does not establish what any head actually does, and a head that disambiguates on multi-token context is not subject to the dilution at all. The 8.081 figure is identical for ZymCTRL and ProGen2-medium to three decimals because both are one-token-per-residue over the same cohort, which is the expected coincidence and a check on the measurement. L = 256 was chosen to match the census probe length; the multiplicity grows linearly in L, so the ratio is length-stable but the absolute values are not.
+
+> **EXP-R2-152 draw stability, 2026-08-10.** The entry's verdicts each rested on one cohort draw, which evidence-discipline rule 4 holds to be exploratory. Re-drawn at seeds 20260729 and 20260730, same protocol, n = 128:
+>
+> | checkpoint | mode | draws | spread | verdict |
+> |---|---|---|---:|---|
+> | Llama-2-7b-hf | text | +5.5240, +5.5558 | 0.0318 | stable |
+> | Llama-2-7b-hf | protein | +0.0843, +0.0918 | 0.0075 | **unmeasurable**, stable |
+> | ProLLaMA_Stage_1 | text | +0.8336, +0.6180, +0.6917 | **0.2156** | measurable, stable |
+> | ProLLaMA_Stage_1 | protein | +0.5505, +0.5652, +0.5764 | 0.0258 | measurable, stable |
+> | ProLLaMA | text | +0.7368, +0.6343 | 0.1025 | measurable, stable |
+> | ProLLaMA | protein | +0.5215, +0.5532 | 0.0317 | measurable, stable |
+>
+> **Every verdict survives every redraw**, so D1.d's bridge is draw-stable and the first pre-registered branch is not a single-draw artefact. **The magnitudes on the adapted arms' text mode are not tight**, and the entry's point values should be read as ranges: base **+5.52 to +5.56**, stage 1 **+0.62 to +0.83**, stage 2 **+0.63 to +0.74**. The headline loss is robust to this — taking means, 5.54 → 0.71 is **−4.83 nats, 87%**, against the entry's 4.69 and 85% — but the endpoint itself moves by a quarter of its own value between draws and must not be quoted to four figures.
+>
+> **The spread is itself a finding worth one sentence.** The base model's text mode varies by 0.032 across draws while the adapted arms vary by 0.10 and 0.22 — three to seven times more, on a quantity seven times smaller. A degraded mode is not merely lower, it is markedly less stable across cohorts, which is consistent with F9's pattern that a damaged or off-distribution arm carries selection uncertainty its control does not. The protein mode is stable everywhere, including on the base arm where it is unmeasurable.
+>
+> The stage-localisation is unaffected: the gap between stage 1 and stage 2 (0.62–0.83 against 0.63–0.74) is well inside the draw spread on both, so **the instruction stage's cost remains indistinguishable from zero**, which is the branch the entry read. The base-to-stage-1 gap is more than twenty times the spread.
