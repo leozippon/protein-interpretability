@@ -258,6 +258,7 @@ class EveryCorpusDrawDeclaresItsSeed(unittest.TestCase):
                 "15_replacement_faithfulness.py",
                 "18_das_subspace.py",
                 "19_routing_locality.py",
+                "21_joint_mode_qualification.py",
             },
         )
 

@@ -76,6 +76,7 @@ The executable registered panel is declared only by `scripts/transfer/panel_cont
 | `18_das_subspace.py` | Retained negative-design record; closed and not scheduled |
 | `19_routing_locality.py` | Router, expert-set, and boundary diagnostics |
 | `20_retrieval_bound.py` | Model fitness versus training-corpus profile retrieval |
+| `21_joint_mode_qualification.py` | Joint text/protein mode qualification for a non-panel checkpoint |
 
 Stages outside the registered panel use their dedicated launcher or a direct validated invocation as documented in `scripts/transfer/README.md`. A new joint-model adapter is admitted to the executable contract only after its interface and negative paths are tested.
 

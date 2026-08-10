@@ -895,6 +895,14 @@ def held_out_cohort(candidate: Cohort, scored: Cohort) -> tuple[Cohort, dict[str
     on content it will then be evaluated on is precisely the leak this estimator
     exists to avoid, so the duplicates are removed by content and the number
     removed is returned for the record rather than absorbed silently.
+
+    **The candidate's sampling record travels with the result**, for the reason
+    :func:`subsample_cohort` already documents: dropping it made
+    ``Cohort.sampling`` answer ``"unrecorded"`` on every held-out reference this
+    package builds, so an artefact could not say whether the block the
+    context-free baseline was fitted on was a seeded draw over the corpus or the
+    head of a file. That baseline is the denominator of every context-information
+    figure, and Appendix B rule 1 applies to it as much as to the scored draw.
     """
 
     if candidate.kind != scored.kind:
@@ -911,6 +919,12 @@ def held_out_cohort(candidate: Cohort, scored: Cohort) -> tuple[Cohort, dict[str
         if len(labels) != len(candidate.records):
             raise ValueError(f"cohort {candidate.name!r}: EC labels do not align with records")
         metadata["ec_labels"] = [labels[index] for index in keep]
+    metadata["sampling"] = {
+        **candidate.sampling,
+        "held_out_against": scored.name,
+        "held_out_against_digest": scored.digest,
+        "dropped_sequences_shared_with_cohort": len(candidate.records) - len(keep),
+    }
     cohort = Cohort(
         name=candidate.name,
         kind=candidate.kind,
