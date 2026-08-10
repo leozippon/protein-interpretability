@@ -9271,3 +9271,19 @@ Spread across everything the environment can change is **0.0010**; the nearest s
 > **What direction this cuts is not measured, and I am not asserting one.** Sequential replacement corrupts each layer's input with every earlier layer's error, which argues early-layer fidelity matters most and would favour ProtGPT2; the last layers determine the logits directly, which argues the opposite. Nothing in this design separates them, so the honest statement is that a per-layer mean is the wrong summary for a sequential estimand and the right one has not been built.
 >
 > **It also bounds ZymCTRL's open objection more tightly than the mean did.** ZymCTRL's dictionary is 1.92× gpt2-large's on the mean but **1.50× on the deepest half and 1.65× at the peak**, and against ProtGPT2 rather than against the text arm it is 1.34× on the deepest half. The arm is genuinely worse reconstructed everywhere; it is less of an outlier than 0.529-against-0.238 suggests, and its 31-of-36 layers above 0.4 against ProtGPT2's 11 is the cleanest form of the difference.
+
+## 2026-08-09 — EXP-R2-150 pre-registered: is ZymCTRL's failure a property of the cohort band?
+
+**Written before launch; no number exists.** EXP-R2-135 established that this exact estimand is band-dependent on ProGen3: behavioural recovery spans **4.1×** across four cohort bands — 0.0425 at 600–1022 to 0.1750 at 64–120, with non-overlapping paired intervals — and the attention causal gate *flips to PASS* on the shortest band while attainability passes throughout. EXP-R2-149 measured ZymCTRL at **one** band, 64–246, the band every arm in the three-arm comparison shares. That comparison is therefore internally matched and is not at issue. What is at issue is whether ZymCTRL's **absolute** 0.0916 is a property of the arm or of the band it was drawn on, which no measurement here has tested.
+
+**Design.** The `tc_zymctrl_s06` dictionary, unchanged, scored on two further bands: **64–120**, the band on which ProGen3 reached its *best* recovery and its only causal PASS, and **246–600**, a longer one. Same seed, same cohort protocol, same 128 sequences, same snapshot. Nothing but `--protein-min-len` and `--protein-max-len` moves.
+
+**The rule.**
+
+| outcome | reading |
+|---|---|
+| recovery stays inside roughly 0.06–0.13 on both bands | The failure is a property of the arm, not of the band. EXP-R2-149's three-arm statement carries its absolute numbers as well as its ordering. |
+| recovery on 64–120 rises toward or past ProGen3's 0.1750, or the two bands span a ProGen3-sized 4.1× | The absolute value is band-carried. **The ordering at the shared 64–246 band still stands**, because every arm in that comparison was drawn on it, but no band-free reading of ZymCTRL's 0.09 survives, and EXP-R2-149's numbers must be quoted with their band exactly as EXP-R2-132's are. |
+| recovery falls further on the longer band | Consistent with ProGen3's monotone decline with length, and recorded as such rather than as a new effect. |
+
+**What this cannot do.** The text arms draw from OpenWebText on a character floor, not a residue band, so a residue-band sweep moves the protein arms only and cannot produce a matched text control. This is a within-arm robustness check on an absolute number, not a modality measurement, and it is not licensed to become one. Per EXP-R2-148 the causal half is reported and not read.
