@@ -208,7 +208,12 @@ class NeuronTensorDeclaration(unittest.TestCase):
         finally:
             A._MLP_NEURON_TENSOR.clear()
             A._MLP_NEURON_TENSOR.update(original)
-        self.assertIn(str(D_MODEL), str(caught.exception))
+        message = str(caught.exception)
+        self.assertIn(f"is {D_MODEL} wide", message)
+        self.assertIn(str(D_MLP), message)
+        # The explanatory refusal must be what fires, not a shape error raised
+        # further down by an accumulator of the declared width.
+        self.assertIn("down-projection", message)
 
     def test_an_undeclared_architecture_is_refused_rather_than_duck_typed(self):
         # progen's block does have an mlp with an output projection; resolving it

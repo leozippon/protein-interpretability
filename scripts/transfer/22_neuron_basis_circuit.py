@@ -310,8 +310,20 @@ def neuron_reference(
 
     def read_neurons(layer: int, activation: torch.Tensor) -> None:
         keep = scored["mask"]
-        observed_width.add(int(activation.shape[-1]))
-        flat = activation.reshape(-1, activation.shape[-1]).float()[keep]
+        measured = int(activation.shape[-1])
+        if measured != declared_width:
+            # Checked here, at the first tensor, rather than after the sweep: an
+            # accumulator of the declared width would otherwise raise a shape
+            # error that says nothing about which tensor was hooked.
+            raise RuntimeError(
+                f"layer {layer}'s hooked tensor is {measured} wide and the "
+                f"declaration says {declared_width}. The MLP's output is {width} "
+                "wide, so a tensor of that width means the hook is reading past "
+                "the down-projection, and a neuron-basis circuit measured there "
+                "would understate every arm's sparsity"
+            )
+        observed_width.add(measured)
+        flat = activation.reshape(-1, measured).float()[keep]
         neuron_total[layer] += flat.sum(0).double().cpu()
         counted[layer] += float(keep.sum())
         nonlocal minimum
@@ -333,10 +345,8 @@ def neuron_reference(
         raise RuntimeError("the cohort supplied no content positions to average over")
     if observed_width != {declared_width}:
         raise RuntimeError(
-            f"the hooked tensor is {sorted(observed_width)} wide and the declaration "
-            f"says {declared_width}. The MLP's output is {width} wide: a tensor of "
-            "that width means the hook moved past the down-projection, and a "
-            "neuron-basis result read there would understate every arm's sparsity"
+            f"{sorted(observed_width)} widths were hooked across the sweep; every "
+            "layer must present the one declared tensor"
         )
     return {
         "neuron_mean": (neuron_total / counted[:, None]).float(),
