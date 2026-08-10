@@ -2,6 +2,8 @@
 
 The current transfer programme declares its model, dataset, and tool inputs in [`manifests/interpretability_transfer_resources.json`](manifests/interpretability_transfer_resources.json). The manifest records environment-variable contracts rather than infrastructure paths or availability claims. Large payloads remain ignored and outside Git.
 
+Related-work provenance is recorded in [`manifests/related_work_sources.json`](manifests/related_work_sources.json). Downloaded papers, official web snapshots and shallow source-repository clones remain local under `literature/`; they are ignored by Git and synchronization, and do not include model weights or datasets.
+
 Resolve the declared `TRANSFER_*` variables in the protected runtime environment, then verify the registered panel with:
 
 ```bash

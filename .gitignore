@@ -18,6 +18,7 @@ external_resources/*
 external_resources/manifests/*
 !external_resources/manifests/*.md
 !external_resources/manifests/interpretability_transfer_resources.json
+!external_resources/manifests/related_work_sources.json
 
 # Frozen provenance is external; do not recreate it in the live checkout
 archive/

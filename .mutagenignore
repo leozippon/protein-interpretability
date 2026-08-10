@@ -20,6 +20,7 @@ next_phase_artifacts/
 # Downloaded third-party payloads; metadata under external_resources remains synchronized
 external_resources/baselines/
 external_resources/ec_metrics/
+external_resources/literature/
 external_resources/scripts/
 external_resources/tools/
 

@@ -1,0 +1,147 @@
+{
+  "schema_version": 1,
+  "updated": "2026-08-10",
+  "purpose": "Source registry for the interpretability-transfer related-work corpus. Downloaded payloads remain local and ignored; this file records the stable provenance needed to rebuild or cite the corpus.",
+  "payload_root": "external_resources/literature",
+  "collections": [
+    {
+      "id": "anthropic-transformer-circuits",
+      "kind": "web_series",
+      "canonical_url": "https://transformer-circuits.pub/",
+      "local_path": "external_resources/literature/web/anthropic-transformer-circuits",
+      "scope": "All research pages linked by the official index at capture time, from 2021 through July 2026; large interactive feature datasets and model payloads are excluded."
+    },
+    {
+      "id": "related-work-papers",
+      "kind": "papers",
+      "local_path": "external_resources/literature/papers",
+      "inventory": "external_resources/literature/SHA256SUMS",
+      "scope": "Mechanistic interpretability for text decoders; SAE, transcoder, circuit-tracing and causal-abstraction methods; MoE routing audits; protein-model interpretability; fitness and retrieval; joint language-protein models; and protein novelty or functional validation."
+    },
+    {
+      "id": "official-implementations",
+      "kind": "source_repositories",
+      "local_path": "external_resources/literature/repos",
+      "inventory": "external_resources/literature/REPOSITORIES.tsv",
+      "scope": "Shallow clones of official implementations only. Model weights, Git LFS objects, datasets and recursive submodules are excluded."
+    }
+  ],
+  "citation_corrections": [
+    {
+      "supplied_records": [2, 6],
+      "correction": "These are the same paper. The author is Furkan Eris, not Belrose et al.",
+      "canonical_url": "https://arxiv.org/abs/2602.01845"
+    },
+    {
+      "supplied_record": 4,
+      "correction": "The paper is by Arjuna M. Subramanian, Zachary A. Martinez and Matt Thomson. arXiv:2510.01412 is an unrelated probability paper.",
+      "canonical_url": "https://doi.org/10.1101/2025.10.01.679905"
+    },
+    {
+      "supplied_record": 5,
+      "correction": "The correct identifier is arXiv:2602.21750. arXiv:2602.14748 is an unrelated theoretical-computer-science paper.",
+      "canonical_url": "https://arxiv.org/abs/2602.21750"
+    },
+    {
+      "supplied_record": 7,
+      "correction": "Tranception was published at ICML 2022 in PMLR 162, not Nature Machine Intelligence.",
+      "canonical_url": "https://proceedings.mlr.press/v162/notin22a.html"
+    }
+  ],
+  "priority_sources": [
+    {
+      "id": "interplm",
+      "research_topics": ["R2.1", "R2.3", "R3.1", "R3.3"],
+      "paper": "https://www.nature.com/articles/s41592-025-02836-7",
+      "repository": "https://github.com/ElanaPearl/InterPLM"
+    },
+    {
+      "id": "interprot",
+      "research_topics": ["R2.1", "R2.3", "R3.1", "R3.3"],
+      "paper": "https://proceedings.mlr.press/v267/adams25a.html",
+      "repository": "https://github.com/etowahadams/interprot"
+    },
+    {
+      "id": "protein-sae-transcoder",
+      "research_topics": ["R2.3", "R3.1"],
+      "paper": "https://doi.org/10.1073/pnas.2506316122",
+      "repository": "https://github.com/onkarsg10/Rep_SAEs_PLMs"
+    },
+    {
+      "id": "induction-meets-biology",
+      "research_topics": ["R1.3", "R2.1", "R2.2"],
+      "paper": "https://arxiv.org/abs/2602.23179"
+    },
+    {
+      "id": "progenmech",
+      "research_topics": ["R1.3", "R2.3", "R2.4", "R3.3"],
+      "paper": "https://arxiv.org/abs/2606.16044",
+      "repository": "https://github.com/amirgroup-codes/ProGenMech"
+    },
+    {
+      "id": "protein-fitness-preference",
+      "research_topics": ["R1.2", "R2.4", "R3.3"],
+      "paper": "https://openreview.net/forum?id=UvPdpa4LuV"
+    },
+    {
+      "id": "protein-data-leakage",
+      "research_topics": ["R1.2", "R2.4"],
+      "paper": "https://doi.org/10.1101/2024.07.23.604678",
+      "repository": "https://gitlab.com/dacs-hpi/pretraining-aware-hotprot"
+    },
+    {
+      "id": "compss",
+      "research_topics": ["R2.4", "R3.3"],
+      "paper": "https://www.nature.com/articles/s41587-024-02214-2",
+      "repository": "https://github.com/seanrjohnson/protein_scoring"
+    },
+    {
+      "id": "progen-functional-validation",
+      "research_topics": ["R3.3"],
+      "paper": "https://www.nature.com/articles/s41587-022-01618-2",
+      "repository": "https://github.com/salesforce/progen"
+    },
+    {
+      "id": "prollama",
+      "research_topics": ["R1.1", "R1.2", "R1.3", "R2", "R3.2"],
+      "paper": "https://arxiv.org/abs/2402.16445",
+      "repository": "https://github.com/PKU-YuanGroup/ProLLaMA"
+    },
+    {
+      "id": "esm3",
+      "research_topics": ["R1.1", "R1.3", "R3.3"],
+      "paper": "https://doi.org/10.1126/science.ads0018",
+      "repository": "https://github.com/evolutionaryscale/esm"
+    },
+    {
+      "id": "circuit-tracing",
+      "research_topics": ["R2.3", "R2.4"],
+      "paper": "https://transformer-circuits.pub/2025/attribution-graphs/methods.html",
+      "repository": "https://github.com/decoderesearch/circuit-tracer"
+    },
+    {
+      "id": "mib",
+      "research_topics": ["R2.4"],
+      "paper": "https://proceedings.mlr.press/v267/mueller25a.html",
+      "repository": "https://github.com/aaronmueller/MIB"
+    },
+    {
+      "id": "distributed-alignment-search",
+      "research_topics": ["R2.4", "R3.2"],
+      "paper": "https://proceedings.mlr.press/v236/geiger24a.html",
+      "repository": "https://github.com/stanfordnlp/pyvene"
+    },
+    {
+      "id": "universal-sparse-autoencoders",
+      "research_topics": ["R3.1", "R3.2"],
+      "paper": "https://arxiv.org/abs/2502.03714"
+    },
+    {
+      "id": "tranception",
+      "research_topics": ["R1.2", "R2.4", "R3.3"],
+      "paper": "https://proceedings.mlr.press/v162/notin22a.html",
+      "repository": "https://github.com/OATML-Markslab/Tranception"
+    }
+  ],
+  "evidence_boundary": "A downloaded source is related work, not a project finding. Representation readout, behavior steering, replacement fidelity, retrieval-bounded fitness, structural plausibility and wet-lab function are distinct evidence levels and must not be conflated."
+}
