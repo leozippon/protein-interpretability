@@ -9444,3 +9444,23 @@ That makes the cost of protein adaptation to the text mode a **within-lineage di
 >
 > **Nothing downstream changes, and the reasoning is better supported for it.** The stage still refuses the arm under a residue unit, the estimand is still per token, and the cross-arm incomparability of the magnitude is now more clearly warranted rather than less: at 1.536 residues per token this arm's per-token figure differs from a per-residue arm's by a factor that is neither one nor constant across records.
 
+
+## 2026-08-10 — EXP-R2-153: ZymCTRL's dictionary is saturated, and the last open objection to F11 closes
+
+**The objection this answers, in the form EXP-R2-149 left it.** ZymCTRL's dictionary reconstructs about twice as badly as either 36 × 1280 comparator — 0.529 per layer against gpt2-large's 0.275 and ProtGPT2's 0.238 — so for that arm alone, unlike ProtGPT2 whose retrained dictionary reconstructs *best of the pair*, "the dictionary was simply worse" was live. That entry recorded the check as running and scoped ZymCTRL's individual contribution as weaker until it landed. It has landed.
+
+**The check is a within-arm training-budget increase and nothing else moves.** Same arm, same architecture, same 12× expansion, same k = 64, same 552,960 latents, same corpus seed, same cohort protocol, same band, same stage. Only the step count changes: 22,000 → **28,000**, which is **~154 tokens per latent against 120.7** and the most the corpus supports without repeating a record.
+
+| dictionary | steps | tokens/latent | reconstruction NMSE per layer | **behavioural recovery** |
+|---|---:|---:|---:|---:|
+| `tc_zymctrl_s06` | 22,000 | 120.7 | 0.5011 | **+0.0916** [+0.0845, +0.0992] |
+| `tc_zymctrl_tok85m` | 28,000 | **~154** | **0.4920** | **+0.0932** [+0.0861, +0.1011] |
+| *gpt2-large, for scale* | — | 132 | 0.2750 | +0.9322 |
+
+**A 27% increase in training tokens bought 1.8% of reconstruction and 0.0016 of recovery.** The intervals overlap almost entirely. The dictionary is saturated at this budget, and the arm sits at 0.09 either way against a 0.80 gate.
+
+**The comparison that makes this decisive is the tokens-per-latent one.** At ~154 tokens per latent ZymCTRL's dictionary is now trained on **more data per latent than gpt2-large's 132**, which recovers 0.9322 on the shape-identical text control. So the protein arm has more dictionary training per latent than the passing text arm and recovers a tenth as much. "The dictionary was under-trained" is not available as an explanation, and **ZymCTRL's contribution to the three-arm statement is restored to full strength** rather than remaining the weakest leg.
+
+**What it does not do.** It does not show the dictionary is *good* — 31 of 36 layers still sit above 0.4 NMSE, and the arm reconstructs worse than either comparator at every depth. It shows that this deficit is not a budget artefact, which is a different and narrower claim. It also leaves EXP-R2-149's other, permanent caveat untouched: ZymCTRL differs from ProtGPT2 in tokenisation **and** EC conditioning, and the control that would split them is not buildable under this estimand at any budget, because the tag-stripped denominator is negative.
+
+**Bounds.** One arm, one budget increase, one seed, one band (64–246), n = 128 with an n = 512 check still running. Reconstruction is measured under clean teacher-forced inputs while recovery is measured under sequential replacement, which is the same convention every arm in this comparison uses and is not a like-for-like pairing (the EXP-R2-149 addendum on per-layer reconstruction applies here too). Per EXP-R2-148 the causal half is reported and not read.
