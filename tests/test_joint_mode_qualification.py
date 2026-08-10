@@ -14,6 +14,11 @@ unless something stops it. ``StubTokenizer(split_marker=...)`` carries Galactica
 ``Split``-and-remove pretokenizer rule, and the same stub without it is a
 tokenizer that ignores the escape -- which is what an unaided ``AutoTokenizer``
 call amounts to and what costs about 2.9 nats/token on the real checkpoint.
+
+The same merging stub is also what a *token-unit* family reads as its declared
+format, which is the point of the symbol-unit declaration: the two cases produce
+the same record and only one of them is a defect. What separates them here is
+``symbol_unit``, never a call site.
 """
 
 from __future__ import annotations
@@ -81,6 +86,10 @@ class StubTokenizer:
         self.bos_id = bos_id
         self._vocab: dict[str, int] = {}
         self._inverse: dict[int, str] = {}
+        if bos_id is not None:
+            # A real tokenizer spells its beginning-of-sequence token, and the
+            # spelled-run rule reads every id it produced.
+            self._inverse[bos_id] = "<s>"
         self._add("<unk>")
         for token in specials:
             self._add(token)
@@ -144,6 +153,26 @@ def galactica_stub(*, honours_the_split_rule: bool = True) -> StubTokenizer:
     )
 
 
+class MergingBeyondOneResidue(StubTokenizer):
+    """Per-residue for one residue, merged for two.
+
+    The state a resolution that only probed single residues would accept and a
+    residue-unit claim must never be made in. Nothing about it is visible until a
+    real sequence is rendered, which is why resolution renders one.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            specials=("[START_AMINO]", "[END_AMINO]"),
+            split_marker=JM.GALACTICA_SPLIT_MARKER,
+        )
+
+    def __call__(self, text: str, return_tensors=None) -> dict[str, list[int]]:
+        if text.count(self.split_marker) <= 2:
+            return super().__call__(text, return_tensors=return_tensors)
+        return {"input_ids": self._fragment(text.replace(self.split_marker, ""))}
+
+
 def instructprotein_stub(*, drop: tuple[str, ...] = (), alias=None) -> StubTokenizer:
     residues = tuple(f"Ƥ{residue}" for residue in AA20 if residue not in drop)
     return StubTokenizer(
@@ -153,28 +182,66 @@ def instructprotein_stub(*, drop: tuple[str, ...] = (), alias=None) -> StubToken
     )
 
 
+def prollama_stub() -> StubTokenizer:
+    """A tokenizer that merges residues and whose delimiters are NOT its tokens.
+
+    The two properties that matter about the real staged ProLLaMA_Stage_1
+    tokenizer, in stub form: ``Seq=<`` is spelled out of ordinary pieces rather
+    than carried as one, and a residue string comes back as multi-residue pieces.
+    ``Seq``/``=``/``<``/``>`` are added as pieces so the prefix is spellable at
+    all, but none of them is the declared ``Seq=<``.
+    """
+
+    return StubTokenizer(
+        specials=("Seq", "=", "<", ">", "[", "]", "Generate", "by", "superfamily"),
+        bos_id=2,
+    )
+
+
 SEQUENCE = "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ"
 
 
 # ------------------------------------------------------------------ declarations
 
 
+def _declaration(**overrides) -> JM.JointRendering:
+    """A minimal declaration, so a refusal test names only the field it is about."""
+
+    fields = {
+        "name": "broken",
+        "symbol_unit": JM.RESIDUE_UNIT,
+        "protein_start": "<a>",
+        "protein_end": "</a>",
+        "residue_escape": "^",
+        "escape_before_end_delimiter": False,
+        "protein_context_template": None,
+        "scored_target_rule": JM.BETWEEN_DELIMITERS,
+        "residue_subspace_disjoint_from_text": False,
+        "note": "",
+    }
+    fields.update(overrides)
+    return JM.JointRendering(**fields)
+
+
 class RenderingDeclaration(unittest.TestCase):
-    def test_both_qualified_families_are_declared_in_one_place(self):
-        self.assertEqual(sorted(JM.RENDERING_NAMES), ["galactica", "instructprotein"])
+    def test_every_qualified_family_is_declared_in_one_place(self):
+        self.assertEqual(
+            sorted(JM.RENDERING_NAMES), ["galactica", "instructprotein", "prollama"]
+        )
         self.assertIs(JM.rendering("galactica"), JM.JOINT_RENDERINGS["galactica"])
 
     def test_an_unknown_rendering_name_is_refused(self):
         with self.assertRaises(KeyError):
-            JM.rendering("prollama")
+            JM.rendering("esm2")
 
     def test_the_stage_offers_exactly_the_declared_families_and_refuses_the_rest(self):
         parser = STAGE.build_parser()
         with contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit):
-                parser.parse_args(["--checkpoint", "/nowhere", "--rendering", "prollama"])
-        parsed = parser.parse_args(["--checkpoint", "/nowhere", "--rendering", "galactica"])
-        self.assertEqual(parsed.rendering, "galactica")
+                parser.parse_args(["--checkpoint", "/nowhere", "--rendering", "esm2"])
+        for name in JM.RENDERING_NAMES:
+            parsed = parser.parse_args(["--checkpoint", "/nowhere", "--rendering", name])
+            self.assertEqual(parsed.rendering, name)
 
     def test_the_checkpoint_is_required_because_it_is_not_a_panel_arm(self):
         parser = STAGE.build_parser()
@@ -206,32 +273,30 @@ class RenderingDeclaration(unittest.TestCase):
             "Instruction: I would like a protein.\nOutput: <protein>ƤMƤK</protein>",
         )
 
-    def test_a_declaration_with_no_escape_is_refused_because_that_is_the_control(self):
+    def test_a_residue_unit_declaration_with_no_escape_is_refused(self):
+        # The escape IS the naive control, so a residue-unit family cannot
+        # declare an empty one and call it the trained format.
         with self.assertRaises(ValueError):
-            JM.JointRendering(
-                name="broken",
-                protein_start="<a>",
-                protein_end="</a>",
-                residue_escape="",
-                escape_before_end_delimiter=False,
-                protein_context_template=None,
-                scored_target_rule=JM.BETWEEN_DELIMITERS,
-                residue_subspace_disjoint_from_text=False,
-                note="",
-            )
+            _declaration(symbol_unit=JM.RESIDUE_UNIT, residue_escape="")
+
+    def test_a_token_unit_declaration_that_also_declares_an_escape_is_refused(self):
+        # An escape that reached the per-residue alphabet would make the family a
+        # residue-unit one; one that did not would not be an escape.
+        with self.assertRaises(ValueError) as raised:
+            _declaration(symbol_unit=JM.TOKEN_UNIT, residue_escape="^")
+        self.assertIn("symbol unit", str(raised.exception))
+
+    def test_a_declaration_with_an_undeclared_symbol_unit_is_refused(self):
+        with self.assertRaises(ValueError) as raised:
+            _declaration(symbol_unit="per_residue_ish", residue_escape="^")
+        self.assertIn("symbol unit", str(raised.exception))
 
     def test_a_declaration_with_an_undeclared_scoring_rule_is_refused(self):
         with self.assertRaises(ValueError):
-            JM.JointRendering(
-                name="broken",
-                protein_start="<a>",
-                protein_end="</a>",
+            _declaration(
+                symbol_unit=JM.RESIDUE_UNIT,
                 residue_escape="^",
-                escape_before_end_delimiter=False,
-                protein_context_template=None,
                 scored_target_rule="whatever_looks_right",
-                residue_subspace_disjoint_from_text=False,
-                note="",
             )
 
     def test_a_non_canonical_sequence_is_refused_rather_than_rendered(self):
@@ -245,9 +310,34 @@ class RenderingDeclaration(unittest.TestCase):
     def test_only_the_family_with_dedicated_residue_tokens_declares_a_text_subspace(self):
         # This is what the text-mode control is gated on: Galactica's residues are
         # ordinary capital letters, so a "residue probability mass" on its text
-        # mode would identify nothing.
+        # mode would identify nothing. ProLLaMA's are ordinary letters too.
         self.assertFalse(JM.rendering("galactica").residue_subspace_disjoint_from_text)
         self.assertTrue(JM.rendering("instructprotein").residue_subspace_disjoint_from_text)
+        self.assertFalse(JM.rendering("prollama").residue_subspace_disjoint_from_text)
+
+    def test_prollama_declares_the_token_as_its_symbol_unit_and_the_others_the_residue(self):
+        self.assertEqual(JM.rendering("prollama").symbol_unit, JM.TOKEN_UNIT)
+        for name in ("galactica", "instructprotein"):
+            self.assertEqual(JM.rendering(name).symbol_unit, JM.RESIDUE_UNIT, name)
+
+    def test_prollama_renders_the_format_the_lineage_was_trained_on(self):
+        prollama = JM.rendering("prollama")
+        self.assertEqual(prollama.render_protein("MK"), "Seq=<MK>")
+        self.assertEqual(
+            prollama.render_protein("MK", context="Ferritin-like superfamily"),
+            "[Generate by superfamily] Superfamily=<Ferritin-like superfamily> Seq=<MK>",
+        )
+
+    def test_only_a_family_with_an_escape_has_a_naive_control_at_all(self):
+        # Requirement 5: the control is defined by the escape, and a family with
+        # no escape refuses to render it rather than returning the declared form
+        # under the control's name.
+        self.assertFalse(JM.rendering("prollama").naive_control_available)
+        for name in ("galactica", "instructprotein"):
+            self.assertTrue(JM.rendering(name).naive_control_available, name)
+        with self.assertRaises(ValueError) as raised:
+            JM.rendering("prollama").render_protein("MK", variant=JM.NAIVE)
+        self.assertIn("no per-residue escape", str(raised.exception))
 
 
 # ----------------------------------------------------- resolution against a tokenizer
@@ -281,6 +371,50 @@ class ResolutionAgainstATokenizer(unittest.TestCase):
     def test_a_tokenizer_without_the_declared_delimiters_is_refused(self):
         with self.assertRaises(ValueError):
             JM.resolve(galactica_stub(), "instructprotein")
+
+    def test_a_per_residue_family_on_a_merging_tokenizer_is_refused_at_resolution(self):
+        # The load-bearing refusal, moved ahead of the weights: this tokenizer
+        # honours the escape for one residue and merges two, so a probe that only
+        # ever saw one residue would have accepted it.
+        with self.assertRaises(ValueError) as raised:
+            JM.resolve(MergingBeyondOneResidue(), "galactica")
+        self.assertIn("merged residues", str(raised.exception))
+
+    def test_a_per_residue_family_whose_escape_is_ignored_is_refused_at_resolution(self):
+        with self.assertRaises(ValueError):
+            JM.resolve(galactica_stub(honours_the_split_rule=False), "galactica")
+
+    def test_a_token_unit_family_resolves_without_its_delimiters_being_tokens(self):
+        # 'Seq=<' is not a token of this vocabulary and never will be; the family
+        # locates its span by spelling, so resolution must not demand one.
+        tokenizer = prollama_stub()
+        self.assertIsNone(tokenizer.convert_tokens_to_ids("Seq=<"))
+        resolved = JM.resolve(tokenizer, "prollama")
+        self.assertIsNone(resolved.start_id)
+        self.assertIsNone(resolved.end_id)
+        self.assertEqual(sorted(resolved.residue_ids), sorted(AA20))
+
+    def test_the_token_unit_support_is_every_residue_spelling_token(self):
+        resolved = JM.resolve(prollama_stub(), "prollama")
+        support = set(resolved.scored_target_ids)
+        # Twenty singles plus every two-residue piece the stub carries, and
+        # nothing that spells anything else.
+        self.assertEqual(len(support), len(AA20) + len(AA20) ** 2)
+        self.assertTrue(set(resolved.residue_ids.values()) <= support)
+        for token in ("Seq", "=", "<", ">", "<unk>"):
+            self.assertNotIn(resolved.tokenizer.convert_tokens_to_ids(token), support, token)
+
+    def test_a_residue_unit_family_supports_exactly_its_twenty_residue_ids(self):
+        for name, tokenizer in (
+            ("galactica", galactica_stub()),
+            ("instructprotein", instructprotein_stub()),
+        ):
+            resolved = JM.resolve(tokenizer, name)
+            self.assertEqual(
+                resolved.scored_target_ids,
+                tuple(sorted(resolved.residue_ids.values())),
+                name,
+            )
 
 
 # -------------------------------------------------------- the per-residue guard
@@ -317,6 +451,7 @@ class PerResidueVerification(unittest.TestCase):
             start_id=resolved.start_id,
             end_id=resolved.end_id,
             residue_ids=resolved.residue_ids,
+            scored_target_ids=resolved.scored_target_ids,
         )
         with self.assertRaises(ValueError):
             deaf.render(SEQUENCE)
@@ -338,6 +473,53 @@ class PerResidueVerification(unittest.TestCase):
             sorted(signature.parameters), ["context", "sequence", "variant"]
         )
         self.assertEqual(signature.parameters["variant"].default, JM.DECLARED)
+
+    def test_the_guard_takes_no_bypass_parameter_and_the_unit_decides_instead(self):
+        # Requirement 1 in one assertion: the per-residue guard's signature is the
+        # record and nothing else, so the residue/token distinction cannot be made
+        # at a call site. `verify_symbol_unit` is the only thing that chooses.
+        resolved = JM.resolve(galactica_stub(), "galactica")
+        for method in (resolved.verify_one_token_per_residue, resolved.verify_symbol_unit):
+            self.assertEqual(sorted(inspect.signature(method).parameters), ["record"])
+
+    def test_a_token_unit_family_does_not_raise_on_merged_tokens(self):
+        # The same merging tokenizer that is a stopped run for Galactica is the
+        # declared, trained behaviour here, and the record says how far it merged
+        # rather than refusing to exist.
+        resolved = JM.resolve(prollama_stub(), "prollama")
+        record = resolved.render(SEQUENCE)
+        self.assertLess(record.n_scored_tokens, len(SEQUENCE))
+        self.assertGreater(record.residues_per_scored_token, 1.0)
+        resolved.verify_symbol_unit(record)
+
+    def test_the_unit_and_not_the_call_site_decides_which_verification_runs(self):
+        # The two families are handed structurally identical merged records. Only
+        # the declared symbol unit separates a defect from a trained format.
+        merging = JM.resolve(prollama_stub(), "prollama")
+        per_residue = JM.resolve(galactica_stub(), "galactica")
+        merged = per_residue.render(SEQUENCE, variant=JM.NAIVE)
+        self.assertGreater(merged.residues_per_scored_token, 1.0)
+        with self.assertRaises(ValueError):
+            per_residue.verify_symbol_unit(merged)
+        merging.verify_symbol_unit(merging.render(SEQUENCE))
+
+    def test_a_token_unit_target_outside_the_enumerated_support_is_refused(self):
+        # The token-unit counterpart of the stray-id half of the per-residue
+        # guard: a span and a support that disagree would leave the held-out
+        # unigram unable to represent the sample it normalises.
+        resolved = JM.resolve(prollama_stub(), "prollama")
+        record = resolved.render(SEQUENCE)
+        narrowed = JM.JointTokenisation(
+            declaration=resolved.declaration,
+            tokenizer=resolved.tokenizer,
+            start_id=None,
+            end_id=None,
+            residue_ids=resolved.residue_ids,
+            scored_target_ids=tuple(sorted(resolved.residue_ids.values())),
+        )
+        with self.assertRaises(ValueError) as raised:
+            narrowed.verify_symbol_unit(record)
+        self.assertIn("outside", str(raised.exception))
 
 
 # ------------------------------------------------------------- scored positions
@@ -408,6 +590,70 @@ class ScoredPositions(unittest.TestCase):
                 resolved.tokenizer, resolved.declaration, "[START_AMINO]"
             )
 
+    def test_the_prollama_span_is_strictly_inside_Seq_and_the_closing_bracket(self):
+        resolved = JM.resolve(prollama_stub(), "prollama")
+        record = resolved.render(SEQUENCE)
+        pieces = [resolved.tokenizer.convert_ids_to_tokens(i) for i in record.token_ids]
+        positions = record.scored_positions
+        # Contiguous, and its spellings are exactly the sequence: no delimiter
+        # fragment inside, no residue left outside.
+        self.assertEqual(list(positions), list(range(positions[0], positions[-1] + 1)))
+        self.assertEqual("".join(pieces[i] for i in positions), SEQUENCE)
+        # Both delimiters are outside it, and they are spelled by several tokens
+        # each -- which is exactly why a delimiter-id rule cannot run here.
+        self.assertEqual("".join(pieces[: positions[0]])[-len("Seq=<") :], "Seq=<")
+        self.assertEqual("".join(pieces[positions[-1] + 1 :]), ">")
+        for piece in (pieces[i] for i in positions):
+            self.assertTrue(set(piece) <= set(AA20), piece)
+
+    def test_the_prollama_span_excludes_an_instruction_prefix_rather_than_scoring_it(self):
+        resolved = JM.resolve(prollama_stub(), "prollama")
+        bare = resolved.render(SEQUENCE)
+        prompted = resolved.render(SEQUENCE, context="Ferritin like superfamily")
+        pieces = [resolved.tokenizer.convert_ids_to_tokens(i) for i in prompted.token_ids]
+        self.assertEqual(prompted.n_scored_tokens, bare.n_scored_tokens)
+        self.assertGreater(min(prompted.scored_positions), min(bare.scored_positions))
+        self.assertEqual(
+            "".join(pieces[i] for i in prompted.scored_positions), SEQUENCE
+        )
+
+    def test_the_spelled_run_rule_refuses_to_run_without_the_sequence(self):
+        resolved = JM.resolve(prollama_stub(), "prollama")
+        with self.assertRaises(ValueError):
+            JM.scored_target_positions(
+                resolved.tokenizer,
+                resolved.declaration,
+                resolved.declaration.render_protein(SEQUENCE),
+            )
+
+    def test_a_sequence_that_does_not_start_on_a_token_boundary_is_refused(self):
+        # The failure a delimiter-id rule would have caught by construction: a
+        # residue merged into the opening delimiter, so token position is not
+        # residue position. It raises rather than returning a shifted span.
+        resolved = JM.resolve(prollama_stub(), "prollama")
+        merging = prollama_stub()
+        merging._add("<M")
+        merging._longest = max(merging._longest, 2)
+        with self.assertRaises(ValueError) as raised:
+            JM.scored_target_positions(
+                merging,
+                resolved.declaration,
+                resolved.declaration.render_protein(SEQUENCE),
+                sequence=SEQUENCE,
+            )
+        self.assertIn("token boundaries", str(raised.exception))
+
+    def test_a_context_that_repeats_the_sequence_is_refused_as_ambiguous(self):
+        resolved = JM.resolve(prollama_stub(), "prollama")
+        with self.assertRaises(ValueError) as raised:
+            JM.scored_target_positions(
+                resolved.tokenizer,
+                resolved.declaration,
+                resolved.declaration.render_protein(SEQUENCE, context=SEQUENCE),
+                sequence=SEQUENCE,
+            )
+        self.assertIn("ambiguous", str(raised.exception))
+
 
 # ----------------------------------------------------------- the held-out draw
 
@@ -416,47 +662,57 @@ SCORED_RECORDS = ["".join(AA20) * 4, "".join(reversed(AA20)) * 4, ("MK" * 40)]
 REFERENCE_RECORDS = [("AC" * 40), ("DE" * 40), ("FG" * 40)]
 
 
+def stub_protein_draw(calls: list[dict]):
+    """``arms.protein_cohort`` replaced by two fixed, overlapping windows."""
+
+    def draw(n, min_len, max_len, *, skip=0, name="", with_ec=False, seed=None):
+        calls.append({"n": n, "skip": skip, "seed": seed})
+        # The reference block deliberately repeats one scored record, the way
+        # Swiss-Prot repeats a sequence under several accessions.
+        records = (
+            list(SCORED_RECORDS) if skip == 0 else [SCORED_RECORDS[0], *REFERENCE_RECORDS]
+        )
+        return Cohort(
+            name,
+            "protein",
+            records[:n] if skip == 0 else records,
+            min_len,
+            max_len,
+            {
+                "sampling": sampling_record(
+                    seed=seed,
+                    skip=skip,
+                    requested=n,
+                    eligible=64,
+                    corpus="stub_swissprot",
+                )
+            },
+        )
+
+    return draw
+
+
+def cohort_args(**overrides) -> argparse.Namespace:
+    args = argparse.Namespace(
+        sequences=len(SCORED_RECORDS),
+        unigram_sequences=4,
+        protein_min_len=8,
+        protein_max_len=400,
+        text_min_chars=8,
+        cohort_draw_seed=20260728,
+    )
+    vars(args).update(overrides)
+    return args
+
+
 class HeldOutUnigramDraw(unittest.TestCase):
     """The reference must be a different sample, and the stage must prove it."""
 
     def _args(self) -> argparse.Namespace:
-        return argparse.Namespace(
-            sequences=len(SCORED_RECORDS),
-            unigram_sequences=4,
-            protein_min_len=8,
-            protein_max_len=400,
-            text_min_chars=8,
-            cohort_draw_seed=20260728,
-        )
+        return cohort_args()
 
     def _stub_draw(self, calls: list[dict]):
-        def draw(n, min_len, max_len, *, skip=0, name="", with_ec=False, seed=None):
-            calls.append({"n": n, "skip": skip, "seed": seed})
-            # The reference block deliberately repeats one scored record, the way
-            # Swiss-Prot repeats a sequence under several accessions.
-            records = (
-                list(SCORED_RECORDS)
-                if skip == 0
-                else [SCORED_RECORDS[0], *REFERENCE_RECORDS]
-            )
-            return Cohort(
-                name,
-                "protein",
-                records[:n] if skip == 0 else records,
-                min_len,
-                max_len,
-                {
-                    "sampling": sampling_record(
-                        seed=seed,
-                        skip=skip,
-                        requested=n,
-                        eligible=64,
-                        corpus="stub_swissprot",
-                    )
-                },
-            )
-
-        return draw
+        return stub_protein_draw(calls)
 
     def test_the_reference_is_drawn_past_the_scored_cohort_and_deduplicated(self):
         calls: list[dict] = []
@@ -536,7 +792,7 @@ class Measurability(unittest.TestCase):
 class UnigramSupport(unittest.TestCase):
     def test_the_protein_reference_is_fitted_over_the_residue_alphabet_only(self):
         resolved = JM.resolve(galactica_stub(), "galactica")
-        counts = STAGE.residue_target_counts(resolved, [SEQUENCE], context=None)
+        counts = STAGE.scored_target_counts(resolved, [SEQUENCE], context=None)
         self.assertEqual(counts.size, len(AA20))
         self.assertEqual(int(counts.sum()), len(SEQUENCE))
         # Support size decides the smoothing bias, which is why it is recorded.
@@ -550,6 +806,26 @@ class UnigramSupport(unittest.TestCase):
         self.assertEqual(record["support_size"], len(AA20))
         self.assertLess(record["smoothing_mass_fraction"], 0.5)
         self.assertGreater(record["cross_entropy_nats"], 0.0)
+
+    def test_a_token_unit_reference_is_fitted_over_the_token_support_it_is_scored_on(self):
+        # Rule 26's other half: the unit moved, so the support has to move with
+        # it. Counting a token-unit family over twenty residue ids would leave
+        # every merged target unrepresentable.
+        resolved = JM.resolve(prollama_stub(), "prollama")
+        counts = STAGE.scored_target_counts(resolved, [SEQUENCE], context=None)
+        self.assertEqual(counts.size, len(resolved.scored_target_ids))
+        self.assertGreater(counts.size, len(AA20))
+        rendered = resolved.render(SEQUENCE)
+        self.assertEqual(int(counts.sum()), rendered.n_scored_tokens)
+        self.assertLess(int(counts.sum()), len(SEQUENCE))
+        record = STAGE.unigram_record(
+            counts,
+            counts,
+            support="test",
+            reference=Cohort("r", "protein", [SEQUENCE], 8, 400, {}),
+            overlap={},
+        )
+        self.assertEqual(record["support_size"], len(resolved.scored_target_ids))
 
 
 class ScoringPrimitive(unittest.TestCase):
@@ -600,6 +876,157 @@ class ScoringPrimitive(unittest.TestCase):
     def test_a_record_with_no_scored_position_is_refused(self):
         with self.assertRaises(ValueError):
             STAGE.score_positions(self._model(torch.zeros(1, 3, 5)), [1, 2, 3], [], device="cpu")
+
+
+# -------------------------------------------------- the protein record, end to end
+
+
+class ZeroLogitModel:
+    """A decoder with no opinion, so what is under test is the record, not the number."""
+
+    def __init__(self, vocab_size: int) -> None:
+        self.vocab_size = vocab_size
+
+    def __call__(self, ids):
+        return SimpleNamespace(logits=torch.zeros(1, ids.shape[1], self.vocab_size))
+
+
+class TheProteinRecordAndItsControls(unittest.TestCase):
+    """What reaches the artefact, for both symbol units, through the real path."""
+
+    def _protein_mode(self, name: str, tokenizer) -> dict:
+        tokenisation = JM.resolve(tokenizer, name)
+        original = STAGE.protein_cohort
+        STAGE.protein_cohort = stub_protein_draw([])
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                return STAGE.protein_mode(
+                    cohort_args(
+                        device="cpu",
+                        protein_context=None,
+                        max_tokens=4096,
+                        min_context_information=0.30,
+                    ),
+                    ZeroLogitModel(len(tokenizer)),
+                    tokenisation,
+                )
+        finally:
+            STAGE.protein_cohort = original
+
+    def test_a_token_unit_record_carries_its_measured_residues_per_token_and_its_unit(self):
+        record = self._protein_mode("prollama", prollama_stub())
+        self.assertEqual(record["symbol_unit"], JM.TOKEN_UNIT)
+        self.assertEqual(record["context_information_unit"], "nats per scored token")
+        measured = record["measured_residues_per_scored_token"]
+        self.assertGreater(measured, 1.0)
+        self.assertEqual(measured, record["declared_rendering"]["residues_per_scored_token"])
+        # The estimand really was formed in the unit the record names, and over a
+        # reference fitted on the same token support.
+        self.assertAlmostEqual(
+            record["context_information_nats"],
+            record["unigram_reference"]["cross_entropy_nats"]
+            - record["declared_rendering"]["clean_nll_nats_per_scored_token"],
+            places=12,
+        )
+        self.assertGreater(record["unigram_reference"]["support_size"], len(AA20))
+
+    def test_a_token_unit_magnitude_is_marked_non_comparable_in_its_own_field(self):
+        record = self._protein_mode("prollama", prollama_stub())
+        comparability = record["cross_arm_comparability"]
+        self.assertEqual(comparability["verdict"], "NOT_COMPARABLE_ACROSS_ARMS")
+        self.assertEqual(comparability["symbol_unit"], JM.TOKEN_UNIT)
+        self.assertEqual(
+            comparability["measured_residues_per_scored_token"],
+            record["measured_residues_per_scored_token"],
+        )
+        self.assertIn("L23", comparability["note"])
+
+    def test_a_per_residue_record_stays_in_residues_and_stays_comparable(self):
+        record = self._protein_mode("galactica", galactica_stub())
+        self.assertEqual(record["symbol_unit"], JM.RESIDUE_UNIT)
+        self.assertEqual(record["context_information_unit"], "nats per scored residue")
+        self.assertEqual(record["measured_residues_per_scored_token"], 1.0)
+        self.assertEqual(
+            record["cross_arm_comparability"]["verdict"], "COMPARABLE_ACROSS_ARMS"
+        )
+        self.assertEqual(record["unigram_reference"]["support_size"], len(AA20))
+        self.assertAlmostEqual(
+            record["context_information_nats"],
+            record["unigram_reference"]["cross_entropy_nats"]
+            - record["declared_rendering"]["clean_nll_nats_per_residue"],
+            places=12,
+        )
+
+    def test_the_naive_control_is_withheld_with_a_reason_rather_than_fabricated(self):
+        record = self._protein_mode("prollama", prollama_stub())
+        naive = record["controls"]["naive_rendering"]
+        self.assertEqual(naive["verdict"], "WITHHELD")
+        self.assertIn("no per-residue escape", naive["reason"])
+        # No number is emitted under the control's name, in either unit.
+        for key in (
+            "price_nats_per_residue",
+            "price_nats_per_scored_token",
+            "clean_nll_nats_per_scored_token",
+            "clean_nll_nats_per_residue",
+            "residues_per_scored_token",
+        ):
+            self.assertNotIn(key, naive)
+
+    def test_the_naive_control_is_still_priced_where_an_escape_exists(self):
+        record = self._protein_mode("galactica", galactica_stub())
+        naive = record["controls"]["naive_rendering"]
+        self.assertNotIn("verdict", naive)
+        self.assertIn("price_nats_per_residue", naive)
+        self.assertGreater(naive["residues_per_scored_token"], 1.0)
+        self.assertFalse(naive["verified_against_declared_symbol_unit"])
+
+    def test_the_reversal_control_survives_the_unit_change_and_is_read_per_residue(self):
+        # Requirement 4: a within-arm difference over an identical residue
+        # multiset. The token counts differ between the two conditions, which is
+        # exactly why the cost is not read per token.
+        record = self._protein_mode("prollama", prollama_stub())
+        declared = record["declared_rendering"]
+        reversed_score = record["controls"]["reversed"]
+        self.assertEqual(reversed_score["cost_unit"], "nats per residue")
+        self.assertIn("cost_nats_per_residue", reversed_score)
+        self.assertNotIn("cost_nats_per_scored_token", reversed_score)
+        self.assertNotIn("context_information_nats_per_residue", reversed_score)
+        self.assertIn("different token population", reversed_score["note"])
+        self.assertEqual(
+            reversed_score["n_scored_residues"], declared["n_scored_residues"]
+        )
+        self.assertAlmostEqual(
+            reversed_score["cost_nats_per_residue"],
+            reversed_score["clean_nll_nats_per_residue"]
+            - declared["clean_nll_nats_per_residue"],
+            places=12,
+        )
+
+    def test_the_reversal_control_keeps_its_shared_reference_for_a_per_residue_family(self):
+        record = self._protein_mode("galactica", galactica_stub())
+        reversed_score = record["controls"]["reversed"]
+        self.assertEqual(reversed_score["cost_unit"], "nats per residue")
+        self.assertIn("preserves the residue multiset", reversed_score["note"])
+        self.assertEqual(
+            reversed_score["n_scored_tokens"],
+            record["declared_rendering"]["n_scored_tokens"],
+        )
+
+    def test_the_rendering_facts_name_the_unit_and_the_support_they_were_read_with(self):
+        facts = JM.resolve(prollama_stub(), "prollama").facts()
+        self.assertEqual(facts["symbol_unit"], JM.TOKEN_UNIT)
+        self.assertFalse(facts["naive_control_available"])
+        self.assertFalse(facts["delimiters_are_tokens"])
+        self.assertIsNone(facts["start_token_id"])
+        self.assertEqual(
+            facts["n_scored_target_token_ids"], len(facts["scored_target_token_ids"])
+        )
+        self.assertGreater(facts["n_scored_target_token_ids"], len(AA20))
+        json.dumps(facts)
+        galactica = JM.resolve(galactica_stub(), "galactica").facts()
+        self.assertEqual(galactica["symbol_unit"], JM.RESIDUE_UNIT)
+        self.assertTrue(galactica["delimiters_are_tokens"])
+        self.assertEqual(galactica["n_scored_target_token_ids"], len(AA20))
 
 
 if __name__ == "__main__":  # pragma: no cover

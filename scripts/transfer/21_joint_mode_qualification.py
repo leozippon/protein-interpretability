@@ -17,18 +17,34 @@ cohort**, not failing. That distinction is the whole verdict. It says the
 evaluation interface cannot resolve anything on this cohort, and it says nothing
 about what the checkpoint knows.
 
+**What one scored symbol is, is the family's declaration.** Galactica and
+InstructProtein reach a per-residue alphabet, so a protein symbol is a residue and
+the magnitude is in nats per residue. ProLLaMA does not -- ``Seq=<...>`` over the
+unmodified LLaMA-2 vocabulary merges residue runs, and that merged form is what
+the lineage was trained on -- so its protein symbol is a token. The estimand
+follows the declared unit rather than the other way round: the unigram support,
+the clean cross-entropy's denominator and the reported unit all move together.
+
+That mobility is exactly why every protein record carries its **measured residues
+per scored token** and an explicit cross-arm comparability verdict. A magnitude in
+nats per token is not commensurable with one in nats per residue, and it is not
+commensurable with another arm's nats per token either when the arms differ in
+residues per token (Appendix B rule 26, limitation L23). The artefact says so in
+its own field rather than leaving a reader to notice.
+
 **The unigram is held out and its support is declared.** It is fitted on a draw
 that is disjoint from the scored one by construction (a later window of the same
 seeded permutation) and then deduplicated by content, because Swiss-Prot carries
-the same sequence under several accessions (Appendix B rule 3). Its support
-differs by mode and the difference is not cosmetic: the protein reference is
-fitted over the **twenty declared residue token ids**, because those are the only
-ids a scored protein target can take, while the text reference is fitted over the
-model's whole vocabulary. Laplace smoothing inflates a cross-entropy by roughly
-``log(1 + s*V/N)``, which is 0.0003 nats over twenty symbols and 0.6 nats over
-fifty thousand on a reference of this size -- so fitting the protein reference
-over the full vocabulary would put more smoothing bias into the baseline than the
-effect being measured.
+the same sequence under several accessions (Appendix B rule 3). Its support is
+always the set of ids a scored target of that mode can take -- and that set is
+read from ``joint_modes``, so it follows the declared symbol unit: the twenty
+residue ids for a residue-unit family, every residue-spelling token (463 on the
+staged LLaMA-2 vocabulary) for a token-unit one, and the model's whole vocabulary
+for text. Laplace smoothing inflates a cross-entropy by roughly ``log(1 + s*V/N)``,
+and on the 41682-target ProLLaMA reference this stage's defaults draw that is
+0.0005 nats over twenty symbols, 0.011 over 463 and 0.570 over the full 32000 --
+so fitting a protein reference over the whole vocabulary would put more smoothing
+bias into the baseline than the effect being measured.
 
 **Controls, because the headline number alone cannot be read.**
 
@@ -36,14 +52,23 @@ effect being measured.
                   decoder carrying real directional sequence structure cannot be
                   indifferent to reversal, so a small reversal cost is what
                   distinguishes "this cohort is hard" from "this mode is not
-                  reading the sequence at all". Reversal preserves the residue
-                  multiset exactly, so the same held-out reference applies.
+                  reading the sequence at all". It is a within-arm difference over
+                  an identical residue multiset, which is why it survives the unit
+                  problem above and why the decision rule leans on it hardest: the
+                  cost is read **per residue** in both units. For a token-unit
+                  family that is also the only readable form -- reversal permutes
+                  the residues but not the tokenisation, so the reversed condition
+                  is a different token population and neither a per-token cost nor
+                  the forward reference applies to it.
 ``naive``         the same sequences under the rendering with the per-residue
                   escape removed -- what an unaided ``AutoTokenizer`` call
                   produces. It prices the rendering (Appendix B rule 4) in the
                   estimand's own per-residue units, and it is the one measurement
                   in this stage that is deliberately not verified against the
-                  per-residue alphabet.
+                  per-residue alphabet. **Withheld with its reason** for a family
+                  that declares no escape: there "the escape removed" is the
+                  declared rendering itself, the price is zero by construction,
+                  and no substitute control is invented.
 ``residue_mass``  the model's probability mass on its residue tokens at every
                   scored TEXT position, where the family declares a residue
                   subspace disjoint from text. This is what identifies a
@@ -76,7 +101,6 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.transfer import joint_modes  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
-    AA20,
     DEFAULT_CORPUS_DRAW_SEED,
     REPO,
     Cohort,
@@ -303,28 +327,29 @@ def cohort_record(cohort: Cohort, *, band_unit: str) -> dict[str, Any]:
 # --------------------------------------------------------------- unigram support
 
 
-def residue_target_counts(
+def scored_target_counts(
     tokenisation: joint_modes.JointTokenisation,
     records: Sequence[str],
     *,
     context: str | None,
 ) -> np.ndarray:
-    """Residue-target counts over exactly the multiset the model is scored on.
+    """Protein-target counts over exactly the multiset the model is scored on.
 
-    Counted through the same rendering the model sees, so the reference and the
-    scored sample are counted over the same kind of symbol; the per-residue
-    verification inside ``render`` is what guarantees every counted target is a
-    residue rather than a merged piece.
+    Counted through the same rendering the model sees and over the support the
+    rendering declares, so the reference and the scored sample are counted over
+    the same kind of symbol whichever symbol unit the family declares. The
+    verification inside ``render`` is what guarantees every counted target is one
+    the support can represent, so the lookup below cannot silently drop a target.
     """
 
-    order = {tokenisation.residue_ids[residue]: index for index, residue in enumerate(AA20)}
-    counts = np.zeros(len(AA20), dtype=np.int64)
+    order = {value: index for index, value in enumerate(tokenisation.scored_target_ids)}
+    counts = np.zeros(len(order), dtype=np.int64)
     for sequence in records:
         rendered = tokenisation.render(sequence, context=context)
         for position in rendered.scored_positions:
             counts[order[rendered.token_ids[position]]] += 1
     if counts.sum() < 1:
-        raise RuntimeError("the protein records yielded no scored residue targets")
+        raise RuntimeError("the protein records yielded no scored targets")
     return counts
 
 
@@ -437,7 +462,49 @@ def score_protein_records(
         "residues_per_scored_token": residues / scored_tokens,
         "clean_nll_nats_per_scored_token": total_nll / scored_tokens,
         "clean_nll_nats_per_residue": total_nll / residues,
-        "verified_one_token_per_residue": variant == joint_modes.DECLARED,
+        "symbol_unit": tokenisation.declaration.symbol_unit,
+        "verified_against_declared_symbol_unit": variant == joint_modes.DECLARED,
+    }
+
+
+def comparability_record(
+    declaration: joint_modes.JointRendering, residues_per_scored_token: float
+) -> dict[str, Any]:
+    """Whether this arm's magnitude may be placed beside another arm's, and why not.
+
+    Appendix B rule 26 and limitation L23: an estimand whose unit is the token is
+    not a cross-arm estimand when arms differ in symbols per token. The verdict is
+    a field rather than a caveat in prose because the number it qualifies is a
+    finite, plausible-looking magnitude that reads exactly like a comparable one.
+    """
+
+    if declaration.symbol_unit == joint_modes.RESIDUE_UNIT:
+        return {
+            "verdict": "COMPARABLE_ACROSS_ARMS",
+            "symbol_unit": declaration.symbol_unit,
+            "measured_residues_per_scored_token": float(residues_per_scored_token),
+            "note": (
+                "the scored unit is the residue and the declared rendering was "
+                "verified at exactly one token per residue, so this magnitude is in "
+                "the same units as every other per-residue arm's"
+            ),
+        }
+    return {
+        "verdict": "NOT_COMPARABLE_ACROSS_ARMS",
+        "symbol_unit": declaration.symbol_unit,
+        "measured_residues_per_scored_token": float(residues_per_scored_token),
+        "note": (
+            f"{declaration.name} declares the TOKEN as its protein symbol unit, and "
+            f"one scored token carried {residues_per_scored_token:.3f} residues on "
+            "this cohort. Nats per token is therefore not the unit any per-residue "
+            "arm reports, and it is not this arm's unit on another cohort either, "
+            "since residues per token is a property of the corpus and the tokenizer "
+            "together. Do NOT place this magnitude beside a per-residue arm's or "
+            "convert it by dividing: the held-out reference is fitted over token "
+            "targets, so the quotient is not a per-residue cross-entropy (Appendix B "
+            "rule 26, limitation L23). The within-arm controls below -- reversal "
+            "above all -- are what this family's verdict rests on"
+        ),
     }
 
 
@@ -446,15 +513,28 @@ def protein_mode(
     model: Any,
     tokenisation: joint_modes.JointTokenisation,
 ) -> dict[str, Any]:
-    """Context information on residues, with the two rendering controls beside it."""
+    """Context information on the declared protein symbol, with its controls beside it."""
+
+    declaration = tokenisation.declaration
+    per_residue = declaration.symbol_unit == joint_modes.RESIDUE_UNIT
+    unit = "nats per scored residue" if per_residue else "nats per scored token"
+    clean_key = (
+        "clean_nll_nats_per_residue" if per_residue else "clean_nll_nats_per_scored_token"
+    )
 
     scored, reference, overlap = mode_cohorts(args, "protein")
     print(f"[protein] {len(scored)} scored records, {len(reference)} held-out reference records")
     unigram = unigram_record(
-        residue_target_counts(tokenisation, reference.records, context=args.protein_context),
-        residue_target_counts(tokenisation, scored.records, context=args.protein_context),
-        support="the declared residue token ids, the only ids a scored protein "
-        "target can take under this rendering",
+        scored_target_counts(tokenisation, reference.records, context=args.protein_context),
+        scored_target_counts(tokenisation, scored.records, context=args.protein_context),
+        support=(
+            "the declared residue token ids, the only ids a scored protein target "
+            "can take under this rendering"
+            if per_residue
+            else "every token of this vocabulary spelled purely of canonical "
+            "residues, which is the set of ids a scored protein target can take "
+            "under a rendering whose symbol unit is the token"
+        ),
         reference=reference,
         overlap=overlap,
     )
@@ -467,12 +547,11 @@ def protein_mode(
         variant=joint_modes.DECLARED,
         max_tokens=args.max_tokens,
     )
-    context_information = (
-        unigram["cross_entropy_nats"] - declared["clean_nll_nats_per_residue"]
-    )
+    context_information = unigram["cross_entropy_nats"] - declared[clean_key]
     print(
-        f"  declared rendering  {declared['clean_nll_nats_per_residue']:.4f} nats/residue "
-        f"against unigram {unigram['cross_entropy_nats']:.4f}"
+        f"  declared rendering  {declared[clean_key]:.4f} {unit} "
+        f"against unigram {unigram['cross_entropy_nats']:.4f} "
+        f"at {declared['residues_per_scored_token']:.3f} residues/token"
     )
 
     reversed_records = [sequence[::-1] for sequence in scored.records]
@@ -488,54 +567,87 @@ def protein_mode(
     reversed_score["cost_nats_per_residue"] = (
         reversed_score["clean_nll_nats_per_residue"] - declared["clean_nll_nats_per_residue"]
     )
+    reversed_score["cost_unit"] = "nats per residue"
     reversed_score["note"] = (
-        "the same sequences read C-to-N. Reversal preserves the residue multiset "
-        "exactly, so the held-out reference above applies unchanged and the cost is "
-        "a pure directional-information reading. A decoder carrying real directional "
-        "sequence structure cannot be indifferent to it"
+        "the same sequences read C-to-N, and the control this stage's decision rule "
+        "leans on hardest because it is a within-arm difference over an identical "
+        "residue multiset -- it needs no cross-arm unit to be readable. A decoder "
+        "carrying real directional sequence structure cannot be indifferent to it. "
+        + (
+            "Reversal preserves the residue multiset exactly, so the held-out "
+            "reference above applies to this condition unchanged and the cost is a "
+            "pure directional-information reading"
+            if per_residue
+            else "Reversal permutes the residues but NOT the tokenisation, so this "
+            "condition is a different token population: the held-out token reference "
+            "above does not apply to it, no context information is reported for it, "
+            "and the cost is read per residue -- the denominator the two conditions "
+            "do share (Appendix B rules 26, 27). Compare the two conditions' "
+            "residues_per_scored_token to see how far the token populations differ"
+        )
     )
 
-    naive = score_protein_records(
-        model,
-        tokenisation,
-        scored.records,
-        device=args.device,
-        context=args.protein_context,
-        variant=joint_modes.NAIVE,
-        max_tokens=args.max_tokens,
-    )
-    naive["price_nats_per_residue"] = (
-        naive["clean_nll_nats_per_residue"] - declared["clean_nll_nats_per_residue"]
-    )
-    naive["price_nats_per_scored_token"] = (
-        naive["clean_nll_nats_per_scored_token"]
-        - declared["clean_nll_nats_per_scored_token"]
-    )
-    naive["context_information_nats_per_residue"] = (
-        unigram["cross_entropy_nats"] - naive["clean_nll_nats_per_residue"]
-    )
-    naive["note"] = (
-        "the same sequences with the per-residue escape removed -- what an unaided "
-        "AutoTokenizer call produces. Deliberately NOT verified against the "
-        "per-residue alphabet; it exists to be wrong. Read the per-residue price: "
-        "the per-token one compares two different token populations, since this "
-        "condition scores merged multi-residue pieces (Appendix B rules 26, 27)"
-    )
-    print(
-        f"  naive rendering     {naive['clean_nll_nats_per_scored_token']:.4f} nats/token "
-        f"at {naive['residues_per_scored_token']:.3f} residues/token"
-    )
+    if declaration.naive_control_available:
+        naive = score_protein_records(
+            model,
+            tokenisation,
+            scored.records,
+            device=args.device,
+            context=args.protein_context,
+            variant=joint_modes.NAIVE,
+            max_tokens=args.max_tokens,
+        )
+        naive["price_nats_per_residue"] = (
+            naive["clean_nll_nats_per_residue"] - declared["clean_nll_nats_per_residue"]
+        )
+        naive["price_nats_per_scored_token"] = (
+            naive["clean_nll_nats_per_scored_token"]
+            - declared["clean_nll_nats_per_scored_token"]
+        )
+        naive["context_information_nats_per_residue"] = (
+            unigram["cross_entropy_nats"] - naive["clean_nll_nats_per_residue"]
+        )
+        naive["note"] = (
+            "the same sequences with the per-residue escape removed -- what an unaided "
+            "AutoTokenizer call produces. Deliberately NOT verified against the "
+            "per-residue alphabet; it exists to be wrong. Read the per-residue price: "
+            "the per-token one compares two different token populations, since this "
+            "condition scores merged multi-residue pieces (Appendix B rules 26, 27)"
+        )
+        print(
+            f"  naive rendering     {naive['clean_nll_nats_per_scored_token']:.4f} nats/token "
+            f"at {naive['residues_per_scored_token']:.3f} residues/token"
+        )
+    else:
+        naive = {
+            "verdict": "WITHHELD",
+            "reason": (
+                f"{declaration.name} declares no per-residue escape. Its trained "
+                "protein format writes residues straight into the checkpoint's own "
+                "vocabulary, so 'the same block with the escape removed' IS the "
+                "declared rendering: the price would be exactly 0.0 by construction "
+                "and would report a control that measured nothing. The rendering cost "
+                "this control exists to price does not exist for this family, and no "
+                "substitute control is invented in its place (Appendix B rule 4)"
+            ),
+        }
+        print(f"  naive rendering     WITHHELD ({declaration.name} has no escape to remove)")
     print(f"  reversed            cost {reversed_score['cost_nats_per_residue']:+.4f} nats/residue")
 
+    comparability = comparability_record(declaration, declared["residues_per_scored_token"])
     record: dict[str, Any] = {
         "cohort": cohort_record(scored, band_unit="residues"),
         "unigram_reference": unigram,
         "declared_rendering": declared,
+        "symbol_unit": declaration.symbol_unit,
         "context_information_nats": float(context_information),
-        "context_information_unit": "nats per scored residue",
+        "context_information_unit": unit,
+        "measured_residues_per_scored_token": float(declared["residues_per_scored_token"]),
+        "cross_arm_comparability": comparability,
         "context_information_definition": (
-            "held-out unigram cross-entropy on the scored residues minus the "
-            "model's clean cross-entropy on the same residues"
+            f"held-out unigram cross-entropy on the scored protein targets minus the "
+            f"model's clean cross-entropy on the same targets, in {unit}. One scored "
+            f"symbol is {joint_modes.SYMBOL_UNIT_DEFINITIONS[declaration.symbol_unit]}"
         ),
         "controls": {"reversed": reversed_score, "naive_rendering": naive},
     }
@@ -780,8 +892,11 @@ def main() -> None:
         "estimand": (
             "context information per mode: held-out unigram cross-entropy on the "
             "scored symbols minus the model's clean cross-entropy on the same "
-            "symbols. Protein symbols are residues, text symbols are tokens, and "
-            "each mode's record names its own unit and support"
+            "symbols. A text symbol is a token; a protein symbol is whatever the "
+            "family declares as its symbol unit in src.transfer.joint_modes, so "
+            "each mode's record names its own unit, its own support, and -- for "
+            "protein -- its measured residues per scored token and whether the "
+            "magnitude may be placed beside another arm's at all"
         ),
     }
 
@@ -805,10 +920,17 @@ def main() -> None:
     write_json(destination, payload)
     print()
     for name, record in modes_record.items():
-        print(
+        line = (
             f"[{name}] context information {record['context_information_nats']:+.4f} "
             f"({record['context_information_unit']})  {record['verdict']}"
         )
+        comparability = record.get("cross_arm_comparability")
+        if comparability is not None:
+            line += (
+                f"  {comparability['verdict']} at "
+                f"{comparability['measured_residues_per_scored_token']:.3f} residues/token"
+            )
+        print(line)
     print(f"wrote {destination}")
 
 
