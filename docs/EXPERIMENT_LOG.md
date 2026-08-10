@@ -9632,3 +9632,48 @@ That makes the cost of protein adaptation to the text mode a **within-lineage di
 > EXP-R2-152's draw-stability check measured stage 1 against stage 2 at three and two cohort draws: text **+0.6180 to +0.8336** against **+0.6343 to +0.7368**, protein **+0.5505 to +0.5764** against **+0.5215 to +0.5532**. **The two stages are indistinguishable on the qualification estimand — their difference is inside the draw spread on both modes.** Instruction tuning certainly changes behaviour, but the estimand that qualified these arms cannot power a diffing comparison between them, so a feature-level difference found there would have no behavioural anchor to be validated against.
 >
 > **The base-to-stage-1 comparison is where the signal is**: text moves 5.54 to 0.71, more than twenty times the draw spread, and the protein mode goes from unmeasurable to measurable with the reversal cost moving from −0.001 to +0.144. **Model diffing should therefore run base → stage 1 first**, with stage 1 → stage 2 admitted only if the first comparison establishes that the method resolves anything at all on this lineage. One limitation travels with that order and is already recorded: the base model's protein mode is unmeasurable, so on the protein side the base is a pre-adaptation representational reference and not a behavioural control.
+
+## 2026-08-10 — EXP-R2-157: the neuron basis inverts between the modalities, and the learned dictionary is where the difference lives
+
+**The experiment the revised priority order put first, and it is training-free.** Two hypotheses remained live for F11's proximal cause after depth, budget, routing, tokenisation, cohort band, dictionary saturation and normalisation had each been excluded: either the *learned dictionary* fails on protein, or protein MLP computation is *genuinely dense* and no sparse basis recovers it. A circuit built in the model's own neuron basis — which nobody trained — separates them. Stage `22_neuron_basis_circuit.py`, snapshot `20260810131739_e02c6227202f`, the architecture-matched non-gated triple, one card each, n = 128, band 64–246 on the protein arms.
+
+**The instrument was checked before the numbers were read.** The hooked tensor is the input of `mlp.c_proj`, measured width **5120 = 4 x d_model** on all three arms, activation `gelu_new` with its measured minimum −0.1709 against the declared −0.17 bound. Mean-ablating every neuron and mean-ablating the block output agree to **0.0008 of the denominator**, so the neuron floor and the replacement stage's floor are the same endpoint and the two estimands are commensurable by measurement rather than by assertion.
+
+| neurons kept per layer (of 5120) | gpt2-large | ProtGPT2 | ZymCTRL |
+|---|---:|---:|---:|
+| 64 — *the transcoder's own active budget* | **−0.0039** | **+0.0370** | **+0.0270** |
+| 256 | +0.1167 | +0.0893 | +0.0375 |
+| 512 | +0.1836 | +0.1860 | +0.0557 |
+| 1024 | +0.3003 | +0.2604 | +0.0805 |
+| 2048 — 40% of the basis | **+0.4301** | **+0.3518** | **+0.1924** |
+| 5120 — all | +1.0000 | +1.0000 | +1.0000 |
+| *trained transcoder, 12x expansion, k = 64* | **+0.9322** | **+0.1641** | **+0.0932** |
+
+**At the transcoder's own sparsity the neuron basis is worthless on every arm, including text.** Keeping 64 neurons per layer recovers −0.004, +0.037 and +0.027. So there is nothing modality-specific about neurons at matched sparsity, and this experiment does **not** show that protein computation is dense — it shows the neuron basis is a poor basis everywhere, which is the finding that makes the next line readable.
+
+**The discriminating comparison is at a matched fraction of the basis, and it inverts.** At 2048 of 5120 neurons the dictionary is worth **2.2x** the neuron circuit on the text arm (0.9322 against 0.4301) and **less than half** of it on both protein arms (0.1641 against 0.3518; 0.0932 against 0.1924). **On text a trained sparse dictionary vastly outperforms 40% of the raw neurons; on protein it is beaten by them, using 32x fewer active units against it.**
+
+**That is an attribution.** The failure is not that protein MLP computation resists every sparse basis — a crude dense-ish basis recovers a fifth to a third of the gap on the protein arms, more than the trained dictionary does. What fails is **the learned dictionary's ability to find a productive basis on protein**, and the modality difference lives in the training of the dictionary rather than in the computation being described. Under §5's organising rule that scopes the deficit toward the **method**, and it is the first evidence that has moved F11's proximal cause at all.
+
+**Two things this does not license.** It does not say the protein dictionaries are worse than nothing — they beat the free affine baseline, which is negative on both protein arms. And it does not say a better dictionary exists: it says the neuron basis, at a budget no dictionary would accept, outperforms the dictionary on protein, which is a statement about the dictionary's marginal value, not about an achievable ceiling.
+
+**A defect in the selection, recorded rather than smoothed.** The attribution ranking is gradient x activation while the intervention is mean-ablation, and the artefact declares that mismatch as a limitation. It shows: the size-matched random control **beats the selected circuit at large k** on two arms (gpt2-large 0.335 against 0.3003 at k = 1024; ZymCTRL 0.137 against 0.0805), and the random control is non-monotone in k on gpt2-large (0.043 at 256, 0.009 at 512, 0.335 at 1024) at three seeds. **So the ranking carries little information at large k and the random control is itself noisy there.** The inversion above is read at k = 2048, above where the random control was measured, and it rests on the *selected* curve; it should be re-read against a size-matched random control at 2048 and more seeds before it is promoted. The small-k end, where selection beats random cleanly, is not where the inversion lives.
+
+**Bounds.** One draw per arm, n = 128, one attribution score, one cohort band, three control seeds and only up to k = 1024. Three arms is not a panel and all three share the GPT-2 architecture, which is what makes them comparable and also what limits the generalisation. The protein arms are scored on their own corpora at their own renderings, so the comparison is within-arm against that arm's own transcoder and across arms only on the ratio. Per Appendix B rule 27 the denominators travel with the numbers: 6.9192, 4.3039 and 2.1918 nats.
+
+> **EXP-R2-157 confirmed under the ranking its own artefact flagged as mismatched, 2026-08-10.** The entry's selection ranked neurons by gradient x activation, which is a first-order approximation to **zeroing** a neuron, while the intervention applied is **mean** ablation. The stage declares that mismatch in `selection.limitation` and ships the matched score, and the entry recorded the consequence honestly: the size-matched random control beat the selected circuit at large k on two arms, and the inversion was read at k = 2048, above where that control had been measured. Re-run with `--score mean_ablation_attribution`, **the ranking held fixed across all three arms** so the comparison cannot confound ranking with modality, random controls extended to k = 2048 at five seeds.
+>
+> | k per layer | gpt2-large | ProtGPT2 | ZymCTRL |
+> |---|---:|---:|---:|
+> | 64 | −0.0804 (rand +0.016) | +0.0408 (rand +0.011) | — |
+> | 512 | +0.2190 (rand +0.044) | +0.2168 (rand +0.092) | — |
+> | 1024 | +0.2727 (rand +0.031) | +0.2740 (rand +0.146) | +0.0824 |
+> | **2048** | **+0.5284** (rand +0.279) | **+0.3763** (rand +0.229) | **+0.1901** |
+> | *trained transcoder* | *+0.9322* | *+0.1641* | *+0.0932* |
+>
+> **The inversion survives and widens.** At 2048 of 5120 neurons the dictionary is worth **1.76x** the neuron circuit on the text arm and **0.44x** and **0.49x** on the two protein arms — it more than halves what raw neurons achieve on protein while nearly doubling it on text. Under the default ranking those ratios were 2.2x, 0.47x and 0.48x, so the reading is **not an artefact of the ranking**; the matched score moves the text arm's own curve up (0.4301 to 0.5284) and leaves both protein arms essentially where they were (ZymCTRL 0.1924 to 0.1901).
+>
+> **The specific defect that motivated the re-run is gone.** At k = 2048 the selected circuit now beats its size-matched random control on both arms measured there — 0.5284 against 0.279, and 0.3763 against 0.229 — so the ranking is doing real work at the size the inversion is read at, which is what the earlier run could not show.
+>
+> Two bounds still stand. ZymCTRL's random control was not extended to k = 2048 in this run, so its 0.1901 is compared against the dictionary and not against chance at that size. And three arms of one architecture family remain three arms of one architecture family.
+
