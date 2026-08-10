@@ -9600,3 +9600,25 @@ That makes the cost of protein adaptation to the text mode a **within-lineage di
 > **The spread is itself a finding worth one sentence.** The base model's text mode varies by 0.032 across draws while the adapted arms vary by 0.10 and 0.22 — three to seven times more, on a quantity seven times smaller. A degraded mode is not merely lower, it is markedly less stable across cohorts, which is consistent with F9's pattern that a damaged or off-distribution arm carries selection uncertainty its control does not. The protein mode is stable everywhere, including on the base arm where it is unmeasurable.
 >
 > The stage-localisation is unaffected: the gap between stage 1 and stage 2 (0.62–0.83 against 0.63–0.74) is well inside the draw spread on both, so **the instruction stage's cost remains indistinguishable from zero**, which is the branch the entry read. The base-to-stage-1 gap is more than twenty times the spread.
+
+## 2026-08-10 — EXP-R2-156: the replacement gap is not a denominator artefact, and it is larger in absolute nats than in ratio
+
+**The objection, from the literature review.** Protein decoders operate close to their alphabet's entropy ceiling, so the clean-to-mean-ablated gap that our recovery fraction divides by is small — 0.95 to 2.19 nats on the protein arms against 6.35 to 8.68 on the text arms. If a fixed amount of damage were divided by a small denominator, protein recovery would look bad for reasons of normalisation rather than fidelity. This is a serious objection, it is the same shape as Appendix B rule 27, and it was raised against our own instrument rather than someone else's.
+
+**It is answerable from artefacts already on disk, at no compute cost, by reporting the numerator instead of the ratio.** Absolute damage is `replacement NLL − clean NLL`, unnormalised. Each arm is taken at **its own most favourable band** and the text arms at theirs, so the comparison is stacked against the conclusion:
+
+| arm | band | recovery | denominator | **damage, nats/token** | **damage, nats/symbol** |
+|---|---|---:|---:|---:|---:|
+| gpt2-large | 64–246 | +0.9404 | 8.6772 | **0.5170** | **0.1175** |
+| gpt2 | 64–246 | +0.9091 | 6.3512 | **0.5771** | **0.1312** |
+| protgpt2 | 600–1022 | +0.2724 | 5.1734 | **3.7644** | **1.2548** |
+| progen3 | 64–120 | +0.1626 | 1.3213 | **1.1066** | **1.1066** |
+| zymctrl | 64–246 | +0.0932 | 2.1919 | **1.9877** | **1.9877** |
+
+**The objection's premise is false: protein absolute damage is larger, not smaller.** Text dictionaries cost their models **0.52–0.58 nats/token**; protein dictionaries cost theirs **1.11–3.76**. Per content symbol — dividing by each arm's measured symbols per token, which is Appendix B rule 26 applied to this statistic — text is **0.118–0.131** and protein **1.107–1.988**, a separation of **8.4x to 16.9x with no overlap**, at every arm's most favourable band.
+
+**So the failure is visible on three independent normalisations and the ratio is the mildest of them.** Recovery fraction 0.09–0.27 against 0.91–0.94; absolute nats per token 1.11–3.76 against 0.52–0.58; absolute nats per symbol 1.11–1.99 against 0.12–0.13. A denominator artefact would show the protein deficit shrinking or vanishing as the normalisation is removed. It grows.
+
+**What this closes and what it does not.** It closes "the recovery ratio flatters the text arms" as an explanation of F11, which is the last purely-metrological alternative that had not been tested. It does **not** identify the proximal cause, and it does not show the protein dictionaries are badly trained — EXP-R2-153 already showed ZymCTRL's is saturated. It sharpens the question rather than answering it: a saturated dictionary, with more training tokens per latent than the passing text control, destroys an order of magnitude more information per residue than the text dictionary destroys per character.
+
+**Bounds.** The symbols-per-token divisors are declared rather than re-measured here (gpt2 lineage 4.40 characters/token, ProtGPT2 3.00 residues/token, ZymCTRL and ProGen3 1.0), and the per-symbol row is only as good as those figures; the per-token row needs none of them and carries the same conclusion. Damage is a difference of two cross-entropies measured on the same cohort under the same rendering, so it inherits every bound already recorded on those quantities, including the cohort band and the contamination exposure of each arm's training stream. No new measurement was made: this is a re-reading of admitted artefacts, and it is recorded because the re-reading answers a question the original reporting could not.

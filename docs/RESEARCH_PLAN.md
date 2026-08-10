@@ -46,6 +46,12 @@ Use local Lens, Probe, Erasure, or Patching measurements before a costly replace
 
 Use negative controls, an appropriate positive control, independent seeds, and family-disjoint data. A result from a joint checkpoint does not strengthen or retract an existing pure-model claim unless the comparison directly identifies the same quantity.
 
+### 4b. Prefer a training-free control to a new campaign
+
+A literature review on 2026-08-10 reordered the programme around one observation: the cheapest decisive experiments available were controls that require no training at all — a neuron-basis baseline, a norm- and angle-matched perturbation null, a collision null for a token-space census, and a re-reading of admitted artefacts on an unnormalised scale. One of those re-readings refuted an alternative explanation of the programme's largest open question at no compute cost. Before proposing a campaign, establish that no training-free control answers the same question, and state explicitly which control was considered and why it does not suffice.
+
+Two consequences carry into how results are reported. Report the **numerator as well as the ratio**: a recovery fraction whose denominator differs several-fold across arms hides whichever direction the reader does not check, and the unnormalised quantity is often the stronger statement. And **score a selector against the trivial baseline available from its own coordinates and against its own arm's chance rate**, never against a uniform baseline, when arms differ in alphabet size — a uniform reference does not correct for symbol collision and a token-space score is diluted by it.
+
 ### 5. Admit an adapted method or biological study
 
 The currently motivated candidates are a concept-aligned Lens for incompatible output spaces and language-mediated causal concept alignment using real sequence–description pairs. Simple retrieval, affine, orthogonal, shuffled-pair, and rank-matched baselines come before an Adapter MLP. Biological claims additionally require external phenotype or functional evidence; linguistic plausibility and model scores are insufficient.
