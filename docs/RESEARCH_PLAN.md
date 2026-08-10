@@ -8,7 +8,7 @@ The programme follows three directions in order:
 
 1. **Compare model families from first principles.** Separate effects of tokenization, training data, architecture, and modality across pure-text, pure-protein, and joint language–protein generative models.
 2. **Use and audit interpretability methods.** Apply each method as a controlled measurement tool and determine whether a failure belongs to the method itself or to transfer across models and modalities.
-3. **Develop adapted methods.** Build a new method only after a reproducible failure has been localized, then require causal and independent-data validation before using it for biological claims.
+3. **Develop and validate methods for biological knowledge.** Propose and validate interpretability methods that distinguish knowledge encoded by protein-generative models from retrieval and surface correlation. Require causal, retrieval-aware, and independent biological validation before using a method to formulate or test a new biological hypothesis.
 
 The existing pure-text and pure-protein campaign is the inherited baseline, not the whole programme. Its frozen results are not rerun merely to expand coverage. New experiments select the smallest comparison that can distinguish a declared hypothesis; the project does not attempt a methods × models Cartesian product.
 
@@ -18,13 +18,13 @@ Prefer comparisons in this order because each lower row leaves more possible exp
 
 | Comparison | What it helps identify | Remaining limitation | Availability |
 |---|---|---|---|
-| Same joint checkpoint, text mode versus protein mode | Modality under shared weights and most of the architecture | Tokenizer, prompt, output space, and training exposure may still differ | **none qualified** (EXP-R2-151) |
+| Same joint checkpoint, text mode versus protein mode | Modality under shared weights and most of the architecture | Tokenizer, prompt, output space, and training exposure may still differ | **ProLLaMA Stage 1 and Stage 2 qualified in both modes** (EXP-R2-152); method experiments not yet run |
 | Matched checkpoint lineage | When a capability or mechanism appears across training stages | A released stage usually changes a package of data and objectives, not one factor | active |
 | Shape-matched pure text and protein models | Modality while holding major architectural dimensions fixed | Training data and optimization remain different | in use |
 | Dense versus MoE within one modality | Whether routing or expert structure explains a measured failure | Model family and training data must still be controlled | in use |
 | Cross-lab or cross-architecture replication | Whether a result generalizes beyond one lineage | It is not a clean causal attribution by itself | in use |
 
-**The first row is currently empty, and that changes the order of work rather than the hierarchy.** Both reachable dense joint decoders were qualified and refused on opposite modes at identical architecture and scale: one carries text and an unmeasurable protein mode, the other protein and a collapsed text mode. Until a checkpoint qualifies in both modes, joint-model work proceeds on the second row — a matched lineage whose stages differ in protein adaptation — and any joint result must state which mode was measurable. Add a joint MoE only if a qualified dense comparison leaves routing or expert specialization as a live explanation; there is no such comparison yet, so a joint MoE is not scheduled. Encoder–decoder, protein-encoder-plus-LLM, or cross-attention systems enter only when a hypothesis depends on their component boundary and the intervention target has been defined for that architecture.
+**The first row now has a qualified bridge, but its controls still determine what it can identify.** Galactica and InstructProtein were refused on opposite modes at identical architecture and scale; the ProLLaMA matched lineage then supplied two checkpoints whose text and protein modes are both measurable. These checkpoints permit same-weight mode comparisons and same-input model diffing across training stages, but they do not control tokenizer, rendering, training exposure, or the biological meaning of an activation. Add a joint MoE only if the qualified dense comparison leaves routing or expert specialization as a live explanation; no joint MoE is currently scheduled. Encoder–decoder, protein-encoder-plus-LLM, or cross-attention systems enter only when a hypothesis depends on their component boundary and the intervention target has been defined for that architecture.
 
 A joint checkpoint's qualification is a real gate and not a formality. Establish the rendering against the model's own likelihood before reading any model property, and report an arm below the context-information threshold as unmeasurable on that cohort rather than as failing.
 
@@ -37,6 +37,8 @@ Strictly load the checkpoint, render each mode as trained, identify scored posit
 ### 2. Establish a measurable comparison
 
 Define the unit being compared—token, character, residue, sequence, attention head, expert, or concept—and show that the target effect is attainable and statistically powered. Distances and windows must use a content unit that remains meaningful across tokenizers.
+
+Check that the manipulation is *available* on every arm it is claimed for, not only that the arm is eligible for the stage. A conditioned arm whose scored span is delimited by start and end tokens cannot take any manipulation that truncates the sequence: truncation removes the closing boundary and destroys the definition of what is scored, so the stage refuses rather than scoring a partial span. That exclusion is structural and no budget removes it; report the arm as excluded from that manipulation and state which arms the resulting matrix therefore covers.
 
 ### 3. Apply the minimum informative method
 
@@ -52,9 +54,9 @@ A literature review on 2026-08-10 reordered the programme around one observation
 
 Two consequences carry into how results are reported. Report the **numerator as well as the ratio**: a recovery fraction whose denominator differs several-fold across arms hides whichever direction the reader does not check, and the unnormalised quantity is often the stronger statement. And **score a selector against the trivial baseline available from its own coordinates and against its own arm's chance rate**, never against a uniform baseline, when arms differ in alphabet size — a uniform reference does not correct for symbol collision and a token-space score is diluted by it.
 
-### 5. Admit an adapted method or biological study
+### 5. Develop and validate a method for biological knowledge
 
-The currently motivated candidates are a concept-aligned Lens for incompatible output spaces and language-mediated causal concept alignment using real sequence–description pairs. Simple retrieval, affine, orthogonal, shuffled-pair, and rank-matched baselines come before an Adapter MLP. Biological claims additionally require external phenotype or functional evidence; linguistic plausibility and model scores are insufficient.
+The currently motivated candidates are a concept-aligned Lens and three distinct alignment experiments. D3.h is standard Model Diffing: compare matched ProLLaMA checkpoints on identical inputs, separately within each mode, and stop if simpler baselines answer the question before a Crosscoder is needed. **Run base → stage 1 before stage 1 → stage 2, on the evidence.** The two adapted stages are indistinguishable on the estimand that qualified them — their difference sits inside the cohort-draw spread in both modes — so a feature-level difference found between them would have no behavioural anchor. Base → stage 1 moves the text mode by more than twenty draw spreads and takes the protein mode from unmeasurable to measurable, and is the comparison that can establish whether the method resolves anything on this lineage at all. Its own limitation travels with it: the base model's protein mode is unmeasurable, so on that side the base is a pre-adaptation representational reference, not a behavioural control. D3.g is language-mediated concept alignment: use genuine sequence–description pairs only after sequence- or concept-level aggregation; text and protein token positions are not directly paired. D3.i is gated and unranked: it receives no implementation or compute until D3.g succeeds and both a biologically grounded protein circuit and a language-side circuit pass their own causal-faithfulness gates. Jacobians may nominate edge correspondences, but edge/path interventions must validate them in both original models; cycle consistency is necessary and not sufficient. The authoritative admission and stopping rules are in §8 of the audit.
 
 ## Measurement Stages
 
@@ -108,5 +110,5 @@ Use B only for interface validation and small correctness checks. Run full campa
 
 1. Identified differences in model foundations and causal computation, with remaining confounds stated.
 2. A method-transfer map whose failures are scoped and supported by valid controls.
-3. An adapted method only where the preceding evidence earns it.
-4. Biological or novelty claims only where a validated mechanism predicts external evidence beyond homology retrieval.
+3. A causally validated method that can distinguish encoded biological knowledge from retrieval or surface correlation.
+4. A new biological claim only where that method predicts independent evidence beyond homology retrieval.
