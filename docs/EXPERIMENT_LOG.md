@@ -9255,3 +9255,19 @@ Spread across everything the environment can change is **0.0010**; the nearest s
 **The free linear baseline is a third pattern, not a third member of either group.** Three draws: n=128 skip 0 **−0.0096** [−0.0162, −0.0029]; n=512 skip 0 **+0.0107** [+0.0078, +0.0136]; n=128 skip 512, disjoint from both, **+0.0242** [+0.0191, +0.0297]. The sign is draw-dependent across a 0.034 spread, so a per-layer affine map on this arm recovers nothing beyond the mean-ablation floor and nothing worse. Against EXP-R2-144's arms — text +0.26/+0.29, ProtGPT2 −0.72, ProGen3 −1.61/−1.78 — ZymCTRL sits at zero, separated from **both** groups. **EXP-R2-144's "two non-overlapping groups" is therefore a statement about its four arms and not a modality statement**: with ZymCTRL admitted the protein side spans −1.78 to +0.02. The free-baseline leg of the modality argument is weakened accordingly; the behavioural-recovery leg, which is what EXP-R2-147 and this entry rest on, is not.
 
 **Bounds.** One protocol, one cohort band (64–246 residues), one snapshot, n=128 with an n=512 check still running. Three protein arms and two text arms is five decoders, not a population. The dictionary-quality objection is open until the higher-budget arm lands.
+
+> **Addendum, same day, from admitted artefacts and no new compute: the per-layer reconstruction comparison is not what its single number says.** All three 36 × 1280 arms carry a `nmse_per_layer` array at `d_hidden` 15360 and k = 64, so they are directly comparable. Reading them:
+>
+> | arm | mean | layers 0–17 | layers 18–35 | peak | peak layer | layers above 0.4 |
+> |---|---:|---:|---:|---:|---:|---:|
+> | gpt2-large | 0.2750 | 0.1994 | 0.3506 | 0.3947 | 29 | **0 of 36** |
+> | protgpt2 | **0.2376** | **0.0835** | **0.3916** | **0.5577** | 29 | **11 of 36** |
+> | zymctrl | 0.5290 | 0.5337 | 0.5243 | 0.6526 | 18 | 31 of 36 |
+>
+> **ProtGPT2 reconstructs better than gpt2-large on the mean (0.86×) and worse on the deepest half (1.12×) and worse still at its peak (1.41×).** Its whole advantage is early: 0.0835 against 0.1994 over the first eighteen layers, a 2.4× margin that the deep half then gives back. gpt2-large never exceeds 0.4 at any layer; ProtGPT2 does at eleven.
+>
+> **This qualifies a sentence in EXP-R2-146 and EXP-R2-147** — "the retrained protein dictionary now reconstructs its model's blocks *better* than the text dictionary reconstructs its own" — which is true of the per-layer mean, the quantity those entries quote, and is not true uniformly across depth. **It does not overturn the reading**: a 12% deep-half difference cannot explain a behavioural gap of 0.9322 against 0.1641, and the other two biases those entries rest on (89.8% cohort contamination, and a 3× token increase that moved recovery toward ProGen3 rather than toward text) are untouched.
+>
+> **What direction this cuts is not measured, and I am not asserting one.** Sequential replacement corrupts each layer's input with every earlier layer's error, which argues early-layer fidelity matters most and would favour ProtGPT2; the last layers determine the logits directly, which argues the opposite. Nothing in this design separates them, so the honest statement is that a per-layer mean is the wrong summary for a sequential estimand and the right one has not been built.
+>
+> **It also bounds ZymCTRL's open objection more tightly than the mean did.** ZymCTRL's dictionary is 1.92× gpt2-large's on the mean but **1.50× on the deepest half and 1.65× at the peak**, and against ProtGPT2 rather than against the text arm it is 1.34× on the deepest half. The arm is genuinely worse reconstructed everywhere; it is less of an outlier than 0.529-against-0.238 suggests, and its 31-of-36 layers above 0.4 against ProtGPT2's 11 is the cleanest form of the difference.
