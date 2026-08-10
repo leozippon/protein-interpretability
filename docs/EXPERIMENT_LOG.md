@@ -9484,3 +9484,34 @@ That makes the cost of protein adaptation to the text mode a **within-lineage di
 | recovery falls **only at the shortest cap** | Consistent with a truncation or denominator artefact on very short scored spans rather than a length effect. Recorded as a bound on how short a scored span may be, not as a new phenomenon. |
 
 **What this cannot do, stated before it is run.** The protein sweep moves the **population and** the scored length together, because a residue band selects which sequences are eligible. This moves scored length **only**, by truncation, on a fixed cohort. So it is **not** a matched control, it cannot convert a protein band figure into a text one, and it is not licensed to become a modality measurement — it answers one question about the estimand and nothing else. Per EXP-R2-148 the causal half is reported and not read.
+
+## 2026-08-10 — EXP-R2-154: the estimand is length-sensitive on every arm, and a working dictionary absorbs it
+
+**Read against the rule pre-registered above, before any of these numbers existed.** `gpt2-large`, its admitted local dictionary unchanged, OpenWebText at the 800-character floor, one seed, n = 128, snapshot `20260810062359_d45b69596b39`. Only `--max-tokens` moves.
+
+| scored length cap | **trained dictionary** | clean | denominator | **free linear baseline** |
+|---|---:|---:|---:|---:|
+| 64 | **+0.9404** [+0.9359, +0.9446] | 3.0496 | 8.6772 | **+0.4528** [+0.4455, +0.4609] |
+| 128 | +0.9392 [+0.9353, +0.9426] | 2.8413 | 8.3622 | — |
+| 256 | +0.9391 [+0.9357, +0.9421] | 2.7317 | 8.0183 | — |
+| 512 | +0.9322 [+0.9286, +0.9352] | 2.6541 | 6.9135 | **+0.2912** [+0.2825, +0.2993] |
+| **span** | **0.0082** | | | **0.1616** |
+
+**The first pre-registered branch fires, and on its own terms cleanly: the text control's recovery varies by 0.0082 across an eightfold range of scored length**, well inside the declared 0.02, against protein spans of 1.23x to 2.10x. Read through a working dictionary, length sensitivity is not a general property of this estimand, and EXP-R2-150's protein-side attribution stands as written.
+
+**But the free baseline, which the rule did not anticipate carrying the result, says something sharper.** On the *same arm, the same cohorts and the same four caps*, a per-layer affine map with no dictionary at all moves **0.1616** — twenty times the trained dictionary's 0.0082, and in the same range as the protein arms' whole band spans. The estimand's own inputs move with length on text exactly as they do on protein: the clean-to-ablated denominator falls from 8.6772 to 6.9135 across the sweep. **So the estimand is length-sensitive on the text arm too. What is flat is not the estimand but the trained dictionary's recovery of it.**
+
+**That reframes the finding rather than overturning it, and the reframing is the result.** A faithful replacement tracks its model as the scored span changes and its recovery ratio stays put; an unfaithful one inherits the estimand's length dependence. **Length-invariance of recovery is a property of a dictionary that works, not of the measurement.** This is the mirror image of the pattern this programme keeps finding, and worth stating as such: three earlier estimands collapsed into method limitations once a text control was run, and this one does the opposite — the text control shows the method behaving correctly and isolates the failure on the protein side.
+
+**The protein side, with population held fixed so only length moves.** ProtGPT2's band sweep changes which sequences are eligible *and* how long the scored span is. Holding band 246–600 fixed and moving only the cap separates them:
+
+| scored length cap, band 246–600 held | ProtGPT2 recovery |
+|---|---:|
+| 64 | +0.1733 [+0.1597, +0.1877] |
+| 128 | +0.2313 [+0.2193, +0.2443] |
+| 512 (no truncation at this band) | +0.2386 [+0.2264, +0.2518] |
+| **span** | **0.0653** |
+
+**Scored length alone accounts for roughly 44% of ProtGPT2's full band dependence** — 0.0653 of the 0.1490 its four-band sweep spans — and the remainder is the change of population. Against the text control's 0.0082 over the same caps, this arm's dictionary is about **eight times more length-sensitive** than the text one on a quantity that a faithful replacement should hold flat.
+
+**Bounds.** One text arm, one protein arm, one dictionary each, one seed, n = 128. This varies scored length **by truncation on a fixed cohort**, while EXP-R2-150's band sweep varies population and length together; the two are not the same manipulation and the text sweep is **not** a matched control for a residue band. It cannot convert a protein band figure into a text one and it is not a modality measurement — one text arm and one protein arm is not a panel. The free baseline is measured at two caps rather than four, so its span is a range and not a shape. Per EXP-R2-148 the causal half is reported and not read.
