@@ -9,9 +9,12 @@ artefact without anything failing.
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import importlib.util
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -262,6 +265,371 @@ class FreeBaselineGate(unittest.TestCase):
         record = STAGE16.free_baseline_gate(self._assays([0.2, 0.2]), gate=0.0)
         self.assertTrue(record["unit_floor"]["degenerate"])
         self.assertIsNotNone(record["unit_floor"]["degenerate_reason"])
+
+
+class _RecordingModel:
+    """Just enough :class:`ReplaceableModel` to see what the control splices.
+
+    The control must go through ``block_intercept`` -- the one primitive the
+    replacement and the mean ablation already use -- rather than open a second
+    forward path of its own, so this records the interceptor it is handed and
+    nothing else.
+    """
+
+    device = torch.device("cpu")
+
+    def __init__(self):
+        self.interceptors = []
+
+    @contextlib.contextmanager
+    def block_intercept(self, fn):
+        self.interceptors.append(fn)
+        yield
+
+
+class MatchedRandomPerturbation(unittest.TestCase):
+    """The control that separates a LARGE replacement error from a DIRECTED one.
+
+    Under sequential replacement a protein decoder recovers a fraction of the
+    clean-to-ablated gap that a text decoder recovers almost all of, and the
+    damage is 8-17x larger in absolute nats. That is compatible with two
+    different stories -- an error that is merely bigger, and an error aimed at the
+    subspace the downstream computation reads -- and only a perturbation matched
+    to the error in both norm and angle tells them apart. If the matching is
+    wrong the control silently answers a different question, so it is pinned here
+    rather than trusted.
+    """
+
+    SHAPE = (2, 5, 16)
+
+    @classmethod
+    def _pair(cls, seed: int = 0):
+        """A block output and a replacement whose error leans on it.
+
+        The parallel component is deliberately large: an implementation that
+        discarded it would still be norm-matched, and only the angle test would
+        see the difference.
+        """
+
+        generator = torch.Generator().manual_seed(seed)
+        clean = torch.randn(cls.SHAPE, generator=generator)
+        error = 0.5 * clean + 0.3 * torch.randn(cls.SHAPE, generator=generator)
+        return clean, clean + error
+
+    @staticmethod
+    def _cosine(left, right):
+        return (left * right).sum(-1) / (left.norm(dim=-1) * right.norm(dim=-1))
+
+    def test_the_perturbation_carries_the_errors_own_norm_at_every_position(self):
+        clean, replacement = self._pair()
+        perturbation = STAGE15.matched_perturbation(
+            clean, replacement, torch.Generator().manual_seed(11)
+        )
+        self.assertEqual(perturbation.shape, clean.shape)
+        torch.testing.assert_close(
+            perturbation.norm(dim=-1),
+            (replacement - clean).norm(dim=-1),
+            rtol=1e-4,
+            atol=1e-5,
+        )
+
+    def test_the_perturbation_makes_the_errors_own_angle_with_the_clean_output(self):
+        clean, replacement = self._pair()
+        error = replacement - clean
+        perturbation = STAGE15.matched_perturbation(
+            clean, replacement, torch.Generator().manual_seed(11)
+        )
+        reference = self._cosine(error, clean)
+        # The angle has to be worth matching, or the test would pass on an
+        # implementation that made r orthogonal to the block output.
+        self.assertGreater(float(reference.min()), 0.2)
+        torch.testing.assert_close(
+            self._cosine(perturbation, clean), reference, rtol=1e-4, atol=1e-5
+        )
+
+    def test_the_orthogonal_direction_really_moves_between_seeds(self):
+        clean, replacement = self._pair()
+        first, second = (
+            STAGE15.matched_perturbation(
+                clean, replacement, torch.Generator().manual_seed(seed)
+            )
+            for seed in (1, 2)
+        )
+        again = STAGE15.matched_perturbation(
+            clean, replacement, torch.Generator().manual_seed(1)
+        )
+        torch.testing.assert_close(first, again)
+        # Matched in both quantities and different in the one thing left free,
+        # which is what makes several draws a distribution rather than a repeat.
+        torch.testing.assert_close(
+            first.norm(dim=-1), second.norm(dim=-1), rtol=1e-4, atol=1e-5
+        )
+        unit = clean / clean.norm(dim=-1, keepdim=True)
+        residuals = [
+            value - (value * unit).sum(-1, keepdim=True) * unit
+            for value in (first, second)
+        ]
+        self.assertLess(float(self._cosine(*residuals).max()), 0.99)
+
+    def test_a_single_degenerate_position_refuses_the_whole_tensor(self):
+        # Both degeneracies leave the angle undefined, and both would otherwise
+        # return a zero perturbation at that position -- a control reported as
+        # matched that was never matched to anything.
+        clean, replacement = self._pair()
+        zero_output = clean.clone()
+        zero_output[0, 2] = 0.0
+        with self.assertRaises(ValueError):
+            STAGE15.matched_perturbation(
+                zero_output, replacement, torch.Generator().manual_seed(3)
+            )
+        exact = replacement.clone()
+        exact[1, 4] = clean[1, 4]
+        with self.assertRaises(ValueError):
+            STAGE15.matched_perturbation(
+                clean, exact, torch.Generator().manual_seed(3)
+            )
+
+    def test_the_control_substitutes_the_clean_output_plus_the_matched_error(self):
+        model = _RecordingModel()
+
+        def transcoder(layer, x):
+            return 1.5 * x + float(layer)
+
+        factory = STAGE15.matched_perturbation_context(model, transcoder, seed=5)
+        with factory():
+            pass
+        self.assertEqual(len(model.interceptors), 1, "one splice, not a second path")
+        intercept = model.interceptors[0]
+        block_input = torch.randn(1, 4, 8, generator=torch.Generator().manual_seed(2))
+        block_output = torch.randn(1, 4, 8, generator=torch.Generator().manual_seed(4))
+        substituted = intercept(3, block_input, block_output)
+        # y_clean + r, not the replacement output, and r matched to the error the
+        # replacement would have made at this layer.
+        error = transcoder(3, block_input) - block_output
+        torch.testing.assert_close(
+            (substituted - block_output).norm(dim=-1),
+            error.norm(dim=-1),
+            rtol=1e-4,
+            atol=1e-5,
+        )
+
+    def test_with_no_draws_the_control_is_withheld_with_a_reason_and_no_number(self):
+        record = STAGE15.matched_perturbation_control({}, {}, replicates=16, seed=1)
+        self.assertEqual(record["verdict"], "WITHHELD")
+        self.assertIn("matched-perturbation-draws", record["reason"])
+        self.assertEqual(sorted(record), ["reason", "verdict"])
+        self.assertFalse(
+            any(isinstance(value, (int, float)) for value in record.values()),
+            "a withheld control must carry no number that could be read as a result",
+        )
+
+    def test_every_draw_is_reported_individually_beside_its_seed(self):
+        # Three draws whose damage differs by a factor of two: a record that kept
+        # only their mean would hide exactly that.
+        n = 48
+        clean = np.linspace(2.0, 2.4, n)
+        scores = {
+            "original": {"nll": clean, "kl": np.zeros(n)},
+            "replacement": {"nll": clean + 1.0, "kl": np.full(n, 0.9)},
+            "mean_ablated": {"nll": clean + 2.0, "kl": np.full(n, 2.0)},
+        }
+        seeds = {}
+        for index, damage in enumerate((0.2, 0.3, 0.4)):
+            name = f"matched_perturbation_draw{index}"
+            scores[name] = {"nll": clean + damage, "kl": np.full(n, damage / 2.0)}
+            seeds[name] = 100 + index
+        record = STAGE15.matched_perturbation_control(
+            scores, seeds, replicates=64, seed=3
+        )
+        self.assertEqual(record["verdict"], "REPORTED")
+        self.assertEqual(record["matched_at"], "position")
+        self.assertEqual([draw["seed"] for draw in record["draws"]], [100, 101, 102])
+        for draw, damage in zip(record["draws"], (0.2, 0.3, 0.4)):
+            self.assertAlmostEqual(draw["nll_minus_clean"], damage, places=6)
+            # The same denominator the replacement's own recovery is read against.
+            self.assertAlmostEqual(draw["recovery"], (2.0 - damage) / 2.0, places=6)
+            self.assertAlmostEqual(draw["kl_nats_per_token"], damage / 2.0, places=6)
+            self.assertAlmostEqual(draw["kl_recovery"], 1.0 - damage / 4.0, places=6)
+            self.assertAlmostEqual(
+                draw["replacement_nll_damage_over_this"], 1.0 / damage, places=6
+            )
+            self.assertIsNotNone(draw["paired_per_sequence"]["recovery_interval"])
+        spread = record["across_draws"]["nll_minus_clean"]
+        self.assertEqual(len(spread["values"]), 3)
+        self.assertAlmostEqual(spread["min"], 0.2, places=6)
+        self.assertAlmostEqual(spread["max"], 0.4, places=6)
+
+    def test_the_flag_defaults_to_not_running_the_control(self):
+        # Every invocation that predates the flag must compute what it computed
+        # before, so the default cannot be anything but zero. Read from the
+        # declaration rather than trusted, as the eligible-arm set is.
+        source = Path(STAGE15.__file__).read_text(encoding="utf-8")
+        declaration = source.split('"--matched-perturbation-draws",', 1)
+        self.assertEqual(
+            len(declaration), 2, "the stage declares no --matched-perturbation-draws"
+        )
+        self.assertIn("default=0", declaration[1][:200])
+
+
+class _ToyDecoder(torch.nn.Module):
+    """A residual stack whose sublayer output IS its contribution, as the arms' are."""
+
+    def __init__(self, vocab: int = 13, width: int = 8, layers: int = 3):
+        super().__init__()
+        self.embed = torch.nn.Embedding(vocab, width)
+        self.blocks = torch.nn.ModuleList(
+            torch.nn.Sequential(
+                torch.nn.Linear(width, width),
+                torch.nn.Tanh(),
+                torch.nn.Linear(width, width),
+            )
+            for _ in range(layers)
+        )
+        self.head = torch.nn.Linear(width, vocab)
+
+    def forward(self, ids):
+        hidden = self.embed(ids)
+        for block in self.blocks:
+            hidden = hidden + block(hidden)
+        return self.head(hidden)
+
+
+class _ToyReplaceable:
+    """The slice of :class:`ReplaceableModel` the behavioural sweep consumes."""
+
+    def __init__(self, model: _ToyDecoder, vocab: int = 13):
+        self.model = model.eval()
+        self.vocab = vocab
+        self.device = torch.device("cpu")
+        self.n_layers = len(model.blocks)
+        self.width = model.embed.embedding_dim
+
+    def batch(self, inputs):
+        ids = torch.tensor([[int(symbol) % self.vocab for symbol in row] for row in inputs])
+        return {"input_ids": ids, "attention_mask": torch.ones_like(ids)}
+
+    def content_mask(self, batch):
+        return batch["attention_mask"].bool()
+
+    def run(self, batch):
+        return self.model(batch["input_ids"])
+
+    def scored_logits(self, batch):
+        logits = self.model(batch["input_ids"])
+        return (
+            logits[..., :-1, :].float(),
+            batch["input_ids"][..., 1:],
+            batch["attention_mask"][..., 1:].bool(),
+        )
+
+    @contextlib.contextmanager
+    def block_intercept(self, fn):
+        handles = []
+        for layer, block in enumerate(self.model.blocks):
+
+            def hook(module, inputs, output, layer=layer):
+                return fn(layer, inputs[0], output)
+
+            handles.append(block.register_forward_hook(hook))
+        try:
+            yield
+        finally:
+            for handle in handles:
+                handle.remove()
+
+
+class MatchedPerturbationEndToEnd(unittest.TestCase):
+    """The control as the stage composes it, on a CPU stub.
+
+    No checkpoint exists on a host that only runs tests, so the sequential splice,
+    the shared behavioural sweep and the artefact record are exercised here
+    against a toy residual stack rather than left to a campaign to discover. What
+    this establishes is composition, not a magnitude: the control is a condition
+    of the *same* sweep, every draw moves, and what it produces serialises.
+    """
+
+    SEQUENCES = ["1234567890123", "9876543210987", "1122334455667", "5566778899001"]
+
+    def setUp(self):
+        torch.manual_seed(0)
+        self.model = _ToyReplaceable(_ToyDecoder())
+        # Briefly fitted to its own sequences, because on an untrained stack the
+        # blocks are not load-bearing and the clean-to-ablated denominator every
+        # recovery fraction divides by can come out negative -- which is a
+        # property of the stub, not of the control.
+        self._fit()
+        width = self.model.width
+        maps = [
+            torch.eye(width) + 0.35 * torch.randn(width, width)
+            for _ in range(self.model.n_layers)
+        ]
+        self.transcoder = lambda layer, x: x @ maps[layer]
+
+    def _fit(self, steps: int = 400):
+        batch = self.model.batch(self.SEQUENCES)
+        optimiser = torch.optim.Adam(self.model.model.parameters(), lr=0.02)
+        self.model.model.train()
+        for _ in range(steps):
+            logits, targets, _ = self.model.scored_logits(batch)
+            loss = torch.nn.functional.cross_entropy(
+                logits.reshape(-1, logits.shape[-1]), targets.reshape(-1)
+            )
+            optimiser.zero_grad()
+            loss.backward()
+            optimiser.step()
+        self.model.model.eval()
+
+    def _sweep(self, draws: int):
+        conditions = {
+            "original": None,
+            "replacement": STAGE15.replacement_context(self.model, self.transcoder),
+            "mean_ablated": STAGE15.mean_ablation_context(
+                self.model, torch.zeros(self.model.n_layers, self.model.width)
+            ),
+        }
+        seeds = {
+            f"matched_perturbation_draw{index}": 40 + index for index in range(draws)
+        }
+        for name, seed in seeds.items():
+            conditions[name] = STAGE15.matched_perturbation_context(
+                self.model, self.transcoder, seed=seed
+            )
+        scores = STAGE15.behavioural_scores(
+            self.model, self.SEQUENCES, conditions, batch_size=2
+        )
+        return scores, seeds
+
+    def test_the_control_rides_the_same_sweep_and_every_draw_moves(self):
+        scores, seeds = self._sweep(3)
+        self.assertEqual(len(seeds), 3)
+        for name in seeds:
+            self.assertEqual(scores[name]["nll"].shape, scores["original"]["nll"].shape)
+            self.assertTrue(np.isfinite(scores[name]["nll"]).all())
+            # KL is taken against the same 'original' the replacement's is.
+            self.assertTrue((scores[name]["kl"] >= 0).all())
+        self.assertTrue((scores["original"]["kl"] == 0).all())
+        means = [float(scores[name]["nll"].mean()) for name in seeds]
+        self.assertEqual(len(set(means)), 3, "the draws are not independent")
+
+    def test_the_record_is_complete_and_serialises_through_write_json(self):
+        scores, seeds = self._sweep(2)
+        record = STAGE15.matched_perturbation_control(
+            scores, seeds, replicates=128, seed=5
+        )
+        self.assertEqual(record["verdict"], "REPORTED")
+        self.assertEqual(record["n_draws"], 2)
+        for draw in record["draws"]:
+            for key in ("nll_minus_clean", "kl_nats_per_token", "recovery"):
+                self.assertIsNotNone(draw[key], key)
+            self.assertIn("resampling_unit", draw["paired_per_sequence"])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "control.json"
+            # write_json refuses NaN and infinity, which is the failure a ratio
+            # against a zero-damage draw would produce.
+            from src.transfer.io import write_json
+
+            write_json(path, record)
+            self.assertEqual(json.loads(path.read_text())["n_draws"], 2)
 
 
 if __name__ == "__main__":

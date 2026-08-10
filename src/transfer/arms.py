@@ -195,6 +195,95 @@ _DECOMPOSABLE = frozenset({"gpt2", "progen", *_ROTARY_DECODERS})
 
 
 @dataclass(frozen=True)
+class MlpNeuronTensor:
+    """How one architecture's MLP **hidden** activation is reached and checked.
+
+    **The tensor is the MLP's hidden layer, never the MLP's output**, and the
+    distinction is the whole content of this declaration. A GPT-2 feed-forward is
+    ``c_proj(act(c_fc(x)))``: ``c_fc`` lifts the residual stream from ``d_model``
+    to ``d_mlp``, the nonlinearity is applied there, and ``c_proj`` projects back
+    down. A "neuron" is a coordinate of that ``d_mlp``-wide post-nonlinearity
+    tensor. The ``d_model``-wide output is a different object -- it is a dense
+    mixture of every neuron and is far less sparse -- so a neuron-basis circuit
+    measured there would understate what a sparse basis can recover on *any*
+    arm, and on this panel that would manufacture the conclusion that protein
+    models specifically need a learned dictionary.
+
+    Declared per architecture and reached by walking a path, exactly as
+    :data:`_ATTENTION_PATH` is and for the same reason: an undeclared
+    architecture must raise rather than resolve to whichever attribute happens to
+    exist on it. The gated rotary lineages are absent on purpose -- their hidden
+    tensor is the product of two projections, so its coordinates are not the same
+    object a non-gated GELU neuron is -- and so is ``progen``, whose parallel
+    residual block this programme's replacement estimand already excludes.
+    """
+
+    #: Path from the MLP module down to the module whose **input** is the hidden
+    #: tensor. Hooking the down-projection's input rather than the nonlinearity's
+    #: output is what makes the tensor definitionally the one the projection
+    #: consumes, with no second opinion about where the MLP's stages begin.
+    down_projection: tuple[str, ...]
+    #: Config attributes that declare ``d_mlp``, in the order they are consulted.
+    width_attributes: tuple[str, ...]
+    #: What ``d_mlp`` is when every one of those is absent or ``None``. Every
+    #: GPT-2 checkpoint on this panel leaves ``n_inner`` unset and means
+    #: ``4 * n_embd`` by it. ``None`` here means an implicit width is not defined
+    #: for the architecture and an absent attribute must raise.
+    implicit_width_multiple: int | None
+    #: The config attribute naming the nonlinearity.
+    activation_attribute: str
+    #: Greatest lower bound of each **declared** nonlinearity's output. The
+    #: hidden tensor is post-nonlinearity by construction, so a measured minimum
+    #: below this bound means something else was read: a pre-activation tensor is
+    #: unbounded below and gives itself away immediately. An activation that is
+    #: not declared raises rather than being checked against a bound that may not
+    #: hold for it, which is also what keeps the non-gated claim honest -- only
+    #: non-gated variants appear here.
+    activation_lower_bound: dict[str, float]
+
+
+#: Where each architecture keeps the activation its down-projection consumes.
+#: ``gpt2`` only, and see :class:`MlpNeuronTensor` for why the others are absent.
+#:
+#: ``gelu_new`` is the tanh approximation GPT-2, ProtGPT2 and ZymCTRL all declare;
+#: its minimum is -0.169 at x = -0.752, so -0.17 is a true lower bound and any
+#: value materially below it is not a GELU output. ``gelu`` and
+#: ``gelu_pytorch_tanh`` are the same function to within 1e-3 and share the bound;
+#: ``relu`` is floored at zero.
+_MLP_NEURON_TENSOR: dict[str, MlpNeuronTensor] = {
+    "gpt2": MlpNeuronTensor(
+        down_projection=("c_proj",),
+        width_attributes=("n_inner", "intermediate_size"),
+        implicit_width_multiple=4,
+        activation_attribute="activation_function",
+        activation_lower_bound={
+            "gelu_new": -0.17,
+            "gelu": -0.17,
+            "gelu_pytorch_tanh": -0.17,
+            "relu": 0.0,
+        },
+    ),
+}
+
+
+def mlp_neuron_declaration(architecture: str) -> MlpNeuronTensor:
+    """The MLP hidden-tensor declaration for an architecture, or a refusal.
+
+    Answerable from an architecture name alone, so a stage refuses an arm it
+    cannot measure before a checkpoint reaches the GPU rather than after.
+    """
+
+    declared = _MLP_NEURON_TENSOR.get(architecture)
+    if declared is None:
+        raise TypeError(
+            f"no MLP hidden-activation tensor is declared for {architecture!r}, so "
+            "a neuron basis cannot be resolved for it; declared: "
+            f"{sorted(_MLP_NEURON_TENSOR)}"
+        )
+    return declared
+
+
+@dataclass(frozen=True)
 class ArmSpec:
     """Declared properties of one panel member.
 
@@ -826,6 +915,82 @@ class Arm:
                 f"{self.spec.architecture!r}"
             )
         return self.blocks()[layer].mlp
+
+    def _resolve_d_mlp(self) -> tuple[int, str]:
+        """``d_mlp`` and the declaration it came from."""
+
+        declared = mlp_neuron_declaration(self.spec.architecture)
+        for attribute in declared.width_attributes:
+            value = getattr(self.model.config, attribute, None)
+            if value is not None:
+                return int(value), f"config.{attribute}"
+        if declared.implicit_width_multiple is None:
+            raise TypeError(
+                f"{self.name}: none of {list(declared.width_attributes)} is set on the "
+                f"config and {self.spec.architecture!r} declares no implicit width, so "
+                "the MLP hidden width is unknown"
+            )
+        multiple = int(declared.implicit_width_multiple)
+        return multiple * int(self.d_model), (
+            f"{multiple} x d_model ({'/'.join(declared.width_attributes)} unset)"
+        )
+
+    @property
+    def d_mlp(self) -> int:
+        """Width of the MLP hidden layer: the number of neurons in one block."""
+
+        return self._resolve_d_mlp()[0]
+
+    def mlp_down_projection(self, layer: int) -> torch.nn.Module:
+        """The module whose **input** is this layer's MLP hidden activation.
+
+        The neuron tensor is that input, and hooking the projection rather than
+        the nonlinearity is what makes it definitionally so. Resolved by walking
+        :attr:`MlpNeuronTensor.down_projection` from :meth:`mlp`, so an
+        architecture nobody declared raises instead of being searched.
+        """
+
+        self.require("pathway")
+        declared = mlp_neuron_declaration(self.spec.architecture)
+        module: object = self.mlp(layer)
+        for step in declared.down_projection:
+            if not hasattr(module, step):
+                raise TypeError(
+                    f"{self.name}: declared {self.spec.architecture} but its layer-"
+                    f"{layer} MLP has no {step} on the path {declared.down_projection}"
+                )
+            module = getattr(module, step)
+        return module  # type: ignore[return-value]
+
+    def mlp_neuron_facts(self) -> dict[str, object]:
+        """What the artefact must carry about the tensor a neuron basis reads.
+
+        Resolved once, from the declaration and the loaded config, so that the
+        stage records the path it actually hooked and the width it expects rather
+        than a sentence about them. An activation the declaration does not name
+        raises here: its output bound is unknown, so the check that the hooked
+        tensor is post-nonlinearity could not be applied to it.
+        """
+
+        declared = mlp_neuron_declaration(self.spec.architecture)
+        width, source = self._resolve_d_mlp()
+        activation = getattr(self.model.config, declared.activation_attribute, None)
+        if activation not in declared.activation_lower_bound:
+            raise TypeError(
+                f"{self.name}: {declared.activation_attribute}={activation!r} is not a "
+                f"declared nonlinearity for {self.spec.architecture!r} "
+                f"({sorted(declared.activation_lower_bound)}); its output bound is "
+                "unknown, so the hooked tensor cannot be verified as post-nonlinearity"
+            )
+        return {
+            "architecture": self.spec.architecture,
+            "tensor": "input of " + ".".join(("mlp", *declared.down_projection)),
+            "declared_width": int(width),
+            "width_source": source,
+            "d_model": int(self.d_model),
+            "activation": str(activation),
+            "activation_lower_bound": float(declared.activation_lower_bound[activation]),
+        }
 
     def _resolve_attention(self, layer: int) -> torch.nn.Module:
         """Walk :data:`_ATTENTION_PATH` from the block to the attention submodule.

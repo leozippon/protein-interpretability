@@ -259,6 +259,7 @@ class EveryCorpusDrawDeclaresItsSeed(unittest.TestCase):
                 "18_das_subspace.py",
                 "19_routing_locality.py",
                 "21_joint_mode_qualification.py",
+                "22_neuron_basis_circuit.py",
             },
         )
 

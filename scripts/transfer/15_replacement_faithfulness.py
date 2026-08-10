@@ -43,6 +43,12 @@ Gates, in the order they can kill the claim:
                    ratio. Standing rule 27: a "recovery ratio" whose denominator
                    is not published is not a measurement, because the same 0.9
                    can come from a 0.02-nat gap or a 2-nat one.
+                   ``--matched-perturbation-draws`` adds the control that says
+                   whether the damage is merely LARGE or is DIRECTED: a random
+                   perturbation matched to the replacement's own error in norm
+                   AND angle, spliced through the same interceptor and reported
+                   on the same quantities. Off by default, and recorded as
+                   withheld with its reason when it is off.
 ``attainability``  whether the causal estimand has enough footprint to be
                    measured at all, BEFORE any threshold is applied (rule 2, the
                    L1 shape). The cross-model rank correlation is bounded above
@@ -247,6 +253,121 @@ def mean_ablation_context(model: ReplaceableModel, means: torch.Tensor) -> Calla
         return model.block_intercept(
             lambda layer, x, y: resident[layer].to(y.dtype).expand_as(y),
         )
+
+    return factory
+
+
+#: Recorded in place of the control when ``--matched-perturbation-draws`` is 0.
+#: A control that is simply absent from the artefact reads as one nobody thought
+#: of; this says it was not run and what the artefact therefore cannot support.
+MATCHED_PERTURBATION_WITHHELD = (
+    "--matched-perturbation-draws is 0, so no norm- and angle-matched random "
+    "perturbation was run. Without it the replacement's damage can be read as "
+    "LARGE but not as DIRECTED: a dictionary whose error is aimed at the causally "
+    "load-bearing subspace and one whose error is merely big are indistinguishable "
+    "from the numbers in this artefact"
+)
+
+
+def matched_perturbation(
+    clean: torch.Tensor, replacement: torch.Tensor, generator: torch.Generator
+) -> torch.Tensor:
+    """A random error matched to the replacement's own error in norm AND angle.
+
+    The question this answers is whether the replacement's error is *directed*
+    rather than merely large. A dictionary's reconstruction error is a vector; if
+    a random vector of the same length, leaning on the block output by the same
+    amount, does the same behavioural damage, the failure is one of approximation
+    capacity. If the random vector does far less damage, the error is aimed at the
+    subspace the downstream computation reads, which is a different claim.
+
+    Given the block's own output ``y`` (the reference) and the replacement's error
+    ``e = y_replacement - y``, decompose ``e = e_par + e_perp`` with ``e_par`` the
+    component along ``y``. The returned ``r`` keeps ``e_par`` exactly and replaces
+    ``e_perp`` by a uniformly random direction in the orthogonal complement of
+    ``y``, rescaled to ``||e_perp||``. Then ``||r|| = ||e||`` and
+    ``<r, y> = <e, y>``, so both the norm and the angle to ``y`` are matched by
+    construction rather than by rejection sampling -- and everything that is left
+    free, the direction inside the orthogonal complement, is exactly what the
+    control is asking about.
+
+    **Matched per position, and that is the strictest of the three available
+    levels.** One vector is what a block writes at one position, so the position
+    is the level the error is defined at; the error's magnitude varies by more
+    than an order of magnitude across positions and layers, so a control matched
+    only per sequence or per layer would be free to put its mass where the
+    replacement's error was small and spare the positions where it was large,
+    and a difference in damage could then be read off the redistribution rather
+    than off the direction. Per-position matching removes that freedom entirely:
+    the two conditions differ in the orthogonal *direction* at every position and
+    in nothing else.
+
+    Degenerate positions raise rather than returning a zero perturbation. With
+    ``||y|| = 0`` the angle to the reference is undefined, and with ``||e|| = 0``
+    a "matched" control would be the zero vector -- in both cases the run would
+    report a control that had never been matched to anything.
+    """
+
+    reference = clean.float()
+    error = replacement.float() - reference
+    reference_norm = reference.norm(dim=-1, keepdim=True)
+    error_norm = error.norm(dim=-1, keepdim=True)
+    zero_reference = int((reference_norm == 0).sum())
+    zero_error = int((error_norm == 0).sum())
+    if zero_reference or zero_error:
+        raise ValueError(
+            f"the matched perturbation is undefined at {zero_reference} positions "
+            f"whose block output has zero norm and at {zero_error} whose "
+            "replacement error has zero norm: the angle to the reference does not "
+            "exist there, and returning a zero perturbation would report an "
+            "unmatched control as a matched one"
+        )
+    scale = (error * reference).sum(-1, keepdim=True) / reference_norm.pow(2)
+    parallel = scale * reference
+    orthogonal_norm = (error - parallel).norm(dim=-1, keepdim=True)
+    noise = torch.randn(
+        reference.shape,
+        generator=generator,
+        device=reference.device,
+        dtype=reference.dtype,
+    )
+    noise = noise - (noise * reference).sum(-1, keepdim=True) / reference_norm.pow(2) * reference
+    noise_norm = noise.norm(dim=-1, keepdim=True)
+    if int((noise_norm == 0).sum()):
+        raise RuntimeError(
+            "a Gaussian draw collapsed onto the reference direction, so no random "
+            "orthogonal direction is available at that position"
+        )
+    return (parallel + orthogonal_norm * (noise / noise_norm)).to(clean.dtype)
+
+
+def matched_perturbation_context(
+    model: ReplaceableModel,
+    transcoder: PerLayerTranscoder | TranscoderReplacement | LinearReplacement,
+    *,
+    seed: int,
+) -> Callable[[], Any]:
+    """The replacement's splice, with a matched random error in its place.
+
+    Sequential in exactly the sense the replacement is: the error is formed
+    against the block output of *this* pass, so layer ``t`` is perturbed on top of
+    the perturbation layers ``< t`` already introduced. It runs through
+    :meth:`ReplaceableModel.block_intercept` -- the same primitive
+    :func:`replacement_context` uses -- so there is one splice implementation and
+    not a second forward path that could drift from it.
+
+    The generator is created once per draw rather than per batch, so the draws are
+    independent of each other and reproducible from ``seed`` and the batch order.
+    """
+
+    generator = torch.Generator(device=model.device)
+    generator.manual_seed(int(seed))
+
+    def factory() -> Any:
+        def perturb(layer: int, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+            return y + matched_perturbation(y, transcoder(layer, x), generator)
+
+        return model.block_intercept(perturb)
 
     return factory
 
@@ -541,6 +662,135 @@ def _paired_recovery(
     }
 
 
+def _across_draws(draws: list[dict[str, Any]], key: str) -> dict[str, Any] | None:
+    """Every draw's value for one quantity, then its spread.
+
+    The values come first and the summary second because that is the reading
+    order this repository admits: three draws of a random control are three
+    numbers, and a mean of three that hides a factor-of-two spread between them
+    is a point estimate with the evidence for its own instability removed.
+    """
+
+    values = [record[key] for record in draws]
+    if any(value is None for value in values):
+        return None
+    values = [float(value) for value in values]
+    return {
+        "values": values,
+        "mean": float(np.mean(values)),
+        "min": float(np.min(values)),
+        "max": float(np.max(values)),
+    }
+
+
+def matched_perturbation_control(
+    scores: dict[str, dict[str, np.ndarray]],
+    seeds: dict[str, int],
+    *,
+    replicates: int,
+    seed: int,
+) -> dict[str, Any]:
+    """The replacement's damage read against a random error of identical size.
+
+    Every quantity the trained replacement is reported on is reported here, on
+    the same cohort sequences and through the same helpers -- absolute damage in
+    nats, the recovery fraction against the same clean-to-mean-ablated
+    denominator, mean per-token ``KL(clean || perturbed)``, and
+    :func:`_paired_recovery`'s interval over one shared index set -- so that the
+    two are read side by side rather than converted into each other.
+
+    The ratios are the finding when there is one: a replacement error that is
+    pathological damages the model by more than a matched random error does, and
+    ``replacement_nll_damage_over_this`` is that factor. A value near 1 says the
+    dictionary's error is no worse than its size implies.
+    """
+
+    if not seeds:
+        return {"verdict": "WITHHELD", "reason": MATCHED_PERTURBATION_WITHHELD}
+
+    clean = scores["original"]["nll"]
+    replaced = scores["replacement"]["nll"]
+    ablated = scores["mean_ablated"]["nll"]
+    clean_mean, ablated_mean = float(clean.mean()), float(ablated.mean())
+    denominator = ablated_mean - clean_mean
+    replacement_damage = float(replaced.mean()) - clean_mean
+    replacement_kl = float(scores["replacement"]["kl"].mean())
+    ablated_kl = float(scores["mean_ablated"]["kl"].mean())
+
+    draws: list[dict[str, Any]] = []
+    for name, draw_seed in seeds.items():
+        perturbed = scores[name]["nll"]
+        perturbed_mean = float(perturbed.mean())
+        damage = perturbed_mean - clean_mean
+        divergence = float(scores[name]["kl"].mean())
+        draws.append(
+            {
+                "condition": name,
+                "seed": int(draw_seed),
+                "nll_nats_per_token": perturbed_mean,
+                "nll_minus_clean": damage,
+                "recovery": (
+                    (ablated_mean - perturbed_mean) / denominator
+                    if denominator > 0
+                    else None
+                ),
+                "kl_nats_per_token": divergence,
+                "kl_recovery": (
+                    (1.0 - divergence / ablated_kl) if ablated_kl > 0 else None
+                ),
+                "paired_per_sequence": _paired_recovery(
+                    clean, perturbed, ablated, replicates=replicates, seed=seed
+                ),
+                # Against the replacement measured on the same sweep, not against
+                # a figure carried from another run.
+                "replacement_nll_damage_over_this": (
+                    replacement_damage / damage if damage > 0 else None
+                ),
+                "replacement_kl_over_this": (
+                    replacement_kl / divergence if divergence > 0 else None
+                ),
+            }
+        )
+    return {
+        "verdict": "REPORTED",
+        "n_draws": len(draws),
+        "construction": (
+            "per scored position, r keeps the component of the replacement's error "
+            "along the block output and replaces the orthogonal residual by a "
+            "uniformly random direction of the same norm; ||r|| = ||e|| and the "
+            "angle to the block output is the error's own"
+        ),
+        "matched_at": "position",
+        "matched_at_note": (
+            "the level the error is defined at, and the strictest of the three: a "
+            "control matched per sequence or per layer could redistribute its mass "
+            "across positions and a difference in damage would read that "
+            "redistribution rather than the direction"
+        ),
+        "substituted": "block output + r, spliced through the same "
+        "ReplaceableModel.block_intercept the replacement uses, sequentially over "
+        "every layer",
+        "draws": draws,
+        "across_draws": {
+            key: _across_draws(draws, key)
+            for key in (
+                "nll_minus_clean",
+                "recovery",
+                "kl_nats_per_token",
+                "replacement_nll_damage_over_this",
+                "replacement_kl_over_this",
+            )
+        },
+        "limitation": (
+            "the match is exact in float32 and the perturbed output is cast back to "
+            "the block's own dtype, so what the model sees carries that dtype's "
+            "rounding (a relative error of order 4e-3 at bfloat16); and the control "
+            "bounds the replacement's error against a random one of the same size, "
+            "not against the best error of that size"
+        ),
+    }
+
+
 def require_matching_arm(declared: str | None, arm: str) -> bool:
     """Refuse a replacement trained against a different model. Returns whether it said.
 
@@ -701,7 +951,22 @@ def main() -> None:
         "and not a default (transfer audit, Appendix B rule 1)",
     )
     parser.add_argument("--cohort-skip", type=int, default=0)
+    parser.add_argument(
+        "--matched-perturbation-draws",
+        type=int,
+        default=0,
+        help="draws of the norm- and angle-matched random control, which asks "
+        "whether the replacement's error is DIRECTED rather than merely large. "
+        "Each draw costs one extra sweep of the behavioural pass. 0 -- the default "
+        "-- does not run it, and the artefact then records the control as withheld "
+        "with its reason rather than omitting it; every invocation that predates "
+        "this flag therefore computes exactly what it computed before. Several "
+        "draws are reported individually, because one draw of a random control is "
+        "a point estimate of a distribution",
+    )
     args = parser.parse_args()
+    if args.matched_perturbation_draws < 0:
+        raise ValueError("--matched-perturbation-draws cannot be negative")
     args.out.mkdir(parents=True, exist_ok=True)
 
     payload: dict[str, Any] = {
@@ -902,6 +1167,22 @@ def main() -> None:
         "replacement": replacement_context(model, transcoder),
         "mean_ablated": mean_ablation_context(model, reference["moe_output_mean"]),
     }
+    # The matched random control, when it is asked for, is another condition of
+    # the same sweep rather than another sweep: it is then measured on the same
+    # batches, under the same content mask, against the same 'original'
+    # distribution the KL is taken from. Its seeds continue the offsets this stage
+    # already spends (+1 attainability, +2 causal).
+    perturbation_seeds = {
+        f"matched_perturbation_draw{draw}": args.seed + 3 + draw
+        for draw in range(args.matched_perturbation_draws)
+    }
+    for name, draw_seed in perturbation_seeds.items():
+        conditions[name] = matched_perturbation_context(model, transcoder, seed=draw_seed)
+    if perturbation_seeds:
+        print(
+            f"[control] {len(perturbation_seeds)} norm- and angle-matched random "
+            "perturbations, one sweep each"
+        )
     scores = behavioural_scores(model, scored_inputs, conditions, batch_size=args.batch_size)
     clean_nll = float(scores["original"]["nll"].mean())
     replacement_nll = float(scores["replacement"]["nll"].mean())
@@ -940,6 +1221,12 @@ def main() -> None:
             replicates=args.bootstrap,
             seed=args.seed,
         ),
+        "matched_perturbation_control": matched_perturbation_control(
+            scores,
+            perturbation_seeds,
+            replicates=args.bootstrap,
+            seed=args.seed,
+        ),
         "reconstruction_nmse_per_layer": reference["reconstruction_nmse_per_layer"],
         "reconstruction_nmse_sum": float(
             sum(reference["reconstruction_nmse_per_layer"])
@@ -957,6 +1244,12 @@ def main() -> None:
         f"recovery {recovery if recovery is None else round(recovery, 4)})"
     )
     print(f"  KL(original||replacement) {replacement_kl:.4f} vs ablated {ablated_kl:.4f}")
+    for record in behavioural_gate["matched_perturbation_control"].get("draws", []):
+        print(
+            f"  matched random seed {record['seed']}: "
+            f"+{record['nll_minus_clean']:.4f} nats, KL {record['kl_nats_per_token']:.4f} "
+            f"(replacement is {record['replacement_nll_damage_over_this']}x its NLL damage)"
+        )
 
     print("[causal] ablating every component in both models")
     effects = {
