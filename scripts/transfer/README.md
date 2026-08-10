@@ -137,7 +137,7 @@ bash scripts/transfer/run_transfer_h200.sh --dry-run
 | `GPUS` | Comma-separated pod-relative GPU indices |
 | `TEXT_ARM` | Text control for control-anchored aggregation |
 | `ARGS_<STAGE>` | Extra arguments for every item in one stage |
-| `ARGS_<STAGE>__<ITEM>` | Extra arguments for one stage item |
+| `ARGS_<STAGE>__<ITEM>` | Extra arguments for one stage item; refused when `ARMS` excludes that item, rather than recorded and never applied |
 | `RUN_ID` | Resume an existing snapshot only when its embedded code hash matches |
 | `EXPECTED_GPU_COUNT` | Optional minimum visible-GPU assertion |
 | `MIN_FREE_MEM_MIB` | Worker warning threshold |

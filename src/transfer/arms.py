@@ -410,9 +410,11 @@ PANEL["dialogpt-small"] = ArmSpec(
 # refuted on the text side alone; if it falls steeply, the deficit must be
 # restated against a scale-matched expectation rather than against a mean.
 #
-# ProtGPT2 sits inside this ladder's range at 738M and 36x1280 -- the same
-# depth and width as gpt2-large -- so the ladder also yields a point prediction
-# for what ProtGPT2's fraction *should* be under a pure scale account.
+# ProtGPT2 sits inside this ladder's range at 774,030,080 parameters and
+# 36x1280 -- not merely the same depth and width as gpt2-large but the same
+# parameter count to the unit, verified from both checkpoints -- so the ladder
+# also yields a point prediction for what ProtGPT2's fraction *should* be under
+# a pure scale account.
 for _name, _dir, _n_layer, _d_model in (
     ("gpt2", "gpt2", 12, 768),
     ("gpt2-medium", "gpt2-medium", 24, 1024),

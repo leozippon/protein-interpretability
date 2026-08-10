@@ -147,6 +147,48 @@ class RequestValidationTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("unknown stage-argument environment variable: ARGS_COHORT_POWRE", result.stderr)
 
+    def test_an_item_scoped_override_outside_arms_is_refused_not_recorded(self):
+        # The controller enumerated a stage's items from the contract alone, so
+        # an override naming an arm this invocation does not dispatch passed
+        # validation, was written into RUN_MANIFEST.json's
+        # parameters.stage_args, and was sent on as
+        # `--item-args lens_family zymctrl <base64>` -- which the worker never
+        # read, because its lens_family items are the contract's eligible arms
+        # intersected with ARMS. The manifest then asserted a scale parameter the
+        # campaign had not run at, so this is a refusal and not a silent drop.
+        result = self.run_controller(
+            ARMS="gpt2-large,protgpt2",
+            STAGES="lens_family",
+            ARGS_LENS_FAMILY__ZYMCTRL="--n-seq 64",
+        )
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("lens_family/zymctrl", result.stderr)
+        self.assertNotIn("--item-args", result.stdout)
+
+    def test_a_cohort_item_whose_arms_are_all_outside_arms_is_refused(self):
+        # cohort_power's items are cohort labels rather than arm names, and the
+        # worker drops a label whose every arm falls outside ARMS. Same
+        # falsehood, different item space.
+        result = self.run_controller(
+            ARMS="gpt2-large",
+            STAGES="cohort_power",
+            ARGS_COHORT_POWER__PROTEIN_SMALL_VOCAB="--n-seq 8",
+        )
+        self.assertEqual(result.returncode, 2, result.stdout)
+        self.assertIn("cohort_power/protein_small_vocab", result.stderr)
+
+    def test_the_same_override_is_carried_when_arms_dispatches_the_item(self):
+        # The refusal is about provenance, not about narrowing: ask for the arm
+        # and the override reaches the worker untouched.
+        result = self.run_controller(
+            ARMS="gpt2-large,zymctrl",
+            STAGES="lens_family",
+            ARGS_LENS_FAMILY__ZYMCTRL="--n-seq 64",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("lens_family/zymctrl=[--n-seq 64]", result.stdout)
+        self.assertIn("--item-args lens_family zymctrl", result.stdout)
+
     def test_text_arm_is_validated_against_the_contract(self):
         # ARMS, STAGES and GPUS were each validated and TEXT_ARM was not, so
         # TEXT_ARM=gpt2 instead of gpt2-large -- two valid text arms -- ran the
@@ -1423,10 +1465,6 @@ class ArmsForItemDispatchesOnDeclaredScope(unittest.TestCase):
         )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ExternalBaselineDispatchTests(unittest.TestCase):
     """The four ways an external-baseline dispatch has silently reported success.
 
@@ -1626,3 +1664,7 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
         )
         missing = [name for name in entry_points if f"`{name}`" not in plan]
         self.assertEqual(missing, [], f"stages absent from the measurement package table: {missing}")
+
+
+if __name__ == "__main__":
+    unittest.main()

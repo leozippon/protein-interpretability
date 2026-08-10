@@ -64,12 +64,14 @@ set -euo pipefail
 #       --skip-truncation --dtype --cohort-name --out DIR. Scores every arm
 #       passed to one invocation together in one process and writes one
 #       combined report, so this worker cannot dispatch it purely per arm.
-#       It is split into up to five items instead of the two (text,
-#       protein) an by-kind-alone split would give:
-#         text                gpt2-large
-#         protein_large_vocab protgpt2
-#         protein_small_vocab zymctrl (--with-ec; EC-conditioned)
-#         protein_progen2_base    progen2-base (default dtype)
+#       It is split into more items than the two (text, protein) a
+#       by-kind-alone split would give. The split itself is declared in
+#       panel_contract.py::cohort_power_items and reaches this file as
+#       TRANSFER_COHORT_ITEMS; today it reads:
+#         text                    every eligible text arm
+#         protein_large_vocab     protgpt2
+#         protein_small_vocab     zymctrl (--with-ec; EC-conditioned)
+#         protein_default_dtype   progen2-base, progen2-small (default dtype)
 #         protein_progen2_medium  progen2-medium (--dtype float32)
 #       Two independent reasons force this, both from the port agent's
 #       L20-vs-H200 cross-check:
@@ -301,8 +303,8 @@ CAMPAIGN_LEDGER_PRINTED=0
 # scripts/transfer/README.md's "Controller Environment" for the full table.
 declare -A STAGE_EXTRA_ARGS=()
 #: Same, scoped to one item of one stage, keyed "stage/item". A stage-wide flag
-#: cannot be overridden for a single item, and cohort_power's four items differ
-#: in exactly the ways that make one scale knob wrong for the others.
+#: cannot be overridden for a single item, and cohort_power's items differ in
+#: exactly the ways that make one scale knob wrong for the others.
 declare -A ITEM_EXTRA_ARGS=()
 
 # ------------------------------------------------------------------ helpers
@@ -788,7 +790,7 @@ stage_eligible_arms() {
 # read here.
 #
 # cohort_power stays a named case, and is the only one: it is panel-wide yet its
-# item space is neither "panel" nor an arm name but the four cohort labels the
+# item space is neither "panel" nor an arm name but the cohort labels the
 # contract declares in TRANSFER_COHORT_ITEM_ARMS, which is where its arm lists
 # come from. An unknown scope is refused rather than guessed.
 arms_for_item() {
@@ -1104,8 +1106,9 @@ build_command() {
   CMD=("${TRANSFER_PYTHON}")
   case "${stage}" in
     cohort_power)
-      # See the "01" entry in the header comment for why this is four items,
-      # not two: the vocab>1024/logits_to_keep truncation-curve guard and
+      # See the "01" entry in the header comment for why this is split into the
+      # contract's cohort items rather than one text item and one protein item:
+      # the vocab>1024/logits_to_keep truncation-curve guard and
       # progen2-medium's host-bound truncation statistic both force it, and
       # each protein sub-item needs its own --cohort-name so that identical
       # non-EC cohorts (same digest under the shared default name) do not
@@ -1239,7 +1242,7 @@ build_command() {
   # Stage-wide args apply to every item of a stage; item-scoped args apply to
   # one. Both exist because a stage-wide-only knob cannot express "give the
   # residue cohort_power item a different --n-seq", and an operator who tried
-  # would have moved all four items at once.
+  # would have moved every item of the stage at once.
   local -a extra=()
   if [ -n "${STAGE_EXTRA_ARGS[${stage}]:-}" ]; then
     local -a stage_extra=()
@@ -1905,7 +1908,7 @@ read -r -a HOMOLOGY_ARMS <<< "${STAGE_ARMS_FOR[homology_control]:-}"
 read -r -a PATH_PATCHING_ARMS <<< "${STAGE_ARMS_FOR[induction_path_patching]:-}"
 read -r -a PAA_CENSUS_ARMS <<< "${STAGE_ARMS_FOR[paa_census]:-}"
 
-# cohort_power's four-way split, also from the contract: by vocabulary regime for
+# cohort_power's item split, also from the contract: by vocabulary regime for
 # the truncation-curve guard, and the residue arms isolated further for their
 # float32 override. Each item's arm list, extra flags and --cohort-name are
 # declared in panel_contract.py::cohort_power_items with the measured reason.

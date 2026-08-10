@@ -3,42 +3,42 @@
   "repository": "InterpretabilityTransfer",
   "contract": {
     "source": "scripts/transfer/panel_contract.py --json",
-    "schema_version": "r2_transfer_panel_contract_v1",
+    "schema_version": "r2_transfer_panel_contract_v5",
     "verify": "python scripts/transfer/panel_contract.py --verify",
     "arm_count": 13,
     "stage_count": 12,
     "campaign_panel": [
-      "bygpt5-medium-en",
-      "dialogpt-small",
       "gpt2",
-      "gpt2-large",
       "gpt2-medium",
+      "gpt2-large",
       "gpt2-xl",
+      "dialogpt-small",
+      "qwen2.5-0.5b",
       "llama-3.2-3b",
+      "protgpt2",
+      "zymctrl",
       "progen2-base",
       "progen2-medium",
       "progen2-small",
-      "protgpt2",
-      "qwen2.5-0.5b",
-      "zymctrl"
+      "bygpt5-medium-en"
     ],
     "stage_order": [
-      "circuit_primitives",
       "cohort_power",
-      "convergence_control",
+      "pathway_budget",
       "estimand_power",
+      "circuit_primitives",
+      "relational_channel",
       "explanation_channel",
+      "convergence_control",
+      "lens_family",
+      "probe_and_erasure",
       "homology_control",
       "induction_path_patching",
-      "lens_family",
-      "paa_census",
-      "pathway_budget",
-      "probe_and_erasure",
-      "relational_channel"
+      "paa_census"
     ],
-    "regeneration": "derived from `python scripts/transfer/panel_contract.py --json`; do not hand-edit -- this block stood at 11 arms / 11 stages against a 13-arm, 12-stage contract"
+    "regeneration": "derived from `python scripts/transfer/panel_contract.py --json`; do not hand-edit. Both lists carry the contract's own order: stage_order is the campaign EXECUTION order, so sorting it destroys the only thing the field states. tests/test_transfer_stage_contract.py::ResourceManifestMirrorsThePanelContract refuses any disagreement with the live contract, which the note alone did not: this block first stood at 11 arms / 11 stages, and then at schema v1 with an alphabetised stage_order, against a 13-arm, 12-stage v5 contract."
   },
-  "resolution_policy": "Resolve every path at runtime from its environment variable. This manifest records no endpoint, credential, pod name, host path, or availability claim.",
+  "resolution_policy": "Resolve every path at runtime from its environment variable. This manifest records no endpoint, credential, pod name, host path, or availability claim. Each model_resources entry therefore lists every src.transfer.arms.PANEL member the variable relocates, including panel members outside contract.campaign_panel: campaign membership is a staging decision, and reading it back out of this file would be exactly the availability claim the previous sentence refuses. Campaign membership is stated once, in contract.campaign_panel.",
   "model_resources": [
     {
       "variable": "TRANSFER_TEXT_MODEL_BASE_DIR",
@@ -49,7 +49,10 @@
         "gpt2-xl",
         "dialogpt-small",
         "qwen2.5-0.5b",
-        "llama-3.2-3b"
+        "llama-3.2-3b",
+        "bygpt5-small-en",
+        "bygpt5-base-en",
+        "bygpt5-medium-en"
       ]
     },
     {
@@ -65,6 +68,7 @@
       "arms": [
         "protgpt2",
         "zymctrl",
+        "progen2-small",
         "progen2-base",
         "progen2-medium"
       ]

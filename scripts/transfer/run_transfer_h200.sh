@@ -155,10 +155,12 @@ FORCE="${FORCE:-0}"
 # the item name upper-cased and every non-alphanumeric character replaced by an
 # underscore -- e.g. ARGS_COHORT_POWER__PROTEIN_PROGEN2_MEDIUM="--n-seq 100", or
 # ARGS_LENS_FAMILY__PROGEN2_MEDIUM="--n-seq 64". It exists because ARGS_<STAGE>
-# reaches every item of a stage at once, and cohort_power's four items differ in
-# exactly the ways that make one scale knob wrong for the others. The worker
-# refuses either kind if it repeats a flag the worker already sets for that item,
-# rather than letting argparse take the last one silently.
+# reaches every item of a stage at once, and cohort_power's items -- the split
+# panel_contract.py::cohort_power_items declares -- differ in exactly the ways
+# that make one scale knob wrong for the others. The item has to be one this
+# invocation dispatches; see item_dispatched. The worker refuses either kind if
+# it repeats a flag the worker already sets for that item, rather than letting
+# argparse take the last one silently.
 #
 # The panel contract supplies the stage list, so a new stage is picked up here
 # without this file being edited.
@@ -284,17 +286,32 @@ collect_stage_args() {
   STAGE_ARGS_RECORDS=""
   local stage item var value b64 item_var supplied
   declare -A allowed_vars=()
+  # Item-scoped variables whose item this invocation will not dispatch, mapped
+  # to that item. Kept apart from the unknown-variable case so the refusal can
+  # name the narrowing that dropped the item instead of calling a documented,
+  # correctly spelled variable unknown.
+  declare -A undispatched_vars=()
   for stage in "${STAGE_NAMES[@]}"; do
     var="ARGS_$(printf '%s' "${stage}" | tr '[:lower:]' '[:upper:]')"
     allowed_vars["${var}"]=1
     for item in $(items_for_stage "${stage}"); do
       item_var="${var}__$(printf '%s' "${item}" | tr '[:lower:]' '[:upper:]' | tr -c '[:alnum:]' '_')"
-      allowed_vars["${item_var%_}"]=1
+      item_var="${item_var%_}"
+      if item_dispatched "${stage}" "${item}"; then
+        allowed_vars["${item_var}"]=1
+      else
+        undispatched_vars["${item_var}"]="${stage}/${item}"
+      fi
     done
   done
   while IFS= read -r supplied; do
     case "${supplied}" in
       ARGS_*)
+        if [ -n "${undispatched_vars[${supplied}]+x}" ]; then
+          echo "${supplied} overrides ${undispatched_vars[${supplied}]}, which this run does not dispatch: ARMS=${ARMS} excludes it" >&2
+          echo "  widen ARMS or drop the override -- accepting it would record a parameter in RUN_MANIFEST.json that the campaign never applied" >&2
+          exit 2
+        fi
         if [ -z "${allowed_vars[${supplied}]+x}" ]; then
           echo "unknown stage-argument environment variable: ${supplied}" >&2
           exit 2
@@ -313,10 +330,12 @@ collect_stage_args() {
       STAGE_ARGS_RECORDS="${STAGE_ARGS_RECORDS}${stage}"$'\t'"${value}"$'\n'
     fi
     # Item-scoped overrides. The item name space is the stage's own: arm names
-    # for a per-arm stage, cohort_power's four item labels, and the literal
-    # "panel" for a panel-wide stage. Both are enumerated from the contract so
-    # that ARGS_LENS_FAMILY__QWEN2_5_0_5B -- an item that stage cannot run -- is
-    # simply never collected rather than passed through to be ignored.
+    # for a per-arm stage, cohort_power's cohort labels, and the literal "panel"
+    # for a panel-wide stage. Every name is enumerated from the contract, and the
+    # validation above has already refused both ways of naming an item no
+    # override can reach: ARGS_LENS_FAMILY__QWEN2_5_0_5B, which that stage cannot
+    # run at all, and ARGS_LENS_FAMILY__ZYMCTRL under an ARMS that excludes
+    # zymctrl. So nothing collected here is dropped later.
     for item in $(items_for_stage "${stage}"); do
       item_var="${var}__$(printf '%s' "${item}" | tr '[:lower:]' '[:upper:]' | tr -c '[:alnum:]' '_')"
       item_var="${item_var%_}"
@@ -345,6 +364,37 @@ items_for_stage() {
       ;;
     per_arm|control_anchored) printf '%s\n' ${TRANSFER_STAGE_ARMS[${stage}]} ;;
   esac
+}
+
+# Whether this invocation actually dispatches one of those items.
+#
+# h200_worker.sh runs a stage over its contract-eligible arms INTERSECTED with
+# ARMS, and drops a cohort_power item every one of whose arms falls outside that
+# intersection. An item-scoped override naming anything it drops cannot be
+# applied, so the same narrowing is asked here, off the same two contract tables
+# the worker reads, and collect_stage_args refuses the override. It used to be
+# accepted, written into RUN_MANIFEST.json's parameters.stage_args and sent on as
+# `--item-args lens_family zymctrl <base64>`, where nothing ever read it -- a
+# manifest asserting a scale parameter the campaign did not run at.
+item_dispatched() {
+  local stage="$1" item="$2" arm
+  local -a arms=()
+  case "${TRANSFER_STAGE_SCOPE[${stage}]:-}" in
+    per_arm|control_anchored) arms=("${item}") ;;
+    panel_wide)
+      if [ "${stage}" = cohort_power ]; then
+        read -r -a arms <<< "${TRANSFER_COHORT_ITEM_ARMS[${item}]}"
+      else
+        read -r -a arms <<< "${TRANSFER_STAGE_ARMS[${stage}]}"
+      fi
+      ;;
+  esac
+  for arm in ${arms[@]+"${arms[@]}"}; do
+    case ",${ARMS}," in
+      *",${arm},"*) return 0 ;;
+    esac
+  done
+  return 1
 }
 
 reject_duplicate_values() {

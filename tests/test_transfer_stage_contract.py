@@ -699,6 +699,55 @@ class ShellContractStaysInStepWithThePanel(unittest.TestCase):
         self.assertNotIn(None, protein_names)
 
 
+#: The machine-readable resource interface `external_resources/README.md` and
+#: `scripts/transfer/README.md` both point operators at.
+RESOURCE_MANIFEST = (
+    REPO_ROOT / "external_resources" / "manifests" / "interpretability_transfer_resources.json"
+)
+
+
+class ResourceManifestMirrorsThePanelContract(unittest.TestCase):
+    """The manifest's `contract` block is a copy of the declaration, not a claim.
+
+    It says so itself -- "derived from `panel_contract.py --json`; do not
+    hand-edit" -- and nothing read it, so the note was the whole guarantee and it
+    drifted twice with every campaign still working: first to 11 arms / 11
+    stages, then to schema v1 with an ALPHABETISED `stage_order`. Sorting that
+    field destroys the only thing it states, the campaign execution order, and a
+    reader cannot tell a sorted list from a stale one by looking at it.
+    """
+
+    def setUp(self):
+        self.manifest = json.loads(RESOURCE_MANIFEST.read_text(encoding="utf-8"))
+        self.live = pc.contract_payload()
+
+    def test_the_contract_block_is_the_live_contract(self):
+        block = self.manifest["contract"]
+        stale = "; regenerate from `python scripts/transfer/panel_contract.py --json`"
+        self.assertEqual(block["schema_version"], self.live["schema_version"], stale)
+        self.assertEqual(block["stage_order"], self.live["stage_order"], stale)
+        self.assertEqual(block["campaign_panel"], self.live["campaign_panel"], stale)
+        self.assertEqual(block["arm_count"], len(self.live["campaign_panel"]), stale)
+        self.assertEqual(block["stage_count"], len(self.live["stage_order"]), stale)
+
+    def test_every_panel_arm_is_listed_under_the_variable_that_relocates_it(self):
+        # PANEL, not CAMPAIGN_PANEL: these entries answer "which variable
+        # relocates this checkpoint", which is declared for every panel member,
+        # and the manifest's resolution_policy refuses to carry an availability
+        # claim -- which campaign membership is. Both bygpt5 rungs outside the
+        # campaign panel are therefore listed here and only here.
+        declared: dict[str, set[str]] = {}
+        for entry in self.manifest["model_resources"]:
+            arms = entry["arms"]
+            self.assertNotIn(entry["variable"], declared, "one entry per variable")
+            self.assertEqual(len(arms), len(set(arms)), f"{entry['variable']} repeats an arm")
+            declared[entry["variable"]] = set(arms)
+        expected: dict[str, set[str]] = {}
+        for arm in PANEL:
+            expected.setdefault(pc.model_variable(arm), set()).add(arm)
+        self.assertEqual(declared, expected)
+
+
 class WorkerAndControllerBehaviour(unittest.TestCase):
     """Bash-level properties, exercised by sourcing the real scripts' logic."""
 
