@@ -16,15 +16,17 @@ The existing pure-text and pure-protein campaign is the inherited baseline, not 
 
 Prefer comparisons in this order because each lower row leaves more possible explanations:
 
-| Comparison | What it helps identify | Remaining limitation |
-|---|---|---|
-| Same joint checkpoint, text mode versus protein mode | Modality under shared weights and most of the architecture | Tokenizer, prompt, output space, and training exposure may still differ |
-| Matched checkpoint lineage | When a capability or mechanism appears across training stages | A released stage usually changes a package of data and objectives, not one factor |
-| Shape-matched pure text and protein models | Modality while holding major architectural dimensions fixed | Training data and optimization remain different |
-| Dense versus MoE within one modality | Whether routing or expert structure explains a measured failure | Model family and training data must still be controlled |
-| Cross-lab or cross-architecture replication | Whether a result generalizes beyond one lineage | It is not a clean causal attribution by itself |
+| Comparison | What it helps identify | Remaining limitation | Availability |
+|---|---|---|---|
+| Same joint checkpoint, text mode versus protein mode | Modality under shared weights and most of the architecture | Tokenizer, prompt, output space, and training exposure may still differ | **none qualified** (EXP-R2-151) |
+| Matched checkpoint lineage | When a capability or mechanism appears across training stages | A released stage usually changes a package of data and objectives, not one factor | active |
+| Shape-matched pure text and protein models | Modality while holding major architectural dimensions fixed | Training data and optimization remain different | in use |
+| Dense versus MoE within one modality | Whether routing or expert structure explains a measured failure | Model family and training data must still be controlled | in use |
+| Cross-lab or cross-architecture replication | Whether a result generalizes beyond one lineage | It is not a clean causal attribution by itself | in use |
 
-Start with one dense joint-model bridge. Add a joint MoE only if the dense comparison leaves routing or expert specialization as a live explanation. Encoder–decoder, protein-encoder-plus-LLM, or cross-attention systems enter only when a hypothesis depends on their component boundary and the intervention target has been defined for that architecture.
+**The first row is currently empty, and that changes the order of work rather than the hierarchy.** Both reachable dense joint decoders were qualified and refused on opposite modes at identical architecture and scale: one carries text and an unmeasurable protein mode, the other protein and a collapsed text mode. Until a checkpoint qualifies in both modes, joint-model work proceeds on the second row — a matched lineage whose stages differ in protein adaptation — and any joint result must state which mode was measurable. Add a joint MoE only if a qualified dense comparison leaves routing or expert specialization as a live explanation; there is no such comparison yet, so a joint MoE is not scheduled. Encoder–decoder, protein-encoder-plus-LLM, or cross-attention systems enter only when a hypothesis depends on their component boundary and the intervention target has been defined for that architecture.
+
+A joint checkpoint's qualification is a real gate and not a formality. Establish the rendering against the model's own likelihood before reading any model property, and report an arm below the context-information threshold as unmeasurable on that cohort rather than as failing.
 
 ## Execution Order
 
