@@ -6,8 +6,8 @@ set -euo pipefail
 # experiment itself -- it freezes a code snapshot, ships it to GPFS, and
 # hands off to the WORKER (h200_worker.sh), which runs inside an H200 pod
 # against GPFS-mounted models and data. See scripts/transfer/README.md for
-# the full controller/worker explanation and docs/methods/
-# TRANSFER_MEASUREMENT_PROGRAMME.md for what each stage measures.
+# the full controller/worker explanation and docs/MEASUREMENTS.md for what each
+# registered stage measures.
 #
 # Compute policy: L20 (local, 8x46GB) is validation only -- invoke one
 # scripts/transfer/0X_*.py directly with a small cohort, never through this
@@ -245,8 +245,7 @@ EOF
 # report a missing local path, an unreadable tool or an unknown argument, none of
 # which carries the pod name unless an operator has named a path after a pod. That
 # is the residual exposure, it is bounded by the operator's own naming, and it is
-# recorded in docs/ENGINEERING_AUDIT.md rather than covered by a claim this
-# function does not deliver.
+# stated here rather than covered by a claim this function does not deliver.
 redact() {
   if [ -z "${H200_POD:-}" ]; then
     cat
@@ -584,10 +583,7 @@ for path in extra:
     print(path)
 PY
 
-  {
-    cat "${baseline_list}" "${closure_extra}"
-    printf '%s\n' docs/analysis/MODEL_LADDER_20260728.md
-  } | LC_ALL=C sort -u > "${FILE_LIST}"
+  cat "${baseline_list}" "${closure_extra}" | LC_ALL=C sort -u > "${FILE_LIST}"
   if [ -s "${closure_extra}" ]; then
     log "import closure added $(wc -l < "${closure_extra}") file(s) outside src/transfer and scripts/transfer:"
     while IFS= read -r extra_path; do
@@ -970,8 +966,6 @@ require_local_path "project root" "${PROJECT_ROOT}"
 require_local_path "src/transfer" "${PROJECT_ROOT}/src/transfer"
 require_local_path "scripts/transfer" "${PROJECT_ROOT}/scripts/transfer"
 require_local_path "worker script" "${PROJECT_ROOT}/scripts/transfer/h200_worker.sh"
-require_local_path "07_convergence_control.py ladder table" \
-  "${PROJECT_ROOT}/docs/analysis/MODEL_LADDER_20260728.md"
 # --print-code-hash never reaches the cluster, so it must not require the access
 # layer to be installed. Demanding it there would make the snapshot-reuse check
 # unrunnable on any host without the tunnel -- including a test host -- and a

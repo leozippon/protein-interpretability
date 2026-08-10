@@ -113,9 +113,8 @@ CAMPAIGN_PANEL: tuple[str, ...] = (
     # The byte-level text control for D2.c (EXP-R2-129). Admitted 2026-08-06 on
     # the staging fact its exclusion turned on: the checkpoint is on GPFS at
     # models/bygpt5-medium-en, 1,156,247,841 bytes, and was load-tested in the pod
-    # at 12 layers, d_model 1536, vocab 384 during the EXP-R2-058 staging session
-    # (docs/analysis/H200_STAGING_20260728.md, item 2). Verified present again
-    # before admission.
+    # at 12 layers, d_model 1536, vocab 384 during EXP-R2-058. Verified present
+    # again before admission.
     #
     # What membership widens, stated rather than discovered later. Three stages
     # accept it and the rest refuse on their own architecture declarations.

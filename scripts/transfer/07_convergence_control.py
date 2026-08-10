@@ -155,7 +155,7 @@ from src.transfer.scaling import (  # noqa: E402
 
 DEFAULT_OUTPUT = REPO_ROOT / "results/transfer/convergence_control"
 DEFAULT_BACKUP = REPO_ROOT / "logs/convergence_control_backup"
-DEFAULT_LADDER_TABLE = REPO_ROOT / "docs/analysis/MODEL_LADDER_20260728.md"
+DEFAULT_LADDER_TABLE: Path | None = None
 
 #: Whole-pathway ablation scopes. Anchored single-layer scopes are swept
 #: elsewhere; here the y-value has to be one number per model that does not
@@ -164,7 +164,9 @@ DEFAULT_LADDER_TABLE = REPO_ROOT / "docs/analysis/MODEL_LADDER_20260728.md"
 PATHWAY_SCOPES = ("mlp_all", "attn_all")
 
 
-def resolve_ladder(table_path: Path) -> tuple[tuple[LadderMember, ...], dict[str, Any]]:
+def resolve_ladder(
+    table_path: Path | None,
+) -> tuple[tuple[LadderMember, ...], dict[str, Any]]:
     """The configured ladder, from the operator's table when there is one.
 
     The ladder is assembled by a separate process, so a table on disk is
@@ -173,26 +175,22 @@ def resolve_ladder(table_path: Path) -> tuple[tuple[LadderMember, ...], dict[str
     deliberate removal.
     """
 
-    if not table_path.is_file():
+    if table_path is None:
         return DEFAULT_LADDER, {
             "source": "scaling.DEFAULT_LADDER",
-            "path": str(table_path),
+            "path": None,
             "sha256": None,
-            "note": "no ladder document on disk at the configured path",
+            "note": "no operator ladder table supplied",
         }
+    if not table_path.is_file():
+        raise FileNotFoundError(f"ladder table does not exist: {table_path}")
     digest = sha256_file(table_path)
     parsed = parse_ladder_table(table_path)
     if parsed is None:
-        return DEFAULT_LADDER, {
-            "source": "scaling.DEFAULT_LADDER",
-            "path": str(table_path),
-            "sha256": digest,
-            "note": (
-                "the document carries no table with every column of "
-                f"{list(LADDER_TABLE_COLUMNS)}, so it is a staging report rather than "
-                "a ladder declaration and the built-in ladder was used"
-            ),
-        }
+        raise ValueError(
+            f"{table_path}: no ladder declaration with required columns "
+            f"{list(LADDER_TABLE_COLUMNS)}"
+        )
     return parsed, {
         "source": "ladder_table",
         "path": str(table_path),
@@ -861,7 +859,12 @@ def build_analysis(frame: list[dict[str, Any]], args: argparse.Namespace) -> dic
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--ladder-table", type=Path, default=DEFAULT_LADDER_TABLE)
+    parser.add_argument(
+        "--ladder-table",
+        type=Path,
+        default=DEFAULT_LADDER_TABLE,
+        help="optional operator-supplied ladder declaration; defaults to the code contract",
+    )
     parser.add_argument(
         "--members",
         nargs="+",

@@ -1,79 +1,54 @@
 # InterpretabilityTransfer
 
-InterpretabilityTransfer studies how mechanistic-interpretability methods transfer from text decoders to protein generative models.
+InterpretabilityTransfer compares pure-text, pure-protein, and joint language–protein generative models, audits whether interpretability methods remain faithful across them, and develops adapted methods only after a reproducible failure is identified.
 
-## Research Objective
+## Start Here
 
-The programme follows three ordered directions:
+| Document | Purpose |
+|---|---|
+| [`summary.md`](summary.md) | Plain-language research direction, hypotheses, progress, and current conclusions |
+| [`docs/INTERPRETABILITY_TRANSFER_AUDIT.md`](docs/INTERPRETABILITY_TRANSFER_AUDIT.md) | Canonical findings, limitations, retractions, evidence boundaries, and scientific decisions |
+| [`docs/RESEARCH_PLAN.md`](docs/RESEARCH_PLAN.md) | Executable comparison guide and stage inventory derived from the canonical plan |
+| [`docs/MEASUREMENTS.md`](docs/MEASUREMENTS.md) | Estimands and metrics for the registered foundational stages |
+| [`scripts/transfer/README.md`](scripts/transfer/README.md) | Local validation and H200 campaign operation |
+| [`docs/EXPERIMENT_LOG.md`](docs/EXPERIMENT_LOG.md) | Append-only experiment chronology |
+| [`docs/PROJECT_LOG.md`](docs/PROJECT_LOG.md) | Append-only repository and operations chronology |
+| [`AGENTS.md`](AGENTS.md) | Research, development, documentation, and compute rules |
 
-1. **Compare model families.** Identify meaningful differences between text and protein generative models.
-2. **Evaluate method transfer.** Determine how and under what conditions existing interpretability methods transfer, and separate method limitations from model or data limitations.
-3. **Develop adapted methods.** Design and validate protein-specific methods only when the preceding evidence identifies a concrete failure mode.
+The summary is the reader entry point, not a second source of scientific claims. The audit controls claim status, evidence boundaries, and the current scientific plan; the research plan translates admitted work into executable comparisons and stages.
 
-Steps 2 and 3 are the main deliverables; step 1 provides their foundation. `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` is canonical for findings, limitations, retractions, and the current scientific plan.
+## Development Workflow
 
-## Repository Layout
-
-The repository root (`.`) is the only live research root.
-
-| Path | Purpose | Git policy |
-|---|---|---|
-| `src/transfer/` | Shared measurement library | tracked |
-| `scripts/transfer/` | Local validation and H200 campaign entry points | tracked |
-| `tests/` | Contract and behavior tests | tracked |
-| `docs/` | Scientific plan, logs, methods, analyses, and navigation | tracked |
-| `evidence/` | Compact receipts and provenance artifacts | tracked |
-| `external_resources/` | Metadata and setup helpers for third-party resources | metadata tracked; payloads ignored |
-| `data/` | Local datasets | ignored |
-| `results/` | Generated experiment outputs | ignored |
-| `logs/` | Runtime output | ignored except `logs/README.md` |
-
-Frozen historical provenance, retired R0/R1 roots, old manuscripts, and retired configurations are stored outside the repository at `/Data2/lzp/bio_archive`. See `docs/ARCHIVE.md`; nothing in that tree is a live interface.
-
-## Campaign Contract
-
-`scripts/transfer/panel_contract.py` is the source of truth for which arms and which stages the campaign contains; generated shell declarations and operator documentation must agree with it.
-
-**The arm and stage lists are deliberately not restated here.** They were, in three documents at once, and all three drifted: two arms and one stage were admitted while the counts stayed as written, so a reader who trusted them would have missed the byte-level control that decides a live claim. `scripts/transfer/README.md` carries the tables, and a test holds it to the contract. Print the current lists with:
-
-```bash
-python scripts/transfer/panel_contract.py --json
-```
-
-Two stages are outside the contract by design, because they measure a checkpoint that is not a panel arm: `15_replacement_faithfulness.py` and `16_fitness_recovery.py`, the external-baseline audit of ProGenMech. They are launched through `scripts/transfer/run_external_baseline_h200.sh` and carry a `condition` block in their own artefacts instead of a stage-contract record.
-
-Validate the generated contract before scheduling:
+1. Read `summary.md` to identify the research question being advanced.
+2. Check the audit before reusing a result, method, statistic, or closed direction.
+3. Follow the research plan's smallest identifying comparison instead of expanding every method across every model.
+4. Treat `scripts/transfer/panel_contract.py` as the executable source of truth for registered arms and stages. Print and verify it with:
 
 ```bash
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate ct
+python scripts/transfer/panel_contract.py --json
 python scripts/transfer/panel_contract.py --verify
 ```
 
-See `scripts/transfer/README.md` for stage eligibility, local validation, and H200 operation.
+5. Validate changed code on B, run full campaigns on H200, and append admitted results to `docs/EXPERIMENT_LOG.md`. Update the audit before promoting a result into a claim.
 
-## Environment
+## Repository Layout
 
-The validated workstation uses Python 3.11. Direct Python dependencies are declared in `requirements.txt`; the correct CUDA-enabled PyTorch build must be selected for the host. Copy `.env.local.example` to the ignored `.env.local` only when local download credentials are needed.
+| Path | Purpose | Git policy |
+|---|---|---|
+| `src/transfer/` | Shared measurement library | tracked |
+| `scripts/transfer/` | Validation and campaign entry points | tracked |
+| `tests/` | Contracts, negative paths, and end-to-end checks | tracked |
+| `docs/` | Research authority, plan, logs, and technical records | tracked |
+| `evidence/` | Compact cited receipts and provenance | tracked |
+| `external_resources/` | Resource metadata and setup helpers | metadata tracked; payloads ignored |
+| `data/`, `results/`, `logs/`, `wandb/` | Local inputs and generated state | ignored |
 
-The resource interface is recorded in `external_resources/manifests/interpretability_transfer_resources.json`. It records environment-variable contracts, not machine-specific paths, credentials, pod names, or claims about current availability.
+The repository root is the only live research root. Compact evidence stays with its receipts under `evidence/`; obsolete audits and staging reports remain recoverable from Git history. Frozen retired work is stored in a checksummed external archive and is immutable rather than a runtime dependency.
 
-## Documents
+## Runtime and Storage
 
-1. `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` - canonical scientific findings, limitations, and plan.
-2. `docs/RESEARCH_PLAN.md` - research scope and evidence discipline.
-3. `docs/EXPERIMENT_LOG.md` - chronological experiment record.
-4. `docs/PROJECT_LOG.md` - repository and operations chronology.
-5. `docs/REPOSITORY_STRUCTURE.md` - repository, naming, storage, and provenance rules.
-6. `docs/DOCUMENT_INDEX.md` - navigation for live and frozen material.
-7. `SUMMARY.md` - progress overview: research conclusions and core experiment index derived from the audit.
-8. `CLAUDE.md` and `AGENTS.md` - identical agent and operator instructions.
+The validated environment and H200 access rules are maintained in `AGENTS.md`; live cluster allocation must be checked rather than copied into documentation. External resource variables are declared in `external_resources/manifests/interpretability_transfer_resources.json`.
 
-`SUMMARY.md` is the reader-oriented progress overview, not a second claim source. The canonical
-audit wins whenever the two differ.
-
-## Storage Safety
-
-Ignored data, results, logs, models, and caches are not protected by Git. Never run `git clean -fdx` or `git clean -fdX`; use `git clean -fd` or an explicit disposable path. Keep compact, cited evidence under `evidence/`, where small causal receipt matrices are explicitly permitted even though generic `*.npz` files remain ignored elsewhere.
-
-Cluster access and recovery are documented outside the repository in `~/hangzhou-remote/README.md`. Query live status before scheduling; never persist disposable pod names in repository files or durable logs.
+Ignored files are not protected by Git. Never use `git clean -fdx` or `git clean -fdX`. Do not delete result trees, logs, checkpoints, datasets, or frozen provenance as though they were caches; only explicitly verified disposable paths may be removed.

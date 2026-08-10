@@ -1,18 +1,29 @@
-# Interpretability transfer audit: text to protein generative models
+# Interpretability audit across text, protein, and joint generative models
 
-**Status:** active; canonical analysis document **Supersedes:** the exploratory contents of the retired repository-root `check.md`, to which the section-numbered `check.md §…` citations in the experiment and project logs still refer; repository-root `SUMMARY.md` is a non-canonical reader summary **Updated:** 2026-08-09 (catalogue through EXP-R2-148; the plan's narrative sections are current to EXP-R2-140, and `docs/EXPERIMENT_LOG.md` is the chronological register)
+**Status:** active; canonical findings and decision record **Supersedes:** the exploratory contents of the retired repository-root `check.md`, to which the section-numbered `check.md §…` citations in the experiment and project logs still refer; repository-root `summary.md` is a non-canonical reader summary **Updated:** 2026-08-10; the claim register is current through EXP-R2-149, EXP-R2-150 remains an open preregistration, and `docs/EXPERIMENT_LOG.md` is the chronological register
 
 ---
 
-## 0. Objective
+## 0. Objective and Current Programme
 
-1. **Differences.** Explore the differences between language-generative and protein-generative models.
-2. **Limitations.** Based on existing interpretability methods for language models, analyse the limitations of those approaches when applied to protein generative models.
-3. **Adapted methods.** Propose interpretability methods suitable for protein generative models.
+1. **Compare model families from first principles.** Characterise differences in tokenization, training corpora, and model architecture among pure-text, pure-protein, and joint language–protein generative models. Prefer matched checkpoint lineages and same-checkpoint text/protein modes where they improve identification.
+2. **Use and audit interpretability methods.** Apply interpretability methods as controlled measurements of behaviour, representation, and causal computation. Scope each limitation as method-intrinsic or transfer-specific, then localise transfer-specific limitations to model, training data or stage, modality, or evaluation interface.
+3. **Develop adapted methods.** Design a new method only after a reproducible failure has been localised. Use a successful method for biological or novelty claims only after causal and independent-data validation.
 
-Parts 2 and 3 are the deliverable. Part 1 is instrumental — a difference between model families matters here only insofar as it explains why a method transfers badly.
+The pure-text and pure-protein programme closed on 2026-08-06 is the inherited baseline, not the whole current objective. Its measurements, retractions, and stopped branches remain binding and are not rerun merely to fill a larger matrix. New joint-model, knowledge-source, and novelty work asks new questions and does not reinterpret the old panel by default.
 
-**This document reorganises the entire experimental record against that objective.** The record was accumulated while the programme was optimising for part 1 as though it were terminal, so a substantial amount of part-2 evidence exists as an unclaimed by-product of retractions and negative results. Recovering it is the main purpose of this reorganisation.
+### Forward tracks
+
+| Item | Question | Admission and stopping rule |
+|---|---|---|
+| **D1.d — joint-model foundational bridge** | Which differences remain when text and protein modes share one checkpoint? | Qualify one dense joint decoder first: strict load, native rendering, scored positions, output semantics, and context-information checks for both modes. Same-checkpoint comparison controls shared weights and most architecture, not tokenization, prompts, output space, or training exposure. Add a joint MoE only if the dense result leaves routing or expert specialisation as a live explanation. |
+| **D1.e — knowledge source and novelty** | Does protein fitness or generation exceed what homologous training examples provide? | EXP-R2-143 supplies the pure-model retrieval bound in F10. Next claims require family- or time-disjoint data, a declared corpus proxy, and external phenotype or function. A model score, predicted structure, or linguistic description alone cannot establish novel function. |
+| **D2.h — joint-model method-fidelity bridge** | Do the measured PAA and replacement failures persist within shared weights? | Use the same interface → measurable target → attainability/power → behaviour → causal target → independent-data order as the pure-model audit. Select only the cells needed for one declared hypothesis; do not rerun the old method menu or build a model × method Cartesian product. Replacement training begins only when cheaper measurements leave a fidelity question open. |
+| **D3 — adapted methods and biology** | Can a localised failure be repaired and then used for science? | D3.b and D3.g remain gated candidates; D3.e and D3.f remain closed. A joint checkpoint may provide an additional arm, but shared weights do not define a cross-modal target or relax the requirements for real sequence–description pairs, calibrated concepts, causal intervention, and external biological evidence. |
+
+EXP-R2-150 is a bounded robustness check on the declared sequence band for existing protein replacement results. It has no admitted result and does not reopen the completed pure-model panel.
+
+Section 9 preserves the plan that produced the inherited baseline, including its identifiers, costs, closed branches, and preregistrations. It is an evidence record; the forward tracks above govern new work, and `docs/RESEARCH_PLAN.md` translates them into an executable comparison and stage guide.
 
 ---
 
@@ -98,17 +109,11 @@ The far-band propagation result, recorded here until 2026-07-31 as the best-foun
 
 > **The replacement-fidelity line, added 2026-08-09 and stated separately because it is a different estimand from the census result above.** Under sequential per-layer transcoder replacement at a fixed 12x expansion, behavioural recovery separates the modalities by a factor of six to ten with no overlap: text **+0.9084 to +0.9322** across two decoders, protein **+0.0916 to +0.1641** across three. Method, dictionary training budget, depth and sparse routing were each excluded by a control built to exclude it (EXP-R2-141 to 147), and **tokenisation was excluded by EXP-R2-149**, which admitted ZymCTRL — gpt2 architecture, 36 x 1280, protein, one token per residue — and measured **+0.0916 and +0.0923** on two corpus seeds against the shape-identical text control's +0.9322. The protein side now spans three tokenisations and two architectures and fails on all of them. Two qualifications travel with it. ZymCTRL's own dictionary reconstructs about twice as badly as either comparator (0.529 per layer against 0.275 and 0.238), so for that arm alone "the dictionary was worse" is not excluded and a higher-budget control is running; and ZymCTRL differs from ProtGPT2 in tokenisation **and** in EC conditioning, so the result separates the modality reading from "tokenisation or conditioning" rather than from tokenisation alone. **The causal half of this gate is not part of the claim** — EXP-R2-148 withdrew it, because the text control that recovers 93% behaviourally fails the causal-rank gate itself on the identical 720-head grid (L27). What this line does **not** do is explain why; the free linear baseline was the standing clue and EXP-R2-149 weakened it, since ZymCTRL's free baseline sits at zero rather than with the other protein arms, so that statistic's apparent two-group structure is a fact about EXP-R2-144's four arms and not a modality statement.
 
-**On part 3 (adapted methods).** Not yet earned. Two candidate directions carry standing rejections (§7) and no proposal is currently traceable to a measured limitation with adequate evidence.
+**On part 3 (adapted methods).** No adapted method has been validated. D3.b and D3.g are gated candidates traceable to measured interface or translation problems; D3.e and D3.f remain closed. A candidate is a testable direction, not a result.
 
 ### 1.1 Frozen claims register, 2026-08-06
 
-The foundational programme is closed as of this date (§9.1). This register exists
-so that the next question asked of this repository is a *new* one: everything
-below is measured, its artefacts are named, and **re-measuring any of it is
-explicitly not authorised**. A claim absent from this table is not citable, whatever
-it says elsewhere in this document — the surrounding sections keep the reasoning,
-including readings that were withdrawn, because how a result was reached is part of
-the record.
+The foundational programme is closed as of this date (§9.1). This register exists so that the next question asked of this repository is a *new* one: everything below is measured, its artefacts are named, and **re-measuring any of it is explicitly not authorised**. A claim absent from this register, including the post-freeze additions in §1.2, is not citable, whatever it says elsewhere in this document. The surrounding sections keep the reasoning, including readings that were withdrawn, because how a result was reached is part of the record.
 
 | # | Claim, as it may be stated | Evidence | Status |
 |---|---|---|---|
@@ -124,12 +129,14 @@ the record.
 | F8 | The **twenty-seven** catalogued limitations of §5 (L1–L27; recorded here as twenty-three until 2026-08-09, then twenty-six before L27 was added the same day), each scoped as **method** or **transfer** under §5's own organising rule — no row carries any other scope | as cited per row in §5 | **frozen** |
 | F9 | A protein arm's cohort carries a selection uncertainty its matched text control does not, on seven unrelated statistics | §5.05(b), EXP-R2-069/070(iv)/077/121/127, and the D2.c retrieval spread | **frozen as a pattern**, not as a single measurement |
 
-Two items are deliberately *not* in this table. The ProtGPT2 retrieval **point
-value** is not citable — it is broadly dispersed across draws (0 to 8 hits over
-thirteen) and its median moved with K until K=13; cite the classification, not the
-number. And no part-1 modality claim is citable beyond F7, for the structural
-reason §2 records: the only family spanning both modalities is GPT-2, so every
-modality coefficient rests on ProtGPT2 alone.
+### 1.2 Post-freeze citable additions, 2026-08-10
+
+| # | Claim, as it may be stated | Evidence | Status |
+|---|---|---|---|
+| F10 | On 217 ProteinGym substitution assays grouped into 174 wild-type families, none of the three measured protein decoders exceeds a position-independent profile lookup over the available pretraining-corpus evidence. ProtGPT2, the only arm with an exactly identified staged corpus, has MODEL − LOOKUP **−0.0143 [−0.0381, +0.0101]** and is retrieval-bounded. ProGen2-medium uses a lower-bound corpus proxy and reads **−0.0043 [−0.0303, +0.0216]**, also retrieval-bounded. ProGen3-112M uses the most model-favouring lower-bound proxy and reads **−0.0808 [−0.1139, −0.0481]**, retrieval-dominated. The last category was added after seeing the ProGen3 result and is disclosed as such. This bounds the present fitness interface; it does not show memorisation, absence of biological knowledge, or lack of generative novelty, and it does not extend to joint models | EXP-R2-143; `results/transfer/retrieval_bound/` | **citable with corpus-proxy and interface bounds** |
+| F11 | Under sequential per-layer transcoder replacement at fixed 12× expansion, two text decoders recover **0.9084–0.9322** of their clean-to-ablated behavioural gap, while three protein decoders recover **0.0916–0.1641** on their declared evaluation cohorts. The protein comparison is restricted to the shared 64–246-residue band. Controls exclude the method being wholly invalid and exclude depth, basic training budget, sparse routing, and multi-residue BPE as sufficient explanations; they do not identify the proximal cause. The causal-rank statistic is withdrawn because its high-recovery text control also fails it. ZymCTRL's EC conditioning and poorer dictionary remain limitations, and EXP-R2-150 has no result, so no band-free robustness claim is admitted | EXP-R2-141–149; replacement artefacts named in those log entries | **citable at declared cohorts; proximal cause open** |
+
+Two items remain deliberately outside the register. The ProtGPT2 PAA head-retrieval **point value** is not citable — it is broadly dispersed across draws (0 to 8 hits over thirteen) and its median moved with K until K=13; cite the classification, not the number. And no additional part-1 modality claim is citable beyond F7, for the structural reason §2 records: the only family spanning both modalities is GPT-2, so every modality coefficient rests on ProtGPT2 alone. F10 is a bounded result about a fitness-evaluation interface, not a modality claim.
 
 **A draw-count discrepancy in the evidence column, recorded rather than reconciled (2026-08-09).** F1 and D2.c's plan row cite "~55 arm-draws"; F1b(i) and F3 cite "62 on-condition arm-draws" for what reads as the same campaign. They are not the same population. "~55" is D2.c's own campaign count at closure; "62" is the EXP-R2-131 failure audit's draw list *before* the eight ByGPT5 draws were added to it, which is the count F1b(i)'s own "8 of 62 otherwise identical arm-draws" is taken over. The audit artefact `logs/paa_audit_seedfix/paa_failure_audit.json` now holds **70** on-condition arm-draws over twelve arms, 62 of them non-ByGPT5, so neither figure in the table is the current size of that file. These are provenance counts and no claim rests on them; no row is edited on this basis.
 
@@ -321,7 +328,7 @@ Twelve autoregressive decoders under one code path, each fed in the format it wa
 
 | # | limitation | method family affected | evidence | scope |
 |---|---|---|---|---|
-| L1 | Recovery gates set without checking attainability; single-MLP estimand has ~0.02 nats/token causal footprint against an 80% gate | SAE / transcoder / CLT | P0-2b (`docs/analysis/P0_2B_DICTIONARY_FIDELITY_RESULTS_20260727.md`, `evidence/p0_2b_fidelity_20260727/`, `evidence/p0_2_adjudication_20260727/`); estimand power sweep | **method** — unattainable on the text control |
+| L1 | Recovery gates set without checking attainability; single-MLP estimand has ~0.02 nats/token causal footprint against an 80% gate | SAE / transcoder / CLT | P0-2b (`evidence/p0_2b_fidelity_20260727/`, `evidence/p0_2_adjudication_20260727/`); estimand power sweep | **method** — unattainable on the text control |
 | L2 | A 0.1-nat mutual-information gate applied to a design with a 0.0066-nat analytic ceiling | attribution / explanation channel | explanation-channel analysis | **method** |
 | L3 | FVU is not comparable across models; ranking by FVU does not track behavioural fidelity | SAE / CLT | TG-03, TG-08 budget sweep | **method** |
 | L4 | Loss-recovered denominators are arm-specific; ablation-baseline choice moves the measured denominator substantially | SAE / CLT, activation patching | denominator-guard work | **method** |
@@ -750,14 +757,9 @@ This is a rule about **constructed methods**, not about measurement. Measuring a
 
 ---
 
-## 9. The plan, organised by the three directions
+## 9. Foundational programme record
 
-Restructured 2026-07-30 (EXP-R2-068). The previous Phase A/B/C scheme had drifted
-from the objective it served: items were numbered by the order they were thought
-of, and two of them turned out to belong to different directions. This version is
-organised by the three directions themselves, with one-letter identifiers, and
-each direction states what it has established before what it still owes. Retired
-item names are kept in §9.1 so nothing is lost.
+This section records the pure-text and pure-protein plan used from 2026-07-30 through 2026-08-09. Its identifiers, gates, costs, preregistrations, and closed branches remain part of the evidence trail. The forward tracks in §0 govern new work; `docs/RESEARCH_PLAN.md` is their executable guide, and this section must not be read as the current admission list.
 
 **No programme-level budget figure is maintained here, and the one that was is withdrawn (2026-08-09).** This paragraph read "Remaining budget ~55–95 H200 GPU-hours. The programme has spent about 8 to date, which is the main reason the estimate has fallen: measurements that were costed as campaigns turned out to be minutes once the case counts were sized to the gate rather than to the panel." The spend figure is contradicted by this section's own tables, which book D2.b′ at ~16 GPU-h, D1.a at ~6 + ~6, EXP-R2-080 at ≈44 and D2.g at ~3 — already an order of magnitude above 8 — while D2.c's ~55 arm-draws are priced in draws and never in hours. Since a total was never maintained, a remainder derived from it cannot be either. The per-item costs in the tables below are the only spend figures this document supports, and they are per item rather than cumulative.
 
@@ -780,8 +782,7 @@ Two further differences are open rather than closed:
 | **D1.a** | Do the far-band propagation *magnitudes* differ, once resolved? | **Reopened, then re-answered, and the answer changed (EXP-R2-073 / 074).** The token-band result is withdrawn: two protein arms swap order on the unit choice alone. Re-measured over five windows with the band *and* the corruption span declared in content symbols, the **level** contrast reverses — text is highest at short content distance — and what separates is the **decay rate**: across **seven** text controls the separation is clean at threshold 0.50 (worst text 0.397 below lowest protein 0.500, 136 of 140 paired comparisons) and **overlaps by 0.015 at 0.25**, where the off-distribution arm dialogpt-small reaches 0.611. Like the far-band level result, it lives in the large-effect tail. The matched pair separates on this estimand for the first time; the text decay ratio is flat across a 6.5x scale range where the protein one rises, so a larger protein arm would widen the gap rather than close it. Residual unit caveats in §5.1 | ~6 + ~6 GPU-h, spent |
 | ~~**D1.b**~~ | Is the tail statement a *distribution* statement at full population? | **Answered (EXP-R2-073), CPU, no GPU spent.** No: it remains a tail statement, and the tail is now located — the ordering separates at every quantile from q75 to q99 and fails at the median and in the extreme upper tail. Pooled AUC 0.624, 20 of 28 pairs above 0.5, 2 of 28 showing stochastic dominance against the recorded 0 of 12. Two published figures moved with it: modality variance surviving projection 25.4% → **36.3%**, and the 2.34x scale-adjusted shortfall loses its interval verdict as an out-of-lineage extrapolation. Detail in §4 | 0 GPU-h, spent |
 
-**Exit condition unchanged in spirit:** D1 exists to explain transfer failures, not
-for its own sake. No new D1 measurement is authorised beyond these two.
+**Exit condition unchanged in spirit:** D1.a and D1.b existed to explain the foundational transfer failures, not to expand the completed pure-model panel for its own sake. Their closure does not prohibit D1.d or D1.e, which ask newly admitted questions about joint checkpoints, knowledge source, and novelty.
 
 ### D1.c — Candidate arms and corpora, with the risk each carries
 
@@ -803,7 +804,7 @@ only after a load check on the pod.
 
 **Corpora, as evidence packages rather than more FASTA.** Four are worth building, in this order, and each carries a trap that has to be designed around rather than noticed afterwards. A *temporal* extrapolation set per model cutoff, from UniParc first-observation timestamps against a pinned Swiss-Prot release — but UniRef cluster IDs are rebuilt between releases and cannot be the identifier, and new appearance is not novelty without homology exclusion. A *PDB-CATH* set of experimental structures released after each cutoff, split out-of-family on CATH superfamilies with S20/S35 sensitivity beside the S40 already here, distinguishing an old sequence with a new structure from a genuinely new sequence. An *independent DMS* collection from late MaveDB assays absent from the model papers and from ProteinGym, grouped by wild type and homologous cluster — millions of mutant rows over one wild type are not independent units, which is the same error L1's cohort made at smaller scale. And a *repeat-mechanism* 2x2 (repeat present/absent x low/normal complexity) from RepeatsDB, Swiss-Prot repeat records and synthetic constructs, matched on length, taxonomy, domain architecture, compositional entropy and maximum training-set similarity — which is the only design that tests the corpus-repeat confound §4 calls irremovable, rather than restating it. MGnify is optional and cannot be a clean gold standard: it is largely predicted proteins and may overlap BFD.
 
-**A standing caution this survey earns.** Predicted structures, pLDDT and sequence-inferred labels support stratification and covariate adjustment. They cannot demonstrate functional competence or "acquired protein knowledge", which is the second half of the programme's objective and currently has no instrument at all.
+**A standing caution this survey earns.** Predicted structures, pLDDT and sequence-inferred labels support stratification and covariate adjustment. They cannot demonstrate functional competence or "acquired protein knowledge". F10 now bounds one narrow question on the current fitness interface; functional competence on independent evidence and generative novelty still have no qualified instrument.
 
 ### D2 — Where the methods transfer, and whose fault it is when they do not
 
@@ -1555,9 +1556,9 @@ reopened without a claim that depends on it.
 
 ## Appendix A — Experiment index
 
-**Scope, declared 2026-08-09: this index covers the founding series only — TR-025 through EXP-R2-066 — and is not carried forward.** It was written when that series was the whole record and its preamble read as though it were the register of the experimental record; the document's substance now runs to EXP-R2-140 and `docs/EXPERIMENT_LOG.md` to EXP-R2-148. **`docs/EXPERIMENT_LOG.md` is the chronological register for the whole programme, and §1.1 is the authority on what is currently citable.** Extending A.1 and A.2 forward would build a second full index of the log and a third source of claim status, which is what the Single-Source Principle exists to prevent. They are kept, unextended, because their status column carries retraction records — TR-030 retracted by EXP-R2-033, both EXP-R2-050 rows, TG-01 — that exist nowhere else in this document, and because A.4's provenance hazard depends on their aliases.
+**Scope, declared 2026-08-09: this index covers the founding series only — TR-025 through EXP-R2-066 — and is not carried forward.** It was written when that series was the whole record and its preamble read as though it were the register of the experimental record. **`docs/EXPERIMENT_LOG.md` is the chronological register for the whole programme, and §1 is the authority on what is currently citable.** Extending A.1 and A.2 would build a second full index of the log and a third source of claim status. They are kept, unextended, because their status column carries retraction records — TR-030 retracted by EXP-R2-033, both EXP-R2-050 rows, TG-01 — that exist nowhere else in this document, and because A.4's provenance hazard depends on their aliases.
 
-Within that scope, "stands" means the result was defensible when this index was written; "retracted" means withdrawn on evidence; "superseded" means replaced by a better-controlled measurement. Current status for anything cited outside this appendix is §1.1's, not this column's.
+Within that scope, "stands" means the result was defensible when this index was written; "retracted" means withdrawn on evidence; "superseded" means replaced by a better-controlled measurement. Current status for anything cited outside this appendix is §1's, not this column's.
 
 **Stable aliases for reused transfer-series ids.** The append-only log reused EXP-R2-025 through EXP-R2-032. This audit therefore uses `TR-025` = EXP-R2-025 (2026-07-24), `TR-026` = EXP-R2-026 (2026-07-27), and `TR-027` through `TR-032` = EXP-R2-027 through EXP-R2-032 (2026-07-28). These aliases do not renumber or rewrite history.
 

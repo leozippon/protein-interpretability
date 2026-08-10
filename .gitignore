@@ -7,9 +7,6 @@ data/
 results/
 wandb/
 **/logs/
-!logs/
-logs/*
-!logs/README.md
 mlruns/
 next_phase_artifacts/
 

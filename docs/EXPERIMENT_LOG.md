@@ -1,6 +1,6 @@
 # Research 2 — CLT Experiment Log
 
-> **Current status (2026-07-17):** this chronological log contains historical terminology and superseded hypotheses as provenance. Current claim boundaries and scientific-gate status are authoritative in `NPJ_AI_MAJOR_REVISION_EXECUTION_STATUS_20260717.md`, `NPJ_AI_MAJOR_REVISION_PLAN_20260716.md` and `PROJECT_STATUS.md`. No historical “universal”, mechanism or steering-success wording overrides those documents.
+> This append-only file records experiment chronology. Historical terminology and superseded hypotheses remain as provenance. Current citable findings, retractions, evidence boundaries, and the scientific plan are authoritative in `INTERPRETABILITY_TRANSFER_AUDIT.md`; `RESEARCH_PLAN.md` maps admitted work to executable comparisons and stages. No historical wording in this log overrides those documents.
 
 ## EXP-R2-001: Baseline CLT Training on H200 (2026-04-02)
 

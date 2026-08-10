@@ -1,5 +1,7 @@
 # TG series — transfer screen, text versus protein decoders
 
+**Status:** legacy corrected campaign. Retained for unique measurements and retraction provenance; use `scripts/transfer/` for new experiments.
+
 Ten entry points plus a positive-control stage and a collator. Every stage takes `--arm` and writes one JSON per arm under `results/transfer_gap_20260729_corrected/<stage>/`.
 
 ```bash

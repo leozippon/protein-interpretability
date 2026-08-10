@@ -31,7 +31,7 @@ The executed specification contains 27 completed full runs. The three sparsity-t
 
 ## Prospective P0-2b design
 
-The protocol was `docs/P0_2B_DICTIONARY_FIDELITY_PROTOCOL_20260727.md`; it moved to `/Data2/lzp/bio_archive/legacy/r2_retired_scope_20260729/docs/P0_2B_DICTIONARY_FIDELITY_PROTOCOL_20260727.md` on 2026-07-29 (EXP-R2-065) with the rest of the P0 protocol set. The executed specification, which is the authoritative form, has SHA-256 `11092e16891922380a2d224288138968e45ea982d36b46a4007f9f6b76a8d6bf` and is at `../../evidence/p0_2b_fidelity_20260727/p0_2b_fidelity_spec.executed.json`.
+The protocol was `docs/P0_2B_DICTIONARY_FIDELITY_PROTOCOL_20260727.md`; it moved to the frozen external archive on 2026-07-29 (EXP-R2-065) with the rest of the P0 protocol set. The executed specification, which is the authoritative form, has SHA-256 `11092e16891922380a2d224288138968e45ea982d36b46a4007f9f6b76a8d6bf` and is stored beside this file as `p0_2b_fidelity_spec.executed.json`.
 
 The new cohort contains 240 canonical-AA EC-labelled Swiss-Prot sequences, 64–246 residues, selected from 248 eligible sequences after excluding:
 

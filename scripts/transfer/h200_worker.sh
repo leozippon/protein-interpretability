@@ -138,11 +138,10 @@ set -euo pipefail
 #       scratch, matching the script's own stated reason for that flag:
 #       "results/transfer has twice been deleted by a concurrent
 #       process ... the second copy is written under logs/, which is
-#       local-only". --ladder-table defaults to
-#       docs/analysis/MODEL_LADDER_20260728.md, which lives outside
-#       src/transfer and scripts/transfer; the controller copies that one
-#       file into the snapshot for this reason (see its stage_snapshot). 07
-#       also has its own graceful per-member availability check
+#       local-only". The default ladder is the code contract in
+#       src/transfer/scaling.py; an operator may still pass an explicit
+#       --ladder-table on a direct invocation. 07 also has its own graceful
+#       per-member availability check
 #       (inspect_member) that skips an unstaged rung rather than failing
 #       the whole run, so this worker's own data-path preflight for 07
 #       stays deliberately narrow -- see verify_item_data_paths.

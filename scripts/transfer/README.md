@@ -151,11 +151,23 @@ The controller binds each run ID to a content hash. Reusing `RUN_ID` is allowed 
 
 Results roots are shared, ignored, and not backed up by Git. Never delete or recreate a results root, never use `git clean -fdx` or `git clean -fdX`, and never treat an orphaned temporary directory as a completed result. Promote only compact, cited receipts to `evidence/`.
 
+### Known operational limits
+
+| Limit | Required practice |
+|---|---|
+| Snapshot publication has no distributed lease and is not atomic | Never run two controllers with the same run ID. If a push is interrupted, use a new run ID rather than repairing the partial snapshot in place. |
+| Checkpoints and corpora are identified primarily by resolved paths, while code and result files are content-hashed | Preserve model revisions and corpus manifests with any claim that depends on exact upstream bytes. A matching code hash alone is not full input provenance. |
+| A narrowed panel-wide run can replace fixed summary files in a shared results root | Give narrowed or exploratory runs a run-scoped `GPFS_RESULTS_ROOT`; do not point them at the canonical full-panel root. |
+| The registered controller stops when the remote worker completes; it does not pull or scientifically read the result | Treat `campaign complete` as remote execution success only. Pull, digest-verify, inspect, and log the artefact before calling it admitted. |
+| Text cohort qualification is one item covering all selected text arms | Stage every selected text checkpoint first. One missing checkpoint skips the text qualification item rather than producing a partial text baseline. |
+
 ## External Baseline Stages
 
-Stages 15, 16, 17 and 19 measure ProGen3-112M, which is not a panel arm. They cannot name a registered stage and so cannot reach the controller's scheduling path; they launch through `run_external_baseline_h200.sh`, which freezes through the controller (never reimplementing the freeze) and then dispatches one stage to one GPU.
+Stages 15, 16, 17, 19, and 20 are external to the registered panel. They cannot name a registered stage and so cannot reach the controller's scheduling path; they launch through `run_external_baseline_h200.sh`, which freezes through the controller (never reimplementing the freeze) and then dispatches one stage to one GPU. Stage 18 is a closed design record and is not scheduled.
 
 Stages 15 and 17 additionally take `--arm`, which defaults to `progen3` and otherwise names a **dense** panel arm — the text control and the dense protein arm a replacement result needs before it can be attributed to protein, to mixture-of-experts, or to transcoder replacement in general. The eligible set is composed by `src.transfer.replaceable.eligible_arms` from `CAMPAIGN_PANEL`, the architectures that carry this estimand, and the arms with a measured loader band; run either stage with `--help` to see it. They are still not registered stages, so a dense-arm run is a direct invocation and not a campaign item.
+
+Stage 20 builds and scores the training-corpus retrieval bound. Its scoring step stages `wildtypes.json` in the output directory before producing the result, so invoke the launcher with `--expect retrieval_bound.json`; otherwise the input file can be mistaken for completed output.
 
 **Snapshot reuse, and the rule that governs it.** Several conditions of one comparison should share one snapshot: four controllers freezing at once collide on the shared relay's single temp script path, and the arms of one comparison must run one code hash or they are not the controlled comparison they are reported as. Freeze once, then pass `--run-id` and `--snapshot-dir` to each invocation:
 

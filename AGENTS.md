@@ -1,12 +1,12 @@
 # Research Objective
 
-Study how and under what conditions mechanistic-interpretability methods developed on text decoders transfer to protein generative models. Meanwhile, analyses can also be performed from the interpretability perspective to examine the differences between protein‑generative models and language‑generative models, as well as whether protein‑generative models can truly acquire knowledge and generate novel proteins. Follow three directions in order:
+Study the mechanistic differences among pure-text, pure-protein, and joint language–protein generative models, and determine when interpretability methods provide faithful measurements across them. Also examine whether protein-generative models acquire knowledge and generate genuinely novel proteins. Follow three directions in order:
 
-1. **Compare model families.** Identify meaningful differences between text and protein generative models.
-2. **Evaluate method transfer.** Determine where existing methods transfer, where they fail, and whether each limitation belongs to the method, model, data, or evaluation interface.
-3. **Develop adapted methods.** Design and validate protein-specific methods only when the preceding evidence identifies a concrete failure mode. If feasible, leverage interpretability methods to uncover scientifically meaningful findings learned by the models, which correspond to real‑world phenomena or yield novel scientific insights.
+1. **Compare model families from first principles.** Characterize differences in tokenization, training corpora, and model architecture among pure-text, pure-protein, and joint language–protein generative models. Use matched checkpoint lineages and same-checkpoint text/protein modes where they improve identification.
+2. **Use and audit interpretability methods.** Apply interpretability methods as controlled measurement tools to explain how those foundations affect model behavior, representations, and causal computation, while testing whether each method remains faithful across model families. Attribute limitations to the method itself or to transfer; for transfer-specific limitations, localize the responsible model, training data or stage, modality, or evaluation interface.
+3. **Develop adapted methods.** Design and validate adapted methods only when the preceding evidence identifies a reproducible failure mode. Where feasible, use successful methods to uncover biologically meaningful mechanisms or novel scientific findings.
 
-`docs/INTERPRETABILITY_TRANSFER_AUDIT.md` is canonical for findings, limitations, retractions, and the current plan.
+`docs/INTERPRETABILITY_TRANSFER_AUDIT.md` is canonical for detailed findings, limitations, retractions, and the current scientific plan. `summary.md` is the user-facing overview of the research direction.
 
 # Repository Guidelines
 
@@ -39,9 +39,18 @@ When these principles conflict, preserve explicit requirements, correctness, and
 - Before a substantial addition or restructuring, identify the document's purpose and scope, then read the full affected document and any relevant neighboring documents. Integrate the change into the existing narrative; when accumulated patches have obscured it, reorganize instead of appending another fragment.
 - Give each document a coherent hierarchy and reader-oriented flow. Use headings only for meaningful divisions at the same level, group related ideas together, and move from overview to detail and normal use to exceptions where that order fits.
 - Apply the Single-Source Principle across documents. Keep each fact, design decision, and procedure in one authoritative section. Use links or brief pointers elsewhere; when sections overlap, clarify their boundaries instead of repeating the same content.
-- Prefer concise, plain language. Use lists or tables for genuinely parallel information, keep prose when it carries a sequence or argument, and mention identifiers or abbreviations only when readers need the exact name.
 - Write Markdown prose as logical lines; do not hard-wrap it at 80 columns.
-- Keep documentation aligned with current behavior. Verify commands and examples that readers may execute, and update or remove stale guidance with the related change.
+- Keep documentation aligned with current behavior.
+- Verify commands and examples that readers may execute, and update or remove stale guidance with the related change.
+- Use filename casing as a soft audience convention: retain ecosystem-standard names such as `README.md`, `LICENSE.md`, and `CHANGELOG.md`; use `lowercase-kebab-case.md` for ordinary user-facing documents and `UPPER_SNAKE_CASE.md` for agent, process, or internal-control documents.
+- Structure user-facing documentation for human readability in plain, approachable language. Follow these practices:
+  - Maintain a clear logical progression and fluent, natural language within and between sections.
+  - Keep the content as concise as possible without sacrificing logical completeness.
+  - Use tables and lists for genuinely parallel information; use concise prose for reasoning, sequences, and qualifications.
+  - Avoid canned introductions, repetitive summaries, excessive headings, artificial parallelism, and unnecessary bold emphasis.
+  - Avoid unnecessary redundant abstract concepts; retain necessary standard technical terminology.
+  - Omit variable names, filenames, and similar details unless necessary.
+  - Keep unnecessary cross-references to a minimum.
 
 ## Git and Delivery
 

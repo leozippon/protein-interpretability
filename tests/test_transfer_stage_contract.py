@@ -1096,6 +1096,45 @@ class ConvergenceControlRecordsBothCorpora(unittest.TestCase):
         self.assertIn('"pretraining_corpus": member.pretraining_corpus', source)
 
 
+class ConvergenceLadderResolution(unittest.TestCase):
+    def stage(self):
+        return _load_stage_module("07_convergence_control.py")
+
+    def test_no_override_uses_the_code_contract(self):
+        stage = self.stage()
+        ladder, provenance = stage.resolve_ladder(None)
+        self.assertEqual(ladder, scaling.DEFAULT_LADDER)
+        self.assertEqual(provenance["source"], "scaling.DEFAULT_LADDER")
+        self.assertIsNone(provenance["path"])
+
+    def test_valid_override_replaces_the_code_contract(self):
+        stage = self.stage()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            table = Path(tmpdir) / "ladder.md"
+            table.write_text(
+                "| name | path | modality | tokenisation | input_format | source | "
+                "cohort_corpus | cohort_min_symbols | cohort_max_symbols |\n"
+                "|---|---|---|---|---|---|---|---:|---:|\n"
+                "| only-arm | /models/only | text | bpe | raw | web | "
+                "openwebtext_screen | 800 | 0 |\n",
+                encoding="utf-8",
+            )
+            ladder, provenance = stage.resolve_ladder(table)
+        self.assertEqual([member.name for member in ladder], ["only-arm"])
+        self.assertEqual(provenance["source"], "ladder_table")
+
+    def test_explicit_missing_or_non_table_input_fails(self):
+        stage = self.stage()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            with self.assertRaises(FileNotFoundError):
+                stage.resolve_ladder(root / "missing.md")
+            prose = root / "prose.md"
+            prose.write_text("# This is not a ladder declaration\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "no ladder declaration"):
+                stage.resolve_ladder(prose)
+
+
 if __name__ == "__main__":  # pragma: no cover
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")

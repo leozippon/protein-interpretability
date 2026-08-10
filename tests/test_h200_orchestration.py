@@ -107,9 +107,6 @@ def make_project_copy(root: Path) -> Path:
     shutil.copy2(REPO_ROOT / "src" / "__init__.py", project / "src" / "__init__.py")
     shutil.copytree(REPO_ROOT / "src" / "transfer", project / "src" / "transfer")
     shutil.copytree(TRANSFER_DIR, project / "scripts" / "transfer")
-    ladder = project / "docs" / "analysis" / "MODEL_LADDER_20260728.md"
-    ladder.parent.mkdir(parents=True)
-    shutil.copy2(REPO_ROOT / "docs" / "analysis" / ladder.name, ladder)
     return project
 
 
@@ -782,10 +779,7 @@ class SnapshotContractTests(unittest.TestCase):
             snapshot = package_root / run_id
             manifest = snapshot / "CODE_CONTENT_SHA256SUMS"
             self.assertTrue(manifest.is_file())
-            self.assertIn(
-                "docs/analysis/MODEL_LADDER_20260728.md",
-                manifest.read_text(encoding="utf-8"),
-            )
+            self.assertNotIn("docs/", manifest.read_text(encoding="utf-8"))
             subprocess.run(
                 ["sha256sum", "-c", "--", manifest.name],
                 cwd=snapshot,
