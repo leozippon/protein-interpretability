@@ -9464,3 +9464,23 @@ That makes the cost of protein adaptation to the text mode a **within-lineage di
 **What it does not do.** It does not show the dictionary is *good* — 31 of 36 layers still sit above 0.4 NMSE, and the arm reconstructs worse than either comparator at every depth. It shows that this deficit is not a budget artefact, which is a different and narrower claim. It also leaves EXP-R2-149's other, permanent caveat untouched: ZymCTRL differs from ProtGPT2 in tokenisation **and** EC conditioning, and the control that would split them is not buildable under this estimand at any budget, because the tag-stripped denominator is negative.
 
 **Bounds.** One arm, one budget increase, one seed, one band (64–246), n = 128 with an n = 512 check still running. Reconstruction is measured under clean teacher-forced inputs while recovery is measured under sequential replacement, which is the same convention every arm in this comparison uses and is not a like-for-like pairing (the EXP-R2-149 addendum on per-layer reconstruction applies here too). Per EXP-R2-148 the causal half is reported and not read.
+
+## 2026-08-10 — EXP-R2-154 pre-registered: is the replacement estimand's length dependence present on the text control?
+
+**Written before launch; no number exists.** The relay is occupied by a model staging push, so nothing here needs a new snapshot: it reuses `20260810062359_d45b69596b39`, already on GPFS, whose code differs from HEAD only in files stage 15 does not import.
+
+**The gap this closes.** EXP-R2-150 found band dependence on three of four protein dictionaries, in directions that are not shared, and attributed its source per arm. It swept **no text arm**, and said so: the text cohort is drawn from OpenWebText on a character floor rather than a residue band, so no matched control for the band axis exists. That is true and it is not the whole question. A **within-arm scored-length** sweep does exist on text — hold the cohort fixed and vary `--max-tokens` — and it answers a weaker but decisive one: **is this estimand length-sensitive on the arm that passes it?**
+
+**Why that question is worth a card.** Three estimands in this programme have already turned out to be limitations of the method rather than of the transfer, each time when a text control was finally run against them: the induction census's depth confound (F5), the copy-suppression selector against its own layer index (L22), and the replacement causal-rank gate (L27). Every text run of stage 15 to date has used `--max-tokens 512` and `--text-min-chars 800`, so this axis has never been varied on text at all, and EXP-R2-150's length finding currently rests on protein arms alone.
+
+**Design.** `gpt2-large`, its admitted local dictionary unchanged, OpenWebText at the standard 800-character floor, same seed, n = 128, one card. Only `--max-tokens` moves: **64, 128, 256, 512**. The free linear baseline runs at the two extremes, so the same dictionary-versus-estimand decomposition EXP-R2-150 used on protein is available here.
+
+**The rule, declared now.**
+
+| outcome | reading |
+|---|---|
+| recovery varies by **less than ~0.02** across 64–512 | Length sensitivity is not a general property of this estimand. EXP-R2-150's protein-side attribution stands as written, and the protein length dependence is a protein-side fact. |
+| recovery varies **comparably to the protein arms** (their spans are 1.23x to 2.10x) | Length sensitivity is **method-intrinsic**, demonstrated on the text control, and EXP-R2-150's per-arm attribution must be restated against this baseline. The modality separation itself is untouched, because every arm in it was measured at matched settings. |
+| recovery falls **only at the shortest cap** | Consistent with a truncation or denominator artefact on very short scored spans rather than a length effect. Recorded as a bound on how short a scored span may be, not as a new phenomenon. |
+
+**What this cannot do, stated before it is run.** The protein sweep moves the **population and** the scored length together, because a residue band selects which sequences are eligible. This moves scored length **only**, by truncation, on a fixed cohort. So it is **not** a matched control, it cannot convert a protein band figure into a text one, and it is not licensed to become a modality measurement — it answers one question about the estimand and nothing else. Per EXP-R2-148 the causal half is reported and not read.
