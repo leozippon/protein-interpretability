@@ -9779,3 +9779,25 @@ That makes the cost of protein adaptation to the text mode a **within-lineage di
 > Both protein dictionaries are worse than a random error of their own size and both text dictionaries are better, but the margins are small — the largest is 0.164 against a modality gap of 0.77. **So the "two different reasons" hypothesis is neither confirmed nor refuted by this evidence**, and confirming it needs a measurement nobody has taken: the dictionary's error norm as a fraction of the block output norm, per arm, which would place each dictionary on its own curve exactly. That is a one-line addition to the replacement stage and is the next thing to build.
 >
 > **What the curves do support, measured directly and with a seed spread under ±0.005 at every point.** ProtGPT2's tolerance collapses over a very narrow band: **+0.9910 at ε = 0.05, +0.8727 at 0.10, +0.2697 at 0.15, +0.1685 at 0.20.** Two thirds of its behaviour is lost between ε = 0.10 and 0.15. No other arm has anything like it — ZymCTRL is still at +0.7540 at ε = 0.80 and gpt2-large at +0.3790 at ε = 1.40. A cliff that sharp means ProtGPT2's measured recovery is extremely sensitive to exactly where its dictionary's error falls, which is precisely the quantity not yet measured.
+
+## 2026-08-10 — EXP-R2-161: the two protein arms sit at opposite ends of the tolerance curve, and one measurement still separates size from direction
+
+**Each arm's own tolerance curve, measured directly** (isotropic MLP perturbation at relative size ε, three seeds, spread under ±0.005):
+
+| ε | gpt2-large | gpt2 | ZymCTRL | ProtGPT2 |
+|---|---:|---:|---:|---:|
+| 0.10 | +0.999 | +0.992 | +0.999 | +0.873 |
+| 0.15 | — | — | — | **+0.270** |
+| 0.40 | +0.983 | +0.843 | +0.972 | −0.024 |
+| 0.80 | +0.904 | +0.386 | +0.754 | −0.421 |
+| 1.40 | +0.379 | −0.010 | +0.161 | — |
+
+**ProtGPT2 has a tolerance cliff and nothing else in the panel does.** It loses two thirds of its behaviour between ε = 0.10 and ε = 0.15, and is already negative by 0.40. ZymCTRL survives ε = 0.80 at +0.754 and gpt2-large survives ε = 1.40 at +0.379. **These two protein arms are at opposite ends of the panel's tolerance range**, which is the first direct evidence that their equal-looking dictionary failures are not the same phenomenon.
+
+**Locating each dictionary on its own curve, and the honest limit of that exercise.** Inverting each curve on the *damage* axis — at what isotropic ε does a random perturbation do what this dictionary's actual error does, taking the actual-error damage from EXP-R2-158's angle-preserving control — gives an **isotropic-equivalent size**: gpt2-large **0.721**, gpt2 **0.346**, ProtGPT2 **0.145**, ZymCTRL **beyond 1.40**.
+
+**That quantity is not the literal error norm, and the difference is the finding rather than a caveat.** The ε sweep uses a uniformly random direction, which in 1280 dimensions is essentially orthogonal to the block output; EXP-R2-158's control preserves the error's *angle*, keeping its component along the output. The two agree only if the error has no meaningful parallel component. For ZymCTRL they disagree enormously: an isotropic perturbation at ε = 0.80 costs it almost nothing (+0.754) while its dictionary's own error, at whatever norm it has, costs it everything (+0.139 under the angle-preserving control). **So ZymCTRL's dictionary error is doing damage that an isotropic error of comparable size does not do**, which points at a systematic component along the block output — a scaling or bias error — rather than at sheer magnitude.
+
+**What this settles and what it does not.** Settled: the two protein arms have very different tolerance profiles, ProtGPT2 fragile and ZymCTRL robust, so a single mechanism cannot produce both failures through the same route. Not settled: whether ProtGPT2's dictionary error is small and lands on its cliff, or large; and whether ZymCTRL's is large or merely badly directed. **Both need one quantity nobody has measured — the dictionary's error norm as a fraction of the block output norm, per layer and per position.** Until it exists, the isotropic-equivalent sizes above are a derived comparison and not an error measurement, and are recorded as such.
+
+**Bounds.** Curves are one cohort draw per arm at three seeds per ε; second draws are running. Inversion is linear between measured grid points. ZymCTRL's point lies past the grid, so ">1.40" is a bound and not a value. gpt2's curve is markedly steeper than gpt2-large's, so tolerance is not a modality property on the text side either.

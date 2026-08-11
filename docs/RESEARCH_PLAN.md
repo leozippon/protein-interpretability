@@ -87,6 +87,7 @@ The executable registered panel is declared only by `scripts/transfer/panel_cont
 | `21_joint_mode_qualification.py` | Joint text/protein mode qualification for a non-panel checkpoint |
 | `22_neuron_basis_circuit.py` | Training-free neuron-basis faithfulness curve, the control that separates dictionary failure from dense MLP computation |
 | `23_perturbation_sensitivity.py` | Training-free relative-magnitude MLP perturbation sweep, measuring whether a joint checkpoint's protein mode is more fragile than its text mode under equally sized damage |
+| `24_component_swap.py` | Training-free component swap between two checkpoints of one lineage, measuring in `21_joint_mode_qualification.py`'s estimand whether continued protein pretraining's text cost travels with the vocabulary interface or with the body |
 
 Stages outside the registered panel use their dedicated launcher or a direct validated invocation as documented in `scripts/transfer/README.md`. A new joint-model adapter is admitted to the executable contract only after its interface and negative paths are tested.
 
