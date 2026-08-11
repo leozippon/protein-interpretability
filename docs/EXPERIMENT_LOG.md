@@ -9883,3 +9883,42 @@ That makes the cost of protein adaptation to the text mode a **within-lineage di
 `progen2-xlarge` loads, runs and passes both gates while `config.vocab_size` raises `AttributeError` on it throughout, which is the direct demonstration that the key is off the path.
 
 **Bounds.** Bands for `progen2-medium`, `-large` and `-xlarge` were measured on CPU and have not been re-measured on a GPU; the 0.0172 device spread on `progen2-small` is the only direct evidence that they transport, and it is one arm. Only `progen2-small` has been run through the **whole stage** end to end; the other three have had their loader gates run and nothing else, so no sweep, no cohort and no tolerance number exists for them. The staged rungs remain outside `PANEL` and outside every campaign stage.
+
+## 2026-08-11 — EXP-R2-165 (launched): matched text and protein dictionaries on one joint checkpoint, two seeds each
+
+**The question, and why it is the R2.3 pivot.** F11 says text replacement is far more faithful than protein replacement, and every single-factor explanation offered so far has been excluded — denominator (EXP-R2-156), dictionary budget (EXP-R2-153), error direction (EXP-R2-158), modality of perturbation tolerance (EXP-R2-160). Every one of those comparisons crossed *checkpoints*, so lineage, corpus, tokenizer and architecture all moved with the modality. This run holds the weights fixed: **one** `ProLLaMA_Stage_1` checkpoint, two modes of it, a per-layer transcoder fitted separately to each, matched in everything a dictionary's faithfulness could otherwise be blamed on.
+
+**Matched by construction, and refused at scoring if it drifts.** Architecture PLT, 32 layers x 4096, `d_hidden` 8192, `k` 32, auxk and optimiser at their declared defaults, batch 4, **34,000,000 scored tokens**, 256 evaluation sequences. `src.transfer.transcoders.MatchedTraining` digests exactly those fields plus the backbone digest; both smoke runs produced the identical digest `2e607956a013`, and `15_replacement_faithfulness.py --matched-against` refuses a disagreeing pair rather than reporting it. `--max-tokens` differs between the modes (512 text, 1024 protein) because it is a truncation cap in tokens and the two modes' records are shaped differently; what is held equal is the thing the estimand counts.
+
+**The seed is the replicate axis and is deliberately not a matched field.** Four cells, one card each: text at seeds 20260806 and 20260811, protein at the same two. Both `--seed` and `--corpus-seed` move together within a cell, so a replicate differs in dictionary initialisation *and* in the order the corpus is seen — the honest replicate for "is this a property of the mode or of one run".
+
+**Sizing, from measured throughput rather than assumed.** A 20-step smoke on the real checkpoint at both modes measured **473 scored tokens per record** in text mode at `--max-tokens 512` and **208** in protein mode at 1024. The budget therefore needs about 18.0k steps in text and 41.0k in protein at batch 4; `--steps` is set to 26,000 and 56,000, which is 44% and 37% of headroom, because a budget that outruns `--steps` refuses the run at the end rather than at the start. `--steps` also sets the held-out offset, so the held-out draw stays past everything training reaches: 104,000 records of 396,133 eligible documents in text, 224,000 of 547,305 Swiss-Prot records in protein. At 8192 latents the dictionary sees **129.7 scored tokens per latent**, inside the 108–155 the panel's own arms were trained at, and its active fraction is **0.391%** against the 36 x 1280 arms' 0.417%.
+
+**The trade this sizing makes, stated rather than buried.** A 12x dictionary on this backbone — 49,152 latents — needs 206 GB of optimiser state and does not fit one H200; 8x does not leave room for the frozen backbone. At 2x the absolute reconstruction and recovery numbers here are **not** directly comparable with the panel's 12x cross-model results. The text-versus-protein contrast *within* this checkpoint is exact, and that is the comparison being made.
+
+**What will be read from it**, in the order the pilot was asked for: training stability across the two seeds, held-out reconstruction, the dead-latent count, and then behavioural recovery after sequential layerwise replacement — the last of which is the only one of the four that is a faithfulness result, and the only one that licenses using these features for anything downstream.
+
+Snapshot `20260811004706_579fd22e1771` at commit `2239c05`; four `run_external_baseline_h200.sh` cells staggered four minutes apart on cards 0–3, dispatch records under ignored `logs/external_baseline/`. Smoke runs were written to pod scratch, not to the results tree (Appendix B rule 29). **Launched, not measured**: no number from this run exists yet.
+
+## 2026-08-11 — EXP-R2-166: inside the vocabulary interface it is the output head, and the retrained input embedding is nearly inert
+
+**What was run.** The four separable cells EXP-R2-163 left unmeasured. `24_component_swap.py`, snapshot `20260810225544_dc2f11b4b3c0`, the `Llama-2-7b-hf` ↔ `ProLLaMA_Stage_1` pair, component groups `embedding` and `lm_head` taken one at a time in both directions. The lineage is untied — tying is read from the tensors, not from `config.tie_word_embeddings` — so the two halves of the interface are genuinely separable and all four cells report `INTERCHANGEABLE` over 291 tensors with shapes, dtypes and the full key set compared.
+
+**Text mode.** The total loss is 4.6904 nats (base +5.5240, stage 1 +0.8336).
+
+| cell | body | component moved | text | share of the 4.69 |
+|---|---|---|---:|---:|
+| forward | base | stage 1 `embedding` | +5.5273 | **−0.1%** (none) |
+| forward | base | stage 1 `lm_head` | +5.4316 | **2.0%** |
+| forward | base | stage 1 interface (both) | +5.4345 | 1.9% |
+| backward | stage 1 | base `embedding` | +0.8854 | **1.1%** |
+| backward | stage 1 | base `lm_head` | +1.4790 | **13.8%** |
+| backward | stage 1 | base interface (both) | +1.5095 | 14.4% |
+
+**The interface's whole effect is the output head, in both directions.** Installing stage 1's retrained input embedding into the base body changes the text estimand by −0.0033 nats — it is not merely small, it is on the wrong side of zero — while its output head costs 0.0924. Restoring the base output head to stage 1's body recovers 0.6454 nats against the embedding's 0.0518. `modules_to_save="embed_tokens,lm_head"` retrained 262.1M parameters at this stage and **half of them are functionally inert on this estimand**.
+
+**Within the interface the two components are additive; the co-adaptation is between the interface and the body.** Forward, the separate cells sum to 0.0891 against 0.0895 measured together; backward, to 0.6972 against 0.6759. The 1.9%-versus-14.4% asymmetry EXP-R2-163 reported is therefore not an interaction between the embedding and the head — it is the body's co-adaptation to the head.
+
+**Protein mode, where the answer is sharper than "joint".** Stage 1 reads +0.5505. With the base input embedding installed it still reads **+0.5330 and stays `measurable`** — 96.8% of the acquired capability retained through a wholly foreign embedding. With the base output head installed it falls to `unmeasurable_on_this_cohort`, as does the both-components cell. So EXP-R2-163's "the protein gain requires body and interface together" resolves to **body and output head**; the retrained input embedding is not part of what carries it.
+
+**One caveat governs the whole table, and it is structural rather than a bound on this run.** The estimand is a next-token cross-entropy and the output head is the matrix that parameterises that distribution, so a head substitution perturbs the measured quantity more directly than an embedding substitution, whose effect must propagate through 32 layers first. This attributes **the measured loss** to a component; it does not establish that the embedding matters less to the model in general, and a different estimand could order the two differently. The unmeasurable protein cells are reported as destroyed capability, not as the magnitudes −0.076 and −0.061, which their own verdict declines to license.
