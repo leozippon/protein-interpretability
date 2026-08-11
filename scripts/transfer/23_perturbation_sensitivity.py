@@ -58,6 +58,37 @@ Without the panel arms a joint difference could not be attributed between joint
 training, modality, tokenizer and lineage; without the joint checkpoint the
 standalone pair cannot separate modality from weights.
 
+**The protein scale ladder, and what the perturbation target is on it.** ``--arm``
+also reaches all four rungs of ``src.transfer.arms.PROTEIN_SCALE_LADDER`` --
+``progen2-small`` (151M), ``progen2-medium`` (764M), ``progen2-large`` (2.78B) and
+``progen2-xlarge`` (6.44B): one lineage, one 31-token residue tokenizer, one
+UniRef90+BFD30 mixture, so a tolerance curve across them isolates **scale** with
+everything else this stage depends on held fixed. Two of the four are staged
+non-members of the panel (``src.transfer.arms.STAGED_ARMS``) and are reached here
+rather than admitted to it, because a panel arm carries campaign obligations --
+above all the ``budget`` family, whose ``arm_power`` reads ``config.vocab_size``,
+a key ``progen2-large`` declares as 51200 against a 31-token tokenizer and
+``progen2-xlarge`` does not declare at all -- that a tolerance measurement does
+not need and those two checkpoints cannot meet. Nothing on this stage's path
+reads that key: the alphabet never enters, and the expansion beside every
+magnitude is measured from the tokenizer and the rendering.
+
+ProGen2's block is GPT-J-style **parallel**: attention and feed-forward read the
+same ``ln_1`` and both sum into the residual, so there is no sequential "block
+output" of the kind the GPT-2 arms' interception rests on. **The declared
+perturbation target is the feed-forward output** -- the analogue of the
+MLP-output tensor perturbed on every other arm, the same object before anything
+is added to it -- and the identity that certifies it,
+``block output == (attention output + intercepted feed-forward output) + ln_1
+input``, is verified **exactly** against the live forward pass by
+``src.transfer.replaceable.DenseReplaceable.estimand_identity`` before the arm is
+measured, the way ``residual + mlp_out == block_out`` is verified on the serial
+arms. An architecture with no such declaration is refused rather than
+duck-typed, and the per-arm declaration reaches the artefact as
+``perturbation_target``, so a reader of two arms' curves can see which tensor
+each one perturbed. The attention contribution is not perturbed, on either
+layout.
+
 **Two comparability requirements, both enforced in the artefact.**
 
 *Raw nats are not comparable across modes.* ProLLaMA writes protein at about 1.54
@@ -123,8 +154,9 @@ from src.transfer.replaceable import (  # noqa: E402
     ReplaceableModel,
     arm_evaluation_cohort_source,
     checkpoint_weights_digest,
-    eligible_arms,
+    joint_mode_corpus,
     load_replaceable,
+    perturbable_arms,
 )
 from src.transfer.statistics import bootstrap_unit_floor, mean_interval  # noqa: E402
 
@@ -154,8 +186,13 @@ STAGE15 = _load_stage("15_replacement_faithfulness.py")
 STAGE21 = _load_stage("21_joint_mode_qualification.py")
 STAGE22 = _load_stage("22_neuron_basis_circuit.py")
 
-SCHEMA_VERSION = "r2_transfer_perturbation_sensitivity_v1"
+SCHEMA_VERSION = "r2_transfer_perturbation_sensitivity_v2"
 DEFAULT_OUT = REPO / "results/transfer/perturbation_sensitivity"
+
+#: The arms ``--arm`` offers, composed once so that the names argparse advertises
+#: and the names :func:`~src.transfer.replaceable.load_replaceable` accepts are
+#: one list rather than two that can drift.
+ADMISSIBLE_ARMS = perturbable_arms(CAMPAIGN_PANEL)
 
 #: Modules and stages whose content decides these numbers, hashed into the
 #: artefact. The splice module is first because it is the one that decides what a
@@ -644,6 +681,11 @@ def measure_mode(
     record: dict[str, Any] = {
         "cohort": cohort_record(cohort, args),
         "scoring_note": model.scoring_note,
+        # Which tensor was perturbed, in the model's own declaration rather than
+        # this stage's prose. "The block output" names one tensor on a serial
+        # residual block and a different one on a parallel block, and a reader of
+        # two arms' curves has no other way to tell which each one perturbed.
+        "perturbation_target": model.perturbation_target,
         "symbols_per_token": symbols_per_token(model, inputs),
         "gates": {"loader": loader, "endpoints": endpoints},
         "block_output_norm": {
@@ -704,12 +746,14 @@ def build_parser() -> argparse.ArgumentParser:
     target.add_argument(
         "--arm",
         default=None,
-        choices=eligible_arms(CAMPAIGN_PANEL),
-        help="a panel arm to measure. The eligible set is composed by "
-        "src.transfer.replaceable.eligible_arms and is shared with stages 15, 17 "
-        "and 22, so the four describe the same population of arms. The matched "
-        "standalone pair gpt2-large and protgpt2 are what a joint result is read "
-        "against",
+        choices=ADMISSIBLE_ARMS,
+        help="a declared arm to measure. The set is composed by "
+        "src.transfer.replaceable.perturbable_arms: stages 15, 17 and 22's "
+        "eligible arms, plus the parallel-residual ProGen2 rungs whose block this "
+        "stage's estimand -- which reads a block's output and not its input -- is "
+        "defined on. The matched standalone pair gpt2-large and protgpt2 are what "
+        "a joint result is read against, and the four progen2 rungs are the "
+        "protein scale ladder",
     )
     target.add_argument(
         "--checkpoint",
@@ -874,8 +918,18 @@ def main() -> None:
             "construction": (
                 "at every position of every replaced block, r is a uniformly random "
                 "direction scaled so that ||r|| = epsilon * ||y||, where y is that "
-                "block's output at that position in the perturbed forward pass; the "
-                "block writes y + r"
+                "block's declared perturbation target at that position in the "
+                "perturbed forward pass; the block writes y + r"
+            ),
+            "target_declaration": (
+                "y is the per-layer FEED-FORWARD output, before anything is added to "
+                "it. On a serial residual block (gpt2, llama) that tensor is the whole "
+                "of the block's residual write; on a parallel GPT-J-style block "
+                "(progen2) it is one of two terms in a single three-way sum and the "
+                "attention term is left untouched, exactly as it is on a serial arm. "
+                "The identity certifying the interception is verified exactly against "
+                "the live forward pass before the arm is measured, and each mode's "
+                "modes.<mode>.perturbation_target records which layout it ran on"
             ),
             "epsilon_anchored_at": (
                 "the block output norm, measured per arm, per mode, per layer and per "
@@ -959,7 +1013,12 @@ def main() -> None:
                     max_tokens=args.max_tokens,
                     protein_context=args.protein_context,
                 ),
-                source="swissprot" if mode == "protein" else "openwebtext",
+                # The corpus a joint mode is read from is declared once in
+                # src.transfer.replaceable, because 15_replacement_faithfulness.py
+                # and 17_train_transcoder.py read the same declaration and a
+                # dictionary trained on one population and scored on another is
+                # the train/eval gap EXP-R2-135 priced at 4.1x.
+                source=joint_mode_corpus(mode),
                 label=f"{declaration.name}:{mode}",
             )
     else:
@@ -967,6 +1026,7 @@ def main() -> None:
         model = load_replaceable(
             args.arm,
             campaign_panel=CAMPAIGN_PANEL,
+            admissible=ADMISSIBLE_ARMS,
             device=args.device,
             dtype=args.dtype,
             max_tokens=args.max_tokens,

@@ -568,8 +568,20 @@ def arm_power(
     estimator in its own value, so it cannot be quoted as a cross-arm one, and
     the plug-in verdict is additionally published under an estimator-qualified
     key that no caller overwrites. See :data:`MEASURABLE_PLUG_IN`.
+
+    The ``budget`` capability is required here rather than only at the stages
+    that call this, because the line below reads ``config.vocab_size`` as the
+    alphabet an entropy is taken over -- and that key is not the alphabet on
+    every checkpoint this repository can load. ``progen2-large`` declares 51200
+    against a 31-token tokenizer, so its plug-in entropy and its Miller-Madow
+    correction would be taken over 51169 unreachable symbols; ``progen2-xlarge``
+    declares no ``vocab_size`` at all and would raise here rather than at a
+    declaration. Both are :data:`src.transfer.arms.STAGED_ARMS` members that
+    withhold the ``budget`` capability for exactly this reason, and the refusal
+    belongs where the key is read (Appendix B rule 12).
     """
 
+    arm.require("budget")
     inputs = cohort.input_strings(arm)
     scored = scored_tokens(arm, inputs, max_len=max_len, batch_size=batch_size)
     vocab = int(arm.model.config.vocab_size)

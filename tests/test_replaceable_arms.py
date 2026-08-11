@@ -27,14 +27,18 @@ if str(REPO / "scripts/transfer") not in sys.path:
 import torch  # noqa: E402
 
 from panel_contract import CAMPAIGN_PANEL  # noqa: E402
+from src.transfer import arms as A  # noqa: E402
 from src.transfer import replaceable as R  # noqa: E402
+from src.transfer import scaling  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
     AA20,
     CORPUS_SOURCES,
     PANEL,
     Arm,
     iter_corpus_records,
+    load_arm,
 )
+from src.transfer.budget import arm_power  # noqa: E402
 from src.transfer.progen3 import component_grid, components  # noqa: E402
 from src.transfer.transcoders import TranscoderConfig  # noqa: E402
 
@@ -95,10 +99,16 @@ class EligibleArms(unittest.TestCase):
         # The half of the invariant the library cannot check on its own without
         # importing a stage script: an arm that is staged, architecturally
         # admissible and in neither table is one nobody decided about.
+        #
+        # The condition is RESIDUAL_WRITE and not DENSE_ARCHITECTURES because a
+        # band is a property of a checkpoint and its rendering rather than of the
+        # transcoder tap: progen2-base is a campaign arm whose block layout this
+        # module now declares, so leaving it out of both tables would be exactly
+        # the omission this test exists to catch.
         undecided = sorted(
             name
             for name in CAMPAIGN_PANEL
-            if PANEL[name].architecture in R.DENSE_ARCHITECTURES
+            if PANEL[name].architecture in R.RESIDUAL_WRITE
             and name not in R.MEASURED_DENSE_SELF_CHECK_NLL
             and name not in R.DENSE_ARMS_WITHOUT_A_BAND
         )
@@ -114,6 +124,175 @@ class EligibleArms(unittest.TestCase):
         for stage in (STAGE15, STAGE17):
             source = Path(stage.__file__).read_text(encoding="utf-8")
             self.assertIn("choices=eligible_arms(CAMPAIGN_PANEL)", source)
+
+
+class TheProteinScaleLadder(unittest.TestCase):
+    """Four ProGen2 rungs reachable for a tolerance curve, and not for a campaign.
+
+    The two upper rungs are staged on GPFS, load and run, and are deliberately
+    outside :data:`src.transfer.arms.PANEL`: ``progen2-large`` declares
+    ``vocab_size`` 51200 against a 31-token tokenizer and ``progen2-xlarge``
+    declares no ``vocab_size`` at all, so every panel statistic derived from that
+    key would be computed over a mostly dead alphabet or would raise. What follows
+    pins that they are reachable by the one measurement that needs none of it, and
+    refused by the machinery that does.
+    """
+
+    def test_the_staged_names_are_the_contracts_own_and_are_not_panel_members(self):
+        # Two declarations of one fact would drift: panel_contract records the
+        # measured reason for a campaign, arms.py records the loader's spec. The
+        # library cannot check this itself without importing a stage script.
+        import panel_contract
+
+        self.assertEqual(
+            sorted(A.STAGED_ARMS), sorted(panel_contract.STAGED_BUT_NOT_ADMITTED)
+        )
+        for name, reason in panel_contract.STAGED_BUT_NOT_ADMITTED.items():
+            self.assertNotIn(name, PANEL, name)
+            self.assertIn("vocab_size", reason, name)
+
+    def test_the_ladder_varies_scale_and_nothing_else_it_declares(self):
+        specs = [A.arm_spec(name) for name in A.PROTEIN_SCALE_LADDER]
+        for key in ("modality", "tokenisation", "input_format", "architecture",
+                    "evaluation_cohort_source", "pretraining_corpus"):
+            self.assertEqual(len({getattr(spec, key) for spec in specs}), 1, key)
+        self.assertEqual([spec.d_model for spec in specs], [1024, 1536, 2560, 4096])
+        self.assertEqual([spec.n_layer for spec in specs], [12, 27, 32, 32])
+        # And the first two rungs are the pair a campaign already schedules, so
+        # the ladder extends a declared contrast rather than replacing it.
+        self.assertEqual(A.PROTEIN_SCALE_LADDER[:2], A.PROTEIN_SCALE_CONTRAST)
+
+    def test_the_perturbation_admits_the_ladder_and_the_replacement_does_not(self):
+        eligible = R.eligible_arms(CAMPAIGN_PANEL)
+        perturbable = R.perturbable_arms(CAMPAIGN_PANEL)
+        for name in A.PROTEIN_SCALE_LADDER:
+            self.assertIn(name, perturbable, name)
+            self.assertNotIn(name, eligible, name)
+        # Widened by exactly the parallel-residual arms and nothing else.
+        self.assertEqual(
+            sorted(set(perturbable) - set(eligible)), sorted(A.PROTEIN_SCALE_LADDER)
+        )
+        for name in eligible:
+            self.assertIn(name, perturbable, name)
+
+    def test_a_staged_checkpoint_is_admitted_for_one_measurement_family_only(self):
+        # The capability is the enforcement of the paragraph above: budget is what
+        # arm_power needs, and arm_power reads config.vocab_size.
+        for name, spec in A.STAGED_ARMS.items():
+            self.assertEqual(sorted(spec.capabilities), ["pathway"], name)
+        arm = Arm(
+            spec=A.STAGED_ARMS["progen2-xlarge"],
+            model=None,
+            tokenizer=None,
+            device="cpu",
+            dtype="bfloat16",
+        )
+        cohort = A.Cohort(name="stub", kind="protein", records=["MKT"], min_symbols=0, max_symbols=0)
+        with self.assertRaises(ValueError) as caught:
+            arm_power(arm, cohort, max_len=8, batch_size=1)
+        self.assertIn("budget", str(caught.exception))
+
+    def test_a_staged_non_member_cannot_be_registered_into_the_panel_at_run_time(self):
+        # scaling.register_arm_spec inserts a ladder rung into PANEL so that
+        # load_arm can reach it, and scaling.DEFAULT_LADDER lists both staged
+        # rungs. Without this refusal a convergence-control run would give each
+        # name two live declarations with different capability sets, and would
+        # hand arm_power a plug-in entropy over progen2-large's 51200-symbol
+        # config against its 31-token tokenizer.
+        member = next(
+            rung for rung in scaling.DEFAULT_LADDER if rung.name == "progen2-large"
+        )
+        with self.assertRaises(ValueError) as caught:
+            scaling.register_arm_spec(member, {"n_layer": 32, "d_model": 2560})
+        self.assertIn("STAGED_ARMS", str(caught.exception))
+        self.assertNotIn("progen2-large", PANEL)
+        # Both staged rungs are in that ladder, so both are covered.
+        self.assertEqual(
+            sorted(
+                rung.name for rung in scaling.DEFAULT_LADDER if rung.name in A.STAGED_ARMS
+            ),
+            sorted(A.STAGED_ARMS),
+        )
+
+    def test_the_panel_door_stays_panel_only(self):
+        # A staged checkpoint is loadable, but only by a caller that resolved its
+        # declaration on purpose. Admitting it by name would let any stage with a
+        # free-text --arm schedule a checkpoint the panel deliberately excluded.
+        for name in A.STAGED_ARMS:
+            with self.assertRaises(KeyError, msg=name):
+                load_arm(name, device="cpu")
+            self.assertIs(A.arm_spec(name), A.STAGED_ARMS[name])
+        with self.assertRaises(KeyError):
+            A.arm_spec("not-a-model")
+
+    def test_the_cohort_and_corpus_of_a_staged_arm_resolve_before_it_is_loaded(self):
+        for name in A.PROTEIN_SCALE_LADDER:
+            self.assertEqual(R.arm_cohort_kind(name), "protein")
+            self.assertEqual(R.arm_evaluation_cohort_source(name), "swissprot")
+
+    def test_the_implementation_is_dispatched_from_the_classes_own_declarations(self):
+        self.assertIs(R.replaceable_implementation("gpt2"), R.DenseReplaceable)
+        self.assertIs(
+            R.replaceable_implementation("progen"), R.ParallelResidualReplaceable
+        )
+        self.assertTrue(issubclass(R.ParallelResidualReplaceable, R.DenseReplaceable))
+        for architecture in ("llama", "qwen2", "t5_decoder"):
+            with self.assertRaises(TypeError, msg=architecture):
+                R.replaceable_implementation(architecture)
+        # The two sets partition the declared layouts, so no architecture is both
+        # admitted by one class and dispatched to the other.
+        self.assertEqual(
+            R.DenseReplaceable.architectures & R.ParallelResidualReplaceable.architectures,
+            frozenset(),
+        )
+        self.assertEqual(
+            set(R.RESIDUAL_WRITE),
+            set(R.DenseReplaceable.architectures | R.ParallelResidualReplaceable.architectures),
+        )
+
+
+class TheBandsLimitationIsRecordedRatherThanAssumedAway(unittest.TestCase):
+    """A gate must publish what it does not catch, or a PASS overstates itself."""
+
+    def test_every_unseparated_corruption_really_is_inside_the_band(self):
+        # These are recorded as *not* separated, so a test that they are outside
+        # the band would be the wrong test: what has to hold is that the table
+        # tells the truth. If a later change made one of them separable, this
+        # fails and the entry must move to MEASURED_DENSE_SELF_CHECK_CORRUPTIONS.
+        for arm, entries in R.UNSEPARATED_DENSE_SELF_CHECK_CORRUPTIONS.items():
+            reference = R.MEASURED_DENSE_SELF_CHECK_NLL[arm]
+            for name, value in entries.items():
+                self.assertLessEqual(
+                    abs(value - reference),
+                    R.DENSE_SELF_CHECK_HALF_WIDTH,
+                    f"{arm}/{name} is separable and is filed as if it were not",
+                )
+                self.assertEqual(R.check_dense_nll(arm, value)["verdict"], "PASS")
+
+    def test_the_gate_publishes_them_beside_its_verdict(self):
+        record = R.check_dense_nll(
+            "progen2-small", R.MEASURED_DENSE_SELF_CHECK_NLL["progen2-small"]
+        )
+        self.assertEqual(record["verdict"], "PASS")
+        self.assertIn("rendered_raw", record["unseparated_corruptions"])
+        self.assertEqual(sorted(record["corruptions"]), ["randomly_initialised"])
+        # An arm with no recorded limitation says so with an empty record rather
+        # than by omitting the field.
+        self.assertEqual(
+            R.check_dense_nll(
+                "gpt2-large", R.MEASURED_DENSE_SELF_CHECK_NLL["gpt2-large"]
+            )["unseparated_corruptions"],
+            {},
+        )
+
+    def test_the_ladder_carries_a_measured_band_at_every_rung(self):
+        for name in A.PROTEIN_SCALE_LADDER:
+            self.assertIn(name, R.MEASURED_DENSE_SELF_CHECK_NLL, name)
+            self.assertEqual(
+                R.check_dense_nll(name, R.MEASURED_DENSE_SELF_CHECK_NLL[name])["verdict"],
+                "PASS",
+                name,
+            )
 
 
 class DenseLoaderBand(unittest.TestCase):

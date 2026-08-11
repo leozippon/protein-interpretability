@@ -47,6 +47,23 @@ ProtGPT2 an unwrapped sequence costs **1.42 nats/token** and makes a correctly
 loaded model look untrained (L11). :func:`dense_self_check` therefore scores
 frozen inputs *through the arm's declared rendering* and refuses outside a
 measured band, and it checks the estimand identity above at the same time.
+
+**Two estimands, two admissible sets, one identity check.** A *replacement*
+needs the block's input as well as its output, so it needs the serial layout
+above: :data:`DENSE_ARCHITECTURES` names it and :func:`eligible_arms` composes
+the arms stages 15, 17 and 22 may run. A *perturbation* -- the tolerance curve
+``23_perturbation_sensitivity.py`` measures -- reads only the output, and
+therefore needs the weaker claim that the intercepted tensor is a term the
+residual stream receives. :data:`RESIDUAL_WRITE` declares that per architecture
+and :func:`perturbable_arms` composes the wider set, which adds the ProGen2
+lineage. ProGen2's block is GPT-J-style parallel -- ``hidden = attn_out + ff_out
++ residual``, both terms read from one pre-attention ``ln_1`` -- so there is no
+sequential block output of the kind GPT-2's interception rests on, and the
+declared reconstruction is ``(attn_out + ff_out) + residual`` instead.
+:meth:`DenseReplaceable.estimand_identity` verifies whichever the declaration
+names, exactly, on the live forward pass; the serial reconstruction applied to a
+ProGen2 block misses by 14.25 at bfloat16, so the check is load-bearing rather
+than decorative.
 """
 
 from __future__ import annotations
@@ -61,7 +78,16 @@ from typing import Any, Callable, Iterator, Sequence
 import torch
 
 from . import joint_modes
-from .arms import PANEL, Arm, Cohort, conditioning_boundary_ids, load_arm, tokenize_batch
+from .arms import (
+    PANEL,
+    STAGED_ARMS,
+    Arm,
+    Cohort,
+    arm_spec,
+    conditioning_boundary_ids,
+    load_arm_spec,
+    tokenize_batch,
+)
 from .io import sha256_file
 from .path_patching import attention_output_projection
 from .scoring import sequence_target_mask, target_rule
@@ -87,9 +113,9 @@ from .progen3 import (
 #: named through the panel and is named here, once.
 PROGEN3_ARM = "progen3"
 
-#: Architectures whose blocks carry the ProGen3 estimand unchanged: a block whose
-#: input is the post-attention normalisation and whose output is added to the
-#: residual stream.
+#: Architectures whose blocks carry the ProGen3 **replacement** estimand
+#: unchanged: a block whose *input* is the post-attention normalisation and whose
+#: output is added to the residual stream.
 #:
 #: ``gpt2`` only, and deliberately. ``progen`` (ProGen2) is a *parallel* residual
 #: block -- its feed-forward reads the same normalisation as its attention, not a
@@ -99,7 +125,118 @@ PROGEN3_ARM = "progen3"
 #: still excluded: nothing here has been verified against them, and the identity
 #: check in :meth:`DenseReplaceable.self_check` is a verification of the arm that
 #: runs, not a licence for the ones that have not.
+#:
+#: This set gates the *transcoder* stages (15, 17, 22) through
+#: :func:`eligible_arms`, and it is deliberately narrower than
+#: :data:`RESIDUAL_WRITE`: a measurement that reads only the block's **output**
+#: needs the weaker of the two claims, and :func:`perturbable_arms` composes
+#: that one.
 DENSE_ARCHITECTURES = frozenset({"gpt2"})
+
+
+@dataclass(frozen=True)
+class ResidualWrite:
+    """How one architecture's block writes its feed-forward term into the residual.
+
+    The declaration :meth:`DenseReplaceable.block_intercept` is verified against.
+    It answers the two questions that decide whether an intercepted feed-forward
+    output *is* the term the residual stream receives, and it answers them per
+    architecture rather than by trying attribute names:
+
+    ``residual_norm``
+        the normalisation whose **input** is the residual the block writes into.
+        On a serial GPT-2 block that is ``ln_2``, applied after the attention has
+        already been added; on a parallel GPT-J-style block it is ``ln_1``, whose
+        input is the block's own input because nothing has been added yet.
+    ``parallel_attention``
+        whether the attention sublayer writes into the **same** sum. False on a
+        serial block, where the attention term is already inside the residual by
+        the time the feed-forward runs; True on a parallel one, where
+        ``hidden = attn_out + ff_out + residual`` is a single three-term add.
+
+    The attention and feed-forward *modules* are not named here. They are
+    resolved through :meth:`src.transfer.arms.Arm.attention` and
+    :meth:`src.transfer.arms.Arm.mlp`, which are the panel's own declarations of
+    where each architecture keeps them (Appendix B rule 12); a second copy of
+    ``"attn"`` in this file is exactly the drift that declaration exists to stop.
+    """
+
+    residual_norm: str
+    parallel_attention: bool
+
+    @property
+    def identity(self) -> str:
+        """The equality a live forward pass must satisfy exactly, as a sentence.
+
+        Read by both :meth:`DenseReplaceable.estimand_identity`, which checks it,
+        and :attr:`DenseReplaceable.perturbation_target`, which publishes it, so
+        the artefact cannot claim an identity other than the one that was tested.
+        """
+
+        if self.parallel_attention:
+            return (
+                "block output == (attention output + intercepted feed-forward "
+                f"output) + {self.residual_norm} input"
+            )
+        return (
+            f"block output == {self.residual_norm} input + intercepted "
+            "feed-forward output"
+        )
+
+
+#: Where each architecture's per-layer feed-forward output lands in the residual
+#: stream, keyed by :attr:`src.transfer.arms.ArmSpec.architecture`.
+#:
+#: **The perturbation target is the feed-forward output on both layouts**, and
+#: that is the point of declaring them together. Stage 23 perturbs the tensor a
+#: block adds to the residual stream through its feed-forward; on ``gpt2`` that
+#: tensor is the whole of the block's residual write, and on ``progen`` it is one
+#: of two terms in it. The *tensor* is the same object in both cases -- the MLP's
+#: own output, before anything is added to it -- so a tolerance curve measured
+#: across the two is a curve over one manipulation. What differs is the identity
+#: that has to hold for the interception to be that tensor, which is why the
+#: declaration carries the identity rather than a prose note.
+#:
+#: An undeclared architecture raises in :func:`residual_write`. Duck-typing an
+#: attribute called ``mlp`` would perturb *a* tensor on a LLaMA or an OPT block
+#: and report it as this measurement without saying so.
+RESIDUAL_WRITE: dict[str, ResidualWrite] = {
+    "gpt2": ResidualWrite(residual_norm="ln_2", parallel_attention=False),
+    "progen": ResidualWrite(residual_norm="ln_1", parallel_attention=True),
+}
+
+#: The parallel-residual architectures, derived from the table above rather than
+#: listed again: ``parallel_attention`` is the property that decides it.
+PARALLEL_ARCHITECTURES = frozenset(
+    name for name, write in RESIDUAL_WRITE.items() if write.parallel_attention
+)
+
+
+def residual_write(architecture: str) -> ResidualWrite:
+    """The declared residual write for an architecture, refusing an undeclared one.
+
+    Answerable from an architecture name alone, so a stage refuses an arm whose
+    block layout nobody verified before a checkpoint reaches the GPU.
+    """
+
+    declared = RESIDUAL_WRITE.get(architecture)
+    if declared is None:
+        raise TypeError(
+            f"no residual write is declared for {architecture!r}, so the tensor a "
+            "perturbation would be applied to has not been identified on it "
+            f"(declared: {sorted(RESIDUAL_WRITE)}). Duck-typing an attribute called "
+            "'mlp' would perturb a tensor whose relationship to the residual stream "
+            "is unverified and report it as this measurement"
+        )
+    return declared
+
+
+if not DENSE_ARCHITECTURES <= set(RESIDUAL_WRITE):
+    raise AssertionError(
+        f"{sorted(DENSE_ARCHITECTURES - set(RESIDUAL_WRITE))} carry the replacement "
+        "estimand but declare no residual write, so the identity that estimand "
+        "rests on could not be checked"
+    )
 
 #: The ``Component.kind`` of the block each model family replaces. ProGen3 keeps
 #: ``moe_block``, which is what every frozen artefact under
@@ -120,7 +257,7 @@ def arm_cohort_kind(arm: str) -> str:
 
     if arm == PROGEN3_ARM:
         return "protein"
-    return "text" if PANEL[arm].modality == "text" else "protein"
+    return "text" if arm_spec(arm).modality == "text" else "protein"
 
 
 def arm_evaluation_cohort_source(arm: str) -> str:
@@ -134,7 +271,7 @@ def arm_evaluation_cohort_source(arm: str) -> str:
 
     if arm == PROGEN3_ARM:
         return PROGEN3_EVALUATION_COHORT_SOURCE
-    return PANEL[arm].evaluation_cohort_source
+    return arm_spec(arm).evaluation_cohort_source
 
 
 def arm_training_corpus(arm: str) -> str:
@@ -152,7 +289,7 @@ def arm_training_corpus(arm: str) -> str:
 
     if arm == PROGEN3_ARM:
         return PROGEN3_TRAINING_CORPUS
-    return PANEL[arm].evaluation_cohort_source
+    return arm_spec(arm).evaluation_cohort_source
 
 
 def checkpoint_weights_files(checkpoint: Path) -> list[Path]:
@@ -218,6 +355,15 @@ class ReplaceableModel(ABC):
     loading_note: str
     #: Which direction(s) the scoring convention covers, for the same block.
     scoring_note: str
+    #: Which declaration turned a record into the string this model was fed.
+    #: Declared per implementation rather than written into a stage's condition
+    #: block, because the three do genuinely differ -- a panel arm renders
+    #: through the panel, ProGen3's own batch preparer renders itself, and a
+    #: joint checkpoint renders through the family declaration in
+    #: :mod:`src.transfer.joint_modes` -- and a stage that stated one sentence
+    #: for all three would put a false statement about the fed string into the
+    #: artefact of the arm whose fed string is worth 1.42 nats (L11).
+    rendering_note: str
 
     @property
     def cohort_kind(self) -> str:
@@ -275,6 +421,19 @@ class ReplaceableModel(ABC):
     def content_mask(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Positions carrying content: everything but padding and markers."""
 
+    def forget_rendered(self) -> None:
+        """Drop whatever per-record state :meth:`render` kept, once it is batched.
+
+        A no-op for the two implementations that keep none: a panel arm and
+        ProGen3 re-derive everything a batch needs from the input string.
+        :class:`JointReplaceable` cannot -- a protein record's scored span is
+        located by the rendering rule and is not recoverable from the rendered
+        text -- so it keeps one record per rendered string, and a trainer that
+        renders a fresh batch every step for tens of thousands of steps would
+        otherwise accumulate them all. Declared here so a stage calls it once
+        and carries no per-implementation branch.
+        """
+
     # -- running -----------------------------------------------------------
 
     @abstractmethod
@@ -292,6 +451,20 @@ class ReplaceableModel(ABC):
         self, fn: Callable[[int, torch.Tensor, torch.Tensor], torch.Tensor | None]
     ) -> Any:
         """Context manager reading or replacing every replaceable block's output."""
+
+    @property
+    @abstractmethod
+    def perturbation_target(self) -> dict[str, Any]:
+        """What tensor :meth:`block_intercept` hands a stage, in the artefact's words.
+
+        Declared rather than described in a stage's prose, and abstract rather
+        than defaulted, because "the block output" names a different tensor on a
+        serial and on a parallel residual block and a reader of two arms' numbers
+        has no other way to tell which was perturbed. Every implementation states
+        the tensor, the layout it sits in, the identity that was verified on the
+        live forward pass, and -- where the block writes the residual through more
+        than one path -- what was *not* perturbed.
+        """
 
     # -- components --------------------------------------------------------
 
@@ -332,6 +505,10 @@ class ProGen3Replaceable(ReplaceableModel):
     scoring_note = (
         "N->C only (the reverse direction doubles every sweep and this stage runs "
         "one per component per model)"
+    )
+    rendering_note = (
+        "src.transfer.progen3's own batch preparer, which adds the terminus and "
+        "direction tokens itself; a corpus record IS the input string here"
     )
 
     def __init__(self, pg: ProGen3) -> None:
@@ -390,6 +567,27 @@ class ProGen3Replaceable(ReplaceableModel):
         self, fn: Callable[[int, torch.Tensor, torch.Tensor], torch.Tensor | None]
     ) -> Any:
         return moe_intercept(self.pg, fn)
+
+    @property
+    def perturbation_target(self) -> dict[str, Any]:
+        return {
+            "tensor": (
+                "the MoE block's output, before the residual add: what "
+                "src.transfer.progen3.moe_intercept hands its callback"
+            ),
+            "block_layout": (
+                "serial: the block reads post_attention_layernorm and its output is "
+                "the whole of the term added to the residual stream"
+            ),
+            "identity_verified": (
+                "src.transfer.progen3.self_check's own gate, which is this arm's "
+                "loader gate and is not the dense arms' identity check"
+            ),
+            "not_perturbed": (
+                "the attention contribution, which this block layout has already "
+                "added to the residual before the block runs"
+            ),
+        }
 
     def ablated(self, component: Component) -> Any:
         return progen3_ablated(self.pg, component)
@@ -523,11 +721,26 @@ SELF_CHECK_MAX_TOKENS = 256
 #:
 #: An arm absent from this table cannot be measured, because its loader gate would
 #: have nothing to check -- see :data:`DENSE_ARMS_WITHOUT_A_BAND`.
+#:
+#: **Two measurement conditions, recorded rather than blended.** The four GPT-2
+#: lineage values were measured at bfloat16, batch 4, on one L20. The four ProGen2
+#: rungs were measured at bfloat16, batch 4, on **CPU**, because ``progen2-xlarge``
+#: is 6.44B parameters and the local L20s are shared. The two conditions are
+#: comparable to within the half-width by a long way: ``progen2-small`` reads
+#: 2.3112 on CPU and 2.3284 on an L20, a device spread of 0.0172 against a
+#: half-width of 0.30.
 MEASURED_DENSE_SELF_CHECK_NLL: dict[str, float] = {
     "gpt2": 3.7651,
     "gpt2-large": 3.1706,
     "protgpt2": 5.2006,
     "zymctrl": 0.7292,
+    # The protein-side scale ladder (src.transfer.arms.PROTEIN_SCALE_LADDER). The
+    # upper two are STAGED_ARMS rather than panel members; a band is a property of
+    # a checkpoint and its rendering, so it is measured the same way for both.
+    "progen2-small": 2.3112,
+    "progen2-medium": 1.8452,
+    "progen2-large": 1.7849,
+    "progen2-xlarge": 1.2678,
 }
 
 #: What the same measurement gives when an arm is broken in a way that does not
@@ -554,6 +767,10 @@ MEASURED_DENSE_SELF_CHECK_NLL: dict[str, float] = {
 #:   silent failure this arm has, at **+2.4487 nats/token**: that figure is L15's
 #:   conditioning leak measured on this gate's own inputs, against EXP-R2-034's
 #:   1.73 on the cohort it was priced on.
+#: * ``randomly_initialised`` on ``progen2-small`` -- the same architecture and
+#:   tokenizer built from the arm's config with no weights read, measured on CPU
+#:   beside that arm's own band. 3.6384 against 2.3112 is 1.33 nats, so L24's
+#:   shape is caught on this lineage as well.
 MEASURED_DENSE_SELF_CHECK_CORRUPTIONS: dict[str, dict[str, float]] = {
     "gpt2": {"randomly_initialised": 11.0789},
     "protgpt2": {"rendered_raw": 9.5802},
@@ -561,6 +778,42 @@ MEASURED_DENSE_SELF_CHECK_CORRUPTIONS: dict[str, dict[str, float]] = {
         "rendered_without_its_ec_tag": 3.1779,
         "randomly_initialised": 6.2108,
     },
+    "progen2-small": {"randomly_initialised": 3.6384},
+}
+
+#: Silent failures this band **does not** separate, keyed by the arm they were
+#: measured on. The other half of the table above, and it is data rather than a
+#: caveat because a limitation nobody wrote down is one a later reader assumes
+#: away.
+#:
+#: ``rendered_raw`` on a ProGen2 arm is the N-to-C control token ``"1"`` dropped
+#: from the rendering -- L11's shape on this lineage, and the failure the band was
+#: expected to catch. It costs **0.140** nats/token on ``progen2-small`` (2.4516
+#: against 2.3112), 0.142 on ``progen2-medium``, 0.204 on ``progen2-large`` and
+#: 0.112 on ``progen2-xlarge``: every one of them inside a half-width of 0.30, so
+#: the band admits a ProGen2 arm rendered without its control token.
+#:
+#: That is a property of the lineage rather than of the band. ProtGPT2's FASTA
+#: wrapping is worth 4.38 nats on these inputs because its BPE merges were learnt
+#: over the wrapped byte stream; ProGen2's control token is one token of context
+#: in front of an otherwise in-distribution N-to-C residue run, and the model is
+#: barely disturbed by losing it. Narrowing the half-width would not repair it
+#: either -- 0.112 on ``progen2-xlarge`` is inside any band wide enough to hold
+#: the 0.0172 device spread with margin -- so the honest response is to record the
+#: number, publish it beside the gate's verdict, and rely on the rendering being
+#: reached through one implementation
+#: (:meth:`src.transfer.arms.Cohort.input_strings`) rather than on the likelihood.
+#:
+#: The second entry is the same kind of fact about a *checkpoint* rather than a
+#: rendering: ``progen2-medium`` and ``progen2-large`` are 0.060 nats apart on
+#: these inputs, so the band cannot tell those two rungs of the ladder apart. The
+#: declared depth and width check in :func:`src.transfer.arms.load_arm_spec`
+#: (27L/1536d against 32L/2560d) and the weight digest in the artefact do.
+UNSEPARATED_DENSE_SELF_CHECK_CORRUPTIONS: dict[str, dict[str, float]] = {
+    "progen2-small": {"rendered_raw": 2.4516},
+    "progen2-medium": {"rendered_raw": 1.9874, "another_rung_progen2_large": 1.7849},
+    "progen2-large": {"rendered_raw": 1.9884, "another_rung_progen2_medium": 1.8452},
+    "progen2-xlarge": {"rendered_raw": 1.3800},
 }
 
 #: Half-width of the band :func:`check_dense_nll` accepts, in nats/token.
@@ -597,25 +850,43 @@ DENSE_ARMS_WITHOUT_A_BAND: dict[str, str] = {
     ),
     "gpt2-xl": "no band measured; as gpt2-medium",
     "dialogpt-small": "no band measured; as gpt2-medium",
+    "progen2-base": (
+        "no band measured. It is the corpus twin of progen2-medium rather than a "
+        "rung of src.transfer.arms.PROTEIN_SCALE_LADDER, so no measurement here "
+        "needed it; one short scoring run on the frozen inputs would admit it"
+    ),
 }
 
 
 def _check_dense_arms() -> None:
-    """A band names a real dense arm, and no arm is both measured and refused.
+    """A band names a real declared arm, and no arm is both measured and refused.
 
-    The other half of this invariant -- that every *staged* dense arm is in one
-    table or the other -- is checked in ``tests/test_replaceable_arms.py``,
-    because it needs ``panel_contract.CAMPAIGN_PANEL`` and a library module must
-    not import a stage script to validate itself.
+    The other half of this invariant -- that every *staged* arm carrying a
+    residual-write declaration is in one table or the other -- is checked in
+    ``tests/test_replaceable_arms.py``, because it needs
+    ``panel_contract.CAMPAIGN_PANEL`` and a library module must not import a
+    stage script to validate itself.
+
+    The architecture condition is :data:`RESIDUAL_WRITE` and not
+    :data:`DENSE_ARCHITECTURES`, and the two say different things. A band is a
+    property of a *checkpoint and its rendering* -- it catches weights that did
+    not load and a rendering the model was not trained behind -- and neither of
+    those depends on whether a transcoder tap is defined on the block. The
+    narrower claim is made where it belongs, in :func:`eligible_arms`.
     """
 
     for name, value in MEASURED_DENSE_SELF_CHECK_NLL.items():
-        if name not in PANEL:
-            raise AssertionError(f"{name} has a self-check band but is not a panel arm")
-        if PANEL[name].architecture not in DENSE_ARCHITECTURES:
+        if name not in PANEL and name not in STAGED_ARMS:
             raise AssertionError(
-                f"{name} has a self-check band but its {PANEL[name].architecture!r} "
-                "architecture is not declared dense-replaceable"
+                f"{name} has a self-check band but is neither a panel arm nor a "
+                "declared staged checkpoint"
+            )
+        architecture = arm_spec(name).architecture
+        if architecture not in RESIDUAL_WRITE:
+            raise AssertionError(
+                f"{name} has a self-check band but its {architecture!r} architecture "
+                "declares no residual write, so the gate could not check the identity "
+                "the band's own scoring convention rests on"
             )
         if not value > 0.0:
             raise AssertionError(f"{name} declares a non-positive self-check NLL")
@@ -630,10 +901,17 @@ def _check_dense_arms() -> None:
     # A corruption filed under a name with no band is data nobody reads:
     # check_dense_nll resolves the arm's corruptions by key and would report an
     # empty set rather than raise, which is the silent shape this table exists
-    # to make impossible.
-    orphans = sorted(set(MEASURED_DENSE_SELF_CHECK_CORRUPTIONS) - set(MEASURED_DENSE_SELF_CHECK_NLL))
-    if orphans:
-        raise AssertionError(f"{orphans} declare corruptions but have no self-check band")
+    # to make impossible. The same holds for the corruptions the band is recorded
+    # as NOT separating, which reach the artefact through the same record.
+    for table, label in (
+        (MEASURED_DENSE_SELF_CHECK_CORRUPTIONS, "corruptions"),
+        (UNSEPARATED_DENSE_SELF_CHECK_CORRUPTIONS, "unseparated corruptions"),
+    ):
+        orphans = sorted(set(table) - set(MEASURED_DENSE_SELF_CHECK_NLL))
+        if orphans:
+            raise AssertionError(
+                f"{orphans} declare {label} but have no self-check band"
+            )
 
 
 _check_dense_arms()
@@ -660,11 +938,16 @@ def check_dense_nll(arm: str, value: float) -> dict[str, Any]:
     # its EC tag reads 3.1779 and a healthy gpt2-large reads 3.1706, so a reader
     # handed both arms' corruptions can draw a comparison that means nothing.
     corruptions = dict(MEASURED_DENSE_SELF_CHECK_CORRUPTIONS.get(arm, {}))
+    unseparated = dict(UNSEPARATED_DENSE_SELF_CHECK_CORRUPTIONS.get(arm, {}))
     record = {
         "nll": float(value),
         "band": [float(low), float(high)],
         "reference": float(reference),
         "corruptions": corruptions,
+        # Published beside the verdict rather than only in this module's source,
+        # so that an artefact carrying a PASS also carries what the PASS does not
+        # rule out on this arm (see UNSEPARATED_DENSE_SELF_CHECK_CORRUPTIONS).
+        "unseparated_corruptions": unseparated,
         "verdict": "PASS" if inside else "FAIL",
     }
     if not inside:
@@ -687,13 +970,25 @@ class DenseReplaceable(ReplaceableModel):
     read against a text control (``gpt2-large``) and against a dense protein
     model of *identical* architecture, depth, width, vocabulary and parameter
     count (``protgpt2``) -- the matched modality pair of audit §2.
+
+    :attr:`architectures` is this class's own admissible set, declared as a class
+    attribute rather than read from a module constant inside ``__init__`` so that
+    :class:`ParallelResidualReplaceable` can declare a different one without a
+    second copy of anything else. This class is the *serial* layout, the one the
+    replacement estimand is defined on.
     """
 
+    #: The architectures this implementation's block layout covers.
+    architectures = DENSE_ARCHITECTURES
     block_kind = DENSE_BLOCK_KIND
     loading_note = (
-        "src.transfer.arms.load_arm: AutoModelForCausalLM at a declared dtype, "
-        "with the checkpoint's depth and width checked against the panel "
+        "src.transfer.arms.load_arm_spec: AutoModelForCausalLM at a declared "
+        "dtype, with the checkpoint's depth and width checked against the "
         "declaration and the loaded dtype read back from the parameters"
+    )
+    rendering_note = (
+        "src.transfer.arms.Cohort.input_strings, the panel's one declaration of "
+        "what string each arm is fed"
     )
 
     @property
@@ -716,11 +1011,11 @@ class DenseReplaceable(ReplaceableModel):
         return "left to right, every non-padding target after the first"
 
     def __init__(self, arm: Arm, *, max_tokens: int) -> None:
-        if arm.spec.architecture not in DENSE_ARCHITECTURES:
+        if arm.spec.architecture not in self.architectures:
             raise TypeError(
-                f"{arm.name}: {arm.spec.architecture!r} is not declared "
-                f"dense-replaceable ({sorted(DENSE_ARCHITECTURES)}); its block does "
-                "not carry the replacement estimand this measurement is defined on"
+                f"{arm.name}: {arm.spec.architecture!r} is not covered by "
+                f"{type(self).__name__} ({sorted(self.architectures)}); its block "
+                "does not carry the estimand this implementation is defined on"
             )
         if arm.name not in MEASURED_DENSE_SELF_CHECK_NLL:
             reason = DENSE_ARMS_WITHOUT_A_BAND.get(arm.name, "no band measured")
@@ -728,6 +1023,9 @@ class DenseReplaceable(ReplaceableModel):
         if max_tokens < 1:
             raise ValueError("--max-tokens must be positive")
         self.arm = arm
+        # Resolved in the constructor rather than at each use, so an arm whose
+        # residual write nobody declared is refused before a cohort is drawn.
+        self.residual_write = residual_write(arm.spec.architecture)
         self.max_tokens = int(max_tokens)
         self.name = arm.name
 
@@ -1010,24 +1308,79 @@ class DenseReplaceable(ReplaceableModel):
 
     # -- gates -------------------------------------------------------------
 
-    @torch.no_grad()
-    def estimand_identity(self) -> dict[str, Any]:
-        """Verify that the intercepted pair IS the replacement estimand.
+    @property
+    def perturbation_target(self) -> dict[str, Any]:
+        """The tensor a stage perturbs on this arm, and what it is not.
 
-        A transcoder trained here reads what :meth:`block_intercept` calls the
-        block input and predicts what it calls the block output, and the whole
-        cross-model comparison rests on that being the same object ProGen3's
-        transcoder is trained on: the post-attention normalisation's output, and
-        the term added to the residual stream. Both halves are checked against
-        the live forward pass -- the block's own output must equal its input
-        residual plus the intercepted feed-forward output -- and the tolerance is
-        **exact**, because the model performs that addition on the same two
-        tensors in the same dtype, so anything but equality means the block does
-        something this interceptor does not see.
+        Built from :attr:`residual_write` so that the sentence in the artefact and
+        the equality :meth:`estimand_identity` tested are the same declaration.
         """
 
+        write = self.residual_write
+        return {
+            "tensor": (
+                "the per-layer feed-forward output -- the input of "
+                "src.transfer.arms.Arm.mlp's own forward hook -- before anything "
+                "is added to it"
+            ),
+            "block_layout": (
+                "parallel (GPT-J style): the attention and the feed-forward read "
+                f"the same {write.residual_norm} and both sum into the residual, "
+                "so there is no sequential block output of the kind a serial "
+                "layout has"
+                if write.parallel_attention
+                else (
+                    "serial: the attention has already been added to the residual "
+                    f"by the time {write.residual_norm} runs, so the feed-forward "
+                    "output IS the whole of this block's residual write"
+                )
+            ),
+            "identity_verified": write.identity,
+            "not_perturbed": (
+                "the attention contribution, which on this layout is a SECOND "
+                "residual write made from the same normalisation. It is left "
+                "untouched, exactly as the attention term is left untouched on a "
+                "serial arm, so the manipulation is the same object on both"
+                if write.parallel_attention
+                else (
+                    "the attention contribution, which this layout has already "
+                    "added to the residual before the feed-forward runs"
+                )
+            ),
+        }
+
+    @torch.no_grad()
+    def estimand_identity(self) -> dict[str, Any]:
+        """Verify that the intercepted tensor IS this block's feed-forward write.
+
+        What rests on it differs by stage and both readings need the same check.
+        A transcoder trained here reads what :meth:`block_intercept` calls the
+        block input and predicts what it calls the block output, and the
+        cross-model comparison rests on that being the object ProGen3's transcoder
+        is trained on; a perturbation reads only the output half, and rests on it
+        being the term the residual stream receives. Either way the block's own
+        output must be reconstructible from the intercepted tensor and the other
+        declared terms.
+
+        **The reconstruction is the declared one**, resolved from
+        :attr:`residual_write`. On a serial block that is ``residual + ff``. On a
+        parallel GPT-J-style block the model computes
+        ``attn_out + ff_out + residual`` as a single left-associated sum, so the
+        check rebuilds ``(attn_out + ff_out) + residual`` in that order and reads
+        the attention term from :meth:`src.transfer.arms.Arm.attention`, the
+        panel's own declaration of where the attention lives.
+
+        The tolerance is **exact**, because the model performs those additions on
+        those tensors in that dtype: anything but equality means the block does
+        something this interceptor does not see. The serial reconstruction applied
+        to a ProGen2 block misses by 14.25 at bfloat16, which is what makes this
+        an identity check rather than a formality.
+        """
+
+        write = self.residual_write
         blocks = list(self.arm.blocks())
         residual: dict[int, torch.Tensor] = {}
+        attention: dict[int, torch.Tensor] = {}
         contribution: dict[int, torch.Tensor] = {}
         produced: dict[int, torch.Tensor] = {}
         handles = []
@@ -1038,20 +1391,27 @@ class DenseReplaceable(ReplaceableModel):
 
             return hook
 
-        def after_block(layer: int) -> Callable[..., None]:
+        def after_module(store: dict[int, torch.Tensor], layer: int) -> Callable[..., None]:
             def hook(module: torch.nn.Module, inputs: Any, output: Any) -> None:
-                produced[layer] = (output[0] if isinstance(output, tuple) else output).detach()
+                store[layer] = (output[0] if isinstance(output, tuple) else output).detach()
 
             return hook
 
         for layer, block in enumerate(blocks):
-            if not hasattr(block, "ln_2"):
+            norm = getattr(block, write.residual_norm, None)
+            if norm is None:
                 raise TypeError(
-                    f"{self.arm.name}: block {layer} has no ln_2, so the residual the "
-                    "feed-forward writes into cannot be read"
+                    f"{self.arm.name}: block {layer} has no {write.residual_norm}, so "
+                    "the residual the feed-forward writes into cannot be read"
                 )
-            handles.append(block.ln_2.register_forward_pre_hook(before_norm(layer)))
-            handles.append(block.register_forward_hook(after_block(layer)))
+            handles.append(norm.register_forward_pre_hook(before_norm(layer)))
+            handles.append(block.register_forward_hook(after_module(produced, layer)))
+            if write.parallel_attention:
+                handles.append(
+                    self.arm.attention(layer).register_forward_hook(
+                        after_module(attention, layer)
+                    )
+                )
 
         def tap(layer: int, x: torch.Tensor, y: torch.Tensor) -> None:
             contribution[layer] = y.detach()
@@ -1074,20 +1434,25 @@ class DenseReplaceable(ReplaceableModel):
 
         worst = 0.0
         for layer in range(self.n_layers):
-            rebuilt = residual[layer] + contribution[layer]
+            if write.parallel_attention:
+                rebuilt = (attention[layer] + contribution[layer]) + residual[layer]
+            else:
+                rebuilt = residual[layer] + contribution[layer]
             worst = max(worst, float((rebuilt - produced[layer]).abs().max()))
         record = {
             "max_absolute_difference": worst,
             "n_layers": self.n_layers,
-            "identity": "block output == ln_2 input + intercepted feed-forward output",
+            "identity": write.identity,
+            "block_layout": "parallel" if write.parallel_attention else "serial",
             "verdict": "PASS" if worst == 0.0 else "FAIL",
         }
         if worst != 0.0:
             raise RuntimeError(
-                f"{self.arm.name}: the intercepted feed-forward output plus its "
-                f"input residual differs from the block's own output by {worst:.3e}. "
-                "The transcoder estimand is not what this interceptor reads, so a "
-                "replacement measured here would not be the measurement ProGen3's is."
+                f"{self.arm.name}: the declared reconstruction -- {write.identity} -- "
+                f"differs from the block's own output by {worst:.3e}. The tensor this "
+                "interceptor reads is not the residual write it is declared to be, so "
+                "a replacement or a perturbation measured here would not be the "
+                "measurement the other arms' is."
             )
         return record
 
@@ -1143,6 +1508,41 @@ def dense_self_check_nll(model: DenseReplaceable, *, batch_size: int = 4) -> flo
     return total / count
 
 
+class ParallelResidualReplaceable(DenseReplaceable):
+    """An arm whose attention and feed-forward write the residual in one sum.
+
+    ProGen2, and the reason it needs its own admissible set rather than an entry
+    in :data:`DENSE_ARCHITECTURES`. Its block is GPT-J-style::
+
+        residual = hidden_states
+        hidden_states = self.ln_1(hidden_states)
+        attn_output = self.attn(hidden_states, ...)[0]
+        feed_forward_hidden_states = self.mlp(hidden_states)
+        hidden_states = attn_output + feed_forward_hidden_states + residual
+
+    so the feed-forward reads a *pre*-attention normalisation. A transcoder
+    trained at that tap predicts a different object from the one ProGen3's
+    predicts, which is why :data:`DENSE_ARCHITECTURES` -- the replacement
+    estimand's admissible set -- excludes it and still does.
+
+    **What this class admits is strictly weaker and is enough for a
+    perturbation.** ``23_perturbation_sensitivity.py`` never reads the block
+    *input*: it perturbs the feed-forward *output*, anchored on that tensor's own
+    norm. That tensor is the same object on both layouts -- the MLP's output
+    before anything is added to it -- and the only thing that changes is the
+    identity which certifies the interception, which
+    :meth:`DenseReplaceable.estimand_identity` resolves from
+    :data:`RESIDUAL_WRITE` and verifies exactly on the live forward pass.
+
+    Everything else is inherited unchanged, deliberately: the rendering, the
+    scored-target rule, the content mask, the splice and the loader band are
+    properties of a panel-style checkpoint and not of its residual layout, so a
+    second copy of any of them would be a second measurement.
+    """
+
+    architectures = PARALLEL_ARCHITECTURES
+
+
 # ------------------------------------------------------- joint checkpoints
 
 
@@ -1152,6 +1552,61 @@ def dense_self_check_nll(model: DenseReplaceable, *, batch_size: int = 4) -> flo
 #: checkpoint controls architecture, scale AND weights where two standalone
 #: models control only the first.
 JOINT_MODES = ("text", "protein")
+
+#: The corpus each joint mode is read from, in the vocabulary
+#: :data:`src.transfer.arms.CORPUS_SOURCES` uses.
+#:
+#: One declaration because three stages need it and they must agree. A
+#: transcoder trained on one population and scored on another is the train/eval
+#: gap EXP-R2-135 priced at 4.1x in NLL recovery, and it is exactly what
+#: :func:`arm_training_corpus` exists to prevent on a panel arm; a joint
+#: checkpoint has no panel declaration to read it from, so it is declared here
+#: and read by ``15_replacement_faithfulness.py``, ``17_train_transcoder.py``
+#: and ``23_perturbation_sensitivity.py`` alike.
+#:
+#: Swiss-Prot rather than UniRef50 for the protein mode, and that is a choice
+#: rather than an inheritance: ProGen3's transcoders train on UniRef50 because
+#: its published runs did, while every joint measurement this programme owns --
+#: ``21_joint_mode_qualification.py``'s context information above all -- is
+#: taken on Swiss-Prot, so training elsewhere would put a population gap between
+#: the dictionary and every number it is read beside.
+JOINT_MODE_CORPUS: dict[str, str] = {"text": "openwebtext", "protein": "swissprot"}
+
+
+def joint_mode_corpus(mode: str) -> str:
+    """The corpus one joint mode is both trained on and scored on."""
+
+    if mode not in JOINT_MODE_CORPUS:
+        raise ValueError(
+            f"unknown joint mode {mode!r}; declared: {sorted(JOINT_MODE_CORPUS)}"
+        )
+    return JOINT_MODE_CORPUS[mode]
+
+
+def joint_tokenisation(
+    tokenizer: Any, declaration: joint_modes.JointRendering, mode: str
+) -> joint_modes.JointTokenisation | None:
+    """The declared rendering resolved against this tokenizer, when the mode needs it.
+
+    The refusal point for a checkpoint/family/mode triple, and it runs on the
+    tokenizer alone so that a wrong pairing fails before a multi-gigabyte load.
+    Protein mode resolves -- which is what refuses a tokenizer that cannot carry
+    the declared residue alphabet, or that merges residues where the family
+    declares one token per residue. Text mode does not: its scored positions are
+    the tokenizer's own next-token targets and do not depend on the protein
+    format, so resolving would refuse a checkpoint on a property the run never
+    reads.
+
+    Declared once because the two stages that build a :class:`JointReplaceable`
+    per mode would otherwise each decide it, and the failure of deciding it
+    wrongly is silent in one direction: a text run that resolved would refuse a
+    measurable mode, and a protein run that did not would be refused by
+    :class:`JointReplaceable` itself -- but only after the weights were read.
+    """
+
+    if mode not in JOINT_MODES:
+        raise ValueError(f"unknown joint mode {mode!r}; declared: {JOINT_MODES}")
+    return joint_modes.resolve(tokenizer, declaration) if mode == "protein" else None
 
 
 @dataclass(frozen=True)
@@ -1297,6 +1752,22 @@ class JointReplaceable(ReplaceableModel):
                 "21_joint_mode_qualification.py scores"
             )
         return "left to right, every non-padding target after the first"
+
+    @property
+    def rendering_note(self) -> str:
+        if self.mode == "protein":
+            return (
+                "src.transfer.joint_modes.JointTokenisation.render, the declared "
+                f"{self.declaration.name} protein format, which locates and "
+                "verifies the scored span in the same call that produces the "
+                "string; NOT src.transfer.arms.Cohort.input_strings, which is "
+                "the panel's declaration and does not describe this checkpoint"
+            )
+        return (
+            "the corpus record itself, tokenised as this checkpoint's own text; "
+            "the declared protein format does not apply to a text record and no "
+            "wrapper is added to one"
+        )
 
     def _padding_id(self) -> tuple[int, str]:
         """A right-padding id, named rather than assumed.
@@ -1468,6 +1939,20 @@ class JointReplaceable(ReplaceableModel):
     def content_mask(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         return batch["content_mask"]
 
+    def forget_rendered(self) -> None:
+        """Drop the rendering records, once the batch that needed them exists.
+
+        Unbounded otherwise, and the bound matters: this is the one
+        implementation that keeps per-record state, and a transcoder trainer
+        renders a fresh batch every step. At the joint campaign's own budget --
+        of order 3e5 protein records, each carrying its rendered text, its token
+        ids and its scored positions -- the dictionary reaches gigabytes over a
+        run, for records no later step reads. A caller that renders once and
+        batches many times (every scoring stage) simply never calls this.
+        """
+
+        self._rendered.clear()
+
     # -- running -----------------------------------------------------------
 
     def run(self, batch: dict[str, torch.Tensor]) -> Any:
@@ -1525,6 +2010,28 @@ class JointReplaceable(ReplaceableModel):
         finally:
             for handle in handles:
                 handle.remove()
+
+    @property
+    def perturbation_target(self) -> dict[str, Any]:
+        return {
+            "tensor": (
+                f"the per-layer {self.layout.feed_forward} output, before the "
+                "residual add"
+            ),
+            "block_layout": (
+                "serial: the attention has already been added to the residual by "
+                f"the time {self.layout.pre_feed_forward_norm} runs, so the "
+                "feed-forward output IS this block's residual write"
+            ),
+            "identity_verified": (
+                f"block output == {self.layout.pre_feed_forward_norm} input + "
+                f"intercepted {self.layout.feed_forward} output"
+            ),
+            "not_perturbed": (
+                "the attention contribution, which this layout has already added "
+                "to the residual before the feed-forward runs"
+            ),
+        }
 
     @contextmanager
     def ablated(self, component: Component) -> Iterator[None]:
@@ -1741,10 +2248,74 @@ def eligible_arms(campaign_panel: Sequence[str]) -> list[str]:
     ]
 
 
+def perturbable_arms(campaign_panel: Sequence[str]) -> list[str]:
+    """The ``--arm`` values ``23_perturbation_sensitivity.py`` accepts.
+
+    :func:`eligible_arms` widened by exactly the difference between the two
+    estimands, and composed rather than written down for the same reason.
+
+    A *replacement* reads a block's input and predicts its output, so it needs
+    the serial post-attention layout :data:`DENSE_ARCHITECTURES` declares. A
+    *perturbation* reads only the output, so it needs the weaker claim
+    :data:`RESIDUAL_WRITE` declares -- that the intercepted tensor is a term the
+    residual stream receives, under an identity verified exactly on the live
+    forward pass. Two additions follow:
+
+    * the **parallel-residual panel arms** (``progen2-small``,
+      ``progen2-medium``), which a campaign already schedules and which the
+      replacement stages still refuse;
+    * the **staged non-members** (:data:`src.transfer.arms.STAGED_ARMS`), which
+      complete ``src.transfer.arms.PROTEIN_SCALE_LADDER``. They are reachable
+      here and not in :data:`~src.transfer.arms.PANEL` because a panel arm
+      carries campaign obligations -- above all the ``budget`` family, whose
+      ``arm_power`` reads ``config.vocab_size`` -- that a tolerance measurement
+      does not need and that these two checkpoints cannot meet.
+
+    Both additions still require a measured loader band, so an arm nobody has
+    scored on the frozen inputs is not reachable from here either.
+    """
+
+    admitted = eligible_arms(campaign_panel)
+    admitted += [
+        name
+        for name in campaign_panel
+        if PANEL[name].architecture in PARALLEL_ARCHITECTURES
+        and name in MEASURED_DENSE_SELF_CHECK_NLL
+    ]
+    admitted += [
+        name
+        for name in sorted(STAGED_ARMS)
+        if STAGED_ARMS[name].architecture in RESIDUAL_WRITE
+        and name in MEASURED_DENSE_SELF_CHECK_NLL
+    ]
+    return admitted
+
+
+def replaceable_implementation(architecture: str) -> type[DenseReplaceable]:
+    """Which implementation covers one architecture's block layout.
+
+    Resolved from the classes' own :attr:`DenseReplaceable.architectures`
+    declarations rather than from a third table, so an architecture cannot be
+    admitted by one and dispatched by the other.
+    """
+
+    for implementation in (DenseReplaceable, ParallelResidualReplaceable):
+        if architecture in implementation.architectures:
+            return implementation
+    raise TypeError(
+        f"no replaceable implementation covers {architecture!r}; declared: "
+        + ", ".join(
+            f"{cls.__name__}{sorted(cls.architectures)}"
+            for cls in (DenseReplaceable, ParallelResidualReplaceable)
+        )
+    )
+
+
 def load_replaceable(
     arm: str,
     *,
     campaign_panel: Sequence[str],
+    admissible: Sequence[str] | None = None,
     device: str = "cuda:0",
     dtype: str = "bfloat16",
     max_tokens: int = 512,
@@ -1752,9 +2323,16 @@ def load_replaceable(
 ) -> ReplaceableModel:
     """Load one arm behind the shared interface, refusing an ineligible name.
 
-    ``checkpoint`` relocates ProGen3's weights only; a panel arm's location is
-    the panel's declaration and is relocated by its own environment variable
-    (:attr:`src.transfer.arms.ArmSpec.path_variable`), never by a stage flag.
+    ``admissible`` is the set the *calling stage* declared, so that the names its
+    ``--arm`` offers and the names this function accepts are one list. ``None``
+    means :func:`eligible_arms`, which is the replacement stages' set and their
+    long-standing behaviour; ``23_perturbation_sensitivity.py`` passes
+    :func:`perturbable_arms`.
+
+    ``checkpoint`` relocates ProGen3's weights only; every other checkpoint's
+    location is its declaration's and is relocated by its own environment
+    variable (:attr:`src.transfer.arms.ArmSpec.path_variable`), never by a stage
+    flag.
     """
 
     if arm == PROGEN3_ARM:
@@ -1767,13 +2345,15 @@ def load_replaceable(
         )
     if checkpoint is not None:
         raise ValueError(
-            f"--checkpoint relocates ProGen3's weights; {arm} is a panel arm whose "
-            "location is declared by "
-            f"{PANEL[arm].path_variable if arm in PANEL else 'the panel'}"
+            f"--checkpoint relocates ProGen3's weights; {arm} is a declared "
+            "checkpoint whose location is declared by "
+            f"{arm_spec(arm).path_variable if arm in PANEL or arm in STAGED_ARMS else 'the panel'}"
         )
-    admissible = eligible_arms(campaign_panel)
-    if arm not in admissible:
-        raise ValueError(f"arm {arm!r} cannot be measured here; eligible: {admissible}")
-    return DenseReplaceable(
-        load_arm(arm, device=device, dtype=dtype), max_tokens=max_tokens
+    admitted = list(eligible_arms(campaign_panel) if admissible is None else admissible)
+    if arm not in admitted:
+        raise ValueError(f"arm {arm!r} cannot be measured here; eligible: {admitted}")
+    spec = arm_spec(arm)
+    implementation = replaceable_implementation(spec.architecture)
+    return implementation(
+        load_arm_spec(spec, device=device, dtype=dtype), max_tokens=max_tokens
     )

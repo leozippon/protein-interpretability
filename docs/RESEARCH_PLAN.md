@@ -18,8 +18,9 @@ Prefer comparisons in this order because each lower row leaves more possible exp
 
 | Comparison | What it helps identify | Remaining limitation | Availability |
 |---|---|---|---|
-| Same joint checkpoint, text mode versus protein mode | Modality under shared weights and most of the architecture | Tokenizer, prompt, output space, and training exposure may still differ | **ProLLaMA Stage 1 and Stage 2 qualified in both modes** (EXP-R2-152); method experiments not yet run |
+| Same joint checkpoint, text mode versus protein mode | Modality under shared weights and most of the architecture | Tokenizer, prompt, output space, and training exposure may still differ | **ProLLaMA Stage 1 and Stage 2 qualified in both modes** (EXP-R2-152); `15_replacement_faithfulness.py` and `17_train_transcoder.py` reach a joint checkpoint by path and mode; no dictionary trained yet |
 | Matched checkpoint lineage | When a capability or mechanism appears across training stages | A released stage usually changes a package of data and objectives, not one factor | active |
+| Within-lineage scale ladder | Whether a measured property is ordered by scale rather than by modality, corpus, or lineage | Depth, width, and parameter count move together, so scale is one axis and not three | ProGen2 small/medium/large/xlarge, reachable by `23_perturbation_sensitivity.py`; the upper two are staged non-members of the panel |
 | Shape-matched pure text and protein models | Modality while holding major architectural dimensions fixed | Training data and optimization remain different | in use |
 | Dense versus MoE within one modality | Whether routing or expert structure explains a measured failure | Model family and training data must still be controlled | in use |
 | Cross-lab or cross-architecture replication | Whether a result generalizes beyond one lineage | It is not a clean causal attribution by itself | in use |
@@ -27,6 +28,8 @@ Prefer comparisons in this order because each lower row leaves more possible exp
 **The first row now has a qualified bridge, but its controls still determine what it can identify.** Galactica and InstructProtein were refused on opposite modes at identical architecture and scale; the ProLLaMA matched lineage then supplied two checkpoints whose text and protein modes are both measurable. These checkpoints permit same-weight mode comparisons and same-input model diffing across training stages, but they do not control tokenizer, rendering, training exposure, or the biological meaning of an activation. Add a joint MoE only if the qualified dense comparison leaves routing or expert specialization as a live explanation; no joint MoE is currently scheduled. Encoder–decoder, protein-encoder-plus-LLM, or cross-attention systems enter only when a hypothesis depends on their component boundary and the intervention target has been defined for that architecture.
 
 A joint checkpoint's qualification is a real gate and not a formality. Establish the rendering against the model's own likelihood before reading any model property, and report an arm below the context-information threshold as unmeasurable on that cohort rather than as failing.
+
+**The first row's dictionary comparison is sized, not yet run.** Two per-layer transcoders on one `ProLLaMA_Stage_1` checkpoint — one on its text mode, one on its protein mode — at 32 layers, `d_hidden` 16,384 (4× expansion, 524,288 latents, 4.30B transcoder parameters), `k` 64, a matched budget of 68,000,000 scored tokens per mode and a 256-sequence held-out draw. The panel's 12× expansion is not available here for two independent reasons: 12.89B transcoder parameters need 206 GB of AdamW state against an H200's 143.8 GB, and the run would take about nine days per mode at the FLOP throughput this repository has actually achieved. 4× costs roughly a third of the transcoder FLOPs, keeps 130 tokens per latent inside the panel's measured 108–155, and puts the active fraction at 0.391% against the 36×1280 arms' 0.417% — so relative sparsity stays comparable while the expansion ratio does not. That is the trade: comparability with the existing cross-model dictionary results is weakened, and the text-versus-protein comparison *within* this checkpoint stays exact, which is the comparison being made. Per-layer comes first and a cross-layer variant is admitted only against a parameter-matched per-layer comparator, per L25.
 
 ## Execution Order
 
@@ -78,15 +81,15 @@ The executable registered panel is declared only by `scripts/transfer/panel_cont
 | `12_induction_robustness.py` | Threshold and scale robustness |
 | `13_induction_probe_bootstrap.py` | Probe-cluster uncertainty |
 | `14_paa_census.py` | PAA selection and exhaustive causal labels |
-| `15_replacement_faithfulness.py` | Behavioral and diagnostic causal checks for replacement models |
+| `15_replacement_faithfulness.py` | Behavioral and diagnostic causal checks for replacement models, on a panel arm or on one mode of a joint checkpoint reached by path; refuses an unmatched training configuration and a dictionary scored on the other mode |
 | `16_fitness_recovery.py` | Fitness baseline and recovery interface |
-| `17_train_transcoder.py` | Local PLT and CLT training controls |
+| `17_train_transcoder.py` | Local PLT and CLT training controls, on a panel arm or on one mode of a joint checkpoint; a token budget rather than a step count is what matches two modes |
 | `18_das_subspace.py` | Retained negative-design record; closed and not scheduled |
 | `19_routing_locality.py` | Router, expert-set, and boundary diagnostics |
 | `20_retrieval_bound.py` | Model fitness versus training-corpus profile retrieval |
 | `21_joint_mode_qualification.py` | Joint text/protein mode qualification for a non-panel checkpoint |
 | `22_neuron_basis_circuit.py` | Training-free neuron-basis faithfulness curve, the control that separates dictionary failure from dense MLP computation |
-| `23_perturbation_sensitivity.py` | Training-free relative-magnitude MLP perturbation sweep, measuring whether a joint checkpoint's protein mode is more fragile than its text mode under equally sized damage |
+| `23_perturbation_sensitivity.py` | Training-free relative-magnitude MLP perturbation sweep, measuring whether a joint checkpoint's protein mode is more fragile than its text mode under equally sized damage, and — across the four ProGen2 rungs of `src.transfer.arms.PROTEIN_SCALE_LADDER` — whether the tolerance curve is ordered by scale within one protein lineage |
 | `24_component_swap.py` | Training-free component swap between two checkpoints of one lineage, measuring in `21_joint_mode_qualification.py`'s estimand whether continued protein pretraining's text cost travels with the vocabulary interface or with the body |
 
 Stages outside the registered panel use their dedicated launcher or a direct validated invocation as documented in `scripts/transfer/README.md`. A new joint-model adapter is admitted to the executable contract only after its interface and negative paths are tested.

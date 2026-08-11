@@ -738,6 +738,155 @@ for _name, _layers, _width in (
 # the text x byte-level cell. The checkpoint remains on disk if an independent
 # architecture check is later judged worth that cost.
 
+#: Checkpoints staged beside the panel that are deliberately **not** panel
+#: members, keyed by the name a measurement reaches them under.
+#:
+#: The distinction this table exists to keep is between "not staged" and "staged
+#: and not admitted". ``scripts/transfer/panel_contract.STAGED_BUT_NOT_ADMITTED``
+#: records the second fact and its measured reason for the campaign; this table
+#: is the declaration a *loader* needs, and ``tests/test_replaceable_arms.py``
+#: checks the two name the same checkpoints, because a library module must not
+#: import a stage script to validate itself.
+#:
+#: **Why these two are not in** :data:`PANEL`. Both are ProGen2 rungs above
+#: ``progen2-medium``, both load and run, and both would corrupt a panel-wide
+#: statistic on admission. ``progen2-large`` declares ``vocab_size`` 51200
+#: against a 31-token tokenizer, so every quantity derived from that key -- the
+#: held-out unigram support, the plug-in entropy, the rank-(V-1) aperture -- would
+#: be computed over a mostly dead alphabet; ``progen2-xlarge`` carries no
+#: ``vocab_size`` key at all, only ``vocab_size_emb``/``vocab_size_lm_head``, so
+#: the same code raises on it instead. Neither fact touches a measurement that
+#: reads only the tokenizer and the block outputs, which is why they are reachable
+#: here rather than unreachable everywhere.
+#:
+#: ``capabilities`` is therefore ``{"pathway"}`` and not the panel default. It is
+#: the enforcement of the paragraph above: ``budget`` is what
+#: :func:`src.transfer.budget.arm_power` needs, and that function reads
+#: ``config.vocab_size`` directly, so withholding the capability is what turns
+#: "would produce a number over a dead alphabet" into a refusal with a reason.
+STAGED_ARMS: dict[str, ArmSpec] = {
+    # 2779.4M parameters, 32 blocks of width 2560, 32 heads (EXP-R2-068).
+    "progen2-large": ArmSpec(
+        name="progen2-large",
+        path=MODEL_ROOT / "progen2-large",
+        path_variable="TRANSFER_MODEL_BASE_DIR",
+        modality="protein",
+        n_layer=32,
+        d_model=2560,
+        tokenisation="residue",
+        input_format="n_to_c_control",
+        evaluation_cohort_source="swissprot",
+        architecture="progen",
+        pretraining_corpus="uniref90_bfd30",
+        capabilities=frozenset({"pathway"}),
+    ),
+    # 6443.6M parameters, 32 blocks of width 4096, 16 heads. Its config declares
+    # ``embed_dim`` and no ``n_embd``, which :func:`load_arm_spec` already
+    # resolves through its declared fallback order.
+    "progen2-xlarge": ArmSpec(
+        name="progen2-xlarge",
+        path=MODEL_ROOT / "progen2-xlarge",
+        path_variable="TRANSFER_MODEL_BASE_DIR",
+        modality="protein",
+        n_layer=32,
+        d_model=4096,
+        tokenisation="residue",
+        input_format="n_to_c_control",
+        evaluation_cohort_source="swissprot",
+        architecture="progen",
+        pretraining_corpus="uniref90_bfd30",
+        capabilities=frozenset({"pathway"}),
+    ),
+}
+
+
+def _check_staged_arms() -> None:
+    """A staged checkpoint is not a panel member, and says which it is."""
+
+    both = sorted(set(STAGED_ARMS) & set(PANEL))
+    if both:
+        raise AssertionError(
+            f"{both} are declared both as panel members and as staged non-members; "
+            "one name must mean one thing"
+        )
+    for name, spec in STAGED_ARMS.items():
+        if spec.name != name:
+            raise AssertionError(f"staged arm {name!r} declares the name {spec.name!r}")
+
+
+_check_staged_arms()
+
+
+def arm_spec(name: str) -> ArmSpec:
+    """The declaration for a panel arm or a staged checkpoint.
+
+    One resolver for both, so that a measurement which admits staged checkpoints
+    reads their modality, rendering and evaluation corpus from the same field a
+    panel arm's come from. It does **not** widen :func:`load_arm`: that door stays
+    :data:`PANEL`-only, and a caller that means to load a staged checkpoint says
+    so by resolving the spec here and passing it to :func:`load_arm_spec`.
+    """
+
+    if name in PANEL:
+        return PANEL[name]
+    if name in STAGED_ARMS:
+        return STAGED_ARMS[name]
+    raise KeyError(
+        f"unknown arm {name!r}; the panel is {sorted(PANEL)} and the staged "
+        f"non-members are {sorted(STAGED_ARMS)}"
+    )
+
+
+#: The four-rung protein scale ladder: one lineage, one 31-token residue
+#: tokenizer, one UniRef90+BFD30 mixture, 151M -> 765M -> 2.78B -> 6.44B.
+#:
+#: :data:`PROTEIN_SCALE_CONTRAST` is its first two rungs and is what a *campaign*
+#: may schedule, because the upper two are :data:`STAGED_ARMS` rather than panel
+#: members. The ladder is declared separately because a measurement that needs
+#: none of the panel's campaign obligations -- one that reads the tokenizer and
+#: the block outputs and nothing derived from ``config.vocab_size`` -- can run all
+#: four, and the set of rungs it runs on is then a value rather than a list a
+#: reader has to reassemble.
+PROTEIN_SCALE_LADDER = (
+    "progen2-small",
+    "progen2-medium",
+    "progen2-large",
+    "progen2-xlarge",
+)
+
+
+def _check_scale_ladder() -> None:
+    """A scale ladder must vary scale and nothing else it declares.
+
+    Checked at import for the reason :func:`_check_corpus_contrast` is: the whole
+    value of these four rungs is that architecture, tokenisation, rendering,
+    evaluation corpus and pretraining mixture are held fixed, so a rung that
+    quietly differed in one of them would turn a scale curve into a curve of
+    something else with nothing raising.
+    """
+
+    specs = [arm_spec(name) for name in PROTEIN_SCALE_LADDER]
+    held = (
+        "modality",
+        "tokenisation",
+        "input_format",
+        "evaluation_cohort_source",
+        "architecture",
+        "pretraining_corpus",
+    )
+    for key in held:
+        values = {getattr(spec, key) for spec in specs}
+        if len(values) != 1:
+            raise AssertionError(
+                f"the protein scale ladder does not hold {key} fixed: {sorted(values)}"
+            )
+    widths = [spec.d_model for spec in specs]
+    if widths != sorted(widths) or len(set(widths)) != len(widths):
+        raise AssertionError(f"the protein scale ladder is not ordered by width: {widths}")
+
+
+_check_scale_ladder()
+
 #: The exactly matched pair. Depth, width and vocabulary size are identical, so
 #: any difference between these two is a modality difference, not an
 #: architecture difference.
@@ -1067,18 +1216,32 @@ class Arm:
         return self._resolve_attention(layer)
 
 
-def load_arm(
-    name: str,
+def load_arm_spec(
+    spec: ArmSpec,
     device: str = "cuda:0",
     dtype: str = "bfloat16",
     attn_implementation: str | None = None,
 ) -> Arm:
-    """Load a panel member and verify its declared shape and inference dtype."""
-    if name not in PANEL:
-        raise KeyError(f"unknown arm {name!r}; panel is {sorted(PANEL)}")
+    """Load a declared checkpoint and verify its declared shape and inference dtype.
+
+    The loader takes a *declaration* rather than a name because two kinds of
+    checkpoint reach it: a :data:`PANEL` member through :func:`load_arm`, and a
+    :data:`STAGED_ARMS` non-member through :func:`arm_spec` at a call site that
+    means to admit one. Splitting the name lookup from the load is what keeps the
+    panel door panel-only while leaving one implementation of the load itself, so
+    a staged checkpoint gets the same shape and dtype verification a panel arm
+    does (Appendix B rule 12).
+
+    ``config.vocab_size`` is deliberately not consulted. Two ProGen2 checkpoints
+    in this repository spell the output width differently -- ``progen2-large``
+    declares 51200 against a 31-token tokenizer and ``progen2-xlarge`` declares no
+    ``vocab_size`` at all -- so the shape check reads depth and width, which every
+    checkpoint here declares and which identify a rung of a scale ladder.
+    """
+
+    name = spec.name
     if dtype not in _DTYPES:
         raise ValueError(f"unsupported inference dtype {dtype!r}")
-    spec = PANEL[name]
     path = str(require_input_path(spec.path, _MODEL_PATH_VARIABLES))
 
     config = AutoConfig.from_pretrained(path, trust_remote_code=True)
@@ -1134,6 +1297,30 @@ def load_arm(
         device=device,
         dtype=dtype,
         attn_implementation=None if resolved is None else str(resolved),
+    )
+
+
+def load_arm(
+    name: str,
+    device: str = "cuda:0",
+    dtype: str = "bfloat16",
+    attn_implementation: str | None = None,
+) -> Arm:
+    """Load a panel member by name, refusing anything outside :data:`PANEL`.
+
+    A staged non-member is not reachable here on purpose: admitting one by name
+    would mean every stage that takes a free-text arm could schedule a checkpoint
+    the panel deliberately excluded. Those callers resolve
+    :func:`arm_spec` explicitly and load through :func:`load_arm_spec`.
+    """
+
+    if name not in PANEL:
+        raise KeyError(f"unknown arm {name!r}; panel is {sorted(PANEL)}")
+    return load_arm_spec(
+        PANEL[name],
+        device=device,
+        dtype=dtype,
+        attn_implementation=attn_implementation,
     )
 
 

@@ -22,6 +22,19 @@ unperturbed position as a perturbed one.
 tokenizer that cannot carry the declared residue alphabet, and a block layout that
 is not the serial post-attention feed-forward are all refused rather than measured.
 
+**The perturbed tensor is the declared one on a PARALLEL residual block.**
+ProGen2's block is GPT-J-style: attention and feed-forward read one ``ln_1`` and
+both sum into the residual, so ``residual + ff`` is *not* the block's output and
+the serial identity the GPT-2 arms are verified under would be checking the wrong
+equality. ``TheParallelBlockTargetIsDeclared`` builds a parallel stub, pins that
+the serial reconstruction misses while the declared one is exact, refuses a stub
+whose declared identity does not hold, and refuses an architecture nobody
+declared. Its config **omits ``vocab_size`` entirely and raises if anything reads
+it**, which is ``progen2-xlarge``'s shape: that checkpoint carries only
+``vocab_size_emb``/``vocab_size_lm_head``, and ``progen2-large`` carries a
+``vocab_size`` of 51200 against a 31-token tokenizer, so a quantity derived from
+that key would be over a mostly dead alphabet or would raise.
+
 One correction to the specification is pinned here rather than left implicit: the
 recovery fraction is **not** bounded below by zero and a large epsilon does not
 approach the mean-ablated floor. Mean ablation removes the block's information; a
@@ -62,6 +75,7 @@ from transformers import (  # noqa: E402
     LlamaConfig,
     LlamaForCausalLM,
 )
+from transformers.modeling_outputs import CausalLMOutputWithPast  # noqa: E402
 
 from src.transfer import arms as A  # noqa: E402
 from src.transfer import joint_modes as JM  # noqa: E402
@@ -191,6 +205,223 @@ def _text_arm() -> A.Arm:
 
 def _dense(**kwargs) -> R.DenseReplaceable:
     return R.DenseReplaceable(_text_arm(**kwargs), max_tokens=64)
+
+
+# ----------------------------------------------------- the parallel-block stub
+
+
+#: ProGen2's released vocabulary, in the order its tokenizer declares it: two
+#: control tokens for the generation direction, then one token per residue, then
+#: the single special id. Reproduced exactly because two of this file's claims are
+#: about it -- that a residue tokenizer's expansion is 1.0 symbols per token, and
+#: that the N-to-C control token is an ordinary vocabulary entry rather than a
+#: special one, so the content mask keeps it.
+PROGEN_TOKENS: tuple[str, ...] = (
+    "<|pad|>",
+    "<|bos|>",
+    "<|eos|>",
+    "1",
+    "2",
+    *"ABCDEFGHIKLMNOPQRSTUVWXYZ",
+    "<|endoftext|>",
+)
+
+
+class StubResidueTokenizer:
+    """One token per residue, which is what ``tokenisation="residue"`` declares."""
+
+    all_special_ids = [len(PROGEN_TOKENS) - 1]
+    pad_token_id = len(PROGEN_TOKENS) - 1
+    eos_token = "<|endoftext|>"
+
+    def __init__(self) -> None:
+        self._ids = {token: index for index, token in enumerate(PROGEN_TOKENS)}
+
+    def __len__(self) -> int:
+        return len(PROGEN_TOKENS)
+
+    def __call__(self, text, return_tensors=None):
+        return {"input_ids": [self._ids[character] for character in text]}
+
+    def decode(self, ids):
+        return "".join(PROGEN_TOKENS[int(index)] for index in ids)
+
+
+class StubProGenConfig:
+    """A ProGen2-shaped config that declares no ``vocab_size`` at all.
+
+    ``progen2-xlarge``'s config carries ``vocab_size_emb`` and
+    ``vocab_size_lm_head`` and nothing else, so any code that reached for
+    ``config.vocab_size`` on it would raise inside a run rather than at a
+    declaration; ``progen2-large`` carries a ``vocab_size`` of 51200 against a
+    31-token tokenizer, so the same code would silently compute over 51169
+    unreachable symbols. Reading it here is an ``AssertionError`` and not an
+    ``AttributeError`` on purpose: a ``getattr(config, "vocab_size", None)``
+    swallows the second and would let the failure this stub exists to catch pass
+    as a ``None``.
+    """
+
+    model_type = "progen"
+
+    def __init__(self, n_head: int) -> None:
+        self.n_head = n_head
+
+    def __getattr__(self, name: str):
+        if name == "vocab_size":
+            raise AssertionError(
+                "config.vocab_size was read on the ProGen2 path: progen2-xlarge "
+                "declares no such key and progen2-large declares 51200 against a "
+                "31-token tokenizer, so nothing here may depend on it"
+            )
+        raise AttributeError(name)
+
+
+class _StubProGenAttention(torch.nn.Module):
+    """Causal attention returning ProGen2's ``(output, ...)`` tuple.
+
+    Separate ``q``/``k``/``v`` projections, deliberately: ProGen2's real
+    ``qkv_proj`` is sharded in q, v, k order across eight model-parallel
+    partitions, ``src.transfer.circuits`` already resolves that layout and
+    verifies it against the live forward, and a stub with a fused projection here
+    would invite a second implementation of the same split.
+    """
+
+    def __init__(self, width: int) -> None:
+        super().__init__()
+        self.q = torch.nn.Linear(width, width, bias=False)
+        self.k = torch.nn.Linear(width, width, bias=False)
+        self.v = torch.nn.Linear(width, width, bias=False)
+        self.out_proj = torch.nn.Linear(width, width, bias=False)
+
+    def forward(self, hidden_states, **kwargs):
+        scores = self.q(hidden_states) @ self.k(hidden_states).transpose(-1, -2)
+        length = hidden_states.shape[1]
+        causal = torch.ones(length, length, dtype=torch.bool).tril()
+        scores = scores.masked_fill(~causal, float("-inf")) / (hidden_states.shape[-1] ** 0.5)
+        return (self.out_proj(scores.softmax(-1) @ self.v(hidden_states)), None)
+
+
+class _StubProGenMLP(torch.nn.Module):
+    def __init__(self, width: int, inner: int) -> None:
+        super().__init__()
+        self.fc_in = torch.nn.Linear(width, inner)
+        self.fc_out = torch.nn.Linear(inner, width)
+
+    def forward(self, hidden_states):
+        return self.fc_out(torch.nn.functional.gelu(self.fc_in(hidden_states)))
+
+
+class _StubProGenBlock(torch.nn.Module):
+    """ProGen2's block, transcribed from its released ``modeling_progen.py``::
+
+        residual = hidden_states
+        hidden_states = self.ln_1(hidden_states)
+        attn_output = self.attn(hidden_states, ...)[0]
+        feed_forward_hidden_states = self.mlp(hidden_states)
+        hidden_states = attn_output + feed_forward_hidden_states + residual
+
+    ``leak`` is the corruption: a term the block adds that no interceptor sees, so
+    the declared identity no longer holds and the arm must be refused.
+    """
+
+    def __init__(self, width: int, inner: int, *, leak: float = 0.0) -> None:
+        super().__init__()
+        self.ln_1 = torch.nn.LayerNorm(width)
+        self.attn = _StubProGenAttention(width)
+        self.mlp = _StubProGenMLP(width, inner)
+        self.leak = float(leak)
+
+    def forward(self, hidden_states, **kwargs):
+        residual = hidden_states
+        hidden_states = self.ln_1(hidden_states)
+        attn_output = self.attn(hidden_states)[0]
+        feed_forward_hidden_states = self.mlp(hidden_states)
+        return (attn_output + feed_forward_hidden_states + residual + self.leak,)
+
+
+class StubProGenForCausalLM(torch.nn.Module):
+    """A ProGen2-shaped decoder: ``transformer.h`` of parallel-residual blocks.
+
+    The embedding width is a constructor argument and never ``config.vocab_size``,
+    which is how the released model reads it too (``config.vocab_size_emb``).
+    Right padding plus causal attention means the padding mask changes nothing,
+    so it is accepted and not consulted.
+    """
+
+    def __init__(self, *, leak: float = 0.0) -> None:
+        super().__init__()
+        self.config = StubProGenConfig(N_HEAD)
+        self.transformer = torch.nn.Module()
+        self.transformer.wte = torch.nn.Embedding(len(PROGEN_TOKENS), D_MODEL)
+        self.transformer.h = torch.nn.ModuleList(
+            _StubProGenBlock(D_MODEL, D_MLP, leak=leak) for _ in range(N_LAYER)
+        )
+        self.transformer.ln_f = torch.nn.LayerNorm(D_MODEL)
+        self.lm_head = torch.nn.Linear(D_MODEL, len(PROGEN_TOKENS), bias=False)
+
+    def forward(
+        self, input_ids, attention_mask=None, labels=None, use_cache=False, return_dict=True
+    ):
+        hidden = self.transformer.wte(input_ids)
+        for block in self.transformer.h:
+            hidden = block(hidden)[0]
+        logits = self.lm_head(self.transformer.ln_f(hidden))
+        loss = None
+        if labels is not None:
+            loss = torch.nn.functional.cross_entropy(
+                logits[..., :-1, :].reshape(-1, logits.shape[-1]),
+                labels[..., 1:].reshape(-1),
+                ignore_index=-100,
+            )
+        return CausalLMOutputWithPast(loss=loss, logits=logits)
+
+
+_PARALLEL_MODELS: dict[float, StubProGenForCausalLM] = {}
+
+
+def _progen_model(leak: float = 0.0, seed: int = 17) -> StubProGenForCausalLM:
+    """One trained parallel stub per leak, for the reason ``_text_model`` is cached."""
+
+    if leak not in _PARALLEL_MODELS:
+        torch.manual_seed(seed)
+        model = StubProGenForCausalLM(leak=leak)
+        tokenizer = StubResidueTokenizer()
+        _overfit(model, [tokenizer("1" + sequence)["input_ids"] for sequence in SEQUENCES])
+        _PARALLEL_MODELS[leak] = model
+    return _PARALLEL_MODELS[leak]
+
+
+def _progen_arm(leak: float = 0.0) -> A.Arm:
+    """A ProGen2 arm at stub scale, under the real arm's name and architecture.
+
+    The name is real because the loader band is keyed by it; the shape is the
+    stub's because a two-layer model is what a CPU test can train. Exactly the
+    arrangement ``_text_arm`` uses for ``gpt2``.
+    """
+
+    return A.Arm(
+        spec=A.ArmSpec(
+            name="progen2-small",
+            path=Path("/nowhere"),
+            path_variable="TRANSFER_MODEL_BASE_DIR",
+            modality="protein",
+            n_layer=N_LAYER,
+            d_model=D_MODEL,
+            tokenisation="residue",
+            input_format="n_to_c_control",
+            evaluation_cohort_source="swissprot",
+            architecture="progen",
+            pretraining_corpus="uniref90_bfd30",
+        ),
+        model=_progen_model(leak),
+        tokenizer=StubResidueTokenizer(),
+        device="cpu",
+        dtype="float32",
+    )
+
+
+def _parallel(leak: float = 0.0) -> R.ParallelResidualReplaceable:
+    return R.ParallelResidualReplaceable(_progen_arm(leak), max_tokens=64)
 
 
 # -------------------------------------------------------------- the joint stub
@@ -891,6 +1122,229 @@ class TheJointArmIsTheCheckpointItSaysItIs(unittest.TestCase):
         self.assertEqual(sorted(cross["per_mode"]), ["protein", "text"])
         with tempfile.TemporaryDirectory() as directory:
             write_json(Path(directory) / "modes.json", {"modes": modes, "cross": cross})
+
+
+# --------------------------------------------------------- the parallel block
+
+
+class TheParallelBlockTargetIsDeclared(unittest.TestCase):
+    """What is perturbed on a GPT-J-style block, and how that is established.
+
+    The scale ladder this stage reaches -- progen2-small through progen2-xlarge --
+    is one ProGen2 lineage, and ProGen2's residual block is parallel. Everything
+    below is about the one way that can go wrong without raising: perturbing a
+    tensor whose relationship to the residual stream nobody checked, and reporting
+    the number beside a serial arm's as though the two were the same manipulation.
+    """
+
+    def test_the_declared_target_is_the_feed_forward_output(self):
+        model = _parallel()
+        target = model.perturbation_target
+        self.assertIn("feed-forward output", target["tensor"])
+        self.assertTrue(target["block_layout"].startswith("parallel"))
+        self.assertEqual(
+            target["identity_verified"],
+            "block output == (attention output + intercepted feed-forward output) "
+            "+ ln_1 input",
+        )
+        # The attention writes the same residual on this layout and is left alone,
+        # which is what makes the manipulation the same object it is on gpt2.
+        self.assertIn("attention contribution", target["not_perturbed"])
+        self.assertTrue(
+            _dense().perturbation_target["block_layout"].startswith("serial")
+        )
+
+    def test_the_intercepted_tensor_IS_the_feed_forward_output(self):
+        model = _parallel()
+        batch = model.batch(model.render(SEQUENCES[:2]))
+        seen: dict[int, torch.Tensor] = {}
+        direct: dict[int, torch.Tensor] = {}
+        handles = [
+            block.mlp.register_forward_hook(
+                lambda module, inputs, output, layer=layer: direct.__setitem__(
+                    layer, output.detach().clone()
+                )
+            )
+            for layer, block in enumerate(model.arm.blocks())
+        ]
+
+        def tap(layer, x, y):
+            seen[layer] = y.detach().clone()
+            return None
+
+        try:
+            with model.block_intercept(tap):
+                model.run(batch)
+        finally:
+            for handle in handles:
+                handle.remove()
+        self.assertEqual(sorted(seen), list(range(N_LAYER)))
+        for layer in range(N_LAYER):
+            self.assertTrue(torch.equal(seen[layer], direct[layer]), layer)
+
+    def test_the_declared_identity_holds_exactly_and_the_serial_one_does_not(self):
+        # The whole reason the declaration exists. On a parallel block the block's
+        # output is attn + ff + residual, so the serial reconstruction the GPT-2
+        # arms are verified under is checking an equality that is simply false --
+        # by 14.25 at bfloat16 on the real progen2-small, and by a wide margin here.
+        model = _parallel()
+        record = model.estimand_identity()
+        self.assertEqual(record["verdict"], "PASS")
+        self.assertEqual(record["max_absolute_difference"], 0.0)
+        self.assertEqual(record["block_layout"], "parallel")
+        self.assertEqual(record["n_layers"], N_LAYER)
+
+        residual, attention, feed_forward, produced = {}, {}, {}, {}
+        handles = []
+        for layer, block in enumerate(model.arm.blocks()):
+            handles.append(
+                block.ln_1.register_forward_pre_hook(
+                    lambda module, inputs, layer=layer: residual.__setitem__(
+                        layer, inputs[0].detach()
+                    )
+                )
+            )
+            handles.append(
+                block.attn.register_forward_hook(
+                    lambda module, inputs, output, layer=layer: attention.__setitem__(
+                        layer, output[0].detach()
+                    )
+                )
+            )
+            handles.append(
+                block.mlp.register_forward_hook(
+                    lambda module, inputs, output, layer=layer: feed_forward.__setitem__(
+                        layer, output.detach()
+                    )
+                )
+            )
+            handles.append(
+                block.register_forward_hook(
+                    lambda module, inputs, output, layer=layer: produced.__setitem__(
+                        layer, output[0].detach()
+                    )
+                )
+            )
+        try:
+            model.run(model.batch(model.render(SEQUENCES[:2])))
+        finally:
+            for handle in handles:
+                handle.remove()
+        for layer in range(N_LAYER):
+            declared = (attention[layer] + feed_forward[layer]) + residual[layer]
+            serial = residual[layer] + feed_forward[layer]
+            self.assertEqual(
+                float((declared - produced[layer]).abs().max()), 0.0, f"layer {layer}"
+            )
+            self.assertGreater(
+                float((serial - produced[layer]).abs().max()), 1e-3, f"layer {layer}"
+            )
+
+    def test_a_stub_whose_declared_identity_does_not_hold_is_refused(self):
+        # A block that adds a term no interceptor sees. Nothing about it raises on
+        # its own -- it loads, it runs, its cross-entropy is finite -- and the
+        # identity check is the only thing between it and a complete artefact.
+        with self.assertRaises(RuntimeError) as caught:
+            _parallel(leak=0.25).estimand_identity()
+        message = str(caught.exception)
+        self.assertIn("ln_1 input", message)
+        self.assertIn("not the residual write it is declared to be", message)
+
+    def test_an_architecture_with_no_declaration_is_refused_rather_than_duck_typed(self):
+        for architecture in ("llama", "qwen2", "opt", "t5_decoder", "reformer"):
+            with self.assertRaises(TypeError, msg=architecture) as caught:
+                R.residual_write(architecture)
+            self.assertIn("no residual write is declared", str(caught.exception))
+        self.assertTrue(R.residual_write("progen").parallel_attention)
+        self.assertFalse(R.residual_write("gpt2").parallel_attention)
+        # And the refusal reaches the constructor: an arm whose architecture this
+        # implementation does not cover cannot be built at all.
+        arm = _progen_arm()
+        with self.assertRaises(TypeError):
+            R.DenseReplaceable(arm, max_tokens=64)
+
+    def test_nothing_on_this_path_reads_config_vocab_size(self):
+        # The stub's config omits vocab_size the way progen2-xlarge's does and
+        # raises AssertionError if anything reaches for it, so this is a run of the
+        # real path rather than a search of the source.
+        model = _parallel()
+        with self.assertRaises(AssertionError):
+            _ = model.arm.model.config.vocab_size
+        inputs = model.render(SEQUENCES)
+        self.assertEqual(model.n_heads, N_HEAD)
+        STAGE.block_output_reference(model, inputs, batch_size=2)
+        STAGE.symbols_per_token(model, inputs)
+        model.estimand_identity()
+        STAGE22_scored(
+            model,
+            inputs,
+            factory=STAGE.perturbation_context(model, epsilon=0.2, seed=5),
+        )
+
+    def test_symbols_per_token_comes_from_the_tokenizer_and_is_one_per_residue(self):
+        arm = _progen_arm()
+        # A residue tokenizer emits one token per residue, so the expansion is
+        # exactly 1.0 -- the property that makes a nats-per-token figure on this
+        # lineage readable as nats per residue.
+        self.assertEqual(A.symbols_per_token(arm, list(SEQUENCES), 512), 1.0)
+        # Under the arm's own rendering the N-to-C control token adds one token and
+        # no residue, so the measured expansion is n / (n + 1) -- read off the
+        # tokenizer and the rendering, never off a vocabulary size.
+        model = _parallel()
+        inputs = model.render(SEQUENCES)
+        residues = sum(len(sequence) for sequence in SEQUENCES)
+        self.assertAlmostEqual(
+            STAGE.symbols_per_token(model, inputs)["value"],
+            residues / (residues + len(SEQUENCES)),
+            places=12,
+        )
+        self.assertIn("residues", STAGE.symbols_per_token(model, inputs)["unit"])
+
+    def test_the_control_token_is_context_and_the_residues_are_the_targets(self):
+        model = _parallel()
+        batch = model.batch(model.render(SEQUENCES[:1]))
+        ids = batch["input_ids"][0].tolist()
+        self.assertEqual(ids[0], PROGEN_TOKENS.index("1"))
+        # It is an ordinary vocabulary entry, so the unconditioned content mask
+        # keeps it -- as gpt2 keeps its first token -- while the target rule never
+        # scores it, because nothing predicts the first position.
+        self.assertTrue(bool(model.content_mask(batch)[0, 0]))
+        self.assertEqual(
+            model._target_mask(batch)[0].tolist(),
+            [True] * (len(ids) - 1),
+        )
+
+    def test_the_whole_sweep_runs_on_a_parallel_arm_and_serialises(self):
+        model = _parallel()
+        model.self_check = lambda: {"verdict": "PASS", "note": "stubbed for the test"}
+        with _patched_corpus(SEQUENCES, "protein"):
+            with contextlib.redirect_stdout(io.StringIO()):
+                record = STAGE.measure_mode(
+                    _args(), model, source="swissprot", label="progen2-small:protein"
+                )
+        endpoints = record["gates"]["endpoints"]
+        self.assertEqual(endpoints["verdict"], "PASS")
+        self.assertGreater(endpoints["denominator_nats_per_token"], 0.0)
+        self.assertAlmostEqual(
+            record["sweep"][0]["across_draws"]["recovery"]["mean"], 1.0
+        )
+        self.assertEqual(record["cohort"]["kind"], "protein")
+        self.assertTrue(
+            record["perturbation_target"]["block_layout"].startswith("parallel")
+        )
+        self.assertEqual(len(record["block_output_norm"]["mean_per_layer"]), N_LAYER)
+        with tempfile.TemporaryDirectory() as directory:
+            write_json(Path(directory) / "parallel.json", record)
+
+    def test_the_ladder_is_reachable_and_the_transcoder_stages_still_refuse_it(self):
+        import panel_contract
+
+        admissible = R.perturbable_arms(panel_contract.CAMPAIGN_PANEL)
+        self.assertEqual(admissible, STAGE.ADMISSIBLE_ARMS)
+        for name in A.PROTEIN_SCALE_LADDER:
+            self.assertIn(name, admissible, name)
+            self.assertIn(name, _choices("arm"), name)
+            self.assertNotIn(name, R.eligible_arms(panel_contract.CAMPAIGN_PANEL), name)
 
 
 # ------------------------------------------------------------------ the target
