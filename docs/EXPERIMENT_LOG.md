@@ -9728,3 +9728,39 @@ That makes the cost of protein adaptation to the text mode a **within-lineage di
 **Bounds, and one that matters more than the others.** ProLLaMA is a damaged model in absolute terms — clean cross-entropy 6.62 nats in text and 4.21 in protein, against gpt2-large's 2.65 — and its denominators are small, 3.81 and 1.36 against gpt2-large's 6.91. A small denominator makes a recovery ratio *more* sensitive, and the protein mode has the smallest denominator of all four cells while being the more robust at low ε, so the reversal is not produced by the normalisation. One draw per cell here; a second cohort draw of the pivotal cell is running. Three seeds per ε, isotropic directions only — this bounds what a perturbation of that size costs, not what the worst one does. Per-mode symbols per token are 3.923 and 1.533, so no cross-mode magnitude comparison is licensed and none is made; the comparison is between two dimensionless ratios each normalised within its own mode.
 
 > **EXP-R2-158's tolerance paragraph is qualified by EXP-R2-159, recorded here so the two are not read independently.** The entry states: *"At matched relative reconstruction error, the same-sized MLP perturbation costs the protein model about six times more of its behaviour... That is a property of the model's tolerance to MLP-output perturbation, not of the dictionary's aim, and it is measured on the only pair in the panel that controls architecture."* The measurement stands exactly as reported; the words "property of the model's tolerance" over-reach, because the pair controls architecture and **not weights or training**, and the same manipulation inside one weight set does not reproduce the gap. **Read it as: gpt2-large tolerates MLP perturbation far better than ProtGPT2 does. Do not read it as: protein decoders tolerate MLP perturbation worse than text decoders.** The entry's other claim — that the error's *direction* is not the explanation — is untouched, since it is a within-arm comparison on every arm.
+
+## 2026-08-10 — EXP-R2-160: MLP-perturbation robustness is not ordered by modality, and it does not predict dictionary recovery
+
+**Ten cells on one instrument.** Stage `23_perturbation_sensitivity.py` extended to the standalone panel and the full joint lineage. Recovery at ε = 0.40, each cell against its own clean-to-mean-ablated gap:
+
+| rank | arm | mode | recovery at ε = 0.40 |
+|---|---|---|---:|
+| 1 | gpt2-large | text | **+0.9832** |
+| 2 | **ZymCTRL** | **protein** | **+0.9724** |
+| 3 | gpt2 | text | +0.8433 |
+| 4 | Llama-2-7b | text | +0.6306 |
+| 5 | ProLLaMA S2 | text | +0.4914 |
+| 6 | ProLLaMA S1 | protein | +0.3623 |
+| 7 | ProLLaMA S1 | text | +0.2080 |
+| 8 | ProLLaMA S2 | protein | +0.1824 |
+| 9 | ProtGPT2 | protein | −0.0242 |
+| 10 | Llama-2-7b | protein | −0.5282 |
+
+**Modality does not order this list.** A protein decoder is second, above two of four text arms, and 0.011 from the top. Another protein decoder is ninth. The within-modality spread — ZymCTRL to ProtGPT2, +0.9724 to −0.0242 — is larger than the entire text range. **"Protein decoders are fragile to MLP perturbation" is refused as a modality statement**, and with it the last framing in which EXP-R2-158's gpt2-large-versus-ProtGPT2 contrast could be read as a property of modality rather than of those two models.
+
+**The within-weights reversal replicates.** A second cohort draw of ProLLaMA Stage 1 gives text 0.9139 / 0.6827 / 0.1927 against protein 0.9491 / 0.7918 / 0.3410 at ε = 0.10 / 0.20 / 0.40 — the same ordering, the protein mode more robust, at every ε. EXP-R2-159 does not rest on one draw.
+
+**And robustness does not predict dictionary recovery, which is the finding that matters for F11.**
+
+| arm | dictionary NMSE/layer | robustness at ε = 0.40 | dictionary recovery |
+|---|---:|---:|---:|
+| gpt2-large | 0.2768 | +0.9832 | **+0.9322** |
+| gpt2 | 0.1960 | +0.8433 | **+0.9091** |
+| ProtGPT2 | 0.2555 | −0.0242 | **+0.1641** |
+| ZymCTRL | 0.5011 | +0.9724 | **+0.0916** |
+
+**ZymCTRL breaks any single-cause account.** It is the second most robust arm in the panel and has the worst dictionary recovery of any arm measured. Its dictionary also makes by far the largest relative error — NMSE 0.5011 against 0.20–0.28 for the other three. ProtGPT2 is the mirror image: its dictionary's relative error is *smaller* than gpt2-large's, and it is the most fragile arm in the panel bar one.
+
+**So the two protein arms appear to fail for different reasons.** ZymCTRL: a very large dictionary error on a model that tolerates perturbation well. ProtGPT2: a moderate dictionary error on a model that tolerates perturbation badly. That would explain why every single-cause hunt so far has come back negative — depth, budget, routing, tokenisation, band, saturation, denominator and error direction were each tested as one explanation for both arms, and there may not be one. **Stated as a hypothesis, not a result**: it is a reading of four arms on two axes, and the arithmetic that would confirm it — whether each arm's dictionary damage is what its own sensitivity curve predicts at its own error size — needs the curve measured at each dictionary's actual relative error, which is running now on an extended ε grid.
+
+**Bounds.** One draw per cell except ProLLaMA Stage 1, which has two; three seeds per ε; isotropic directions only, so this bounds what a perturbation of that size costs and not what the worst one does. Each cell is normalised within itself and no cross-cell magnitude comparison is made; the denominators span 1.20 to 8.15 nats and travel with the numbers. Llama-2-7b's protein mode is scored on a mode its own qualification calls unmeasurable, so its −0.5282 describes the destruction of something that was not there; it is listed for completeness and carries no weight. ε = 0.40 is one slice of a curve and the ranking at other ε may differ.
