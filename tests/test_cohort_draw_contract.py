@@ -90,6 +90,19 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "prefix is a region rather than a sample, and the block size the shuffle "
         "operates over is recorded in the artefact rather than left implicit"
     ),
+    "25_model_diffing_baselines.py": (
+        "draws through 17_train_transcoder.py's seeded block-shuffled stream, "
+        "imported rather than reimplemented, because it fits its maps on exactly "
+        "the tensors and the population a transcoder is fitted to. It also needs "
+        "something a cohort constructor cannot give it: ONE pool of train+eval "
+        "records split under a seeded permutation, so the fitting and the "
+        "reporting halves are samples of one population rather than two windows of "
+        "a cluster-ordered corpus -- the gap that would otherwise read as a "
+        "failure of the map. Rule 1 is answered with --seed and with --skip, which "
+        "moves the pool through the corpus in file order and is the only way to "
+        "produce the skip-offset sensitivity; the block size, the pool size and "
+        "the skip all reach the artefact"
+    ),
     "20_retrieval_bound.py": (
         "its units are the 187 distinct wild types of the ProteinGym substitution "
         "benchmark and the DMS variants of each, not corpus sequences, so it draws "

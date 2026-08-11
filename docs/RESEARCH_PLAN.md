@@ -103,6 +103,7 @@ The executable registered panel is declared only by `scripts/transfer/panel_cont
 | `22_neuron_basis_circuit.py` | Training-free neuron-basis faithfulness curve, the control that separates dictionary failure from dense MLP computation |
 | `23_perturbation_sensitivity.py` | Training-free relative-magnitude MLP perturbation sweep, measuring whether a joint checkpoint's protein mode is more fragile than its text mode under equally sized damage, and — across the four ProGen2 rungs of `src.transfer.arms.PROTEIN_SCALE_LADDER` — whether the tolerance curve is ordered by scale within one protein lineage |
 | `24_component_swap.py` | Training-free component swap between two checkpoints of one lineage, measuring in `21_joint_mode_qualification.py`'s estimand whether continued protein pretraining's text cost travels with the vocabulary interface or with the body |
+| `25_model_diffing_baselines.py` | Training-free same-input diffing baselines between two checkpoints of one lineage (R2.4), reporting per layer how much of the identity residual an offset, a rigid alignment and a full linear map remove on held-out positions, beside a shuffled-pairing null and the adjacent-layer unit. It reports the three quantities §4c's readings turn on and declares no threshold of its own |
 
 Stages outside the registered panel use their dedicated launcher or a direct validated invocation as documented in `scripts/transfer/README.md`. A new joint-model adapter is admitted to the executable contract only after its interface and negative paths are tested.
 
