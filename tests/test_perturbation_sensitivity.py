@@ -1,0 +1,1116 @@
+"""What the perturbation-sensitivity stage must get right, on CPU stubs.
+
+The stage asks whether a joint checkpoint's protein mode is more fragile than its
+text mode under a perturbation of *equivalent relative magnitude*. That question
+is only answerable if four things hold, and each of them can be wrong silently:
+
+**The perturbation is the size it claims.** Epsilon is a fraction of the block
+output's norm at that position, so a perturbation whose norm drifted -- by being
+scaled against a batch mean, a layer mean, or nothing at all -- would compare two
+modes under two different manipulations and report the difference as modality.
+
+**The two anchors are real.** Epsilon = 0 adds the zero vector and must reproduce
+the clean cross-entropy exactly; anything measurable means the splice path is not
+a no-op and every point of the sweep is shifted with it. And the denominator every
+ratio is divided by is the clean-to-mean-ablated gap, which must be positive.
+
+**A degenerate position is refused.** A block output of zero norm has no scale for
+epsilon to be relative to, and a zero perturbation there would report an
+unperturbed position as a perturbed one.
+
+**The joint arm is the checkpoint it says it is.** A rendering nobody declared, a
+tokenizer that cannot carry the declared residue alphabet, and a block layout that
+is not the serial post-attention feed-forward are all refused rather than measured.
+
+One correction to the specification is pinned here rather than left implicit: the
+recovery fraction is **not** bounded below by zero and a large epsilon does not
+approach the mean-ablated floor. Mean ablation removes the block's information; a
+perturbation removes it *and* injects norm the residual stream never carried, which
+damages the attention and embedding pathways too. So a large epsilon falls
+*through* the floor. ``TheSweepAnchors`` measures that rather than asserting the
+comfortable version, and the artefact records it as a property of the manipulation.
+
+Everything runs on randomly initialised two-layer models built from config objects
+-- a GPT-2 for the panel-arm path and a LLaMA for the joint path -- with stub
+tokenizers: no GPU, no network, no 7B checkpoint, as ``tests/test_replaceable_arms.py``
+and ``tests/test_neuron_basis_circuit.py`` do.
+"""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import importlib.util
+import io
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+if str(REPO / "scripts/transfer") not in sys.path:
+    sys.path.insert(0, str(REPO / "scripts/transfer"))
+
+import numpy as np  # noqa: E402
+import torch  # noqa: E402
+from transformers import (  # noqa: E402
+    GPT2Config,
+    GPT2LMHeadModel,
+    LlamaConfig,
+    LlamaForCausalLM,
+)
+
+from src.transfer import arms as A  # noqa: E402
+from src.transfer import joint_modes as JM  # noqa: E402
+from src.transfer import replaceable as R  # noqa: E402
+from src.transfer.io import write_json  # noqa: E402
+
+
+def _load_stage(filename: str):
+    """Import a stage whose module name starts with a digit."""
+
+    path = REPO / "scripts/transfer" / filename
+    spec = importlib.util.spec_from_file_location(path.stem.replace("-", "_"), path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+STAGE = _load_stage("23_perturbation_sensitivity.py")
+
+
+# --------------------------------------------------------------- the text stub
+
+D_MODEL, D_MLP, N_LAYER, N_HEAD, VOCAB = 8, 24, 2, 2, 16
+
+DOCUMENTS = [
+    "the harbour opened onto a shallow bay",
+    "a compiler translates one language into another",
+    "rainfall is concentrated in two short seasons",
+    "iron rusts when exposed to oxygen and water",
+]
+
+
+class _StubTextTokenizer:
+    """Enough tokenizer for ``tokenize_batch`` and the unconditioned content mask."""
+
+    all_special_ids = [0]
+    unk_token_id = 0
+    pad_token_id = 0
+    eos_token = "<|endoftext|>"
+
+    def __call__(self, text, return_tensors=None):
+        return {"input_ids": [1 + (ord(character) % (VOCAB - 1)) for character in text]}
+
+    def decode(self, ids):
+        return "".join(chr(96 + int(i)) for i in ids)
+
+
+def _overfit(model, rows: list[list[int]], *, steps: int = 200, lr: float = 5e-2) -> None:
+    """Overfit a stub on a handful of rows so its MLP carries something.
+
+    A *randomly initialised* decoder is already at its own chance rate, so
+    mean-ablating its MLP moves the cross-entropy by a thousandth of a nat and a
+    perturbation large enough to saturate it moves back towards chance -- which
+    makes the recovery ratio a ratio of two rounding errors and lets a large
+    epsilon read as *less* damaging than the floor. Every invariant this file
+    pins is about the regime a trained model is in, so the stub is put in it.
+    """
+
+    width = max(len(row) for row in rows)
+    ids = torch.zeros(len(rows), width, dtype=torch.long)
+    labels = torch.full((len(rows), width), -100, dtype=torch.long)
+    attention = torch.zeros(len(rows), width, dtype=torch.long)
+    for index, row in enumerate(rows):
+        ids[index, : len(row)] = torch.tensor(row, dtype=torch.long)
+        labels[index, : len(row)] = torch.tensor(row, dtype=torch.long)
+        attention[index, : len(row)] = 1
+    model.train()
+    optimiser = torch.optim.Adam(model.parameters(), lr=lr)
+    for _ in range(steps):
+        optimiser.zero_grad()
+        model(input_ids=ids, attention_mask=attention, labels=labels).loss.backward()
+        optimiser.step()
+    model.eval()
+    for parameter in model.parameters():
+        parameter.requires_grad_(False)
+
+
+_TEXT_MODEL: GPT2LMHeadModel | None = None
+
+
+def _text_model(seed: int = 11) -> GPT2LMHeadModel:
+    """One trained text stub, built once: the tests read it and never mutate it."""
+
+    global _TEXT_MODEL
+    if _TEXT_MODEL is None:
+        torch.manual_seed(seed)
+        model = GPT2LMHeadModel(
+            GPT2Config(
+                vocab_size=VOCAB,
+                n_positions=64,
+                n_embd=D_MODEL,
+                n_layer=N_LAYER,
+                n_head=N_HEAD,
+                n_inner=D_MLP,
+                resid_pdrop=0.0,
+                embd_pdrop=0.0,
+                attn_pdrop=0.0,
+            )
+        )
+        tokenizer = _StubTextTokenizer()
+        _overfit(model, [tokenizer(document)["input_ids"] for document in DOCUMENTS])
+        _TEXT_MODEL = model
+    return _TEXT_MODEL
+
+
+def _text_arm() -> A.Arm:
+    return A.Arm(
+        spec=A.ArmSpec(
+            name="gpt2",
+            path=Path("/nowhere"),
+            path_variable="TRANSFER_TEXT_MODEL_BASE_DIR",
+            modality="text",
+            n_layer=N_LAYER,
+            d_model=D_MODEL,
+            tokenisation="bpe",
+            input_format="raw",
+            evaluation_cohort_source="openwebtext",
+            architecture="gpt2",
+        ),
+        model=_text_model(),
+        tokenizer=_StubTextTokenizer(),
+        device="cpu",
+        dtype="float32",
+    )
+
+
+def _dense(**kwargs) -> R.DenseReplaceable:
+    return R.DenseReplaceable(_text_arm(**kwargs), max_tokens=64)
+
+
+# -------------------------------------------------------------- the joint stub
+
+
+SEQUENCES = [
+    "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQ",
+    "ACDEFGHIKLMNPQRSTVWYACDEFGHIKLMN",
+    "MSDTLTRLAEVLEARKGAAPDSSYVASLYHKG",
+    "MQPNDITFFQRFQNDILAGRKTITIRDASESH",
+]
+
+
+class StubJointTokenizer:
+    """A vocabulary that merges residues, whose delimiters are not its tokens.
+
+    The two properties of the staged ProLLaMA tokenizer that decide this stage's
+    protein numbers: ``Seq=<`` is spelled out of ordinary pieces rather than
+    carried as one, and a residue run comes back as multi-residue pieces, so the
+    family's declared symbol unit is the token. ``split_marker`` reproduces
+    Galactica's released ``Split``/``Removed`` rule; without it, a family that
+    declares a per-residue alphabet cannot reach one -- which is the state a
+    protein-mode run must be refused in.
+    """
+
+    def __init__(
+        self,
+        *,
+        specials: tuple[str, ...] = (),
+        split_marker: str | None = None,
+        bos_id: int = 2,
+        declare_ids: bool = True,
+    ) -> None:
+        self.split_marker = split_marker
+        self.bos_id = bos_id
+        self._vocab: dict[str, int] = {}
+        self._inverse: dict[int, str] = {bos_id: "<s>"}
+        self._add("<unk>")
+        for token in specials:
+            self._add(token)
+        # 'Seq' is one piece, as it is on the staged LLaMA-2 vocabulary. Spelling
+        # it out of 'S', 'e', 'q' would make the residue S occur inside the
+        # prefix, and the spelled-run rule would then refuse every rendering as
+        # ambiguous -- a property of this stub, not of the family.
+        for token in ("Seq", "Generate", "by", "superfamily", "Superfamily"):
+            self._add(token)
+        for residue in A.AA20:
+            self._add(residue)
+        for left in A.AA20:
+            for right in A.AA20:
+                self._add(left + right)
+        for character in "=<>[] abcdefghijklmnopqrstuvwxyz.,\n#":
+            self._add(character)
+        self._longest = max(len(token) for token in self._vocab)
+        self.unk_id = self._vocab["<unk>"]
+        self.all_special_ids = [bos_id, self.unk_id]
+        # Deliberately no pad_token_id: LLaMA-2's tokenizer declares none either,
+        # so the padding id has to be resolved from the declared fallback order.
+        self.eos_token_id = bos_id if declare_ids else None
+        self.unk_token_id = self.unk_id if declare_ids else None
+
+    def _add(self, token: str) -> None:
+        if token in self._vocab:
+            return
+        index = len(self._vocab) + 10
+        self._vocab[token] = index
+        self._inverse[index] = token
+
+    def __len__(self) -> int:
+        return len(self._vocab) + 10
+
+    def convert_tokens_to_ids(self, token: str):
+        return self._vocab.get(token)
+
+    def convert_ids_to_tokens(self, index: int):
+        return self._inverse.get(int(index))
+
+    def decode(self, ids) -> str:
+        return "".join(self._inverse.get(int(value), "") for value in ids)
+
+    def _fragment(self, text: str) -> list[int]:
+        ids: list[int] = []
+        cursor = 0
+        while cursor < len(text):
+            for length in range(min(self._longest, len(text) - cursor), 0, -1):
+                candidate = text[cursor : cursor + length]
+                if candidate in self._vocab:
+                    ids.append(self._vocab[candidate])
+                    cursor += length
+                    break
+            else:
+                ids.append(self.unk_id)
+                cursor += 1
+        return ids
+
+    def __call__(self, text: str, return_tensors=None) -> dict[str, list[int]]:
+        fragments = text.split(self.split_marker) if self.split_marker else [text]
+        ids: list[int] = [self.bos_id]
+        for fragment in fragments:
+            ids.extend(self._fragment(fragment))
+        return {"input_ids": ids}
+
+
+def prollama_stub(**kwargs) -> StubJointTokenizer:
+    return StubJointTokenizer(**kwargs)
+
+
+def galactica_stub_without_the_escape() -> StubJointTokenizer:
+    """Carries Galactica's delimiters and ignores its per-residue escape."""
+
+    return StubJointTokenizer(specials=("[START_AMINO]", "[END_AMINO]"))
+
+
+_JOINT_MODELS: dict[int, LlamaForCausalLM] = {}
+
+
+def _llama(tokenizer, seed: int = 5) -> LlamaForCausalLM:
+    """One trained LLaMA stub per vocabulary size, for the same reason as above."""
+
+    size = len(tokenizer)
+    if size not in _JOINT_MODELS:
+        torch.manual_seed(seed)
+        model = LlamaForCausalLM(
+            LlamaConfig(
+                vocab_size=size,
+                hidden_size=D_MODEL,
+                intermediate_size=D_MLP,
+                num_hidden_layers=N_LAYER,
+                num_attention_heads=N_HEAD,
+                num_key_value_heads=N_HEAD,
+                max_position_embeddings=256,
+                tie_word_embeddings=False,
+            )
+        )
+        corpus = list(DOCUMENTS) + [f"Seq=<{sequence}>" for sequence in SEQUENCES]
+        _overfit(model, [JM.encode(tokenizer, text) for text in corpus])
+        _JOINT_MODELS[size] = model
+    return _JOINT_MODELS[size]
+
+
+def _joint(mode: str, *, tokenizer=None, max_tokens: int = 128) -> R.JointReplaceable:
+    tokenizer = tokenizer or prollama_stub()
+    declaration = JM.rendering("prollama")
+    return R.JointReplaceable(
+        model=_llama(tokenizer),
+        tokenizer=tokenizer,
+        checkpoint=Path("/nowhere"),
+        declaration=declaration,
+        mode=mode,
+        tokenisation=JM.resolve(tokenizer, declaration) if mode == "protein" else None,
+        max_tokens=max_tokens,
+    )
+
+
+# ---------------------------------------------------------------- the estimand
+
+
+def _args(**overrides) -> argparse.Namespace:
+    args = argparse.Namespace(
+        sequences=len(DOCUMENTS),
+        text_min_chars=8,
+        protein_min_len=8,
+        protein_max_len=400,
+        cohort_skip=0,
+        cohort_draw_seed=A.DEFAULT_CORPUS_DRAW_SEED,
+        batch_size=2,
+        bootstrap=64,
+        seed=7,
+        epsilons=[0.1, 4.0],
+        draws=2,
+        max_tokens=128,
+    )
+    vars(args).update(overrides)
+    return args
+
+
+def _stub_cohort(records, kind):
+    def draw(n, *positional, skip=0, name="", seed=None, **keywords):
+        return A.Cohort(
+            name,
+            kind,
+            list(records)[:n],
+            8,
+            400,
+            {
+                "sampling": A.sampling_record(
+                    seed=seed, skip=skip, requested=n, eligible=64, corpus=f"stub_{kind}"
+                )
+            },
+        )
+
+    return draw
+
+
+@contextlib.contextmanager
+def _patched_corpus(records, kind):
+    attribute = "text_cohort" if kind == "text" else "protein_cohort"
+    original = getattr(STAGE, attribute)
+    setattr(STAGE, attribute, _stub_cohort(records, kind))
+    try:
+        yield
+    finally:
+        setattr(STAGE, attribute, original)
+
+
+class ThePerturbationIsTheSizeItClaims(unittest.TestCase):
+    """Epsilon is a fraction of THIS position's block output norm, or it is nothing."""
+
+    def _y(self, seed: int = 3) -> torch.Tensor:
+        generator = torch.Generator().manual_seed(seed)
+        # Deliberately heteroscedastic across positions: a perturbation scaled by
+        # a batch or layer mean would pass a homoscedastic check and fail here.
+        base = torch.randn((2, 5, D_MODEL), generator=generator)
+        scale = torch.tensor([0.01, 0.1, 1.0, 10.0, 100.0]).view(1, 5, 1)
+        return base * scale
+
+    def test_the_norm_is_epsilon_times_the_block_output_norm_at_every_position(self):
+        y = self._y()
+        for epsilon in (0.05, 0.2, 0.8, 4.0):
+            generator = torch.Generator().manual_seed(1)
+            r = STAGE.relative_perturbation(y, epsilon, generator)
+            torch.testing.assert_close(
+                r.norm(dim=-1),
+                epsilon * y.norm(dim=-1),
+                rtol=1e-5,
+                atol=0.0,
+                msg=f"epsilon {epsilon}",
+            )
+
+    def test_epsilon_zero_is_exactly_the_zero_vector(self):
+        y = self._y()
+        generator = torch.Generator().manual_seed(1)
+        r = STAGE.relative_perturbation(y, 0.0, generator)
+        self.assertTrue(bool((r == 0).all()))
+
+    def test_two_seeds_give_two_directions_and_one_norm(self):
+        y = self._y()
+        first = STAGE.relative_perturbation(y, 0.3, torch.Generator().manual_seed(1))
+        again = STAGE.relative_perturbation(y, 0.3, torch.Generator().manual_seed(1))
+        other = STAGE.relative_perturbation(y, 0.3, torch.Generator().manual_seed(2))
+        self.assertTrue(torch.equal(first, again), "one seed must reproduce one draw")
+        self.assertFalse(torch.equal(first, other), "two seeds must differ in direction")
+        torch.testing.assert_close(
+            first.norm(dim=-1), other.norm(dim=-1), rtol=1e-5, atol=0.0
+        )
+        # Different *directions*, not merely different numbers: the cosine between
+        # two independent draws in 8 dimensions is nowhere near 1.
+        cosine = torch.nn.functional.cosine_similarity(first, other, dim=-1)
+        self.assertLess(float(cosine.abs().max()), 0.999)
+
+    def test_a_zero_norm_block_output_is_refused_rather_than_perturbed_by_zero(self):
+        y = self._y()
+        y[0, 2] = 0.0
+        for epsilon in (0.0, 0.5):
+            with self.assertRaises(ValueError) as caught:
+                STAGE.relative_perturbation(y, epsilon, torch.Generator().manual_seed(1))
+            message = str(caught.exception)
+            self.assertIn("zero norm", message)
+            self.assertIn("1 positions", message)
+
+    def test_a_negative_magnitude_is_refused(self):
+        with self.assertRaises(ValueError):
+            STAGE.relative_perturbation(
+                self._y(), -0.1, torch.Generator().manual_seed(1)
+            )
+
+    def test_the_dtype_of_the_block_output_survives_the_perturbation(self):
+        y = self._y().to(torch.bfloat16)
+        r = STAGE.relative_perturbation(y, 0.25, torch.Generator().manual_seed(1))
+        self.assertEqual(r.dtype, torch.bfloat16)
+
+
+class TheSpliceIsTheOneSplice(unittest.TestCase):
+    """The perturbation reaches the forward pass through block_intercept and nothing else."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.model = _dense()
+        cls.inputs = cls.model.render(DOCUMENTS)
+
+    def test_every_layer_is_perturbed_and_at_the_declared_relative_size(self):
+        clean: dict[int, torch.Tensor] = {}
+        perturbed: dict[int, torch.Tensor] = {}
+
+        def record(store):
+            def tap(layer, x, y):
+                store[layer] = y.detach().clone()
+                return None
+
+            return tap
+
+        batch = self.model.batch(self.inputs[:2])
+        with self.model.block_intercept(record(clean)):
+            self.model.run(batch)
+        # Registration order is entry order, so the inner tap reads the tensor the
+        # perturbation produced -- which is what says the splice reached the pass.
+        factory = STAGE.perturbation_context(self.model, epsilon=0.25, seed=4)
+        with factory(), self.model.block_intercept(record(perturbed)):
+            self.model.run(batch)
+
+        self.assertEqual(sorted(perturbed), list(range(N_LAYER)))
+        # Layer 0 sees the same clean output in both passes, so its perturbation is
+        # exactly epsilon of its own norm. Later layers are perturbed on top of
+        # what earlier ones already did, which is the sequential property.
+        difference = perturbed[0] - clean[0]
+        torch.testing.assert_close(
+            difference.norm(dim=-1), 0.25 * clean[0].norm(dim=-1), rtol=1e-5, atol=0.0
+        )
+        self.assertFalse(torch.equal(perturbed[1], clean[1]))
+
+    def test_the_hooks_are_removed_when_the_context_exits(self):
+        # A splice that outlived its context would perturb every later sweep of
+        # the same run -- including the clean endpoint the denominator is built
+        # from -- without anything raising.
+        before = STAGE22_scored(self.model, self.inputs)
+        with STAGE.perturbation_context(self.model, epsilon=0.5, seed=4)():
+            during = STAGE22_scored(self.model, self.inputs)
+        after = STAGE22_scored(self.model, self.inputs)
+        self.assertFalse(np.allclose(before, during))
+        np.testing.assert_allclose(before, after, rtol=0, atol=0)
+
+
+def STAGE22_scored(model, inputs, factory=None):
+    return STAGE.STAGE22.scored_cross_entropy(
+        model, inputs, batch_size=2, factory=factory
+    )
+
+
+def _choices(destination: str):
+    """One argparse option's declared choices."""
+
+    for action in STAGE.build_parser()._actions:
+        if action.dest == destination:
+            return action.choices
+    raise AssertionError(f"the stage declares no --{destination.replace('_', '-')}")
+
+
+class TheSweepAnchors(unittest.TestCase):
+    """Both ends of the sweep are measured, and neither is what a reader assumes."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.model = _dense()
+        cls.inputs = cls.model.render(DOCUMENTS)
+        cls.reference = STAGE.block_output_reference(
+            cls.model, cls.inputs, batch_size=2
+        )
+        cls.clean = STAGE22_scored(cls.model, cls.inputs)
+        cls.ablated = STAGE22_scored(
+            cls.model,
+            cls.inputs,
+            factory=STAGE.STAGE15.mean_ablation_context(
+                cls.model, cls.reference["block_output_mean"]
+            ),
+        )
+
+    def _at(self, epsilon: float, seed: int = 3) -> np.ndarray:
+        return STAGE22_scored(
+            self.model,
+            self.inputs,
+            factory=STAGE.perturbation_context(self.model, epsilon=epsilon, seed=seed),
+        )
+
+    def test_the_denominator_is_positive_on_this_stub(self):
+        self.assertGreater(
+            float(self.ablated.mean() - self.clean.mean()),
+            0.0,
+            "the stub's mean ablation must damage the model or every ratio is undefined",
+        )
+
+    def test_epsilon_zero_reproduces_the_clean_model_exactly(self):
+        np.testing.assert_allclose(self._at(0.0), self.clean, rtol=0, atol=0)
+
+    def test_a_large_epsilon_falls_THROUGH_the_mean_ablated_floor(self):
+        # The correction this class exists to pin. A perturbation is not bounded
+        # by the mean-ablated floor: it removes the block's information AND
+        # injects norm the residual stream never carried. Recovery therefore goes
+        # negative rather than approaching zero from above.
+        picks = STAGE.STAGE22.bootstrap_indices(len(self.clean), replicates=64, seed=1)
+        huge = STAGE.STAGE22.recovery_record(
+            self.clean, self._at(64.0), self.ablated, picks=picks
+        )
+        self.assertLessEqual(huge["recovery"], 0.0)
+        self.assertGreater(
+            huge["damage_nats_per_token"], huge["denominator_nats_per_token"]
+        )
+
+    def test_recovery_decreases_as_the_perturbation_grows(self):
+        picks = STAGE.STAGE22.bootstrap_indices(len(self.clean), replicates=64, seed=1)
+        curve = [
+            STAGE.STAGE22.recovery_record(
+                self.clean, self._at(epsilon), self.ablated, picks=picks
+            )["recovery"]
+            for epsilon in (0.0, 0.1, 0.4, 1.6, 6.4)
+        ]
+        self.assertEqual(curve, sorted(curve, reverse=True), curve)
+        self.assertAlmostEqual(curve[0], 1.0, places=9)
+
+    def test_the_reference_records_the_norm_epsilon_is_anchored_on(self):
+        norms = self.reference["mean_block_output_norm_per_layer"]
+        self.assertEqual(len(norms), N_LAYER)
+        for value in norms:
+            self.assertGreater(value, 0.0)
+        counted = self.reference["n_content_positions_per_layer"]
+        expected = float(
+            sum(
+                int(self.model.content_mask(self.model.batch([text])).sum())
+                for text in self.inputs
+            )
+        )
+        self.assertEqual(counted, [expected] * N_LAYER)
+
+
+class TheArtefactCarriesTheNumerator(unittest.TestCase):
+    """Standing rule 27: a ratio whose denominator is not published is not a
+    measurement."""
+
+    CLEAN = np.array([2.0, 2.2, 1.8, 2.0])
+    ABLATED = np.array([4.0, 4.2, 3.8, 4.0])
+
+    def test_the_endpoints_are_reported_in_nats_with_their_intervals(self):
+        record = STAGE.endpoints_record(self.CLEAN, self.ABLATED, self.CLEAN)
+        self.assertEqual(record["verdict"], "PASS")
+        self.assertAlmostEqual(record["clean_nats_per_token"], 2.0)
+        self.assertAlmostEqual(record["mean_ablated_nats_per_token"], 4.0)
+        self.assertAlmostEqual(record["denominator_nats_per_token"], 2.0)
+        for key in ("clean_interval", "mean_ablated_interval"):
+            self.assertIn("interval", record[key])
+
+    def test_a_shifted_zero_epsilon_point_fails_the_endpoint_gate(self):
+        record = STAGE.endpoints_record(self.CLEAN, self.ABLATED, self.CLEAN + 0.01)
+        self.assertEqual(record["verdict"], "FAIL")
+        self.assertAlmostEqual(record["zero_epsilon_minus_clean_nats"], 0.01)
+
+    def test_a_non_positive_denominator_fails_the_endpoint_gate(self):
+        record = STAGE.endpoints_record(self.ABLATED, self.CLEAN, self.ABLATED)
+        self.assertEqual(record["verdict"], "FAIL")
+
+    def test_the_draw_spread_is_reported_before_its_summary(self):
+        draws = [{"recovery": 0.9}, {"recovery": 0.3}, {"recovery": 0.6}]
+        record = STAGE.across_draws(draws, "recovery")
+        self.assertEqual(record["values"], [0.9, 0.3, 0.6])
+        self.assertAlmostEqual(record["min"], 0.3)
+        self.assertAlmostEqual(record["max"], 0.9)
+        self.assertIsNone(STAGE.across_draws([{"recovery": None}], "recovery"))
+
+    def test_a_measured_mode_carries_absolute_nats_and_its_own_denominator(self):
+        model = _dense()
+        # The band gate needs a real checkpoint; what is under test here is the
+        # record, so the loader gate is stubbed rather than measured.
+        model.self_check = lambda: {"verdict": "PASS", "note": "stubbed for the test"}
+        with _patched_corpus(DOCUMENTS, "text"):
+            with contextlib.redirect_stdout(io.StringIO()):
+                record = STAGE.measure_mode(
+                    _args(), model, source="openwebtext", label="stub"
+                )
+
+        endpoints = record["gates"]["endpoints"]
+        for key in (
+            "clean_nats_per_token",
+            "mean_ablated_nats_per_token",
+            "denominator_nats_per_token",
+        ):
+            self.assertTrue(np.isfinite(endpoints[key]), key)
+        self.assertGreater(endpoints["denominator_nats_per_token"], 0.0)
+        self.assertEqual(endpoints["verdict"], "PASS")
+
+        # 0 is prepended to the declared grid and every point reports every draw.
+        self.assertEqual([point["epsilon"] for point in record["sweep"]], [0.0, 0.1, 4.0])
+        seeds = []
+        for point in record["sweep"]:
+            # Three draws of a random direction, reported individually -- except
+            # at the identity anchor, where the zero vector has only one.
+            self.assertEqual(len(point["draws"]), 1 if point["epsilon"] == 0.0 else 2)
+            self.assertEqual(point["n_draws"], len(point["draws"]))
+            for draw in point["draws"]:
+                seeds.append(draw["seed"])
+                # The numerator, not only the ratio.
+                self.assertIn("damage_nats_per_token", draw)
+                self.assertIn("denominator_nats_per_token", draw)
+                self.assertIn("recovery", draw)
+                self.assertAlmostEqual(
+                    draw["denominator_nats_per_token"],
+                    endpoints["denominator_nats_per_token"],
+                    places=12,
+                )
+        self.assertEqual(len(set(seeds)), len(seeds), "every draw needs its own seed")
+
+        self.assertAlmostEqual(record["sweep"][0]["across_draws"]["recovery"]["mean"], 1.0)
+        self.assertGreater(record["symbols_per_token"]["value"], 0.0)
+        self.assertIn("per scored token", record["symbols_per_token"]["unit"])
+        self.assertEqual(
+            len(record["block_output_norm"]["mean_per_layer"]), model.n_layers
+        )
+
+        # And it serialises: write_json refuses NaN and infinity, so a non-finite
+        # intermediate would be caught here rather than in a campaign.
+        with tempfile.TemporaryDirectory() as directory:
+            write_json(Path(directory) / "record.json", record)
+
+    def test_the_cross_mode_record_licenses_the_ratio_and_refuses_the_magnitude(self):
+        def mode(denominator, expansion):
+            return {
+                "gates": {
+                    "endpoints": {
+                        "clean_nats_per_token": 1.0,
+                        "mean_ablated_nats_per_token": 1.0 + denominator,
+                        "denominator_nats_per_token": denominator,
+                    }
+                },
+                "symbols_per_token": {"value": expansion, "unit": "residues per scored token"},
+                "sweep": [
+                    {
+                        "epsilon": 0.1,
+                        "across_draws": {"recovery": {"values": [0.9], "mean": 0.9}},
+                    }
+                ],
+            }
+
+        record = STAGE.cross_mode_record(
+            {"text": mode(2.0, 4.2), "protein": mode(0.5, 1.54)}
+        )
+        self.assertEqual(record["magnitude_comparison"]["verdict"], "NOT_LICENSED")
+        self.assertIn("L23", record["magnitude_comparison"]["reason"])
+        self.assertIn("recovery fraction", record["licensed_comparison"])
+        self.assertEqual(
+            record["per_mode"]["protein"]["denominator_nats_per_token"], 0.5
+        )
+        self.assertEqual(record["per_mode"]["text"]["symbols_per_token"], 4.2)
+        self.assertTrue(record["readable_only_with_two_modes"])
+        self.assertFalse(
+            STAGE.cross_mode_record({"text": mode(2.0, 4.2)})["readable_only_with_two_modes"]
+        )
+
+
+# --------------------------------------------------------------- the joint arm
+
+
+class TheJointArmIsTheCheckpointItSaysItIs(unittest.TestCase):
+    def test_an_unknown_rendering_is_refused_by_name(self):
+        with self.assertRaises(KeyError) as caught:
+            STAGE.resolve_protein_rendering(prollama_stub(), "not-a-family")
+        self.assertIn("prollama", str(caught.exception))
+        # And it is unreachable from the command line at all: the choices are
+        # composed by src.transfer.joint_modes rather than listed by the stage.
+        self.assertEqual(tuple(_choices("rendering")), tuple(JM.RENDERING_NAMES))
+
+    def test_protein_mode_on_a_tokenizer_without_the_declared_alphabet_is_refused(self):
+        # Galactica declares the residue as its symbol unit and reaches it only
+        # through a per-residue escape the released tokenizer consumes. A
+        # tokenizer that ignores that escape merges residues, so the declared
+        # alphabet does not exist on it and protein mode must not be measured.
+        with self.assertRaises(ValueError) as caught:
+            STAGE.resolve_protein_rendering(
+                galactica_stub_without_the_escape(), "galactica"
+            )
+        self.assertIn("per-residue alphabet", str(caught.exception))
+
+    def test_protein_mode_without_a_resolved_rendering_is_refused(self):
+        with self.assertRaises(ValueError) as caught:
+            R.JointReplaceable(
+                model=_llama(prollama_stub()),
+                tokenizer=prollama_stub(),
+                checkpoint=Path("/nowhere"),
+                declaration=JM.rendering("prollama"),
+                mode="protein",
+                tokenisation=None,
+            )
+        self.assertIn("resolved against", str(caught.exception))
+
+    def test_text_mode_does_not_need_the_protein_alphabet_and_says_so(self):
+        model = _joint("text", tokenizer=galactica_stub_without_the_escape())
+        inputs = model.render(DOCUMENTS)
+        with _patched_corpus(DOCUMENTS, "text"):
+            with contextlib.redirect_stdout(io.StringIO()):
+                record = STAGE.measure_mode(
+                    _args(epsilons=[0.2], draws=1),
+                    model,
+                    source="openwebtext",
+                    label="joint:text",
+                )
+        self.assertEqual(record["rendering"]["verdict"], "NOT_RESOLVED")
+        self.assertEqual(record["rendering"]["declared_family"], "prollama")
+        self.assertGreater(len(inputs), 0)
+
+    def test_an_undeclared_block_layout_is_refused_rather_than_duck_typed(self):
+        for architecture in ("gpt2", "opt", "progen", "qwen2"):
+            with self.assertRaises(TypeError, msg=architecture):
+                R.joint_block_layout(architecture)
+        self.assertEqual(R.joint_block_layout("llama").feed_forward, "mlp")
+
+    def test_the_declared_mode_set_is_the_one_the_stage_offers(self):
+        self.assertEqual(R.JOINT_MODES, ("text", "protein"))
+        with self.assertRaises(ValueError):
+            _joint("nucleotide")
+
+    def test_the_estimand_identity_holds_exactly_on_the_declared_layout(self):
+        record = _joint("protein").self_check()
+        self.assertEqual(record["estimand"]["verdict"], "PASS")
+        self.assertEqual(record["estimand"]["max_absolute_difference"], 0.0)
+        self.assertIn("post_attention_layernorm", record["estimand"]["identity"])
+
+    def test_the_joint_arm_declares_the_gate_it_does_not_have(self):
+        # A dense panel arm is gated on a measured likelihood band; no such band
+        # exists for a checkpoint reached by path, and the honest record is a
+        # withheld verdict with its reason rather than an invented one.
+        record = _joint("text").self_check()
+        self.assertEqual(record["likelihood_band"]["verdict"], "WITHHELD")
+        self.assertIn("21_joint_mode_qualification.py", record["likelihood_band"]["reason"])
+
+    def test_the_scored_span_is_the_renderings_own_and_excludes_the_delimiters(self):
+        model = _joint("protein")
+        inputs = model.render(SEQUENCES[:2])
+        batch = model.batch(inputs)
+        for row, text in enumerate(inputs):
+            rendered = model.tokenisation.render(
+                SEQUENCES[:2][row], context=None
+            )
+            positions = set(rendered.scored_positions)
+            self.assertEqual(
+                {int(index) for index in batch["content_mask"][row].nonzero().flatten()},
+                positions,
+            )
+            self.assertEqual(
+                {
+                    int(index) + 1
+                    for index in batch["target_mask"][row].nonzero().flatten()
+                },
+                positions,
+            )
+            # The rendering really did merge residues, which is why this family
+            # declares the token as its symbol unit.
+            self.assertGreater(rendered.residues_per_scored_token, 1.0)
+            self.assertEqual(text, rendered.text)
+
+    def test_a_string_that_did_not_come_from_render_has_no_scored_span(self):
+        model = _joint("protein")
+        with self.assertRaises(KeyError):
+            model.batch(["Seq=<MKTA>"])
+
+    def test_a_rendering_that_does_not_fit_the_token_budget_is_refused(self):
+        model = _joint("protein", max_tokens=4)
+        with self.assertRaises(ValueError) as caught:
+            model.render(SEQUENCES[:1])
+        self.assertIn("closing delimiter", str(caught.exception))
+
+    def test_the_padding_id_is_resolved_from_a_declared_order_or_refused(self):
+        model = _joint("text")
+        self.assertEqual(model._pad_source, "eos_token_id")
+        with self.assertRaises(ValueError):
+            R.JointReplaceable(
+                model=_llama(prollama_stub()),
+                tokenizer=prollama_stub(declare_ids=False),
+                checkpoint=Path("/nowhere"),
+                declaration=JM.rendering("prollama"),
+                mode="text",
+            )
+
+    def test_both_modes_run_through_the_identical_sweep(self):
+        tokenizer = prollama_stub()
+        declaration = JM.rendering("prollama")
+        backbone = _llama(tokenizer)
+        tokenisation = JM.resolve(tokenizer, declaration)
+        modes = {}
+        for mode, records, kind, source in (
+            ("protein", SEQUENCES, "protein", "swissprot"),
+            ("text", DOCUMENTS, "text", "openwebtext"),
+        ):
+            model = R.JointReplaceable(
+                model=backbone,
+                tokenizer=tokenizer,
+                checkpoint=Path("/nowhere"),
+                declaration=declaration,
+                mode=mode,
+                tokenisation=tokenisation if mode == "protein" else None,
+                max_tokens=128,
+            )
+            with _patched_corpus(records, kind):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    modes[mode] = STAGE.measure_mode(
+                        _args(epsilons=[0.2], draws=1),
+                        model,
+                        source=source,
+                        label=f"joint:{mode}",
+                    )
+        for mode, record in modes.items():
+            self.assertAlmostEqual(
+                record["sweep"][0]["across_draws"]["recovery"]["mean"], 1.0, msg=mode
+            )
+            self.assertTrue(
+                np.isfinite(record["gates"]["endpoints"]["denominator_nats_per_token"]), mode
+            )
+        self.assertGreater(modes["protein"]["symbols_per_token"]["value"], 1.0)
+        self.assertIn("residues", modes["protein"]["symbols_per_token"]["unit"])
+        self.assertIn("characters", modes["text"]["symbols_per_token"]["unit"])
+        cross = STAGE.cross_mode_record(modes)
+        self.assertEqual(cross["magnitude_comparison"]["verdict"], "NOT_LICENSED")
+        self.assertEqual(sorted(cross["per_mode"]), ["protein", "text"])
+        with tempfile.TemporaryDirectory() as directory:
+            write_json(Path(directory) / "modes.json", {"modes": modes, "cross": cross})
+
+
+# ------------------------------------------------------------------ the target
+
+
+class TheTargetIsResolvedBeforeAnythingIsLoaded(unittest.TestCase):
+    def _resolve(self, **overrides):
+        args = argparse.Namespace(
+            arm=None,
+            checkpoint=None,
+            rendering=None,
+            modes=None,
+            epsilons=[0.1],
+            draws=3,
+        )
+        vars(args).update(overrides)
+        return STAGE.resolve_target(args)
+
+    def test_a_checkpoint_without_a_rendering_is_refused(self):
+        with self.assertRaises(ValueError) as caught:
+            self._resolve(checkpoint=Path("/nowhere"))
+        self.assertIn("--rendering", str(caught.exception))
+
+    def test_a_checkpoint_defaults_to_both_modes(self):
+        self.assertEqual(
+            set(self._resolve(checkpoint=Path("/nowhere"), rendering="prollama")),
+            {"text", "protein"},
+        )
+        self.assertEqual(
+            self._resolve(
+                checkpoint=Path("/nowhere"), rendering="prollama", modes="protein"
+            ),
+            ("protein",),
+        )
+
+    def test_a_panel_arm_takes_neither_a_rendering_nor_a_mode(self):
+        self.assertEqual(self._resolve(arm="gpt2-large"), ())
+        with self.assertRaises(ValueError):
+            self._resolve(arm="gpt2-large", rendering="prollama")
+        with self.assertRaises(ValueError):
+            self._resolve(arm="gpt2-large", modes="both")
+
+    def test_an_arm_and_a_checkpoint_are_mutually_exclusive(self):
+        with self.assertRaises(SystemExit):
+            with contextlib.redirect_stderr(io.StringIO()):
+                STAGE.build_parser().parse_args(
+                    ["--arm", "gpt2-large", "--checkpoint", "/nowhere"]
+                )
+        with self.assertRaises(SystemExit):
+            with contextlib.redirect_stderr(io.StringIO()):
+                STAGE.build_parser().parse_args([])
+
+    def test_a_degenerate_sweep_is_refused(self):
+        with self.assertRaises(ValueError):
+            self._resolve(arm="gpt2-large", draws=0)
+        with self.assertRaises(ValueError):
+            self._resolve(arm="gpt2-large", epsilons=[-0.1])
+
+    def test_the_matched_standalone_pair_runs_through_the_identical_path(self):
+        # Without them a joint-model difference could not be attributed between
+        # joint training, modality, tokenizer and lineage.
+        for name in ("gpt2-large", "protgpt2"):
+            self.assertIn(name, _choices("arm"))
+
+    def test_an_arm_with_no_symbols_per_token_convention_is_refused(self):
+        with self.assertRaises(TypeError) as caught:
+            STAGE.symbols_per_token(object(), ["a"])
+        self.assertIn("symbols-per-token", str(caught.exception))
+
+
+class TheDriverWritesOneArtefactForOneCheckpoint(unittest.TestCase):
+    """The whole driver, on stubs: the part no CPU host can otherwise reach.
+
+    A 7B joint checkpoint does not fit on the hardware this repository validates
+    on, so the driver's wiring -- the loaders, the two-mode loop, the cross-mode
+    record and the serialisation -- would otherwise be exercised for the first
+    time on a cluster. The loaders and the corpus are replaced by stubs; every
+    line between them is the real one.
+    """
+
+    def test_both_modes_reach_one_artefact_with_their_own_denominators(self):
+        tokenizer = prollama_stub()
+        backbone = _llama(tokenizer)
+        facts = {
+            "resolved_path": "/nowhere",
+            "model_type": "llama",
+            "n_layers": N_LAYER,
+            "d_model": D_MODEL,
+            "n_heads": N_HEAD,
+            "vocab_size": len(tokenizer),
+            "dtype_requested": "float32",
+            "dtype_observed": ["float32"],
+        }
+        saved = (
+            STAGE.STAGE21.load_tokenizer,
+            STAGE.STAGE21.load_model,
+            STAGE.checkpoint_weights_digest,
+            sys.argv,
+        )
+        STAGE.STAGE21.load_tokenizer = lambda path: (Path(path), tokenizer)
+        STAGE.STAGE21.load_model = lambda resolved, tok, *, device, dtype: (
+            backbone,
+            dict(facts),
+        )
+        STAGE.checkpoint_weights_digest = lambda path: "0" * 64
+        with tempfile.TemporaryDirectory() as directory:
+            sys.argv = [
+                "23_perturbation_sensitivity.py",
+                "--checkpoint", "/nowhere",
+                "--rendering", "prollama",
+                "--device", "cpu",
+                "--dtype", "float32",
+                "--sequences", "4",
+                "--batch-size", "2",
+                "--bootstrap", "32",
+                "--epsilons", "0.2",
+                "--draws", "2",
+                "--max-tokens", "128",
+                "--out", directory,
+            ]
+            try:
+                with _patched_corpus(SEQUENCES, "protein"), _patched_corpus(
+                    DOCUMENTS, "text"
+                ):
+                    with contextlib.redirect_stdout(io.StringIO()):
+                        STAGE.main()
+                payload = json.loads(
+                    (Path(directory) / "perturbation_sensitivity.json").read_text()
+                )
+            finally:
+                (
+                    STAGE.STAGE21.load_tokenizer,
+                    STAGE.STAGE21.load_model,
+                    STAGE.checkpoint_weights_digest,
+                    sys.argv,
+                ) = saved
+
+        self.assertEqual(payload["schema_version"], STAGE.SCHEMA_VERSION)
+        self.assertEqual(sorted(payload["modes"]), ["protein", "text"])
+        self.assertEqual(payload["target"]["kind"], "joint_checkpoint")
+        self.assertEqual(payload["target"]["rendering_family"], "prollama")
+        self.assertEqual(payload["target"]["weights_sha256"], "0" * 64)
+        self.assertEqual(
+            sorted(payload["provenance"]["modules"]), sorted(STAGE.PROVENANCE_MODULES)
+        )
+        self.assertIn("epsilon_anchored_at", payload["perturbation"])
+        self.assertIn("NOT bounded below by zero", payload["perturbation"]["range_note"])
+
+        # Each mode carries its own denominator in nats and its own expansion, and
+        # only the ratio is licensed between them.
+        denominators = set()
+        for mode, record in payload["modes"].items():
+            self.assertEqual(record["cohort"]["kind"], mode)
+            denominators.add(record["gates"]["endpoints"]["denominator_nats_per_token"])
+            self.assertGreater(record["symbols_per_token"]["value"], 0.0)
+            self.assertEqual(record["sweep"][0]["epsilon"], 0.0)
+            self.assertEqual(record["sweep"][0]["n_draws"], 1)
+            self.assertEqual(record["sweep"][1]["n_draws"], 2)
+        self.assertEqual(len(denominators), 2, "the two modes must not share a floor")
+        self.assertEqual(
+            payload["cross_mode"]["magnitude_comparison"]["verdict"], "NOT_LICENSED"
+        )
+        self.assertTrue(payload["cross_mode"]["readable_only_with_two_modes"])
+        # The protein rendering is resolved and its facts travel with the run; the
+        # text mode says in its own field that it did not need one.
+        self.assertEqual(payload["modes"]["protein"]["rendering"]["name"], "prollama")
+        self.assertEqual(
+            payload["modes"]["protein"]["rendering"]["symbol_unit"], JM.TOKEN_UNIT
+        )
+        self.assertEqual(payload["modes"]["text"]["rendering"]["verdict"], "NOT_RESOLVED")
+        self.assertEqual(
+            payload["settings"]["cohort_draw_seed"], A.DEFAULT_CORPUS_DRAW_SEED
+        )
+
+
+class StageWiring(unittest.TestCase):
+    def test_the_stage_is_not_registered_in_the_panel_contract(self):
+        import panel_contract
+
+        self.assertNotIn("perturbation_sensitivity", panel_contract.STAGE_CONTRACTS)
+
+    def test_the_provenance_modules_exist_and_include_the_splice(self):
+        self.assertIn("src/transfer/replaceable.py", STAGE.PROVENANCE_MODULES)
+        for name in STAGE.PROVENANCE_MODULES:
+            self.assertTrue((REPO / name).exists(), name)
+
+    def test_the_cohort_band_and_draw_are_arguments_with_the_declared_defaults(self):
+        defaults = {action.dest: action.default for action in STAGE.build_parser()._actions}
+        self.assertEqual(defaults["protein_min_len"], 64)
+        self.assertEqual(defaults["protein_max_len"], 246)
+        self.assertEqual(defaults["cohort_draw_seed"], A.DEFAULT_CORPUS_DRAW_SEED)
+        self.assertEqual(defaults["text_min_chars"], 800)
+
+    def test_the_default_sweep_is_a_curve_with_several_draws_at_each_point(self):
+        self.assertGreaterEqual(len(STAGE.DEFAULT_EPSILONS), 5)
+        self.assertEqual(list(STAGE.DEFAULT_EPSILONS), sorted(STAGE.DEFAULT_EPSILONS))
+        self.assertGreater(min(STAGE.DEFAULT_EPSILONS), 0.0)
+        self.assertGreaterEqual(STAGE.DEFAULT_DRAWS_PER_EPSILON, 3)
+
+    def test_the_shared_endpoints_are_imported_and_not_restated(self):
+        # Appendix B rule 12. The fully-ablated endpoint, the per-sequence sweep,
+        # the paired recovery record and the joint loader all exist already; a
+        # second copy of any of them would make this stage's ratios a different
+        # measurement from the ones they are meant to be compared with.
+        source = Path(STAGE.__file__).read_text(encoding="utf-8")
+        for name in (
+            "def mean_ablation_context",
+            "def scored_cross_entropy",
+            "def recovery_record",
+            "def bootstrap_indices",
+            "def load_model",
+        ):
+            self.assertNotIn(name, source, f"{name} is restated rather than imported")
+        for attribute in ("mean_ablation_context", "matched_perturbation_context"):
+            self.assertTrue(hasattr(STAGE.STAGE15, attribute), attribute)
+        for attribute in ("load_tokenizer", "load_model"):
+            self.assertTrue(hasattr(STAGE.STAGE21, attribute), attribute)
+        for attribute in ("scored_cross_entropy", "recovery_record", "bootstrap_indices"):
+            self.assertTrue(hasattr(STAGE.STAGE22, attribute), attribute)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    unittest.main()

@@ -260,6 +260,7 @@ class EveryCorpusDrawDeclaresItsSeed(unittest.TestCase):
                 "19_routing_locality.py",
                 "21_joint_mode_qualification.py",
                 "22_neuron_basis_circuit.py",
+                "23_perturbation_sensitivity.py",
             },
         )
 

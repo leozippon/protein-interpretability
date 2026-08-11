@@ -54,11 +54,13 @@ from __future__ import annotations
 import hashlib
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterator, Sequence
 
 import torch
 
+from . import joint_modes
 from .arms import PANEL, Arm, Cohort, conditioning_boundary_ids, load_arm, tokenize_batch
 from .io import sha256_file
 from .path_patching import attention_output_projection
@@ -151,6 +153,36 @@ def arm_training_corpus(arm: str) -> str:
     if arm == PROGEN3_ARM:
         return PROGEN3_TRAINING_CORPUS
     return PANEL[arm].evaluation_cohort_source
+
+
+def checkpoint_weights_files(checkpoint: Path) -> list[Path]:
+    """A checkpoint directory's weight files, preferring safetensors.
+
+    Declared rather than globbed for anything readable: a directory that carries
+    both formats would otherwise digest whichever the glob happened to order
+    first, and two runs of one checkpoint would disagree about its identity.
+    """
+
+    for pattern in ("*.safetensors", "pytorch_model*.bin"):
+        found = sorted(Path(checkpoint).glob(pattern))
+        if found:
+            return found
+    raise FileNotFoundError(
+        f"{checkpoint} carries no *.safetensors and no pytorch_model*.bin, "
+        "so the loaded weights cannot be identified in the artefact"
+    )
+
+
+def checkpoint_weights_digest(checkpoint: Path) -> str:
+    """SHA-256 of the weight file, or of the shard digests when there are several."""
+
+    files = checkpoint_weights_files(checkpoint)
+    if len(files) == 1:
+        return sha256_file(files[0])
+    combined = hashlib.sha256()
+    for path in files:
+        combined.update(f"{path.name} {sha256_file(path)}\n".encode())
+    return combined.hexdigest()
 
 
 # --------------------------------------------------------------- the interface
@@ -728,33 +760,14 @@ class DenseReplaceable(ReplaceableModel):
         return Path(self.arm.spec.path)
 
     def weights_files(self) -> list[Path]:
-        """The checkpoint's weight files, preferring safetensors.
+        """The checkpoint's weight files, preferring safetensors."""
 
-        Declared rather than globbed for anything readable: a checkpoint
-        directory that carries both formats would otherwise digest whichever the
-        glob happened to order first, and two runs of one arm would disagree
-        about its identity.
-        """
-
-        for pattern in ("*.safetensors", "pytorch_model*.bin"):
-            found = sorted(self.checkpoint.glob(pattern))
-            if found:
-                return found
-        raise FileNotFoundError(
-            f"{self.checkpoint} carries no *.safetensors and no pytorch_model*.bin, "
-            "so the loaded weights cannot be identified in the artefact"
-        )
+        return checkpoint_weights_files(self.checkpoint)
 
     def weights_digest(self) -> str:
         """SHA-256 of the weight file, or of the shard digests when there are several."""
 
-        files = self.weights_files()
-        if len(files) == 1:
-            return sha256_file(files[0])
-        combined = hashlib.sha256()
-        for path in files:
-            combined.update(f"{path.name} {sha256_file(path)}\n".encode())
-        return combined.hexdigest()
+        return checkpoint_weights_digest(self.checkpoint)
 
     # -- inputs ------------------------------------------------------------
 
@@ -1128,6 +1141,572 @@ def dense_self_check_nll(model: DenseReplaceable, *, batch_size: int = 4) -> flo
     if count == 0:
         raise RuntimeError(f"{model.arm.name}: the frozen self-check inputs scored no tokens")
     return total / count
+
+
+# ------------------------------------------------------- joint checkpoints
+
+
+#: The two modes one joint language-protein checkpoint is measured in. A mode is
+#: not an arm: it selects the rendering, the corpus and the scored span, and the
+#: weights are the same object in both -- which is the whole reason a joint
+#: checkpoint controls architecture, scale AND weights where two standalone
+#: models control only the first.
+JOINT_MODES = ("text", "protein")
+
+
+@dataclass(frozen=True)
+class JointBlockLayout:
+    """Where one joint architecture keeps the block a perturbation is spliced into.
+
+    ``layer_list`` is the attribute path from the causal-LM wrapper to the list of
+    decoder layers, ``feed_forward`` the attribute on one layer whose output IS
+    the term added to the residual stream, and ``pre_feed_forward_norm`` the
+    normalisation whose *input* is the residual it is added to. The last is what
+    :meth:`JointReplaceable.estimand_identity` reconstructs the block output
+    from, so the layout is verified against the live forward pass rather than
+    believed.
+    """
+
+    layer_list: tuple[str, ...]
+    feed_forward: str
+    pre_feed_forward_norm: str
+
+
+#: Joint architectures whose block carries the replacement estimand unchanged,
+#: keyed by ``config.model_type``.
+#:
+#: ``llama`` only, and for the reason :data:`DENSE_ARCHITECTURES` is a frozenset
+#: of one. The ProLLaMA lineage (``Llama-2-7b-hf``, ``ProLLaMA_Stage_1``,
+#: ``ProLLaMA``) is LLaMA-2, whose decoder layer is the serial
+#: ``residual + mlp(post_attention_layernorm(residual))`` this estimand is defined
+#: on. Galactica is ``opt``, which splits its feed-forward into ``fc1``/``fc2``
+#: with no single module whose output is the residual contribution, so it has no
+#: block for this declaration to name; adding it would need a different
+#: interception point and a separate verification.
+JOINT_ARCHITECTURES: dict[str, JointBlockLayout] = {
+    "llama": JointBlockLayout(
+        layer_list=("model", "layers"),
+        feed_forward="mlp",
+        pre_feed_forward_norm="post_attention_layernorm",
+    ),
+}
+
+
+def joint_block_layout(model_type: str) -> JointBlockLayout:
+    """The declared layout for one joint architecture, refusing an undeclared one."""
+
+    if model_type not in JOINT_ARCHITECTURES:
+        raise TypeError(
+            f"{model_type!r} is not a declared joint architecture "
+            f"({sorted(JOINT_ARCHITECTURES)}); its block has not been verified to be "
+            "the serial post-attention feed-forward this estimand is defined on, and "
+            "duck-typing an attribute called 'mlp' would measure a different object "
+            "without saying so"
+        )
+    return JOINT_ARCHITECTURES[model_type]
+
+
+class JointReplaceable(ReplaceableModel):
+    """One mode of one joint language-protein checkpoint, behind the shared interface.
+
+    The third implementation, and the one the joint axis needs: a
+    :class:`DenseReplaceable` is a *panel* arm with a measured likelihood band,
+    and a joint checkpoint is deliberately not in the panel -- a checkpoint that
+    has not passed ``21_joint_mode_qualification.py`` must not be in ``arms.py``
+    at all. So the joint checkpoint is reached by path, its rendering is named,
+    and one instance is built per mode over **the same loaded weights**.
+
+    Everything about a mode that could be decided twice is read from
+    :mod:`src.transfer.joint_modes` instead: the protein rendering, its scored
+    span, and the refusal of a tokenizer that cannot carry the declared alphabet.
+    Nothing here re-derives a format.
+
+    **What one instance's scored positions are.** In protein mode they are the
+    rendering's own scored span -- the token run whose targets carry residues --
+    which is exactly what ``21_joint_mode_qualification.py`` scores, so the two
+    stages describe the same symbols. In text mode they are every non-padding
+    target after the first, which is what every dense arm scores.
+
+    **What its content positions are**, the positions a per-layer mean is taken
+    over: in protein mode the scored span, so delimiters, the instruction prefix
+    and the beginning-of-sequence token stay out of the fully-ablated endpoint;
+    in text mode every non-padding, non-special position, which is
+    :meth:`DenseReplaceable.content_mask`'s unconditioned rule.
+    """
+
+    block_kind = DENSE_BLOCK_KIND
+    loading_note = (
+        "AutoModelForCausalLM at a declared dtype, read back from the loaded "
+        "parameters; the block layout is resolved from a declaration keyed by "
+        "config.model_type and verified against the live forward pass"
+    )
+
+    def __init__(
+        self,
+        *,
+        model: Any,
+        tokenizer: Any,
+        checkpoint: Path,
+        declaration: joint_modes.JointRendering,
+        mode: str,
+        tokenisation: joint_modes.JointTokenisation | None = None,
+        max_tokens: int = 512,
+        protein_context: str | None = None,
+    ) -> None:
+        if mode not in JOINT_MODES:
+            raise ValueError(f"unknown joint mode {mode!r}; declared: {JOINT_MODES}")
+        if mode == "protein" and tokenisation is None:
+            raise ValueError(
+                f"{declaration.name}: protein mode needs the rendering resolved against "
+                "this checkpoint's tokenizer (src.transfer.joint_modes.resolve), which "
+                "is what refuses a tokenizer that does not carry the declared residue "
+                "alphabet. Scoring protein without it would score whatever the "
+                "tokenizer happened to produce"
+            )
+        if max_tokens < 2:
+            raise ValueError("--max-tokens must leave at least one scored target")
+        self.layout = joint_block_layout(str(getattr(model.config, "model_type", "")))
+        self.model = model
+        self.tokenizer = tokenizer
+        self._checkpoint = Path(checkpoint)
+        self.declaration = declaration
+        self.mode = mode
+        self.tokenisation = tokenisation
+        self.max_tokens = int(max_tokens)
+        self.protein_context = protein_context
+        self.name = f"{declaration.name}:{mode}"
+        self._rendered: dict[str, joint_modes.RenderedProtein] = {}
+        self._pad_id, self._pad_source = self._padding_id()
+
+    # -- declarations ------------------------------------------------------
+
+    @property
+    def cohort_kind(self) -> str:
+        """The mode decides the corpus, not a panel declaration."""
+
+        return self.mode
+
+    @property
+    def scoring_note(self) -> str:
+        if self.mode == "protein":
+            return (
+                "left to right, the declared rendering's scored span only "
+                f"({self.declaration.scored_target_rule}): the delimiters, the "
+                "optional document context and the beginning-of-sequence token are "
+                "excluded, so the likelihood is over the same symbols "
+                "21_joint_mode_qualification.py scores"
+            )
+        return "left to right, every non-padding target after the first"
+
+    def _padding_id(self) -> tuple[int, str]:
+        """A right-padding id, named rather than assumed.
+
+        The value cannot change a number -- padding is right of the content, the
+        attention is causal and no scored target lands on it -- but a tokenizer
+        that declares none at all would pad with ``None``, so the fallback order
+        is declared and the source is recorded rather than guessed at silently.
+        """
+
+        for attribute in ("pad_token_id", "eos_token_id", "unk_token_id"):
+            value = getattr(self.tokenizer, attribute, None)
+            if value is not None:
+                return int(value), attribute
+        raise ValueError(
+            "this tokenizer declares no pad, end-of-sequence or unknown token id, so "
+            "a batch of unequal lengths cannot be padded"
+        )
+
+    # -- shape -------------------------------------------------------------
+
+    def _layers(self) -> list[torch.nn.Module]:
+        node: Any = self.model
+        for attribute in self.layout.layer_list:
+            node = getattr(node, attribute, None)
+            if node is None:
+                raise TypeError(
+                    f"{self.name}: this checkpoint has no "
+                    f"{'.'.join(self.layout.layer_list)}, so the declared block layout "
+                    "does not describe it"
+                )
+        return list(node)
+
+    @property
+    def n_layers(self) -> int:
+        return len(self._layers())
+
+    @property
+    def n_heads(self) -> int:
+        heads = getattr(self.model.config, "num_attention_heads", None)
+        if heads is None:
+            raise TypeError(
+                f"{self.name}: config declares no num_attention_heads, so the "
+                "attention grid cannot be built"
+            )
+        return int(heads)
+
+    @property
+    def width(self) -> int:
+        return int(self.model.config.hidden_size)
+
+    @property
+    def device(self) -> torch.device:
+        return next(self.model.parameters()).device
+
+    @property
+    def checkpoint(self) -> Path:
+        return self._checkpoint
+
+    def weights_digest(self) -> str:
+        return checkpoint_weights_digest(self._checkpoint)
+
+    # -- inputs ------------------------------------------------------------
+
+    def render(
+        self, records: Sequence[str], *, ec_labels: Sequence[str | None] | None = None
+    ) -> list[str]:
+        """Records as this mode's own input strings, through the declared rendering.
+
+        A protein record goes through :meth:`joint_modes.JointTokenisation.render`,
+        which raises rather than warns when the declared rendering did not reach
+        the symbol unit its family declares. The resulting record -- its ids and
+        its scored span -- is kept, because re-deriving the span from the rendered
+        string at batch time would be a second copy of the rule that located it.
+        """
+
+        if ec_labels is not None and any(label is not None for label in ec_labels):
+            raise ValueError(
+                f"{self.name} has no EC conditioning prompt; labels handed to it would "
+                "be silently dropped and the run would look like a conditioned one"
+            )
+        if self.mode == "text":
+            return list(records)
+        assert self.tokenisation is not None  # enforced in __init__
+        rendered: list[str] = []
+        for sequence in records:
+            record = self.tokenisation.render(sequence, context=self.protein_context)
+            if len(record.token_ids) > self.max_tokens:
+                raise ValueError(
+                    f"a rendered protein needs {len(record.token_ids)} tokens and "
+                    f"max_tokens is {self.max_tokens}; truncating it would drop the "
+                    "closing delimiter and silently change the scored span. Raise "
+                    "--max-tokens or lower --protein-max-len"
+                )
+            self._rendered[record.text] = record
+            rendered.append(record.text)
+        return rendered
+
+    def _rows(self, inputs: Sequence[str], cap: int) -> list[tuple[list[int], set[int]]]:
+        """Each input's ids and the positions whose *target* this mode scores."""
+
+        rows: list[tuple[list[int], set[int]]] = []
+        for text in inputs:
+            if self.mode == "protein":
+                record = self._rendered.get(text)
+                if record is None:
+                    raise KeyError(
+                        f"{self.name}: this string did not come from render(), so its "
+                        "scored span is unknown. A protein input must be rendered "
+                        "through the declared rendering, which is where the span is "
+                        "located and verified"
+                    )
+                rows.append((list(record.token_ids), set(record.scored_positions)))
+                continue
+            ids = joint_modes.encode(self.tokenizer, text)[:cap]
+            if len(ids) < 2:
+                raise ValueError(
+                    f"{self.name}: a text record tokenised to {len(ids)} tokens; "
+                    "nothing predicts the first token of a sequence, so there is no "
+                    "scored target"
+                )
+            rows.append((ids, set(range(1, len(ids)))))
+        return rows
+
+    def batch(
+        self, inputs: Sequence[str], *, max_tokens: int | None = None
+    ) -> dict[str, torch.Tensor]:
+        """Right-padded ids with this mode's content and target masks alongside.
+
+        Both masks travel with the batch rather than being recomputed from the
+        ids, because in protein mode neither is derivable from the ids alone: the
+        scored span is located by the rendering's own rule, and a residue token is
+        an ordinary piece of the text vocabulary on this family.
+        """
+
+        rows = self._rows(list(inputs), self.max_tokens if max_tokens is None else max_tokens)
+        if not rows:
+            raise ValueError("an empty batch has nothing to score")
+        width = max(len(ids) for ids, _ in rows)
+        input_ids = torch.full((len(rows), width), self._pad_id, dtype=torch.long)
+        attention = torch.zeros((len(rows), width), dtype=torch.long)
+        content = torch.zeros((len(rows), width), dtype=torch.bool)
+        target = torch.zeros((len(rows), width - 1), dtype=torch.bool)
+        for row, (ids, scored) in enumerate(rows):
+            input_ids[row, : len(ids)] = torch.tensor(ids, dtype=torch.long)
+            attention[row, : len(ids)] = 1
+            for position in sorted(scored):
+                target[row, position - 1] = True
+            if self.mode == "protein":
+                content[row, sorted(scored)] = True
+            else:
+                content[row, : len(ids)] = True
+                special = [
+                    token
+                    for token in getattr(self.tokenizer, "all_special_ids", []) or []
+                    if token is not None
+                ]
+                if special:
+                    marker = torch.tensor(special, dtype=torch.long)
+                    content[row] &= ~torch.isin(input_ids[row], marker)
+        device = self.device
+        return {
+            "input_ids": input_ids.to(device),
+            "attention_mask": attention.to(device),
+            "content_mask": content.to(device),
+            "target_mask": target.to(device),
+        }
+
+    def content_mask(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
+        return batch["content_mask"]
+
+    # -- running -----------------------------------------------------------
+
+    def run(self, batch: dict[str, torch.Tensor]) -> Any:
+        return self.model(
+            input_ids=batch["input_ids"],
+            attention_mask=batch["attention_mask"],
+            use_cache=False,
+            return_dict=True,
+        )
+
+    def scored_logits(
+        self, batch: dict[str, torch.Tensor]
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        output = self.run(batch)
+        ids = batch["input_ids"]
+        return output.logits[..., :-1, :].float(), ids[..., 1:], batch["target_mask"]
+
+    @contextmanager
+    def block_intercept(
+        self, fn: Callable[[int, torch.Tensor, torch.Tensor], torch.Tensor | None]
+    ) -> Iterator[None]:
+        """Read or replace every feed-forward's output while the model runs.
+
+        The same contract :meth:`DenseReplaceable.block_intercept` declares --
+        ``fn(layer, block_input, block_output)`` returns a substitute or ``None``
+        -- so a stage carries one splice and not a per-architecture branch.
+        """
+
+        handles = []
+        for layer, block in enumerate(self._layers()):
+            module = getattr(block, self.layout.feed_forward, None)
+            if module is None:
+                raise TypeError(
+                    f"{self.name}: layer {layer} has no {self.layout.feed_forward!r}, "
+                    "so the declared block layout does not describe it"
+                )
+
+            def hook(
+                module: torch.nn.Module,
+                inputs: tuple[Any, ...],
+                output: Any,
+                layer: int = layer,
+            ) -> Any:
+                if isinstance(output, tuple):
+                    raise TypeError(
+                        f"{self.name}: layer {layer}'s feed-forward returned a tuple; "
+                        "this interceptor is written for a module whose output IS the "
+                        "residual contribution"
+                    )
+                return fn(layer, inputs[0], output)
+
+            handles.append(module.register_forward_hook(hook))
+        try:
+            yield
+        finally:
+            for handle in handles:
+                handle.remove()
+
+    @contextmanager
+    def ablated(self, component: Component) -> Iterator[None]:
+        """Zero one block's contribution to the residual stream.
+
+        Only the block family. An attention head is zeroed at the input of the
+        output projection, which
+        :func:`src.transfer.path_patching.attention_output_projection` resolves
+        from the *panel's* declaration -- and a joint checkpoint reached by path is
+        not a panel arm, so there is no declaration to resolve it against. Refused
+        with that reason rather than located by searching for a plausible module.
+        """
+
+        if component.kind != self.block_kind:
+            raise ValueError(
+                f"{self.name}: no ablation is implemented for component kind "
+                f"{component.kind!r}. The attention output projection is declared per "
+                "panel architecture and this checkpoint is not a panel arm"
+            )
+        target = component.layer
+
+        def zero(layer: int, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor | None:
+            return torch.zeros_like(y) if layer == target else None
+
+        with self.block_intercept(zero):
+            yield
+
+    # -- measurement -------------------------------------------------------
+
+    def symbols_per_token(self, inputs: Sequence[str]) -> float:
+        """Measured expansion over exactly the window this mode scores.
+
+        Protein counts residues per scored token, read off the rendering records
+        rather than recounted, which is the quantity
+        ``21_joint_mode_qualification.py`` reports beside every protein magnitude
+        of a token-unit family. Text counts characters per token over the
+        truncated window, which is
+        :func:`src.transfer.arms.symbols_per_token`'s text convention.
+        """
+
+        tokens = 0
+        symbols = 0
+        for text in inputs:
+            if self.mode == "protein":
+                record = self._rendered.get(text)
+                if record is None:
+                    raise KeyError(
+                        f"{self.name}: this string did not come from render(), so its "
+                        "scored span is unknown"
+                    )
+                tokens += record.n_scored_tokens
+                symbols += record.n_residues
+                continue
+            ids = joint_modes.encode(self.tokenizer, text)[: self.max_tokens]
+            tokens += len(ids)
+            symbols += len(self.tokenizer.decode(ids))
+        if tokens == 0:
+            raise RuntimeError(f"{self.name}: the scored inputs carry no tokens")
+        return symbols / tokens
+
+    # -- gates -------------------------------------------------------------
+
+    def _self_check_records(self) -> tuple[str, ...]:
+        """The frozen inputs the structural gate runs on.
+
+        Literally the sets the dense arms are checked on -- eight paragraphs of
+        English and eight Swiss-Prot records -- so that the joint checkpoint's
+        gate reads the same inputs the standalone pair's does and no third frozen
+        set enters the repository.
+        """
+
+        return SELF_CHECK_DOCUMENTS if self.mode == "text" else SELF_CHECK_SEQUENCES
+
+    @torch.no_grad()
+    def estimand_identity(self) -> dict[str, Any]:
+        """Verify that the intercepted pair IS the block this estimand is defined on.
+
+        :meth:`DenseReplaceable.estimand_identity`'s check, on the declared layout:
+        the block's own output must equal the residual its pre-feed-forward
+        normalisation read plus the intercepted feed-forward output. The tolerance
+        is **exact**, because the model performs that addition on those two
+        tensors in that dtype, so anything but equality means the block does
+        something this interceptor does not see.
+        """
+
+        blocks = self._layers()
+        residual: dict[int, torch.Tensor] = {}
+        contribution: dict[int, torch.Tensor] = {}
+        produced: dict[int, torch.Tensor] = {}
+        handles = []
+
+        def before_norm(layer: int) -> Callable[..., None]:
+            def hook(module: torch.nn.Module, inputs: tuple[Any, ...]) -> None:
+                residual[layer] = inputs[0].detach()
+
+            return hook
+
+        def after_block(layer: int) -> Callable[..., None]:
+            def hook(module: torch.nn.Module, inputs: Any, output: Any) -> None:
+                produced[layer] = (
+                    output[0] if isinstance(output, tuple) else output
+                ).detach()
+
+            return hook
+
+        for layer, block in enumerate(blocks):
+            norm = getattr(block, self.layout.pre_feed_forward_norm, None)
+            if norm is None:
+                raise TypeError(
+                    f"{self.name}: block {layer} has no "
+                    f"{self.layout.pre_feed_forward_norm!r}, so the residual the "
+                    "feed-forward writes into cannot be read"
+                )
+            handles.append(norm.register_forward_pre_hook(before_norm(layer)))
+            handles.append(block.register_forward_hook(after_block(layer)))
+
+        def tap(layer: int, x: torch.Tensor, y: torch.Tensor) -> None:
+            contribution[layer] = y.detach()
+            return None
+
+        try:
+            with self.block_intercept(tap):
+                self.run(self.batch(self.render(self._self_check_records()[:2])))
+        finally:
+            for handle in handles:
+                handle.remove()
+
+        worst = 0.0
+        for layer in range(len(blocks)):
+            rebuilt = residual[layer] + contribution[layer]
+            worst = max(worst, float((rebuilt - produced[layer]).abs().max()))
+        record = {
+            "max_absolute_difference": worst,
+            "n_layers": len(blocks),
+            "identity": (
+                f"block output == {self.layout.pre_feed_forward_norm} input + "
+                f"intercepted {self.layout.feed_forward} output"
+            ),
+            "verdict": "PASS" if worst == 0.0 else "FAIL",
+        }
+        if worst != 0.0:
+            raise RuntimeError(
+                f"{self.name}: the intercepted feed-forward output plus its input "
+                f"residual differs from the block's own output by {worst:.3e}. The "
+                "perturbation estimand is not what this interceptor reads, so a "
+                "number measured here would not be the measurement the dense arms' is."
+            )
+        return record
+
+    def self_check(self) -> dict[str, Any]:
+        """The structural gate, and an honest statement of the one it does not have.
+
+        A dense panel arm is gated on a **measured** frozen-input likelihood band,
+        which is what catches a checkpoint that loaded without its weights or was
+        fed the wrong rendering (L11, L24). No such band has been measured for a
+        joint checkpoint -- it is reached by path precisely because it is not a
+        panel arm -- so the band is recorded as withheld with its reason instead of
+        being invented, and the two gates this arm does have are what run:
+        resolution of the declared rendering against this tokenizer, which
+        happened before the weights were read, and the estimand identity above.
+        """
+
+        return {
+            "estimand": self.estimand_identity(),
+            "rendering_resolved": self.tokenisation is not None,
+            "likelihood_band": {
+                "verdict": "WITHHELD",
+                "reason": (
+                    "no frozen-input likelihood band has been measured for this "
+                    "checkpoint, because it is reached by path rather than declared "
+                    "in src.transfer.arms.PANEL (a checkpoint that has not passed "
+                    "21_joint_mode_qualification.py must not be in the panel). This "
+                    "arm's loader gate is therefore structural only: a checkpoint "
+                    "that loaded without its weights would be caught by neither the "
+                    "rendering resolution nor the estimand identity. Read this "
+                    "artefact beside that stage's context-information verdict for "
+                    "the same checkpoint and mode"
+                ),
+            },
+            "n_records": len(self._self_check_records()),
+            "verdict": "PASS",
+        }
 
 
 # ------------------------------------------------------------------ dispatch
