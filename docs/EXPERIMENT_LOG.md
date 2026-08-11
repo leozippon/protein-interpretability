@@ -9677,3 +9677,28 @@ That makes the cost of protein adaptation to the text mode a **within-lineage di
 >
 > Two bounds still stand. ZymCTRL's random control was not extended to k = 2048 in this run, so its 0.1901 is compared against the dictionary and not against chance at that size. And three arms of one architecture family remain three arms of one architecture family.
 
+
+## 2026-08-10 — EXP-R2-158: the replacement error is not pathologically directed, and the matched pair differs in tolerance rather than in aim
+
+**The question.** EXP-R2-156 established that protein absolute damage is 8–17x the text arms' per content symbol, so the deficit is not a normalisation artefact. That leaves two readings of the error itself: it is merely **large**, or it is **aimed** at the causally load-bearing subspace. The control is a random perturbation matched to the dictionary's own error in **both norm and angle** at every position, substituted through the same splice, so the only thing that differs is the direction of the orthogonal component. Three draws per arm, snapshot `20260810134208_52482748ee2a`.
+
+| arm | dictionary damage | matched-random damage | **ratio** | dictionary recovery |
+|---|---:|---:|---:|---:|
+| gpt2 | 0.5771 | 0.7840 | **0.74** | +0.9091 |
+| ProGen3 | 1.2316 | 1.4595 | **0.84** | +0.1340 |
+| gpt2-large | 0.4690 | 0.4964 | **0.94** | +0.9322 |
+| ZymCTRL | 1.9911 | 1.8877 | **1.05** | +0.0916 |
+| ProtGPT2 | 3.5960 | 2.8898 | **1.24** | +0.1641 |
+
+**Direction is not the explanation, and it does not even order the modalities.** Every arm sits within ±26% of what a random error of the same norm and angle would do, and the ordering interleaves: ProGen3, a protein arm, is *more* benign than gpt2-large, and gpt2, a text arm, is the most benign of all. Only ProtGPT2 is meaningfully worse than random, at 1.24. **The pathological-direction account is refused as a modality explanation** — on three of five arms the dictionary's error is *less* harmful than a random error of its size, which is the opposite of pathological.
+
+**What the same control reveals instead, on the one architecture-controlled pair.** gpt2-large and ProtGPT2 hold depth, width, head count, vocabulary size and parameter count fixed and differ in modality. Their dictionaries reconstruct to **almost the same relative error** — mean per-layer NMSE 0.2768 and 0.2555, the protein one slightly *better*. Now substitute a random perturbation of each dictionary's own size:
+
+- gpt2-large loses **0.4964** of a 6.9192-nat gap — recovery **+0.9283**, barely distinguishable from its dictionary's +0.9322.
+- ProtGPT2 loses **2.8898** of a 4.3039-nat gap — recovery **+0.3285**, against its dictionary's +0.1641.
+
+**At matched relative reconstruction error, the same-sized MLP perturbation costs the protein model about six times more of its behaviour.** The text model absorbs a perturbation of that size almost completely; the protein model does not. That is a property of the **model's tolerance to MLP-output perturbation**, not of the dictionary's aim, and it is measured on the only pair in the panel that controls architecture.
+
+**How this narrows F11.** Three accounts are now excluded rather than merely untested: the ratio's denominator (EXP-R2-156), the dictionary's training budget (EXP-R2-153), and the error's direction (here). What survives is that a protein decoder's behaviour is unusually intolerant of perturbation to its MLP outputs, and that a sparse dictionary at k = 64 is a perturbation large enough to matter there while being small enough not to matter on text. That is consistent with EXP-R2-157, where keeping 40% of the raw neurons — a far gentler approximation than 64 active latents — recovers more on protein than the dictionary does.
+
+**Bounds, and one derived statistic I decline to promote.** Dividing each arm's matched-random damage by its NMSE gives 1.79, 3.30, 3.77, 4.00, 11.31 for gpt2-large, ProGen3, ZymCTRL, gpt2 and ProtGPT2 — **which does not order the modalities**, since gpt2 exceeds two protein arms. So no five-arm sensitivity claim is made; the tolerance statement above is made on the matched pair only, where architecture is controlled, and ProtGPT2 is also the arm with the highest ratio in the direction table, so the pair is not a neutral draw from the panel. Three draws per arm, n = 128, one cohort band per arm, one dictionary per arm. The matching is exact in float32 and the substituted tensor is cast back to the block dtype, so the model sees the match to bfloat16 rounding. The control bounds the dictionary's error against a *random* error of the same size, not against the *best* error of that size.
