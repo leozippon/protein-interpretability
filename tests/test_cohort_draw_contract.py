@@ -57,6 +57,16 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "only to positions, over a 150-of-396,000 file-order prefix"
     ),
     "12_induction_robustness.py": "reads artefacts from disk; loads no corpus",
+    "24_component_swap.py": (
+        "measures its chimera through 21_joint_mode_qualification.py's own "
+        "protein_mode and text_mode, which draw both windows through "
+        "arms.protein_cohort and arms.text_cohort under that stage's mode_cohorts. "
+        "It defines --cohort-draw-seed and passes it in the namespace those "
+        "functions read, so rule 1 is answered at the one call site rather than at "
+        "a second copy of it -- a chimera's number is only readable beside the "
+        "qualification figures it is compared with, which requires the identical "
+        "draw and not merely a matching one"
+    ),
     "panel_contract.py": "a declaration, not a measurement",
     "paa_failure_audit.py": (
         "stratifies retained census and causal artefacts that already exist; it "
