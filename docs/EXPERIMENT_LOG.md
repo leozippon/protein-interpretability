@@ -9801,3 +9801,26 @@ That makes the cost of protein adaptation to the text mode a **within-lineage di
 **What this settles and what it does not.** Settled: the two protein arms have very different tolerance profiles, ProtGPT2 fragile and ZymCTRL robust, so a single mechanism cannot produce both failures through the same route. Not settled: whether ProtGPT2's dictionary error is small and lands on its cliff, or large; and whether ZymCTRL's is large or merely badly directed. **Both need one quantity nobody has measured — the dictionary's error norm as a fraction of the block output norm, per layer and per position.** Until it exists, the isotropic-equivalent sizes above are a derived comparison and not an error measurement, and are recorded as such.
 
 **Bounds.** Curves are one cohort draw per arm at three seeds per ε; second draws are running. Inversion is linear between measured grid points. ZymCTRL's point lies past the grid, so ">1.40" is a bound and not a value. gpt2's curve is markedly steeper than gpt2-large's, so tolerance is not a modality property on the text side either.
+
+## 2026-08-10 — EXP-R2-162: across the joint lineage the two modes trade robustness, and the trade reverses between training stages
+
+**Matched-resolution tolerance curves on all three lineage checkpoints, both modes.** Same instrument, same cohort protocol, same ε grid, three seeds per point; each mode normalised by its own clean-to-mean-ablated gap. Recovery at three points on the curve:
+
+| checkpoint | mode | ε = 0.10 | ε = 0.40 | ε = 0.80 |
+|---|---|---:|---:|---:|
+| Llama-2-7b (base) | text | +0.993 | **+0.631** | +0.212 |
+| Llama-2-7b (base) | protein | +0.910 | **−0.528** | −2.667 |
+| ProLLaMA S1 (protein CPT) | text | +0.920 | **+0.208** | −0.257 |
+| ProLLaMA S1 (protein CPT) | protein | +0.951 | **+0.362** | −1.049 |
+| ProLLaMA S2 (instruction) | text | +0.974 | **+0.491** | −0.185 |
+| ProLLaMA S2 (instruction) | protein | +0.929 | **+0.182** | −1.291 |
+
+**The mode gap at ε = 0.40 changes sign twice along the lineage.** The base model favours text by **+1.159**; after protein continued pretraining the ordering **reverses** and protein leads by **0.154**; after instruction tuning it reverses **again** and text leads by **0.309**.
+
+**Each stage trades one mode's robustness for the other's, and each trades in the direction its data would predict.** Protein continued pretraining moves text from +0.631 to +0.208 and protein from −0.528 to +0.362 — it buys protein robustness and pays for it in text. Instruction tuning, which adds **no protein data**, moves text back up to +0.491 and protein down to +0.182. **Neither stage improves both modes, and neither degrades both.**
+
+**Why this is worth more than the standalone panel could say.** These are one architecture, one tokenizer, one parameter count and one weight lineage; the only thing that varies is what was trained and when. A robustness difference between two standalone models could be modality, corpus, tokenizer, scale, or lab. Here it can only be the training stage, and the trade-off is visible as a sign change rather than a magnitude difference.
+
+**It also explains the EXP-R2-159 reading rather than merely confirming it.** That entry recorded, on Stage 1, that the protein mode is the more robust of the two and read it as evidence against a modality account. The lineage now shows this is a *stage-dependent* property of that checkpoint and not a standing fact about the model family: the same architecture reading the same two modalities orders them differently before protein pretraining, after it, and after instruction tuning. **No ordering of the two modes is a property of the model; it is a property of the checkpoint.**
+
+**Bounds, and one that governs the high-ε column.** The protein mode's denominator on these arms is 1.20–1.38 nats against the text mode's 3.81–8.15, so once damage exceeds the gap the protein ratio goes far more negative than the text one for the same absolute damage — the ε = 0.80 column is dominated by that and should not be read as six times more damage. The columns that carry the reading are ε ≤ 0.40, where every cell is inside its own gap. One cohort draw per curve at three seeds per ε; second draws are running. The base model's protein mode is scored on a mode its own qualification calls unmeasurable, so its protein row describes the loss of something that was barely present, and its −0.528 is the least meaningful number in the table.
