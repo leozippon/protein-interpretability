@@ -19,6 +19,27 @@ identical architecture, depth, width, vocabulary and parameter count -- audit
 appears on the text control is a property of the METHOD, one that appears only on
 protein arms is a property of the TRANSFER.
 
+**``--joint-checkpoint`` plus ``--rendering`` plus ``--mode`` closes the last gap
+in that attribution.** ``gpt2-large`` against ``protgpt2`` controls architecture,
+depth, width and parameter count and cannot control *weights* or *training data*;
+two dictionaries trained by ``17_train_transcoder.py`` on the **two modes of one
+joint checkpoint** control all of them, because the weights are the same object
+in both. The checkpoint is reached by path and its rendering, scored span and
+mode-specific corpus come from ``21_joint_mode_qualification.py`` and
+:mod:`src.transfer.joint_modes`, so the tokens a dictionary is scored on are the
+tokens that mode was qualified on.
+
+That comparison is worth nothing unless the two dictionaries are matched, and
+three of the ways they can fail to be are silent. ``--matched-against`` names the
+other mode's training record and **refuses** a pair disagreeing on the backbone
+digest, the layer count, the width, ``k``, the token budget or the held-out
+budget; the ``arm`` a dictionary declares is compared against the model's own
+name, so a **text dictionary scored on the protein mode of the same weights** --
+which passes every depth and width check there is -- is refused rather than
+reported as a faithfulness result; and the matched declaration reaches this
+artefact as well as the training one, so a pair can be read for agreement from
+either side.
+
 Gates, in the order they can kill the claim:
 
 ``loader``         the backbone is really loaded, and is really the thing the
@@ -73,6 +94,9 @@ from __future__ import annotations
 
 import argparse
 import gc
+import hashlib
+import importlib.util
+import json
 import sys
 from contextlib import nullcontext
 from datetime import datetime, timezone
@@ -93,6 +117,7 @@ if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from panel_contract import CAMPAIGN_PANEL  # noqa: E402
+from src.transfer import joint_modes  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
     DEFAULT_CORPUS_DRAW_SEED,
     REPO,
@@ -108,22 +133,51 @@ from src.transfer.progen3 import (  # noqa: E402
     token_nll,
 )
 from src.transfer.replaceable import (  # noqa: E402
+    JOINT_MODES,
     PROGEN3_ARM,
+    JointReplaceable,
     ReplaceableModel,
     arm_evaluation_cohort_source,
     eligible_arms,
+    joint_mode_corpus,
+    joint_tokenisation,
     load_replaceable,
 )
 from src.transfer.statistics import bootstrap_unit_floor, mean_interval  # noqa: E402
 from src.transfer.transcoders import (  # noqa: E402
     DEFAULT_REPLACEMENT,
+    MATCHED_TRAINING_KEY,
     LinearReplacement,
     LinearReplacementFitter,
+    MatchedTraining,
     PerLayerTranscoder,
     TranscoderReplacement,
+    compare_matched_training,
     load_replacement,
     load_trained_transcoder,
+    matched_training_from_artefact,
 )
+
+
+def _load_stage(filename: str) -> Any:
+    """Import a stage whose module name starts with a digit.
+
+    ``21_joint_mode_qualification.py`` owns the loading of a joint checkpoint,
+    and is imported rather than restated so that the checkpoint this stage scores
+    is the one that stage qualified (Appendix B rule 12) -- as
+    ``17_train_transcoder.py`` and ``23_perturbation_sensitivity.py`` do.
+    """
+
+    path = Path(__file__).resolve().parent / filename
+    spec = importlib.util.spec_from_file_location(f"_transfer_stage_{filename[:2]}", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+STAGE21 = _load_stage("21_joint_mode_qualification.py")
 
 SCHEMA_VERSION = "r2_transfer_replacement_faithfulness_v1"
 DEFAULT_OUT = REPO / "results/transfer/replacement_faithfulness"
@@ -791,7 +845,9 @@ def matched_perturbation_control(
     }
 
 
-def require_matching_arm(declared: str | None, arm: str) -> bool:
+def require_matching_arm(
+    declared: str | None, arm: str, *, required: bool = False
+) -> bool:
     """Refuse a replacement trained against a different model. Returns whether it said.
 
     Depth and width do not identify an arm, and on this panel they positively
@@ -801,9 +857,26 @@ def require_matching_arm(declared: str | None, arm: str) -> bool:
     replacement fitted to a different model. The trainer records which arm it
     read; a checkpoint written before it did says so rather than being assumed to
     be ProGen3.
+
+    ``required`` refuses the undeclared case as well, and the joint path passes
+    it. There the two conditions are two *modes of one checkpoint*, so they agree
+    on depth, on width and on the weight digest -- ``arm`` is the only field that
+    separates a text dictionary from a protein one, and an undeclared arm would
+    let the two be exchanged silently. Every joint dictionary declares one,
+    because ``17_train_transcoder.py`` records the model's own name; only the
+    four ProGen3 checkpoints written before that record existed do not, and they
+    are not joint.
     """
 
     if declared is None:
+        if required:
+            raise RuntimeError(
+                f"this replacement declares no arm and is being scored on {arm!r}. "
+                "On a joint checkpoint the two conditions share a checkpoint, a "
+                "depth and a width, so nothing but the declared arm separates a "
+                "text dictionary from a protein one: an undeclared dictionary "
+                "could be either, and the artefact would look identical"
+            )
         return False
     if declared != arm:
         raise RuntimeError(
@@ -811,6 +884,29 @@ def require_matching_arm(declared: str | None, arm: str) -> bool:
             f"measures {arm!r}; depth and width do not separate them"
         )
     return True
+
+
+def target_label(args: argparse.Namespace) -> str:
+    """What this run measures, as one name, before anything is loaded.
+
+    Equal to the loaded model's own ``name`` by construction -- an arm's name for
+    a panel arm, ``rendering:mode`` for a joint checkpoint -- so the cohort label,
+    the artefact and the arm check a replacement is refused on all say the same
+    thing. Answerable from the arguments alone because the cohort is drawn before
+    the weights are read.
+    """
+
+    if args.joint_checkpoint is not None:
+        return f"{args.rendering}:{args.mode}"
+    return str(args.arm)
+
+
+def cohort_source(args: argparse.Namespace) -> str:
+    """The corpus this run's cohort is drawn from, panel declaration or joint mode."""
+
+    if args.joint_checkpoint is not None:
+        return joint_mode_corpus(args.mode)
+    return arm_evaluation_cohort_source(args.arm)
 
 
 def build_cohort(args: argparse.Namespace, *, skip: int = 0, name: str | None = None) -> Cohort:
@@ -821,8 +917,8 @@ def build_cohort(args: argparse.Namespace, *, skip: int = 0, name: str | None = 
     free linear baseline is fitted on) and the two must be the same population.
     """
 
-    source = arm_evaluation_cohort_source(args.arm)
-    label = name or f"{args.arm}_replacement"
+    source = cohort_source(args)
+    label = name or f"{target_label(args)}_replacement"
     if source == "openwebtext":
         return text_cohort(
             args.sequences,
@@ -845,13 +941,60 @@ def build_cohort(args: argparse.Namespace, *, skip: int = 0, name: str | None = 
             seed=args.cohort_draw_seed or None,
         )
     raise ValueError(
-        f"{args.arm} draws its cohort from {source!r}, which this stage cannot build"
+        f"{target_label(args)} draws its cohort from {source!r}, which this stage "
+        "cannot build"
     )
 
 
-def main() -> None:
+#: What a run declares about the *scoring* half of a matched pair, hashed so two
+#: artefacts can be checked against each other at a glance.
+#:
+#: Separate from :class:`src.transfer.transcoders.MatchedTraining`, and refused on
+#: differently, because the two are fixed at different times and by different
+#: people. A training configuration is settled before a thirty-hour run and is
+#: unfixable afterwards, so ``--matched-against`` refuses a disagreement outright.
+#: A scoring budget is chosen at the moment of measurement and can simply be
+#: re-run, so it is recorded with a digest in both modes' artefacts: a reader
+#: comparing two of them sees one number and not eight fields, and a mismatch is
+#: visible rather than silent.
+SCORING_BUDGET_FIELDS = (
+    "sequences",
+    "bootstrap",
+    "max_tokens",
+    "protein_min_len",
+    "protein_max_len",
+    "text_min_chars",
+    "cohort_draw_seed",
+    "cohort_skip",
+    "gate_recovery",
+    "gate_rho",
+    "matched_perturbation_draws",
+)
+
+
+def scoring_budget(args: argparse.Namespace) -> dict[str, Any]:
+    """This run's scoring budget and its digest, for comparison across two modes."""
+
+    values = {name: getattr(args, name) for name in SCORING_BUDGET_FIELDS}
+    return {
+        **values,
+        "fields": list(SCORING_BUDGET_FIELDS),
+        "digest": hashlib.sha256(
+            json.dumps(values, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest(),
+        "note": (
+            "the evaluation budget this run scored under. Two modes of one "
+            "checkpoint are only comparable if these digests agree; unlike the "
+            "training configuration, a disagreement here is repairable by "
+            "re-running and is therefore recorded rather than refused"
+        ),
+    }
+
+
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
+    target = parser.add_mutually_exclusive_group()
+    target.add_argument(
         "--arm",
         default=PROGEN3_ARM,
         choices=eligible_arms(CAMPAIGN_PANEL),
@@ -860,11 +1003,61 @@ def main() -> None:
         "architectures that carry this estimand, and the arms with a measured "
         "loader band; it is not a list this stage keeps",
     )
+    target.add_argument(
+        "--joint-checkpoint",
+        type=Path,
+        default=None,
+        help="directory of a joint language-protein checkpoint to measure instead "
+        "of a panel arm. A path and not a name: a checkpoint that has not passed "
+        "21_joint_mode_qualification.py must not be in the panel. Requires "
+        "--rendering and --mode, and is distinct from --checkpoint, which "
+        "relocates ProGen3's weights",
+    )
+    parser.add_argument(
+        "--rendering",
+        default=None,
+        choices=joint_modes.RENDERING_NAMES,
+        help="which declared family's input format --joint-checkpoint takes. "
+        "Required with it and refused with --arm. The set is composed by "
+        "src.transfer.joint_modes, the single place either mode's format is decided",
+    )
+    parser.add_argument(
+        "--mode",
+        default=None,
+        choices=JOINT_MODES,
+        help="which mode of --joint-checkpoint this dictionary is scored on. It "
+        "must be the mode the dictionary was trained on: the two modes share a "
+        "checkpoint, a depth and a width, so nothing else separates them and a "
+        "text dictionary scored on protein would produce a complete artefact",
+    )
+    parser.add_argument(
+        "--protein-context",
+        default=None,
+        help="optional document context a joint checkpoint's protein block is "
+        "embedded in, filled into the family's declared template. Omitted means "
+        "the bare block, and whichever was used reaches the artefact",
+    )
+    parser.add_argument(
+        "--matched-against",
+        type=Path,
+        default=None,
+        help="the OTHER condition's 17_train_transcoder.py JSON record. The run "
+        "refuses unless the two dictionaries agree on the backbone digest, the "
+        "layer count, the dictionary width, k, the training token budget and the "
+        "held-out evaluation budget -- the fields a difference between their "
+        "behavioural numbers would otherwise be attributable to. Its JSON and not "
+        "its checkpoint, so the check costs no gigabyte load. Omitted, the "
+        "matched declaration of THIS dictionary is still recorded with its digest, "
+        "and the artefact says the pair was not checked",
+    )
     parser.add_argument(
         "--max-tokens",
         type=int,
         default=512,
-        help="token cap a dense arm's inputs are truncated to; ProGen3 ignores it",
+        help="token cap a dense arm's inputs are truncated to; ProGen3 ignores it. "
+        "A joint checkpoint's protein rendering is never truncated: the stage "
+        "raises instead, because dropping the closing delimiter would silently "
+        "change the scored span",
     )
     parser.add_argument(
         "--text-min-chars",
@@ -964,9 +1157,205 @@ def main() -> None:
         "draws are reported individually, because one draw of a random control is "
         "a point estimate of a distribution",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def resolve_target(args: argparse.Namespace) -> None:
+    """Refuse an incoherent target before a cohort is drawn or a model is loaded.
+
+    Mutates ``args.arm`` to ``None`` on the joint path, deliberately: ``--arm``
+    keeps its ProGen3 default so that every panel invocation means exactly what it
+    meant before, and leaving that default standing beside a ``--joint-checkpoint``
+    would put ``"arm": "progen3"`` into the settings block of a run that never
+    touched ProGen3.
+    """
+
     if args.matched_perturbation_draws < 0:
         raise ValueError("--matched-perturbation-draws cannot be negative")
+    if args.matched_against is not None:
+        # Read now and read again where it is compared: the file is a few
+        # hundred bytes, and a typo in its path should fail in a second rather
+        # than after a multi-gigabyte checkpoint is on the GPU.
+        matched_training_from_artefact(args.matched_against)
+    if args.joint_checkpoint is None:
+        for flag, value in (
+            ("--rendering", args.rendering),
+            ("--mode", args.mode),
+            ("--protein-context", args.protein_context),
+        ):
+            if value is not None:
+                raise ValueError(
+                    f"{flag} describes a joint checkpoint; a panel arm's rendering "
+                    "and modality are declared by src.transfer.arms.PANEL and are "
+                    "not chosen here"
+                )
+        return
+    missing = [
+        flag
+        for flag, value in (("--rendering", args.rendering), ("--mode", args.mode))
+        if value is None
+    ]
+    if missing:
+        raise ValueError(
+            f"--joint-checkpoint needs {' and '.join(missing)}: the format a joint "
+            "checkpoint was trained on and the mode a dictionary belongs to are "
+            "declarations, and a run that guessed either would produce a complete "
+            "artefact for a different object (Appendix B rule 4)"
+        )
+    if args.checkpoint is not None:
+        raise ValueError(
+            "--checkpoint relocates ProGen3's weights and is meaningless beside "
+            "--joint-checkpoint, which names the weights this run reads"
+        )
+    if args.replacement_kind == "released":
+        raise ValueError(
+            "--replacement-kind released reads ProGenMech's ProGen3 checkpoint, "
+            "which is not a replacement for a joint checkpoint. A joint mode "
+            "reaches this stage through 'local' (a dictionary trained by "
+            "17_train_transcoder.py against that checkpoint and mode) or 'linear' "
+            "(the free baseline, which needs no checkpoint at all)"
+        )
+    args.arm = None
+
+
+def load_target(args: argparse.Namespace) -> tuple[ReplaceableModel, dict[str, Any]]:
+    """The decoder this run measures, panel arm or one mode of a joint checkpoint.
+
+    The joint half runs the tokenizer, the rendering and the weights in that
+    order, through ``21_joint_mode_qualification.py``'s own loaders, so a wrong
+    checkpoint/family/mode triple fails before a multi-gigabyte load and the
+    checkpoint scored here is the one that stage qualified.
+    """
+
+    if args.joint_checkpoint is None:
+        print(f"[loader] loading {args.arm} and running its self-check")
+        model = load_replaceable(
+            args.arm,
+            campaign_panel=CAMPAIGN_PANEL,
+            device=args.device,
+            dtype=args.dtype,
+            max_tokens=args.max_tokens,
+            checkpoint=args.checkpoint,
+        )
+        return model, {"kind": "panel_arm", "arm": args.arm}
+
+    declaration = joint_modes.rendering(args.rendering)
+    print(
+        f"[loader] {args.joint_checkpoint} as {declaration.name}:{args.mode} "
+        f"on {args.device}"
+    )
+    resolved, tokenizer = STAGE21.load_tokenizer(args.joint_checkpoint)
+    tokenisation = joint_tokenisation(tokenizer, declaration, args.mode)
+    backbone, checkpoint_facts = STAGE21.load_model(
+        resolved, tokenizer, device=args.device, dtype=args.dtype
+    )
+    checkpoint_facts["requested_path"] = str(args.joint_checkpoint)
+    model = JointReplaceable(
+        model=backbone,
+        tokenizer=tokenizer,
+        checkpoint=resolved,
+        declaration=declaration,
+        mode=args.mode,
+        tokenisation=tokenisation,
+        max_tokens=args.max_tokens,
+        protein_context=args.protein_context,
+    )
+    return model, {
+        "kind": "joint_checkpoint",
+        "rendering_family": declaration.name,
+        "mode": args.mode,
+        "checkpoint_facts": checkpoint_facts,
+        "rendering": (
+            tokenisation.facts()
+            if tokenisation is not None
+            else {
+                "verdict": "NOT_RESOLVED",
+                "declared_family": declaration.name,
+                "reason": (
+                    "the text mode's scored positions are the tokenizer's own "
+                    "next-token targets and do not depend on the protein "
+                    "rendering, so the declared family is recorded but not "
+                    "resolved against this tokenizer. A protein-mode run resolves "
+                    "it and is refused when it does not hold"
+                ),
+            }
+        ),
+    }
+
+
+def matched_pair_record(
+    declared: MatchedTraining | None, against: Path | None, *, kind: str
+) -> dict[str, Any]:
+    """Whether this dictionary may be read against the other condition's.
+
+    Refuses rather than reports, and that is the whole point: the comparison this
+    stage exists to enable is between two dictionaries over ONE set of weights,
+    and a difference in width, in ``k`` or in how much data either saw would read
+    as modality. L25 is the same failure one level up -- a cross-layer
+    transcoder's win at equal width was a 3.25x parameter advantage -- and it was
+    only visible because someone thought to count the parameters.
+    """
+
+    if declared is None:
+        if against is not None:
+            raise RuntimeError(
+                f"--matched-against {against} was given, but this {kind} replacement "
+                "carries no matched-training declaration to compare -- it predates "
+                "one, or it is the free linear baseline, which is solved rather than "
+                "trained. Accepting the flag and checking nothing would report an "
+                "unchecked pair as a checked one"
+            )
+        return {
+            "verdict": "WITHHELD",
+            "reason": (
+                f"a {kind} replacement carries no matched-training declaration: "
+                "either it predates one, or it is the free linear baseline, which "
+                "is solved rather than trained and has no budget to match"
+            ),
+        }
+    record: dict[str, Any] = {"this_run": declared.record()}
+    if against is None:
+        record.update(
+            {
+                "verdict": "NOT_CHECKED",
+                "reason": (
+                    "--matched-against was not given, so this dictionary's declared "
+                    "configuration is recorded with its digest and is compared "
+                    "against nothing. Two modes of one checkpoint are only readable "
+                    "against each other if these digests agree"
+                ),
+            }
+        )
+        return record
+    other = matched_training_from_artefact(against)
+    comparison = compare_matched_training(declared, other)
+    record.update({"other_run": other.record(), "comparison": comparison, "against": str(against)})
+    if comparison["verdict"] != "MATCHED":
+        raise RuntimeError(
+            f"this dictionary and {against} are not a matched pair "
+            f"({comparison['verdict']}): "
+            + (
+                f"they disagree on {comparison['disagreements']}"
+                if comparison["disagreements"]
+                else "at least one declared no --train-tokens budget, so equal step "
+                "counts do not imply equal data"
+            )
+            + ". A difference between their behavioural numbers would be "
+            "attributable to that rather than to what they were trained on"
+        )
+    if not comparison["distinct_targets"]:
+        record["comparison"]["note"] += (
+            ". WARNING: both targets are "
+            f"{comparison['targets'][0]!r}, so this is one condition compared with "
+            "itself and not a pair"
+        )
+    record["verdict"] = "MATCHED"
+    return record
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    resolve_target(args)
     args.out.mkdir(parents=True, exist_ok=True)
 
     payload: dict[str, Any] = {
@@ -981,17 +1370,13 @@ def main() -> None:
     print("[cohort] drawing")
     cohort = build_cohort(args)
 
-    print(f"[loader] loading {args.arm} and running its self-check")
-    model = load_replaceable(
-        args.arm,
-        campaign_panel=CAMPAIGN_PANEL,
-        device=args.device,
-        dtype=args.dtype,
-        max_tokens=args.max_tokens,
-        checkpoint=args.checkpoint,
-    )
+    model, target = load_target(args)
     loader_gate = model.self_check()
-    print(f"  self-check NLL {loader_gate['nll']:.4f} in {loader_gate['band']}")
+    band = loader_gate.get("nll")
+    print(
+        f"  self-check {loader_gate['verdict']}"
+        + ("" if band is None else f", NLL {band:.4f} in {loader_gate['band']}")
+    )
     # Rendered once, through the arm's own declaration, and passed to every sweep
     # below. Re-rendering per sweep is how two conditions of one comparison come
     # to be fed different strings (audit §0.1). A conditioned arm's labels travel
@@ -1004,7 +1389,7 @@ def main() -> None:
     if args.replacement_kind == "released" and args.arm != PROGEN3_ARM:
         raise ValueError(
             "--replacement-kind released reads ProGenMech's ProGen3 checkpoint, "
-            f"which is not a replacement for {args.arm}. A dense arm reaches this "
+            f"which is not a replacement for {model.name}. A dense arm reaches this "
             "stage through 'local' (a transcoder trained by 17_train_transcoder.py "
             "against that arm) or 'linear' (the free baseline, which needs no "
             "checkpoint at all)"
@@ -1054,8 +1439,9 @@ def main() -> None:
             d_model=model.width,
             d_hidden=0,
             k=0,
-            arm=args.arm,
+            arm=model.name,
         )
+        declared_matched = None
         backbone_gate = {
             "verdict": "WITHHELD",
             "reason": "the free linear baseline is solved against the backbone "
@@ -1076,7 +1462,7 @@ def main() -> None:
         # gate exists to catch a replacement fitted to different weights, and for
         # a local checkpoint that question is answered by provenance instead.
         print("[backbone] reading a locally trained replacement (no embedded backbone)")
-        transcoder, recorded = load_trained_transcoder(args.replacement)
+        transcoder, recorded, declared_matched = load_trained_transcoder(args.replacement)
         transcoder.to(model.device)
         hyperparameters = argparse.Namespace(**recorded)
         backbone_gate = {
@@ -1092,6 +1478,7 @@ def main() -> None:
         transcoder, embedded, hyperparameters = load_replacement(args.replacement)
         transcoder.to(model.device)
         released = released_state_dict(model.checkpoint)
+        declared_matched = None
     # The replacement is spliced in by positional layer index. A checkpoint
     # covering a different depth or width -- or a layer subset -- would be
     # applied to the wrong blocks without raising, and the run would emit a
@@ -1101,17 +1488,28 @@ def main() -> None:
     if int(hyperparameters.num_layers) != model.n_layers:
         raise RuntimeError(
             f"the replacement covers {hyperparameters.num_layers} layers and "
-            f"{args.arm} has {model.n_layers}; splicing by positional index would "
+            f"{model.name} has {model.n_layers}; splicing by positional index would "
             "measure the wrong blocks"
         )
     if int(hyperparameters.d_model) != model.width:
         raise RuntimeError(
             f"the replacement was fitted at d_model {hyperparameters.d_model} and "
-            f"{args.arm} is {model.width} wide"
+            f"{model.name} is {model.width} wide"
         )
+    # Against the model's OWN name rather than --arm, so that one check covers a
+    # panel arm and a joint mode alike: the trainer records the same name. On the
+    # joint path an undeclared arm is refused as well, because there depth, width
+    # and checkpoint are shared between the two conditions and the declared name
+    # is all that separates a text dictionary from a protein one.
     replacement_arm_declared = require_matching_arm(
-        getattr(hyperparameters, "arm", None), args.arm
+        getattr(hyperparameters, "arm", None),
+        model.name,
+        required=isinstance(model, JointReplaceable),
     )
+    matched_pair = matched_pair_record(
+        declared_matched, args.matched_against, kind=args.replacement_kind
+    )
+    print(f"  matched pair {matched_pair['verdict']}")
     if args.replacement_kind == "released":
         backbone_gate = backbone_identity(embedded, released)
         print(
@@ -1126,7 +1524,7 @@ def main() -> None:
     grid = model.components()
     grid_families = families(grid)
     condition = {
-        "arm": args.arm,
+        "arm": model.name,
         "replacement": (
             "ProGenMech ProGen3_PLT_L10_D4608 (per-layer transcoder)"
             if args.replacement_kind == "released"
@@ -1153,8 +1551,7 @@ def main() -> None:
         "behavioural one is not",
         "fully_ablated_endpoint": f"every {model.block_kind} output replaced by its "
         "per-layer mean over this cohort's content positions",
-        "input_rendering": "src.transfer.arms.Cohort.input_strings, the panel's "
-        "one declaration of what string each arm is fed",
+        "input_rendering": model.rendering_note,
         "component_families": list(grid_families),
         "ablation": "zero the component's contribution to the residual stream",
         "resampling_unit": "cohort sequence",
@@ -1351,13 +1748,20 @@ def main() -> None:
                 "text_min_chars": args.text_min_chars,
             },
             "model": {
-                "arm": args.arm,
+                "arm": model.name,
                 "checkpoint": str(model.checkpoint),
                 "n_layers": model.n_layers,
                 "n_heads": model.n_heads,
                 "n_components": len(grid),
                 "dtype": args.dtype,
             },
+            "target": {**target, "name": model.name},
+            # Both halves of what a two-condition comparison must agree on, in the
+            # artefact that carries the behavioural number. The training half is
+            # refused on (--matched-against); the scoring half is a digest two
+            # artefacts are compared by, because it is repairable by re-running.
+            MATCHED_TRAINING_KEY: matched_pair,
+            "scoring_budget": scoring_budget(args),
             "gates": gates,
             "verdict": (
                 "PASS"

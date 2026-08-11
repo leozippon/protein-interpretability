@@ -11,14 +11,22 @@ dimensional checks find.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 import torch
 
 from src.transfer.transcoders import (
     DEAD_STEPS_SEQUENCES,
+    MATCHED_TRAINING_FIELDS,
+    MATCHED_TRAINING_KEY,
+    MatchedTraining,
     Transcoder,
     TranscoderConfig,
     TranscoderReplacement,
+    compare_matched_training,
+    matched_training,
+    matched_training_from_artefact,
     normalise,
     topk_relu,
 )
@@ -237,6 +245,143 @@ def test_beginning_a_new_forward_pass_clears_the_accumulated_latents() -> None:
     replacement.reset()
     fresh = run(second)
     assert torch.equal(repeated, fresh), "the second pass depended on the first"
+
+
+# ------------------------------------------------- matching two training runs
+
+
+def _matched(**overrides) -> MatchedTraining:
+    """The declaration of one arm of a matched pair, at the joint campaign's shape."""
+
+    settings = {
+        "target": "prollama:protein",
+        "backbone_sha256": "a" * 64,
+        "architecture": "PLT",
+        "num_layers": 32,
+        "d_model": 4096,
+        "d_hidden": 16384,
+        "k": 64,
+        "training_token_budget": 68_000_000,
+        "training_tokens": 68_000_412,
+        "evaluation_sequences": 256,
+    }
+    settings.update(overrides)
+    return MatchedTraining(**settings)
+
+
+def test_the_two_modes_of_one_checkpoint_are_a_matched_pair() -> None:
+    """The state the whole comparison rests on, and the one it must certify."""
+
+    protein = _matched()
+    text = _matched(target="prollama:text", training_tokens=68_003_919)
+    record = compare_matched_training(protein, text)
+    assert record["verdict"] == "MATCHED"
+    assert record["disagreements"] == []
+    assert record["distinct_targets"] is True
+    # The digest is over the matched fields ONLY, so it must agree between two
+    # conditions that differ in their target and in their realised token count --
+    # a digest that moved with either would certify nothing.
+    assert record["digests_agree"] is True
+    assert protein.digest() == text.digest()
+    assert record["training_tokens_realised"] == [68_000_412, 68_003_919]
+    assert record["training_tokens_relative_difference"] < 1e-4
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("num_layers", 24),
+        ("d_model", 2048),
+        ("d_hidden", 49152),
+        ("k", 32),
+        ("training_token_budget", 34_000_000),
+        ("evaluation_sequences", 128),
+        ("backbone_sha256", "b" * 64),
+        ("architecture", "CLT"),
+    ],
+)
+def test_every_field_a_difference_could_be_attributed_to_is_detected(field, value) -> None:
+    """Each of these would read as modality if it moved between the two modes.
+
+    Parametrised over the declared list rather than spot-checked, because the
+    failure this guards is a field being *added* to the pair's configuration and
+    not to the set the comparison refuses on.
+    """
+
+    record = compare_matched_training(
+        _matched(), _matched(target="prollama:text", **{field: value})
+    )
+    assert record["verdict"] == "MISMATCH"
+    assert record["disagreements"] == [field]
+    assert record["digests_agree"] is False
+    assert record["fields"][field]["agree"] is False
+
+
+def test_the_refused_set_is_the_declared_set_and_carries_the_backbone() -> None:
+    assert set(_matched().matched()) == set(MATCHED_TRAINING_FIELDS)
+    # 'prollama:protein' names a MODE; Llama-2-7b-hf, ProLLaMA_Stage_1 and
+    # ProLLaMA all answer to it, so without the digest a pair drawn from two of
+    # them would be a comparison across training stages wearing the label of a
+    # comparison within one set of weights.
+    assert "backbone_sha256" in MATCHED_TRAINING_FIELDS
+    # The realised count is recorded and NOT refused on: the loop stops at the
+    # first step to cross the budget, so it overshoots by up to one batch.
+    assert "training_tokens" not in MATCHED_TRAINING_FIELDS
+    assert "target" not in MATCHED_TRAINING_FIELDS
+
+
+def test_an_undeclared_token_budget_is_its_own_verdict() -> None:
+    """Equal steps are equal schedules over unequal data, and that is not a match.
+
+    A text record and a protein record carry different numbers of scored
+    positions, so two runs of the same step count see different amounts of data.
+    Reporting that as MATCHED would certify the one thing the joint comparison
+    most needs to be true and is least likely to be.
+    """
+
+    record = compare_matched_training(
+        _matched(training_token_budget=None),
+        _matched(target="prollama:text", training_token_budget=None),
+    )
+    assert record["verdict"] == "UNMATCHED_BUDGET"
+    assert record["disagreements"] == []
+    assert record["training_token_budget_declared"] is False
+    # One-sided too: a declared budget and an undeclared one are not a pair.
+    half = compare_matched_training(
+        _matched(), _matched(target="prollama:text", training_token_budget=None)
+    )
+    assert half["verdict"] == "MISMATCH"
+
+
+def test_one_condition_compared_with_itself_is_reported_as_such() -> None:
+    record = compare_matched_training(_matched(), _matched())
+    assert record["verdict"] == "MATCHED"
+    assert record["distinct_targets"] is False
+
+
+def test_the_declaration_round_trips_through_its_own_record() -> None:
+    original = _matched()
+    restored = matched_training(original.record())
+    assert restored == original
+    assert restored.digest() == original.digest()
+    assert original.record()["digest"] == original.digest()
+
+
+def test_a_record_missing_a_matched_field_is_refused_rather_than_defaulted(tmp_path) -> None:
+    incomplete = _matched().record()
+    del incomplete["d_hidden"]
+    with pytest.raises(KeyError, match="d_hidden"):
+        matched_training(incomplete)
+
+    artefact = tmp_path / "run.json"
+    artefact.write_text(json.dumps({"schema_version": "x"}), encoding="utf-8")
+    with pytest.raises(KeyError, match=MATCHED_TRAINING_KEY):
+        matched_training_from_artefact(artefact)
+
+    artefact.write_text(
+        json.dumps({MATCHED_TRAINING_KEY: _matched().record()}), encoding="utf-8"
+    )
+    assert matched_training_from_artefact(artefact) == _matched()
 
 
 def test_a_checkpoint_round_trips_into_the_class_that_wrote_it() -> None:

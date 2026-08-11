@@ -41,6 +41,32 @@ the format it was trained on, both through the panel declaration in
 ``src/transfer/arms.py``. ProGen3 keeps UniRef50, which is what its published
 runs used.
 
+**``--joint-checkpoint`` plus ``--rendering`` plus ``--mode`` reaches the one
+comparison a panel arm cannot make.** Every dictionary comparison this programme
+owns is across *different models*, so a difference between two of them is a
+difference of architecture, scale, lineage and training data at once -- L25's
+shape, where a cross-layer transcoder's win at equal width turned out to be a
+3.25x parameter advantage. Two per-layer transcoders trained on **one joint
+checkpoint**, one on its text mode and one on its protein mode, share every one
+of those: the weights are the same object in both, so a difference cannot be
+attributed to any of them. A joint checkpoint is reached by path and not by name
+for the reason ``21_joint_mode_qualification.py`` gives -- a checkpoint that has
+not passed that stage must not be in the panel -- and this stage loads it, renders
+it and locates its scored positions through that stage's own machinery and
+:class:`src.transfer.replaceable.JointReplaceable`, so the tokens a mode trains
+on are the tokens that mode is qualified and scored on.
+
+**The comparison is only worth making if nothing else moves, so the trainer
+declares what must not.** ``--train-tokens`` sets the budget in scored tokens
+rather than steps, because a text record and a protein record carry different
+numbers of scored positions and equal step counts are therefore equal *schedules*
+over unequal data. That budget, the layer count, the dictionary width, ``k``, the
+backbone digest and the held-out evaluation budget are written into both the
+checkpoint and the JSON record as a
+:class:`src.transfer.transcoders.MatchedTraining` declaration with its own
+digest, and ``15_replacement_faithfulness.py --matched-against`` refuses a pair
+that disagrees on any of them.
+
 Output is a checkpoint plus a JSON record, and the checkpoint is written in the
 shape ``15_replacement_faithfulness.py`` can load, so a trained transcoder goes
 straight to the faithfulness gate with no conversion step in between.
@@ -49,6 +75,7 @@ straight to the faithfulness gate with no conversion step in between.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import sys
 import time
 from datetime import datetime, timezone
@@ -67,21 +94,56 @@ if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from panel_contract import CAMPAIGN_PANEL  # noqa: E402
-from src.transfer.arms import REPO, corpus_location, iter_corpus_records  # noqa: E402
+from src.transfer import joint_modes  # noqa: E402
+from src.transfer.arms import (  # noqa: E402
+    AA20,
+    REPO,
+    corpus_location,
+    iter_corpus_records,
+)
 from src.transfer.io import write_json  # noqa: E402
 from src.transfer.replaceable import (  # noqa: E402
+    JOINT_MODES,
     PROGEN3_ARM,
+    JointReplaceable,
     ReplaceableModel,
     arm_training_corpus,
     eligible_arms,
+    joint_mode_corpus,
+    joint_tokenisation,
     load_replaceable,
 )
 from src.transfer.transcoders import (  # noqa: E402
     DEAD_STEPS_SEQUENCES,
+    MATCHED_TRAINING_KEY,
+    MatchedTraining,
     Transcoder,
     TranscoderConfig,
     TrainingRecord,
 )
+
+
+def _load_stage(filename: str) -> Any:
+    """Import a stage whose module name starts with a digit.
+
+    ``21_joint_mode_qualification.py`` owns the loading of a joint checkpoint --
+    the tokenizer read before the weights so a wrong checkpoint/family pair fails
+    in a second, and the shape and dtype read back off the built model rather
+    than echoed from the request. Imported rather than restated so that the
+    checkpoint this stage trains against is the one that stage qualified
+    (Appendix B rule 12), exactly as ``23_perturbation_sensitivity.py`` does.
+    """
+
+    path = Path(__file__).resolve().parent / filename
+    spec = importlib.util.spec_from_file_location(f"_transfer_stage_{filename[:2]}", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+STAGE21 = _load_stage("21_joint_mode_qualification.py")
 
 #: Records buffered before each shuffle. The held-out draw must clear a whole
 #: number of these, so the block size and the offset that skips past it cannot be
@@ -136,6 +198,46 @@ CORPUS_BAND: dict[str, tuple[int, int | None]] = {
     "zymctrl_ec": (MIN_RESIDUES, ZYMCTRL_MAX_RESIDUES),
     "openwebtext": (MIN_CHARACTERS, None),
 }
+
+
+def joint_protein_band(
+    tokenisation: joint_modes.JointTokenisation,
+    *,
+    max_tokens: int,
+    protein_context: str | None,
+) -> tuple[int, int]:
+    """The residue band a joint protein mode may be streamed under, measured not guessed.
+
+    ZymCTRL's ceiling above is ``1024 - 10`` because that rendering's wrapper is
+    ten tokens on a known tokenizer. A joint family's wrapper is not knowable in
+    advance -- ``Seq=<`` is three pieces of the LLaMA-2 vocabulary and a document
+    context adds however many its template costs -- so it is **measured** here,
+    by rendering a one-residue sequence through the same declaration the training
+    stream will use, and the ceiling is the token cap minus it.
+
+    That is an exact upper bound rather than an estimate. Every rendering this
+    family accepts spells its sequence on token boundaries -- a residue that
+    merged into a delimiter or into the context is refused by
+    :func:`src.transfer.joint_modes.scored_target_positions`, not truncated -- so
+    a rendered record is exactly the wrapper plus its scored span, and a scored
+    span is never longer than the sequence is in residues. A record inside the
+    band therefore cannot exceed the cap, which is what turns
+    :meth:`src.transfer.replaceable.JointReplaceable.render`'s refusal from a
+    hazard that can end a thirty-hour run at hour twenty into one that cannot
+    fire at all.
+    """
+
+    probe = tokenisation.render(AA20[0], context=protein_context)
+    wrapper = len(probe.token_ids) - probe.n_residues
+    ceiling = min(MAX_RESIDUES, max_tokens - wrapper)
+    if ceiling < MIN_RESIDUES:
+        raise ValueError(
+            f"--max-tokens {max_tokens} leaves {ceiling} residues once this "
+            f"rendering's {wrapper}-token wrapper is paid for, which is below the "
+            f"{MIN_RESIDUES}-residue floor: no record of this corpus could be "
+            "rendered whole"
+        )
+    return MIN_RESIDUES, ceiling
 
 
 def stream_records(
@@ -203,6 +305,12 @@ def capture(
             [record for record, _ in records], ec_labels=[label for _, label in records]
         )
     )
+    # The batch now carries everything the rendering located, so the per-record
+    # state a joint checkpoint keeps between the two calls is dead. Dropping it
+    # here rather than never is the difference between a bounded trainer and one
+    # whose memory grows with its step count; the two implementations that keep
+    # no such state see a no-op.
+    model.forget_rendered()
     captured: dict[int, tuple[torch.Tensor, torch.Tensor]] = {}
 
     def tap(layer: int, block_input: torch.Tensor, block_output: torch.Tensor) -> None:
@@ -264,10 +372,11 @@ def evaluate(
     }
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--architecture", choices=("clt", "plt"), required=True)
-    parser.add_argument(
+    target = parser.add_mutually_exclusive_group()
+    target.add_argument(
         "--arm",
         default=PROGEN3_ARM,
         choices=eligible_arms(CAMPAIGN_PANEL),
@@ -276,6 +385,44 @@ def main() -> None:
         "declarations -- the campaign panel, the architectures that carry this "
         "estimand, and the arms with a measured loader band -- and is not a list "
         "this stage keeps",
+    )
+    target.add_argument(
+        "--joint-checkpoint",
+        type=Path,
+        default=None,
+        help="directory of a joint language-protein checkpoint to train against "
+        "instead of a panel arm. A path and not a name: a checkpoint that has not "
+        "passed 21_joint_mode_qualification.py must not be in the panel, so there "
+        "is nothing for a default to point at. Requires --rendering and --mode. "
+        "Distinct from --checkpoint, which relocates ProGen3's weights and means "
+        "something else",
+    )
+    parser.add_argument(
+        "--rendering",
+        default=None,
+        choices=joint_modes.RENDERING_NAMES,
+        help="which declared family's input format --joint-checkpoint takes. "
+        "Required with it and refused with --arm, whose rendering is declared by "
+        "src.transfer.arms.PANEL. The set is composed by src.transfer.joint_modes, "
+        "the single place either mode's format is decided",
+    )
+    parser.add_argument(
+        "--mode",
+        default=None,
+        choices=JOINT_MODES,
+        help="which mode of --joint-checkpoint to train a dictionary on. One mode "
+        "per run and one dictionary per mode: the comparison is between two "
+        "dictionaries over one set of weights, so they are two runs and their "
+        "matched configuration is what 15_replacement_faithfulness.py refuses on. "
+        "Refused with --arm, whose mode is the arm's declared modality",
+    )
+    parser.add_argument(
+        "--protein-context",
+        default=None,
+        help="optional document context a joint checkpoint's protein block is "
+        "embedded in, filled into the family's declared template. Omitted means "
+        "the bare block, and whichever was used reaches the artefact and sets the "
+        "residue band the corpus is streamed under",
     )
     parser.add_argument(
         "--max-tokens",
@@ -286,13 +433,28 @@ def main() -> None:
         "declared in residues. A conditioned arm needs a cap that covers its "
         "declared band plus its rendering wrapper -- zymctrl_ec is 1014 residues "
         "plus 10 tokens, so pass --max-tokens 1024; below that the terminator "
-        "that delimits the scored span is truncated away and the run refuses",
+        "that delimits the scored span is truncated away and the run refuses. A "
+        "joint protein mode derives its residue ceiling from this cap and its "
+        "measured wrapper, so it cannot produce a record that does not fit",
     )
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--corpus", type=Path, default=None)
     parser.add_argument("--steps", type=int, default=20000)
+    parser.add_argument(
+        "--train-tokens",
+        type=int,
+        default=0,
+        help="training budget in SCORED TOKENS. 0 -- the default -- runs --steps "
+        "steps and is what every invocation predating this flag computed. A "
+        "positive value stops at the first step to reach it and refuses the run if "
+        "--steps ran out first, which is what lets two modes of one checkpoint see "
+        "the same amount of data: a text record and a protein record carry "
+        "different numbers of scored positions, so equal steps are equal schedules "
+        "over unequal data. --steps then bounds the run and sets the held-out "
+        "offset, which stays past everything training reaches",
+    )
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--eval-sequences", type=int, default=256)
     parser.add_argument("--eval-every", type=int, default=2000)
@@ -316,34 +478,164 @@ def main() -> None:
         "the PLT run**: the comparison is only controlled if both see the same "
         "sequences in the same order",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def resolve_target(args: argparse.Namespace) -> None:
+    """Refuse an incoherent target before a corpus is opened or a model is loaded.
+
+    Mutates ``args.arm`` to ``None`` on the joint path, deliberately: ``--arm``
+    keeps its ProGen3 default so that every panel invocation means exactly what
+    it meant before, and leaving that default standing beside a
+    ``--joint-checkpoint`` would put ``"arm": "progen3"`` into the settings block
+    of a run that never touched ProGen3.
+    """
+
+    if args.train_tokens < 0:
+        raise ValueError("--train-tokens cannot be negative")
+    if args.joint_checkpoint is None:
+        for flag, value in (("--rendering", args.rendering), ("--mode", args.mode)):
+            if value is not None:
+                raise ValueError(
+                    f"{flag} describes a joint checkpoint's input format; a panel "
+                    "arm's rendering and modality are declared by "
+                    "src.transfer.arms.PANEL and are not chosen here"
+                )
+        if args.protein_context is not None:
+            raise ValueError(
+                "--protein-context fills a joint family's declared context "
+                "template; a panel arm's rendering carries no such template"
+            )
+        return
+    missing = [
+        flag
+        for flag, value in (("--rendering", args.rendering), ("--mode", args.mode))
+        if value is None
+    ]
+    if missing:
+        raise ValueError(
+            f"--joint-checkpoint needs {' and '.join(missing)}: the format a joint "
+            "checkpoint was trained on and the mode a dictionary is fitted to are "
+            "declarations, and a run that guessed either would train a complete "
+            "dictionary against a different object (Appendix B rule 4)"
+        )
+    if args.checkpoint is not None:
+        raise ValueError(
+            "--checkpoint relocates ProGen3's weights and is meaningless beside "
+            "--joint-checkpoint, which names the weights this run reads"
+        )
+    args.arm = None
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    resolve_target(args)
     args.out.mkdir(parents=True, exist_ok=True)
     torch.manual_seed(args.seed)
 
+    joint = args.joint_checkpoint is not None
     # The corpus is resolved and checked before anything reaches a GPU, so a host
     # that has not staged it fails in a second rather than after a checkpoint is
     # loaded. `--corpus` relocates ProGen3's UniRef50 and is refused for the
-    # other sources, which are read through their own declared variables.
-    source = arm_training_corpus(args.arm)
+    # other sources, which are read through their own declared variables. A joint
+    # mode's corpus is the one src.transfer.replaceable declares for it, which is
+    # also the one 15_replacement_faithfulness.py will score that mode on.
+    source = joint_mode_corpus(args.mode) if joint else arm_training_corpus(args.arm)
     low, high = CORPUS_BAND[source]
     corpus = corpus_location(source, path=args.corpus)
+
+    model_handle: ReplaceableModel
+    target: dict[str, Any]
+    if joint:
+        declaration = joint_modes.rendering(args.rendering)
+        print(
+            f"[loader] {args.joint_checkpoint} as {declaration.name}:{args.mode} "
+            f"on {args.device}"
+        )
+        # The tokenizer alone first, then the rendering, then the weights: a
+        # wrong checkpoint/family/mode triple fails before a multi-gigabyte load.
+        resolved, tokenizer = STAGE21.load_tokenizer(args.joint_checkpoint)
+        tokenisation = joint_tokenisation(tokenizer, declaration, args.mode)
+        if tokenisation is not None:
+            low, high = joint_protein_band(
+                tokenisation,
+                max_tokens=args.max_tokens,
+                protein_context=args.protein_context,
+            )
+        backbone, checkpoint_facts = STAGE21.load_model(
+            resolved, tokenizer, device=args.device, dtype="bfloat16"
+        )
+        checkpoint_facts["requested_path"] = str(args.joint_checkpoint)
+        model_handle = JointReplaceable(
+            model=backbone,
+            tokenizer=tokenizer,
+            checkpoint=resolved,
+            declaration=declaration,
+            mode=args.mode,
+            tokenisation=tokenisation,
+            max_tokens=args.max_tokens,
+            protein_context=args.protein_context,
+        )
+        target = {
+            "kind": "joint_checkpoint",
+            "rendering_family": declaration.name,
+            "mode": args.mode,
+            "checkpoint_facts": checkpoint_facts,
+            "rendering": (
+                tokenisation.facts()
+                if tokenisation is not None
+                else {
+                    "verdict": "NOT_RESOLVED",
+                    "declared_family": declaration.name,
+                    "reason": (
+                        "the text mode's scored positions are the tokenizer's own "
+                        "next-token targets and do not depend on the protein "
+                        "rendering, so the declared family is recorded but not "
+                        "resolved against this tokenizer. A protein-mode run "
+                        "resolves it and is refused when it does not hold"
+                    ),
+                }
+            ),
+        }
+    else:
+        print(f"[loader] loading {args.arm} and running its self-check")
+        model_handle = load_replaceable(
+            args.arm,
+            campaign_panel=CAMPAIGN_PANEL,
+            device=args.device,
+            dtype="bfloat16",
+            max_tokens=args.max_tokens,
+            checkpoint=args.checkpoint,
+        )
+        target = {"kind": "panel_arm", "arm": args.arm}
 
     def records() -> Iterator[tuple[str, str | None]]:
         return iter_corpus_records(
             source, min_symbols=low, max_symbols=high, path=args.corpus
         )
 
-    print(f"[loader] loading {args.arm} and running its self-check")
-    model_handle: ReplaceableModel = load_replaceable(
-        args.arm,
-        campaign_panel=CAMPAIGN_PANEL,
-        device=args.device,
-        dtype="bfloat16",
-        max_tokens=args.max_tokens,
-        checkpoint=args.checkpoint,
-    )
     loader_gate = model_handle.self_check()
-    print(f"  self-check NLL {loader_gate['nll']:.4f} PASS")
+    band = loader_gate.get("nll")
+    print(
+        f"  self-check {loader_gate['verdict']}"
+        + ("" if band is None else f", NLL {band:.4f}")
+    )
+    # Digested before training rather than after it: a checkpoint whose weight
+    # files cannot be identified should stop the run in a second, not after
+    # thirty hours, and the digest is the field that says WHICH ProLLaMA a mode's
+    # dictionary was fitted to -- 'prollama:protein' names a mode and three
+    # checkpoints of one lineage answer to it.
+    backbone_digest = model_handle.weights_digest()
+    target.update(
+        {
+            "name": model_handle.name,
+            "checkpoint": str(model_handle.checkpoint),
+            "weights_sha256": backbone_digest,
+            "n_layers": model_handle.n_layers,
+            "d_model": model_handle.width,
+            "loading_note": model_handle.loading_note,
+        }
+    )
 
     config = TranscoderConfig(
         num_layers=model_handle.n_layers,
@@ -356,7 +648,15 @@ def main() -> None:
         # latent may stay silent while every other declared setting is unmoved.
         dead_steps=max(1, DEAD_STEPS_SEQUENCES // args.batch_size),
         cross_layer=args.architecture == "clt",
-        arm=args.arm,
+        # The model's own name and not --arm, so that a dictionary fitted to one
+        # mode of a joint checkpoint declares 'prollama:protein' rather than a
+        # null. For a panel arm the two are the same string, which is why
+        # 15_replacement_faithfulness.py can refuse a mismatch with one check for
+        # both kinds of target. Without it, a text dictionary spliced into the
+        # protein mode of the same weights passes every shape check there is --
+        # same depth, same width, same checkpoint -- and produces a complete
+        # faithfulness artefact for the wrong measurement.
+        arm=model_handle.name,
     )
     model = Transcoder(config).to(args.device).float()
     n_parameters = sum(p.numel() for p in model.parameters())
@@ -426,9 +726,23 @@ def main() -> None:
     record = TrainingRecord()
     final: dict[str, Any] | None = None
     started = time.time()
-    print(f"[train] {args.steps} steps, batch {args.batch_size}")
+    budget = int(args.train_tokens)
+    print(
+        f"[train] {args.steps} steps, batch {args.batch_size}"
+        + (f", stopping at {budget} scored tokens" if budget else "")
+    )
     for step in range(1, args.steps + 1):
-        chunk = [next(training) for _ in range(args.batch_size)]
+        try:
+            chunk = [next(training) for _ in range(args.batch_size)]
+        except StopIteration:
+            # A bare StopIteration out of a list comprehension surfaces far from
+            # its cause. The corpus running dry is a sizing fact and says so.
+            raise RuntimeError(
+                f"the {source!r} stream ran out at step {step} after "
+                f"{record.tokens} of {budget or '(no)'} scored tokens: the band "
+                f"{[low, high]} does not hold enough records for this budget. "
+                "Lower --train-tokens or widen the band"
+            ) from None
         x, y, mask = capture(model_handle, chunk)
         x, y = flatten(x, y, mask)
         if x.shape[1] == 0:
@@ -442,9 +756,14 @@ def main() -> None:
         record.steps = step
         record.tokens += int(x.shape[1])
         record.sequences += len(chunk)
-        if step % args.eval_every == 0 or step == args.steps:
+        # The budget is reached at the FIRST step to cross it, so the realised
+        # total overshoots it by at most one batch. That is why the matched
+        # declaration compares the budget and records the realised count beside
+        # it rather than the other way round.
+        reached = bool(budget) and record.tokens >= budget
+        if step % args.eval_every == 0 or step == args.steps or reached:
             held = evaluate(model, model_handle, held_out, batch_size=args.batch_size)
-            if step == args.steps:
+            if step == args.steps or reached:
                 final = held
             entry = {
                 "step": step,
@@ -462,12 +781,34 @@ def main() -> None:
                 f"held-out {entry['held_out_nmse_sum']:7.4f}  dead {entry['n_dead']:5d}  "
                 f"{entry['elapsed_s']:.0f}s"
             )
+        if reached:
+            break
 
+    if budget and record.tokens < budget:
+        raise RuntimeError(
+            f"--steps {args.steps} ran out after {record.tokens} of {budget} "
+            "scored tokens, so this dictionary saw less data than the budget it "
+            "declares and could not be matched against the other mode's. Raise "
+            "--steps -- it bounds the run and sets the held-out offset, and the "
+            "token budget is what stops it"
+        )
     if final is None:
         raise RuntimeError(
             "the training loop never reached its final step, so no held-out "
             "evaluation exists; refusing to write a checkpoint with no score"
         )
+    matched = MatchedTraining(
+        target=model_handle.name,
+        backbone_sha256=backbone_digest,
+        architecture=config.record()["architecture"],
+        num_layers=config.num_layers,
+        d_model=config.d_model,
+        d_hidden=config.d_hidden,
+        k=config.k,
+        training_token_budget=budget or None,
+        training_tokens=record.tokens,
+        evaluation_sequences=int(args.eval_sequences),
+    )
     # The last loop evaluation *is* the final one. Recomputing it here ran a
     # second 256-sequence sweep per run and produced, necessarily, the identical
     # number.
@@ -482,18 +823,24 @@ def main() -> None:
         "config": config.record(),
         "n_parameters": int(n_parameters),
         "writes_to": {str(k): v for k, v in model.writes_to.items()},
+        "target": target,
+        MATCHED_TRAINING_KEY: matched.record(),
         "loader_gate": loader_gate,
         "training": record.record(),
         "held_out": final,
         "condition": {
-            "arm": args.arm,
+            "arm": model_handle.name,
             "corpus": str(corpus),
             "corpus_source": source,
             "symbol_band": [low, high],
             "symbol_unit": "characters" if source == "openwebtext" else "residues",
-            "input_rendering": (
-                "src.transfer.arms.Cohort.input_strings, the panel's one "
-                "declaration of what string each arm is fed"
+            "input_rendering": model_handle.rendering_note,
+            "training_budget": (
+                f"{budget} scored tokens; --steps {args.steps} bounds the run and "
+                f"{record.steps} were taken"
+                if budget
+                else f"{args.steps} steps of {args.batch_size} records, "
+                "no token budget declared"
             ),
             "draw": "block-shuffled stream, 8192-record blocks, seeded; a prefix "
             "of a corpus grouped by cluster or shard is a region rather than a "
@@ -538,8 +885,10 @@ def main() -> None:
                 "this trains in strict float32",
                 "input distribution: theirs mixes roughly one third GLM/infilling "
                 "instances into every batch; this trains on pure causal-LM batches",
-                "corpus filter: the 32-1022 residue band here is this stage's own "
-                "choice. Their data module's length truncation is commented out, "
+                "corpus filter: the residue band here is this stage's own choice "
+                "-- 32-1022 for a panel protein arm, and for a joint protein mode "
+                "a ceiling derived from --max-tokens and the measured rendering "
+                "wrapper. Their data module's length truncation is commented out, "
                 "and 1022 appears only in their activation-collection script",
             ],
             "cross_arm_comparability": (
@@ -548,7 +897,10 @@ def main() -> None:
                 "the model and in what its own corpus is -- not in how either was "
                 "read. What they do NOT share is a token budget: a residue band "
                 "and a character floor are bands in different units, which is why "
-                "symbol_unit is recorded beside symbol_band (Appendix B rule 21)"
+                "symbol_unit is recorded beside symbol_band (Appendix B rule 21). "
+                "Two MODES of one joint checkpoint do share one: --train-tokens "
+                "matches them in scored tokens, which is the unit both bands "
+                "resolve to and the only one they have in common"
             ),
         },
     }
@@ -556,16 +908,29 @@ def main() -> None:
     # names; a panel arm carries its own name because several arms of one
     # comparison are written into one directory and would otherwise overwrite each
     # other under identical hyper-parameters -- which is exactly the configuration
-    # the matched pair runs in.
+    # the matched pair runs in. A joint checkpoint's two modes are the same case
+    # one level down: they share every hyper-parameter by construction, so the
+    # mode has to be in the name or the second run would overwrite the first.
     stem = f"{args.architecture}_d{args.d_hidden}_k{args.k}_s{args.corpus_seed}"
-    if args.arm != PROGEN3_ARM:
+    if joint:
+        stem = f"{args.rendering}_{args.mode}_{stem}"
+    elif args.arm != PROGEN3_ARM:
         stem = f"{args.arm}_{stem}"
     torch.save(
-        {"config": config.record(), "state_dict": model.state_dict(), "record": payload},
+        {
+            "config": config.record(),
+            "state_dict": model.state_dict(),
+            MATCHED_TRAINING_KEY: matched.record(),
+            "record": payload,
+        },
         args.out / f"{stem}.pt",
     )
     write_json(args.out / f"{stem}.json", payload)
-    print(f"[done] held-out NMSE sum {final['nmse_sum']:.4f}  wrote {args.out / stem}.pt")
+    print(
+        f"[done] held-out NMSE sum {final['nmse_sum']:.4f}  "
+        f"{record.tokens} scored tokens  matched digest {matched.digest()[:12]}  "
+        f"wrote {args.out / stem}.pt"
+    )
 
 
 if __name__ == "__main__":

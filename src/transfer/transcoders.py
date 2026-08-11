@@ -61,10 +61,12 @@ exists to stop. One declaration of what a transcoder is, trained or released.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import torch
 import torch.nn.functional as F
@@ -397,6 +399,212 @@ class TrainingRecord:
         }
 
 
+# ------------------------------------------------- matching two training runs
+
+
+#: What two dictionaries must agree on before a difference between their
+#: behavioural numbers may be attributed to what they were trained on.
+#:
+#: **The list is the experiment.** Two per-layer transcoders on the *same*
+#: ProLLaMA weights -- one on its text mode, one on its protein mode -- can only
+#: separate modality from everything else if nothing else moves: the same layers,
+#: the same dictionary width, the same active fraction, the same amount of data
+#: and the same held-out budget. Every one of those can differ without anything
+#: raising, and a width or token difference between the two arms would read as
+#: modality in exactly the way L25 records a capacity difference reading as
+#: cross-layer connectivity.
+#:
+#: ``backbone_sha256`` is in the list and is the field the *name* cannot supply.
+#: A joint checkpoint is reached by path, so ``prollama:protein`` names a mode
+#: and not a checkpoint: ``Llama-2-7b-hf``, ``ProLLaMA_Stage_1`` and ``ProLLaMA``
+#: all answer to it, and a pair drawn from two of them would be a comparison
+#: across training stages wearing the label of a comparison within one set of
+#: weights.
+#:
+#: ``training_token_budget`` and not the realised count. The trainer stops at the
+#: first step that reaches the budget, so the realised totals differ by up to one
+#: batch; the budget is the declared quantity and is what must be equal, while
+#: the realised counts are recorded beside it and reported as a relative
+#: difference.
+MATCHED_TRAINING_FIELDS = (
+    "backbone_sha256",
+    "architecture",
+    "num_layers",
+    "d_model",
+    "d_hidden",
+    "k",
+    "training_token_budget",
+    "evaluation_sequences",
+)
+
+
+@dataclass(frozen=True)
+class MatchedTraining:
+    """One training run's declaration of everything a matched pair must share.
+
+    Written by ``17_train_transcoder.py`` into both its JSON record and its
+    checkpoint, and read back by ``15_replacement_faithfulness.py``, so the
+    faithfulness artefact states the training configuration of the dictionary it
+    scored rather than leaving a reader to find the training artefact.
+
+    ``target`` is the one field that must **differ** across the pair -- it is the
+    arm, or ``rendering:mode`` for a joint checkpoint -- and it is recorded here
+    so that :func:`compare_matched_training` can say whether it was handed two
+    conditions or the same one twice.
+    """
+
+    target: str
+    backbone_sha256: str
+    architecture: str
+    num_layers: int
+    d_model: int
+    d_hidden: int
+    k: int
+    #: ``None`` for a run whose length was set in steps rather than in tokens.
+    #: Not zero: a zero budget and an undeclared one are different states, and
+    #: only the second may be compared as if it were a number.
+    training_token_budget: int | None
+    #: What the run actually consumed, in scored tokens.
+    training_tokens: int
+    evaluation_sequences: int
+
+    def matched(self) -> dict[str, Any]:
+        """Exactly the fields a pair is refused on, in the declared order."""
+
+        values = asdict(self)
+        return {name: values[name] for name in MATCHED_TRAINING_FIELDS}
+
+    def digest(self) -> str:
+        """SHA-256 over the matched fields, so a mismatch is visible in one line.
+
+        Over :data:`MATCHED_TRAINING_FIELDS` alone and not over the whole record:
+        a digest that moved with the realised token count or with the target name
+        would differ between the two modes by construction and would therefore
+        certify nothing.
+        """
+
+        return hashlib.sha256(
+            json.dumps(self.matched(), sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+
+    def record(self) -> dict[str, Any]:
+        return {
+            **asdict(self),
+            "matched_fields": list(MATCHED_TRAINING_FIELDS),
+            "digest": self.digest(),
+            "note": (
+                "the fields two dictionaries must agree on before a difference "
+                "between their behavioural numbers may be attributed to what they "
+                "were trained on. 'target' is the field that must DIFFER; "
+                "'training_tokens' is what the run consumed and is recorded rather "
+                "than matched, because the loop stops at the first step to reach "
+                "'training_token_budget' and so overshoots it by up to one batch"
+            ),
+        }
+
+
+def matched_training(record: Mapping[str, Any]) -> MatchedTraining:
+    """Read a matched-training declaration back from an artefact or a checkpoint."""
+
+    missing = sorted(
+        name
+        for name in (
+            "target",
+            "backbone_sha256",
+            "architecture",
+            "num_layers",
+            "d_model",
+            "d_hidden",
+            "k",
+            "training_tokens",
+            "evaluation_sequences",
+        )
+        if name not in record
+    )
+    if missing:
+        raise KeyError(
+            f"this matched-training record is missing {missing}; it was not written "
+            "by 17_train_transcoder.py, so the configuration a comparison would be "
+            "refused on is unknown"
+        )
+    budget = record.get("training_token_budget")
+    return MatchedTraining(
+        target=str(record["target"]),
+        backbone_sha256=str(record["backbone_sha256"]),
+        architecture=str(record["architecture"]),
+        num_layers=int(record["num_layers"]),
+        d_model=int(record["d_model"]),
+        d_hidden=int(record["d_hidden"]),
+        k=int(record["k"]),
+        training_token_budget=None if budget is None else int(budget),
+        training_tokens=int(record["training_tokens"]),
+        evaluation_sequences=int(record["evaluation_sequences"]),
+    )
+
+
+def compare_matched_training(
+    left: MatchedTraining, right: MatchedTraining
+) -> dict[str, Any]:
+    """Whether two dictionaries may be read against each other, field by field.
+
+    Three verdicts, and the middle one is the point of having three. ``MATCHED``
+    means every field of :data:`MATCHED_TRAINING_FIELDS` agrees. ``MISMATCH``
+    names the ones that do not. ``UNMATCHED_BUDGET`` is the case where the two
+    runs agree on everything they declared and at least one of them declared no
+    token budget at all -- their step counts may be equal while their token
+    counts are not, because a text record and a protein record carry different
+    numbers of scored positions, and "the same number of steps" is then a
+    matched *schedule* over two different amounts of data. It is reported
+    separately rather than folded into either of the other two, because it is a
+    statement about what was declared and not about what disagreed.
+
+    The realised token counts are reported with their relative difference
+    whatever the verdict, so a pair that agrees on a budget and diverged in
+    practice is visible rather than certified by the digest alone.
+    """
+
+    fields = {
+        name: {"values": [values[0], values[1]], "agree": values[0] == values[1]}
+        for name, values in (
+            (name, (left.matched()[name], right.matched()[name]))
+            for name in MATCHED_TRAINING_FIELDS
+        )
+    }
+    disagreements = sorted(name for name, entry in fields.items() if not entry["agree"])
+    budget_declared = (
+        left.training_token_budget is not None and right.training_token_budget is not None
+    )
+    realised = [left.training_tokens, right.training_tokens]
+    largest = max(abs(value) for value in realised) or 1
+    if disagreements:
+        verdict = "MISMATCH"
+    elif not budget_declared:
+        verdict = "UNMATCHED_BUDGET"
+    else:
+        verdict = "MATCHED"
+    return {
+        "targets": [left.target, right.target],
+        "distinct_targets": left.target != right.target,
+        "digests": [left.digest(), right.digest()],
+        "digests_agree": left.digest() == right.digest(),
+        "matched_fields": list(MATCHED_TRAINING_FIELDS),
+        "fields": fields,
+        "disagreements": disagreements,
+        "training_token_budget_declared": budget_declared,
+        "training_tokens_realised": realised,
+        "training_tokens_relative_difference": abs(realised[0] - realised[1]) / largest,
+        "verdict": verdict,
+        "note": (
+            "MATCHED means every field two dictionaries must share agrees. "
+            "UNMATCHED_BUDGET means they agree on what they declared and at least "
+            "one declared no --train-tokens, so equal step counts do not imply "
+            "equal data: a text record and a protein record carry different "
+            "numbers of scored positions. distinct_targets says whether this is a "
+            "pair of conditions at all rather than one condition twice"
+        ),
+    }
+
+
 # ------------------------------------------------------------- the free baseline
 
 
@@ -584,7 +792,34 @@ class TranscoderReplacement:
         return reconstruction.reshape(shape).to(x.dtype)
 
 
-def load_trained_transcoder(path: Path) -> tuple[TranscoderReplacement, dict[str, Any]]:
+#: The key a matched-training declaration is stored under, in a checkpoint and in
+#: a training artefact alike. One spelling, because two consumers read it.
+MATCHED_TRAINING_KEY = "matched_training"
+
+
+def matched_training_from_artefact(path: Path) -> MatchedTraining:
+    """The matched-training declaration of a ``17_train_transcoder.py`` JSON record.
+
+    The JSON and not the checkpoint, because this reads the *other* arm of a
+    comparison and the other arm's weights are of no interest: a matched pair's
+    dictionaries run to gigabytes each, and loading one to read nine integers
+    would make the check cost more than the run it guards.
+    """
+
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    declaration = payload.get(MATCHED_TRAINING_KEY)
+    if declaration is None:
+        raise KeyError(
+            f"{path} carries no {MATCHED_TRAINING_KEY!r} block, so it is not a "
+            "training record from 17_train_transcoder.py -- or it predates the "
+            "matched-configuration declaration and the pair cannot be checked"
+        )
+    return matched_training(declaration)
+
+
+def load_trained_transcoder(
+    path: Path,
+) -> tuple[TranscoderReplacement, dict[str, Any], MatchedTraining | None]:
     """Read a checkpoint written by ``17_train_transcoder.py``.
 
     Separate from :func:`load_replacement` because they are different objects:
@@ -592,6 +827,12 @@ def load_trained_transcoder(path: Path) -> tuple[TranscoderReplacement, dict[str
     backbone, this one reads ours, which carries none. Conflating them behind one
     function would mean guessing which is on disk, and a wrong guess produces a
     shape error a long way from its cause.
+
+    The third element is the run's :class:`MatchedTraining` declaration, or
+    ``None`` for a checkpoint written before there was one. It travels with the
+    weights rather than beside them so that a dictionary handed to the
+    faithfulness stage carries the configuration it must be matched on, whatever
+    happened to its training artefact.
     """
 
     checkpoint = torch.load(path, map_location="cpu", weights_only=False)
@@ -603,6 +844,7 @@ def load_trained_transcoder(path: Path) -> tuple[TranscoderReplacement, dict[str
             "load_replacement instead."
         )
     recorded = checkpoint["config"]
+    declared = checkpoint.get(MATCHED_TRAINING_KEY)
     config = TranscoderConfig(
         num_layers=int(recorded["num_layers"]),
         d_model=int(recorded["d_model"]),
@@ -620,7 +862,11 @@ def load_trained_transcoder(path: Path) -> tuple[TranscoderReplacement, dict[str
     )
     model = Transcoder(config)
     model.load_state_dict(checkpoint["state_dict"], strict=True)
-    return TranscoderReplacement(model), recorded
+    return (
+        TranscoderReplacement(model),
+        recorded,
+        None if declared is None else matched_training(declared),
+    )
 
 
 # ------------------------------------------------------- the released transcoder
