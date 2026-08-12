@@ -290,6 +290,22 @@ class FreeBaselineGate(unittest.TestCase):
         self.assertTrue(record["unit_floor"]["degenerate"])
         self.assertIsNotNone(record["unit_floor"]["degenerate_reason"])
 
+    def test_the_declared_margin_is_the_threshold_the_verdict_is_read_against(self):
+        # Every existing case here passes gate=0.0, where "clears the margin" and
+        # "clears zero" coincide -- which is how the margin came to be recorded in
+        # the artefact without being applied to the verdict. A model reliably a
+        # fifth of a rank correlation above the free baseline clears a margin of
+        # 0.10 and does not clear one of 0.50.
+        assays = self._assays([0.20, 0.22, 0.18, 0.24, 0.19, 0.21, 0.23, 0.17])
+        self.assertEqual(
+            STAGE16.free_baseline_gate(assays, gate=0.10)["verdict"], "PASS"
+        )
+        demanding = STAGE16.free_baseline_gate(assays, gate=0.50)
+        self.assertEqual(demanding["verdict"], "FAIL")
+        self.assertEqual(demanding["gate_margin"], 0.50)
+        # The interval itself is a property of the assays, not of the margin.
+        self.assertGreater(demanding["paired_difference"]["interval"][0], 0.0)
+
 
 class _RecordingModel:
     """Just enough :class:`ReplaceableModel` to see what the control splices.
@@ -654,6 +670,72 @@ class MatchedPerturbationEndToEnd(unittest.TestCase):
 
             write_json(path, record)
             self.assertEqual(json.loads(path.read_text())["n_draws"], 2)
+
+    def test_the_full_depth_front_reproduces_the_headline_replacement_exactly(self):
+        """The invariant the whole sweep rests on.
+
+        A row is only readable beside the headline if the deepest row IS the
+        headline. If replacing the first ``n_layers`` blocks gave anything other
+        than the ordinary replacement, the sweep would be measuring a second
+        manipulation and its trend would say nothing about the first.
+        """
+
+        conditions = {
+            "original": None,
+            "replacement": STAGE15.replacement_context(self.model, self.transcoder),
+            "replacement_front1": STAGE15.replacement_front_context(
+                self.model, self.transcoder, layers=1
+            ),
+            f"replacement_front{self.model.n_layers}": STAGE15.replacement_front_context(
+                self.model, self.transcoder, layers=self.model.n_layers
+            ),
+        }
+        scores = STAGE15.behavioural_scores(
+            self.model, self.SEQUENCES, conditions, batch_size=2
+        )
+        full = scores[f"replacement_front{self.model.n_layers}"]["nll"]
+        np.testing.assert_allclose(full, scores["replacement"]["nll"], rtol=0, atol=0)
+        # And a shallower front is a different manipulation, or the flag does
+        # nothing: replacing one block must not equal replacing all of them.
+        self.assertNotAlmostEqual(
+            float(scores["replacement_front1"]["nll"].mean()), float(full.mean())
+        )
+
+    def test_a_front_outside_the_models_depth_is_refused_rather_than_clamped(self):
+        n = self.model.n_layers
+        self.assertEqual(STAGE15.parse_replacement_front("", n_layers=n), [])
+        self.assertEqual(
+            STAGE15.parse_replacement_front(f"1,{n},1", n_layers=n), sorted({1, n})
+        )
+        for bad in ("0", f"{n + 1}", "-1"):
+            with self.assertRaises(ValueError):
+                STAGE15.parse_replacement_front(bad, n_layers=n)
+
+    def test_the_sweep_is_read_against_the_headlines_own_endpoints(self):
+        conditions = {
+            "original": None,
+            "mean_ablated": STAGE15.mean_ablation_context(
+                self.model, torch.zeros(self.model.n_layers, self.model.width)
+            ),
+            "replacement_front1": STAGE15.replacement_front_context(
+                self.model, self.transcoder, layers=1
+            ),
+        }
+        scores = STAGE15.behavioural_scores(
+            self.model, self.SEQUENCES, conditions, batch_size=2
+        )
+        clean = float(scores["original"]["nll"].mean())
+        ablated = float(scores["mean_ablated"]["nll"].mean())
+        record = STAGE15.replacement_front_sweep(
+            scores, [1], clean=clean, ablated=ablated
+        )
+        row = record["rows"][0]
+        self.assertEqual(row["layers_replaced"], 1)
+        self.assertEqual(record["denominator"], ablated - clean)
+        # The row's recovery is the headline formula, not a second convention.
+        self.assertAlmostEqual(
+            row["recovery"], (ablated - row["nll_nats_per_token"]) / (ablated - clean)
+        )
 
 
 if __name__ == "__main__":

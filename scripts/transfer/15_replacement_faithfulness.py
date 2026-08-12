@@ -101,6 +101,7 @@ import sys
 from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
+from collections.abc import Sequence
 from typing import Any, Callable
 
 import numpy as np
@@ -370,6 +371,97 @@ def replacement_context(
         return model.block_intercept(lambda layer, x, y: transcoder(layer, x))
 
     return factory
+
+
+def replacement_front_context(
+    model: ReplaceableModel,
+    transcoder: PerLayerTranscoder | TranscoderReplacement | LinearReplacement,
+    *,
+    layers: int,
+) -> Callable[[], Any]:
+    """Replace only the first ``layers`` blocks and leave the rest original.
+
+    **What this separates.** A dictionary is fitted teacher-forced, on each
+    block's true input and true output, and is scored under *sequential*
+    replacement, where every block reads a residual stream the replacements above
+    it have already perturbed. Those are different objects -- the artefact's
+    ``reconstruction_measured_under`` says so -- and errors compound across depth
+    under the second while they cannot under the first. The mean-ablation
+    endpoint the recovery ratio divides by does not compound either: substituting
+    a fixed per-layer mean is a stable corruption at every depth.
+
+    So a dictionary that is genuinely good per layer can still be worse than mean
+    ablation once spliced through the whole stack, and reading that as "the
+    dictionary is bad" would confuse the method with the convention it was scored
+    under. Moving the front through depth prices the compounding directly: it is
+    the same dictionary, the same cohort and the same endpoints at every ``k``,
+    and only the number of blocks reading a perturbed stream changes.
+
+    Returning ``None`` above the front leaves those blocks untouched, which is
+    :meth:`~src.transfer.replaceable.ReplaceableModel.block_intercept`'s own
+    contract for "do not substitute" rather than a second code path. A
+    cross-layer dictionary is unaffected by the truncation for the blocks that do
+    run: it decodes layer ``L`` from latents at layers up to ``L``, all of which
+    are below the front whenever ``L`` is.
+    """
+
+    def factory() -> Any:
+        return model.block_intercept(
+            lambda layer, x, y: transcoder(layer, x) if layer < layers else None
+        )
+
+    return factory
+
+
+def replacement_front_sweep(
+    scores: dict[str, dict[str, np.ndarray]],
+    fronts: Sequence[int],
+    *,
+    clean: float,
+    ablated: float,
+) -> dict[str, Any]:
+    """The recovery ratio as a function of how many blocks are replaced.
+
+    Read against **the same two endpoints as the headline** -- this run's own
+    clean and fully-ablated cross-entropies, from the same sweep over the same
+    batches -- so a row here and the artefact's headline recovery are the same
+    quantity at different depths, and the ``k = n_layers`` row must reproduce the
+    headline exactly.
+    """
+
+    denominator = ablated - clean
+    rows = []
+    for k in fronts:
+        nll = float(scores[f"replacement_front{k}"]["nll"].mean())
+        rows.append(
+            {
+                "layers_replaced": int(k),
+                "nll_nats_per_token": nll,
+                "nll_minus_clean": nll - clean,
+                "kl_nats_per_token": float(scores[f"replacement_front{k}"]["kl"].mean()),
+                "recovery": (ablated - nll) / denominator if denominator > 0 else None,
+            }
+        )
+    return {
+        "rows": rows,
+        "clean": clean,
+        "fully_ablated": ablated,
+        "denominator": denominator,
+        "denominator_definition": "fully_ablated - clean, the headline's own",
+        "note": (
+            "recovery as a function of the number of leading blocks replaced, on "
+            "this run's own cohort, batches and endpoints. The dictionary is "
+            "fitted teacher-forced on clean activations and scored under "
+            "sequential replacement, where each replaced block reads a stream the "
+            "replacements above it have already perturbed; error can compound "
+            "with depth under the second convention and cannot under the first, "
+            "while the mean-ablation endpoint is a stable corruption that does "
+            "not compound either. A recovery that is positive at small k and "
+            "falls with depth prices that compounding; one already negative at "
+            "k=1 excludes it, because a single replaced block reads a clean "
+            "stream and has nothing to compound with"
+        ),
+    }
 
 
 def mean_ablation_context(model: ReplaceableModel, means: torch.Tensor) -> Callable[[], Any]:
@@ -1229,7 +1321,44 @@ def build_parser() -> argparse.ArgumentParser:
         "draws are reported individually, because one draw of a random control is "
         "a point estimate of a distribution",
     )
+    parser.add_argument(
+        "--replacement-front",
+        default="",
+        help="comma-separated block counts at which to re-score with only the "
+        "FIRST k blocks replaced, e.g. '1,2,4,8,16,32'. Each value costs one extra "
+        "sweep of the behavioural pass, on the same batches and against the same "
+        "clean and fully-ablated endpoints as the headline, so a row is the "
+        "headline recovery at a different depth and the k = n_layers row must "
+        "reproduce it exactly. Empty -- the default -- runs nothing and records "
+        "nothing, so every invocation that predates this flag computes what it "
+        "computed before. It exists to price the one asymmetry between how a "
+        "dictionary is FITTED (teacher-forced, on clean activations) and how it is "
+        "SCORED (sequentially, each block reading a stream already perturbed "
+        "above it): error can compound with depth under the second and cannot "
+        "under the first",
+    )
     return parser
+
+
+def parse_replacement_front(value: str, *, n_layers: int) -> list[int]:
+    """The declared block counts, validated against this model's depth.
+
+    Refuses rather than clamps. A front of 40 on a 32-layer model is a
+    misunderstanding of what was asked for, and silently scoring it as 32 would
+    put two identical rows in the sweep under different labels.
+    """
+
+    if not value.strip():
+        return []
+    fronts = sorted({int(piece) for piece in value.split(",") if piece.strip()})
+    outside = [k for k in fronts if k < 1 or k > n_layers]
+    if outside:
+        raise ValueError(
+            f"--replacement-front names {outside}, outside 1..{n_layers} for this "
+            "model; a front of zero blocks is the clean condition and a front past "
+            "the last block is not a condition at all"
+        )
+    return fronts
 
 
 def resolve_target(args: argparse.Namespace) -> None:
@@ -1639,6 +1768,16 @@ def main() -> None:
         "replacement": replacement_context(model, transcoder),
         "mean_ablated": mean_ablation_context(model, reference["moe_output_mean"]),
     }
+    # Extra conditions of the SAME sweep rather than a second pass, which is what
+    # makes a row commensurable with the headline: identical batches, identical
+    # endpoints, identical dictionary, and the KL taken against the same original.
+    fronts = parse_replacement_front(args.replacement_front, n_layers=model.n_layers)
+    for k in fronts:
+        conditions[f"replacement_front{k}"] = replacement_front_context(
+            model, transcoder, layers=k
+        )
+    if fronts:
+        print(f"[control] replacement front sweep at {fronts}, one sweep each")
     # The matched random control, when it is asked for, is another condition of
     # the same sweep rather than another sweep: it is then measured on the same
     # batches, under the same content mask, against the same 'original'
@@ -1699,6 +1838,20 @@ def main() -> None:
             replicates=args.bootstrap,
             seed=args.seed,
         ),
+        "replacement_front_sweep": (
+            replacement_front_sweep(scores, fronts, clean=clean_nll, ablated=ablated_nll)
+            if fronts
+            else {
+                "rows": [],
+                "note": (
+                    "--replacement-front was not given, so the depth at which this "
+                    "dictionary's error begins to exceed the mean-ablation floor "
+                    "was not measured. Without it a negative headline recovery "
+                    "cannot be attributed to the fitted/scored convention gap "
+                    "rather than to the dictionary"
+                ),
+            }
+        ),
         "reconstruction_nmse_per_layer": reference["reconstruction_nmse_per_layer"],
         "reconstruction_nmse_sum": float(
             sum(reference["reconstruction_nmse_per_layer"])
@@ -1716,6 +1869,11 @@ def main() -> None:
         f"recovery {recovery if recovery is None else round(recovery, 4)})"
     )
     print(f"  KL(original||replacement) {replacement_kl:.4f} vs ablated {ablated_kl:.4f}")
+    for row in behavioural_gate["replacement_front_sweep"]["rows"]:
+        print(
+            f"  front k={row['layers_replaced']:>3}: NLL {row['nll_nats_per_token']:.4f}  "
+            f"recovery {row['recovery'] if row['recovery'] is None else round(row['recovery'], 4)}"
+        )
     for record in behavioural_gate["matched_perturbation_control"].get("draws", []):
         print(
             f"  matched random seed {record['seed']}: "
