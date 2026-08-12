@@ -413,12 +413,76 @@ def replacement_front_context(
     return factory
 
 
+#: The rule that decides whether a step between two fronts is a real move.
+#:
+#: Declared here rather than at a call site so the artefact carries it, and
+#: worded as a rule about the *paired* difference because the marginal interval
+#: beside each row supports only the weaker unpaired reading -- the same point
+#: :func:`_paired_recovery` makes about the three headline conditions. The two
+#: outcomes are not symmetric in what they license: an interval clear of zero
+#: says the move is there, while an interval covering zero says this cohort
+#: cannot separate it from zero and says nothing about whether it exists.
+FRONT_STEP_SEPARATION_RULE = (
+    "a step from front k to front k' is separated when the 95% percentile "
+    "interval of the paired difference recovery(k') - recovery(k), resampled "
+    "over cohort sequences on the index sets shared by every condition, "
+    "excludes zero: INCREASE above zero, DECREASE below it. An interval "
+    "covering zero is UNRESOLVED -- this cohort cannot separate the step from "
+    "zero -- and is never read as evidence that the step is absent. "
+    "fraction_of_replicates_positive is reported beside every step so a reader "
+    "can apply a level other than 95%, including a multiplicity correction "
+    "over however many steps they are reading"
+)
+
+
+def _front_recovery_draws(
+    scores: dict[str, dict[str, np.ndarray]],
+    fronts: Sequence[int],
+    *,
+    replicates: int,
+    seed: int,
+) -> np.ndarray:
+    """One recovery draw per replicate per front, on index sets shared by all.
+
+    The construction is :func:`_paired_recovery`'s, taken deliberately rather
+    than reimplemented differently: one index set per replicate drawn from the
+    same generator in the same order, every condition scored on it, and a
+    replicate discarded when its resampled denominator is not positive. Two
+    consequences follow and both are load-bearing. The ``k = n_layers`` column
+    is then the headline's own bootstrap column *value by value*, so its
+    interval must equal the headline's exactly and not merely agree with it.
+    And the difference between two columns is a paired difference on the same
+    sequences, which is the only comparison the front rows support -- they are
+    six manipulations of one cohort, not six samples.
+
+    Returns ``(n_retained_replicates, n_fronts)``; a replicate is retained only
+    if it is finite for every front, so the columns stay row-aligned and a
+    difference is always taken within one index set.
+    """
+
+    clean = scores["original"]["nll"]
+    ablated = scores["mean_ablated"]["nll"]
+    columns = [scores[f"replacement_front{k}"]["nll"] for k in fronts]
+    n = clean.size
+    rng = np.random.default_rng(seed)
+    draws = np.full((replicates, len(columns)), np.nan, dtype=np.float64)
+    for index in range(replicates):
+        pick = rng.integers(0, n, size=n)
+        c, a = clean[pick].mean(), ablated[pick].mean()
+        if a - c > 0:
+            for column_index, column in enumerate(columns):
+                draws[index, column_index] = (a - column[pick].mean()) / (a - c)
+    return draws[np.isfinite(draws).all(axis=1)]
+
+
 def replacement_front_sweep(
     scores: dict[str, dict[str, np.ndarray]],
     fronts: Sequence[int],
     *,
     clean: float,
     ablated: float,
+    replicates: int,
+    seed: int,
 ) -> dict[str, Any]:
     """The recovery ratio as a function of how many blocks are replaced.
 
@@ -427,6 +491,13 @@ def replacement_front_sweep(
     batches -- so a row here and the artefact's headline recovery are the same
     quantity at different depths, and the ``k = n_layers`` row must reproduce the
     headline exactly.
+
+    Every row carries a percentile interval and every ordered pair of rows
+    carries an interval on its paired difference, because the shape of this
+    curve is what the sweep is read for and a point estimate cannot say whether
+    a rise in it happened. Ordered pairs rather than adjacent steps only: a
+    non-monotone curve is a statement about the rows that bracket the rise, and
+    those need not be neighbours on a grid that doubles.
     """
 
     denominator = ablated - clean
@@ -442,12 +513,71 @@ def replacement_front_sweep(
                 "recovery": (ablated - nll) / denominator if denominator > 0 else None,
             }
         )
+
+    floor = bootstrap_unit_floor(scores["original"]["nll"].size)
+    draws = _front_recovery_draws(scores, fronts, replicates=replicates, seed=seed)
+    # Both conditions the percentile interval needs: enough atoms for a nominal
+    # 95% interval to realise anything near 95%, and enough replicates retained
+    # that the quantiles are of the distribution rather than of its tail.
+    publishable = not floor["degenerate"] and draws.shape[0] >= 0.95 * replicates
+
+    def interval(values: np.ndarray) -> list[float] | None:
+        if not publishable:
+            return None
+        return [float(np.quantile(values, 0.025)), float(np.quantile(values, 0.975))]
+
+    for row_index, row in enumerate(rows):
+        row["recovery_interval"] = interval(draws[:, row_index])
+
+    steps = []
+    for left in range(len(rows)):
+        for right in range(left + 1, len(rows)):
+            difference = draws[:, right] - draws[:, left]
+            bounds = interval(difference)
+            # Withheld on the same condition as the interval: it is the same
+            # bootstrap distribution read one-sidedly, so publishing it where a
+            # percentile interval is refused would route around the floor.
+            fraction = float(np.mean(difference > 0.0)) if publishable else None
+            separation = "UNRESOLVED"
+            if bounds is not None and bounds[0] > 0.0:
+                separation = "INCREASE"
+            elif bounds is not None and bounds[1] < 0.0:
+                separation = "DECREASE"
+            steps.append(
+                {
+                    "from_layers_replaced": rows[left]["layers_replaced"],
+                    "to_layers_replaced": rows[right]["layers_replaced"],
+                    "adjacent": right == left + 1,
+                    "recovery_difference": (
+                        rows[right]["recovery"] - rows[left]["recovery"]
+                        if rows[left]["recovery"] is not None
+                        and rows[right]["recovery"] is not None
+                        else None
+                    ),
+                    "recovery_difference_interval": bounds,
+                    "fraction_of_replicates_positive": fraction,
+                    "separation": separation,
+                }
+            )
+
     return {
         "rows": rows,
         "clean": clean,
         "fully_ablated": ablated,
         "denominator": denominator,
         "denominator_definition": "fully_ablated - clean, the headline's own",
+        "steps": steps,
+        "separation_rule": FRONT_STEP_SEPARATION_RULE,
+        "resampling": {
+            "resampling_unit": (
+                "cohort sequence, one index set shared by every front and both "
+                "endpoints"
+            ),
+            "bootstrap_replicates": int(replicates),
+            "replicates_retained": int(draws.shape[0]),
+            "intervals_published": bool(publishable),
+            **floor,
+        },
         "note": (
             "recovery as a function of the number of leading blocks replaced, on "
             "this run's own cohort, batches and endpoints. The dictionary is "
@@ -1839,7 +1969,17 @@ def main() -> None:
             seed=args.seed,
         ),
         "replacement_front_sweep": (
-            replacement_front_sweep(scores, fronts, clean=clean_nll, ablated=ablated_nll)
+            replacement_front_sweep(
+                scores,
+                fronts,
+                clean=clean_nll,
+                ablated=ablated_nll,
+                # The headline's own replicates and seed, so the deepest front's
+                # interval is the headline's interval rather than a second
+                # bootstrap that happens to agree with it.
+                replicates=args.bootstrap,
+                seed=args.seed,
+            )
             if fronts
             else {
                 "rows": [],
@@ -1870,10 +2010,29 @@ def main() -> None:
     )
     print(f"  KL(original||replacement) {replacement_kl:.4f} vs ablated {ablated_kl:.4f}")
     for row in behavioural_gate["replacement_front_sweep"]["rows"]:
+        bounds = row.get("recovery_interval")
         print(
             f"  front k={row['layers_replaced']:>3}: NLL {row['nll_nats_per_token']:.4f}  "
             f"recovery {row['recovery'] if row['recovery'] is None else round(row['recovery'], 4)}"
+            + (
+                f"  95% [{bounds[0]:.4f}, {bounds[1]:.4f}]"
+                if bounds is not None
+                else "  95% withheld"
+            )
         )
+    for step in behavioural_gate["replacement_front_sweep"].get("steps", []):
+        if step["adjacent"] and step["recovery_difference"] is not None:
+            bounds = step["recovery_difference_interval"]
+            print(
+                f"  step k={step['from_layers_replaced']}->{step['to_layers_replaced']}: "
+                f"delta {step['recovery_difference']:+.4f}"
+                + (
+                    f"  95% [{bounds[0]:+.4f}, {bounds[1]:+.4f}]"
+                    if bounds is not None
+                    else "  95% withheld"
+                )
+                + f"  {step['separation']}"
+            )
     for record in behavioural_gate["matched_perturbation_control"].get("draws", []):
         print(
             f"  matched random seed {record['seed']}: "

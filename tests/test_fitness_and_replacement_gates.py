@@ -605,8 +605,8 @@ class MatchedPerturbationEndToEnd(unittest.TestCase):
         ]
         self.transcoder = lambda layer, x: x @ maps[layer]
 
-    def _fit(self, steps: int = 400):
-        batch = self.model.batch(self.SEQUENCES)
+    def _fit(self, steps: int = 400, sequences: list[str] | None = None):
+        batch = self.model.batch(sequences if sequences is not None else self.SEQUENCES)
         optimiser = torch.optim.Adam(self.model.model.parameters(), lr=0.02)
         self.model.model.train()
         for _ in range(steps):
@@ -727,7 +727,7 @@ class MatchedPerturbationEndToEnd(unittest.TestCase):
         clean = float(scores["original"]["nll"].mean())
         ablated = float(scores["mean_ablated"]["nll"].mean())
         record = STAGE15.replacement_front_sweep(
-            scores, [1], clean=clean, ablated=ablated
+            scores, [1], clean=clean, ablated=ablated, replicates=64, seed=3
         )
         row = record["rows"][0]
         self.assertEqual(row["layers_replaced"], 1)
@@ -736,6 +736,133 @@ class MatchedPerturbationEndToEnd(unittest.TestCase):
         self.assertAlmostEqual(
             row["recovery"], (ablated - row["nll_nats_per_token"]) / (ablated - clean)
         )
+
+    #: Enough cohort sequences to clear ``MINIMUM_BOOTSTRAP_UNITS``, which the
+    #: four-sequence fixture above deliberately does not.
+    RESAMPLED_SEQUENCES = [
+        "1234567890123",
+        "9876543210987",
+        "1122334455667",
+        "5566778899001",
+        "2468013579246",
+        "1357924680135",
+        "9182736455647",
+        "3141592653589",
+        "2718281828459",
+        "1123581321345",
+        "8642097531864",
+        "5050505050505",
+    ]
+
+    def _front_scores(self, sequences):
+        # Fitted on the cohort it is then scored on, for the reason setUp gives:
+        # on a stack whose blocks are not load-bearing the clean-to-ablated
+        # denominator can come out negative, and a recovery ratio that is None
+        # would exercise nothing here.
+        self._fit(sequences=sequences)
+        conditions = {
+            "original": None,
+            "replacement": STAGE15.replacement_context(self.model, self.transcoder),
+            "mean_ablated": STAGE15.mean_ablation_context(
+                self.model, torch.zeros(self.model.n_layers, self.model.width)
+            ),
+        }
+        fronts = [1, self.model.n_layers]
+        for k in fronts:
+            conditions[f"replacement_front{k}"] = STAGE15.replacement_front_context(
+                self.model, self.transcoder, layers=k
+            )
+        scores = STAGE15.behavioural_scores(
+            self.model, sequences, conditions, batch_size=2
+        )
+        return scores, fronts
+
+    def test_the_deepest_fronts_interval_is_the_headlines_own_interval(self):
+        """The k = n_layers invariant, extended from the point to the interval.
+
+        The row already had to reproduce the headline recovery exactly, or the
+        sweep would be a second manipulation. The same argument binds the
+        interval: read beside the headline's, it is only commensurable if the
+        two are the same bootstrap -- the same generator, the same index sets,
+        the same discarded replicates -- rather than two draws of one quantity
+        that agree to a few digits and diverge under a different seed.
+        """
+
+        scores, fronts = self._front_scores(self.RESAMPLED_SEQUENCES)
+        clean = float(scores["original"]["nll"].mean())
+        ablated = float(scores["mean_ablated"]["nll"].mean())
+        record = STAGE15.replacement_front_sweep(
+            scores, fronts, clean=clean, ablated=ablated, replicates=256, seed=11
+        )
+        headline = STAGE15._paired_recovery(
+            scores["original"]["nll"],
+            scores["replacement"]["nll"],
+            scores["mean_ablated"]["nll"],
+            replicates=256,
+            seed=11,
+        )
+        deepest = record["rows"][-1]
+        self.assertEqual(deepest["layers_replaced"], self.model.n_layers)
+        self.assertIsNotNone(headline["recovery_interval"])
+        self.assertEqual(deepest["recovery_interval"], headline["recovery_interval"])
+        self.assertTrue(record["resampling"]["intervals_published"])
+
+    def test_every_ordered_pair_carries_a_paired_interval_and_the_declared_verdict(self):
+        scores, fronts = self._front_scores(self.RESAMPLED_SEQUENCES)
+        clean = float(scores["original"]["nll"].mean())
+        ablated = float(scores["mean_ablated"]["nll"].mean())
+        record = STAGE15.replacement_front_sweep(
+            scores, fronts, clean=clean, ablated=ablated, replicates=256, seed=11
+        )
+        recoveries = {row["layers_replaced"]: row["recovery"] for row in record["rows"]}
+        self.assertEqual(len(record["steps"]), len(fronts) * (len(fronts) - 1) // 2)
+        for step in record["steps"]:
+            self.assertAlmostEqual(
+                step["recovery_difference"],
+                recoveries[step["to_layers_replaced"]]
+                - recoveries[step["from_layers_replaced"]],
+            )
+            bounds = step["recovery_difference_interval"]
+            self.assertIsNotNone(bounds)
+            self.assertLessEqual(bounds[0], bounds[1])
+            # The verdict is the rule and nothing else: an interval covering
+            # zero is UNRESOLVED, never a decision that the step is absent.
+            expected = "UNRESOLVED"
+            if bounds[0] > 0.0:
+                expected = "INCREASE"
+            elif bounds[1] < 0.0:
+                expected = "DECREASE"
+            self.assertEqual(step["separation"], expected)
+            self.assertGreaterEqual(step["fraction_of_replicates_positive"], 0.0)
+            self.assertLessEqual(step["fraction_of_replicates_positive"], 1.0)
+
+    def test_below_the_unit_floor_the_intervals_are_withheld_and_the_points_remain(self):
+        """The floor's own contract, on the four-sequence cohort that trips it.
+
+        A percentile interval over four atoms realises well under its nominal
+        coverage and can come out narrower than one over hundreds, so publishing
+        it beside the unit count is the failure `bootstrap_unit_floor` exists to
+        prevent. The point estimates are unaffected and must survive.
+        """
+
+        scores, fronts = self._front_scores(self.SEQUENCES)
+        clean = float(scores["original"]["nll"].mean())
+        ablated = float(scores["mean_ablated"]["nll"].mean())
+        record = STAGE15.replacement_front_sweep(
+            scores, fronts, clean=clean, ablated=ablated, replicates=256, seed=11
+        )
+        self.assertTrue(record["resampling"]["degenerate"])
+        self.assertFalse(record["resampling"]["intervals_published"])
+        self.assertIsNotNone(record["resampling"]["degenerate_reason"])
+        for row in record["rows"]:
+            self.assertIsNone(row["recovery_interval"])
+            self.assertIsNotNone(row["recovery"])
+        for step in record["steps"]:
+            self.assertIsNone(step["recovery_difference_interval"])
+            # The one-sided reading is the same distribution and is withheld too.
+            self.assertIsNone(step["fraction_of_replicates_positive"])
+            self.assertEqual(step["separation"], "UNRESOLVED")
+            self.assertIsNotNone(step["recovery_difference"])
 
 
 if __name__ == "__main__":
