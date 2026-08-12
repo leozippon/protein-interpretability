@@ -1737,5 +1737,257 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
         self.assertEqual(missing, [], f"stages absent from the measurement package table: {missing}")
 
 
+class PinnedCodeSourceTests(unittest.TestCase):
+    """One dispatch reads one code state, on a checkout that will not hold still.
+
+    Measured on 2026-08-12: several agents commit into this working tree, the
+    repository's code hash moved twice inside a single 4.5-minute freeze,
+    five-plus dispatch attempts across three campaigns were refused by the
+    snapshot-reuse guard, and two campaigns were abandoned. The guard is right
+    -- a snapshot must never run under code it was not frozen from -- and these
+    tests do not soften it. They fix what it reads: ``--pin`` names a commit,
+    and that commit is what the stage check, the code hash and the freeze all
+    see, however the tree moves meanwhile.
+    """
+
+    STAGE = "20_retrieval_bound.py"
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="pinned_"))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.project = make_project_copy(self.root)
+        self.git("init", "--quiet")
+        self.git("config", "user.email", "suite@example.invalid")
+        self.git("config", "user.name", "orchestration suite")
+        self.git("add", "--all")
+        self.git("commit", "--quiet", "-m", "fixture")
+        self.commit = self.git("rev-parse", "HEAD")
+        self.output_root = self.root / "operator"
+
+    # ------------------------------------------------------------- helpers
+
+    def git(self, *args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(self.project), *args],
+            capture_output=True, text=True, check=True, timeout=120,
+        ).stdout.strip()
+
+    def move_the_tree(self) -> None:
+        """What another agent's commit does to this dispatch's code, in one line."""
+
+        moved = self.project / "scripts" / "transfer" / "README.md"
+        moved.write_text(
+            moved.read_text(encoding="utf-8") + "\nanother agent's edit\n",
+            encoding="utf-8",
+        )
+
+    def code_hash(self, *pin: str, project_root: Path | None = None) -> str:
+        """The hash the reuse guard compares, computed the way the guard does."""
+
+        environment = {
+            key: value for key, value in os.environ.items() if not key.startswith("ARGS_")
+        }
+        environment.update({"H200_POD": "unused", "H200_ACCESS_ROOT": "/nonexistent-access-root"})
+        if project_root is not None:
+            environment["PROJECT_ROOT"] = str(project_root)
+        result = subprocess.run(
+            ["bash", "scripts/transfer/run_transfer_h200.sh", *pin, "--print-code-hash"],
+            capture_output=True, text=True, cwd=str(self.project),
+            env=environment, timeout=600,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout[-800:] + result.stderr[-800:])
+        printed = re.search(r"^CODE_HASH=([0-9a-f]{64})$", result.stdout, re.M)
+        self.assertIsNotNone(printed, f"no CODE_HASH on stdout: {result.stdout[-500:]}")
+        return printed.group(1)
+
+    def dispatch(self, *arguments: str, run_id: str, snapshot: Path) -> subprocess.CompletedProcess[str]:
+        """One driver invocation, carried to its dispatch or to its refusal."""
+
+        gpfs = self.root / "gpfs"
+        pod_exec = self.root / "pod_exec.sh"
+        pod_exec.write_text("#!/usr/bin/env bash\necho LAUNCHED\n", encoding="utf-8")
+        pod_exec.chmod(0o755)
+        # The log a stage that died in start-up would have left. Its presence is
+        # how a dispatch that got all the way through the guard announces
+        # itself: exit 6, DIED AT DISPATCH.
+        pod_log = gpfs / "logs" / "external_baseline" / f"{run_id}_cell.log"
+        pod_log.parent.mkdir(parents=True, exist_ok=True)
+        pod_log.write_text(
+            "Traceback (most recent call last):\nRuntimeError: no checkpoint\n",
+            encoding="utf-8",
+        )
+        return subprocess.run(
+            [
+                "bash", str(self.project / "scripts" / "transfer" / "run_external_baseline_h200.sh"),
+                "--run-id", run_id, "--snapshot-dir", str(snapshot),
+                "--stage", self.STAGE, "--label", "cell", "--gpu", "0", *arguments,
+            ],
+            capture_output=True, text=True, cwd=str(self.project),
+            env={**os.environ, "H200_POD": "unused",
+                 "H200_POD_BASH": str(LOCAL_POD_BASH), "H200_POD_EXEC": str(pod_exec),
+                 "GPFS_PROJECT_ROOT": str(gpfs), "LOCAL_OUTPUT_ROOT": str(self.output_root),
+                 "LIVENESS_SETTLE_SECONDS": "0", "GRACE_SECONDS": "0",
+                 "POLL_SECONDS": "1", "TIMEOUT_SECONDS": "3"},
+            timeout=900,
+        )
+
+    def snapshot_for(self, run_id: str) -> Path:
+        """A snapshot on the (stubbed) pod carrying the stage, as reuse requires."""
+
+        snapshot = self.root / "gpfs" / "packages" / run_id
+        (snapshot / "scripts" / "transfer").mkdir(parents=True, exist_ok=True)
+        (snapshot / "scripts" / "transfer" / self.STAGE).write_text("", encoding="utf-8")
+        return snapshot
+
+    def dispatch_records(self) -> list[Path]:
+        return sorted((self.output_root / "logs" / "external_baseline").glob("*.dispatch"))
+
+    def worktrees(self) -> list[str]:
+        return [line for line in self.git("worktree", "list").splitlines() if line.strip()]
+
+    # ------------------------------------------------------------- the pin
+
+    def test_a_pinned_read_does_not_move_when_the_tree_does(self):
+        """The defect, in three lines: freeze, someone commits, dispatch refused."""
+
+        pinned_before = self.code_hash("--pin", self.commit)
+        unpinned_before = self.code_hash()
+        self.assertEqual(
+            pinned_before, unpinned_before,
+            "a clean tree and its own commit must hash identically, or the pin "
+            "changes what is frozen rather than only when it can change",
+        )
+
+        self.move_the_tree()
+
+        self.assertNotEqual(
+            self.code_hash(), unpinned_before,
+            "the tree moved and the unpinned hash did not; this test's premise "
+            "no longer holds and the race it stands for cannot be reproduced",
+        )
+        self.assertEqual(
+            self.code_hash("--pin", self.commit), pinned_before,
+            "the pinned hash followed the working tree; a campaign pinned to a "
+            "commit would still be refused mid-flight",
+        )
+
+    def test_the_pinned_hash_is_the_named_commits_own_content(self):
+        """Pinning must freeze that commit -- not merely something stable."""
+
+        self.move_the_tree()
+        independent = self.root / "independent"
+        self.git("worktree", "add", "--detach", "--quiet", str(independent), self.commit)
+        self.addCleanup(
+            lambda: subprocess.run(
+                ["git", "-C", str(self.project), "worktree", "remove", "--force", str(independent)],
+                capture_output=True, text=True, timeout=120,
+            )
+        )
+        self.assertEqual(
+            self.code_hash("--pin", self.commit),
+            self.code_hash(project_root=independent),
+            "the pinned hash is not the hash of that commit's content",
+        )
+
+    def test_a_pinned_run_removes_its_worktree_including_when_it_fails(self):
+        """A leaked worktree is a leaked checkout of the repository, per dispatch."""
+
+        before = self.worktrees()
+        self.code_hash("--pin", self.commit)
+        self.assertEqual(self.worktrees(), before, "a successful pinned run leaked its worktree")
+
+        failed = subprocess.run(
+            ["bash", "scripts/transfer/run_transfer_h200.sh",
+             "--pin", self.commit, "--print-code-hash"],
+            capture_output=True, text=True, cwd=str(self.project),
+            env={**os.environ, "H200_POD": "unused",
+                 "H200_ACCESS_ROOT": "/nonexistent-access-root",
+                 # Refused after the pin is established, which is the window a
+                 # leak would open in.
+                 "ARMS": "no-such-arm"},
+            timeout=600,
+        )
+        self.assertNotEqual(failed.returncode, 0, "this run was supposed to fail after pinning")
+        self.assertIn("unknown arm", failed.stderr)
+        self.assertEqual(self.worktrees(), before, "a failed pinned run leaked its worktree")
+
+    def test_an_unresolvable_pin_stops_the_dispatch_rather_than_using_the_tree(self):
+        """Falling back to the tree here would reinstate the defect silently."""
+
+        run_id = f"20260101000000_{self.code_hash('--pin', self.commit)[:12]}"
+        result = self.dispatch(
+            "--pin", "no-such-commit", run_id=run_id, snapshot=self.snapshot_for(run_id),
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout[-800:])
+        self.assertIn("does not name a commit", result.stderr)
+        self.assertEqual(
+            self.dispatch_records(), [],
+            "a dispatch whose code source could not be established still recorded one",
+        )
+
+    def test_a_stage_only_in_the_working_tree_is_not_dispatched_under_a_pin(self):
+        """The stage check has to read the pin too, or it checks a different tree."""
+
+        (self.project / "scripts" / "transfer" / "99_uncommitted.py").write_text(
+            "raise SystemExit\n", encoding="utf-8",
+        )
+        run_id = f"20260101000000_{self.code_hash('--pin', self.commit)[:12]}"
+        result = subprocess.run(
+            ["bash", str(self.project / "scripts" / "transfer" / "run_external_baseline_h200.sh"),
+             "--pin", self.commit, "--run-id", run_id,
+             "--snapshot-dir", str(self.snapshot_for(run_id)),
+             "--stage", "99_uncommitted.py", "--label", "cell", "--gpu", "0"],
+            capture_output=True, text=True, cwd=str(self.project),
+            env={**os.environ, "H200_POD": "unused",
+                 "H200_POD_BASH": str(LOCAL_POD_BASH),
+                 "LOCAL_OUTPUT_ROOT": str(self.output_root)},
+            timeout=600,
+        )
+        self.assertNotEqual(result.returncode, 0, result.stdout[-800:])
+        self.assertIn("no such stage at", result.stderr)
+
+    # ------------------------------------------------- the guard it protects
+
+    def test_a_dispatch_against_a_moved_tree_is_still_refused(self):
+        """The refusal this change must not weaken."""
+
+        run_id = f"20260101000000_{self.code_hash()[:12]}"
+        snapshot = self.snapshot_for(run_id)
+        self.move_the_tree()
+
+        result = self.dispatch(run_id=run_id, snapshot=snapshot)
+        self.assertEqual(result.returncode, 3, result.stdout[-800:] + result.stderr[-800:])
+        self.assertIn("minted from different code", result.stderr)
+        self.assertEqual(
+            self.dispatch_records(), [],
+            "a refused dispatch wrote a record for a run that never happened",
+        )
+
+    def test_the_same_dispatch_proceeds_when_it_names_the_commit(self):
+        """And the outcome the pin exists to produce: the campaign runs."""
+
+        run_id = f"20260101000000_{self.code_hash('--pin', self.commit)[:12]}"
+        snapshot = self.snapshot_for(run_id)
+        self.move_the_tree()
+
+        result = self.dispatch("--pin", self.commit, run_id=run_id, snapshot=snapshot)
+        self.assertNotIn(
+            "minted from different code", result.stderr,
+            "a dispatch pinned to the commit its snapshot was frozen from was "
+            "refused because the working tree had moved",
+        )
+        # It reached the pod and the stage's own log said the stage died, which
+        # is as far as a dispatch can get without a cluster.
+        self.assertEqual(result.returncode, 6, result.stdout[-800:] + result.stderr[-800:])
+        self.assertIn("DIED AT DISPATCH", result.stdout)
+
+        records = self.dispatch_records()
+        self.assertEqual(len(records), 1, f"expected one dispatch record, got {records}")
+        self.assertIn(
+            f"code_source\t{self.commit}", records[0].read_text(encoding="utf-8"),
+            "the operator's ledger does not say which code state this cell ran",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

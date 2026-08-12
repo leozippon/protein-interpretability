@@ -113,8 +113,10 @@ The status commands naturally display current pod names. Never persist a pod nam
 Launch the full contract only after reviewing the dry run:
 
 ```bash
-bash scripts/transfer/run_transfer_h200.sh
+bash scripts/transfer/run_transfer_h200.sh --pin HEAD
 ```
+
+`--pin` freezes a named commit rather than the working tree, by checking it out into a temporary worktree the controller owns and removes. Use it whenever other agents may be committing: the freeze takes minutes, a hash that moves inside that window aborts the campaign, and one hash moved twice inside a single 4.5-minute freeze on 2026-08-12. Uncommitted work is not frozen under a pin, so commit first; without the flag the freeze reads the working tree exactly as before.
 
 Scope a run explicitly when resources or scientific gates require it:
 
@@ -192,12 +194,18 @@ Stage 20 builds and scores the training-corpus retrieval bound. Its scoring step
 **Snapshot reuse, and the rule that governs it.** Several conditions of one comparison should share one snapshot: four controllers freezing at once collide on the shared relay's single temp script path, and the arms of one comparison must run one code hash or they are not the controlled comparison they are reported as. Freeze once, then pass `--run-id` and `--snapshot-dir` to each invocation:
 
 ```bash
-eval "$(scripts/transfer/run_transfer_h200.sh --freeze-only)"   # sets RUN_ID, SNAPSHOT_DIR
-scripts/transfer/run_external_baseline_h200.sh --run-id "$RUN_ID" --snapshot-dir "$SNAPSHOT_DIR" \
+export H200_POD=<running-pod-name>
+eval "$(scripts/transfer/run_transfer_h200.sh --pin HEAD --freeze-only)"   # sets RUN_ID, SNAPSHOT_DIR, PIN_COMMIT
+scripts/transfer/run_external_baseline_h200.sh --pin "$PIN_COMMIT" \
+    --run-id "$RUN_ID" --snapshot-dir "$SNAPSHOT_DIR" \
     --stage 17_train_transcoder.py --label clt --gpu 0 -- --architecture clt &
 ```
 
-**A reused snapshot runs the code it was frozen with, not the code on disk.** Editing a stage after freezing and then reusing the old run-id runs the old stage: four launches once died on `error: unrecognized arguments` for a flag added after the freeze. The driver now refuses this — it asks the controller for the current hash (`--print-code-hash`, local only, no network) and requires the run-id's trailing segment to match, which is `resolve_run_id`'s rule applied at the one other place a snapshot can be adopted. **Edit a stage, freeze again.**
+**A reused snapshot runs the code it was frozen with, not the code on disk.** Editing a stage after freezing and then reusing the old run-id runs the old stage: four launches once died on `error: unrecognized arguments` for a flag added after the freeze. The driver refuses this — it asks the controller for the current hash (`--print-code-hash`, local only, no network) and requires the run-id's trailing segment to match, which is `resolve_run_id`'s rule applied at the one other place a snapshot can be adopted. **Edit a stage, freeze again.**
+
+**Pass the same `--pin` to every cell of a campaign.** The hash the refusal compares against is read from the working tree unless a commit is named, and the tree moves under other agents: on 2026-08-12 that cost five-plus refused dispatches across three campaigns and two abandoned campaigns, once with the hash moving twice inside one freeze. Pinned, each cell reads the commit its snapshot was frozen from, so the comparison is stable for as long as the campaign runs. The refusal itself is unchanged and still applies to a pinned cell whose commit is not the one behind the snapshot.
+
+**Dispatch each cell as its own command.** `export H200_POD=... && cell0 & cell1 &` backgrounds only the first list, so every later cell runs without the export and dies on the unset variable — eleven of twelve cells in one case, three in another five hours earlier. Export on its own line, then background each cell separately.
 
 **The state vocabulary, because two of these mean very different things.**
 

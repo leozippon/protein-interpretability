@@ -18,9 +18,10 @@ set -euo pipefail
 # so the launcher is part of the run's identity -- editing it changes CODE_HASH,
 # which is correct.
 #
-# The freeze is NOT reimplemented here. run_transfer_h200.sh --freeze-only does
-# it and prints RUN_ID and SNAPSHOT_DIR (Appendix B rule 12: one declaration,
-# imported, never reimplemented).
+# The freeze is NOT reimplemented here, and neither is the pinning of the code
+# it reads. run_transfer_h200.sh --freeze-only does both and prints RUN_ID,
+# SNAPSHOT_DIR and, when pinned, PIN_COMMIT (Appendix B rule 12: one
+# declaration, imported, never reimplemented).
 #
 # Privacy: no pod name is written here. Export H200_POD before invoking.
 #
@@ -45,20 +46,49 @@ set -euo pipefail
 #   admits it. The default is unchanged, so this is required only where the
 #   output directory is not empty at launch.
 #
-#   To run several conditions of ONE comparison concurrently, freeze once and
-#   hand every invocation the same snapshot:
+#   To run several conditions of ONE comparison concurrently, freeze once at a
+#   named commit and hand every invocation the same snapshot AND the same pin:
 #
-#     eval "$(scripts/transfer/run_transfer_h200.sh --freeze-only)"   # RUN_ID, SNAPSHOT_DIR
-#     scripts/transfer/run_external_baseline_h200.sh --run-id "$RUN_ID" \
-#         --snapshot-dir "$SNAPSHOT_DIR" --stage ... --label ... --gpu 0 -- ... &
+#     eval "$(scripts/transfer/run_transfer_h200.sh --pin HEAD --freeze-only)"
+#     # sets RUN_ID, SNAPSHOT_DIR, PIN_COMMIT
+#     scripts/transfer/run_external_baseline_h200.sh --pin "$PIN_COMMIT" \
+#         --run-id "$RUN_ID" --snapshot-dir "$SNAPSHOT_DIR" \
+#         --stage ... --label ... --gpu 0 -- ... &
 #
-#   Two reasons, one operational and one scientific. Four controllers freezing at
-#   once collide on the shared relay's single temp script path -- a hazard
-#   EXP-R2-122 recorded and a 20-second stagger did not fix, because a push
-#   occupies the relay for minutes. And the arms of one comparison must run the
-#   same code: a CLT and a PLT frozen from two snapshots are not the controlled
-#   comparison they are reported as. Reusing a snapshot is refused unless it is
-#   present on the pod, so this cannot silently run against nothing.
+#   Two reasons to freeze once, one operational and one scientific. Four
+#   controllers freezing at once collide on the shared relay's single temp
+#   script path -- a hazard EXP-R2-122 recorded and a 20-second stagger did not
+#   fix, because a push occupies the relay for minutes. And the arms of one
+#   comparison must run the same code: a CLT and a PLT frozen from two snapshots
+#   are not the controlled comparison they are reported as. Reusing a snapshot is
+#   refused unless it is present on the pod, so this cannot silently run against
+#   nothing.
+#
+#   --pin is what makes that reuse survive a working day. Without it, "the code"
+#   means whatever is in the tree at the instant each command reads it, and
+#   several agents commit into that tree: on 2026-08-12 the hash moved twice
+#   inside one 4.5-minute freeze, five-plus dispatch attempts across three
+#   campaigns were refused, and two campaigns were abandoned. The refusal is
+#   correct and is unchanged -- a snapshot must never run under code it was not
+#   frozen from -- so what --pin changes is the source being compared, from a
+#   directory anyone may write to into a commit nobody can rewrite. Everything
+#   below then reads that commit: the stage-file check, the code hash, and the
+#   freeze itself. Uncommitted work is not dispatched under --pin; commit it
+#   first, or leave the flag off and accept that the tree may move.
+#
+#   Dispatch each cell as its OWN command, never as one backgrounded && list:
+#
+#     export H200_POD=<pod>
+#     scripts/transfer/run_external_baseline_h200.sh ... --gpu 0 -- ... &
+#     scripts/transfer/run_external_baseline_h200.sh ... --gpu 1 -- ... &
+#
+#   `export H200_POD=... && cell0 & cell1 & cell2 &` backgrounds only the first
+#   list, so the export stays inside that subshell and every later cell dies on
+#   the unset variable. Two agents five hours apart lost three cells and then
+#   eleven to exactly this; the driver refuses such a cell immediately and says
+#   why, but a backgrounded refusal is easy to miss, so the shape to avoid is
+#   written here, where a launcher looks, rather than only in the experiment log,
+#   where the second agent did not look.
 
 H200_ACCESS_ROOT="${H200_ACCESS_ROOT:-${HOME}/hangzhou-remote}"
 H200_SYNC="${H200_SYNC:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_sync.sh}"
@@ -95,12 +125,21 @@ GPU="0"
 RUN_ID=""
 SNAPSHOT_DIR=""
 EXPECT=""
+# --pin <commit-ish>, resolved to a full commit id below. Empty means the code
+# is read from the working tree, which is the behaviour this driver has always
+# had and is still what a caller who passes nothing gets.
+PIN_REF=""
+PIN_COMMIT=""
 POLL_SECONDS="${POLL_SECONDS:-120}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-57600}"
 STAGE_ARGS=()
 
+# The header from `Usage:` to the end of the leading comment block, which is
+# where this file's operating instructions are. It used to be a fixed line
+# range, which silently drifts off the end of what it was pointing at the first
+# time the header grows.
 usage() {
-  sed -n '3,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '/^# Usage:/,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 while [ $# -gt 0 ]; do
@@ -111,6 +150,7 @@ while [ $# -gt 0 ]; do
     --run-id) RUN_ID="$2"; shift 2 ;;
     --snapshot-dir) SNAPSHOT_DIR="$2"; shift 2 ;;
     --expect) EXPECT="$2"; shift 2 ;;
+    --pin) PIN_REF="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     --) shift; STAGE_ARGS=("$@"); break ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -120,10 +160,38 @@ done
 : "${H200_POD:?H200_POD must be exported by the caller}"
 [ -n "${STAGE}" ] || { echo "--stage is required" >&2; exit 2; }
 [ -n "${LABEL}" ] || { echo "--label is required" >&2; exit 2; }
-[ -f "${REPO_ROOT}/scripts/transfer/${STAGE}" ] || {
-  echo "no such stage: scripts/transfer/${STAGE}" >&2; exit 2; }
 
 log() { printf '[external-baseline] %s %s\n' "$(date -Is)" "$*"; }
+
+# ------------------------------------------------------------- code source
+
+# Resolve --pin once, here, and let every later code read follow it: the stage
+# check immediately below, the code hash the reuse guard compares, and the
+# freeze the controller performs. One dispatch therefore reads one code state,
+# and a campaign whose cells all name the same commit reads the same one all
+# day, whatever the working tree does meanwhile.
+#
+# CONTROLLER_PIN is passed on rather than re-implemented: the controller checks
+# the commit out into a temporary worktree it owns and removes (see
+# establish_pinned_code_root there), and this driver never materialises a tree
+# of its own -- the one question it has to answer locally, whether the stage
+# file exists at that commit, git answers out of the object store without a
+# checkout.
+CONTROLLER_PIN=()
+if [ -n "${PIN_REF}" ]; then
+  command -v git >/dev/null 2>&1 || {
+    echo "--pin needs git(1) on PATH" >&2; exit 2; }
+  PIN_COMMIT="$(git -C "${REPO_ROOT}" rev-parse --verify --quiet "${PIN_REF}^{commit}")" || {
+    echo "--pin ${PIN_REF} does not name a commit in ${REPO_ROOT}" >&2; exit 2; }
+  CONTROLLER_PIN=(--pin "${PIN_COMMIT}")
+  git -C "${REPO_ROOT}" cat-file -e "${PIN_COMMIT}:scripts/transfer/${STAGE}" 2>/dev/null || {
+    echo "no such stage at ${PIN_COMMIT:0:12}: scripts/transfer/${STAGE}" >&2
+    echo "(it may exist in the working tree; --pin dispatches the commit, not the tree)" >&2
+    exit 2; }
+else
+  [ -f "${REPO_ROOT}/scripts/transfer/${STAGE}" ] || {
+    echo "no such stage: scripts/transfer/${STAGE}" >&2; exit 2; }
+fi
 
 # ------------------------------------------------------------------- freeze
 
@@ -133,21 +201,43 @@ if [ -n "${RUN_ID}" ] || [ -n "${SNAPSHOT_DIR}" ]; then
   # another run's directory.
   [ -n "${RUN_ID}" ] && [ -n "${SNAPSHOT_DIR}" ] || {
     echo "--run-id and --snapshot-dir must be given together" >&2; exit 3; }
-  # The run-id's trailing segment must be the hash of the code on disk right
-  # now. This is resolve_run_id's rule, applied at the one other place a
-  # snapshot can be adopted, and asked of the controller rather than
-  # reimplemented (Appendix B rule 12). Without it this option silently runs
-  # stale code: --replacement-kind was added to a stage after its snapshot was
-  # frozen, four launches died on `unrecognized arguments`, and each was
-  # reported LAUNCHED and then polled for ten minutes.
-  CURRENT_HASH="$(cd "${REPO_ROOT}" && bash scripts/transfer/run_transfer_h200.sh \
-      --print-code-hash 2>/dev/null | sed -n 's/^CODE_HASH=//p')"
-  [ -n "${CURRENT_HASH}" ] || { echo "could not compute the current code hash" >&2; exit 3; }
+  # The run-id's trailing segment must be the hash of the code this dispatch
+  # reads -- the pinned commit under --pin, the working tree otherwise. This is
+  # resolve_run_id's rule, applied at the one other place a snapshot can be
+  # adopted, and asked of the controller rather than reimplemented (Appendix B
+  # rule 12). Without it this option silently runs stale code: --replacement-kind
+  # was added to a stage after its snapshot was frozen, four launches died on
+  # `unrecognized arguments`, and each was reported LAUNCHED and then polled for
+  # ten minutes.
+  #
+  # The controller's own diagnostics are kept and shown on failure. They used to
+  # be discarded, so a controller that refused for its own reason -- an
+  # unresolvable pin, a missing file -- arrived here as the bare and misleading
+  # "could not compute the current code hash".
+  HASH_OUT="$(cd "${REPO_ROOT}" && bash scripts/transfer/run_transfer_h200.sh \
+      ${CONTROLLER_PIN[@]+"${CONTROLLER_PIN[@]}"} --print-code-hash 2>&1)" || {
+    printf '%s\n' "${HASH_OUT}" >&2
+    echo "the controller could not hash the code to compare against; refusing" >&2
+    exit 3
+  }
+  CURRENT_HASH="$(printf '%s\n' "${HASH_OUT}" | sed -n 's/^CODE_HASH=//p')"
+  [ -n "${CURRENT_HASH}" ] || {
+    printf '%s\n' "${HASH_OUT}" >&2
+    echo "could not compute the current code hash" >&2
+    exit 3
+  }
   case "${RUN_ID}" in
     *_"${CURRENT_HASH:0:12}") ;;
     *)
-      echo "refusing to reuse ${RUN_ID}: it was minted from different code than is" >&2
-      echo "on disk now (current hash ${CURRENT_HASH:0:12}). Freeze a new snapshot;" >&2
+      echo "refusing to reuse ${RUN_ID}: it was minted from different code than" >&2
+      if [ -n "${PIN_COMMIT}" ]; then
+        echo "commit ${PIN_COMMIT:0:12} carries (its hash is ${CURRENT_HASH:0:12})." >&2
+        echo "Pin the commit the snapshot was frozen from, or freeze a new snapshot;" >&2
+      else
+        echo "is on disk now (current hash ${CURRENT_HASH:0:12}). Freeze a new snapshot;" >&2
+        echo "if the tree moved under another agent's commit rather than under your own" >&2
+        echo "edit, pass --pin <commit> so this reads a commit instead of the tree;" >&2
+      fi
       echo "a reused snapshot runs the code it was frozen with, not the code you edited." >&2
       exit 3
       ;;
@@ -160,10 +250,15 @@ if [ -n "${RUN_ID}" ] || [ -n "${SNAPSHOT_DIR}" ]; then
     echo "reused snapshot ${SNAPSHOT_DIR} does not carry ${STAGE} on the pod; refusing" >&2
     exit 3
   }
-  log "reusing snapshot run_id=${RUN_ID} (verified against the code on disk; no relay push)"
+  if [ -n "${PIN_COMMIT}" ]; then
+    log "reusing snapshot run_id=${RUN_ID} (verified against commit ${PIN_COMMIT:0:12}; no relay push)"
+  else
+    log "reusing snapshot run_id=${RUN_ID} (verified against the code on disk; no relay push)"
+  fi
 else
   log "freezing and pushing the code snapshot via the controller"
-  FREEZE_OUT="$(cd "${REPO_ROOT}" && bash scripts/transfer/run_transfer_h200.sh --freeze-only)"
+  FREEZE_OUT="$(cd "${REPO_ROOT}" && bash scripts/transfer/run_transfer_h200.sh \
+      ${CONTROLLER_PIN[@]+"${CONTROLLER_PIN[@]}"} --freeze-only)"
   RUN_ID="$(printf '%s\n' "${FREEZE_OUT}" | sed -n 's/^RUN_ID=//p')"
   SNAPSHOT_DIR="$(printf '%s\n' "${FREEZE_OUT}" | sed -n 's/^SNAPSHOT_DIR=//p')"
   [ -n "${RUN_ID}" ] && [ -n "${SNAPSHOT_DIR}" ] || {
@@ -191,6 +286,9 @@ mkdir -p "$(dirname "${LOCAL_RECORD}")"
 {
   printf 'run_id\t%s\n' "${RUN_ID}"
   printf 'snapshot\t%s\n' "${SNAPSHOT_DIR}"
+  # Which code state this cell was dispatched against, in the ledger an operator
+  # reads. A campaign's cells must all show the same one.
+  printf 'code_source\t%s\n' "${PIN_COMMIT:-working tree ${REPO_ROOT}}"
   printf 'stage\t%s\n' "${STAGE}"
   printf 'label\t%s\n' "${LABEL}"
   printf 'gpu\t%s\n' "${GPU}"

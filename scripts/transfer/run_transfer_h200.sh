@@ -31,7 +31,10 @@ set -euo pipefail
 # directory already holds different content. The worker that actually
 # executes is the one that shipped inside that same snapshot, not a
 # separately-deployed copy, so a later fix to the worker cannot
-# retroactively change what an old run-id ran.
+# retroactively change what an old run-id ran. What the hash is computed
+# over is the working tree unless --pin names a commit, and on a checkout
+# several agents commit into, a campaign should pin -- see
+# establish_pinned_code_root.
 #
 # H200 access (privacy: no infrastructure identifiers belong in this
 # file). Pods are disposable; this controller never defaults to one. Set
@@ -56,6 +59,9 @@ set -euo pipefail
 #     (reuses an existing frozen snapshot instead of freezing a new one;
 #     only valid if that run-id's embedded hash matches the code on disk
 #     right now -- see resolve_run_id below)
+#   bash scripts/transfer/run_transfer_h200.sh --pin "$(git rev-parse HEAD)"
+#     (freezes that commit rather than the working tree, so the hash cannot
+#     move under a concurrent commit -- see establish_pinned_code_root)
 #
 # All paths and lists are overridable via environment variables; run with
 # --help (or read the config block below) for the full list.
@@ -79,6 +85,18 @@ H200_STATUS_TIMEOUT_SECONDS="${H200_STATUS_TIMEOUT_SECONDS:-120}"
 CONTROLLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "${CONTROLLER_DIR}/../.." && pwd)}"
 PROJECT_ROOT="${PROJECT_ROOT:-${REPO_ROOT}}"
+
+# The directory the freeze reads code out of, which is PROJECT_ROOT unless --pin
+# names a commit -- see establish_pinned_code_root. PROJECT_ROOT keeps the
+# operator-facing role either way: the controller log is written under it, so a
+# pinned run still files its record where an operator looks for it.
+CODE_ROOT="${PROJECT_ROOT}"
+PIN_REF=""
+PIN_COMMIT=""
+# Temporary directories this run owns, emptied by `cleanup` on the way out.
+# Declared here because the EXIT trap is registered before either is filled.
+SCRATCH=""
+PIN_SCRATCH=""
 
 # The prefix of the line the worker states its own exit status on. Read out of
 # the worker source rather than restated here, for the reason the panel contract
@@ -191,13 +209,25 @@ CONTROLLER_LOG_DIR="${PROJECT_ROOT}/logs/transfer_h200_controller"
 usage() {
   cat <<'EOF'
 Usage: H200_POD=<pod> run_transfer_h200.sh [--dry-run] [--freeze-only]
-                                          [--print-code-hash] [--force]
+                                          [--print-code-hash] [--pin <commit>]
+                                          [--force]
 
 --freeze-only pushes and verifies the code snapshot, writes the run manifest,
 then prints RUN_ID and SNAPSHOT_DIR on stdout and exits without scheduling any
 stage. It is how an external-baseline stage -- one that measures a checkpoint
 which is not a panel arm, and therefore cannot name a registered stage -- gets a
 frozen, verified snapshot without a second copy of the freeze walker.
+
+--pin <commit> freezes a named commit instead of the working tree, by checking
+it out into a temporary detached worktree this run owns and removes. Use it
+whenever a run's code must not move underneath it: several agents commit into
+this checkout, and a code hash that moves mid-freeze aborts the campaign. Under
+--pin the run manifest records that commit and a clean tree, because both are
+read from the pinned worktree. Uncommitted work is NOT frozen -- commit first.
+It pins the frozen code only: the controller log still goes under PROJECT_ROOT,
+and this script and the panel contract beside it are read from the copy you
+invoked, so an uncommitted edit to either governs how the freeze runs while the
+pinned commit governs what it freezes.
 
 --print-code-hash stages and hashes the snapshot locally, prints CODE_HASH and
 exits without touching the pod or the network. A caller reusing an existing
@@ -207,7 +237,8 @@ run-id, applied at the one other place a snapshot can be adopted.
 
 Environment overrides: H200_POD (required except for --help), H200_ACCESS_ROOT,
 H200_STATUS_TIMEOUT_SECONDS (caller-side bound on the cluster health probe, in
-seconds; at least 90), REPO_ROOT, PROJECT_ROOT, GPFS_PROJECT_ROOT,
+seconds; at least 90), REPO_ROOT, PROJECT_ROOT (the checkout; --pin decides
+what is frozen out of it), GPFS_PROJECT_ROOT,
 GPFS_PACKAGE_ROOT,
 GPFS_RESULTS_ROOT, GPFS_LOGS_ROOT, ARMS (comma-separated), GPUS
 (comma-separated indices, pod-relative), TEXT_ARM, STAGES (comma-separated,
@@ -265,6 +296,26 @@ require_local_path() {
   if [ ! -e "${path}" ]; then
     echo "missing required ${label}: ${path}" >&2
     exit 2
+  fi
+}
+
+# One EXIT handler for every temporary directory this run owns.
+#
+# There used to be a bare `trap 'rm -rf -- "${SCRATCH}"' EXIT` beside the
+# mktemp that fills SCRATCH. A second trap registered anywhere earlier would
+# have been silently replaced by it, and a pinned worktree removed with rm -rf
+# alone leaves a stale administrative entry in the repository -- so both
+# resources are released here, and the trap is registered once, before either
+# directory exists.
+cleanup() {
+  if [ -n "${PIN_SCRATCH}" ]; then
+    # By name, and only ever this process's own worktree.
+    git -C "${PROJECT_ROOT}" worktree remove --force "${PIN_SCRATCH}/source" \
+      >/dev/null 2>&1 || true
+    rm -rf -- "${PIN_SCRATCH}"
+  fi
+  if [ -n "${SCRATCH}" ]; then
+    rm -rf -- "${SCRATCH}"
   fi
 }
 
@@ -474,6 +525,58 @@ verify_h200_cluster() {
 
 # ------------------------------------------------------------ code freeze
 
+# Materialises the code the freeze reads, so that code cannot move while the
+# freeze is reading it.
+#
+# The freeze hashes what is on disk, and on this workstation "on disk" is a
+# working tree several agents commit into. Measured on 2026-08-12: the hash
+# moved twice inside one 4.5-minute freeze, which is faster than a campaign can
+# be frozen at all, and a whole twelve-cell campaign was refused because the
+# run-id it had just been given no longer matched the tree. Nothing downstream
+# can repair that. resolve_run_id's refusal is correct and stays exactly as
+# strict; what has to change is the source it compares against, from a
+# directory anyone may write to into one nobody can.
+#
+# A commit is that source. A detached worktree is how it becomes a directory
+# the freeze walker can read, and it is preferred over extracting an archive of
+# the same commit for two reasons: the whole tracked tree is checked out, so no
+# second hard-coded directory list is invented here for the closure walk to
+# fall outside of (the failure the comment below records), and `git rev-parse`
+# and `git status` answer truthfully inside it, so write_run_manifest records
+# the pinned commit and a clean tree instead of "unknown".
+#
+# The worktree is this process's own, in its own temporary directory, and is
+# removed by name in `cleanup`; it is never shared, so cleanup can never remove
+# a worktree another dispatch is using. A hard kill leaves the administrative
+# entry behind, which `git worktree prune` drops; nothing here prunes globally,
+# because that would reach beyond what this process created.
+establish_pinned_code_root() {
+  local resolved
+  if ! command -v git >/dev/null 2>&1; then
+    echo "--pin needs git(1) on PATH" >&2
+    exit 2
+  fi
+  if ! git -C "${PROJECT_ROOT}" rev-parse --git-dir >/dev/null 2>&1; then
+    echo "--pin ${PIN_REF} needs ${PROJECT_ROOT} to be a git checkout, and it is not" >&2
+    exit 2
+  fi
+  if ! resolved="$(git -C "${PROJECT_ROOT}" rev-parse --verify --quiet "${PIN_REF}^{commit}")"; then
+    echo "--pin ${PIN_REF} does not name a commit in ${PROJECT_ROOT}" >&2
+    exit 2
+  fi
+  PIN_SCRATCH="$(mktemp -d)"
+  # Failing here is fatal on purpose. Falling back to the working tree would
+  # reinstate exactly the race this option exists to remove, silently, at the
+  # one moment the caller has said it must not happen.
+  if ! git -C "${PROJECT_ROOT}" worktree add --detach --quiet "${PIN_SCRATCH}/source" "${resolved}"; then
+    echo "could not check out ${resolved} into a temporary worktree; refusing to" >&2
+    echo "freeze from the working tree instead, which is what --pin rules out" >&2
+    exit 2
+  fi
+  PIN_COMMIT="${resolved}"
+  CODE_ROOT="${PIN_SCRATCH}/source"
+}
+
 # Populates FILE_LIST with every repo-relative runtime file to stage. The
 # checksum manifest is intentionally created from the staged copy afterwards.
 #
@@ -507,7 +610,7 @@ freeze_manifest() {
   local baseline_list="${scratch}/baseline_list.txt"
   local closure_extra="${scratch}/closure_extra.txt"
 
-  ( cd "${PROJECT_ROOT}" && \
+  ( cd "${CODE_ROOT}" && \
     find src/transfer scripts/transfer \
       \( -path '*/__pycache__/*' -o -name '*.pyc' -o -name '*.pyo' \) -prune \
       -o -type f -print
@@ -518,7 +621,7 @@ freeze_manifest() {
     exit 2
   fi
 
-  ( cd "${PROJECT_ROOT}" && python3 - "${baseline_list}" ) > "${closure_extra}" <<'PY'
+  ( cd "${CODE_ROOT}" && python3 - "${baseline_list}" ) > "${closure_extra}" <<'PY'
 import ast
 import sys
 from pathlib import Path
@@ -652,7 +755,7 @@ stage_snapshot() {
   local rel
   while IFS= read -r rel; do
     mkdir -p "${STAGING_DIR}/$(dirname "${rel}")"
-    cp -p "${PROJECT_ROOT}/${rel}" "${STAGING_DIR}/${rel}"
+    cp -p "${CODE_ROOT}/${rel}" "${STAGING_DIR}/${rel}"
   done < "${FILE_LIST}"
   MANIFEST="${STAGING_DIR}/CODE_CONTENT_SHA256SUMS"
   ( cd "${STAGING_DIR}" && xargs -a "${FILE_LIST}" -d '\n' sha256sum ) > "${MANIFEST}"
@@ -767,10 +870,13 @@ write_run_manifest() {
   local git_revision git_dirty
   RUN_MANIFEST="${scratch}/RUN_MANIFEST.json"
 
-  git_revision="$(git -C "${PROJECT_ROOT}" rev-parse HEAD 2>/dev/null || echo unknown)"
+  # Asked of the tree the code was actually frozen from. Under --pin that is the
+  # pinned worktree, where the answer is the pinned commit and a clean status --
+  # which is the honest record of what this run froze.
+  git_revision="$(git -C "${CODE_ROOT}" rev-parse HEAD 2>/dev/null || echo unknown)"
   if [ "${git_revision}" = unknown ]; then
     git_dirty=unknown
-  elif [ -n "$(git -C "${PROJECT_ROOT}" status --porcelain 2>/dev/null)" ]; then
+  elif [ -n "$(git -C "${CODE_ROOT}" status --porcelain 2>/dev/null)" ]; then
     git_dirty=true
   else
     git_dirty=false
@@ -984,6 +1090,7 @@ while [ $# -gt 0 ]; do
     --dry-run) DRY_RUN=1; shift ;;
     --freeze-only) FREEZE_ONLY=1; shift ;;
     --print-code-hash) PRINT_CODE_HASH=1; shift ;;
+    --pin) PIN_REF="$2"; shift 2 ;;
     --force) FORCE=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -1012,10 +1119,15 @@ if ! command -v timeout >/dev/null 2>&1; then
   echo "timeout(1) not found on PATH (needed to bound the cluster health probe)" >&2
   exit 2
 fi
+trap cleanup EXIT
+if [ -n "${PIN_REF}" ]; then
+  establish_pinned_code_root
+fi
+
 require_local_path "project root" "${PROJECT_ROOT}"
-require_local_path "src/transfer" "${PROJECT_ROOT}/src/transfer"
-require_local_path "scripts/transfer" "${PROJECT_ROOT}/scripts/transfer"
-require_local_path "worker script" "${PROJECT_ROOT}/scripts/transfer/h200_worker.sh"
+require_local_path "src/transfer" "${CODE_ROOT}/src/transfer"
+require_local_path "scripts/transfer" "${CODE_ROOT}/scripts/transfer"
+require_local_path "worker script" "${CODE_ROOT}/scripts/transfer/h200_worker.sh"
 # --print-code-hash never reaches the cluster, so it must not require the access
 # layer to be installed. Demanding it there would make the snapshot-reuse check
 # unrunnable on any host without the tunnel -- including a test host -- and a
@@ -1102,13 +1214,17 @@ reject_duplicate_values STAGES "${REQUESTED_STAGES[@]}"
 collect_stage_args
 
 SCRATCH="$(mktemp -d)"
-trap 'rm -rf -- "${SCRATCH}"' EXIT
 
 log "InterpretabilityTransfer H200 controller"
 # The pod name is deliberately absent from this banner and from every other line
 # this script writes; see `redact` above. Cluster identity is established by the
 # health check, which is the thing that actually needs to be true.
 log "PROJECT_ROOT:      ${PROJECT_ROOT}"
+if [ -n "${PIN_COMMIT}" ]; then
+  log "CODE SOURCE:       pinned commit ${PIN_COMMIT}"
+else
+  log "CODE SOURCE:       the working tree under PROJECT_ROOT (not pinned; --pin <commit> pins it)"
+fi
 log "GPFS_PACKAGE_ROOT: ${GPFS_PACKAGE_ROOT}"
 log "GPFS_RESULTS_ROOT: ${GPFS_RESULTS_ROOT}"
 log "GPFS_LOGS_ROOT:    ${GPFS_LOGS_ROOT}"
@@ -1177,8 +1293,14 @@ push_run_manifest
 
 if [ "${FREEZE_ONLY}" = "1" ]; then
   log "freeze-only: snapshot verified on GPFS, no stage scheduled"
-  # stdout, not the log, so a caller can capture these two directly.
+  # stdout, not the log, so a caller can capture these directly. PIN_COMMIT is
+  # emitted only when there is one, and it is the third value a campaign needs:
+  # every cell dispatched against this snapshot has to read the same commit, or
+  # the reuse guard will refuse it the moment another agent commits.
   printf 'RUN_ID=%s\nSNAPSHOT_DIR=%s\n' "${RUN_ID}" "${SNAPSHOT_DIR}"
+  if [ -n "${PIN_COMMIT}" ]; then
+    printf 'PIN_COMMIT=%s\n' "${PIN_COMMIT}"
+  fi
   exit 0
 fi
 
