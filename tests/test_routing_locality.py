@@ -17,6 +17,7 @@ import pytest
 from src.transfer.routing import (
     DEGENERATE_CELL_SHARE,
     MINIMUM_CELL_TOKENS,
+    boundary_cells,
     cell_occupancy,
     expert_set_from_residue,
     expert_sets,
@@ -91,6 +92,67 @@ def test_cell_occupancy_flags_a_router_with_no_variation_to_spend() -> None:
     assert healthy["degenerate"] is False
     assert healthy["degenerate_reason"] is None
     assert healthy["cells_above_minimum"] == 28
+
+
+def _tied_margin_router(n_tied: int, n_free: int) -> np.ndarray:
+    """A router that leaves ``n_tied`` tokens at an identical margin.
+
+    Each row is a proper distribution over four experts. The tied rows put the
+    second and third weights on the same value, so with ``top_k = 2`` their
+    distance to the routing boundary is exactly zero; the free rows carry
+    distinct positive margins.
+    """
+
+    tied = np.tile([0.40, 0.30, 0.30, 0.00], (n_tied, 1))
+    margins = np.linspace(0.01, 0.19, n_free)
+    free = np.stack(
+        [
+            np.full(n_free, 0.40),
+            0.30 + margins / 2.0,
+            0.30 - margins / 2.0,
+            np.zeros(n_free),
+        ],
+        axis=1,
+    )
+    return np.concatenate([tied, free])
+
+
+def test_boundary_cells_attain_far_fewer_cells_than_they_request() -> None:
+    """Quantile bins collapse on tied margins, and ``degenerate`` does not see it.
+
+    ``n_cells`` is the cardinality asked for, not the one attained: a router that
+    leaves 90% of its tokens at an identical margin has one quantile edge repeated
+    twenty-five times, so twenty-eight requested cells become three occupied ones.
+    A ``boundary`` grouping in that state can remove nothing on held-out tokens
+    however much proximity to a routing boundary carries, so its null is
+    uninterpretable -- which is the whole reason attainability is measured before
+    a result is read (standing rule 2).
+
+    The share it concentrates at, 0.929, sits *below* the concentration threshold,
+    so ``degenerate`` reads False here and ``n_occupied`` is the field that carries
+    the failure. Both are asserted, because a future change that made the flag
+    catch this case must not do so silently.
+    """
+
+    cells = boundary_cells(_tied_margin_router(900, 100), top_k=2, n_cells=28)
+    record = cell_occupancy(cells, 28)
+
+    assert record["n_cells"] == 28
+    assert record["n_occupied"] == 3
+    assert record["largest_cell_share"] == pytest.approx(0.929, abs=5e-3)
+    assert record["largest_cell_share"] < DEGENERATE_CELL_SHARE
+    assert record["degenerate"] is False
+
+
+def test_boundary_cells_use_the_full_grid_when_the_margins_are_spread() -> None:
+    """The positive path: with no ties every requested cell is occupied."""
+
+    cells = boundary_cells(_tied_margin_router(0, 1000), top_k=2, n_cells=28)
+    record = cell_occupancy(cells, 28)
+
+    assert record["n_occupied"] == 28
+    assert record["largest_cell_share"] < 0.1
+    assert record["degenerate"] is False
 
 
 def test_fit_correction_leaves_undersized_cells_at_zero() -> None:

@@ -295,14 +295,23 @@ def layer_record(
         cells, residues, train=splits[0][0], test=splits[0][1]
     )
 
+    # The boundary grouping's attainability is not the expert set's. Its cells are
+    # margin quantiles, so a router whose margins are largely tied collapses them
+    # into a handful of occupied bins however many were asked for, and
+    # `boundary_over_random` would then read null because the grouping had nowhere
+    # to put the tokens rather than because proximity to a boundary carries
+    # nothing. Recorded here so the artefact can tell those two apart -- and read
+    # `n_occupied` beside `degenerate`, which tests only concentration: 90% tied
+    # margins give 3 occupied cells of 28 at a largest share of 0.928, below the
+    # 0.95 concentration threshold.
+    boundary = boundary_cells(
+        data["router_probabilities"][layer], top_k=top_k, n_cells=n_expert_cells
+    )
+    record["boundary_occupancy"] = cell_occupancy(boundary, n_expert_cells)
+
     assignments = {
         "routing": (cells, n_expert_cells),
-        "boundary": (
-            boundary_cells(
-                data["router_probabilities"][layer], top_k=top_k, n_cells=n_expert_cells
-            ),
-            n_expert_cells,
-        ),
+        "boundary": (boundary, n_expert_cells),
         "random": (rng.integers(0, n_expert_cells, size=cells.size), n_expert_cells),
         "residue": (
             np.unique(residues, return_inverse=True)[1],

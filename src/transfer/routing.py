@@ -137,6 +137,14 @@ def boundary_cells(router_probs: np.ndarray, *, top_k: int, n_cells: int) -> np.
     against the same random control. Quantile bins rather than fixed-width ones
     because the margin distribution is heavily skewed and fixed bins would leave
     most cells empty.
+
+    ``n_cells`` is the cardinality *requested*, not the cardinality attained. Ties
+    in the margin collapse the quantile edges, so a router that leaves most tokens
+    at an identical margin puts them all in one bin: 90% tied margins give three
+    occupied cells of twenty-eight. Pass the result through
+    :func:`cell_occupancy` before reading anything measured on it, and read
+    ``n_occupied`` beside ``degenerate`` -- that share is 0.928, below the
+    concentration threshold, so the flag alone does not catch this.
     """
 
     ordered = -np.sort(-router_probs, axis=1)
