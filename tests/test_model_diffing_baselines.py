@@ -836,7 +836,14 @@ class TheStageRunsEndToEndOnTwoCheckpointsOfOneLineage(unittest.TestCase):
         self.assertEqual(payload["tokenizer_vocabulary"]["verdict"], "IDENTICAL")
         self.assertEqual(payload["comparability"]["verdict"], "COMPARABLE")
         self.assertEqual(payload["cohort"]["corpus_source"], "swissprot")
-        self.assertEqual(payload["cohort"]["splits"]["verdict"], "DISJOINT")
+        self.assertEqual(payload["cohort"]["splits"]["verdict"], "NEAR_DUPLICATE_DISJOINT")
+        # The measured boundary, not the construction: a reader of the artefact
+        # has to be able to see how close the two sides came without re-running
+        # anything, and on a protein cohort that is the number that decides
+        # whether the held-out split was held out.
+        boundary = payload["cohort"]["splits"]["boundary_containment"]
+        self.assertEqual(boundary["n_above_threshold"], 0)
+        self.assertEqual(payload["cohort"]["symbol_unit"], "residues")
         self.assertGreater(payload["cohort"]["n_train_positions"], payload["comparability"]["d_model"])
         self.assertEqual(payload["reference"]["role"], "reference")
         self.assertNotEqual(
