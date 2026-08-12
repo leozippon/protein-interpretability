@@ -198,6 +198,54 @@ def families(grid: list[Component]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(component.kind for component in grid))
 
 
+def component_family_comparability(grid_families: tuple[str, ...]) -> str:
+    """What this artefact's causal gates may and may not be read against.
+
+    Decided by the families the grid actually carries rather than by the arm's
+    name, so the sentence in the artefact and the rows in
+    ``component_effects.npz`` cannot come apart.
+
+    **The asymmetry is real and it is not symmetric in its consequences.** A
+    joint checkpoint is reached by path rather than declared in the panel, so
+    :func:`src.transfer.path_patching.attention_output_projection` has no
+    declaration to resolve its attention output projection against and the
+    attention family is absent from its grid
+    (:meth:`src.transfer.replaceable.JointReplaceable.component_families`). One
+    family and two families are not the same amount of evidence, so a joint arm's
+    replacement fidelity read against a dense arm's is not like-for-like and no
+    modality claim may rest on it.
+
+    The within-checkpoint pair is a different comparison and it survives intact.
+    A joint checkpoint's text mode and its protein mode carry the *identical*
+    block-only grid, so the missing family cancels between them; that pair also
+    holds the weights fixed and varies only the mode, which is what lets it
+    identify something no cross-checkpoint comparison can. The block-only grid
+    therefore forbids a comparison this programme does not license and does not
+    weaken the one it exists to make.
+    """
+
+    if "attention_head" in grid_families:
+        return (
+            "this grid carries both component families, so the attainability and "
+            "causal gates below are the full set this stage defines. An artefact "
+            "whose grid carries only the block family -- any joint checkpoint -- "
+            "is NOT like-for-like against this one and no modality claim may rest "
+            "on the pair"
+        )
+    return (
+        "this grid carries the block family ONLY, because an attention head is "
+        "zeroed at the input of an output projection declared per panel "
+        "architecture and this checkpoint is not a panel arm. Two consequences, "
+        "and they differ. Against a DENSE arm's artefact, which carries two "
+        "families, this is NOT like-for-like: one family and two are not the same "
+        "amount of evidence and no modality claim may rest on that pair. Against "
+        "the OTHER MODE of this same checkpoint it IS like-for-like: both modes "
+        "carry this identical block-only grid so the asymmetry cancels, and that "
+        "pair holds the weights fixed and varies only the mode, which is the "
+        "comparison this measurement exists to make"
+    )
+
+
 def check_grid_is_ablatable(model: ReplaceableModel, grid: list[Component]) -> None:
     """Refuse a grid this model will not ablate, before any sweep is paid for.
 
@@ -1579,6 +1627,7 @@ def main() -> None:
         "per-layer mean over this cohort's content positions",
         "input_rendering": model.rendering_note,
         "component_families": list(grid_families),
+        "component_family_comparability": component_family_comparability(grid_families),
         "ablation": "zero the component's contribution to the residual stream",
         "resampling_unit": "cohort sequence",
     }

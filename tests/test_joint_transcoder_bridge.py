@@ -466,6 +466,60 @@ class TheFaithfulnessStageRefusesAnUnmatchedPair(unittest.TestCase):
         self.assertEqual(record["this_run"]["target"], "prollama:protein")
         self.assertEqual(record["other_run"]["target"], "prollama:text")
 
+    def test_a_checkpoint_and_artefact_predating_the_optimisation_fields_still_pair(self):
+        """The exact shape of the four dictionaries already on GPFS.
+
+        They were written before the matched declaration covered the optimiser,
+        so their ``matched_training`` block carries none of those fields -- but
+        their settings block carries every one, in the checkpoint under ``record``
+        and in the JSON at the top level. Both readers recover them from there.
+
+        This is the path a re-dispatch takes on the first file it opens. Requiring
+        the fields instead would refuse four already-trained dictionaries over
+        values recorded three lines away, and the refusal would land after the
+        model was loaded rather than at a declaration.
+        """
+
+        widened = (
+            "auxk", "learning_rate", "weight_decay", "grad_clip",
+            "batch_size", "seed", "corpus_seed", "max_tokens",
+        )
+
+        def aged(path: Path) -> Path:
+            checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+            for name in widened:
+                checkpoint[MATCHED_TRAINING_KEY].pop(name, None)
+            older = path.with_name("aged_" + path.name)
+            torch.save(checkpoint, older)
+            payload = json.loads(path.with_suffix(".json").read_text())
+            for name in widened:
+                payload[MATCHED_TRAINING_KEY].pop(name, None)
+            older.with_suffix(".json").write_text(json.dumps(payload), encoding="utf-8")
+            return older
+
+        old_protein, old_text = aged(self.protein), aged(self.text)
+        record = STAGE15.matched_pair_record(
+            load_trained_transcoder(old_protein)[2],
+            old_text.with_suffix(".json"),
+            kind="local",
+        )
+        self.assertEqual(record["comparison"]["verdict"], "MATCHED")
+        self.assertEqual(record["comparison"]["disagreements"], [])
+        # Recovered, not defaulted: the values are this run's own.
+        self.assertEqual(
+            record["this_run"]["learning_rate"],
+            json.loads(self.protein.with_suffix(".json").read_text())["settings"][
+                "learning_rate"
+            ],
+        )
+        # And a declaration with neither source is refused rather than guessed.
+        stripped = json.loads(old_text.with_suffix(".json").read_text())
+        stripped.pop("settings")
+        orphan = old_text.with_name("orphan.json")
+        orphan.write_text(json.dumps(stripped), encoding="utf-8")
+        with self.assertRaises(KeyError):
+            matched_training_from_artefact(orphan)
+
     def test_a_width_mismatch_refuses_the_run(self):
         with self.assertRaises(RuntimeError) as caught:
             STAGE15.matched_pair_record(
@@ -620,6 +674,39 @@ class TheCausalSweepRunsOnTheGridTheModelDeclares(unittest.TestCase):
         with self.assertRaises(ValueError) as caught:
             STAGE15.check_grid_is_ablatable(model, smuggled)
         self.assertIn("attention_head", str(caught.exception))
+
+    def test_the_artefact_says_which_comparison_this_grid_licenses(self):
+        """Both halves of the scoping rule, on the side each applies to.
+
+        A one-family artefact and a two-family artefact are not the same amount
+        of evidence, so joint-against-dense is refused. The within-checkpoint pair
+        is not that comparison: both modes carry the identical block-only grid, so
+        the missing family cancels and the pair -- which holds the weights fixed
+        and varies only the mode -- stays admissible. An artefact that stated only
+        the refusal would read as if the whole measurement were compromised.
+        """
+
+        joint = STAGE15.component_family_comparability(
+            STAGE15.families(_joint("protein").components())
+        )
+        self.assertIn("ONLY", joint)
+        self.assertIn("NOT like-for-like", joint)
+        self.assertIn("OTHER MODE", joint)
+        self.assertIn("IS like-for-like", joint)
+
+        # And the two modes really do carry the same grid, which is what makes
+        # the second half true rather than merely asserted.
+        tokenizer = prollama_stub()
+        self.assertEqual(
+            _joint("protein", tokenizer=tokenizer).components(),
+            _joint("text", tokenizer=tokenizer).components(),
+        )
+
+        dense = STAGE15.component_family_comparability(
+            STAGE15.families(_dense().components())
+        )
+        self.assertIn("both component families", dense)
+        self.assertIn("NOT like-for-like", dense)
 
     def test_a_dense_arm_still_declares_and_sweeps_both_families(self):
         # The joint restriction must not have narrowed the panel path: a dense arm

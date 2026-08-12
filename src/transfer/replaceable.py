@@ -2095,13 +2095,14 @@ class JointReplaceable(ReplaceableModel):
         family is therefore absent from the grid rather than located by searching
         for a plausible module.
 
-        **What this costs a reader, stated rather than left to be discovered.**
-        ``15_replacement_faithfulness.py`` scores attainability and causal
-        agreement per family, so on this checkpoint both gates are computed over
-        the block family only and the artefact's ``component_families`` says so. A
-        dense arm's artefact carries two families and this one carries one; they
-        are not the same amount of evidence, and no comparison between them should
-        read as if they were.
+        **What this costs a reader is a scoping rule, not a caveat**, and it is
+        declared where a reader meets it: ``15_replacement_faithfulness.py``
+        writes it into every artefact's ``component_family_comparability`` from
+        the families the grid actually carries. In short, a comparison against a
+        dense arm is refused and the within-checkpoint two-mode comparison is not,
+        because both modes carry this identical block-only grid. It is stated
+        there rather than here so that the artefact a result is read from carries
+        it.
         """
 
         return (self.block_kind,)
