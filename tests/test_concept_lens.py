@@ -282,7 +282,12 @@ def test_the_streaming_path_reports_discarded_mass_rather_than_dividing_it_away(
 
 @pytest.mark.parametrize("seed", range(8))
 def test_resolution_depth_agrees_with_the_published_half_depth(seed: int) -> None:
-    """Two numbers in one repository must not mean different things."""
+    """Two numbers in one repository must not mean different things.
+
+    The agreement is now structural -- ``half_resolution_depth`` is one call of
+    ``resolution_depth`` -- so what this pins is the fraction that "half" names,
+    which no type or signature holds.
+    """
 
     rng = np.random.default_rng(seed)
     depths = np.linspace(0.0, 1.0, 11)

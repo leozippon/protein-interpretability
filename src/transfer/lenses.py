@@ -1194,21 +1194,29 @@ def residue_class_cluster_bootstrap(
     }
 
 
-def half_resolution_depth(depths: Sequence[float], values: Sequence[float]) -> float | None:
-    """Relative depth at which half of a quantity's total reduction is reached.
+def resolution_depth(
+    depths: Sequence[float], values: Sequence[float], tau: float
+) -> float | None:
+    """Relative depth at which ``tau`` of a quantity's total reduction is reached.
 
-    Returns ``None`` when the quantity does not fall across the grid, because a
-    half-way point is undefined in that case and reporting one would invent a
+    Returns ``None`` when the quantity does not fall across the grid, because the
+    crossing point is undefined in that case and reporting one would invent a
     resolution depth for a trajectory that never resolved.
+
+    The fraction is a parameter because a depth ordering read at one fraction is
+    a threshold result: Appendix B rule 17 requires it to survive a sweep, which
+    :data:`src.transfer.concept_lens.RESOLUTION_TAUS` supplies.
     """
 
+    if not 0.0 < tau < 1.0:
+        raise ValueError("tau must lie strictly between zero and one")
     if len(depths) != len(values) or len(depths) < 2:
         raise ValueError("depths and values must be aligned vectors of length at least two")
     start, end = float(values[0]), float(values[-1])
     span = start - end
     if not math.isfinite(span) or span <= 0.0:
         return None
-    threshold = start - 0.5 * span
+    threshold = start - tau * span
     for index in range(1, len(values)):
         previous, current = float(values[index - 1]), float(values[index])
         if current <= threshold <= previous:
@@ -1219,6 +1227,18 @@ def half_resolution_depth(depths: Sequence[float], values: Sequence[float]) -> f
                 float(depths[index]) - float(depths[index - 1])
             )
     return float(depths[-1])
+
+
+def half_resolution_depth(depths: Sequence[float], values: Sequence[float]) -> float | None:
+    """Relative depth at which half of a quantity's total reduction is reached.
+
+    The name the published lens fields are keyed on, and one call of
+    :func:`resolution_depth`. The two used to be separate implementations in two
+    modules, agreeing at ``tau = 0.5`` because a test held them to it; they now
+    agree because there is one of them.
+    """
+
+    return resolution_depth(depths, values, 0.5)
 
 
 def coarse_to_fine_gap(

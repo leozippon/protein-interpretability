@@ -55,7 +55,9 @@ from .arms import (
     AA20,
     Arm,
     ArmSpec,
+    CONDITIONING_START,
     Cohort,
+    N_TO_C_MARKER,
     ZYMCTRL_FASTA,
     iter_fasta,
     sampling_record,
@@ -568,11 +570,14 @@ def prefix_ids(arm: Arm, *, ec_label: str | None = None) -> list[int]:
             raise ValueError(f"{arm.name}: tokenizer defines no end-of-text token")
         return [int(eos)]
     if fmt == "n_to_c_control":
-        return [int(i) for i in arm.tokenizer("1", return_tensors=None)["input_ids"]]
+        encoded = arm.tokenizer(N_TO_C_MARKER, return_tensors=None)["input_ids"]
+        return [int(i) for i in encoded]
     if fmt == "ec_conditioned":
         if ec_label is None:
             raise ValueError(f"{arm.name}: an EC label is required to build a prompt prefix")
-        encoded = arm.tokenizer(f"{ec_label}<sep><start>", return_tensors=None)["input_ids"]
+        encoded = arm.tokenizer(
+            f"{ec_label}<sep>{CONDITIONING_START}", return_tensors=None
+        )["input_ids"]
         return [int(i) for i in encoded]
     raise ValueError(f"{arm.name}: unsupported input format {fmt!r}")
 

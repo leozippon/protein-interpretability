@@ -81,7 +81,7 @@ import torch
 from scipy import stats
 
 from .arms import AA20, Arm
-from .lenses import LensHead, ResidualCache, ResidueVocabulary
+from .lenses import LensHead, ResidualCache, ResidueVocabulary, resolution_depth
 from .profiles import KYTE_DOOLITTLE
 
 #: Formal side-chain charge at pH 7. Histidine carries the fractional value its
@@ -184,7 +184,8 @@ def text_property_table(arm: Arm) -> dict[str, np.ndarray]:
 CLASS_COUNT_SWEEP: tuple[int, ...] = (2, 3, 4, 5)
 
 #: Fractions of a trajectory's total reduction at which resolution depth is
-#: read. 0.5 is ``lenses.half_resolution_depth``; the other two are the sweep.
+#: read, through ``lenses.resolution_depth``. 0.5 is what
+#: ``lenses.half_resolution_depth`` reports; the other two are the sweep.
 RESOLUTION_TAUS: tuple[float, ...] = (0.25, 0.5, 0.75)
 
 #: Null draws. Both nulls are re-scorings of a cached lens distribution, so this
@@ -501,39 +502,6 @@ def null_excess(observed: float, null: np.ndarray, *, quantile: float) -> dict[s
         "empirical_p": float((1 + int((values >= observed).sum())) / (1 + values.size)),
         "n_draws": int(values.size),
     }
-
-
-def resolution_depth(
-    depths: Sequence[float], values: Sequence[float], tau: float
-) -> float | None:
-    """Relative depth at which ``tau`` of a trajectory's total reduction is reached.
-
-    Generalises ``lenses.half_resolution_depth`` to a swept fraction and must
-    agree with it exactly at ``tau = 0.5``; ``tests/test_concept_lens.py`` holds
-    that agreement so the two cannot drift. It lives here rather than replacing
-    the original because ``lenses`` is owned elsewhere; the right end state is
-    one parameterised function there.
-    """
-
-    if not 0.0 < tau < 1.0:
-        raise ValueError("tau must lie strictly between zero and one")
-    if len(depths) != len(values) or len(depths) < 2:
-        raise ValueError("depths and values must be aligned vectors of length at least two")
-    start, end = float(values[0]), float(values[-1])
-    span = start - end
-    if not math.isfinite(span) or span <= 0.0:
-        return None
-    threshold = start - tau * span
-    for index in range(1, len(values)):
-        previous, current = float(values[index - 1]), float(values[index])
-        if current <= threshold <= previous:
-            if math.isclose(previous, current):
-                return float(depths[index])
-            weight = (previous - threshold) / (previous - current)
-            return float(depths[index - 1]) + weight * (
-                float(depths[index]) - float(depths[index - 1])
-            )
-    return float(depths[-1])
 
 
 def aperture_gain(
