@@ -105,7 +105,6 @@ class Assay:
     sequences: list[str]
     scores: np.ndarray
     n_eligible: int
-    n_multi: int
     seed: int
     sampling: str
 
@@ -129,13 +128,27 @@ class Assay:
 
         return [parse_mutant(mutant) for mutant in self.mutants]
 
+    @property
+    def n_multi_mutant_drawn(self) -> int:
+        """Drawn variants carrying more than one substitution.
+
+        Over the drawn variants and not the eligible pool. It used to be counted
+        while the file was read, which put a pool-wide count -- up to 535,917 --
+        beside a drawn ``n_variants`` of 1000 in the same record, and the
+        composition of the drawn cohort is exactly what the ProGenMech design
+        comparison turns on. Derived from :func:`parse_mutant` so that the
+        substitution grammar has one declaration (Appendix B rule 12).
+        """
+
+        return sum(1 for entry in self.substitutions if len(entry) > 1)
+
     def record(self) -> dict:
         return {
             "assay": self.name,
             "wildtype_length": len(self.wildtype),
             "n_variants": len(self.sequences),
             "n_eligible": self.n_eligible,
-            "n_multi_mutant": self.n_multi,
+            "n_multi_mutant_drawn": self.n_multi_mutant_drawn,
             "seed": self.seed,
             "sampling": self.sampling,
         }
@@ -265,7 +278,6 @@ def load_assay(
     sequences: list[str] = []
     scores: list[float] = []
     bins: list[str] = []
-    n_multi = 0
     with path.open() as handle:
         for row in csv.DictReader(handle):
             mutant = row["mutant"]
@@ -278,7 +290,6 @@ def load_assay(
             sequences.append(row["mutated_sequence"])
             scores.append(float(row["DMS_score"]))
             bins.append(row["DMS_score_bin"])
-            n_multi += len(tokens) > 1
 
     if not mutants:
         raise RuntimeError(f"{name}: no eligible variants")
@@ -321,7 +332,6 @@ def load_assay(
         sequences=[sequences[i] for i in picked],
         scores=np.array([scores[i] for i in picked], dtype=np.float64),
         n_eligible=eligible,
-        n_multi=n_multi,
         seed=seed,
         sampling=(
             f"score_bin_stratified, train_holdout={train_holdout} "

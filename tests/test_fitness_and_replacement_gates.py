@@ -126,6 +126,30 @@ class AssayDraw(unittest.TestCase):
         )
         self.assertNotEqual(uniform.mutants, stratified.mutants)
 
+    def test_the_multi_mutant_count_describes_the_drawn_cohort(self):
+        """The composition reported beside `n_variants` is the draw's own.
+
+        It used to be accumulated while the CSV was read, so a shipped record
+        carried `n_variants: 1000` beside a multi-mutant count of 14,015 -- a
+        property of the eligible pool wearing the name of a property of the
+        cohort. The count is bounded by the draw it describes, and the draw is
+        what the ProGenMech design comparison is about.
+        """
+
+        assay = load_assay(self.ASSAY, n=200, seed=9)
+        record = assay.record()
+        self.assertEqual(record["n_variants"], len(assay.mutants))
+        self.assertLessEqual(record["n_multi_mutant_drawn"], record["n_variants"])
+        self.assertLess(record["n_variants"], record["n_eligible"])
+        self.assertEqual(
+            record["n_multi_mutant_drawn"],
+            sum(1 for mutant in assay.mutants if ":" in mutant),
+        )
+
+    def test_a_single_substitution_draw_reports_no_multi_mutants(self):
+        assay = load_assay(self.ASSAY, n=32, seed=9, include_multi=False)
+        self.assertEqual(assay.record()["n_multi_mutant_drawn"], 0)
+
     def test_every_progenmech_assay_is_present_and_loadable(self):
         root = REPO / "data/proteingym/DMS_ProteinGym_substitutions"
         for name in PROGENMECH_ASSAYS:
