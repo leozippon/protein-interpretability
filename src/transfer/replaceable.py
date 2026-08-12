@@ -602,6 +602,19 @@ class ProGen3Replaceable(ReplaceableModel):
     ) -> Any:
         return moe_intercept(self.pg, fn)
 
+    #: The normalisation whose input is the residual each block's output is added
+    #: to. One declaration, read by :meth:`estimand_identity` and by
+    #: :attr:`perturbation_target`, so the equality that is checked and the
+    #: sentence that reports it cannot come apart.
+    residual_norm = "post_attention_layernorm"
+
+    @property
+    def identity(self) -> str:
+        return (
+            f"block output == {self.residual_norm} input + intercepted MoE "
+            "block output"
+        )
+
     @property
     def perturbation_target(self) -> dict[str, Any]:
         return {
@@ -610,12 +623,13 @@ class ProGen3Replaceable(ReplaceableModel):
                 "src.transfer.progen3.moe_intercept hands its callback"
             ),
             "block_layout": (
-                "serial: the block reads post_attention_layernorm and its output is "
+                f"serial: the block reads {self.residual_norm} and its output is "
                 "the whole of the term added to the residual stream"
             ),
             "identity_verified": (
-                "src.transfer.progen3.self_check's own gate, which is this arm's "
-                "loader gate and is not the dense arms' identity check"
+                f"{self.identity}, verified exactly on the live forward pass by "
+                "this arm's own self_check, which runs it before its likelihood "
+                "band -- the same certification the dense arms carry"
             ),
             "not_perturbed": (
                 "the attention contribution, which this block layout has already "
@@ -626,8 +640,110 @@ class ProGen3Replaceable(ReplaceableModel):
     def ablated(self, component: Component) -> Any:
         return progen3_ablated(self.pg, component)
 
+    @torch.no_grad()
+    def estimand_identity(self) -> dict[str, Any]:
+        """Verify that the intercepted MoE output IS this block's residual write.
+
+        :meth:`DenseReplaceable.estimand_identity`'s check on ProGen3's own
+        modules, and it is here because this arm is the **reference** every dense
+        arm is compared against. It was certified by declaration while they were
+        certified by measurement; EXP-R2-181 closed that gap by measuring it and
+        found exactly zero on all ten layers. That measurement establishes one
+        checkpoint and one conversion, and this gate is what keeps it true.
+
+        **What it would catch, and nothing else in this stack would.** The eager
+        MoE conversion is this repository's own code, and
+        :func:`src.transfer.progen3.moe_intercept` unwraps a
+        ``(hidden_states, router_probabilities)`` tuple before handing the hidden
+        half on. If either ever dropped the router term or addressed a different
+        submodule, the tap would stop being the residual write while every number
+        derived from it still looked well formed, and every dense arm would be
+        compared against a reference that had moved. The likelihood band does not
+        see this: it scores the model's own forward pass, which the interception
+        does not disturb.
+
+        The tolerance is **exact**, because the model performs that addition on
+        those tensors in that dtype. The decoder layers are walked directly rather
+        than through :attr:`src.transfer.progen3.ProGen3.moe_blocks`, because this
+        check needs each block's *parent* -- the layer that owns the residual and
+        the normalisation -- and that property deliberately exposes only the block.
+        """
+
+        layers = list(self.pg.model.model.layers)
+        residual: dict[int, torch.Tensor] = {}
+        contribution: dict[int, torch.Tensor] = {}
+        produced: dict[int, torch.Tensor] = {}
+        handles = []
+
+        def before_norm(layer: int) -> Callable[..., None]:
+            def hook(module: torch.nn.Module, inputs: tuple[Any, ...]) -> None:
+                residual[layer] = inputs[0].detach()
+
+            return hook
+
+        def after_layer(layer: int) -> Callable[..., None]:
+            def hook(module: torch.nn.Module, inputs: Any, output: Any) -> None:
+                produced[layer] = (
+                    output[0] if isinstance(output, tuple) else output
+                ).detach()
+
+            return hook
+
+        for layer, block in enumerate(layers):
+            norm = getattr(block, self.residual_norm, None)
+            if norm is None:
+                raise TypeError(
+                    f"{self.name}: decoder layer {layer} has no {self.residual_norm}, "
+                    "so the residual the MoE block writes into cannot be read"
+                )
+            handles.append(norm.register_forward_pre_hook(before_norm(layer)))
+            handles.append(block.register_forward_hook(after_layer(layer)))
+
+        def tap(layer: int, x: torch.Tensor, y: torch.Tensor) -> None:
+            contribution[layer] = y.detach()
+            return None
+
+        try:
+            with self.block_intercept(tap):
+                self.run(self.batch(self.render(SELF_CHECK_SEQUENCES[:2])))
+        finally:
+            for handle in handles:
+                handle.remove()
+
+        worst = 0.0
+        for layer in range(len(layers)):
+            rebuilt = residual[layer] + contribution[layer]
+            worst = max(worst, float((rebuilt - produced[layer]).abs().max()))
+        record = {
+            "max_absolute_difference": worst,
+            "n_layers": len(layers),
+            "identity": self.identity,
+            "block_layout": "serial",
+            "verdict": "PASS" if worst == 0.0 else "FAIL",
+        }
+        if worst != 0.0:
+            raise RuntimeError(
+                f"{self.name}: the intercepted MoE output plus its input residual "
+                f"differs from the block's own output by {worst:.3e}. The tensor "
+                "this interceptor reads is not the residual write it is declared to "
+                "be, so every dense arm measured against this reference would be "
+                "compared with a different object."
+            )
+        return record
+
     def self_check(self) -> dict[str, Any]:
-        return progen3_self_check(self.pg)
+        """The estimand identity, then the scored band. Both refuse rather than report.
+
+        The same order and the same contract as
+        :meth:`DenseReplaceable.self_check`, which is the point of adding it: the
+        reference arm and the arms compared against it are now gated the same way
+        rather than by a band here and a band plus an identity there.
+        """
+
+        estimand = self.estimand_identity()
+        record = dict(progen3_self_check(self.pg))
+        record["estimand"] = estimand
+        return record
 
 
 # --------------------------------------------------------------- dense arms

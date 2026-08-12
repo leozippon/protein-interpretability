@@ -332,35 +332,74 @@ class _Block(nn.Module):
 
 
 class _Layer(nn.Module):
-    def __init__(self, heads: int, head_dim: int) -> None:
+    """A miniature of ProGen3's serial decoder layer.
+
+    ``forward`` is the identity the estimand check exists to verify: the residual
+    the normalisation read, plus the MoE block's output, IS the layer's output.
+    ``leak`` breaks exactly that and nothing else, which is what lets the check be
+    tested on its failing path rather than only on its passing one.
+    """
+
+    def __init__(self, heads: int, head_dim: int, leak: float = 0.0) -> None:
         super().__init__()
         self.block_sparse_moe = _Block()
+        self.post_attention_layernorm = nn.Identity()
         self.self_attn = nn.Module()
         self.self_attn.o_proj = nn.Linear(heads * head_dim, heads * head_dim, bias=False)
+        self.leak = leak
+
+    def forward(self, hidden: torch.Tensor) -> torch.Tensor:
+        contribution, _router = self.block_sparse_moe(self.post_attention_layernorm(hidden))
+        return hidden + contribution + self.leak
 
 
 class _Backbone(nn.Module):
-    def __init__(self, layers: int, heads: int, head_dim: int) -> None:
+    def __init__(self, layers: int, heads: int, head_dim: int, leak: float = 0.0) -> None:
         super().__init__()
-        self.layers = nn.ModuleList([_Layer(heads, head_dim) for _ in range(layers)])
+        self.layers = nn.ModuleList(
+            [_Layer(heads, head_dim, leak) for _ in range(layers)]
+        )
 
 
 class _Model(nn.Module):
-    def __init__(self, layers: int, heads: int, head_dim: int) -> None:
+    def __init__(self, layers: int, heads: int, head_dim: int, leak: float = 0.0) -> None:
         super().__init__()
-        self.model = _Backbone(layers, heads, head_dim)
+        self.model = _Backbone(layers, heads, head_dim, leak)
+
+    def forward(self, input_ids=None, **kwargs):
+        hidden = input_ids.float().unsqueeze(-1).repeat(1, 1, self.model.layers[0].self_attn.o_proj.in_features)
+        for layer in self.model.layers:
+            hidden = layer(hidden)
+        return SimpleNamespace(logits=hidden)
 
 
-def stub(layers: int = 2, heads: int = 3, head_dim: int = 4) -> ProGen3:
+class _Preparer:
+    """Just enough of the released batch preparer to make a forward pass happen."""
+
+    def get_batch_kwargs(self, sequences, *, device, reverse=False):
+        width = max(len(s) for s in sequences)
+        ids = torch.zeros(len(sequences), width, dtype=torch.long)
+        for row, sequence in enumerate(sequences):
+            ids[row, : len(sequence)] = torch.tensor(
+                [1 + (ord(c) % 20) for c in sequence], dtype=torch.long
+            )
+        return {
+            "input_ids": ids.to(device),
+            "position_ids": torch.arange(width, device=device).expand(len(sequences), width),
+            "sequence_ids": torch.zeros(len(sequences), width, dtype=torch.long, device=device),
+        }
+
+
+def stub(layers: int = 2, heads: int = 3, head_dim: int = 4, leak: float = 0.0) -> ProGen3:
     return ProGen3(
-        model=_Model(layers, heads, head_dim),
+        model=_Model(layers, heads, head_dim, leak),
         config=SimpleNamespace(
             num_hidden_layers=layers,
             num_attention_heads=heads,
             hidden_size=heads * head_dim,
             pad_token_id=0,
         ),
-        preparer=None,
+        preparer=_Preparer(),
         device=torch.device("cpu"),
         checkpoint=Path("/nonexistent"),
     )
@@ -466,6 +505,75 @@ class HeadAblationRemovesExactlyOneHeadsColumns(unittest.TestCase):
             [component.kind for component in grid],
             ["attention_head"] * 6 + ["moe_block"] * 2,
         )
+
+
+class TheReferenceArmCertifiesItsTapLikeEveryArmComparedAgainstIt(unittest.TestCase):
+    """The estimand identity on ProGen3, which is the arm the dense arms are read against.
+
+    Every dense arm rebuilds each block's output from the residual its
+    normalisation read plus the intercepted contribution, and refuses unless the
+    two are bit-equal. This arm carried no such check: it was certified by
+    declaration while they were certified by measurement, so a tap that stopped
+    being the residual write would have moved the reference every published
+    dense comparison is quoted against, silently. EXP-R2-181 measured it at
+    exactly zero on all ten layers of the real checkpoint; these two tests are
+    what keep it true, and the second is the one that matters.
+    """
+
+    def _replaceable(self, leak: float = 0.0):
+        from src.transfer.replaceable import ProGen3Replaceable
+
+        return ProGen3Replaceable(stub(layers=3, leak=leak))
+
+    def test_a_faithful_block_passes_and_reports_the_identity_it_verified(self):
+        record = self._replaceable().estimand_identity()
+        self.assertEqual(record["verdict"], "PASS")
+        self.assertEqual(record["max_absolute_difference"], 0.0)
+        self.assertEqual(record["n_layers"], 3)
+        self.assertEqual(record["block_layout"], "serial")
+        self.assertIn("post_attention_layernorm", record["identity"])
+
+    def test_a_block_doing_something_the_interceptor_cannot_see_is_refused(self):
+        # The whole point. The leak is a term added to the residual that the tap
+        # never observes -- the shape a dropped router term or a re-addressed
+        # submodule would take -- and it must raise rather than report a number.
+        with self.assertRaises(RuntimeError) as caught:
+            self._replaceable(leak=0.5).estimand_identity()
+        message = str(caught.exception)
+        self.assertIn("not the residual write it is declared to be", message)
+        self.assertIn("progen3", message)
+
+    def test_the_loader_gate_runs_the_identity_and_carries_its_record(self):
+        # Ordering is the point, not decoration: the band scores the model's own
+        # forward pass, which a broken interception does not disturb, so a gate
+        # that scored first would report a healthy arm and never reach the check
+        # that fails. On a broken block the band must therefore never be reached.
+        from unittest import mock
+
+        with mock.patch(
+            "src.transfer.replaceable.progen3_self_check",
+            side_effect=AssertionError("the band was scored before the identity"),
+        ) as band:
+            with self.assertRaises(RuntimeError) as caught:
+                self._replaceable(leak=0.5).self_check()
+        self.assertIn("not the residual write", str(caught.exception))
+        band.assert_not_called()
+
+        # And on a faithful block the band does run, with the identity beside it.
+        with mock.patch(
+            "src.transfer.replaceable.progen3_self_check",
+            return_value={"verdict": "PASS", "nll": 2.0},
+        ) as band:
+            record = self._replaceable().self_check()
+        band.assert_called_once()
+        self.assertEqual(record["estimand"]["verdict"], "PASS")
+        self.assertEqual(record["verdict"], "PASS")
+
+    def test_the_declared_target_names_the_identity_that_is_verified(self):
+        target = self._replaceable().perturbation_target
+        self.assertIn("post_attention_layernorm input", target["identity_verified"])
+        self.assertIn("verified exactly on the live forward pass", target["identity_verified"])
+        self.assertTrue(target["block_layout"].startswith("serial"))
 
 
 if __name__ == "__main__":  # pragma: no cover
