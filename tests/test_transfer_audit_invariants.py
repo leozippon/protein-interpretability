@@ -96,7 +96,13 @@ from src.transfer.circuits import _CIRCUIT_ARCHITECTURES  # noqa: E402
 from src.transfer.scaling import (  # noqa: E402
     CIRCUITS_INPUT_FORMATS,
     DEFAULT_LADDER,
+    PRIMARY_AXIS,
+    PRIMARY_METRIC,
     circuits_supported,
+    decide_verdict,
+    arm_declaration,
+    fit_modality_offset,
+    identification_check,
     nearest_neighbour_contrasts,
 )
 from src.transfer.scoring import (  # noqa: E402
@@ -201,20 +207,30 @@ def test_ladder_declares_both_corpora():
         assert member.pretraining_corpus
 
 
-def test_the_ladder_and_the_panel_declare_the_same_capabilities():
+def test_the_ladder_and_the_panel_declare_the_same_arm():
     """Two declarations of one fact must not drift, and one of them raises if they do.
 
     ``register_arm_spec`` refuses a rung whose ladder declaration conflicts with
-    the frozen panel, so a capability granted in ``arms.py`` and not here does not
-    narrow this control -- it stops it. That is the right failure and it is also
-    the reason this equality is worth asserting without a checkpoint on disk.
+    the frozen panel on any field ``scaling.arm_declaration`` lists, so a fact stated
+    in ``arms.py`` and stated differently here does not narrow this control -- it
+    stops it. That is the right failure and it is also the reason this equality is
+    worth asserting without a checkpoint on disk.
+
+    It is asserted over that whole list rather than over ``capabilities`` alone,
+    which is what this test used to check. Admitting the ProGen2 rungs to the
+    panel gave them ``architecture="progen"`` while the ladder left them on the
+    ``"gpt2"`` default, and the conflict sat in the tree, invisible to this
+    assertion, until the campaign that calls ``register_arm_spec`` was launched.
     """
 
     for member in DEFAULT_LADDER:
         spec = PANEL.get(member.name)
         if spec is None:
             continue
-        assert member.capabilities == spec.capabilities, member.name
+        ladder = arm_declaration(member)
+        panel = arm_declaration(spec)
+        for field, value in panel.items():
+            assert ladder[field] == value, f"{member.name}: {field}"
 
 
 def test_the_circuits_axes_are_gated_on_the_module_and_not_only_on_the_intent():
@@ -952,6 +968,55 @@ def test_a_single_cluster_cannot_produce_an_interval():
         )
 
 
+def _behaviour_rows(variant_cost: float) -> list[dict[str, float | int]]:
+    """Four scored sequences of one intervention mode, at a declared cost."""
+
+    return [
+        {
+            "token_count": 10,
+            "clean_nll_sum": 10.0,
+            "variant_nll_sum": 10.0 + 10.0 * variant_cost,
+            "kl_sum": 10.0 * variant_cost,
+            "argmax_agreement_count": 9,
+        }
+        for _ in range(4)
+    ]
+
+
+@pytest.mark.parametrize("readable", [True, False])
+def test_an_unreadable_concept_still_measures_a_cost_but_not_a_reliance(readable):
+    """A reliance number has to say whether there was a concept to rely on.
+
+    The clean linear skill decides that, it was already computed for the erasure
+    gate, and nothing carried it to the block that publishes the excess. Three
+    cells of the frozen citable panel therefore published an attribution-shaped
+    excess with an interval excluding zero on concepts a probe could barely read
+    before the erasure. The measurement is kept -- deleting a direction does cost
+    the model something -- and is marked as not a reliance measurement.
+    """
+
+    block = probes.behaviour_block(
+        {
+            "leace": _behaviour_rows(0.40),
+            "variance_matched_random": _behaviour_rows(0.10),
+            "mean_ablation": _behaviour_rows(1.00),
+        },
+        target_mode="leace",
+        reference_mode="mean_ablation",
+        control_modes=("variance_matched_random",),
+        primary_control="variance_matched_random",
+        minimum_ce_denominator=0.10,
+        concept_readable=readable,
+        seed=5,
+        n_bootstrap=64,
+        scored_groups=["a", "a", "b", "b"],
+    )
+    # The excess is published either way, and it is the same number either way.
+    assert block["primary_excess_ce_nats"] == pytest.approx(0.30)
+    assert block["denominator_valid"] is True
+    assert block["reliance_interpretable"] is readable
+
+
 def test_a_unit_must_declare_arm_independent_content():
     with pytest.raises(ValueError, match="raw content"):
         probes.Unit(
@@ -1228,16 +1293,26 @@ def test_head_heterogeneity_is_not_reported_as_a_confidence_interval():
 # --------------------------------------------------------------------- scaling
 
 
-def _frame_row(name: str, modality: str, capabilities: list[str], value: float) -> dict:
+def _frame_row(
+    name: str,
+    modality: str,
+    capabilities: list[str],
+    value: float,
+    *,
+    tokenisation: str = "bpe",
+    metric: float | None = None,
+) -> dict:
     row = {
         "name": name,
         "modality": modality,
         "capabilities": capabilities,
+        "tokenisation": tokenisation,
         "in_distribution": True,
         "realized_information_fraction": value,
     }
-    row.update({metric: value for metric in ("mlp_share_of_context_information",)})
-    row["induction_natural_fraction_of_heads_above_threshold"] = value
+    measured = value if metric is None else metric
+    row.update({key: measured for key in ("mlp_share_of_context_information",)})
+    row["induction_natural_fraction_of_heads_above_threshold"] = measured
     return row
 
 
@@ -1270,6 +1345,157 @@ def test_an_arm_without_the_capability_cannot_become_a_nearest_neighbour():
         axis_key="realized_information_fraction",
     )
     assert contrasts[0]["text_member"] is None
+
+
+# ------------------------------------------- scaling: the fit and the verdict rule
+#
+# The three functions below decide what the modality-gap campaign concludes, and
+# until this block existed none of them was covered anywhere: the verdict rule
+# reduced each interval to "misses zero" and took the conjunction, so two
+# intervals on opposite sides of zero read as one effect confirmed twice.
+
+
+PRIMARY_FIT = f"{PRIMARY_METRIC}~{PRIMARY_AXIS}"
+_FIT_CAPABILITIES = ["pathway", "circuits", "lens", "budget"]
+
+
+def _primary_fit(low: float, high: float, *, identified: bool = True) -> dict:
+    """A fitted primary fit whose only varying content is the offset interval."""
+
+    return {
+        "fitted": True,
+        "unfitted_reason": None,
+        "residual_dof": 4,
+        "saturated": False,
+        "identification": {
+            "modality_identified": identified,
+            "reason": (
+                None
+                if identified
+                else "no tokenisation family is represented in both modalities"
+            ),
+        },
+        "coefficients": {
+            "protein_offset": {
+                "estimate": (low + high) / 2.0,
+                "interval": [low, high],
+            }
+        },
+    }
+
+
+def test_a_modality_offset_that_reverses_sign_is_not_a_residual_gap():
+    """Excluding zero twice is not one finding unless it is the same finding.
+
+    An unadjusted interval above zero and a tokenisation-adjusted one below it
+    say opposite things about protein decoders at matched convergence. The
+    coefficient reversed when tokenisation entered the design, which is the
+    situation ``identification_check`` exists to anticipate, and the only honest
+    reading of it is that nothing is established in either direction.
+    """
+
+    decision = decide_verdict(
+        {PRIMARY_FIT: _primary_fit(0.2, 0.5)},
+        tokenisation_adjusted_fits={PRIMARY_FIT: _primary_fit(-0.6, -0.2)},
+    )
+    assert decision["verdict"] == "underpowered"
+    assert "opposite sides" in decision["reason"]
+
+
+@pytest.mark.parametrize(
+    "unadjusted, adjusted",
+    [((0.2, 0.5), (0.1, 0.4)), ((-0.5, -0.2), (-0.4, -0.1))],
+)
+def test_an_offset_excluding_zero_on_one_side_in_both_fits_is_the_gap_verdict(
+    unadjusted, adjusted
+):
+    """The positive control: the same-side requirement must not close the route.
+
+    Both signs are checked because the verdict is a statement about a gap, not
+    about protein decoders being the higher of the two.
+    """
+
+    decision = decide_verdict(
+        {PRIMARY_FIT: _primary_fit(*unadjusted)},
+        tokenisation_adjusted_fits={PRIMARY_FIT: _primary_fit(*adjusted)},
+    )
+    assert decision["verdict"] == "residual_modality_gap"
+
+
+def test_an_unidentified_modality_coefficient_cannot_reach_a_verdict():
+    """Identification is a precondition of the reading, not a caveat beside it."""
+
+    decision = decide_verdict(
+        {PRIMARY_FIT: _primary_fit(0.2, 0.5, identified=False)},
+        tokenisation_adjusted_fits={PRIMARY_FIT: _primary_fit(0.1, 0.4, identified=False)},
+    )
+    assert decision["verdict"] == "underpowered"
+    assert "not identified" in decision["reason"]
+
+
+def test_identification_needs_one_tokenisation_family_in_both_modalities():
+    """ProtGPT2 is the rung that identifies the coefficient, and it can drop out.
+
+    Protein *and* subword is the only cell breaking the panel's confound between
+    modality and tokenisation. Whenever it is off-distribution on its own cohort
+    it leaves the usable set, every remaining protein rung is symbol-level and
+    every text rung is subword, and the fitted indicator is a tokenisation
+    indicator wearing a modality label.
+    """
+
+    usable = [
+        {"modality": "text", "tokenisation": "bpe"},
+        {"modality": "protein", "tokenisation": "multi_residue_bpe"},
+        {"modality": "protein", "tokenisation": "residue"},
+    ]
+    identified = identification_check(usable)
+    assert identified["modality_identified"]
+    assert identified["shared_tokenisation_families"] == ["subword"]
+    assert identified["reason"] is None
+
+    unidentified = identification_check(
+        [row for row in usable if row["tokenisation"] != "multi_residue_bpe"]
+    )
+    assert not unidentified["modality_identified"]
+    assert unidentified["shared_tokenisation_families"] == []
+    assert unidentified["reason"]
+
+
+def test_a_tokenisation_indicator_that_repeats_the_modality_one_refuses_the_fit():
+    """A rank-deficient design must refuse, not report an arbitrary split.
+
+    With no protein subword rung the tokenisation column *is* the modality
+    column, so the least-squares solution divides one effect between them
+    arbitrarily. The refusal is what keeps that from being published as an
+    adjusted offset; the unadjusted fit over the same rungs still runs, which is
+    what makes the refusal specific rather than a failure to fit at all.
+    """
+
+    frame = [
+        _frame_row("gpt2", "text", _FIT_CAPABILITIES, 0.30, metric=0.41),
+        _frame_row("gpt2-medium", "text", _FIT_CAPABILITIES, 0.40, metric=0.46),
+        _frame_row("gpt2-large", "text", _FIT_CAPABILITIES, 0.50, metric=0.55),
+        _frame_row(
+            "progen2-small", "protein", _FIT_CAPABILITIES, 0.20,
+            tokenisation="residue", metric=0.24,
+        ),
+        _frame_row(
+            "progen2-medium", "protein", _FIT_CAPABILITIES, 0.25,
+            tokenisation="residue", metric=0.33,
+        ),
+    ]
+    keys = {"metric_key": PRIMARY_METRIC, "axis_key": PRIMARY_AXIS}
+    adjusted = fit_modality_offset(frame, **keys, include_tokenisation=True)
+    assert not adjusted["fitted"]
+    assert adjusted["design_rank"] == 3
+    assert "rank deficient" in adjusted["unfitted_reason"]
+    assert adjusted["coefficients"] is None
+    assert not adjusted["identification"]["modality_identified"]
+
+    unadjusted = fit_modality_offset(frame, **keys, include_tokenisation=False)
+    assert unadjusted["fitted"]
+    assert unadjusted["residual_dof"] == 2
+    assert unadjusted["coefficients"]["protein_offset"]["interval"]
 
 
 # ------------------------------------------------------- criteria still nested

@@ -613,6 +613,13 @@ DEFAULT_LADDER: tuple[LadderMember, ...] = (
         cohort_min_symbols=CONDITIONED_PROTEIN_BAND[0],
         cohort_max_symbols=CONDITIONED_PROTEIN_BAND[1],
     ),
+    # ProGen2 is a GPT-J-style parallel-residual decoder, which ``arms.PANEL``,
+    # ``arms.STAGED_ARMS`` and ``circuits._GPT_STYLE`` all name ``progen``.
+    # ``architecture`` defaults to ``gpt2`` because most of this ladder is GPT-2,
+    # so every ProGen2 rung has to say so explicitly: the field is read by
+    # :func:`circuits_supported` and :func:`lens_supported`, it travels into the
+    # analysis frame, and :func:`register_arm_spec` refuses a rung whose
+    # declaration disagrees with the panel's.
     LadderMember(
         name="progen2-small",
         path=MODEL_ROOT / "progen2-small",
@@ -624,6 +631,7 @@ DEFAULT_LADDER: tuple[LadderMember, ...] = (
         cohort_corpus="plain_swissprot",
         cohort_min_symbols=UNCONDITIONAL_PROTEIN_BAND[0],
         cohort_max_symbols=UNCONDITIONAL_PROTEIN_BAND[1],
+        architecture="progen",
     ),
     LadderMember(
         name="progen2-base",
@@ -636,6 +644,7 @@ DEFAULT_LADDER: tuple[LadderMember, ...] = (
         cohort_corpus="plain_swissprot",
         cohort_min_symbols=UNCONDITIONAL_PROTEIN_BAND[0],
         cohort_max_symbols=UNCONDITIONAL_PROTEIN_BAND[1],
+        architecture="progen",
     ),
     LadderMember(
         name="progen2-medium",
@@ -648,6 +657,7 @@ DEFAULT_LADDER: tuple[LadderMember, ...] = (
         cohort_corpus="plain_swissprot",
         cohort_min_symbols=UNCONDITIONAL_PROTEIN_BAND[0],
         cohort_max_symbols=UNCONDITIONAL_PROTEIN_BAND[1],
+        architecture="progen",
     ),
     LadderMember(
         name="progen2-large",
@@ -660,6 +670,7 @@ DEFAULT_LADDER: tuple[LadderMember, ...] = (
         cohort_corpus="plain_swissprot",
         cohort_min_symbols=UNCONDITIONAL_PROTEIN_BAND[0],
         cohort_max_symbols=UNCONDITIONAL_PROTEIN_BAND[1],
+        architecture="progen",
     ),
     LadderMember(
         name="progen2-xlarge",
@@ -672,6 +683,7 @@ DEFAULT_LADDER: tuple[LadderMember, ...] = (
         cohort_corpus="plain_swissprot",
         cohort_min_symbols=UNCONDITIONAL_PROTEIN_BAND[0],
         cohort_max_symbols=UNCONDITIONAL_PROTEIN_BAND[1],
+        architecture="progen",
     ),
 )
 
@@ -903,6 +915,29 @@ def inspect_member(member: LadderMember) -> dict[str, Any]:
     return record
 
 
+def arm_declaration(source: LadderMember | ArmSpec) -> dict[str, Any]:
+    """The fields a ladder rung and its frozen panel entry must agree on.
+
+    One list, read both by :func:`register_arm_spec`, which refuses a run on any
+    disagreement, and by the invariant test that asserts there is none. Written
+    once because the two used to check different fields: the test compared
+    ``capabilities`` alone while the refusal compared all of these, so the
+    ProGen2 rungs could declare -- and did declare -- ``gpt2`` here against the
+    panel's ``progen`` with nothing failing until a campaign was launched.
+    """
+
+    return {
+        "path": str(source.path),
+        "modality": source.modality,
+        "tokenisation": source.tokenisation,
+        "input_format": source.input_format,
+        "evaluation_cohort_source": source.evaluation_cohort_source,
+        "pretraining_corpus": source.pretraining_corpus,
+        "architecture": source.architecture,
+        "capabilities": sorted(source.capabilities),
+    }
+
+
 def register_arm_spec(member: LadderMember, probe: Mapping[str, Any]) -> ArmSpec:
     """Make a ladder member loadable by ``arms.load_arm`` without editing ``arms``.
 
@@ -942,26 +977,8 @@ def register_arm_spec(member: LadderMember, probe: Mapping[str, Any]) -> ArmSpec
         )
     existing = PANEL.get(member.name)
     if existing is not None:
-        declared = {
-            "path": str(existing.path),
-            "modality": existing.modality,
-            "tokenisation": existing.tokenisation,
-            "input_format": existing.input_format,
-            "evaluation_cohort_source": existing.evaluation_cohort_source,
-            "pretraining_corpus": existing.pretraining_corpus,
-            "architecture": existing.architecture,
-            "capabilities": sorted(existing.capabilities),
-        }
-        requested = {
-            "path": str(member.path),
-            "modality": member.modality,
-            "tokenisation": member.tokenisation,
-            "input_format": member.input_format,
-            "evaluation_cohort_source": member.evaluation_cohort_source,
-            "pretraining_corpus": member.pretraining_corpus,
-            "architecture": member.architecture,
-            "capabilities": sorted(member.capabilities),
-        }
+        declared = arm_declaration(existing)
+        requested = arm_declaration(member)
         if declared != requested:
             raise ValueError(
                 f"{member.name}: ladder declaration {requested} conflicts with the "
@@ -1497,12 +1514,20 @@ def fit_modality_offset(
 
     With ``include_tokenisation`` a symbol-level indicator joins the design, and
     the modality coefficient becomes the offset at matched convergence *and*
-    matched tokenisation. That fit is the one the brief actually asks for - this
-    control exists to separate modality from convergence, scale, tokenisation and
-    distribution, and a design carrying only the first two cannot do it. The
-    unadjusted fit is retained beside it because the two disagreeing is itself the
-    finding: if a modality offset evaporates once tokenisation is held fixed, it
-    was a tokenisation offset.
+    matched tokenisation. The unadjusted fit is retained beside it because the two
+    disagreeing is itself the finding: if a modality offset evaporates once
+    tokenisation is held fixed, it was a tokenisation offset.
+
+    What this design holds fixed is exactly that: one convergence axis, and
+    optionally tokenisation. Scale is never a covariate here -- ``log10_parameters``
+    is one of :data:`CONVERGENCE_AXES`, so it enters as an *alternative* axis in a
+    separate fit rather than beside another one -- and architecture and lineage
+    are not in the design at all. Distribution is handled by exclusion rather than
+    by adjustment: ``analysis_frame`` flags a rung scored off its own distribution
+    and this fit drops it. The confounds outside that list are what
+    :func:`paired_architecture_contrast`, :func:`tokenisation_contrast` and
+    :func:`conditioning_control` report separately, and they are not absorbed into
+    this coefficient.
 
     The question this control exists to answer is whether a protein decoder at the
     *same* convergence as a text decoder shows the same interpretability metric.
@@ -2062,6 +2087,12 @@ def decide_verdict(
     tokenisation effect wherever one exists. Requiring both is the same principle
     :func:`identification_check` applies structurally, applied quantitatively, and
     it blocks the two non-default verdicts equally.
+
+    "Holding in both" is holding in the same direction. ``residual_modality_gap``
+    requires the two intervals to exclude zero on the same side of it, because a
+    coefficient that is positive in one design and negative in the other has
+    reversed sign rather than been confirmed twice; that returns ``underpowered``
+    naming the reversal.
     """
 
     if equivalence_margin <= 0.0:
@@ -2118,10 +2149,29 @@ def decide_verdict(
         decision[f"protein_offset_{label}"] = offset
         decision[f"interval_half_width_{label}"] = (high - low) / 2.0
 
-    excludes_zero = {
-        label: low > 0.0 or high < 0.0 for label, (low, high) in readings.items()
+    # Which side of zero each interval sits on, not merely whether it misses it.
+    # Two intervals on opposite sides both "exclude zero", so a rule reading only
+    # that would return ``residual_modality_gap`` on a coefficient that reversed
+    # direction when tokenisation entered the design -- one fit saying protein
+    # decoders are above text at matched convergence and the other saying they
+    # are below. That is not one effect confirmed twice, and the blind spot opens
+    # only toward this programme's own hypothesis.
+    sides = {
+        label: 1 if low > 0.0 else -1 if high < 0.0 else 0
+        for label, (low, high) in readings.items()
     }
+    excludes_zero = {label: side != 0 for label, side in sides.items()}
     if all(excludes_zero.values()):
+        if len(set(sides.values())) > 1:
+            decision["reason"] = (
+                "the modality coefficient excludes zero in both fits but on opposite "
+                f"sides of it - unadjusted {list(np.round(readings['unadjusted'], 4))} "
+                "against tokenisation-adjusted "
+                f"{list(np.round(readings['tokenisation_adjusted'], 4))}; a coefficient "
+                "that reverses sign when tokenisation enters the design cannot be "
+                "attributed to modality in either direction"
+            )
+            return decision
         decision["verdict"] = "residual_modality_gap"
         decision["reason"] = (
             "the modality coefficient's interval excludes zero at matched convergence "

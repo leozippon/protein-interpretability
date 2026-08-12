@@ -2314,6 +2314,7 @@ def behaviour_block(
     control_modes: Sequence[str],
     primary_control: str,
     minimum_ce_denominator: float,
+    concept_readable: bool,
     seed: int,
     n_bootstrap: int,
     scored_groups: Sequence[Any] | None = None,
@@ -2325,6 +2326,15 @@ def behaviour_block(
     sequences are not independent -- for the fitness cohort they are single
     substitutions of a shared wild type, and a row-level interval there is narrow
     for the wrong reason.
+
+    ``concept_readable`` is whether a linear probe could read the concept at this
+    layer *before* the erasure, and it is required rather than defaulted because
+    it decides what the headline excess means. Erasing a direction the probe
+    could not find still costs the model something, and that cost is a real
+    measurement -- but it is not a measurement of reliance on the concept, since
+    there was no recoverable concept to rely on. It is published beside the
+    number as ``reliance_interpretable``, the same way ``denominator_valid``
+    qualifies the mean-ablation share rather than suppressing it.
 
     A ratio alone is uninterpretable: it hides both the size of the effect and
     the size of the denominator. Every mode is therefore reported in absolute
@@ -2410,6 +2420,7 @@ def behaviour_block(
         "excess_over_control": excess,
         "primary_excess_ce_nats": excess[primary_control]["ce_excess_nats"],
         "primary_excess_ce_ci95": excess[primary_control]["ce_excess_ci95"],
+        "reliance_interpretable": bool(concept_readable),
     }
 
 
@@ -2508,6 +2519,13 @@ def erasure_report(
     # certainly not retained the concept.
     observed = leace_probe["linear"]["skill"]
     passed = observed <= max_post_erasure_skill
+    # Whether the concept was linearly readable before anything was erased. It
+    # qualifies the gate above -- an erasure that removes nothing is trivially
+    # verified -- and it equally qualifies the reliance number below, which is
+    # where it was previously not carried: three cells of the frozen panel
+    # published an excess with an interval excluding zero on a concept no probe
+    # could read to begin with.
+    informative = bool(clean_probe["linear"]["skill"] >= min_clean_skill)
     verification = {
         "gate": {
             "max_post_erasure_linear_skill": float(max_post_erasure_skill),
@@ -2517,7 +2535,7 @@ def erasure_report(
             "passed": bool(passed),
             "min_clean_linear_skill_for_an_informative_gate": float(min_clean_skill),
             "clean_linear_skill": clean_probe["linear"]["skill"],
-            "informative": bool(clean_probe["linear"]["skill"] >= min_clean_skill),
+            "informative": informative,
             "scope": (
                 "LEACE guarantees linear guardedness only; the post-erasure MLP is "
                 "reported as a diagnostic and is not gated"
@@ -2611,6 +2629,7 @@ def erasure_report(
         ),
         primary_control=PRIMARY_CONTROL,
         minimum_ce_denominator=minimum_ce_denominator,
+        concept_readable=informative,
         seed=_derived_seed(seed, "behaviour", layer),
         n_bootstrap=n_bootstrap,
         scored_groups=held_out_groups,

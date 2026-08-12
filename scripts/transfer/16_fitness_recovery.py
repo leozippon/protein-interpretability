@@ -181,6 +181,11 @@ def free_baseline_gate(assays: list[dict[str, Any]], *, gate: float) -> dict[str
     the same predictor reads 0.05 on one and 0.40 on another -- and an unpaired
     comparison of two means over eight such units measures assay selection more
     than it measures the predictors.
+
+    ``gate`` is how far above the free baseline the paired difference must sit,
+    and it is the whole interval's lower end that must clear it. It was recorded
+    in the artefact and not applied, so every margin behaved as zero and the
+    declared rule and the live rule agreed only at the default.
     """
 
     differences = [a["model_minus_blosum62"] for a in assays]
@@ -191,7 +196,7 @@ def free_baseline_gate(assays: list[dict[str, Any]], *, gate: float) -> dict[str
     # normality assumption the sample cannot support, so the distribution-free
     # statement is reported beside it rather than instead of it.
     sign_p = float(stats.binomtest(wins, len(differences), 0.5).pvalue)
-    passes = bool(interval["interval"][0] > 0.0)
+    passes = bool(interval["interval"][0] > gate)
     return {
         "gate_margin": float(gate),
         "paired_difference": interval,
@@ -208,9 +213,9 @@ def free_baseline_gate(assays: list[dict[str, Any]], *, gate: float) -> dict[str
         "verdict": "PASS" if passes else "FAIL",
         "note": (
             "PASS means the model's own zero-shot fitness is above the free "
-            "baseline on these assays, so a recovery ratio quoted against it has "
-            "a base worth recovering. FAIL means it is not, and no ratio against "
-            "that base -- theirs or ours -- is interpretable."
+            "baseline by at least gate_margin on these assays, so a recovery ratio "
+            "quoted against it has a base worth recovering. FAIL means it is not, "
+            "and no ratio against that base -- theirs or ours -- is interpretable."
         ),
     }
 
