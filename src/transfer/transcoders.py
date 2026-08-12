@@ -426,6 +426,29 @@ class TrainingRecord:
 #: batch; the budget is the declared quantity and is what must be equal, while
 #: the realised counts are recorded beside it and reported as a relative
 #: difference.
+#:
+#: **The criterion, so that a later field is decided rather than guessed.** A
+#: setting belongs here when it changes the fitted dictionary, nothing about a
+#: mode requires it to differ, and a run can set it. That admits the whole
+#: optimisation block -- learning rate, weight decay, gradient clip, batch size,
+#: the auxiliary-revival width, and both seeds -- and it excludes ``steps``, which
+#: a budget-matched pair *must* be free to differ on because a text record and a
+#: protein record carry different numbers of scored positions, and ``eval_every``,
+#: which is a measurement cadence and does not touch the fitted object.
+#:
+#: The optimisation block was absent until two artefacts a hundredfold apart in
+#: learning rate, at different seeds and at batch 8 against 64, registered
+#: ``MATCHED`` with no disagreements. The failure was one level below a short
+#: list: :class:`MatchedTraining` carried no such field at all, so widening this
+#: tuple alone would have named fields that did not exist.
+#:
+#: ``corpus_seed`` is matched even though the two modes read *different* corpora
+#: and the same seed therefore selects different records. What it equalises is the
+#: draw procedure -- the block-shuffled stream and the held-out offset -- and two
+#: modes drawn under different procedures differ on an axis nobody chose.
+#:
+#: ``max_tokens`` is deliberately **not** here and is reported instead; see
+#: :attr:`MatchedTraining.max_tokens`.
 MATCHED_TRAINING_FIELDS = (
     "backbone_sha256",
     "architecture",
@@ -433,8 +456,15 @@ MATCHED_TRAINING_FIELDS = (
     "d_model",
     "d_hidden",
     "k",
+    "auxk",
     "training_token_budget",
     "evaluation_sequences",
+    "learning_rate",
+    "weight_decay",
+    "grad_clip",
+    "batch_size",
+    "seed",
+    "corpus_seed",
 )
 
 
@@ -460,6 +490,7 @@ class MatchedTraining:
     d_model: int
     d_hidden: int
     k: int
+    auxk: int
     #: ``None`` for a run whose length was set in steps rather than in tokens.
     #: Not zero: a zero budget and an undeclared one are different states, and
     #: only the second may be compared as if it were a number.
@@ -467,6 +498,27 @@ class MatchedTraining:
     #: What the run actually consumed, in scored tokens.
     training_tokens: int
     evaluation_sequences: int
+    learning_rate: float
+    weight_decay: float
+    grad_clip: float
+    batch_size: int
+    seed: int
+    corpus_seed: int
+    #: The token cap each dictionary's inputs were rendered under. **Reported,
+    #: not matched, and the distinction is the point.** It changes what a
+    #: dictionary saw -- an activation at position 900 is not an activation at
+    #: position 400 -- so it cannot be left out of the record; but it is the one
+    #: setting a mode genuinely constrains, because a protein rendering pays a
+    #: measured wrapper and ``17_train_transcoder.py`` derives that mode's residue
+    #: ceiling from this cap. Forcing the two equal would either truncate the
+    #: protein corpus below its band or move the text window for no reason.
+    #:
+    #: So it is declared here, compared in
+    #: :func:`compare_matched_training`, and reported beside the verdict rather
+    #: than folded into it. The live ProLLaMA pilot runs 512 for text against 1024
+    #: for protein: that is a real unmatched axis, and a reader of its ``MATCHED``
+    #: verdict has to be able to see it without opening the settings block.
+    max_tokens: int
 
     def matched(self) -> dict[str, Any]:
         """Exactly the fields a pair is refused on, in the declared order."""
@@ -495,17 +547,59 @@ class MatchedTraining:
             "note": (
                 "the fields two dictionaries must agree on before a difference "
                 "between their behavioural numbers may be attributed to what they "
-                "were trained on. 'target' is the field that must DIFFER; "
-                "'training_tokens' is what the run consumed and is recorded rather "
-                "than matched, because the loop stops at the first step to reach "
-                "'training_token_budget' and so overshoots it by up to one batch"
+                "were trained on. 'target' is the field that must DIFFER. Three "
+                "fields are recorded and NOT matched: 'training_tokens', what the "
+                "run consumed, because the loop stops at the first step to reach "
+                "'training_token_budget' and so overshoots it by up to one batch; "
+                "'max_tokens', the token cap the inputs were rendered under, "
+                "because a protein rendering pays a wrapper this stage measures "
+                "and derives its residue ceiling from, so a mode may genuinely "
+                "need a different cap -- it is reported with its own agreement "
+                "flag in the comparison instead; and 'target' itself"
             ),
         }
 
 
-def matched_training(record: Mapping[str, Any]) -> MatchedTraining:
-    """Read a matched-training declaration back from an artefact or a checkpoint."""
+#: The declaration's optimisation fields, and the name each one carries in the
+#: ``17_train_transcoder.py`` argument block they are projected from. Identical
+#: names, because ``argparse`` produces them -- listed rather than assumed so that
+#: :func:`matched_training` walks one sequence instead of repeating the same
+#: two-source lookup eight times.
+_OPTIMISATION_FIELDS = (
+    "auxk",
+    "learning_rate",
+    "weight_decay",
+    "grad_clip",
+    "batch_size",
+    "seed",
+    "corpus_seed",
+    "max_tokens",
+)
 
+
+def matched_training(
+    record: Mapping[str, Any], *, settings: Mapping[str, Any] | None = None
+) -> MatchedTraining:
+    """Read a matched-training declaration back from an artefact or a checkpoint.
+
+    ``settings`` is the same run's ``17_train_transcoder.py`` argument block, and
+    it is where the optimisation fields above are read from when the declaration
+    itself does not carry them. Dictionaries were written before the declaration
+    was widened to cover the optimiser, and every one of those runs recorded the
+    values in its own settings block -- so reading them there recovers the run's
+    configuration rather than assuming one, and does not force a campaign to
+    retrain in order to be certified on fields it did in fact hold fixed. The
+    settings block is the source and this declaration is its projection, so the
+    two cannot disagree.
+
+    A record carrying neither raises. A pair certified on fields nobody wrote down
+    is the state this widening exists to end.
+    """
+
+    supplied = dict(settings or {})
+    values = {
+        name: record.get(name, supplied.get(name)) for name in _OPTIMISATION_FIELDS
+    }
     missing = sorted(
         name
         for name in (
@@ -520,7 +614,7 @@ def matched_training(record: Mapping[str, Any]) -> MatchedTraining:
             "evaluation_sequences",
         )
         if name not in record
-    )
+    ) + sorted(name for name, value in values.items() if value is None)
     if missing:
         raise KeyError(
             f"this matched-training record is missing {missing}; it was not written "
@@ -536,9 +630,17 @@ def matched_training(record: Mapping[str, Any]) -> MatchedTraining:
         d_model=int(record["d_model"]),
         d_hidden=int(record["d_hidden"]),
         k=int(record["k"]),
+        auxk=int(values["auxk"]),
         training_token_budget=None if budget is None else int(budget),
         training_tokens=int(record["training_tokens"]),
         evaluation_sequences=int(record["evaluation_sequences"]),
+        learning_rate=float(values["learning_rate"]),
+        weight_decay=float(values["weight_decay"]),
+        grad_clip=float(values["grad_clip"]),
+        batch_size=int(values["batch_size"]),
+        seed=int(values["seed"]),
+        corpus_seed=int(values["corpus_seed"]),
+        max_tokens=int(values["max_tokens"]),
     )
 
 
@@ -560,7 +662,10 @@ def compare_matched_training(
 
     The realised token counts are reported with their relative difference
     whatever the verdict, so a pair that agrees on a budget and diverged in
-    practice is visible rather than certified by the digest alone.
+    practice is visible rather than certified by the digest alone. The token cap
+    is reported the same way and for a stronger reason: it is the one setting a
+    mode may legitimately need to differ on, so ``MATCHED`` does not cover it, and
+    a reader who is not shown it would take the verdict for more than it claims.
     """
 
     fields = {
@@ -593,6 +698,8 @@ def compare_matched_training(
         "training_token_budget_declared": budget_declared,
         "training_tokens_realised": realised,
         "training_tokens_relative_difference": abs(realised[0] - realised[1]) / largest,
+        "max_tokens": [left.max_tokens, right.max_tokens],
+        "max_tokens_agree": left.max_tokens == right.max_tokens,
         "verdict": verdict,
         "note": (
             "MATCHED means every field two dictionaries must share agrees. "
@@ -600,7 +707,12 @@ def compare_matched_training(
             "one declared no --train-tokens, so equal step counts do not imply "
             "equal data: a text record and a protein record carry different "
             "numbers of scored positions. distinct_targets says whether this is a "
-            "pair of conditions at all rather than one condition twice"
+            "pair of conditions at all rather than one condition twice. "
+            "max_tokens is REPORTED and not matched: a protein rendering pays a "
+            "measured wrapper and derives its residue ceiling from this cap, so a "
+            "mode may need a different one -- but the two dictionaries then saw "
+            "different context lengths, which no verdict here certifies, and "
+            "max_tokens_agree is what says so"
         ),
     }
 
@@ -802,7 +914,7 @@ def matched_training_from_artefact(path: Path) -> MatchedTraining:
 
     The JSON and not the checkpoint, because this reads the *other* arm of a
     comparison and the other arm's weights are of no interest: a matched pair's
-    dictionaries run to gigabytes each, and loading one to read nine integers
+    dictionaries run to gigabytes each, and loading one to read a dozen numbers
     would make the check cost more than the run it guards.
     """
 
@@ -814,7 +926,7 @@ def matched_training_from_artefact(path: Path) -> MatchedTraining:
             "training record from 17_train_transcoder.py -- or it predates the "
             "matched-configuration declaration and the pair cannot be checked"
         )
-    return matched_training(declaration)
+    return matched_training(declaration, settings=payload.get("settings"))
 
 
 def load_trained_transcoder(
@@ -865,7 +977,11 @@ def load_trained_transcoder(
     return (
         TranscoderReplacement(model),
         recorded,
-        None if declared is None else matched_training(declared),
+        None
+        if declared is None
+        else matched_training(
+            declared, settings=(checkpoint.get("record") or {}).get("settings")
+        ),
     )
 
 

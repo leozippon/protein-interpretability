@@ -1505,7 +1505,7 @@ class Cohort:
                 for s in self.records
             ]
         if fmt == "n_to_c_control":
-            return ["1" + s for s in self.records]
+            return [N_TO_C_MARKER + s for s in self.records]
         if fmt == "ec_conditioned":
             labels = self.metadata.get("ec_labels")
             if labels is None or len(labels) != len(self.records):
@@ -1527,6 +1527,15 @@ class Cohort:
 #: a valid-looking id for a token it does not have.
 CONDITIONING_START = "<start>"
 CONDITIONING_END = "<end>"
+
+#: The generation-direction marker an ``n_to_c_control`` rendering prefixes to its
+#: content. Declared beside the rendering that emits it for the reason the pair
+#: above is, and with one hazard they do not have: ProGen2 declares only
+#: ``<|pad|>``, ``<|bos|>`` and ``<|eos|>`` as special tokens, so this marker is an
+#: **ordinary vocabulary entry** (id 3 on every released rung). A measurement that
+#: must keep it out of a content span cannot find it through ``all_special_ids``
+#: and has to resolve it from here, through :func:`rendering_marker_ids`.
+N_TO_C_MARKER = "1"
 
 
 def conditioning_boundary_ids(
@@ -1559,6 +1568,73 @@ def conditioning_boundary_ids(
             )
         ids.append(int(resolved))
     return ids[0], ids[1]
+
+
+def rendering_marker_ids(arm: Arm) -> tuple[int, ...]:
+    """Token ids of the non-content markers this arm's rendering prefixes.
+
+    The counterpart of :func:`conditioning_boundary_ids` for the renderings that
+    carry no conditioning prompt, and the one place a measurement may learn which
+    positions of such a rendering are not content.
+    :meth:`Cohort.input_strings` prefixes ``fasta_wrapped`` with the tokenizer's
+    end-of-text token and ``n_to_c_control`` with :data:`N_TO_C_MARKER`; ``raw``
+    prefixes nothing.
+
+    **A tokenizer's special ids do not cover this, and assuming they did was a
+    defect.** ProGen2 declares only ``<|pad|>``, ``<|bos|>`` and ``<|eos|>``
+    special, so ``all_special_ids`` never returns its direction marker and a
+    content mask built from those ids alone keeps position 0 of every ProGen2
+    record -- while ProGen3, whose
+    :data:`src.transfer.progen3.NON_RESIDUE_TOKENS` names ``"1"`` and ``"2"``
+    explicitly, drops the equivalent position. That one position per record is not
+    a rounding error where it lands: on ``progen2-small`` at bfloat16 over 32
+    Swiss-Prot records of 64-246 residues, keeping it displaces
+    ``23_perturbation_sensitivity.py``'s fully-ablated endpoint -- the denominator
+    of every recovery ratio that stage reports -- by 0.68 in relative norm at
+    layer 1 and 0.59 at layer 2, and moves the layer-1 norm anchor epsilon is
+    scaled against from 1.1267 to 1.4993.
+
+    The two branches resolve differently because the two markers are different
+    kinds of token. An end-of-text token is a special token and the tokenizer
+    declares its id, so it is read; a direction marker is an ordinary vocabulary
+    entry that has to be looked up and can come back as the unknown id, which is
+    refused rather than returned. The unknown check is not applied to the
+    end-of-text branch on purpose: ProtGPT2's ``unk_token_id`` *is* its
+    ``eos_token_id``, so an unknown check there would refuse a healthy arm.
+
+    ``ec_conditioned`` raises. Its conditioning prompt is a span rather than a
+    prefix -- the EC digits are ordinary vocabulary entries carrying no marker id
+    at all -- so removing marker ids would leave seven digit positions inside the
+    content span, and :func:`conditioning_boundary_ids` is what locates it.
+    """
+
+    fmt = arm.spec.input_format
+    if fmt == "raw":
+        return ()
+    if fmt == "fasta_wrapped":
+        resolved = arm.tokenizer.eos_token_id
+        if resolved is None:
+            raise ValueError(
+                f"{arm.name}: tokenizer declares no end-of-text id, but its rendering "
+                "prefixes the end-of-text token, so the prefix cannot be located"
+            )
+        return (int(resolved),)
+    if fmt == "n_to_c_control":
+        resolved = arm.tokenizer.convert_tokens_to_ids(N_TO_C_MARKER)
+        if resolved is None or resolved == arm.tokenizer.unk_token_id:
+            raise ValueError(
+                f"{arm.name}: tokenizer has no {N_TO_C_MARKER!r} id, but its input "
+                "format is n_to_c_control, so the direction marker its rendering "
+                "prefixes cannot be kept out of the content span"
+            )
+        return (int(resolved),)
+    if fmt == "ec_conditioned":
+        raise ValueError(
+            f"{arm.name} renders a conditioning prompt rather than a marker prefix: "
+            "its EC digits carry no marker id, so a set of ids cannot describe the "
+            "span that is not content. Use conditioning_boundary_ids"
+        )
+    raise ValueError(f"unsupported input format {fmt!r}")
 
 
 def selected_positions(

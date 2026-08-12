@@ -86,6 +86,7 @@ from .arms import (
     arm_spec,
     conditioning_boundary_ids,
     load_arm_spec,
+    rendering_marker_ids,
     tokenize_batch,
 )
 from .io import sha256_file
@@ -468,10 +469,43 @@ class ReplaceableModel(ABC):
 
     # -- components --------------------------------------------------------
 
-    def components(self) -> list[Component]:
-        """Every attention head, then every replaceable block, in layer order."""
+    def component_families(self) -> tuple[str, ...]:
+        """The families :meth:`ablated` will zero on this model, in grid order.
 
-        return component_grid(self.n_layers, self.n_heads, block_kind=self.block_kind)
+        Attention heads and the replaceable block, which is what every model that
+        declares an attention output projection carries. An implementation that
+        cannot ablate one of them overrides this and says why, and that override is
+        the *only* place the difference is spelled: :meth:`components` builds the
+        grid from it and :meth:`ablated` refuses from it, so a stage cannot be
+        handed a component the model will not accept.
+        """
+
+        return ("attention_head", self.block_kind)
+
+    def components(self) -> list[Component]:
+        """Every component this model can be ablated on, in layer order.
+
+        The grid is :func:`src.transfer.progen3.component_grid` restricted to
+        :meth:`component_families`, so the ordering the saved effect matrices are
+        indexed by stays that one declaration's.
+
+        **It is restricted rather than assumed**, and that is a repair. This
+        method used to emit every attention head unconditionally while
+        :meth:`JointReplaceable.ablated` refused every one of them, so a joint
+        checkpoint reached the causal sweep -- after the whole behavioural sweep
+        had been computed and before anything was written -- and raised there.
+        Four scoring runs of a live campaign were discarded at their last step
+        that way, and re-dispatching reproduced it exactly.
+        """
+
+        families = self.component_families()
+        return [
+            component
+            for component in component_grid(
+                self.n_layers, self.n_heads, block_kind=self.block_kind
+            )
+            if component.kind in families
+        ]
 
     @abstractmethod
     def ablated(self, component: Component) -> Any:
@@ -1141,13 +1175,25 @@ class DenseReplaceable(ReplaceableModel):
     def content_mask(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Positions carrying content: for a conditioned arm, the residues only.
 
-        **Unconditioned arms: non-padding, non-special positions.** The pad token
-        *is* the end-of-text token on every GPT-2-lineage arm, so the mask cannot
-        be built from the ids alone -- padding and ProtGPT2's end-of-text prefix
-        carry the same id, and one of them is a position the model was trained to
-        predict from. The validity mask separates them; the special-token ids then
-        remove the marker itself, which is the counterpart of ProGen3 excluding
-        its terminus tokens.
+        **Unconditioned arms: non-padding positions that are neither a tokenizer
+        special token nor a marker the rendering added.** The pad token *is* the
+        end-of-text token on every GPT-2-lineage arm, so the mask cannot be built
+        from the ids alone -- padding and ProtGPT2's end-of-text prefix carry the
+        same id, and one of them is a position the model was trained to predict
+        from. The validity mask separates them, and the two id sets then remove the
+        markers, which is what makes this the counterpart of ProGen3 excluding its
+        terminus tokens.
+
+        **Both id sets, because neither covers the other.** ProGen3's
+        :data:`src.transfer.progen3.NON_RESIDUE_TOKENS` names ``"1"`` and ``"2"``
+        alongside ``<pad>``/``<bos>``/``<eos>``; ProGen2 declares only the latter
+        kind special and renders the same direction marker as an *ordinary*
+        vocabulary entry, so ``all_special_ids`` alone kept position 0 of every
+        ProGen2 record while the arm this measurement is compared against dropped
+        it. :func:`src.transfer.arms.rendering_marker_ids` resolves the markers
+        from the same declaration :meth:`src.transfer.arms.Cohort.input_strings`
+        renders them from, so the mask and the rendering cannot come to disagree
+        about which positions the arm's own format added.
 
         **A conditioned arm cannot use that rule**, and this is the reason ZymCTRL
         was refused here until now. Its ``<sep>``, ``<start>`` and ``<end>``
@@ -1172,12 +1218,13 @@ class DenseReplaceable(ReplaceableModel):
             inside[:, 1:] = self._target_mask(batch)
             return inside
         mask = batch["attention_mask"].bool()
-        special = [
-            token for token in self.arm.tokenizer.all_special_ids if token is not None
-        ]
-        if special:
-            marker = torch.tensor(special, device=ids.device)
-            mask = mask & ~torch.isin(ids, marker)
+        excluded = sorted(
+            {token for token in self.arm.tokenizer.all_special_ids if token is not None}
+            | set(rendering_marker_ids(self.arm))
+        )
+        if excluded:
+            markers = torch.tensor(excluded, device=ids.device)
+            mask = mask & ~torch.isin(ids, markers)
         return mask
 
     # -- running -----------------------------------------------------------
@@ -1686,7 +1733,10 @@ class JointReplaceable(ReplaceableModel):
     over: in protein mode the scored span, so delimiters, the instruction prefix
     and the beginning-of-sequence token stay out of the fully-ablated endpoint;
     in text mode every non-padding, non-special position, which is
-    :meth:`DenseReplaceable.content_mask`'s unconditioned rule.
+    :meth:`DenseReplaceable.content_mask`'s unconditioned rule on a rendering that
+    prefixes no marker of its own -- this mode's text records are the corpus
+    strings, so a panel arm's :func:`src.transfer.arms.rendering_marker_ids` term
+    would be empty here and there is nothing for it to resolve against.
     """
 
     block_kind = DENSE_BLOCK_KIND
@@ -2033,23 +2083,45 @@ class JointReplaceable(ReplaceableModel):
             ),
         }
 
+    def component_families(self) -> tuple[str, ...]:
+        """The block family alone: this checkpoint has no ablatable attention head.
+
+        An attention head is zeroed at the input of the output projection, which
+        :func:`src.transfer.path_patching.attention_output_projection` resolves
+        from the *panel's* per-architecture declaration -- and a joint checkpoint is
+        reached by path precisely because it is not a panel arm (a checkpoint that
+        has not passed ``21_joint_mode_qualification.py`` must not be in
+        ``arms.py`` at all), so there is no declaration to resolve it against. The
+        family is therefore absent from the grid rather than located by searching
+        for a plausible module.
+
+        **What this costs a reader, stated rather than left to be discovered.**
+        ``15_replacement_faithfulness.py`` scores attainability and causal
+        agreement per family, so on this checkpoint both gates are computed over
+        the block family only and the artefact's ``component_families`` says so. A
+        dense arm's artefact carries two families and this one carries one; they
+        are not the same amount of evidence, and no comparison between them should
+        read as if they were.
+        """
+
+        return (self.block_kind,)
+
     @contextmanager
     def ablated(self, component: Component) -> Iterator[None]:
         """Zero one block's contribution to the residual stream.
 
-        Only the block family. An attention head is zeroed at the input of the
-        output projection, which
-        :func:`src.transfer.path_patching.attention_output_projection` resolves
-        from the *panel's* declaration -- and a joint checkpoint reached by path is
-        not a panel arm, so there is no declaration to resolve it against. Refused
-        with that reason rather than located by searching for a plausible module.
+        Refuses anything outside :meth:`component_families`, which is the same
+        declaration :meth:`components` builds the grid from, so this branch guards
+        a hand-built component rather than the grid a stage sweeps.
         """
 
-        if component.kind != self.block_kind:
+        if component.kind not in self.component_families():
             raise ValueError(
                 f"{self.name}: no ablation is implemented for component kind "
-                f"{component.kind!r}. The attention output projection is declared per "
-                "panel architecture and this checkpoint is not a panel arm"
+                f"{component.kind!r}; this checkpoint declares "
+                f"{list(self.component_families())}. The attention output projection "
+                "is declared per panel architecture and this checkpoint is not a "
+                "panel arm"
             )
         target = component.layer
 
@@ -2107,7 +2179,7 @@ class JointReplaceable(ReplaceableModel):
 
     @torch.no_grad()
     def estimand_identity(self) -> dict[str, Any]:
-        """Verify that the intercepted pair IS the block this estimand is defined on.
+        """Verify that the intercepted **output** IS this block's residual write.
 
         :meth:`DenseReplaceable.estimand_identity`'s check, on the declared layout:
         the block's own output must equal the residual its pre-feed-forward
@@ -2115,6 +2187,14 @@ class JointReplaceable(ReplaceableModel):
         is **exact**, because the model performs that addition on those two
         tensors in that dtype, so anything but equality means the block does
         something this interceptor does not see.
+
+        The output half is what this identity pins, and the wording matters
+        because :meth:`block_intercept` hands a stage a *pair*. The input half is
+        not left unchecked, it is checked differently: it is
+        ``self.layout.feed_forward``'s own first positional argument on every
+        layer of this pass, so a layout that named the wrong module would raise
+        here rather than pass, and an architecture nobody declared is refused by
+        :func:`joint_block_layout` before a forward runs.
         """
 
         blocks = self._layers()

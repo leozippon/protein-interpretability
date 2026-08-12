@@ -198,6 +198,30 @@ def families(grid: list[Component]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(component.kind for component in grid))
 
 
+def check_grid_is_ablatable(model: ReplaceableModel, grid: list[Component]) -> None:
+    """Refuse a grid this model will not ablate, before any sweep is paid for.
+
+    One component of each family is entered and left. That registers and removes
+    the intervention's hooks and resolves the modules it needs -- an attention
+    output projection is declared per architecture and raises where it is not --
+    without running a forward pass, so the whole check costs microseconds.
+
+    **It runs here because the alternative was measured.** The causal sweep is the
+    last thing this stage does and the artefact is written after it, so a
+    component the model refuses ends the run with every behavioural number already
+    computed and nothing on disk. Four scoring runs of the joint campaign were
+    lost that way. :meth:`src.transfer.replaceable.ReplaceableModel.components`
+    now builds the grid from the families the model declares, which is the repair;
+    this is the check that the declaration is true of the implementation, and it
+    is the same discipline the estimand identity applies to the block layout.
+    """
+
+    for family in families(grid):
+        component = next(entry for entry in grid if entry.kind == family)
+        with model.ablated(component):
+            pass
+
+
 def backbone_identity(embedded: dict[str, torch.Tensor], released: dict[str, torch.Tensor]) -> dict[str, Any]:
     """Whether the replacement was fitted to the backbone this stage loaded."""
 
@@ -1523,6 +1547,8 @@ def main() -> None:
 
     grid = model.components()
     grid_families = families(grid)
+    check_grid_is_ablatable(model, grid)
+    print(f"[grid] {len(grid)} components over {list(grid_families)}, all ablatable")
     condition = {
         "arm": model.name,
         "replacement": (

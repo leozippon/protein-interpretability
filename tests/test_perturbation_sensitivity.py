@@ -215,7 +215,8 @@ def _dense(**kwargs) -> R.DenseReplaceable:
 #: the single special id. Reproduced exactly because two of this file's claims are
 #: about it -- that a residue tokenizer's expansion is 1.0 symbols per token, and
 #: that the N-to-C control token is an ordinary vocabulary entry rather than a
-#: special one, so the content mask keeps it.
+#: special one, which is why the content mask has to resolve it from the rendering
+#: declaration and cannot find it in ``all_special_ids``.
 PROGEN_TOKENS: tuple[str, ...] = (
     "<|pad|>",
     "<|bos|>",
@@ -228,11 +229,24 @@ PROGEN_TOKENS: tuple[str, ...] = (
 
 
 class StubResidueTokenizer:
-    """One token per residue, which is what ``tokenisation="residue"`` declares."""
+    """One token per residue, which is what ``tokenisation="residue"`` declares.
+
+    The special-token bookkeeping reproduces the released ProGen2 tokenizer rather
+    than being simplified: ``<|endoftext|>`` is the *only* special id and is also
+    the pad and the unknown id, exactly as ``GPT2TokenizerFast`` reports for every
+    ProGen2 rung. That coincidence is what makes ``all_special_ids`` an incomplete
+    answer to "which positions are not content" on this lineage, so a stub that
+    declared the direction marker special would test a tokenizer nobody has.
+    """
 
     all_special_ids = [len(PROGEN_TOKENS) - 1]
     pad_token_id = len(PROGEN_TOKENS) - 1
+    eos_token_id = len(PROGEN_TOKENS) - 1
+    unk_token_id = len(PROGEN_TOKENS) - 1
     eos_token = "<|endoftext|>"
+
+    def convert_tokens_to_ids(self, token: str) -> int:
+        return self._ids.get(token, self.unk_token_id)
 
     def __init__(self) -> None:
         self._ids = {token: index for index, token in enumerate(PROGEN_TOKENS)}
@@ -1300,18 +1314,61 @@ class TheParallelBlockTargetIsDeclared(unittest.TestCase):
         )
         self.assertIn("residues", STAGE.symbols_per_token(model, inputs)["unit"])
 
-    def test_the_control_token_is_context_and_the_residues_are_the_targets(self):
+    def test_the_control_token_is_context_and_the_residues_are_the_content(self):
+        """The direction marker is context the model reads and content it is not.
+
+        Both halves matter and they are different masks. The target rule never
+        scores position 0 because nothing predicts the first position of a
+        sequence, and every later position is scored -- the marker is part of the
+        context those predictions are made from. The *content* mask is what stage
+        23 averages the fully-ablated endpoint over, and the marker must be out of
+        it: ProGen3's own residue mask names ``"1"`` and ``"2"`` in
+        ``NON_RESIDUE_TOKENS``, so an endpoint that included this position would
+        not be the quantity the arm it is compared against reports.
+
+        This test asserted the opposite until it was measured. ProGen2 declares
+        only ``<|pad|>``/``<|bos|>``/``<|eos|>`` special and the mask was built
+        from ``all_special_ids`` alone, so the marker stayed in. On
+        ``progen2-small`` at bfloat16 over 32 Swiss-Prot records of 64-246
+        residues, that one position per record displaced the endpoint by 0.68 in
+        relative norm at layer 1 and 0.59 at layer 2, and moved the layer-1 norm
+        anchor from 1.1267 to 1.4993.
+        """
+
         model = _parallel()
+        marker = PROGEN_TOKENS.index("1")
         batch = model.batch(model.render(SEQUENCES[:1]))
         ids = batch["input_ids"][0].tolist()
-        self.assertEqual(ids[0], PROGEN_TOKENS.index("1"))
-        # It is an ordinary vocabulary entry, so the unconditioned content mask
-        # keeps it -- as gpt2 keeps its first token -- while the target rule never
-        # scores it, because nothing predicts the first position.
-        self.assertTrue(bool(model.content_mask(batch)[0, 0]))
+        self.assertEqual(ids[0], marker)
+        self.assertNotIn(marker, StubResidueTokenizer.all_special_ids)
+        self.assertEqual(A.rendering_marker_ids(model.arm), (marker,))
+
+        content = model.content_mask(batch)
+        self.assertFalse(bool(content[0, 0]))
+        self.assertEqual(int(content.sum()), len(SEQUENCES[0]))
         self.assertEqual(
             model._target_mask(batch)[0].tolist(),
             [True] * (len(ids) - 1),
+        )
+
+    def test_no_declared_rendering_marker_reaches_the_content_span(self):
+        """The invariant, over the whole cohort and every marker the format adds.
+
+        Written against :func:`src.transfer.arms.rendering_marker_ids` rather than
+        against a literal id, so a format that starts prefixing a second marker is
+        covered by this test the moment it declares it.
+        """
+
+        model = _parallel()
+        batch = model.batch(model.render(SEQUENCES))
+        content = model.content_mask(batch)
+        markers = A.rendering_marker_ids(model.arm)
+        self.assertTrue(markers)
+        for marker in markers:
+            self.assertFalse(bool((content & (batch["input_ids"] == marker)).any()))
+        # And what remains is exactly the residues: nothing else was dropped.
+        self.assertEqual(
+            content.sum(1).tolist(), [len(sequence) for sequence in SEQUENCES]
         )
 
     def test_the_whole_sweep_runs_on_a_parallel_arm_and_serialises(self):

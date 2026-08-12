@@ -261,12 +261,43 @@ def _matched(**overrides) -> MatchedTraining:
         "d_model": 4096,
         "d_hidden": 16384,
         "k": 64,
+        "auxk": 192,
         "training_token_budget": 68_000_000,
         "training_tokens": 68_000_412,
         "evaluation_sequences": 256,
+        "learning_rate": 2e-4,
+        "weight_decay": 1e-5,
+        "grad_clip": 1.0,
+        "batch_size": 4,
+        "seed": 20260806,
+        "corpus_seed": 20260806,
+        "max_tokens": 1024,
     }
     settings.update(overrides)
     return MatchedTraining(**settings)
+
+
+def _differs_from(value: object) -> object:
+    """A value of the same type that cannot equal ``value``.
+
+    Derived rather than tabulated, which is what lets the guard below walk
+    :data:`MATCHED_TRAINING_FIELDS` itself. A hand-written table would have to be
+    extended alongside the tuple, and a field added to one and not the other is
+    exactly the escape the guard exists to close.
+    """
+
+    if isinstance(value, bool):
+        return not value
+    if isinstance(value, int):
+        return value + 1
+    if isinstance(value, float):
+        return value * 2.0
+    if isinstance(value, str):
+        return value + "_other"
+    raise TypeError(
+        f"no perturbation is defined for a matched field of type {type(value).__name__}; "
+        "this guard cannot certify a field it does not know how to move"
+    )
 
 
 def test_the_two_modes_of_one_checkpoint_are_a_matched_pair() -> None:
@@ -287,27 +318,20 @@ def test_the_two_modes_of_one_checkpoint_are_a_matched_pair() -> None:
     assert record["training_tokens_relative_difference"] < 1e-4
 
 
-@pytest.mark.parametrize(
-    "field,value",
-    [
-        ("num_layers", 24),
-        ("d_model", 2048),
-        ("d_hidden", 49152),
-        ("k", 32),
-        ("training_token_budget", 34_000_000),
-        ("evaluation_sequences", 128),
-        ("backbone_sha256", "b" * 64),
-        ("architecture", "CLT"),
-    ],
-)
-def test_every_field_a_difference_could_be_attributed_to_is_detected(field, value) -> None:
+@pytest.mark.parametrize("field", MATCHED_TRAINING_FIELDS)
+def test_every_field_a_difference_could_be_attributed_to_is_detected(field) -> None:
     """Each of these would read as modality if it moved between the two modes.
 
-    Parametrised over the declared list rather than spot-checked, because the
-    failure this guards is a field being *added* to the pair's configuration and
-    not to the set the comparison refuses on.
+    Parametrised over :data:`MATCHED_TRAINING_FIELDS` **itself**, not over a
+    literal list of eight that happened to match it once. The list was a literal,
+    and the tuple grew past it: two artefacts a hundredfold apart in learning
+    rate, at different seeds and at batch 8 against 64, registered MATCHED with no
+    disagreements while a test whose docstring claimed to walk the declared set
+    kept passing. Walking the tuple means a field added to it and left ungated
+    fails here instead.
     """
 
+    value = _differs_from(getattr(_matched(), field))
     record = compare_matched_training(
         _matched(), _matched(target="prollama:text", **{field: value})
     )
@@ -315,6 +339,81 @@ def test_every_field_a_difference_could_be_attributed_to_is_detected(field, valu
     assert record["disagreements"] == [field]
     assert record["digests_agree"] is False
     assert record["fields"][field]["agree"] is False
+
+
+def test_the_optimisation_block_is_gated_and_the_token_cap_is_reported() -> None:
+    """The two halves of what a settings block must do to a comparison.
+
+    A pair that differs on an optimiser setting must be refused: a dictionary
+    trained at a hundred times the learning rate of its partner is a different
+    object, and attributing the difference to modality would be the whole
+    experiment reading a hyper-parameter.
+
+    A pair that differs only in its token cap must NOT be refused -- a protein
+    rendering pays a wrapper this trainer measures and derives its residue ceiling
+    from -- but the difference has to be on the face of the record, because two
+    dictionaries that saw 512 and 1024 tokens of context did not see the same
+    thing and no verdict here says they did.
+    """
+
+    for field, value in (
+        ("learning_rate", 2e-2),
+        ("seed", 20260811),
+        ("batch_size", 64),
+        ("weight_decay", 0.0),
+        ("grad_clip", 0.5),
+        ("corpus_seed", 20260811),
+        ("auxk", 256),
+    ):
+        record = compare_matched_training(
+            _matched(), _matched(target="prollama:text", **{field: value})
+        )
+        assert record["verdict"] == "MISMATCH", field
+        assert record["disagreements"] == [field]
+
+    capped = compare_matched_training(
+        _matched(), _matched(target="prollama:text", max_tokens=512)
+    )
+    assert capped["verdict"] == "MATCHED"
+    assert capped["disagreements"] == []
+    assert capped["max_tokens"] == [1024, 512]
+    assert capped["max_tokens_agree"] is False
+    assert "max_tokens" not in MATCHED_TRAINING_FIELDS
+
+
+def test_a_declaration_predating_the_optimisation_fields_reads_them_from_its_settings() -> None:
+    """The run's own argument block is the source; the declaration is a projection.
+
+    Dictionaries written before the declaration covered the optimiser carry every
+    one of those values in their settings block. Recovering them there certifies
+    the pair on what the run actually did; requiring a retrain would refuse a
+    campaign over a field that is recorded three lines away.
+    """
+
+    old = {
+        name: value
+        for name, value in _matched().record().items()
+        if name not in ("learning_rate", "weight_decay", "grad_clip", "batch_size",
+                        "seed", "corpus_seed", "max_tokens", "auxk")
+    }
+    recovered = matched_training(
+        old,
+        settings={
+            "auxk": 192,
+            "learning_rate": 2e-4,
+            "weight_decay": 1e-5,
+            "grad_clip": 1.0,
+            "batch_size": 4,
+            "seed": 20260806,
+            "corpus_seed": 20260806,
+            "max_tokens": 1024,
+        },
+    )
+    assert recovered == _matched()
+    # And a declaration with neither is refused rather than defaulted: a pair
+    # certified on fields nobody recorded is what this widening exists to end.
+    with pytest.raises(KeyError, match="learning_rate"):
+        matched_training(old)
 
 
 def test_the_refused_set_is_the_declared_set_and_carries_the_backbone() -> None:

@@ -805,9 +805,21 @@ def main() -> None:
         d_model=config.d_model,
         d_hidden=config.d_hidden,
         k=config.k,
+        auxk=config.auxk,
         training_token_budget=budget or None,
         training_tokens=record.tokens,
         evaluation_sequences=int(args.eval_sequences),
+        # Projected from this run's own arguments, which the settings block below
+        # writes verbatim. The declaration is what a pair is refused on and the
+        # settings block is where the values come from; a second spelling of
+        # either would be a second configuration.
+        learning_rate=float(args.learning_rate),
+        weight_decay=float(args.weight_decay),
+        grad_clip=float(args.grad_clip),
+        batch_size=int(args.batch_size),
+        seed=int(args.seed),
+        corpus_seed=int(args.corpus_seed),
+        max_tokens=int(args.max_tokens),
     )
     # The last loop evaluation *is* the final one. Recomputing it here ran a
     # second 256-sequence sweep per run and produced, necessarily, the identical

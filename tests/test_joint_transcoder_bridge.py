@@ -62,10 +62,12 @@ for entry in (REPO, REPO / "scripts/transfer", Path(__file__).resolve().parent):
     if str(entry) not in sys.path:
         sys.path.insert(0, str(entry))
 
+import numpy as np  # noqa: E402
 import torch  # noqa: E402
 
 from src.transfer import joint_modes as JM  # noqa: E402
 from src.transfer import replaceable as R  # noqa: E402
+from src.transfer.progen3 import Component as R_Component  # noqa: E402
 from src.transfer.transcoders import (  # noqa: E402
     MATCHED_TRAINING_KEY,
     load_trained_transcoder,
@@ -573,6 +575,62 @@ class ADictionaryScoredOnTheOtherModeIsRefused(unittest.TestCase):
         # The four ProGen3 checkpoints written before the record existed keep
         # loading, and the artefact says the check did not run.
         self.assertFalse(STAGE15.require_matching_arm(None, "progen3"))
+
+
+# ------------------------------------------------ the causal sweep, end to end
+
+
+class TheCausalSweepRunsOnTheGridTheModelDeclares(unittest.TestCase):
+    """A joint checkpoint must be scoreable to the end, or refuse before the cost.
+
+    Nothing exercised the causal sweep on any model, and the gap cost a live
+    campaign four scoring runs. ``components()`` emitted every attention head for
+    every implementation, ``JointReplaceable.ablated`` refused every one of them,
+    and the two only meet at the last step of the stage -- after the behavioural
+    sweep is computed and before anything is written -- so each run died with its
+    numbers in memory and nothing on disk, and re-dispatching reproduced it.
+
+    So: the grid a joint model declares is a grid it will ablate, the sweep over
+    that grid completes, a grid it will *not* ablate is refused where refusing is
+    free rather than where it is expensive, and a dense arm's two families are
+    untouched by the restriction.
+    """
+
+    def test_the_joint_grid_is_the_block_family_and_every_component_ablates(self):
+        model = _joint("protein")
+        grid = model.components()
+        self.assertEqual(STAGE15.families(grid), (model.block_kind,))
+        self.assertEqual(len(grid), model.n_layers)
+        self.assertEqual({component.kind for component in grid}, {model.block_kind})
+        for component in grid:
+            with model.ablated(component):
+                pass
+
+    def test_the_causal_sweep_completes_on_a_joint_checkpoint(self):
+        model = _joint("protein")
+        grid = model.components()
+        inputs = model.render(SEQUENCES[:2])
+        effects = STAGE15.component_effects(model, inputs, grid, batch_size=2)
+        self.assertEqual(effects.shape, (len(grid), len(inputs)))
+        self.assertTrue(np.isfinite(effects).all())
+
+    def test_a_component_the_model_refuses_is_caught_before_any_sweep(self):
+        model = _joint("protein")
+        smuggled = model.components() + [R_Component("attention_head", 0, 0)]
+        with self.assertRaises(ValueError) as caught:
+            STAGE15.check_grid_is_ablatable(model, smuggled)
+        self.assertIn("attention_head", str(caught.exception))
+
+    def test_a_dense_arm_still_declares_and_sweeps_both_families(self):
+        # The joint restriction must not have narrowed the panel path: a dense arm
+        # carries an attention output projection and its grid is unchanged.
+        model = _dense()
+        grid = model.components()
+        self.assertEqual(
+            STAGE15.families(grid), ("attention_head", model.block_kind)
+        )
+        self.assertEqual(len(grid), model.n_layers * (model.n_heads + 1))
+        STAGE15.check_grid_is_ablatable(model, grid)
 
 
 # ---------------------------------------------------------------- the panel path

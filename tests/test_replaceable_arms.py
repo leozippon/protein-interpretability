@@ -39,7 +39,11 @@ from src.transfer.arms import (  # noqa: E402
     load_arm,
 )
 from src.transfer.budget import arm_power  # noqa: E402
-from src.transfer.progen3 import component_grid, components  # noqa: E402
+from src.transfer.progen3 import (  # noqa: E402
+    NON_RESIDUE_TOKENS,
+    component_grid,
+    components,
+)
 from src.transfer.transcoders import TranscoderConfig  # noqa: E402
 
 
@@ -445,16 +449,35 @@ class _StubTokenizer:
     all_special_ids = [1]
     unk_token_id = 1
     pad_token_id = 1
+    eos_token_id = 1
     eos_token = "<|endoftext|>"
 
+    #: ``"1"`` is here because ProGen2's rendering prefixes it and its tokenizer
+    #: does *not* declare it special -- the same arrangement as the three ZymCTRL
+    #: markers, one format along.
+    _IDS = {"<sep>": 2, "<start>": 3, "<end>": 4, "1": 5}
+
     def convert_tokens_to_ids(self, token):
-        return {"<sep>": 2, "<start>": 3, "<end>": 4}[token]
+        return self._IDS.get(token, self.unk_token_id)
 
 
 def _stub(arm_name: str) -> R.DenseReplaceable:
-    return R.DenseReplaceable(
+    """The panel arm behind its own replaceable class, with no weights.
+
+    The class is resolved from the declared architecture rather than fixed, so a
+    parallel-residual arm is stubbed through the implementation that actually
+    runs it; ``DenseReplaceable`` refuses ``progen`` by construction.
+    """
+
+    spec = PANEL[arm_name]
+    implementation = (
+        R.ParallelResidualReplaceable
+        if spec.architecture in R.PARALLEL_ARCHITECTURES
+        else R.DenseReplaceable
+    )
+    return implementation(
         Arm(
-            spec=PANEL[arm_name],
+            spec=spec,
             model=None,
             tokenizer=_StubTokenizer(),
             device="cpu",
@@ -530,8 +553,10 @@ class ConditionedScoredPositions(unittest.TestCase):
             model._target_mask(batch)[0].tolist(),
             batch["attention_mask"][0, 1:].bool().tolist(),
         )
-        # And its content mask still keeps position 0, which the conditioned
-        # branch cannot: changing that would move every frozen dense result.
+        # And its content mask still keeps position 0. A raw text rendering
+        # prefixes nothing, so it declares no marker and the marker term is empty;
+        # changing that would move every frozen dense result.
+        self.assertEqual(A.rendering_marker_ids(model.arm), ())
         self.assertTrue(bool(model.content_mask(batch)[0, 0]))
 
     def test_a_conditioned_render_without_labels_is_refused(self):
@@ -547,6 +572,71 @@ class ConditionedScoredPositions(unittest.TestCase):
     def test_the_rendering_is_the_panels_own_and_carries_the_prompt(self):
         rendered = _stub("zymctrl").render(["MNL"], ec_labels=["1.3.7.7"])
         self.assertEqual(rendered, ["1.3.7.7<sep><start>MNL<end>"])
+
+
+class RenderingMarkersAreNotContent(unittest.TestCase):
+    """No marker an arm's rendering prefixes may sit in its content span.
+
+    The condition that must hold on every input format, and the one that did not.
+    The unconditioned branch removed the tokenizer's *special* ids alone, which is
+    complete for ProtGPT2 -- whose end-of-text prefix is a special token -- and
+    silently incomplete for ProGen2, whose N-to-C direction marker is an ordinary
+    vocabulary entry. Stage 23 averages the fully-ablated endpoint every recovery
+    ratio divides by over exactly these positions, and on ``progen2-small`` at
+    bfloat16 over 32 Swiss-Prot records of 64-246 residues the one surviving
+    marker per record moved that endpoint by 0.68 in relative norm at layer 1.
+
+    Written against :func:`src.transfer.arms.rendering_marker_ids` rather than
+    against literal ids, so a format that begins prefixing a marker is covered by
+    this test as soon as it declares one.
+    """
+
+    #: One row per unconditioned format: the arm, the ids of a rendered record
+    #: with whatever its format prefixes in front and two padding positions
+    #: behind, and which of those positions are content. Id ``1`` is this stub's
+    #: only special id and is its pad as well, which is the arrangement every
+    #: GPT-2-lineage arm has -- so row two carries the same id as a *prefix* and as
+    #: *padding*, and both must be out.
+    CASES = (
+        ("gpt2-large", [10, 11, 12, 13, 1, 1], [True, True, True, True, False, False]),
+        ("protgpt2", [1, 10, 11, 12, 1, 1], [False, True, True, True, False, False]),
+        ("progen2-medium", [5, 10, 11, 12, 1, 1], [False, True, True, True, False, False]),
+    )
+
+    def test_the_mask_keeps_no_declared_marker_on_any_unconditioned_format(self):
+        for arm_name, ids, expected in self.CASES:
+            with self.subTest(arm=arm_name):
+                model = _stub(arm_name)
+                batch = {
+                    "input_ids": torch.tensor([ids]),
+                    "attention_mask": torch.tensor([[1] * (len(ids) - 2) + [0, 0]]),
+                }
+                mask = model.content_mask(batch)
+                self.assertEqual(mask[0].tolist(), expected)
+                for marker in A.rendering_marker_ids(model.arm):
+                    self.assertFalse(
+                        bool((mask & (batch["input_ids"] == marker)).any()),
+                        f"{arm_name} keeps its own rendering marker {marker}",
+                    )
+
+    def test_the_direction_marker_is_not_reachable_through_the_special_ids(self):
+        # Why the fix could not be "the tokenizer already knows": it does not.
+        # ProGen3 names "1" and "2" in NON_RESIDUE_TOKENS and ProGen2 declares
+        # neither special, so the two arms' content spans disagreed by one
+        # position per record while both were described as the same convention.
+        model = _stub("progen2-medium")
+        markers = A.rendering_marker_ids(model.arm)
+        self.assertEqual(markers, (5,))
+        self.assertNotIn(markers[0], _StubTokenizer.all_special_ids)
+        self.assertIn("1", NON_RESIDUE_TOKENS)
+
+    def test_a_conditioned_rendering_is_refused_rather_than_partly_described(self):
+        # Its EC digits carry no marker id, so a set of ids cannot describe the
+        # span that is not content, and returning the three delimiters would leave
+        # seven digit positions inside it.
+        with self.assertRaises(ValueError) as raised:
+            A.rendering_marker_ids(_stub("zymctrl").arm)
+        self.assertIn("conditioning_boundary_ids", str(raised.exception))
 
 
 class CorpusStreams(unittest.TestCase):
