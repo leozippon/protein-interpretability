@@ -25,8 +25,10 @@ unrelated positions while still coming out finite and plausible.
 
 **What is measured.** Both checkpoints are fed the same records in the same order,
 and at a declared per-layer tensor, over content-masked scored positions only,
-four maps are fitted on a training split and reported on a disjoint held-out
-split:
+four maps are fitted on a training split and reported on a held-out split that
+shares no near-duplicate group with it -- see :func:`draw_splits`, because on a
+protein corpus the record is not the unit of independence and a record-level
+split is not a held-out split:
 
 ``identity``
     no map at all -- the raw activation difference.
@@ -135,6 +137,11 @@ from src.transfer.arms import (  # noqa: E402
     iter_corpus_records,
 )
 from src.transfer.io import sha256_file, write_json  # noqa: E402
+from src.transfer.near_duplicates import (  # noqa: E402
+    boundary_containment,
+    group_disjoint_split,
+    near_duplicate_groups,
+)
 from src.transfer.replaceable import (  # noqa: E402
     JOINT_MODES,
     JointReplaceable,
@@ -188,6 +195,7 @@ PROVENANCE_MODULES = (
     "src/transfer/replaceable.py",
     "src/transfer/joint_modes.py",
     "src/transfer/arms.py",
+    "src/transfer/near_duplicates.py",
     "src/transfer/io.py",
     "scripts/transfer/17_train_transcoder.py",
     "scripts/transfer/21_joint_mode_qualification.py",
@@ -411,6 +419,7 @@ def draw_splits(
     n_eval: int,
     seed: int,
     skip: int,
+    symbol_unit: str,
 ) -> tuple[list[tuple[str, str | None]], list[tuple[str, str | None]], dict[str, Any]]:
     """One seeded pool, split into a training and a held-out half.
 
@@ -422,12 +431,34 @@ def draw_splits(
     another would put a population gap between the map and the number that judges
     it, and the gap would read as a failure of the map. Drawing one pool and
     splitting it under a seeded permutation makes the two halves samples of one
-    population by construction, and disjoint by construction.
+    population by construction.
+
+    **The record is not the unit of independence, and on this corpus it is not
+    close.** The split is taken over near-duplicate *groups*
+    (:mod:`src.transfer.near_duplicates`), not over records, because a
+    record-level split of a protein pool is not a held-out split: 41.4% of the
+    held-out records of the Swiss-Prot pool this stage draws have a relative in
+    the training split at 95% or higher identity, while only 17.4% are exact, so
+    the exact-string check below caught at most two fifths of the leakage even
+    when it passed. Splitting by group takes the measured figure to zero at every
+    identity boundary from 90% up, on both the Swiss-Prot and the UniRef50 pool,
+    against a DIAMOND all-against-all of the pool. The leakage is not neutral
+    between the two pairings this stage reports -- the shuffled null destroys
+    position correspondence and so does not benefit from it -- and it therefore
+    widens the true-against-shuffled gap that decides R2.4.
+
+    Nothing moves on the text side. Every group of the 10,240-document OpenWebText
+    pool is a singleton, so the group split *is* the record split there, and this
+    function reproduces the training split of the completed text-mode cell exactly
+    -- which is what makes the two modes one procedure rather than two.
 
     ``skip`` moves the pool through the corpus in file order. A second run at a
     different value IS the skip-offset sensitivity Appendix B rule 1 requires; the
     seed cannot supply it, because the shuffled reservoir permutes *within* blocks
-    that are read in file order and so leaves the region unchanged.
+    that are read in file order and so leaves the region unchanged. It does not
+    repair redundancy: in band 32-507 the distinct fraction of this pool is 0.874,
+    0.865, 0.879, 0.854 and 0.905 at skips 0, 4,096, 10,240, 20,480 and 40,960,
+    and 0.891 at skip 0 in band 32-1022.
     """
 
     total = int(n_train) + int(n_eval)
@@ -440,24 +471,35 @@ def draw_splits(
             f"skip of {skip}. Lower --train-records/--eval-records or --skip rather "
             "than fitting and evaluating on fewer positions than declared"
         )
+    sequences = [record for record, _ in pool]
+    groups, grouping = near_duplicate_groups(sequences, unit=symbol_unit)
+    mask, split = group_disjoint_split(groups, n_train=n_train, seed=seed + 1)
+
+    # Records are emitted in the seeded permutation's order rather than in pool
+    # order. Batches are formed by walking these lists, so the order decides which
+    # records share a batch and therefore the scope of the shuffled-pairing null;
+    # keeping the permutation is also what makes the all-singleton case reproduce
+    # the record-level split of the completed text-mode cell exactly.
     order = np.random.default_rng(seed + 1).permutation(len(pool))
-    train = [pool[int(index)] for index in order[:n_train]]
-    evaluation = [pool[int(index)] for index in order[n_train:]]
+    train = [pool[int(index)] for index in order if mask[int(index)]]
+    evaluation = [pool[int(index)] for index in order if not mask[int(index)]]
 
     shared = {record for record, _ in train} & {record for record, _ in evaluation}
     if shared:
         raise RuntimeError(
             f"{len(shared)} record(s) appear in both splits, so the held-out split "
             "is not held out and every map fitted on the training split would be "
-            "reported partly on itself. The two halves are index-disjoint by "
-            "construction, so this means the corpus carries duplicate records in "
-            "this band; raise --skip or narrow the band"
+            "reported partly on itself. Two identical records carry identical "
+            "shingle sets and are grouped together, so this can only mean records "
+            "too short to carry a shingle at all "
+            f"({grouping['n_records_without_shingles']} in this pool); narrow the "
+            "band rather than proceeding"
         )
     return (
         train,
         evaluation,
         {
-            "verdict": "DISJOINT",
+            "verdict": "NEAR_DUPLICATE_DISJOINT",
             "pool_records": len(pool),
             "train_records": len(train),
             "eval_records": len(evaluation),
@@ -466,9 +508,26 @@ def draw_splits(
             "blocks_spanned": -(-total // int(STAGE17.SHUFFLE_BLOCK)),
             "draw": (
                 "one seeded shuffled-reservoir draw of train+eval records past "
-                "--skip, then a seeded permutation splits it. Both halves are "
-                "therefore samples of ONE population and disjoint by index; content "
-                "overlap is checked separately and refuses"
+                "--skip, then a seeded split over NEAR-DUPLICATE GROUPS of that "
+                "one pool. Both halves are therefore samples of one population, and "
+                "no group of mutually near-duplicate records straddles them; exact "
+                "content overlap is re-checked afterwards and refuses"
+            ),
+            "grouping": grouping,
+            "group_split": split,
+            "boundary_containment": boundary_containment(
+                sequences, mask, unit=symbol_unit
+            ),
+            "residual_homology": (
+                "near-duplication is grouped; homology is NOT. Close and remote "
+                "homologues may still fall on opposite sides, and on the Swiss-Prot "
+                "pool 855 of 2,043 held-out records keep a relative in the training "
+                "split at 70% identity or above after this split (93 of 2,048 on a "
+                "UniRef50 pool). That boundary is where it is because a "
+                "near-duplicate gate is attainable on the text control under this "
+                "same procedure and a homology gate has no text analogue at all; "
+                "gating it would hold the protein side to a criterion the text side "
+                "is not defined under. Measured, declared, not gated"
             ),
             "skip_offset_sensitivity": (
                 "not measured by one run. Re-run at a different --skip: the seed "
@@ -1319,12 +1378,17 @@ def main() -> None:
     def records() -> Iterator[tuple[str, str | None]]:
         return iter_corpus_records(source, min_symbols=low, max_symbols=high)
 
+    # What the corpus is made of, decided once: it is both the band's unit and the
+    # unit the near-duplicate relation shingles in, and two names for it would let
+    # a run band in residues and group in words.
+    symbol_unit = "characters" if source == "openwebtext" else "residues"
     train, evaluation, splits = draw_splits(
         records,
         n_train=args.train_records,
         n_eval=args.eval_records,
         seed=args.seed,
         skip=args.skip,
+        symbol_unit=symbol_unit,
     )
     print(
         f"[cohort] {splits['train_records']} train / {splits['eval_records']} "
@@ -1395,6 +1459,15 @@ def main() -> None:
         "one_draw": (
             "one pool at one --skip. The skip-offset sensitivity Appendix B rule 1 "
             "requires is a second run, and this artefact is one point of it"
+        ),
+        "held_out_is_near_duplicate_disjoint_not_homology_disjoint": (
+            "the two splits share no near-duplicate group, which is what makes the "
+            "held-out numbers held out; they may still share close and remote "
+            "homologues, and how much they do is measured per held-out record in "
+            "cohort.splits.boundary_containment rather than assumed. A residual "
+            "homology of that kind can only make the true-pairing fit look better "
+            "than it is, because the shuffled null destroys the position "
+            "correspondence it works through"
         ),
         "precision": (
             f"both checkpoints are loaded at {INFERENCE_DTYPE} and every statistic, "
@@ -1476,7 +1549,7 @@ def main() -> None:
             "corpus": str(corpus),
             "corpus_source": source,
             "symbol_band": [low, high],
-            "symbol_unit": "characters" if source == "openwebtext" else "residues",
+            "symbol_unit": symbol_unit,
             "input_rendering": reference.rendering_note,
             "scored_positions": reference.scoring_note,
             "splits": splits,

@@ -15,8 +15,15 @@ the batch tensors and the content masks are compared on every batch.
 
 **The held-out split is held out.** A map with ``d^2`` free parameters reported on
 positions it was fitted on is not a measurement. The two splits are one seeded
-pool split under a permutation -- so they are samples of one population rather
-than two regions of a cluster-ordered corpus -- and a content overlap refuses.
+pool -- so they are samples of one population rather than two regions of a
+cluster-ordered corpus -- split over near-duplicate *groups* rather than over
+records, because on a protein corpus the record is not the unit of independence:
+41.4% of the held-out records of the Swiss-Prot pool this stage draws have a
+relative at 95% identity or above while only 17.4% are exact, so a record-level
+split with an exact-string check is not a held-out split. Whichever unit the
+corpus is made of, a group may not straddle the two halves, exact content overlap
+still refuses, and a pool that cannot be partitioned refuses rather than reporting
+a fraction it did not achieve.
 
 **The estimators are the estimators.** A perfect linear relation must come back at
 a near-zero ``ridge`` residual and a large ``identity`` one, a perfect rotation at
@@ -62,6 +69,7 @@ for entry in (REPO, REPO / "scripts/transfer", Path(__file__).resolve().parent):
     if str(entry) not in sys.path:
         sys.path.insert(0, str(entry))
 
+import numpy  # noqa: E402
 import torch  # noqa: E402
 
 from src.transfer import arms as A  # noqa: E402
@@ -470,65 +478,155 @@ class TwoCheckpointsMustBeComparableBeforeAnythingIsMeasured(unittest.TestCase):
 
 
 class TheHeldOutSplitMustBeHeldOut(unittest.TestCase):
+    """Records are realistic, because the property under test is about content.
+
+    A fixture of ``record-0000``, ``record-0001``, ... would be one near-duplicate
+    group -- the strings differ in one character -- so it could only ever exercise
+    the refusal. Random sequences over the canonical alphabet are unrelated by
+    construction, and the near-duplicates the tests need are planted explicitly so
+    that what each test is about is visible in the fixture.
+    """
+
+    ALPHABET = "ACDEFGHIKLMNPQRSTVWY"
+
     def _corpus(self, records):
         return lambda: iter((record, None) for record in records)
 
+    def _sequences(self, n, *, length=120, seed=0):
+        rng = numpy.random.default_rng(seed)
+        return [
+            "".join(self.ALPHABET[int(i)] for i in rng.integers(0, 20, size=length))
+            for _ in range(n)
+        ]
+
+    def _mutate(self, sequence, *, seed):
+        rng = numpy.random.default_rng(seed)
+        residues = list(sequence)
+        for position in rng.choice(len(residues), size=3, replace=False):
+            residues[int(position)] = self.ALPHABET[int(rng.integers(0, 20))]
+        return "".join(residues)
+
     def test_the_two_splits_are_one_pool_and_are_disjoint(self):
-        records = [f"record-{index:04d}" for index in range(64)]
+        records = self._sequences(64, seed=1)
         train, evaluation, splits = STAGE.draw_splits(
-            self._corpus(records), n_train=40, n_eval=16, seed=5, skip=0
+            self._corpus(records), n_train=40, n_eval=16, seed=5, skip=0,
+            symbol_unit="residues",
         )
-        self.assertEqual(splits["verdict"], "DISJOINT")
+        self.assertEqual(splits["verdict"], "NEAR_DUPLICATE_DISJOINT")
         self.assertEqual((len(train), len(evaluation)), (40, 16))
         self.assertEqual(set(record for record, _ in train) & set(r for r, _ in evaluation), set())
+        # Unrelated records: every group is a singleton, so the group split IS the
+        # record split and the requested sizes are met exactly.
+        self.assertEqual(splits["grouping"]["n_groups"], 56)
+        self.assertEqual(splits["boundary_containment"]["n_above_threshold"], 0)
         # One pool: the union is exactly the drawn records, and neither half is a
         # contiguous region of the corpus's own file order -- which is the failure
         # a prefix draw would produce (Appendix B rule 1).
+        position = {record: index for index, record in enumerate(records)}
         drawn = {record for record, _ in train} | {record for record, _ in evaluation}
         self.assertEqual(len(drawn), 56)
         for half in (train, evaluation):
-            indices = sorted(int(record.split("-")[1]) for record, _ in half)
+            indices = sorted(position[record] for record, _ in half)
             self.assertLess(indices[0], 32)
             self.assertGreaterEqual(indices[-1], 32)
 
-    def test_a_duplicated_record_across_the_two_splits_is_refused(self):
+    def test_near_duplicates_are_kept_on_one_side_rather_than_straddling(self):
+        # The property the whole change exists for. Under a record-level split
+        # these four would be scattered across both halves at this seed; under a
+        # group split they cannot be, and the boundary audit confirms it on the
+        # returned mask rather than on the construction.
+        records = self._sequences(60, seed=2)
+        planted = records[0]
+        for index in (10, 25, 41):
+            records[index] = self._mutate(planted, seed=index)
+        train, evaluation, splits = STAGE.draw_splits(
+            self._corpus(records), n_train=40, n_eval=16, seed=5, skip=0,
+            symbol_unit="residues",
+        )
+        family = {records[index] for index in (0, 10, 25, 41)}
+        left = family & {record for record, _ in train}
+        right = family & {record for record, _ in evaluation}
+        self.assertTrue(bool(left) != bool(right), "the planted group straddles the split")
+        self.assertEqual(splits["grouping"]["largest_group_size"], 4)
+        self.assertEqual(splits["boundary_containment"]["n_above_threshold"], 0)
+        self.assertEqual(splits["group_split"]["verdict"], "GROUP_DISJOINT")
+
+    def test_a_pool_of_one_near_duplicate_group_is_refused(self):
+        # The guard is the feature. A corpus band that yields one family has no
+        # held-out split, and saying so is the correct outcome.
         with self.assertRaises(RuntimeError) as caught:
             STAGE.draw_splits(
-                self._corpus(["same"] * 64), n_train=40, n_eval=16, seed=5, skip=0
+                self._corpus([self._sequences(1, seed=3)[0]] * 64),
+                n_train=40, n_eval=16, seed=5, skip=0, symbol_unit="residues",
             )
-        self.assertIn("both splits", str(caught.exception))
+        self.assertIn("homology cluster", str(caught.exception))
+
+    def test_a_pool_dominated_by_one_group_is_refused_rather_than_rebalanced(self):
+        base = self._sequences(1, length=200, seed=4)[0]
+        records = self._sequences(11, seed=5) + [
+            self._mutate(base, seed=100 + index) for index in range(45)
+        ]
+        with self.assertRaises(RuntimeError) as caught:
+            STAGE.draw_splits(
+                self._corpus(records), n_train=40, n_eval=16, seed=5, skip=0,
+                symbol_unit="residues",
+            )
+        self.assertIn("cannot be partitioned at the requested fraction", str(caught.exception))
 
     def test_a_corpus_too_small_for_the_declared_splits_is_refused(self):
         with self.assertRaises(RuntimeError) as caught:
             STAGE.draw_splits(
-                self._corpus([f"r{i}" for i in range(10)]),
+                self._corpus(self._sequences(10, seed=6)),
                 n_train=40,
                 n_eval=16,
                 seed=5,
                 skip=0,
+                symbol_unit="residues",
             )
         self.assertIn("ran out", str(caught.exception))
+
+    def test_a_text_pool_of_singletons_splits_exactly_as_a_record_draw_would(self):
+        # Attainability before application: the gate this stage now applies to a
+        # protein arm has to be attainable on the text control under the same
+        # procedure. It is, and more than that -- with every group a singleton the
+        # group split reproduces the record-level permutation split exactly, which
+        # is what keeps the completed text-mode cell comparable with the protein
+        # one instead of superseding it.
+        documents = [
+            f"document {index} " + " ".join(
+                f"w{index}x{word}" for word in range(40)
+            )
+            for index in range(64)
+        ]
+        train, evaluation, splits = STAGE.draw_splits(
+            self._corpus(documents), n_train=40, n_eval=16, seed=5, skip=0,
+            symbol_unit="characters",
+        )
+        self.assertEqual(splits["grouping"]["n_groups"], 56)
+        pool = list(STAGE.STAGE17.stream_records(self._corpus(documents), seed=5, skip=0, limit=56))
+        order = numpy.random.default_rng(5 + 1).permutation(len(pool))
+        self.assertEqual(train, [pool[int(index)] for index in order[:40]])
+        self.assertEqual(evaluation, [pool[int(index)] for index in order[40:]])
 
     def test_the_skip_moves_the_pool_through_the_corpus(self):
         # The seed permutes WITHIN blocks read in file order, so only --skip can
         # produce the skip-offset sensitivity Appendix B rule 1 requires.
-        records = [f"record-{index:04d}" for index in range(200)]
+        records = self._sequences(200, seed=7)
+        position = {record: index for index, record in enumerate(records)}
         head, held, _ = STAGE.draw_splits(
-            self._corpus(records), n_train=40, n_eval=16, seed=5, skip=0
+            self._corpus(records), n_train=40, n_eval=16, seed=5, skip=0,
+            symbol_unit="residues",
         )
         tail, tail_held, facts = STAGE.draw_splits(
-            self._corpus(records), n_train=40, n_eval=16, seed=5, skip=120
+            self._corpus(records), n_train=40, n_eval=16, seed=5, skip=120,
+            symbol_unit="residues",
         )
         self.assertEqual(facts["skip_records"], 120)
         # Everything past the skip and nothing before it: the pool is a different
         # region of the corpus, which is what a sensitivity re-run needs and what
         # the seed alone cannot produce.
-        self.assertTrue(
-            all(int(record.split("-")[1]) >= 120 for record, _ in tail + tail_held)
-        )
-        self.assertTrue(
-            any(int(record.split("-")[1]) < 120 for record, _ in head + held)
-        )
+        self.assertTrue(all(position[record] >= 120 for record, _ in tail + tail_held))
+        self.assertTrue(any(position[record] < 120 for record, _ in head + held))
 
 
 class BothCheckpointsMustReceiveTheSameInput(unittest.TestCase):
@@ -656,16 +754,38 @@ def _numbers(node) -> list[float]:
 
 
 def _protein_corpus(count: int = 64) -> list[str]:
-    """Distinct canonical sequences, so the two splits cannot overlap by content."""
+    """Unrelated canonical sequences, drawn rather than derived from four bases.
 
+    This fixture used to cycle ``SEQUENCES`` and append a poly-residue tail, and
+    its docstring said that made the records distinct "so the two splits cannot
+    overlap by content". Every record was distinct and every sixteen of them were
+    near-copies of one base sequence, which is exactly the inference
+    :func:`STAGE.draw_splits` now refuses -- so the end-to-end run on this corpus
+    would refuse too, and rightly. Distinctness is not independence, which is the
+    property the whole stage rests on. Drawn from the canonical alphabet, which
+    the stub tokenizer carries whole as singles and pairs, so no draw can grow its
+    vocabulary past the stub model's embedding.
+    """
+
+    rng = numpy.random.default_rng(20260728)
     return [
-        SEQUENCES[index % len(SEQUENCES)] + A.AA20[index % 20] * (1 + index // 20)
-        for index in range(count)
+        "".join(A.AA20[int(index)] for index in rng.integers(0, 20, size=33 + (position % 5)))
+        for position in range(count)
     ]
 
 
 def _text_corpus(count: int = 64) -> list[str]:
-    return [f"{DOCUMENTS[index % len(DOCUMENTS)]} in the {index}th year" for index in range(count)]
+    """Documents over the stub's own word set, in independent draws.
+
+    Same repair and same reason: appending ``in the Nth year`` to one of four
+    documents produced records that share every word five-gram but one.
+    """
+
+    rng = numpy.random.default_rng(20260729)
+    vocabulary = sorted({word for document in DOCUMENTS for word in document.split()})
+    return [
+        " ".join(str(word) for word in rng.choice(vocabulary, size=11)) for _ in range(count)
+    ]
 
 
 def _run(directory: Path, mode: str, tokenizer, checkpoints, corpus, **overrides) -> dict:
