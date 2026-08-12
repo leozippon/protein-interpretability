@@ -514,6 +514,33 @@ class ReplaceableModel(ABC):
     # -- gates -------------------------------------------------------------
 
     @abstractmethod
+    def estimand_identity(self) -> dict[str, Any]:
+        """Verify on the live forward pass that the intercepted tensor IS this
+        block's residual write, and refuse rather than report if it is not.
+
+        **Abstract because every implementation must answer it, not because every
+        implementation answers it the same way.** What "the block's residual
+        write" means differs by layout -- a serial block's feed-forward output is
+        the whole of it, a parallel block's is one of two terms in the same sum --
+        so the reconstruction each implementation checks is its own. What cannot
+        differ is whether it is checked at all.
+
+        This was not abstract while one implementation lacked it, and the one that
+        lacked it was ``ProGen3Replaceable``: the arm every dense arm's
+        replacement and perturbation numbers are quoted against was certified by
+        declaration while the arms compared to it were certified by measurement
+        (EXP-R2-181). Nothing raised, because nothing asked. Declaring it here is
+        the same fix one level up from collapsing :meth:`components` and
+        :meth:`ablated` into one declaration: a fourth implementation cannot now
+        ship without answering the question, and a reader of any artefact knows
+        the answer was demanded rather than volunteered.
+
+        Returns the record :meth:`self_check` embeds under ``estimand``: at
+        minimum the worst absolute difference, the identity in words, and a
+        verdict.
+        """
+
+    @abstractmethod
     def self_check(self) -> dict[str, Any]:
         """Refuse to be measured unless a scored quantity is in its declared band."""
 
