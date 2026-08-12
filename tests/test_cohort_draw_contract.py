@@ -284,6 +284,28 @@ class EveryCorpusDrawDeclaresItsSeed(unittest.TestCase):
                 "21_joint_mode_qualification.py",
                 "22_neuron_basis_circuit.py",
                 "23_perturbation_sensitivity.py",
+                # Draws circuit_primitives' analysis cohort, at the same band and
+                # under the same seeded permutation, because the collision null it
+                # builds has to be read against a census whose probes came from
+                # that same unigram.
+                "27_collision_null_census.py",
+                # Draws text_cohort directly and builds its own accession-bearing
+                # protein cohort, because a family-disjoint split needs the
+                # accession that protein_cohort discards. That constructor is not
+                # in CORPUS_CONSTRUCTORS, so the seed discipline it is held to is
+                # the one below -- the flag, its imported default, and the
+                # skip-offset window -- plus the stage's own check that its
+                # eligible set matches arms._eligible_protein_records exactly.
+                "26_concept_lens.py",
+                # Its `cohort` stage draws nothing -- its units are ProteinGym
+                # position pairs and the corpus alignments already searched by
+                # 20_retrieval_bound.py -- but its `attainability` stage draws
+                # both constructors, because A1's planted-coupling probes are
+                # carried by real sequences and real documents rather than by
+                # sampled symbols. One drawing stage inside the file is what the
+                # contract governs, so it is registered here rather than
+                # exempted on the strength of the half that does not draw.
+                "28_epistasis_coupling.py",
             },
         )
 
