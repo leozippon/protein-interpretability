@@ -1230,6 +1230,14 @@ build_command() {
             --device "cuda:${gpu}"
             --out "${out_dir}/${item}")
       ;;
+    collision_null_census)
+      # Panel-scoped like 04: the family-wise levels, the bootstrap and the probe
+      # geometry are properties of the comparison rather than of one arm, and a
+      # per-arm dispatch would let them drift between the arms being compared.
+      CMD+=("${TRANSFER_SCRIPTS}/27_collision_null_census.py"
+            --arms "${COLLISION_NULL_ARMS[@]}" --device "cuda:${gpu}"
+            --out "${out_dir}")
+      ;;
     *)
       echo "build_command: unknown stage ${stage}" >&2
       exit 2
@@ -1812,6 +1820,10 @@ run_induction_path_patching() {
   run_panel_stage induction_path_patching "${GPU_LIST[0]}" "${PATH_PATCHING_ARMS[@]}"
 }
 
+run_collision_null_census() {
+  run_panel_stage collision_null_census "${GPU_LIST[0]}" "${COLLISION_NULL_ARMS[@]}"
+}
+
 # ----------------------------------------------------------------- main
 
 KNOWN_STAGES="${TRANSFER_STAGE_ORDER}"
@@ -1907,6 +1919,7 @@ read -r -a CIRCUIT_ARMS <<< "${STAGE_ARMS_FOR[circuit_primitives]:-}"
 read -r -a HOMOLOGY_ARMS <<< "${STAGE_ARMS_FOR[homology_control]:-}"
 read -r -a PATH_PATCHING_ARMS <<< "${STAGE_ARMS_FOR[induction_path_patching]:-}"
 read -r -a PAA_CENSUS_ARMS <<< "${STAGE_ARMS_FOR[paa_census]:-}"
+read -r -a COLLISION_NULL_ARMS <<< "${STAGE_ARMS_FOR[collision_null_census]:-}"
 
 # cohort_power's item split, also from the contract: by vocabulary regime for
 # the truncation-curve guard, and the residue arms isolated further for their
@@ -1995,6 +2008,7 @@ dispatch_stage induction_path_patching run_induction_path_patching
 # the two panel-scoped stages above do. Last in the tier for that reason: it is
 # the only stage here that can absorb the whole allocation.
 dispatch_stage paa_census run_stage_wave paa_census "${PAA_CENSUS_ARMS[@]}"
+dispatch_stage collision_null_census run_collision_null_census
 
 record_host_state "after the campaign"
 

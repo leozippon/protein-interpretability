@@ -6,7 +6,7 @@
 # the two disagree, so a stale copy cannot reach a measurement.
 TRANSFER_CONTRACT_SCHEMA='r2_transfer_panel_contract_v5'
 TRANSFER_CAMPAIGN_PANEL='gpt2 gpt2-medium gpt2-large gpt2-xl dialogpt-small qwen2.5-0.5b llama-3.2-3b protgpt2 zymctrl progen2-base progen2-medium progen2-small bygpt5-medium-en'
-TRANSFER_STAGE_ORDER='cohort_power pathway_budget estimand_power circuit_primitives relational_channel explanation_channel convergence_control lens_family probe_and_erasure homology_control induction_path_patching paa_census'
+TRANSFER_STAGE_ORDER='cohort_power pathway_budget estimand_power circuit_primitives relational_channel explanation_channel convergence_control lens_family probe_and_erasure homology_control induction_path_patching paa_census collision_null_census'
 TRANSFER_PAA_CENSUS_WIDTH='192'
 declare -A TRANSFER_STAGE_SCOPE=()
 declare -A TRANSFER_STAGE_ENTRY=()
@@ -160,6 +160,9 @@ TRANSFER_STAGE_SCOPE['paa_census']='per_arm'
 TRANSFER_STAGE_ENTRY['paa_census']='14_paa_census.py'
 TRANSFER_STAGE_ARMS['paa_census']='gpt2 gpt2-medium gpt2-large gpt2-xl dialogpt-small qwen2.5-0.5b llama-3.2-3b protgpt2 progen2-base progen2-medium progen2-small bygpt5-medium-en'
 TRANSFER_STAGE_REFUSAL['paa_census/zymctrl']='input_format '\''ec_conditioned'\'' is not in ['\''fasta_wrapped'\'', '\''n_to_c_control'\'', '\''raw'\'']: an EC-conditioned rendering cannot enter a pool width SHARED with the rest of the panel, and this is a permanent structural exclusion rather than a parameter left untuned (transfer audit, D2.c blocker 1, EXP-R2-082). ZymCTRL renders as {ec}<sep><start>{seq}<end>, a constant 10-token wrapper; tokenised_rows admits a record only when it reaches exactly the pool width and circuits.content_bounds requires exactly one <end> inside that window, so the admissible residue length is not a band but the single point width - 10. No width admits ZymCTRL and ProtGPT2 at once: ProtGPT2 would need tokens-per-residue >= width/(width - 10) > 1 and never exceeds 0.40, and width - 10 >= 2.5*width has no positive solution. And the single-length window ZymCTRL would need does not run as specified: 14_paa_census.py'\''s build_cohorts draws the reference corpus from the same band with a skip, the largest single residue length holds 959 records against a request of 4000, and a trial run died on exactly that. ZymCTRL'\''s own configuration (--width 348, band 338-338) is therefore a separately declared per-arm run that cannot contribute to a common-cohort statement, so it is refused here rather than scheduled'
+TRANSFER_STAGE_SCOPE['collision_null_census']='panel_wide'
+TRANSFER_STAGE_ENTRY['collision_null_census']='27_collision_null_census.py'
+TRANSFER_STAGE_ARMS['collision_null_census']='gpt2 gpt2-medium gpt2-large gpt2-xl dialogpt-small qwen2.5-0.5b llama-3.2-3b protgpt2 zymctrl progen2-base progen2-medium progen2-small bygpt5-medium-en'
 TRANSFER_COHORT_ITEMS='text protein_large_vocab protein_small_vocab protein_default_dtype protein_progen2_medium'
 TRANSFER_COHORT_ITEM_ARMS['text']='gpt2 gpt2-medium gpt2-large gpt2-xl dialogpt-small qwen2.5-0.5b llama-3.2-3b bygpt5-medium-en'
 TRANSFER_COHORT_ITEM_ARGS['text']='--skip-truncation'

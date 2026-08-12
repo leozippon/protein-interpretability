@@ -10,6 +10,8 @@ is the *only* copy of the decision it carries, which is Appendix B rule 12:
 ``arms``       the matched model panel, its frozen cohorts, and the one renderer
 ``scoring``    the depth grid, the scored-target rule, and per-token aggregation
 ``statistics`` interval estimation and group-disjoint resampling
+``families``   what "family-disjoint" means, which curated label sources may
+               define it, and the split that refuses rather than asserting it
 ``io``         the one atomic, NaN-rejecting artefact writer
 
 Measurements, by the stage whose transfer they probe:
@@ -53,6 +55,7 @@ __all__ = [
     "budget",
     "channels",
     "circuits",
+    "families",
     "homology",
     "induction_robustness",
     "io",

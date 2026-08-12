@@ -1521,11 +1521,12 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("must be given together", result.stderr)
 
-    def _poll_verdict(self, staged: str, expect: str | None) -> str:
-        """Run one dispatch to the point of its poll verdict and return it.
+    def _dispatch_fixture(self) -> tuple[Path, str, Path, Path]:
+        """A project root the driver will accept, with a reusable snapshot and out-dir.
 
-        The pull is never reached: this exercises the completion test alone,
-        which is the part that decides whether a directory is finished.
+        Shared by the poll tests and the dead-dispatch test below, because the
+        run-id has to carry the *current* code hash or the driver refuses the
+        reuse before it reaches the behaviour under test.
         """
 
         root = Path(tempfile.mkdtemp(prefix="expect_"))
@@ -1544,6 +1545,76 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
         (snapshot / "scripts" / "transfer" / "20_retrieval_bound.py").write_text("", encoding="utf-8")
         out_dir = root / "results" / "external_baseline" / run_id / "score"
         out_dir.mkdir(parents=True)
+        return root, run_id, snapshot, out_dir
+
+    def test_a_stage_that_dies_at_startup_cannot_be_reported_as_success(self):
+        """The invariant a swallowed exit status turned into a false success.
+
+        2026-08-11: an ad-hoc driver dispatched the protein-mode diffing cell,
+        this entry point detected the death and exited 6, and the caller reported
+        ``controller exited 0`` because it read ``$?`` after a ``$(date -Is)``
+        that had already reset it. The cell was recorded as complete and no
+        measurement existed. Whatever a caller then does with the status, the
+        sanctioned entry point must not be the place the failure is lost: it has
+        to exit non-zero and say so on its own output.
+        """
+
+        root, run_id, snapshot, _ = self._dispatch_fixture()
+
+        # The pod-side log the stage would have written before raising. The
+        # liveness check reads it through H200_POD_BASH, so it must sit at the
+        # path the driver derives from GPFS_PROJECT_ROOT.
+        pod_log = root / "logs" / "external_baseline" / f"{run_id}_score.log"
+        pod_log.parent.mkdir(parents=True, exist_ok=True)
+        pod_log.write_text(
+            "[cohort] drawing\n"
+            "Traceback (most recent call last):\n"
+            '  File "20_retrieval_bound.py", line 1, in <module>\n'
+            "RuntimeError: the corpus carries duplicate records in this band\n",
+            encoding="utf-8",
+        )
+
+        pod_exec = root / "pod_exec.sh"
+        pod_exec.write_text('#!/usr/bin/env bash\necho LAUNCHED\n', encoding="utf-8")
+        pod_exec.chmod(0o755)
+
+        result = subprocess.run(
+            ["bash", str(self.DRIVER), "--run-id", run_id,
+             "--snapshot-dir", str(snapshot), "--stage", "20_retrieval_bound.py",
+             "--label", "score", "--gpu", "0"],
+            capture_output=True, text=True, cwd=str(REPO_ROOT),
+            env={**os.environ, "H200_POD": "unused",
+                 "H200_POD_BASH": str(LOCAL_POD_BASH), "H200_POD_EXEC": str(pod_exec),
+                 "GPFS_PROJECT_ROOT": str(root), "LOCAL_OUTPUT_ROOT": str(root),
+                 "LIVENESS_SETTLE_SECONDS": "0", "GRACE_SECONDS": "0",
+                 "POLL_SECONDS": "1", "TIMEOUT_SECONDS": "3"},
+            timeout=600,
+        )
+
+        self.assertNotEqual(
+            result.returncode, 0,
+            "a stage that died at start-up exited 0; a caller reading the status "
+            f"would record it as a measurement.\n{result.stdout[-800:]}",
+        )
+        self.assertIn("DIED AT DISPATCH", result.stdout)
+        self.assertNotIn(
+            "ADMITTED", result.stdout,
+            "a dead dispatch must not reach the pull, let alone be admitted",
+        )
+        pulled = root / "results" / "transfer" / "external_baseline" / run_id / "score"
+        self.assertFalse(
+            pulled.exists(),
+            f"a dead dispatch left a pulled result directory behind: {pulled}",
+        )
+
+    def _poll_verdict(self, staged: str, expect: str | None) -> str:
+        """Run one dispatch to the point of its poll verdict and return it.
+
+        The pull is never reached: this exercises the completion test alone,
+        which is the part that decides whether a directory is finished.
+        """
+
+        root, run_id, snapshot, out_dir = self._dispatch_fixture()
         (out_dir / staged).write_text("{}", encoding="utf-8")
 
         pod_exec = root / "pod_exec.sh"

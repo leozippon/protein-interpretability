@@ -60,6 +60,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.transfer.arms import MODEL_ROOT, PANEL, TEXT_MODEL_BASE, TEXT_MODEL_ROOT  # noqa: E402
 from src.transfer.circuits import _CIRCUIT_ARCHITECTURES  # noqa: E402
+from src.transfer.collision_null import CENSUS_ARCHITECTURES  # noqa: E402
 from src.transfer.path_patching import SUPPORTED_ARCHITECTURES  # noqa: E402
 from src.transfer.prediction_addressed import PAA_ARCHITECTURES  # noqa: E402
 from src.transfer.probes import concepts_for_modality  # noqa: E402
@@ -142,8 +143,13 @@ CAMPAIGN_PANEL: tuple[str, ...] = (
 PANEL_MEMBERS_NOT_STAGED: dict[str, str] = {
     "bygpt5-small-en": (
         "refused by paa_census on its 4x6 = 24-head grid; see "
-        "STAGE_CONTRACTS['paa_census'].excluded_arms. No other campaign stage "
-        "admits a t5_decoder arm, so there is nothing for it to run"
+        "STAGE_CONTRACTS['paa_census'].excluded_arms. collision_null_census "
+        "admits it -- that stage's statistic is a per-head excess over the arm's "
+        "own null and carries no grid-dependent chance level -- but its cohort "
+        "has never been through cohort_power, and evidence-discipline rule 2 "
+        "forbids scoring an arm whose cohort information is unqualified. It is "
+        "therefore reachable as a direct invocation, as zymctrl is for "
+        "paa_census, and is not a campaign item"
     ),
     "bygpt5-base-en": (
         "refused by paa_census on its 6x12 = 72-head grid; see "
@@ -633,6 +639,48 @@ STAGE_CONTRACTS: dict[str, StageContract] = {
             "(--census-sequences, --cohort-draw-seed, --census-ban-depth, --causal-*) "
             "is left to ARGS_PAA_CENSUS, where an operator can move it without "
             "moving what the stage can serve"
+        ),
+    ),
+    "collision_null_census": StageContract(
+        name="collision_null_census",
+        entry_point="27_collision_null_census.py",
+        scope="panel_wide",
+        capabilities=frozenset({"circuits"}),
+        # Mirrors the PATTERN declaration, not the circuit one, and for the same
+        # reason paa_census does. This stage reads per-layer attention patterns
+        # through the model's own output_attentions and never rebuilds an OV
+        # circuit, splits a block into sublayers or touches a position table, so
+        # circuits._CIRCUIT_ARCHITECTURES asks a strictly stronger question than
+        # this measurement needs -- and the answer to it refuses the byte-level
+        # text arms, which are the whole point of this stage: their vocabulary
+        # collision rate sits among the residue-tokenised protein arms while
+        # their modality is text, so they are the only arms in the panel that
+        # separate alphabet from modality for the induction census.
+        architectures=frozenset(CENSUS_ARCHITECTURES),
+        architecture_source="src.transfer.collision_null.CENSUS_ARCHITECTURES",
+        protein_bands=(
+            ProteinBand(
+                "protein",
+                (600, 1000),
+                "the cohort that fits the unigram every synthetic probe samples "
+                "from; held at circuit_primitives' analysis band so the probes "
+                "are drawn from the same distribution as the census this stage "
+                "corrects",
+            ),
+        ),
+        protein_band_reason=(
+            "NOT THE QUALIFYING BAND, and deliberately so: it is "
+            "circuit_primitives' analysis band, because a null read against a "
+            "census must be built from the same unigram that census's probes were "
+            "built from. The band therefore inherits that stage's own exposure "
+            "(Appendix B rule 13) rather than adding a second one"
+        ),
+        notes=(
+            "panel-wide: every arm is scored in one process so the family-wise "
+            "levels, the bootstrap and the probe geometry cannot drift between "
+            "arms of one comparison. Split across cards by invoking twice with "
+            "disjoint --arms; the artefacts are per arm and the panel summary is "
+            "per invocation, so a split run is read by merging the per-arm files"
         ),
     ),
 }

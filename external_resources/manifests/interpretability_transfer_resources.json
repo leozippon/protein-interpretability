@@ -6,7 +6,7 @@
     "schema_version": "r2_transfer_panel_contract_v5",
     "verify": "python scripts/transfer/panel_contract.py --verify",
     "arm_count": 13,
-    "stage_count": 12,
+    "stage_count": 13,
     "campaign_panel": [
       "gpt2",
       "gpt2-medium",
@@ -34,7 +34,8 @@
       "probe_and_erasure",
       "homology_control",
       "induction_path_patching",
-      "paa_census"
+      "paa_census",
+      "collision_null_census"
     ],
     "regeneration": "derived from `python scripts/transfer/panel_contract.py --json`; do not hand-edit. Both lists carry the contract's own order: stage_order is the campaign EXECUTION order, so sorting it destroys the only thing the field states. tests/test_transfer_stage_contract.py::ResourceManifestMirrorsThePanelContract refuses any disagreement with the live contract, which the note alone did not: this block first stood at 11 arms / 11 stages, and then at schema v1 with an alphabetised stage_order, against a 13-arm, 12-stage v5 contract."
   },

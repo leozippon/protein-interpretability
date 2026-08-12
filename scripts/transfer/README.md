@@ -18,7 +18,7 @@ The active campaign has 13 arms:
 
 `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `qwen2.5-0.5b`, `llama-3.2-3b`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium`, `progen2-small`, `bygpt5-medium-en`.
 
-The contract declares 12 stages in this order:
+The contract declares 13 stages in this order:
 
 | Order | Stage | Entry point | Scope | Contract-eligible arms |
 |---:|---|---|---|---|
@@ -34,6 +34,7 @@ The contract declares 12 stages in this order:
 | 10 | `homology_control` | `10_homology_control.py` | panel-wide | `protgpt2`, `zymctrl`, `progen2-medium` |
 | 11 | `induction_path_patching` | `11_induction_path_patching.py` | panel-wide | `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `qwen2.5-0.5b`, `llama-3.2-3b`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium`, `progen2-small` |
 | 12 | `paa_census` | `14_paa_census.py` | per arm | `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `qwen2.5-0.5b`, `llama-3.2-3b`, `protgpt2`, `progen2-base`, `progen2-medium`, `progen2-small`, `bygpt5-medium-en` |
+| 13 | `collision_null_census` | `27_collision_null_census.py` | panel-wide | all 13 |
 
 Eligibility is not uniform. Contract refusals are deliberate and include architecture, tokenization, modality, input-format, and stage-interface limits. Inspect them with `python scripts/transfer/panel_contract.py --json`; do not route around them.
 
@@ -124,7 +125,7 @@ GPUS=0,1 \
 bash scripts/transfer/run_transfer_h200.sh --dry-run
 ```
 
-`ARMS` defaults to the full 13-arm campaign panel and `STAGES` defaults to the full 12-stage order. The worker intersects requested arms with each stage contract and reports refusals; no unsupported arm is silently substituted.
+`ARMS` defaults to the full 13-arm campaign panel and `STAGES` defaults to the full 13-stage order. The worker intersects requested arms with each stage contract and reports refusals; no unsupported arm is silently substituted.
 
 ## Controller Environment
 
@@ -133,7 +134,7 @@ bash scripts/transfer/run_transfer_h200.sh --dry-run
 | `H200_POD` | Required shell-local pod selection |
 | `H200_ACCESS_ROOT` | External access-helper root; defaults to `~/hangzhou-remote` |
 | `ARMS` | Comma-separated requested arms; defaults to the 13-arm campaign panel |
-| `STAGES` | Comma-separated requested stages; defaults to all 12 contract stages |
+| `STAGES` | Comma-separated requested stages; defaults to all 13 contract stages |
 | `GPUS` | Comma-separated pod-relative GPU indices |
 | `TEXT_ARM` | Text control for control-anchored aggregation |
 | `ARGS_<STAGE>` | Extra arguments for every item in one stage |
@@ -163,9 +164,28 @@ Results roots are shared, ignored, and not backed up by Git. Never delete or rec
 
 ## External Baseline Stages
 
-Stages 15, 16, 17, 19, and 20 are external to the registered panel. They cannot name a registered stage and so cannot reach the controller's scheduling path; they launch through `run_external_baseline_h200.sh`, which freezes through the controller (never reimplementing the freeze) and then dispatches one stage to one GPU. Stage 18 is a closed design record and is not scheduled.
+Stages 15 to 26 are external to the registered panel. Each measures a checkpoint, a component, or an estimand the contract does not schedule, so none can name a registered stage or reach the controller's scheduling path; they launch through `run_external_baseline_h200.sh`, which freezes through the controller (never reimplementing the freeze) and then dispatches one stage to one GPU.
 
-Stages 15 and 17 additionally take `--arm`, which defaults to `progen3` and otherwise names a **dense** panel arm — the text control and the dense protein arm a replacement result needs before it can be attributed to protein, to mixture-of-experts, or to transcoder replacement in general. The eligible set is composed by `src.transfer.replaceable.eligible_arms` from `CAMPAIGN_PANEL`, the architectures that carry this estimand, and the arms with a measured loader band; run either stage with `--help` to see it. They are still not registered stages, so a dense-arm run is a direct invocation and not a campaign item.
+The driver is generic — `--stage <file>` accepts any `scripts/transfer/<file>` that exists — so this table records what has been written rather than what the driver enforces. A stage missing from it is undiscoverable rather than unreachable, which is how the table came to name only stages 15 to 20 while four more had already been run through the driver. The third column names what one invocation is *about*, because that is the axis a resume key does not have: each condition needs its own `--label` and its own results directory.
+
+| Stage | What it measures | What one invocation names |
+|---|---|---|
+| `15_replacement_faithfulness.py` | Behavioural and diagnostic causal checks under sequential per-layer transcoder replacement | `--arm`, a dense panel arm (below), or one mode of a joint checkpoint |
+| `16_fitness_recovery.py` | The fitness baseline and recovery interface | a sampling scheme and variant budget |
+| `17_train_transcoder.py` | Local PLT and CLT training controls, which produce the dictionaries stage 15 scores | `--arm` as above, and `--architecture` |
+| `18_das_subspace.py` | Closed design record; not scheduled and not run | — |
+| `19_routing_locality.py` | Whether a mixture-of-experts replacement's residual is structured by the routing decision: router, expert-set, and boundary diagnostics | `--checkpoint` and the `--replacement` artefact to diagnose |
+| `20_retrieval_bound.py` | Model fitness against a training-corpus profile retrieval bound | `--arms` and which of its six `--stages` to run; see the `--expect` note below |
+| `21_joint_mode_qualification.py` | Whether one joint checkpoint is measurable in **both** modes, in stage 01's estimand | `--checkpoint` (a directory, never an arm name) and `--rendering` |
+| `22_neuron_basis_circuit.py` | Faithfulness of a size-*k* circuit in the model's own raw-neuron basis, no dictionary trained | `--arm` |
+| `23_perturbation_sensitivity.py` | Behavioural cost of a relative-magnitude MLP-output perturbation, swept over its size | `--arm` **or** `--checkpoint` with `--rendering`; one mode or both |
+| `24_component_swap.py` | Which side of a lineage — vocabulary interface or body — carries a measured difference, in stage 21's estimand | `--host`, `--donor`, `--component-group`, `--rendering` |
+| `25_model_diffing_baselines.py` | Whether a simple map already accounts for two checkpoints' representational difference, the baseline that gates Crosscoder training | `--reference`, `--target`, `--rendering`, and one `--mode` per run |
+| `26_concept_lens.py` | Phase A of the concept-aligned lens: property decoding against its own nulls, with a final-layer positive control that must clear before any depth is read | `--arms` |
+
+Two further entry points belong to neither list. `12_induction_robustness.py` recomputes the induction census's threshold and scale statements from artefacts already on disk and loads no model at all, and `13_induction_probe_bootstrap.py` re-runs those forward passes on one GPU purely to retain the per-probe axis the stored artefacts averaged away. Both are direct invocations over an existing measurement, not campaign items, and both write to their own `--output-dir`.
+
+The `--arm` of stages 15 and 17 defaults to `progen3` and otherwise names a **dense** panel arm — the text control and the dense protein arm a replacement result needs before it can be attributed to protein, to mixture-of-experts, or to transcoder replacement in general. The eligible set is composed by `src.transfer.replaceable.eligible_arms` from `CAMPAIGN_PANEL`, the architectures that carry this estimand, and the arms with a measured loader band; run either stage with `--help` to see it. They are still not registered stages, so a dense-arm run is a direct invocation and not a campaign item.
 
 Stage 20 builds and scores the training-corpus retrieval bound. Its scoring step stages `wildtypes.json` in the output directory before producing the result, so invoke the launcher with `--expect retrieval_bound.json`; otherwise the input file can be mistaken for completed output.
 
