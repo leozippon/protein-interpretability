@@ -213,10 +213,71 @@ def label_distribution(counts: Mapping[Hashable, int]) -> dict[str, Any]:
     }
 
 
+def _window_statistics(
+    counts: Sequence[Counter[Hashable]], *, window: int
+) -> dict[str, Any]:
+    """The per-window summary of one set of label windows, each ``window`` symbols."""
+
+    entropies = [miller_madow_entropy_bits(count) for count in counts]
+    distinct = [len(count) for count in counts]
+    majority = [max(count.values()) / window for count in counts]
+    return {
+        "entropy_bits": mean_interval(entropies),
+        "mean_distinct_labels_per_window": float(np.mean(distinct)),
+        "median_distinct_labels_per_window": float(np.median(distinct)),
+        "mean_majority_label_share": float(np.mean(majority)),
+        "permutation_null_degenerate_fraction": float(np.mean([c < 2 for c in distinct])),
+        "near_degenerate_fraction_majority_over_0p9": float(
+            np.mean([share > 0.9 for share in majority])
+        ),
+    }
+
+
+def _offset_sensitivity(
+    at_offset: Sequence[Counter[Hashable]],
+    at_next_offset: Sequence[Counter[Hashable]],
+    *,
+    window: int,
+    offsets: tuple[int, int],
+    min_units: int,
+) -> dict[str, Any]:
+    """The same statistics on two disjoint windows of the same units."""
+
+    record: dict[str, Any] = {
+        "offsets": [int(offsets[0]), int(offsets[1])],
+        "n_units_paired": len(at_offset),
+        "measured": len(at_offset) >= min_units,
+        "unmeasured_reason": None,
+        "at_offset": None,
+        "at_next_offset": None,
+        "entropy_bits_difference": None,
+    }
+    if not record["measured"]:
+        record["unmeasured_reason"] = (
+            f"only {len(at_offset)} units span both disjoint {window}-symbol windows, "
+            f"below the {min_units}-unit floor. The offset dependence of this channel "
+            "is unmeasured here, not absent"
+        )
+        return record
+    record["at_offset"] = _window_statistics(at_offset, window=window)
+    record["at_next_offset"] = _window_statistics(at_next_offset, window=window)
+    # Paired per unit rather than a difference of two means: the two windows are
+    # read on the same units, so the unit-to-unit spread that dominates either
+    # mean cancels and the interval is about the offset alone.
+    record["entropy_bits_difference"] = mean_interval(
+        [
+            miller_madow_entropy_bits(later) - miller_madow_entropy_bits(earlier)
+            for earlier, later in zip(at_offset, at_next_offset)
+        ]
+    )
+    return record
+
+
 def within_unit_label_entropy(
     units: Iterable[Sequence[Hashable]],
     *,
     window: int = DEFAULT_WINDOW,
+    offset: int = 0,
     min_units: int = 30,
 ) -> dict[str, Any]:
     """Mean Miller-Madow label entropy inside a fixed-length window per unit.
@@ -226,42 +287,60 @@ def within_unit_label_entropy(
     unit whose window carries a single distinct label is invariant under every
     permutation: the null has identically zero power there, and a test built on
     it cannot detect structure however strong the structure is.
+
+    **Where the window sits is a choice, so it is reported as one.** The window
+    starts at ``offset``, and offset zero is the least representative position
+    either modality has: for a protein it is the N-terminus -- signal and transit
+    peptides, a disordered tail, unannotated by construction -- and for a document
+    it is the title and lede. Quoting a cross-modality ratio off one offset
+    assumes each label channel is stationary along its unit, which is the
+    within-unit form of the assumption Appendix B rule 1 refuses to make about
+    position in a *corpus*. ``window_offset_sensitivity`` therefore repeats every
+    statistic on the next **disjoint** window and is part of the record rather
+    than something a caller may omit. It is paired, because the units that reach
+    the second window are the longer ones and an unpaired comparison would
+    confound the offset with unit length.
     """
 
     if window < 2:
         raise ValueError("window must span at least two symbols")
+    if offset < 0:
+        raise ValueError("offset must not be negative")
     if min_units < 2:
         raise ValueError("min_units must be at least two so an interval exists")
 
-    entropies: list[float] = []
-    distinct: list[int] = []
-    majority: list[float] = []
+    next_offset = offset + window
+    windows: list[Counter[Hashable]] = []
+    paired_windows: list[Counter[Hashable]] = []
+    next_windows: list[Counter[Hashable]] = []
     considered = 0
     for labels in units:
         considered += 1
-        if len(labels) < window:
+        if len(labels) < next_offset:
             continue
-        counts = Counter(labels[:window])
-        entropies.append(miller_madow_entropy_bits(counts))
-        distinct.append(len(counts))
-        majority.append(max(counts.values()) / window)
-    if len(entropies) < min_units:
+        counts = Counter(labels[offset:next_offset])
+        windows.append(counts)
+        if len(labels) >= next_offset + window:
+            paired_windows.append(counts)
+            next_windows.append(Counter(labels[next_offset : next_offset + window]))
+    if len(windows) < min_units:
         raise RuntimeError(
-            f"only {len(entropies)} of {considered} units reach the {window}-symbol "
-            f"window; need at least {min_units}"
+            f"only {len(windows)} of {considered} units reach the {window}-symbol "
+            f"window at offset {offset}; need at least {min_units}"
         )
     return {
         "window_symbols": int(window),
+        "window_offset": int(offset),
         "sampling_ceiling_bits": math.log2(window),
-        "n_units": len(entropies),
+        "n_units": len(windows),
         "n_units_considered": considered,
-        "entropy_bits": mean_interval(entropies),
-        "mean_distinct_labels_per_window": float(np.mean(distinct)),
-        "median_distinct_labels_per_window": float(np.median(distinct)),
-        "mean_majority_label_share": float(np.mean(majority)),
-        "permutation_null_degenerate_fraction": float(np.mean([c < 2 for c in distinct])),
-        "near_degenerate_fraction_majority_over_0p9": float(
-            np.mean([share > 0.9 for share in majority])
+        **_window_statistics(windows, window=window),
+        "window_offset_sensitivity": _offset_sensitivity(
+            paired_windows,
+            next_windows,
+            window=window,
+            offsets=(offset, next_offset),
+            min_units=min_units,
         ),
     }
 
