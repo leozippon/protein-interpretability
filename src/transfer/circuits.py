@@ -1459,6 +1459,13 @@ class RepeatProbe:
             "synthetic_repeat",
             "natural_repeat_exact",
             "natural_repeat_approximate",
+            # A probe of the same length and the same token multiset as one of the
+            # three above, whose planted repeat has been destroyed by permutation.
+            # It is a probe kind rather than a flag on the others because a census
+            # run on it is a different measurement and no artefact may be readable
+            # without saying which of the two it holds. See
+            # :mod:`src.transfer.collision_null`.
+            "collision_null",
         }:
             raise ValueError(f"unknown probe kind {self.kind!r}")
         if self.record_index < -1:
@@ -1796,6 +1803,7 @@ def attention_alignment_scores(
     probes: Sequence[RepeatProbe],
     *,
     batch_size: int,
+    per_probe: bool = False,
 ) -> dict[str, Any]:
     """Per-head prefix-matching score plus two specificity controls.
 
@@ -1805,6 +1813,17 @@ def attention_alignment_scores(
     an induction head, and ``offset_two`` is the mean attention one position
     further along, which separates a genuine offset-one match from a head that
     simply smears over the earlier region.
+
+    ``per_probe`` additionally returns the *unaggregated* per-probe sums, shape
+    ``(probe, layer, head)``, together with the scored-position count of each
+    probe.  ``scores`` is unchanged and is still the position-weighted mean over
+    the whole set; the per-probe arrays exist so that a caller can resample
+    probes without a second forward pass, which is what
+    :mod:`src.transfer.collision_null` needs to put an interval on a head count.
+    Returning sums rather than per-probe means is deliberate: a probe-weighted
+    mean is a different estimator from the one every published census used, and
+    ``sum(resampled sums) / sum(resampled counts)`` reproduces that estimator
+    exactly on the full sample.
     """
 
     arm.require("circuits")
@@ -1815,10 +1834,16 @@ def attention_alignment_scores(
         raise ValueError("batch_size must be positive")
     heads = n_head(arm)
     layers = arm.n_layer
-    totals = {
-        key: np.zeros((layers, heads), dtype=np.float64)
-        for key in ("prefix_matching", "same_token", "offset_two")
-    }
+    keys = ("prefix_matching", "same_token", "offset_two")
+    totals = {key: np.zeros((layers, heads), dtype=np.float64) for key in keys}
+    probe_totals = (
+        {key: np.zeros((len(probes), layers, heads), dtype=np.float64) for key in keys}
+        if per_probe
+        else None
+    )
+    probe_counts = np.asarray(
+        [len(probe.query_positions) for probe in probes], dtype=np.int64
+    )
     scored = 0
     uniform = 0.0
     for begin in range(0, len(probes), batch_size):
@@ -1845,17 +1870,28 @@ def attention_alignment_scores(
                 query = torch.tensor(probe.query_positions, device=arm.device)
                 key = torch.tensor(probe.key_positions, device=arm.device)
                 block = pattern[row].float()
-                totals["prefix_matching"][layer] += block[:, query, key].sum(dim=1).cpu().numpy()
-                totals["same_token"][layer] += block[:, query, key - 1].sum(dim=1).cpu().numpy()
-                totals["offset_two"][layer] += block[:, query, key + 1].sum(dim=1).cpu().numpy()
+                drawn = {
+                    "prefix_matching": block[:, query, key].sum(dim=1).cpu().numpy(),
+                    "same_token": block[:, query, key - 1].sum(dim=1).cpu().numpy(),
+                    "offset_two": block[:, query, key + 1].sum(dim=1).cpu().numpy(),
+                }
+                for name, value in drawn.items():
+                    totals[name][layer] += value
+                    if probe_totals is not None:
+                        probe_totals[name][begin + row, layer] = value
         for probe in chunk:
             scored += len(probe.query_positions)
             uniform += sum(1.0 / (position + 1) for position in probe.query_positions)
         del output, attentions
     if scored < 1:
         raise RuntimeError(f"{arm.name}: probes contributed no scored query positions")
+    if int(probe_counts.sum()) != scored:
+        raise RuntimeError(
+            f"{arm.name}: per-probe scored-position counts sum to "
+            f"{int(probe_counts.sum())} against {scored} accumulated"
+        )
     means = {key: value / scored for key, value in totals.items()}
-    return {
+    result: dict[str, Any] = {
         "kind": probes[0].kind,
         "n_probes": len(probes),
         "scored_query_positions": scored,
@@ -1868,6 +1904,10 @@ def attention_alignment_scores(
         "uniform_baseline": _finite(uniform / scored, "uniform baseline"),
         "scores": means,
     }
+    if probe_totals is not None:
+        result["per_probe_sums"] = probe_totals
+        result["per_probe_counts"] = probe_counts
+    return result
 
 
 def summarise_head_matrix(values: np.ndarray, label: str) -> dict[str, Any]:
