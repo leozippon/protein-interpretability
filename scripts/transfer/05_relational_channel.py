@@ -194,10 +194,21 @@ def assemble(
                 for index, r in enumerate(subset)
             ]
         )
+        # The protein each pair came from. Anchors are drawn *within* a protein,
+        # so an interval over anchors treats up to --groups-per-protein correlated
+        # draws as independent; the sampling unit is the protein, and this is what
+        # lets within_anchor_auc report the interval that unit supports.
+        proteins = np.concatenate(
+            [
+                np.full(r["pairs"].anchor.size, index, dtype=np.int64)
+                for index, r in enumerate(subset)
+            ]
+        )
         return {
             "features": build_feature_arms(anchors, partners, attention, separation),
             "label": labels,
             "group": groups,
+            "protein": proteins,
         }
 
     train_side = side(train, 10**6)
@@ -210,6 +221,7 @@ def assemble(
             test_side["label"],
             test_side["group"],
             seed=seed,
+            test_proteins=test_side["protein"],
         )
         for name in PREDICTOR_ARMS
     }
