@@ -85,11 +85,12 @@ Record each experiment's date, configuration or command, and result in `docs/EXP
 
 ## Rules for Multi-Agent Cooperation
 
-*If your task prompt identifies you as a sub-agent, ignore the remaining rules in this section.*
+*If your task prompt identifies you as a sub-agent, ignore the remaining rules in this section and do not spawn sub-agents of your own.*
 
 - Your role centers on abstract design, global coordination, final acceptance, and Git management. Direct, exhaustive reading and modification are required only when necessary.
 - You should intentionally minimize your context footprint to preserve coherent end-to-end reasoning and architectural judgment; delegate first-line evidence gathering instead of performing it directly.
 - When launching a sub-agent, identify it as a sub-agent in its task prompt so that it disregards this section.
+- Keep delegation one level deep. Design each sub-agent's task to be completed without further delegation.
 - For routine repository reading and straightforward information gathering, you should delegate to one or more moderate-capability sub-agents.
 - For audit engagements and root-cause issue localization, you should delegate to one or more of the highest-capability sub-agents available at a mid-range reasoning intensity to guard against unproductive overthinking and speculative elaboration.
 - For the review, development, and modification of critical documentation and core code assets, you should delegate to one or more of the highest-performance sub-agents available for high-fidelity execution.
