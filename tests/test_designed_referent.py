@@ -31,7 +31,7 @@ import pytest
 from scipy import stats
 
 from src.transfer import designed_referent as D
-from src.transfer.kmer_background import ALPHABET, KmerBackground
+from src.transfer.kmer_background import ALPHABET, KmerBackground, kmer_index
 
 
 # ------------------------------------------------------------ variant grammar
@@ -476,3 +476,281 @@ def test_balance_is_reported_rather_than_assumed_from_a_restriction():
     report = D.standardised_mean_differences(left, far, ["a", "b"])
     assert report["balanced"] is False
     assert report["max_abs_smd"] > 0.25
+
+
+# ----------------------------------------- the higher-order fragment channel
+#
+# F12's surviving half is a margin over 3-mer and 4-mer conditionals, so the
+# channel that tests it has to be stronger *and* has to remain a model. Three
+# failures here would produce a channel that looks stronger and is not: a
+# smoothing scheme whose conditionals do not sum to one is not a likelihood and
+# its perplexity is meaningless; a scheme that fails to back off assigns zero
+# probability to an unseen k-mer and reports minus infinity as a score; and a
+# channel evaluated only where the corpus has seen everything is a lookup whose
+# sparsity is invisible. Each has a test.
+
+
+def _toy_counts(records, ks, chunk_bytes=64):
+    """Count a toy corpus through the production counter, not a reimplementation."""
+
+    from tempfile import TemporaryDirectory
+
+    from src.transfer.kmer_background import count_kmers
+
+    with TemporaryDirectory() as work:
+        path = Path(work) / "toy.fasta"
+        with path.open("w", encoding="ascii") as handle:
+            for index, record in enumerate(records):
+                handle.write(f">r{index}\n")
+                for start in range(0, len(record), 60):
+                    handle.write(record[start : start + 60] + "\n")
+        return count_kmers(path, ks=ks, chunk_bytes=chunk_bytes).counts
+
+
+def _toy_corpus(n_records=120, seed=11):
+    rng = np.random.default_rng(seed)
+    return [
+        "".join(rng.choice(list(ALPHABET), size=int(rng.integers(45, 200))))
+        for _ in range(n_records)
+    ]
+
+
+@pytest.mark.parametrize("scheme", D.FRAGMENT_SMOOTHING)
+@pytest.mark.parametrize("order", [1, 2, 3, 4])
+def test_every_declared_smoothing_scheme_is_a_proper_distribution(scheme, order):
+    counts = _toy_counts(_toy_corpus(), (1, 2, 3, 4))
+    model = D.InterpolatedFragmentModel(counts, 4, scheme)
+    contexts = np.random.default_rng(0).integers(0, len(ALPHABET) ** (order - 1), size=64)
+    total = np.zeros(contexts.size)
+    for symbol in range(len(ALPHABET)):
+        total += np.exp(model.log_probability(contexts, np.full(contexts.size, symbol), order))
+    assert np.allclose(total, 1.0, atol=1e-12)
+
+
+@pytest.mark.parametrize("scheme", D.FRAGMENT_SMOOTHING)
+def test_an_unseen_context_backs_off_rather_than_returning_minus_infinity(scheme):
+    # Two order-4 contexts the corpus never saw, sharing their last two residues.
+    # Both must fall back to the identical lower-order state, so the top-order
+    # table cannot be contributing anything -- which is what "backed off" means,
+    # and is the invariant that holds whichever lower-order distribution the
+    # scheme backs off *to*.
+    counts = _toy_counts(_toy_corpus(), (1, 2, 3, 4))
+    width = len(ALPHABET)
+    totals = counts[4].reshape(-1, width).sum(axis=1)
+    unseen = np.flatnonzero(totals == 0)
+    assert unseen.size, "the toy corpus is too dense to exercise the backoff"
+    by_suffix: dict[int, list[int]] = {}
+    for context in unseen.tolist():
+        by_suffix.setdefault(context % (width**2), []).append(context)
+    pairs = [group for group in by_suffix.values() if len(group) >= 2]
+    assert pairs, "no two unseen contexts share a suffix in this toy corpus"
+    left, right = pairs[0][0], pairs[0][1]
+    model = D.InterpolatedFragmentModel(counts, 4, scheme)
+    symbols = np.arange(width)
+    first = model.log_probability(np.full(width, left), symbols, 4)
+    second = model.log_probability(np.full(width, right), symbols, 4)
+    assert np.isfinite(first).all()
+    assert np.allclose(first, second)
+
+
+@pytest.mark.parametrize("scheme", D.FRAGMENT_SMOOTHING)
+def test_the_channel_scores_the_leading_residues_the_k_mer_baseline_drops(scheme):
+    counts = _toy_counts(_toy_corpus(), (1, 2, 3, 4))
+    model = D.InterpolatedFragmentModel(counts, 4, scheme)
+    sequences = ["".join(np.random.default_rng(3).choice(list(ALPHABET), size=30))]
+    record = model.evaluate(sequences, 4)
+    # Every residue carries an emission term, and only the first three fall short
+    # of the full order. fragment_log_likelihood would have scored 27.
+    assert record["positions"] == 30
+    assert record["positions_at_full_order"] == 27
+    assert record["log_likelihood"].shape == (1,)
+    assert np.isfinite(record["log_likelihood"]).all()
+
+
+def test_the_channel_reports_the_sparsity_it_was_read_under():
+    counts = _toy_counts(_toy_corpus(), (1, 2, 3, 4))
+    counts[4][kmer_index("WWWW")] = 0
+    model = D.InterpolatedFragmentModel(counts, 4, "kneser_ney")
+    record = model.evaluate(["WWWWWWWW"], 4)
+    assert record["unseen_kmer_fraction"] == 1.0
+    assert np.isfinite(record["log_likelihood"]).all()
+    seen = model.evaluate(_toy_corpus(4, seed=11), 4)
+    assert seen["unseen_kmer_fraction"] == 0.0
+
+
+def test_an_undeclared_smoothing_scheme_and_a_missing_order_are_refused():
+    counts = _toy_counts(_toy_corpus(20), (1, 2, 3))
+    with pytest.raises(ValueError, match="not one of"):
+        D.fragment_channel_name(5, "add_one")
+    with pytest.raises(ValueError, match="not one of"):
+        D.InterpolatedFragmentModel(counts, 3, "add_one")
+    with pytest.raises(ValueError, match="missing"):
+        D.InterpolatedFragmentModel(counts, 4, "kneser_ney")
+    assert D.fragment_channel_name(5, "kneser_ney") == "fragment_interp_k5_kneser_ney"
+
+
+def test_a_higher_order_channel_fits_the_corpus_it_was_counted_on_better():
+    # Plug-in perplexity falls with the order by construction, which is exactly
+    # why admissibility is decided on held-out sequence and not on this. Asserted
+    # so that a channel which failed to use its context would be caught.
+    records = _toy_corpus(60, seed=7)
+    counts = _toy_counts(records, (1, 2, 3, 4))
+    model = D.InterpolatedFragmentModel(counts, 4, "kneser_ney")
+    curve = [model.cross_entropy(records, order)["cross_entropy_nats"] for order in (1, 2, 3, 4)]
+    assert curve == sorted(curve, reverse=True)
+
+
+# ----------------------------------- the pre-registered rules of EXP-R2-196
+#
+# Two decision rules decide what the higher-order channel is allowed to say, and
+# both live in the stage. The admissibility rule reads a turning point in
+# held-out cross-entropy; the verdict rule reads F12's surviving half against the
+# admissible orders. Each is asserted against its own truth table here, including
+# the case that would otherwise be reported as a discovery -- a channel that beats
+# the model on the designs *and* on the natural control, which is a statement
+# about the channel and not about the referent.
+
+
+def _stage():
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[1] / "scripts/transfer/29_designed_referent.py"
+    spec = importlib.util.spec_from_file_location("_stage_29_fragment", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _curves(values):
+    return {
+        scheme: {
+            draw: {str(order): {"cross_entropy_nats": value} for order, value in values.items()}
+            for draw in ("a", "b")
+        }
+        for scheme in D.FRAGMENT_SMOOTHING
+    }
+
+
+def test_admissibility_stops_at_the_order_where_held_out_cross_entropy_turns():
+    stage = _stage()
+    falling = stage._supported_orders(_curves({1: 3.0, 2: 2.8, 3: 2.7, 4: 2.6}), 4)
+    assert falling["highest_supported_order"] == 4
+    assert falling["turned_at"] is None
+    turned = stage._supported_orders(_curves({1: 3.0, 2: 2.8, 3: 2.7, 4: 2.75}), 4)
+    assert turned["highest_supported_order"] == 3
+    assert turned["turned_at"] == 4
+
+
+def test_one_disagreeing_draw_or_scheme_stops_admissibility():
+    stage = _stage()
+    curves = _curves({1: 3.0, 2: 2.8, 3: 2.7, 4: 2.6})
+    curves["kneser_ney"]["b"]["4"]["cross_entropy_nats"] = 2.71
+    record = stage._supported_orders(curves, 4)
+    assert record["highest_supported_order"] == 3
+    assert record["turned_at"] == 4
+
+
+def _arm_rows(design_intervals, control_intervals=None):
+    control_intervals = control_intervals or {}
+    def side(intervals):
+        return {
+            key: {"interval": value, "point": 0.0 if value is None else sum(value) / 2}
+            for key, value in intervals.items()
+        }
+    return {
+        D.ORIGIN_ARM: {
+            "designs": side(design_intervals),
+            "control": side(
+                {key: control_intervals.get(key, [0.1, 0.3]) for key in design_intervals}
+            ),
+        }
+    }
+
+
+def _keys(orders):
+    return [
+        D.fragment_channel_name(order, scheme)
+        for order in orders
+        for scheme in D.FRAGMENT_SMOOTHING
+    ]
+
+
+def test_the_surviving_half_stands_only_when_every_admissible_channel_is_beaten():
+    stage = _stage()
+    rows = _arm_rows({key: [0.05, 0.15] for key in _keys([3, 4, 5])})
+    verdict = stage._fragment_verdict(rows, arm=D.ORIGIN_ARM, admissible=[3, 4, 5])
+    assert verdict["verdict"] == "stands"
+    assert verdict["stronger_order_available_than_f12_used"] is True
+    assert not verdict["channels_that_beat_the_model"]
+
+
+def test_an_interval_covering_zero_weakens_rather_than_overturns():
+    stage = _stage()
+    intervals = {key: [0.05, 0.15] for key in _keys([3, 4, 5])}
+    intervals[D.fragment_channel_name(5, "kneser_ney")] = [-0.02, 0.09]
+    verdict = stage._fragment_verdict(_arm_rows(intervals), arm=D.ORIGIN_ARM, admissible=[3, 4, 5])
+    assert verdict["verdict"] == "weakened"
+    assert verdict["channels_without_a_demonstrated_margin"] == [
+        D.fragment_channel_name(5, "kneser_ney")
+    ]
+
+
+def test_a_channel_that_beats_the_model_on_both_sides_is_about_the_channel():
+    stage = _stage()
+    intervals = {key: [0.05, 0.15] for key in _keys([3, 4, 5])}
+    beaten = D.fragment_channel_name(5, "kneser_ney")
+    intervals[beaten] = [-0.20, -0.05]
+    both = stage._fragment_verdict(
+        _arm_rows(intervals, {beaten: [-0.18, -0.03]}), arm=D.ORIGIN_ARM, admissible=[3, 4, 5]
+    )
+    assert both["verdict"] == "overturned"
+    assert "about the channel" in both["reading"]
+    designs_only = stage._fragment_verdict(
+        _arm_rows(intervals, {beaten: [0.10, 0.30]}), arm=D.ORIGIN_ARM, admissible=[3, 4, 5]
+    )
+    assert designs_only["verdict"] == "overturned"
+    assert "about the referent" in designs_only["reading"]
+
+
+def test_no_admissible_order_beyond_f12s_own_is_unresolved_rather_than_a_pass():
+    stage = _stage()
+    verdict = stage._fragment_verdict(_arm_rows({}), arm=D.ORIGIN_ARM, admissible=[])
+    assert verdict["verdict"] == "unresolved"
+    assert verdict["stronger_order_available_than_f12_used"] is False
+
+
+def test_the_turning_point_rule_finds_the_order_a_known_corpus_supports():
+    # The positive control for the admissibility rule, on a corpus whose true
+    # order is known by construction: sequences built from five-residue motifs,
+    # so a four-residue context is the longest one that predicts anything and
+    # order five is where the estimate stops being supported. Held-out
+    # cross-entropy turns exactly there under both schemes and on both draws --
+    # while the plug-in cross-entropy on the counted records keeps falling, which
+    # is why admissibility is not decided on it.
+    stage = _stage()
+    rng = np.random.default_rng(4)
+    alphabet = list(ALPHABET)
+    motifs = ["".join(rng.choice(alphabet, size=5)) for _ in range(12)]
+
+    def corpus(count, length):
+        records = []
+        for _ in range(count):
+            parts: list[str] = []
+            while sum(map(len, parts)) < length:
+                if rng.random() < 0.5:
+                    parts.append("".join(rng.choice(motifs)))
+                else:
+                    parts.append("".join(rng.choice(alphabet, size=int(rng.integers(3, 9)))))
+            records.append("".join(parts))
+        return records
+
+    train, held = corpus(1200, 1000), corpus(80, 1000)
+    counts = _toy_counts(train, (1, 2, 3, 4, 5, 6), chunk_bytes=1 << 20)
+    curves = stage._held_out_curves(counts, {"a": held[:40], "b": held[40:]}, max_order=6)
+    record = stage._supported_orders(curves, 6)
+    assert record["highest_supported_order"] == 4
+    assert record["turned_at"] == 5
+
+    plug_in = D.InterpolatedFragmentModel(counts, 6, "kneser_ney")
+    curve = [plug_in.cross_entropy(train[:60], order)["cross_entropy_nats"] for order in range(1, 7)]
+    assert curve == sorted(curve, reverse=True)

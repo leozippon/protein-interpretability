@@ -278,5 +278,46 @@ class Refusals(unittest.TestCase):
             KmerBackground({3: good.astype(np.int32)}, 0, 0, Path("x"), 0, 0.0)
 
 
+class HeldOutSubtraction(unittest.TestCase):
+    """Counts are additive over records, which is what makes a held-out estimate cheap.
+
+    The higher-order fragment channel is admitted on held-out cross-entropy, and
+    the training counts for that estimate are the corpus counts minus the counts
+    of the held-out records rather than a second 24 GB pass. That is only exact
+    because no window spans a record; if it ever stopped being exact the held-out
+    number would be optimistic and nothing else would look wrong.
+    """
+
+    def test_the_corpus_minus_a_held_out_subset_is_the_complement(self) -> None:
+        records = [
+            "ACDEFGHIKLMNPQRSTVWYACDEFGHIK",
+            "MKVLAAGIVGLNLGGWLAAQ",
+            "PPPPQQQQRRRRSSSSTTTT",
+            "WYACDEFGHIKLMNPQRSTV",
+            "GGGGGGGGGGGGGGGGGGGGGGGG",
+        ]
+        held = {1, 3}
+        with TemporaryDirectory() as work:
+            def write(name, chosen):
+                lines = []
+                for index in chosen:
+                    lines.append(f">r{index}")
+                    body = records[index]
+                    lines.extend(body[at : at + 7] for at in range(0, len(body), 7))
+                return _write(work, name, "\n".join(lines) + "\n")
+
+            whole = count_kmers(write("all.faa", range(len(records))), (3, 4, 5))
+            subset = count_kmers(write("held.faa", sorted(held)), (3, 4, 5))
+            rest = count_kmers(
+                write("rest.faa", [i for i in range(len(records)) if i not in held]),
+                (3, 4, 5),
+            )
+            for k in (3, 4, 5):
+                np.testing.assert_array_equal(
+                    whole.counts[k] - subset.counts[k], rest.counts[k]
+                )
+            self.assertEqual(whole.residues - subset.residues, rest.residues)
+
+
 if __name__ == "__main__":
     unittest.main()

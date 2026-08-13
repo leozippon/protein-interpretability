@@ -639,6 +639,328 @@ def fragment_log_likelihood(
     return log_conditional[index].sum(axis=1)
 
 
+# ------------------------------------------- the higher-order fragment channel
+#
+# F12's surviving half is that ProtGPT2's margin over *corpus statistics*
+# survives the exclusion of retrieval, and it rests entirely on the two channels
+# above: maximum-likelihood conditionals at k = 3 and k = 4. A 3-mer or 4-mer
+# Markov model is a weak model of corpus statistics, so that half is only worth
+# what the strongest fragment channel the corpus supports is worth. Everything
+# below builds that channel.
+#
+# Two things have to be right for it to be a fair test rather than a rigged one.
+# A higher-order conditional cannot be maximum-likelihood: 20 letters give 3.2 M
+# possible 5-mers and 64 M possible 6-mers, unobserved ones exist at those orders
+# even in a 17 G-residue corpus, and an unobserved k-mer under maximum likelihood
+# is a log-likelihood of minus infinity. So the channel needs a smoothing scheme,
+# and the scheme changes its strength. It is *declared* rather than tuned: two
+# parameter-free schemes, both reported. And past some order the conditional
+# stops being estimated and starts being a lookup of the corpus itself, which
+# would make the model look good for the wrong reason; where that happens is a
+# measurement (held-out cross-entropy on natural sequence held out of the count)
+# and not a matter of taste.
+
+#: The two declared smoothing schemes. Both are parameter-free given the corpus,
+#: which is what makes "declared, not tuned" enforceable: neither has a knob that
+#: could be moved after a result is seen.
+#:
+#: ``witten_bell``  interpolate order j with order j-1 at weight
+#:                  ``D(c) / (N(c) + D(c))``, ``D(c)`` the number of distinct
+#:                  continuations of the context and ``N(c)`` its total count.
+#: ``kneser_ney``   interpolated Kneser-Ney with the Chen-Goodman discount
+#:                  ``D = n1 / (n1 + 2 n2)`` taken from each table's own
+#:                  count-of-counts, and lower orders scored on continuation
+#:                  counts rather than raw counts.
+FRAGMENT_SMOOTHING: tuple[str, ...] = ("kneser_ney", "witten_bell")
+
+
+def fragment_channel_name(order: int, scheme: str) -> str:
+    """The baseline name an order-``k`` smoothed fragment channel is filed under."""
+
+    if scheme not in FRAGMENT_SMOOTHING:
+        raise ValueError(f"{scheme!r} is not one of {FRAGMENT_SMOOTHING}")
+    return f"fragment_interp_k{int(order)}_{scheme}"
+
+
+#: Rows per block in the reductions below. The k = 7 table is 1.28 G cells and
+#: 10.24 GB; every reduction over it is written blocked so that the table is read
+#: once, contiguously, with a bounded temporary. The column-at-a-time form is the
+#: obvious one and costs twenty strided passes for the same answer.
+_BLOCK_ROWS: int = 1 << 22
+
+
+def _row_totals_and_types(table: np.ndarray, width: int) -> tuple[np.ndarray, np.ndarray]:
+    """Per-context total count and number of distinct continuations."""
+
+    view = table.reshape(-1, width)
+    totals = np.empty(view.shape[0], dtype=np.int64)
+    types = np.empty(view.shape[0], dtype=np.int64)
+    for start in range(0, view.shape[0], _BLOCK_ROWS):
+        block = view[start : start + _BLOCK_ROWS]
+        totals[start : start + _BLOCK_ROWS] = block.sum(axis=1)
+        types[start : start + _BLOCK_ROWS] = (block > 0).sum(axis=1)
+    return totals, types
+
+
+def _continuation_counts(table: np.ndarray, width: int) -> np.ndarray:
+    """``N1+(. w)`` for every ``(j)``-gram ``w``, from the ``(j+1)``-gram table.
+
+    The count vector indexes a k-mer as its base-20 value with the *first* symbol
+    most significant, so reshaping to ``(width, -1)`` splits on that first symbol
+    and the number of non-zero rows above a suffix is the number of distinct
+    symbols that precede it. This is the quantity Kneser-Ney's lower orders are
+    defined on, and taking it from the counts already in memory is why no second
+    pass over the corpus is needed.
+    """
+
+    view = table.reshape(width, -1)
+    out = np.zeros(view.shape[1], dtype=np.int64)
+    for row in range(width):
+        out += view[row] > 0
+    return out
+
+
+def _chen_goodman_discount(table: np.ndarray) -> float:
+    """``n1 / (n1 + 2 n2)`` from a table's own count-of-counts.
+
+    Parameter-free by construction. Zero when the table has no singletons, which
+    happens only on tables small enough that every cell is heavily occupied (the
+    unigram table, and toy corpora in the tests); there the level contributes its
+    own maximum-likelihood estimate and no interpolation weight, which is correct
+    rather than degenerate because every cell is then non-zero.
+    """
+
+    flat = table.reshape(-1)
+    ones = 0
+    twos = 0
+    step = _BLOCK_ROWS * 20
+    for start in range(0, flat.size, step):
+        block = flat[start : start + step]
+        ones += int((block == 1).sum())
+        twos += int((block == 2).sum())
+    if ones + 2 * twos == 0:
+        return 0.0
+    return float(ones / (ones + 2 * twos))
+
+
+@dataclass(frozen=True)
+class _Level:
+    """One order of the interpolation: its table and the two context statistics."""
+
+    table: np.ndarray
+    totals: np.ndarray
+    types: np.ndarray
+    discount: float
+
+
+class InterpolatedFragmentModel:
+    """An interpolated Markov model over the corpus k-mer counts.
+
+    The order is passed per call rather than fixed at construction, because every
+    order shares the same tables and the question this class exists to answer is
+    how the channel behaves *as the order rises*. A call at order ``k`` scores
+    position ``t`` against the ``min(t, k-1)`` residues before it, so the model is
+    a proper normalised distribution over whole sequences and no leading residue
+    is dropped. That is a strengthening of :func:`fragment_log_likelihood`, which
+    omits the first ``k - 1`` emissions; the two are reported side by side so the
+    convention change and the order change are never confounded.
+    """
+
+    def __init__(self, counts: Mapping[int, np.ndarray], max_order: int, scheme: str) -> None:
+        if scheme not in FRAGMENT_SMOOTHING:
+            raise ValueError(f"{scheme!r} is not one of {FRAGMENT_SMOOTHING}")
+        if max_order < 1:
+            raise ValueError(f"the order must be positive, got {max_order}")
+        width = len(ALPHABET)
+        missing = [k for k in range(1, max_order + 1) if k not in counts]
+        if missing:
+            raise ValueError(
+                f"an order-{max_order} channel needs count vectors for k = "
+                f"{list(range(1, max_order + 1))}; missing {missing}"
+            )
+        self.width = width
+        self.scheme = scheme
+        self.max_order = int(max_order)
+        self._raw: dict[int, _Level] = {}
+        self._continuation: dict[int, _Level] = {}
+        for order in range(1, max_order + 1):
+            table = np.asarray(counts[order])
+            if table.shape != (width**order,):
+                raise ValueError(f"k = {order} carries {table.shape}, not {(width**order,)}")
+            totals, types = _row_totals_and_types(table, width)
+            self._raw[order] = _Level(table, totals, types, _chen_goodman_discount(table))
+        if scheme == "kneser_ney":
+            for order in range(1, max_order):
+                table = _continuation_counts(np.asarray(counts[order + 1]), width)
+                totals, types = _row_totals_and_types(table, width)
+                self._continuation[order] = _Level(
+                    table, totals, types, _chen_goodman_discount(table)
+                )
+
+    # -- the recursion ------------------------------------------------------
+
+    def _level(self, order: int, *, top: bool) -> _Level:
+        if top or self.scheme == "witten_bell":
+            return self._raw[order]
+        return self._continuation[order]
+
+    def _step(self, level: _Level, context: np.ndarray, symbol: np.ndarray, lower: np.ndarray) -> np.ndarray:
+        totals = level.totals[context].astype(np.float64)
+        types = level.types[context].astype(np.float64)
+        value = level.table[context * self.width + symbol].astype(np.float64)
+        seen = totals > 0.0
+        safe = np.where(seen, totals, 1.0)
+        if self.scheme == "witten_bell":
+            estimate = (value + types * lower) / (safe + types)
+        else:
+            weight = level.discount * types / safe
+            estimate = np.maximum(value - level.discount, 0.0) / safe + weight * lower
+        return np.where(seen, estimate, lower)
+
+    def log_probability(self, context: np.ndarray, symbol: np.ndarray, order: int) -> np.ndarray:
+        """``log P(symbol | context)`` under an order-``order`` interpolation.
+
+        ``context`` carries the preceding residues as a base-20 value with the
+        most recent residue least significant, so the order-``j`` context is
+        ``context % width**(j-1)`` and one array serves every level.
+        """
+
+        if not 1 <= order <= self.max_order:
+            raise ValueError(f"order {order} is outside 1..{self.max_order}")
+        probability = np.full(np.shape(symbol), 1.0 / self.width, dtype=np.float64)
+        for level_order in range(1, order + 1):
+            modulus = self.width ** (level_order - 1)
+            reduced = context % modulus if modulus > 1 else np.zeros_like(context)
+            probability = self._step(
+                self._level(level_order, top=level_order == order),
+                reduced,
+                symbol,
+                probability,
+            )
+        if not (probability > 0.0).all():
+            raise RuntimeError(
+                f"the order-{order} {self.scheme} channel assigned zero probability; "
+                "an interpolated model that can do that is not usable as a likelihood"
+            )
+        return np.log(probability)
+
+    # -- scoring ------------------------------------------------------------
+
+    def evaluate(self, sequences: Sequence[str], order: int) -> dict[str, Any]:
+        """Score once and report the likelihood and the support together.
+
+        One pass, because the sparsity diagnostics have to sit beside every number
+        they qualify: a channel that wins on positions the corpus never saw has
+        backed off to a lower order, and a channel that wins on positions the
+        corpus saw verbatim is a lookup. Neither is visible in the likelihood.
+        """
+
+        stream = _SequenceStream(sequences, order, self.width)
+        positional = self._positional(stream, order)
+        total = float(positional.sum())
+        positions = int(positional.size)
+        return {
+            "log_likelihood": stream.reduce(positional),
+            "cross_entropy_nats": -total / positions,
+            "perplexity": float(np.exp(-total / positions)),
+            **self._support(stream, order),
+        }
+
+    def sequence_log_likelihood(self, sequences: Sequence[str], order: int) -> np.ndarray:
+        """Whole-sequence log-likelihood of each sequence, every position scored."""
+
+        stream = _SequenceStream(sequences, order, self.width)
+        return stream.reduce(self._positional(stream, order))
+
+    def support(self, sequences: Sequence[str], order: int) -> dict[str, Any]:
+        """How much of this evaluation the corpus actually saw, at full order.
+
+        Reported beside every result rather than used as a gate. A channel whose
+        contexts are all unseen has backed off to a lower order and is not the
+        order it is labelled; a channel whose k-mers are nearly all seen on one
+        side and nearly none on the other is measuring two different things on
+        the two sides.
+        """
+
+        return self._support(_SequenceStream(sequences, order, self.width), order)
+
+    def _support(self, stream: "_SequenceStream", order: int) -> dict[str, Any]:
+        at_order = stream.top == order
+        context = (
+            stream.context[at_order]
+            if order > 1
+            else np.zeros(int(at_order.sum()), dtype=np.int64)
+        )
+        level = self._raw[order]
+        unseen_context = int((level.totals[context] == 0).sum())
+        index = context * self.width + stream.symbol[at_order]
+        unseen_kmer = int((level.table[index] == 0).sum())
+        positions = int(at_order.sum())
+        return {
+            "positions": int(stream.symbol.size),
+            "positions_at_full_order": positions,
+            "unseen_context_positions": unseen_context,
+            "unseen_kmer_positions": unseen_kmer,
+            "unseen_context_fraction": (unseen_context / positions) if positions else None,
+            "unseen_kmer_fraction": (unseen_kmer / positions) if positions else None,
+        }
+
+    def cross_entropy(self, sequences: Sequence[str], order: int) -> dict[str, Any]:
+        """Per-residue cross-entropy in nats, over every scored position."""
+
+        record = self.evaluate(sequences, order)
+        record.pop("log_likelihood")
+        return record
+
+    def _positional(self, stream: "_SequenceStream", order: int) -> np.ndarray:
+        values = np.empty(stream.symbol.size, dtype=np.float64)
+        for top in range(1, order + 1):
+            selected = stream.top == top
+            if not selected.any():
+                continue
+            values[selected] = self.log_probability(
+                stream.context[selected], stream.symbol[selected], top
+            )
+        return values
+
+
+class _SequenceStream:
+    """Every scored position of a list of sequences, as flat arrays.
+
+    Sequences differ in length and a context may not reach across a boundary, so
+    the position of each residue within its own sequence is carried and every lag
+    that would reach past a sequence start contributes nothing. Building this
+    once and evaluating it grouped by available context length is what keeps the
+    corpus held-out pass -- millions of positions over variable-length records --
+    a vectorised operation.
+    """
+
+    def __init__(self, sequences: Sequence[str], order: int, width: int) -> None:
+        if not sequences:
+            raise ValueError("no sequences to score")
+        lengths = np.array([len(sequence) for sequence in sequences], dtype=np.int64)
+        if (lengths < 1).any():
+            raise ValueError("an empty sequence carries no scored position")
+        raw = np.frombuffer("".join(sequences).encode("ascii"), dtype=np.uint8)
+        symbol = _ENCODE[raw]
+        if (symbol < 0).any():
+            raise ValueError("a sequence carries a residue outside the canonical alphabet")
+        self.lengths = lengths
+        self.starts = np.concatenate(([0], np.cumsum(lengths)[:-1]))
+        self.symbol = symbol
+        within = np.arange(symbol.size, dtype=np.int64) - np.repeat(self.starts, lengths)
+        context = np.zeros(symbol.size, dtype=np.int64)
+        for lag in range(1, order):
+            shifted = np.zeros(symbol.size, dtype=np.int64)
+            shifted[lag:] = symbol[:-lag]
+            context += np.where(within >= lag, shifted, 0) * (width ** (lag - 1))
+        self.context = context
+        self.top = np.minimum(within + 1, order)
+
+    def reduce(self, values: np.ndarray) -> np.ndarray:
+        return np.add.reduceat(values, self.starts)
+
+
 def corpus_residue_background(path: Path | None = None) -> np.ndarray:
     """The corpus residue frequencies F10's composition baseline is defined on."""
 
