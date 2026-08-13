@@ -102,6 +102,7 @@ from src.transfer.arms import (  # noqa: E402
     iter_corpus_records,
 )
 from src.transfer.io import write_json  # noqa: E402
+from src.transfer.near_duplicates import screen_against_training_stream  # noqa: E402
 from src.transfer.replaceable import (  # noqa: E402
     JOINT_MODES,
     PROGEN3_ARM,
@@ -149,6 +150,15 @@ STAGE21 = _load_stage("21_joint_mode_qualification.py")
 #: number of these, so the block size and the offset that skips past it cannot be
 #: allowed to disagree -- it was a literal in two places and they did.
 SHUFFLE_BLOCK = 8192
+
+#: How many held-out candidates are drawn per sequence the run will keep.
+#:
+#: The near-duplicate screen below drops candidates, so the draw has to have
+#: something left. Four is what the measured drop rate affords with margin: on
+#: the Swiss-Prot pool the same relation removed 41.4% of held-out records at the
+#: 95%-identity boundary, so a 4x draw survives a drop rate well past twice that
+#: and refuses rather than quietly shrinking the evaluation budget if it does not.
+HELD_OUT_OVERSAMPLE = 4
 
 SCHEMA_VERSION = "r2_transfer_transcoder_training_v1"
 DEFAULT_OUT = REPO / "results/transfer/transcoder_training"
@@ -706,21 +716,72 @@ def main() -> None:
     # independent Swiss-Prot replication does not share the cohort at all. It
     # does bound their absolute held-out NMSE, which those entries already
     # decline to compare against any published figure.
+    #
+    # **And a disjoint offset is still not a held-out set on a protein corpus**
+    # (L30, EXP-R2-175). Everything above makes the two sets disjoint *as
+    # records*; on Swiss-Prot that is a small part of the property, because the
+    # corpus is non-redundant at the level of the entry and not of the sequence.
+    # Measured on the pool `25_model_diffing_baselines.py` draws, 41.4% of
+    # held-out records keep a relative in the training side at 95% identity or
+    # above while only 17.4% are exact -- so a record-level offset leaves most of
+    # the leakage, and the held-out NMSE it reports is optimistic by an amount
+    # nothing measures. That stage was refusing to start over this and was right
+    # to; this one never checked, so the same defect reached the same lineage
+    # through a second door.
+    #
+    # The remedy is the same relation, asked of a stream: the held-out draw is
+    # oversampled and every candidate a training record is a near-duplicate of is
+    # dropped. It runs on **both** modes and not only on the protein one --
+    # attainability before application (Appendix B rule 2), and on a text corpus
+    # the screen is expected to drop nothing, which is the demonstration rather
+    # than an assumption.
     blocks_touched = -(-(args.steps * args.batch_size) // SHUFFLE_BLOCK)
     held_out_offset = blocks_touched * SHUFFLE_BLOCK
-    held_out = list(
+    symbol_unit = "characters" if source == "openwebtext" else "residues"
+    candidates = list(
         stream_records(
             records, seed=args.corpus_seed, skip=held_out_offset,
-            limit=args.eval_sequences,
+            limit=args.eval_sequences * HELD_OUT_OVERSAMPLE,
         )
     )
-    if len(held_out) < args.eval_sequences:
+    if len(candidates) < args.eval_sequences:
         raise RuntimeError(
-            f"the corpus ran out at the held-out offset: {len(held_out)} of "
+            f"the corpus ran out at the held-out offset: {len(candidates)} of "
             f"{args.eval_sequences} sequences past a skip of {held_out_offset}. "
             "Lower --steps or --eval-sequences rather than evaluating on a "
             "population the training stream also reaches."
         )
+    print(
+        f"[held-out] screening {len(candidates)} candidates against the "
+        f"{held_out_offset} training records, on {symbol_unit}"
+    )
+    keep, screen = screen_against_training_stream(
+        [entry[0] for entry in candidates],
+        (
+            entry[0]
+            for entry in stream_records(
+                records, seed=args.corpus_seed, skip=0, limit=held_out_offset
+            )
+        ),
+        unit=symbol_unit,
+    )
+    survivors = [entry for entry, kept in zip(candidates, keep) if kept]
+    print(
+        f"  kept {screen['n_kept']} of {screen['n_candidates']}, "
+        f"max containment {screen['max_containment']:.4f}"
+    )
+    if len(survivors) < args.eval_sequences:
+        raise RuntimeError(
+            f"the near-duplicate screen left {len(survivors)} of "
+            f"{args.eval_sequences} held-out sequences from "
+            f"{len(candidates)} candidates: this corpus region is too close to "
+            "what training reaches. Draw from further out with a larger --steps "
+            "headroom, or raise HELD_OUT_OVERSAMPLE -- do not evaluate on the "
+            "unscreened draw, which is the leakage L30 measured"
+        )
+    held_out = survivors[: args.eval_sequences]
+    screen["n_held_out_taken"] = len(held_out)
+    screen["oversample_factor"] = HELD_OUT_OVERSAMPLE
     training = stream_records(records, seed=args.corpus_seed, skip=0, limit=None)
 
     record = TrainingRecord()
@@ -839,13 +900,13 @@ def main() -> None:
         MATCHED_TRAINING_KEY: matched.record(),
         "loader_gate": loader_gate,
         "training": record.record(),
-        "held_out": final,
+        "held_out": {**final, "near_duplicate_screen": screen},
         "condition": {
             "arm": model_handle.name,
             "corpus": str(corpus),
             "corpus_source": source,
             "symbol_band": [low, high],
-            "symbol_unit": "characters" if source == "openwebtext" else "residues",
+            "symbol_unit": symbol_unit,
             "input_rendering": model_handle.rendering_note,
             "training_budget": (
                 f"{budget} scored tokens; --steps {args.steps} bounds the run and "
@@ -861,7 +922,19 @@ def main() -> None:
                 f"drawn at a skip of {held_out_offset} eligible records, past "
                 "everything the training stream reaches at this step budget, so "
                 "the evaluation cohort is both disjoint from training and from "
-                "the same region of the corpus rather than from its head"
+                "the same region of the corpus rather than from its head; then "
+                "screened against every training record for near-duplication, "
+                "because a record-level offset is not a held-out set on a protein "
+                "corpus (L30). See held_out.near_duplicate_screen"
+            ),
+            "held_out_is_near_duplicate_disjoint_not_homology_disjoint": (
+                "the screen removes near-duplicates and deliberately not remote "
+                "homologues: a near-duplicate gate is attainable on the text "
+                "control under this same procedure and a homology gate has no "
+                "text analogue at all, so gating homology would hold the protein "
+                "mode to a criterion the text mode is not defined under. What "
+                "remains is measured rather than hidden -- the per-candidate "
+                "maximum containment is reported threshold-free"
             ),
             "scored_positions": "content tokens only; padding, terminus and "
             "special tokens are excluded from the objective, and on an "

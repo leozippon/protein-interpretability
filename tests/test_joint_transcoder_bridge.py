@@ -257,28 +257,48 @@ class TheProteinBandCannotProduceARecordThatDoesNotFit(unittest.TestCase):
 
 
 class _StubCorpus:
-    """A corpus large enough that the held-out draw clears the training budget.
+    """A corpus of INDEPENDENT records, large enough to clear the training budget.
 
     ``17_train_transcoder.py`` skips a whole number of shuffle blocks past
     everything training can reach, so the stub has to carry more than one block --
     which is the arithmetic that makes the two sets disjoint and is therefore
     worth exercising rather than patching away.
+
+    **It used to cycle a four-record list, and the docstring's "disjoint" was
+    false.** Cycling makes the two sets disjoint by *index* and identical by
+    *content*: every held-out record was byte-identical to a training record, so
+    the end-to-end tests exercised a held-out draw that was not held out. That is
+    exactly the confusion L30 measured on Swiss-Prot and EXP-R2-175 removed from
+    the diffing stage's fixtures, and the near-duplicate screen this stage now
+    runs refuses it -- which is how it was found here.
+
+    The records are therefore drawn independently. Their units are pooled from
+    the seed records so the stub tokenizer still covers every symbol, and the
+    split into units is by whitespace when the seed records carry any and by
+    character otherwise, which is the difference between a text corpus and a
+    protein one.
     """
 
-    def __init__(self, records: list[str]) -> None:
-        self.records = records
+    def __init__(self, records: list[str], *, seed: int = 20260812) -> None:
+        joiner = " " if any(" " in record for record in records) else ""
+        split = (lambda record: record.split()) if joiner else list
+        units = sorted({unit for record in records for unit in split(record)})
+        length = max(len(split(record)) for record in records)
+        rng = np.random.default_rng(seed)
+        draw = rng.integers(0, len(units), size=(STAGE17.SHUFFLE_BLOCK + 8, length))
+        self.records = [joiner.join(units[int(i)] for i in row) for row in draw]
 
     def __call__(self, source, *, min_symbols, max_symbols=None, path=None):
-        cycle = self.records
-        return (
-            (cycle[index % len(cycle)], None)
-            for index in range(STAGE17.SHUFFLE_BLOCK + 8)
-        )
+        return ((record, None) for record in self.records)
 
 
 @contextlib.contextmanager
-def _trainer_on_stubs(tokenizer, backbone, records):
-    """The trainer with its loaders and its corpus replaced, and nothing else."""
+def _trainer_on_stubs(tokenizer, backbone, records, corpus=None):
+    """The trainer with its loaders and its corpus replaced, and nothing else.
+
+    ``corpus`` overrides the stub corpus so a test can exercise a *bad* one --
+    the repeated-record draw whose held-out set is not held out.
+    """
 
     saved = (
         STAGE17.STAGE21.load_tokenizer,
@@ -304,7 +324,7 @@ def _trainer_on_stubs(tokenizer, backbone, records):
         dict(facts),
     )
     STAGE17.corpus_location = lambda source, path=None: Path(f"/nowhere/{source}")
-    STAGE17.iter_corpus_records = _StubCorpus(records)
+    STAGE17.iter_corpus_records = _StubCorpus(records) if corpus is None else corpus
     R.checkpoint_weights_digest = lambda path: "c" * 64
     try:
         yield
@@ -319,7 +339,7 @@ def _trainer_on_stubs(tokenizer, backbone, records):
         ) = saved
 
 
-def _train(directory: Path, mode: str, tokenizer, backbone, **overrides) -> Path:
+def _train(directory: Path, mode: str, tokenizer, backbone, corpus=None, **overrides) -> Path:
     """One dictionary, trained through the real ``main`` on stub loaders."""
 
     settings = {
@@ -335,7 +355,7 @@ def _train(directory: Path, mode: str, tokenizer, backbone, **overrides) -> Path
     }
     settings.update(overrides)
     records = SEQUENCES if mode == "protein" else DOCUMENTS
-    with _trainer_on_stubs(tokenizer, backbone, list(records)):
+    with _trainer_on_stubs(tokenizer, backbone, list(records), corpus=corpus):
         sys.argv = [
             "17_train_transcoder.py",
             "--architecture", "plt",
@@ -584,6 +604,73 @@ class TheFaithfulnessStageRefusesAnUnmatchedPair(unittest.TestCase):
         self.assertNotEqual(budget()["digest"], budget(sequences=64)["digest"])
         self.assertNotEqual(budget()["digest"], budget(bootstrap=500)["digest"])
         self.assertEqual(sorted(budget()["fields"]), sorted(STAGE15.SCORING_BUDGET_FIELDS))
+
+
+class TheHeldOutDrawMustBeHeldOutOnAProteinCorpusToo(unittest.TestCase):
+    """A record-level offset is not a held-out set, and this stage never checked.
+
+    L30 was measured on `25_model_diffing_baselines.py` and removed there. The
+    same defect reached this stage through a different door: its held-out set is
+    drawn by skipping past the training budget, which makes the two sets disjoint
+    as *records* and leaves 41.4% of a Swiss-Prot held-out draw with a relative
+    at 95% identity or above. What this class holds is that the screen exists, is
+    reported, and refuses rather than shrinking the evaluation budget in silence.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tokenizer = prollama_stub()
+        cls.backbone = _llama(cls.tokenizer)
+
+    def test_the_screen_runs_on_both_modes_and_reaches_the_artefact(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for mode, corpus in (("protein", "swissprot"), ("text", "openwebtext")):
+                payload = json.loads(
+                    _train(root, mode, self.tokenizer, self.backbone)
+                    .with_suffix(".json")
+                    .read_text()
+                )
+                screen = payload["held_out"]["near_duplicate_screen"]
+                self.assertEqual(payload["condition"]["corpus_source"], corpus)
+                self.assertEqual(screen["verdict"], "SCREENED_AGAINST_TRAINING_STREAM")
+                self.assertEqual(screen["n_held_out_taken"], 4)
+                self.assertEqual(screen["oversample_factor"], STAGE17.HELD_OUT_OVERSAMPLE)
+                self.assertGreater(screen["n_training_records_screened"], 0)
+                # Threshold-free, so a reader can move the cut without a re-run.
+                for field in ("max_containment", "q99_containment", "median_containment"):
+                    self.assertIn(field, screen)
+                self.assertIn(
+                    "near_duplicate_screen", payload["condition"]["held_out_draw"]
+                )
+
+    def test_a_corpus_of_one_repeated_record_refuses_instead_of_evaluating_on_it(self):
+        """The state the old fixture was in, now a negative path rather than the norm.
+
+        Cycling one record makes every held-out draw byte-identical to something
+        training saw. The run must stop and say so; reporting a held-out NMSE
+        measured on the training set is the silent failure this screen exists for.
+        """
+
+        class _CyclingCorpus(_StubCorpus):
+            def __init__(self, records):
+                self.records = [
+                    records[index % len(records)]
+                    for index in range(STAGE17.SHUFFLE_BLOCK + 8)
+                ]
+
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(RuntimeError) as caught:
+                _train(
+                    Path(directory),
+                    "protein",
+                    self.tokenizer,
+                    self.backbone,
+                    corpus=_CyclingCorpus(list(SEQUENCES)),
+                )
+        message = str(caught.exception)
+        self.assertIn("near-duplicate screen left", message)
+        self.assertIn("do not evaluate on the unscreened draw", message)
 
 
 class ADictionaryScoredOnTheOtherModeIsRefused(unittest.TestCase):

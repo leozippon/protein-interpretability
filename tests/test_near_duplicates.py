@@ -45,6 +45,7 @@ from src.transfer.near_duplicates import (  # noqa: E402
     boundary_containment,
     group_disjoint_split,
     near_duplicate_groups,
+    screen_against_training_stream,
     shingles,
 )
 
@@ -207,6 +208,99 @@ class TheBoundaryIsMeasuredNotAsserted(unittest.TestCase):
             boundary_containment(
                 _sequences(5, seed=15), np.ones(4, dtype=bool), unit="residues"
             )
+
+
+class AStreamedTrainingSideIsScreenedTheSameWay(unittest.TestCase):
+    """The pool form and the stream form must agree on the same records.
+
+    `17_train_transcoder.py` cannot group its training side: it is hundreds of
+    thousands of records read once. What it can do is index the few hundred
+    held-out candidates and stream the training records past them. That is the
+    same relation at the same threshold, and the risk is that "the same" is
+    asserted rather than held -- so it is checked against the pool form here.
+    """
+
+    def test_a_planted_near_duplicate_is_dropped_and_the_rest_survive(self):
+        training = _sequences(40, seed=21)
+        candidates = _sequences(10, seed=22)
+        candidates[4] = _mutate(training[7], fraction=0.02, seed=23)
+
+        keep, screen = screen_against_training_stream(
+            candidates, iter(training), unit="residues"
+        )
+        self.assertEqual(list(np.flatnonzero(~keep)), [4])
+        self.assertEqual(screen["n_dropped"], 1)
+        self.assertEqual(screen["n_kept"], 9)
+        self.assertEqual(screen["n_training_records_screened"], 40)
+        self.assertGreaterEqual(screen["max_containment"], NEAR_DUPLICATE_CONTAINMENT)
+
+    def test_the_stream_form_drops_exactly_what_the_pool_form_would_group(self):
+        training = _sequences(30, seed=31)
+        candidates = _sequences(8, seed=32)
+        # A fragment of a training record and a substituted copy of another:
+        # both are one unit with their source under the pool relation, and the
+        # first is the length-asymmetric shape a Jaccard threshold misses.
+        candidates[1] = training[3][20:90]
+        candidates[6] = _mutate(training[11], fraction=0.03, seed=33)
+
+        keep, _ = screen_against_training_stream(
+            candidates, iter(training), unit="residues"
+        )
+        groups, _ = near_duplicate_groups(training + candidates, unit="residues")
+        pooled = {
+            position
+            for position in range(len(candidates))
+            if groups[len(training) + position] in set(groups[: len(training)])
+        }
+        self.assertEqual(set(np.flatnonzero(~keep).tolist()), pooled)
+        self.assertEqual(pooled, {1, 6})
+
+    def test_an_unrelated_text_stream_drops_nothing(self):
+        """Attainability on the text control, as an executable property.
+
+        The screen is applied to both modes, so if it removed documents from an
+        unrelated web corpus it would be silently shrinking the text mode's
+        evaluation budget rather than protecting it.
+        """
+
+        rng = np.random.default_rng(41)
+        vocabulary = [f"w{index}" for index in range(4000)]
+        documents = [
+            " ".join(vocabulary[int(i)] for i in rng.integers(0, 4000, size=200))
+            for _ in range(30)
+        ]
+        keep, screen = screen_against_training_stream(
+            documents[20:], iter(documents[:20]), unit="characters"
+        )
+        self.assertTrue(keep.all())
+        self.assertEqual(screen["n_dropped"], 0)
+        self.assertLess(screen["max_containment"], NEAR_DUPLICATE_CONTAINMENT)
+
+    def test_the_statistic_is_reported_threshold_free(self):
+        training = _sequences(12, seed=51)
+        candidates = _sequences(6, seed=52)
+        _, screen = screen_against_training_stream(
+            candidates, iter(training), unit="residues"
+        )
+        for field in ("max_containment", "q99_containment", "median_containment"):
+            self.assertIn(field, screen)
+        self.assertEqual(screen["containment_threshold"], NEAR_DUPLICATE_CONTAINMENT)
+        self.assertEqual(screen["shingle_length"], 5)
+
+    def test_an_empty_candidate_draw_and_an_impossible_threshold_are_refused(self):
+        with self.assertRaises(ValueError):
+            screen_against_training_stream([], iter([]), unit="residues")
+        with self.assertRaises(ValueError):
+            screen_against_training_stream(
+                _sequences(3, seed=61), iter([]), unit="residues", containment=0.0
+            )
+
+    def test_a_candidate_too_short_to_carry_a_shingle_is_kept_and_counted(self):
+        keep, screen = screen_against_training_stream(
+            ["AC", *_sequences(3, seed=71)], iter(_sequences(5, seed=72)), unit="residues"
+        )
+        self.assertTrue(keep[0])
+        self.assertEqual(screen["n_candidates_without_shingles"], 1)
 
 
 if __name__ == "__main__":

@@ -104,7 +104,7 @@ fit/held-out split has to answer first.
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 import numpy as np
@@ -377,5 +377,86 @@ def boundary_containment(
         "median": float(np.median(best)) if best.size else 0.0,
         "n_above_half": int((best >= 0.5).sum()),
         "n_above_threshold": int((best >= NEAR_DUPLICATE_CONTAINMENT).sum()),
+        "n_with_no_shared_shingle": int((best == 0.0).sum()),
+    }
+
+
+def screen_against_training_stream(
+    candidates: Sequence[str],
+    training: Iterable[str],
+    *,
+    unit: str,
+    containment: float = NEAR_DUPLICATE_CONTAINMENT,
+    shingle: int | None = None,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    """Which held-out candidates no training record is a near-duplicate of.
+
+    The same relation as :func:`near_duplicate_groups` and the same threshold,
+    asked of a stream rather than of a pool. A stage that draws its held-out set
+    by *skipping past* the training budget -- ``17_train_transcoder.py`` does --
+    has no pool to group: the training side is hundreds of thousands of records
+    read once, and materialising it to group it costs more memory than the run
+    it protects. So the index is built over the **candidates**, which number in
+    the hundreds, and the training records are streamed against it. The
+    arithmetic is identical to :func:`boundary_containment`'s; only which side is
+    resident differs.
+
+    Returns a keep-mask over ``candidates`` in draw order and a summary carrying
+    the threshold-free per-candidate maximum containment, so the cut is
+    inspectable rather than only applied.
+
+    ``training`` is consumed exactly once. A candidate too short to carry a
+    shingle can never reach the threshold and is kept, which is the same
+    treatment :func:`near_duplicate_groups` gives it -- its own group -- and the
+    count is reported rather than left to be inferred.
+    """
+
+    if not 0.0 < float(containment) <= 1.0:
+        raise ValueError("containment must lie in (0, 1]")
+    if not candidates:
+        raise ValueError("a screen needs at least one candidate")
+
+    sets = [shingles(record, unit=unit, length=shingle) for record in candidates]
+    index: dict[str, list[int]] = {}
+    for position, entry in enumerate(sets):
+        for gram in entry:
+            index.setdefault(gram, []).append(position)
+
+    best = np.zeros(len(candidates), dtype=np.float64)
+    n_training = 0
+    for record in training:
+        n_training += 1
+        entry = shingles(record, unit=unit, length=shingle)
+        if not entry:
+            continue
+        counts: dict[int, int] = {}
+        for gram in entry:
+            for position in index.get(gram, ()):
+                counts[position] = counts.get(position, 0) + 1
+        for position, count in counts.items():
+            smaller = min(len(entry), len(sets[position]))
+            if smaller:
+                best[position] = max(best[position], count / smaller)
+
+    keep = best < float(containment)
+    return keep, {
+        "verdict": "SCREENED_AGAINST_TRAINING_STREAM",
+        "relation": (
+            "a candidate is dropped when any single training record reaches "
+            "|A & B| / min(|A|, |B|) of the containment threshold with it -- the "
+            "relation near_duplicate_groups joins on, applied one-sided because "
+            "the training side is a stream and not a pool"
+        ),
+        "unit": unit,
+        "shingle_length": SHINGLE_UNITS[unit] if shingle is None else int(shingle),
+        "containment_threshold": float(containment),
+        "n_candidates": len(candidates),
+        "n_kept": int(keep.sum()),
+        "n_dropped": int((~keep).sum()),
+        "n_training_records_screened": n_training,
+        "n_candidates_without_shingles": int(sum(1 for entry in sets if not entry)),
+        "max_containment": float(best.max()),
+        "q99_containment": float(np.quantile(best, 0.99)),
+        "median_containment": float(np.median(best)),
         "n_with_no_shared_shingle": int((best == 0.0).sum()),
     }
