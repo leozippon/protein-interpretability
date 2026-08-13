@@ -294,6 +294,16 @@ def test_cohort_counts_track_the_variant_floor():
     assert counts["naturals_scored"] == 1
 
 
+def test_the_post_hoc_length_bands_are_taken_from_the_design_lengths():
+    designs = [
+        _wildtype(f"d{index}", "design", "s", "c", sequence="A" * length)
+        for index, length in enumerate([40, 42, 44, 50, 60])
+    ]
+    assert D.design_length_bands(designs) == ((40, 44), (40, 50), (40, 60))
+    with pytest.raises(ValueError, match="no designs"):
+        D.design_length_bands([])
+
+
 def test_a_wild_type_whose_arrays_disagree_is_refused():
     with pytest.raises(ValueError, match="disagree in length"):
         _wildtype("d", "design", "s", "c", phenotype=np.array([0.1]))

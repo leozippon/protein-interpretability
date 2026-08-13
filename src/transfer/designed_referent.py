@@ -751,6 +751,35 @@ def channel_comparison(
     return record
 
 
+#: What EXP-R2-189 section 6 read off F10's own artefacts for the 64 ProteinGym
+#: Tsuboyama assays. Quoted here so the cross-check compares against a recorded
+#: number rather than against a memory of one.
+PROTEINGYM_TSUBOYAMA_REFERENCE: Mapping[str, float] = {
+    "protgpt2": 0.367,
+    "progen2-medium": 0.365,
+}
+
+
+def design_length_bands(
+    designs: Sequence[WildType],
+) -> tuple[tuple[int, int], ...]:
+    """Length bands for a post-hoc length-matched control, taken from the designs.
+
+    Derived from the design lengths' own quantiles rather than chosen, and
+    reported as a sweep, because the question a length-matched control answers is
+    whether the design-side reading is about *designed* sequence or about *short*
+    sequence, and a single hand-picked band would answer it at one width only.
+    """
+
+    lengths = np.array([len(wt.sequence) for wt in designs], dtype=np.int64)
+    if lengths.size == 0:
+        raise ValueError("no designs to take a length band from")
+    low = int(lengths.min())
+    return tuple(
+        (low, int(np.percentile(lengths, q))) for q in (50.0, 75.0, 100.0)
+    )
+
+
 def arm_verdict(design: Mapping[str, bool], control: Mapping[str, bool]) -> dict[str, Any]:
     """The pre-registered rule, applied.
 

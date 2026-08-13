@@ -77,6 +77,7 @@ from src.transfer.arms import (  # noqa: E402
 )
 from src.transfer.io import sha256_file, write_json  # noqa: E402
 from src.transfer.kmer_background import load as load_kmer_background  # noqa: E402
+from src.transfer.probes import PROTEINGYM_ROOT  # noqa: E402
 
 SCHEMA_VERSION = D.SCHEMA_VERSION
 STAGES = ("cohort", "baseline", "score", "analyse")
@@ -382,6 +383,117 @@ def _side_report(
     return report
 
 
+def _post_hoc(
+    referent: D.Referent,
+    baseline_payload: dict[str, Any],
+    models: dict[str, dict[str, Any]],
+    *,
+    proteingym_dir: Path,
+    resamples: int,
+    seed: int,
+) -> dict[str, Any]:
+    """Two controls computed AFTER the pre-registered reading, and labelled so.
+
+    Neither can change the verdict, which is decided by the frozen rule on the
+    headline reading. They exist because the two questions a reader asks of a
+    design-side null are "is the instrument the same one F10 used" and "is this
+    about designed sequence or about short sequence", and answering them from
+    the artefacts is better than answering them in prose.
+    """
+
+    by = {wt.name: wt for wt in referent.wildtypes}
+    units = {name: by[name].unit for name in by}
+    naturals = [wt for wt in referent.side("natural")]
+    designs = [wt for wt in referent.side("design")]
+
+    # 1. The same estimand on the 64 ProteinGym Tsuboyama wild types, which is
+    #    the cohort EXP-R2-189 section 6 read F10's artefacts over.
+    assays = sorted(Path(proteingym_dir).glob("*Tsuboyama*.csv"))
+    identifiers = {path.stem.split("_")[-1].upper() for path in assays}
+    matched = sorted(
+        wt.name
+        for wt in naturals
+        if "_" not in wt.name and wt.name.split(".")[0].upper() in identifiers
+    )
+    cross_check: dict[str, Any] = {
+        "n_proteingym_tsuboyama_assays": len(assays),
+        "n_matched_in_this_cohort": len(matched),
+        "reference": dict(D.PROTEINGYM_TSUBOYAMA_REFERENCE),
+        "reference_source": "EXP-R2-189 section 6, read off F10's own artefacts",
+        "unweighted_mean_spearman": {},
+    }
+    for arm, payload in models.items():
+        values = [
+            payload["wildtypes"][name]["spearman"]
+            for name in matched
+            if payload["wildtypes"].get(name, {}).get("spearman") is not None
+        ]
+        cross_check["unweighted_mean_spearman"][arm] = float(np.mean(values))
+
+    # 2. The natural control restricted to the designs' own length bands.
+    bands: list[dict[str, Any]] = []
+    for low, high in D.design_length_bands(designs):
+        names = {wt.name for wt in naturals if low <= len(wt.sequence) <= high}
+        band: dict[str, Any] = {
+            "band": [low, high],
+            "n_naturals": len(names),
+            "n_clusters": len({by[name].cluster for name in names}),
+            "arms": {},
+        }
+        for arm, payload in models.items():
+            model = {
+                name: float(payload["wildtypes"][name]["spearman"])
+                for name in names
+                if payload["wildtypes"].get(name, {}).get("spearman") is not None
+            }
+            entry: dict[str, Any] = {
+                "model": D.unit_bootstrap(
+                    [model[name] for name in sorted(model)],
+                    [units[name] for name in sorted(model)],
+                    resamples=resamples,
+                    seed=seed,
+                ),
+                "contrasts": {},
+            }
+            for channel in D.BASELINES:
+                values = {
+                    name: float(baseline_payload["wildtypes"][name]["spearman"][channel])
+                    for name in names
+                    if baseline_payload["wildtypes"][name]["spearman"][channel] is not None
+                }
+                entry["contrasts"][channel] = D.channel_comparison(
+                    model, values, units, resamples=resamples, seed=seed
+                )
+            band["arms"][arm] = entry
+        bands.append(band)
+
+    return {
+        "preregistered": False,
+        "note": (
+            "computed after the pre-registered reading and unable to change it; "
+            "the verdict is decided by arm_verdict on the headline reading alone"
+        ),
+        "instrument_cross_check": cross_check,
+        "length_matched_control": {
+            "design_length_summary": {
+                "min": min(len(wt.sequence) for wt in designs),
+                "median": int(
+                    np.median([len(wt.sequence) for wt in designs])
+                ),
+                "max": max(len(wt.sequence) for wt in designs),
+            },
+            "natural_length_summary": {
+                "min": min(len(wt.sequence) for wt in naturals),
+                "median": int(
+                    np.median([len(wt.sequence) for wt in naturals])
+                ),
+                "max": max(len(wt.sequence) for wt in naturals),
+            },
+            "bands": bands,
+        },
+    }
+
+
 def stage_analyse(args: argparse.Namespace) -> dict[str, Any]:
     cohort_path = args.cohort or args.out / "cohort.json"
     referent = D.load_referent(cohort_path)
@@ -407,12 +519,14 @@ def stage_analyse(args: argparse.Namespace) -> dict[str, Any]:
         return out
 
     arms: dict[str, Any] = {}
+    models: dict[str, dict[str, Any]] = {}
     for arm in args.arms:
         path = args.out / f"model_{arm}.json"
         if not path.is_file():
             print(f"[analyse] no model scores for {arm}; skipping")
             continue
         model_payload = _read(path)
+        models[arm] = model_payload
         if model_payload["cohort_sha256"] != digest:
             raise RuntimeError(f"{arm} was scored on a different cohort")
         model_all = {
@@ -476,6 +590,14 @@ def stage_analyse(args: argparse.Namespace) -> dict[str, Any]:
         },
         "excluded_arms": dict(D.EXCLUDED_ARMS),
         "arms": arms,
+        "post_hoc": _post_hoc(
+            referent,
+            baseline_payload,
+            models,
+            proteingym_dir=args.proteingym_dir,
+            resamples=args.bootstrap,
+            seed=args.seed,
+        ),
     }
     write_json(args.out / "designed_referent.json", payload)
     return payload
@@ -501,6 +623,7 @@ def main() -> None:
         "--kmer-background-dir", type=Path, default=D.KMER_BACKGROUND_DIR
     )
     parser.add_argument("--retrieval-bound-dir", type=Path, default=None)
+    parser.add_argument("--proteingym-dir", type=Path, default=PROTEINGYM_ROOT)
     parser.add_argument("--min-variants", type=int, default=D.MIN_VARIANTS)
     parser.add_argument("--bootstrap", type=int, default=D.BOOTSTRAP_RESAMPLES)
     parser.add_argument("--seed", type=int, default=20260813)
