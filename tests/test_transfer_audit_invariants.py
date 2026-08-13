@@ -34,6 +34,7 @@ if str(REPO_ROOT) not in sys.path:
 from src.transfer import (  # noqa: E402
     channels,
     circuits,
+    designed_referent,
     homology,
     induction_robustness,
     path_patching,
@@ -1977,6 +1978,20 @@ FLOOR_RESPECTING_RESAMPLERS: dict[str, dict[str, object]] = {
             list(np.linspace(0.1, 0.5, n)),
             list(np.linspace(1.0, 2.0, n)),
             list(range(n)),
+            resamples=200,
+            seed=0,
+        ),
+    },
+    # A design series or a natural WT_cluster rather than a 50%-identity family,
+    # but the same object: it delegates the resample to
+    # ``profiles.cluster_bootstrap`` and exists only to turn unit names into the
+    # integer labels that function expects, so the floor has one implementation
+    # and one refusal record.
+    "designed_referent.unit_bootstrap": {
+        "refusal": "degenerate",
+        "below": lambda n: designed_referent.unit_bootstrap(
+            list(np.linspace(0.1, 0.5, n)),
+            [f"unit{index}" for index in range(n)],
             resamples=200,
             seed=0,
         ),

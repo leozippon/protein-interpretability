@@ -118,6 +118,17 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "rows, never a prefix -- a ProteinGym CSV is ordered by position, so the "
         "hazard rule 1 names is present here and is answered in the same way"
     ),
+    "29_designed_referent.py": (
+        "its units are the MegaScale wild types EXP-R2-190's certificate searched "
+        "and the measured variants of each, not corpus sequences, and it takes "
+        "ALL of them: a census over 478 wild types and every eligible variant, "
+        "exactly as the certificate itself was a census. Rule 1's hazard is "
+        "absent rather than answered -- there is no sample, so there is no draw "
+        "to seed and no skip offset to be sensitive to -- and the cohort artefact "
+        "records `sampling.mode = census` so a later reader does not have to "
+        "infer it. It builds its own Cohort only to reach `input_strings`, which "
+        "renders sequences it already holds and selects nothing"
+    ),
 }
 
 
