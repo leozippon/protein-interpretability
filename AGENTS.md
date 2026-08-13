@@ -96,6 +96,7 @@ Record each experiment's date, configuration or command, and result in `docs/EXP
 - For the review, development, and modification of critical documentation and core code assets, you should delegate to one or more of the highest-performance sub-agents available for high-fidelity execution.
 - When launching a sub-agent, choose its context deliberately. A fully fresh context window breaks path dependency and lets the task be reapproached independently, while inherited context continues coherent, aligned reasoning that builds upon prior work.
 - Balance work between follow-up tasks to existing sub-agents and new spawns; avoid both discarding short-lived sub-agents for fragments of one task and driving a single sub-agent to its context window limit.
+- Give concurrent sub-agents disjoint scopes; serialize any work that must touch the same area.
 - Interrupt a sub-agent only when its work is no longer needed or clearly off course, never merely to hurry it.
 - Carry settled decisions into later reviews rather than reopening them.
 - Before delegating to a fresh-context sub-agent, you must ensure that the sub-agent receives the current contents of **Repository Guardrails**, **Development Principles**, **Operational Guardrails**, and **Documentation** from `AGENTS.md`.
