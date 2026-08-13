@@ -89,6 +89,17 @@ KNOWN_VIOLATIONS: tuple[tuple[int, int, str], ...] = (
         191,
         "EXP-R2-191's read, appended after EXP-R2-192 landed during its training window",
     ),
+    # The same shape once more. EXP-R2-193 pre-registered a confirmatory test of
+    # EXP-R2-192's length-matched control and then implemented and ran it, while
+    # a concurrent agent appended EXP-R2-194 in the same window. Its reading is
+    # appended where it was written, after 194, rather than renumbered to 195:
+    # renumbering would sever the pre-registration from its own reading, which is
+    # the link that makes a pre-registration worth anything at all.
+    (
+        194,
+        193,
+        "EXP-R2-193's read, appended after EXP-R2-194 landed while its stage was being written",
+    ),
 )
 
 

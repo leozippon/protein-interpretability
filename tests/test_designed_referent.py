@@ -346,3 +346,133 @@ def test_the_fragment_baselines_see_the_mutation():
     # the other three rather than scoring on composition alone.
     values = scores["fragment_markov_k3"]
     assert values[3] > values[:3].max()
+
+
+# ------------------------------------------------- the design/natural interaction
+#
+# The three ways this statistic goes wrong silently. It can be built from two
+# separately resampled means, which gives an interval that is not an interval on
+# the difference. It can drift away from the unit definition the unadjusted
+# estimator uses once covariates are added, so the two answer different questions
+# while looking like a sensitivity. And its four-way reading can be written so
+# that underpower reports as refutation, which is the one failure this entry
+# exists to avoid.
+
+
+def test_every_scored_design_series_has_a_declared_family():
+    for group, family in D.DESIGN_FAMILY_OF_GROUP.items():
+        assert D.design_family(f"{group}/rd1") == family
+        assert family in D.DESIGN_FAMILIES
+    with pytest.raises(ValueError, match="no declared design family"):
+        D.design_family("NOVEL/rd1")
+
+
+def test_the_interaction_is_the_difference_of_unit_mean_averages():
+    record = D.interaction_bootstrap(
+        [1.0, 3.0, 10.0], ["u1", "u1", "u2"],
+        [0.0, 2.0], ["v1", "v2"],
+        resamples=64, seed=1,
+    )
+    # Unit means are (2.0, 10.0) and (0.0, 2.0): 6.0 - 1.0.
+    assert record["point"] == pytest.approx(5.0)
+    assert record["design_side"] == pytest.approx(6.0)
+    assert record["natural_side"] == pytest.approx(1.0)
+
+
+def test_the_interaction_is_refused_when_either_side_is_below_the_floor():
+    many = ([1.0] * 12, [f"u{index}" for index in range(12)])
+    few = ([0.0] * 4, [f"v{index}" for index in range(4)])
+    for design, natural in ((many, few), (few, many)):
+        record = D.interaction_bootstrap(*design, *natural, resamples=64, seed=1)
+        assert record["degenerate"] is True
+        assert record["interval"] is None
+        assert record["point"] is not None
+        assert D.interaction_outcome(record) == "unresolved"
+
+
+def test_the_interval_is_taken_on_the_difference_and_not_on_two_means():
+    # Both sides are the same numbers in the same order, so a joint draw that
+    # recomputed the difference inside the replicate straddles zero. The failure
+    # this catches is an interval assembled from two separately resampled means,
+    # which on identical sides would be centred on zero but far too narrow only
+    # if the draws were shared -- and far too wide if they were not. What must
+    # hold is that the point is exactly zero and the interval contains it.
+    values = list(np.linspace(-1.0, 1.0, 16))
+    units = [f"u{index}" for index in range(16)]
+    record = D.interaction_bootstrap(values, units, values, units, resamples=512, seed=7)
+    assert record["point"] == pytest.approx(0.0)
+    assert record["interval"][0] < 0.0 < record["interval"][1]
+    assert record["excludes_zero"] is False
+
+
+@pytest.mark.parametrize(
+    "interval,point,expected",
+    [
+        ([-0.40, -0.20], -0.30, "confirms"),
+        ([-0.12, -0.02], -0.07, "attenuated"),
+        ([-0.10, 0.05], -0.02, "refutes"),
+        ([0.10, 0.30], 0.20, "refutes"),
+        ([-0.45, 0.05], -0.20, "unresolved"),
+        (None, -0.30, "unresolved"),
+    ],
+)
+def test_the_four_way_reading_separates_underpower_from_refutation(interval, point, expected):
+    assert D.interaction_outcome({"interval": interval, "point": point}) == expected
+
+
+def test_a_wide_interval_around_a_large_point_is_never_a_refutation():
+    # The failure mode this programme keeps catching: an underpowered interval
+    # read as absence. A point at the declared magnitude with an interval that
+    # covers zero must come back unresolved, not refuted.
+    assert (
+        D.interaction_outcome({"interval": [-1.0, 0.3], "point": -0.5}) == "unresolved"
+    )
+
+
+def test_the_adjusted_interaction_reduces_to_the_unadjusted_one_without_covariates():
+    values = [1.0, 3.0, 10.0, 0.0, 2.0]
+    units = ["d1", "d1", "d2", "n1", "n2"]
+    designed = [True, True, True, False, False]
+    plain = D.interaction_bootstrap(
+        values[:3], units[:3], values[3:], units[3:], resamples=32, seed=3
+    )
+    adjusted = D.adjusted_interaction_bootstrap(
+        values, units, designed, np.zeros((5, 0)), resamples=32, seed=3
+    )
+    assert adjusted["point"] == pytest.approx(plain["point"])
+    assert adjusted["n_design_units"] == 2
+    assert adjusted["n_natural_units"] == 2
+
+
+def test_the_adjusted_interaction_removes_a_covariate_that_explains_the_gap():
+    # Designs and naturals differ only through the covariate: y = 2 * x, with the
+    # designs sitting at high x. The unadjusted difference is large and the
+    # adjusted coefficient is zero, which is exactly what a length adjustment has
+    # to be able to do before it can be trusted to report a residual.
+    x = np.array([4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0,
+                  14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0])
+    designed = list(x >= 14.0)
+    values = (2.0 * x).tolist()
+    units = [f"{'d' if flag else 'n'}{index}" for index, flag in enumerate(designed)]
+    adjusted = D.adjusted_interaction_bootstrap(
+        values, units, designed, x[:, None], resamples=64, seed=5
+    )
+    assert adjusted["point"] == pytest.approx(0.0, abs=1e-9)
+
+
+def test_the_adjusted_interaction_refuses_a_unit_that_mixes_the_two_sides():
+    with pytest.raises(ValueError, match="mixes designs and naturals"):
+        D.adjusted_interaction_bootstrap(
+            [1.0, 2.0], ["u1", "u1"], [True, False], np.zeros((2, 0)),
+            resamples=8, seed=1,
+        )
+
+
+def test_balance_is_reported_rather_than_assumed_from_a_restriction():
+    left = np.array([[1.0, 10.0], [2.0, 11.0], [3.0, 12.0]])
+    close = left + 0.05
+    far = left + 10.0
+    assert D.standardised_mean_differences(left, close, ["a", "b"])["balanced"] is True
+    report = D.standardised_mean_differences(left, far, ["a", "b"])
+    assert report["balanced"] is False
+    assert report["max_abs_smd"] > 0.25

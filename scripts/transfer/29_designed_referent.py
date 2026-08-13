@@ -80,7 +80,7 @@ from src.transfer.kmer_background import load as load_kmer_background  # noqa: E
 from src.transfer.probes import PROTEINGYM_ROOT  # noqa: E402
 
 SCHEMA_VERSION = D.SCHEMA_VERSION
-STAGES = ("cohort", "baseline", "score", "analyse")
+STAGES = ("cohort", "baseline", "score", "analyse", "interaction")
 DEFAULT_OUT = REPO / "results/transfer/designed_referent"
 DEFAULT_ARMS = ("protgpt2", "progen2-small", "progen2-base", "progen2-medium")
 
@@ -603,6 +603,680 @@ def stage_analyse(args: argparse.Namespace) -> dict[str, Any]:
     return payload
 
 
+# -------------------------------------------------------------- stage: interaction
+
+
+class _Rows:
+    """Per-wild-type covariates and contrasts, assembled once from the artefacts.
+
+    Everything this stage needs already exists: the per-wild-type Spearman values
+    from EXP-R2-192's pinned scoring pass and its baseline pass. No model is
+    loaded and no GPU is touched.
+    """
+
+    def __init__(self, referent: D.Referent, baselines: dict[str, Any]) -> None:
+        from src.transfer.profiles import AA20, KYTE_DOOLITTLE
+
+        self.aa20 = list(AA20)
+        kd = np.array([KYTE_DOOLITTLE[residue] for residue in AA20], dtype=np.float64)
+        self.designs = referent.side("design")
+        self.naturals = referent.side("natural")
+        self.by_name = {wt.name: wt for wt in referent.wildtypes}
+        self.unit = {wt.name: wt.unit for wt in referent.wildtypes}
+        self.length = {wt.name: len(wt.sequence) for wt in referent.wildtypes}
+        self.family = {wt.name: D.design_family(wt.series) for wt in self.designs}
+        self.n_variants = {wt.name: len(wt.mutants) for wt in referent.wildtypes}
+        self.phenotype_sd = {
+            wt.name: float(np.std(wt.phenotype)) for wt in referent.wildtypes
+        }
+        self.phenotype_range = {
+            wt.name: float(np.ptp(wt.phenotype)) for wt in referent.wildtypes
+        }
+        self.composition = {
+            wt.name: self._composition(wt.sequence) for wt in referent.wildtypes
+        }
+        self.mean_hydropathy = {
+            name: float(vector @ kd) for name, vector in self.composition.items()
+        }
+        self.baseline = {
+            name: entry["spearman"] for name, entry in baselines["wildtypes"].items()
+        }
+
+    def _composition(self, sequence: str) -> np.ndarray:
+        counts = np.array([sequence.count(residue) for residue in self.aa20], dtype=np.float64)
+        return counts / counts.sum()
+
+    def contrast(self, model: dict[str, float], channel: str, names: list[str]) -> tuple[list[float], list[str], list[str]]:
+        values: list[float] = []
+        units: list[str] = []
+        kept: list[str] = []
+        for name in names:
+            base = self.baseline[name][channel]
+            if name not in model or base is None:
+                continue
+            values.append(model[name] - float(base))
+            units.append(self.unit[name])
+            kept.append(name)
+        return values, units, kept
+
+    def unit_mean(self, model: dict[str, float], names: list[str]) -> float:
+        return D.unit_mean_average(
+            [model[name] for name in names], [self.unit[name] for name in names]
+        )
+
+    def unit_mean_channel(self, channel: str, names: list[str]) -> float:
+        return D.unit_mean_average(
+            [float(self.baseline[name][channel]) for name in names],
+            [self.unit[name] for name in names],
+        )
+
+    def natural_names_in_band(self, low: int, high: int) -> list[str]:
+        return sorted(
+            wt.name for wt in self.naturals if low <= self.length[wt.name] <= high
+        )
+
+    def design_names(self, family: str | None) -> list[str]:
+        return sorted(
+            wt.name
+            for wt in self.designs
+            if family is None or self.family[wt.name] == family
+        )
+
+
+def _band(rows: _Rows, names: list[str], pad: int) -> tuple[int, int]:
+    lengths = [rows.length[name] for name in names]
+    return min(lengths) - pad, max(lengths) + pad
+
+
+def _axis(
+    rows: _Rows,
+    model: dict[str, float],
+    design_names: list[str],
+    natural_names: list[str],
+    *,
+    channel: str,
+    seed: int,
+    resamples: int,
+) -> dict[str, Any]:
+    left, left_units, left_names = rows.contrast(model, channel, design_names)
+    right, right_units, right_names = rows.contrast(model, channel, natural_names)
+    if not left or not right:
+        return {"degenerate": True, "degenerate_reason": "a side carries no readable wild type", "interval": None, "point": None, "outcome": "unresolved"}
+    record = D.interaction_bootstrap(
+        left, left_units, right, right_units, resamples=resamples, seed=seed
+    )
+    record["outcome"] = D.interaction_outcome(record)
+    # The four halves the interaction is a difference of differences of. Carried
+    # because a sign reversal can be the model falling, the channel rising, or
+    # both, and a reader who is shown only the contrast cannot tell which.
+    record["halves"] = {
+        "model_designs": rows.unit_mean(model, left_names),
+        "model_naturals": rows.unit_mean(model, right_names),
+        "channel_designs": rows.unit_mean_channel(channel, left_names),
+        "channel_naturals": rows.unit_mean_channel(channel, right_names),
+        "median_length_designs": float(np.median([rows.length[n] for n in left_names])),
+        "median_length_naturals": float(np.median([rows.length[n] for n in right_names])),
+    }
+    return record
+
+
+def _subset_axis(
+    rows: _Rows,
+    model: dict[str, float],
+    family: str | None,
+    *,
+    channel: str,
+    seed: int,
+    resamples: int,
+) -> dict[str, Any]:
+    design_names = rows.design_names(family)
+    pads: dict[str, Any] = {}
+    for pad in D.LENGTH_PADS:
+        low, high = _band(rows, design_names, pad)
+        natural_names = rows.natural_names_in_band(low, high)
+        record = _axis(
+            rows,
+            model,
+            design_names,
+            natural_names,
+            channel=channel,
+            seed=seed,
+            resamples=resamples,
+        )
+        record["band"] = [low, high]
+        record["pad"] = pad
+        pads[str(pad)] = record
+    live = [pad for pad in D.LENGTH_PADS if not pads[str(pad)]["degenerate"]]
+    primary = live[0] if live else None
+    signs = {
+        np.sign(pads[str(pad)]["point"]) for pad in live if pads[str(pad)]["point"] is not None
+    }
+    return {
+        "n_design_series": len({rows.by_name[name].series for name in design_names}),
+        "design_length_span": list(_band(rows, design_names, 0)),
+        "pads": pads,
+        "primary_pad": primary,
+        "outcome": pads[str(primary)]["outcome"] if primary is not None else "unresolved",
+        "sign_invariant_across_pads": bool(len(signs) <= 1),
+    }
+
+
+def _placebo(rows: _Rows, model: dict[str, float], *, channel: str, seed: int, resamples: int, splits: int) -> dict[str, Any]:
+    """Two halves of the length-matched natural side, which differ in nothing.
+
+    The attainability check for this statistic: a difference between two sides
+    that are the same thing must return zero. At 95% about one split in twenty
+    should exclude zero by chance, and materially more than that would mean the
+    interval is not what it says.
+    """
+
+    low, high = _band(rows, rows.design_names(None), 0)
+    names = rows.natural_names_in_band(low, high)
+    clusters = sorted({rows.unit[name] for name in names})
+    outcomes: list[dict[str, Any]] = []
+    for index in range(splits):
+        rng = np.random.default_rng(seed + index)
+        order = rng.permutation(len(clusters))
+        first = {clusters[position] for position in order[: len(clusters) // 2]}
+        left_names = [name for name in names if rows.unit[name] in first]
+        right_names = [name for name in names if rows.unit[name] not in first]
+        left, left_units, _ = rows.contrast(model, channel, left_names)
+        right, right_units, _ = rows.contrast(model, channel, right_names)
+        record = D.interaction_bootstrap(
+            left, left_units, right, right_units, resamples=resamples, seed=seed + index
+        )
+        outcomes.append(
+            {
+                "split_seed": seed + index,
+                "point": record["point"],
+                "interval": record["interval"],
+                "excludes_zero": record["excludes_zero"],
+            }
+        )
+    excluding = sum(1 for entry in outcomes if entry["excludes_zero"])
+    return {
+        "band": [low, high],
+        "n_clusters": len(clusters),
+        "splits": splits,
+        "n_excluding_zero": excluding,
+        "calibrated": bool(excluding <= 3),
+        "note": (
+            "more than three of twenty voids every axis in this entry, as "
+            "pre-registered"
+        ),
+        "splits_detail": outcomes,
+    }
+
+
+def _composition_control(
+    rows: _Rows,
+    models: dict[str, dict[str, float]],
+    *,
+    channel: str,
+    length_band: tuple[int, int],
+    seed: int,
+    resamples: int,
+) -> dict[str, Any]:
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.model_selection import StratifiedKFold
+
+    design_names = rows.design_names(None)
+    natural_names = sorted(wt.name for wt in rows.naturals)
+    names = design_names + natural_names
+    labels = np.array([1] * len(design_names) + [0] * len(natural_names))
+    composition = np.array([rows.composition[name] for name in names])
+    lengths = np.array([rows.length[name] for name in names], dtype=np.float64)
+    features = np.hstack([composition, (lengths / 100.0)[:, None]])
+
+    scores = np.zeros(len(names), dtype=np.float64)
+    folds = StratifiedKFold(5, shuffle=True, random_state=0)
+    for train, test in folds.split(features, labels):
+        fitted = LogisticRegression(max_iter=5000, C=1.0).fit(features[train], labels[train])
+        scores[test] = fitted.predict_proba(features[test])[:, 1]
+    propensity = dict(zip(names, scores.tolist()))
+    design_scores = scores[labels == 1]
+    natural_scores = scores[labels == 0]
+    support = (
+        float(max(design_scores.min(), natural_scores.min())),
+        float(min(design_scores.max(), natural_scores.max())),
+    )
+
+    covariate_names = ["length", "mean_hydropathy"] + [f"freq_{a}" for a in rows.aa20]
+
+    def covariates(subset: list[str]) -> np.ndarray:
+        return np.array(
+            [
+                [rows.length[name], rows.mean_hydropathy[name], *rows.composition[name]]
+                for name in subset
+            ],
+            dtype=np.float64,
+        )
+
+    windows = {
+        "common_support": support,
+        "0.2_0.8": (0.2, 0.8),
+        "0.3_0.7": (0.3, 0.7),
+    }
+    report: dict[str, Any] = {
+        "propensity": {
+            "features": "20 residue frequencies + length/100",
+            "estimator": "5-fold stratified out-of-fold logistic regression, C=1, seed 0",
+            "common_support": list(support),
+        },
+        "balance_before": D.standardised_mean_differences(
+            covariates(design_names), covariates(natural_names), covariate_names
+        ),
+        "windows": {},
+    }
+    for label, (low, high) in windows.items():
+        kept_designs = [name for name in design_names if low <= propensity[name] <= high]
+        kept_naturals = [name for name in natural_names if low <= propensity[name] <= high]
+        entry: dict[str, Any] = {
+            "window": [float(low), float(high)],
+            "n_designs": len(kept_designs),
+            "n_design_series": len({rows.by_name[name].series for name in kept_designs}),
+            "n_naturals": len(kept_naturals),
+            "n_natural_clusters": len({rows.unit[name] for name in kept_naturals}),
+            "balance_after": D.standardised_mean_differences(
+                covariates(kept_designs), covariates(kept_naturals), covariate_names
+            )
+            if kept_designs and kept_naturals
+            else None,
+            "arms": {},
+        }
+        for arm, model in models.items():
+            entry["arms"][arm] = _axis(
+                rows,
+                model,
+                kept_designs,
+                kept_naturals,
+                channel=channel,
+                seed=seed,
+                resamples=resamples,
+            )
+        report["windows"][label] = entry
+
+    # The propensity restriction is expected to leave the two sides unbalanced,
+    # because designedness in this cohort is nearly a function of glutamate
+    # content. What a restriction cannot do, an explicit match on the separating
+    # covariate can -- on a smaller subcohort. The windows below are chosen to
+    # minimise glutamate imbalance and are chosen on COVARIATES ALONE: no
+    # interaction, correlation or model score was consulted in selecting them,
+    # which is what keeps a matched subcohort a control rather than a search.
+    band_naturals = set(rows.natural_names_in_band(*length_band))
+    glutamate = {
+        name: rows.composition[name][rows.aa20.index("E")]
+        for name in design_names + natural_names
+    }
+    matched: dict[str, Any] = {
+        "preregistered": False,
+        "note": (
+            "an explicit match on the single covariate that separates the two "
+            "sides, inside the pooled length band. Windows selected on covariate "
+            "balance only, with no outcome consulted; added after the reading and "
+            "unable to change the verdict."
+        ),
+        "covariate": "glutamate frequency",
+        "windows": {},
+    }
+    cells = (
+        (0.110, 0.130, length_band),
+        (0.110, 0.140, length_band),
+        (0.105, 0.145, length_band),
+        # The one cell in which glutamate AND length are both balanced at the
+        # declared 0.25 threshold. It costs units -- ten natural clusters against
+        # the pooled seventy-nine -- and is the price of matching two covariates
+        # that a de novo design campaign fixed jointly.
+        (0.080, 0.180, (40, 47)),
+    )
+    for low, high, band in cells:
+        inside = set(rows.natural_names_in_band(*band)) & band_naturals
+        kept_designs = [
+            name
+            for name in design_names
+            if low <= glutamate[name] <= high and band[0] <= rows.length[name] <= band[1]
+        ]
+        kept_naturals = [
+            name
+            for name in natural_names
+            if name in inside and low <= glutamate[name] <= high
+        ]
+        entry = {
+            "window": [low, high],
+            "length_band": list(band),
+            "n_designs": len(kept_designs),
+            "n_design_series": len({rows.by_name[name].series for name in kept_designs}),
+            "n_naturals": len(kept_naturals),
+            "n_natural_clusters": len({rows.unit[name] for name in kept_naturals}),
+            "balance_after": D.standardised_mean_differences(
+                covariates(kept_designs), covariates(kept_naturals), covariate_names
+            ),
+            "arms": {
+                arm: _axis(
+                    rows,
+                    model,
+                    kept_designs,
+                    kept_naturals,
+                    channel=channel,
+                    seed=seed,
+                    resamples=resamples,
+                )
+                for arm, model in models.items()
+            },
+        }
+        matched["windows"][f"E{low}_{high}_L{band[0]}_{band[1]}"] = entry
+    report["glutamate_matched"] = matched
+    return report
+
+
+def _adjusted(
+    rows: _Rows,
+    models: dict[str, dict[str, float]],
+    *,
+    channel: str,
+    seed: int,
+    resamples: int,
+) -> dict[str, Any]:
+    design_names = rows.design_names(None)
+    natural_names = sorted(wt.name for wt in rows.naturals)
+    names = design_names + natural_names
+    composition = np.array([rows.composition[name] for name in names])
+    centred = composition - composition.mean(axis=0)
+    left, singular, _ = np.linalg.svd(centred, full_matrices=False)
+    components = left[:, :5] * singular[:5]
+    column = {
+        "length": np.array([rows.length[name] for name in names], dtype=np.float64),
+        "mean_hydropathy": np.array(
+            [rows.mean_hydropathy[name] for name in names], dtype=np.float64
+        ),
+        "log_n_variants": np.log(
+            np.array([rows.n_variants[name] for name in names], dtype=np.float64)
+        ),
+        "phenotype_sd": np.array(
+            [rows.phenotype_sd[name] for name in names], dtype=np.float64
+        ),
+    }
+    sets = {
+        "S1_length": ["length"],
+        "S2_length_hydropathy": ["length", "mean_hydropathy"],
+        "S3_length_hydropathy_composition_pcs": ["length", "mean_hydropathy"],
+        "S4_length_variants_range": ["length", "log_n_variants", "phenotype_sd"],
+    }
+    report: dict[str, Any] = {}
+    for arm, model in models.items():
+        readable = [
+            name
+            for name in names
+            if name in model and rows.baseline[name][channel] is not None
+        ]
+        mask = np.array([name in set(readable) for name in names])
+        values = [model[name] - float(rows.baseline[name][channel]) for name in readable]
+        units = [rows.unit[name] for name in readable]
+        designed = [name in set(design_names) for name in readable]
+        report[arm] = {}
+        for label, keys in sets.items():
+            block = [column[key][mask] for key in keys]
+            if label.endswith("composition_pcs"):
+                block.append(components[mask])
+            matrix = np.column_stack([np.asarray(part).reshape(len(readable), -1) for part in block])
+            record = D.adjusted_interaction_bootstrap(
+                values, units, designed, matrix, resamples=resamples, seed=seed
+            )
+            record["covariates"] = keys + (["composition_pc1..5"] if label.endswith("composition_pcs") else [])
+            record["outcome"] = D.interaction_outcome(record) if record["point"] is not None else "unresolved"
+            report[arm][label] = record
+    return report
+
+
+def stage_interaction(args: argparse.Namespace) -> dict[str, Any]:
+    cohort_path = args.cohort or args.out / "cohort.json"
+    referent = D.load_referent(cohort_path)
+    digest = sha256_file(cohort_path)
+    baseline_payload = _read(args.out / "baselines.json")
+    if baseline_payload["cohort_sha256"] != digest:
+        raise RuntimeError("the baselines were computed on a different cohort")
+
+    rows = _Rows(referent, baseline_payload)
+    models: dict[str, dict[str, float]] = {}
+    identification: dict[str, Any] = {}
+    for arm in args.arms:
+        path = args.out / f"model_{arm}.json"
+        if not path.is_file():
+            print(f"[interaction] no model scores for {arm}; skipping")
+            continue
+        payload = _read(path)
+        if payload["cohort_sha256"] != digest:
+            raise RuntimeError(f"{arm} was scored on a different cohort")
+        models[arm] = {
+            name: float(entry["spearman"])
+            for name, entry in payload["wildtypes"].items()
+            if entry["spearman"] is not None
+        }
+        identification[arm] = dict(payload["identification"])
+    if D.ORIGIN_ARM not in models:
+        raise RuntimeError(f"the origin arm {D.ORIGIN_ARM} carries no scores")
+
+    channel = D.INTERACTION_CHANNEL
+    axes: dict[str, Any] = {}
+    for arm, model in models.items():
+        subsets = {"all": _subset_axis(rows, model, None, channel=channel, seed=args.seed, resamples=args.bootstrap)}
+        for family in D.DESIGN_FAMILIES:
+            subsets[family] = _subset_axis(
+                rows, model, family, channel=channel, seed=args.seed, resamples=args.bootstrap
+            )
+        specificity = {}
+        for other in D.BASELINES:
+            record = _subset_axis(
+                rows, model, None, channel=other, seed=args.seed, resamples=args.bootstrap
+            )
+            specificity[other] = (
+                record["pads"][str(record["primary_pad"])]
+                if record["primary_pad"] is not None
+                else record
+            )
+        axes[arm] = {"subsets": subsets, "specificity": specificity}
+        for label, entry in subsets.items():
+            primary = entry["pads"].get(str(entry["primary_pad"]))
+            point = "refused" if primary is None else f"{primary['point']:+.4f}"
+            print(f"[interaction] {arm:16s} {label:14s} {entry['outcome']:11s} {point}")
+
+    low, high = _band(rows, rows.design_names(None), 0)
+    in_band = rows.natural_names_in_band(low, high)
+    out_band = sorted(
+        wt.name for wt in rows.naturals if not low <= rows.length[wt.name] <= high
+    )
+    design_variants = [rows.n_variants[name] for name in rows.design_names(None)]
+    design_sd = [rows.phenotype_sd[name] for name in rows.design_names(None)]
+    restricted = [
+        name
+        for name in in_band
+        if min(design_variants) <= rows.n_variants[name] <= max(design_variants)
+        and min(design_sd) <= rows.phenotype_sd[name] <= max(design_sd)
+    ]
+
+    controls = {
+        "placebo_natural_half_splits": _placebo(
+            rows,
+            models[D.ORIGIN_ARM],
+            channel=channel,
+            seed=args.seed,
+            resamples=args.bootstrap,
+            splits=args.placebo_splits,
+        ),
+        "length_within_naturals": {
+            "note": (
+                "naturals inside the pooled design band against naturals outside "
+                "it; how far the contrast moves with length when nothing is "
+                "designed. Descriptive, not a gate."
+            ),
+            "preregistered": True,
+            "band": [low, high],
+            "arms": {
+                arm: _axis(
+                    rows, model, in_band, out_band, channel=channel, seed=args.seed, resamples=args.bootstrap
+                )
+                for arm, model in models.items()
+            },
+        },
+        "length_within_band_split": {
+            "note": (
+                "short against long naturals INSIDE the pooled band. The "
+                "pre-registered length placebo compares a 56-to-67 median shift; "
+                "the design-versus-natural gap is 43 to 56, so this split is the "
+                "closer length analogue. Added after the reading and labelled, "
+                "and it cannot change the verdict."
+            ),
+            "preregistered": False,
+            "split_at": args.length_split,
+            "arms": {
+                arm: _axis(
+                    rows,
+                    model,
+                    [name for name in in_band if rows.length[name] < args.length_split],
+                    [name for name in in_band if rows.length[name] >= args.length_split],
+                    channel=channel,
+                    seed=args.seed,
+                    resamples=args.bootstrap,
+                )
+                for arm, model in models.items()
+            },
+        },
+        "composition": _composition_control(
+            rows,
+            models,
+            channel=channel,
+            length_band=(low, high),
+            seed=args.seed,
+            resamples=args.bootstrap,
+        ),
+        "adjusted": _adjusted(
+            rows, models, channel=channel, seed=args.seed, resamples=args.bootstrap
+        ),
+        "variant_and_range_matched": {
+            "note": (
+                "naturals inside the design band whose variant count and phenotype "
+                "spread also fall inside the designs' own ranges"
+            ),
+            "n_naturals": len(restricted),
+            "n_natural_clusters": len({rows.unit[name] for name in restricted}),
+            "arms": {
+                arm: _axis(
+                    rows,
+                    model,
+                    rows.design_names(None),
+                    restricted,
+                    channel=channel,
+                    seed=args.seed,
+                    resamples=args.bootstrap,
+                )
+                for arm, model in models.items()
+            },
+        },
+    }
+
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "stage": "interaction",
+        "created_utc": _timestamp(),
+        "cohort_sha256": digest,
+        "preregistration": "EXP-R2-193",
+        "settings": {
+            "bootstrap": args.bootstrap,
+            "seed": args.seed,
+            "channel": channel,
+            "confirming_magnitude": D.INTERACTION_MAGNITUDE,
+            "length_pads": list(D.LENGTH_PADS),
+            "families": list(D.DESIGN_FAMILIES),
+            "origin_arm": D.ORIGIN_ARM,
+        },
+        "identification": identification,
+        "cohort_asymmetries": _asymmetries(rows, in_band),
+        "axes": axes,
+        "controls": controls,
+        "verdict": _verdict(axes, controls),
+    }
+    write_json(args.out / "interaction.json", payload)
+    print(json.dumps(payload["verdict"], indent=2, sort_keys=True))
+    return payload
+
+
+def _asymmetries(rows: _Rows, in_band: list[str]) -> dict[str, Any]:
+    def summary(names: list[str]) -> dict[str, Any]:
+        return {
+            "n_wildtypes": len(names),
+            "n_variants_total": int(sum(rows.n_variants[name] for name in names)),
+            "n_variants_median": float(np.median([rows.n_variants[name] for name in names])),
+            "length_median": float(np.median([rows.length[name] for name in names])),
+            "phenotype_range_median": float(
+                np.median([rows.phenotype_range[name] for name in names])
+            ),
+            "phenotype_sd_median": float(
+                np.median([rows.phenotype_sd[name] for name in names])
+            ),
+            "mean_hydropathy_mean": float(
+                np.mean([rows.mean_hydropathy[name] for name in names])
+            ),
+        }
+
+    return {
+        "designs": summary(rows.design_names(None)),
+        "naturals_all": summary(sorted(wt.name for wt in rows.naturals)),
+        "naturals_in_pooled_band": summary(in_band),
+    }
+
+
+def _verdict(axes: dict[str, Any], controls: dict[str, Any]) -> dict[str, Any]:
+    """The pre-registered overall rule, applied to the axes it was declared on."""
+
+    origin = axes[D.ORIGIN_ARM]["subsets"]
+    families = {family: origin[family]["outcome"] for family in D.DESIGN_FAMILIES}
+    replicas = {
+        arm: axes[arm]["subsets"]["all"]["outcome"]
+        for arm in sorted(axes)
+        if arm != D.ORIGIN_ARM
+    }
+    pooled = origin["all"]["outcome"]
+    calibrated = bool(controls["placebo_natural_half_splits"]["calibrated"])
+    confirming = [
+        entry
+        for entry in [origin["all"], *(origin[f] for f in D.DESIGN_FAMILIES)]
+        if entry["outcome"] == "confirms"
+    ] + [
+        axes[arm]["subsets"]["all"]
+        for arm in replicas
+        if axes[arm]["subsets"]["all"]["outcome"] == "confirms"
+    ]
+    sign_invariant = all(entry["sign_invariant_across_pads"] for entry in confirming)
+
+    family_confirms = sum(1 for value in families.values() if value == "confirms")
+    family_refutes = sum(1 for value in families.values() if value == "refutes")
+    replica_confirms = sum(1 for value in replicas.values() if value == "confirms")
+    replica_refutes = sum(1 for value in replicas.values() if value == "refutes")
+
+    confirmed = (
+        calibrated
+        and pooled == "confirms"
+        and family_confirms >= 2
+        and family_refutes == 0
+        and replica_confirms >= 2
+        and replica_refutes == 0
+        and sign_invariant
+    )
+    refuted = calibrated and (
+        pooled == "refutes" or family_refutes >= 2 or replica_refutes >= 2
+    )
+    verdict = "confirmed" if confirmed else ("refuted" if refuted else "underpowered")
+    return {
+        "verdict": verdict,
+        "placebo_calibrated": calibrated,
+        "pooled_origin_arm": pooled,
+        "families": families,
+        "replication_arms": replicas,
+        "sign_invariant_on_confirming_axes": sign_invariant,
+        "composition_control_bounds_interpretation": True,
+    }
+
+
 # ------------------------------------------------------------------------ main
 
 
@@ -627,6 +1301,8 @@ def main() -> None:
     parser.add_argument("--min-variants", type=int, default=D.MIN_VARIANTS)
     parser.add_argument("--bootstrap", type=int, default=D.BOOTSTRAP_RESAMPLES)
     parser.add_argument("--seed", type=int, default=20260813)
+    parser.add_argument("--placebo-splits", type=int, default=20)
+    parser.add_argument("--length-split", type=int, default=50)
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--dtype", default="bfloat16", choices=("bfloat16", "float16"))
     parser.add_argument("--batch-size", type=int, default=256)
@@ -645,6 +1321,7 @@ def main() -> None:
         "baseline": stage_baseline,
         "score": stage_score,
         "analyse": stage_analyse,
+        "interaction": stage_interaction,
     }
     for stage in args.stages:
         print(f"=== {stage}")

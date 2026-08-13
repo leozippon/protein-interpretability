@@ -1996,6 +1996,37 @@ FLOOR_RESPECTING_RESAMPLERS: dict[str, dict[str, object]] = {
             seed=0,
         ),
     },
+    # A difference of two unit-mean averages over two independently clustered
+    # sides, so the floor has to bind on EACH side: a difference is no better
+    # bounded than its worse-bounded half, and a design family with four natural
+    # clusters opposite it would otherwise publish an interval built on four
+    # atoms. Exercised on the natural side here; the design side is symmetric.
+    "designed_referent.interaction_bootstrap": {
+        "refusal": "degenerate",
+        "below": lambda n: designed_referent.interaction_bootstrap(
+            list(np.linspace(0.1, 0.5, 12)),
+            [f"design{index}" for index in range(12)],
+            list(np.linspace(0.0, 0.4, n)),
+            [f"natural{index}" for index in range(n)],
+            resamples=200,
+            seed=0,
+        ),
+    },
+    # The same interaction with covariates, and the same two-sided floor. The
+    # unit is what the stratified draw is taken over, so the count that must
+    # clear the floor is units per side and not wild types.
+    "designed_referent.adjusted_interaction_bootstrap": {
+        "refusal": "degenerate",
+        "below": lambda n: designed_referent.adjusted_interaction_bootstrap(
+            list(np.linspace(0.1, 0.5, 12 + n)),
+            [f"design{index}" for index in range(12)]
+            + [f"natural{index}" for index in range(n)],
+            [True] * 12 + [False] * n,
+            np.linspace(0.0, 1.0, 12 + n).reshape(-1, 1),
+            resamples=200,
+            seed=0,
+        ),
+    },
 }
 
 #: Resamplers that do NOT reach the floor. Recorded rather than quietly left out

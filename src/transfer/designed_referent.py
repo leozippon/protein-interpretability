@@ -68,6 +68,7 @@ from .arms import REPO, env_path
 from .fitness import BLOSUM62, parse_mutant
 from .io import write_json
 from .kmer_background import ALPHABET, KmerBackground
+from .statistics import bootstrap_unit_floor
 
 SCHEMA_VERSION = "r2_designed_referent_v1"
 
@@ -809,4 +810,314 @@ def arm_verdict(design: Mapping[str, bool], control: Mapping[str, bool]) -> dict
         "beats_every_baseline_on_designs": beats_all,
         "control_failures": sorted(name for name in BASELINES if not control[name]),
         "design_failures": sorted(name for name in BASELINES if not design[name]),
+    }
+
+
+# --------------------------------------------------- the design/natural interaction
+#
+# EXP-R2-192 reported MODEL - hydropathy_change on the designs and, in a control
+# computed after the pinned scoring, on the natural domains inside the designs'
+# own length span. The two have opposite signs. Two contrasts reported side by
+# side are not an interaction: the quantity that carries the claim is their
+# **difference**, with one joint interval, and until EXP-R2-193 nothing here
+# computed it. Everything below is that statistic and the axes it is read on.
+
+#: Which design family a series belongs to. EXP-R2-190 enumerated the series as
+#: topology x round, run-family x run, and hallucination round; the three
+#: families are what a held-out reading is split on. Unknown groups raise rather
+#: than falling into a default, because a family that silently absorbs an
+#: unrecognised series would change the unit counts a floor is checked against.
+DESIGN_FAMILY_OF_GROUP: Mapping[str, str] = {
+    "EEHEE": "topology",
+    "EHEE": "topology",
+    "HEEH": "topology",
+    "HEEH_KT": "topology",
+    "HHH": "topology",
+    "EA": "run_keyed",
+    "GG": "run_keyed",
+    "XX": "run_keyed",
+    "TrROS_Hall": "hallucination",
+}
+
+DESIGN_FAMILIES: tuple[str, ...] = ("topology", "run_keyed", "hallucination")
+
+#: Residue padding applied to a design subset's own length span when the natural
+#: side is matched to it. ``0`` is primary; the sweep is the invariance check
+#: Appendix B rule 8 requires wherever a threshold cannot be avoided.
+LENGTH_PADS: tuple[int, ...] = (0, 2, 5)
+
+#: The magnitude an interaction must reach to count as confirming. Roughly a
+#: third of the -0.47 EXP-R2-192's two existing ProtGPT2 numbers imply, fixed in
+#: the pre-registration before any interval existed.
+INTERACTION_MAGNITUDE = 0.15
+
+#: The channel the interaction is declared on. The other six are computed too, as
+#: the pre-registered specificity control, but only this one carries the verdict.
+INTERACTION_CHANNEL = "hydropathy_change"
+
+#: The arm the observation was made on. Its pooled reading is where the effect was
+#: first seen, so it is *not* a confirmatory axis; the families and the other arms
+#: are. Named rather than spelled at each use so the two cannot drift apart.
+ORIGIN_ARM = "protgpt2"
+
+
+def design_family(series: str) -> str:
+    """The family of one design series, e.g. ``EEHEE/rd3`` -> ``topology``."""
+
+    group = series.split("/", 1)[0]
+    try:
+        return DESIGN_FAMILY_OF_GROUP[group]
+    except KeyError:
+        raise ValueError(
+            f"{series!r} belongs to no declared design family; add it to "
+            "DESIGN_FAMILY_OF_GROUP rather than letting it fall into a default"
+        ) from None
+
+
+def _unit_means(values: Sequence[float], units: Sequence[str]) -> np.ndarray:
+    """Per-unit averages, through ``profiles.cluster_means``."""
+
+    order = {name: position for position, name in enumerate(sorted(set(units)))}
+    means, _ = P.cluster_means(values, [order[name] for name in units])
+    return means
+
+
+def unit_mean_average(values: Sequence[float], units: Sequence[str]) -> float:
+    """Average within unit, then across units -- the quantity the interaction differences.
+
+    Exposed so that a caller reporting the four halves of an interaction reports
+    them on the same construction the interaction itself is built from.
+    """
+
+    return float(_unit_means(values, units).mean())
+
+
+def interaction_bootstrap(
+    design_values: Sequence[float],
+    design_units: Sequence[str],
+    natural_values: Sequence[float],
+    natural_units: Sequence[str],
+    *,
+    resamples: int = BOOTSTRAP_RESAMPLES,
+    seed: int,
+    alpha: float = 0.05,
+) -> dict[str, Any]:
+    """The design-minus-natural difference of unit-mean averages, with its interval.
+
+    The resample is **stratified and joint**: one draw takes the design units with
+    replacement and the natural units with replacement and recomputes the
+    difference inside the draw. An interval built from two separately resampled
+    means is not an interval on their difference, and reporting the two contrasts
+    beside each other -- which is what EXP-R2-192 did -- is not reporting the
+    interaction at all.
+
+    The floor is :func:`~.statistics.bootstrap_unit_floor` applied to **each side
+    separately**, because a difference is no better bounded than its worse-bounded
+    half. Refused rather than raised: too few units on one side is a fact about
+    that stratum and belongs in the artefact beside the point estimate.
+    """
+
+    if resamples < 1 or not 0 < alpha < 1:
+        raise ValueError("invalid bootstrap parameters")
+    left = _unit_means(design_values, design_units)
+    right = _unit_means(natural_values, natural_units)
+    design_floor = bootstrap_unit_floor(int(left.size))
+    natural_floor = bootstrap_unit_floor(int(right.size))
+    degenerate = bool(design_floor["degenerate"] or natural_floor["degenerate"])
+    record: dict[str, Any] = {
+        "point": float(left.mean() - right.mean()),
+        "design_side": float(left.mean()),
+        "natural_side": float(right.mean()),
+        "n_design_units": int(left.size),
+        "n_natural_units": int(right.size),
+        "n_design_wildtypes": int(np.asarray(design_values).size),
+        "n_natural_wildtypes": int(np.asarray(natural_values).size),
+        "resamples": int(resamples),
+        "alpha": float(alpha),
+        "degenerate": degenerate,
+        "degenerate_reason": design_floor["degenerate_reason"]
+        or natural_floor["degenerate_reason"],
+        "minimum_units": int(design_floor["minimum_units"]),
+        "interval": None,
+        "excludes_zero": None,
+    }
+    if degenerate:
+        return record
+    rng = np.random.default_rng(seed)
+    design_draws = rng.integers(0, left.size, size=(resamples, left.size))
+    natural_draws = rng.integers(0, right.size, size=(resamples, right.size))
+    statistic = left[design_draws].mean(axis=1) - right[natural_draws].mean(axis=1)
+    low, high = np.percentile(statistic, [100 * alpha / 2, 100 * (1 - alpha / 2)])
+    record["interval"] = [float(low), float(high)]
+    record["excludes_zero"] = bool(low > 0.0 or high < 0.0)
+    return record
+
+
+def interaction_outcome(
+    record: Mapping[str, Any], *, magnitude: float = INTERACTION_MAGNITUDE
+) -> str:
+    """The pre-registered four-way reading of one interaction axis.
+
+    ``confirms``    the interval lies wholly below zero and the point estimate
+                    reaches the declared magnitude.
+    ``attenuated``  the interval lies wholly below zero but the point estimate
+                    does not: a real interaction, smaller than declared.
+    ``refutes``     the interval does not exclude zero downward AND excludes an
+                    interaction of the declared magnitude.
+    ``unresolved``  everything else, including every floor refusal. This is
+                    underpower and must never be read as absence.
+    """
+
+    if magnitude <= 0:
+        raise ValueError("the confirming magnitude must be positive")
+    interval = record.get("interval")
+    if interval is None:
+        return "unresolved"
+    low, high = float(interval[0]), float(interval[1])
+    if high < 0.0:
+        return "confirms" if float(record["point"]) <= -magnitude else "attenuated"
+    return "refutes" if low > -magnitude else "unresolved"
+
+
+def _weighted_least_squares(
+    design: np.ndarray, target: np.ndarray, weights: np.ndarray
+) -> np.ndarray | None:
+    root = np.sqrt(weights)[:, None]
+    solution, _, rank, _ = np.linalg.lstsq(design * root, target * np.sqrt(weights), rcond=None)
+    return None if rank < design.shape[1] else solution
+
+
+def adjusted_interaction_bootstrap(
+    values: Sequence[float],
+    units: Sequence[str],
+    designed: Sequence[bool],
+    covariates: np.ndarray,
+    *,
+    resamples: int = BOOTSTRAP_RESAMPLES,
+    seed: int,
+    alpha: float = 0.05,
+) -> dict[str, Any]:
+    """The interaction adjusted for covariates, on the same units and the same draw.
+
+    A length *band* is a restriction, not a match: the natural domains inside the
+    designs' span are still longer on average than the designs are. This is the
+    complement that needs no band -- the coefficient on ``designed`` in a
+    wild-type-level weighted least squares -- and it is deliberately weighted so
+    that with **no** covariates it reduces exactly to
+    :func:`interaction_bootstrap`'s point estimate: each wild type carries weight
+    ``1 / (wild types in its unit)``, so every unit contributes weight one and the
+    two estimators cannot silently disagree about what a unit is.
+
+    Its own weakness is the one a restriction does not have: a linear adjustment
+    extrapolates where the two sides barely overlap. It complements the restricted
+    readings rather than replacing them.
+    """
+
+    if resamples < 1 or not 0 < alpha < 1:
+        raise ValueError("invalid bootstrap parameters")
+    target = np.asarray(values, dtype=np.float64)
+    flag = np.asarray(designed, dtype=bool)
+    extra = np.asarray(covariates, dtype=np.float64).reshape(target.size, -1)
+    labels = np.asarray(units)
+    if flag.shape != target.shape or labels.shape != target.shape:
+        raise ValueError("values, units and the designed flag must be aligned")
+    if not np.isfinite(target).all() or not np.isfinite(extra).all():
+        raise ValueError("the adjusted interaction requires finite inputs")
+
+    unit_names, unit_index = np.unique(labels, return_inverse=True)
+    sizes = np.bincount(unit_index, minlength=unit_names.size)
+    weights = 1.0 / sizes[unit_index]
+    if extra.shape[1]:
+        centred = extra - extra.mean(axis=0)
+        scale = centred.std(axis=0)
+        scale[scale == 0.0] = 1.0
+        extra = centred / scale
+    matrix = np.column_stack([np.ones(target.size), flag.astype(np.float64), extra])
+
+    # Which side each unit sits on. A unit that mixed designs and naturals would
+    # make the stratified draw ill-defined, so it is refused rather than assigned.
+    unit_is_design = np.zeros(unit_names.size, dtype=bool)
+    for position in range(unit_names.size):
+        rows = flag[unit_index == position]
+        if rows.any() and not rows.all():
+            raise ValueError(f"unit {unit_names[position]!r} mixes designs and naturals")
+        unit_is_design[position] = bool(rows.all())
+    design_units = np.flatnonzero(unit_is_design)
+    natural_units = np.flatnonzero(~unit_is_design)
+    rows_of_unit = [np.flatnonzero(unit_index == position) for position in range(unit_names.size)]
+
+    solution = _weighted_least_squares(matrix, target, weights)
+    design_floor = bootstrap_unit_floor(int(design_units.size))
+    natural_floor = bootstrap_unit_floor(int(natural_units.size))
+    degenerate = bool(design_floor["degenerate"] or natural_floor["degenerate"])
+    record: dict[str, Any] = {
+        "point": None if solution is None else float(solution[1]),
+        "n_design_units": int(design_units.size),
+        "n_natural_units": int(natural_units.size),
+        "n_wildtypes": int(target.size),
+        "n_covariates": int(extra.shape[1]),
+        "resamples": int(resamples),
+        "alpha": float(alpha),
+        "degenerate": degenerate,
+        "degenerate_reason": design_floor["degenerate_reason"]
+        or natural_floor["degenerate_reason"],
+        "interval": None,
+        "excludes_zero": None,
+        "rank_deficient_resamples": 0,
+    }
+    if degenerate or solution is None:
+        return record
+
+    rng = np.random.default_rng(seed)
+    design_draws = rng.integers(0, design_units.size, size=(resamples, design_units.size))
+    natural_draws = rng.integers(0, natural_units.size, size=(resamples, natural_units.size))
+    statistic: list[float] = []
+    refused = 0
+    for replicate in range(resamples):
+        drawn = np.concatenate(
+            [design_units[design_draws[replicate]], natural_units[natural_draws[replicate]]]
+        )
+        rows = np.concatenate([rows_of_unit[position] for position in drawn])
+        fit = _weighted_least_squares(matrix[rows], target[rows], weights[rows])
+        if fit is None:
+            refused += 1
+            continue
+        statistic.append(float(fit[1]))
+    record["rank_deficient_resamples"] = int(refused)
+    if len(statistic) < resamples // 2:
+        record["degenerate"] = True
+        record["degenerate_reason"] = (
+            f"{refused} of {resamples} resamples were rank deficient; the adjusted "
+            "coefficient is not identified on this subcohort"
+        )
+        return record
+    low, high = np.percentile(statistic, [100 * alpha / 2, 100 * (1 - alpha / 2)])
+    record["interval"] = [float(low), float(high)]
+    record["excludes_zero"] = bool(low > 0.0 or high < 0.0)
+    return record
+
+
+def standardised_mean_differences(
+    design: np.ndarray, natural: np.ndarray, names: Sequence[str]
+) -> dict[str, Any]:
+    """Covariate balance between the two sides, as SMDs and their maximum.
+
+    Restricting a cohort to a propensity common support removes the units that
+    could never be matched; it does **not** make the survivors balanced. Reported
+    rather than assumed, so a composition control that failed to balance cannot be
+    read as one that succeeded.
+    """
+
+    left = np.asarray(design, dtype=np.float64).reshape(-1, len(names))
+    right = np.asarray(natural, dtype=np.float64).reshape(-1, len(names))
+    pooled = np.sqrt((left.var(axis=0, ddof=1) + right.var(axis=0, ddof=1)) / 2.0)
+    pooled[pooled == 0.0] = np.nan
+    smd = (left.mean(axis=0) - right.mean(axis=0)) / pooled
+    values = {name: (None if not np.isfinite(v) else float(v)) for name, v in zip(names, smd)}
+    finite = [abs(v) for v in values.values() if v is not None]
+    return {
+        "smd": values,
+        "max_abs_smd": float(max(finite)) if finite else None,
+        "balanced": bool(finite and max(finite) <= 0.25),
+        "threshold": 0.25,
     }
