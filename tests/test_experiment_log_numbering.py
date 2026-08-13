@@ -77,6 +77,18 @@ KNOWN_VIOLATIONS: tuple[tuple[int, int, str], ...] = (
     ),
     (172, 171, "EXP-R2-171's studentised pre-declaration, left after 172 for the same reason"),
     (178, 171, "EXP-R2-171's studentised reading, appended after 173 to 178 had landed"),
+    # EXP-R2-191 pre-declared a gate, then trained for five hours while another
+    # agent ran EXP-R2-192 to completion in the same window. Its reading is
+    # appended where it was written, after 192, for the reason the docstring
+    # above gives: a pre-declaration counts only because it preceded the
+    # numbers, and moving the reading up to sit beside it would put the two
+    # adjacent in a file whose order is what evidences that. One entry, one
+    # declared exception.
+    (
+        192,
+        191,
+        "EXP-R2-191's read, appended after EXP-R2-192 landed during its training window",
+    ),
 )
 
 
