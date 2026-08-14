@@ -140,6 +140,23 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "the dictionary's name -- so rule 1 is answered by the run being "
         "reproduced rather than by a seed this stage chooses"
     ),
+    "32_crosscoder.py": (
+        "DRAWS A COHORT and delegates the draw rather than constructing one. It "
+        "trains a dictionary on a stream of millions of records, which the cohort "
+        "constructors cannot serve for the reason 17_train_transcoder.py gives, so "
+        "it calls that stage's seeded block-shuffled stream for training and its "
+        "screened held_out_cohort for evaluation -- imported, not reimplemented, "
+        "so a Crosscoder's per-site reconstruction is readable against the "
+        "per-layer transcoders scored on the same population. Rule 1 is answered "
+        "by --corpus-seed on both, and the held-out draw is additionally taken "
+        "past everything the step budget reaches and screened for near-duplicates "
+        "against the training stream, because a record-level offset is not a "
+        "held-out set on a protein corpus (L30). The offset, the screen and the "
+        "block size all reach the artefact. It does NOT use "
+        "25_model_diffing_baselines.draw_splits: that stage fits a map on one half "
+        "of one pool while this one trains against a step budget, and two "
+        "definitions of the held-out set would be two populations under one name"
+    ),
     "30_activation_spectrum.py": (
         "measures the rank of the activation cloud a dictionary was fitted on, "
         "so it must sample the population that dictionary was scored on and not "
