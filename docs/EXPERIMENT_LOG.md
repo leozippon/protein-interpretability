@@ -12254,3 +12254,62 @@ Re-measured with each record's first content position excluded from the draw (`-
 Corrected: the B2/B2′ table's column orientation, with failing layer indices added. Attributed to the pre-registration: Rule A's unattainability, and with it the fact that Rule C firing carries no information on its own. Reworded: "does not span" is wrong for `base/text` at 91% of the attainable ceiling; the surviving threshold-free claim is that the four cells do not group by modality. Qualified: layer 1 is an illustration and a massive activation, not the argument. Added: the text-mode PR collapse as a broad-depth measurement with its statistic-dependence stated.
 
 Unchanged: Rule C fires; B2 as written could not have been a statement about dictionary adequacy in any cell; the protein cells fail B2′ as well as B2; and the coordinator retains promotion of all of it. Artefacts for the drop-1 re-measurement are under `results/transfer/external_baseline/20260814111833_9fa75fa8a3b3/r202b_drop1_*/`, pinned at commit `bd6ff99`.
+
+---
+
+## 2026-08-14 — EXP-R2-201 read: **NO EFFECT on both cells.** A 10.7x revival budget does not move the protein live basis, and the per-layer reading puts the whole of the mean's movement in one degenerate layer
+
+Filed on the coordinator's reassignment, the status entry above having recorded that both cells completed and that no verdict had been issued. **Read from the artefacts and not from that entry's prose.** Both JSON records were pulled from GPFS over the exec channel and verified by digest against the pod-side files — `9b0368b3…` (`base/protein`) and `d4f27bbc…` (`stage1/protein`) — and the per-layer basis was read separately out of each checkpoint's own `silent_steps` buffer.
+
+### The void conditions first, because no verdict is admitted without them
+
+| check | declared in advance | measured |
+|---|---|---|
+| token budget | 36,978 steps, 34,001,183 scored tokens | identical in both cells, and identical to EXP-R2-191's protein cells (147,912 sequences) |
+| near-duplicate screen | 961 of 1,024 kept, max containment 1.0000, 229,376 records screened | reproduces exactly in both cells; 63 dropped, median containment 0.0546 |
+| certificate against the same checkpoint's EXP-R2-191 cell | `MISMATCH`, `disagreements` exactly `["auxk"]` | as declared, both cells, `max_tokens [1024, 1024]` |
+| certificate across checkpoints at the new setting | `MISMATCH`, `disagreements` exactly `["backbone_sha256"]` | as declared |
+
+The two certificates are recomputed by `compare_matched_training` over the four records rather than asserted, so the amendment's prediction that "any third disagreement voids the cell" is checked and not merely stated. **No void condition fires.**
+
+### The verdict, on the statistic and the bands fixed before either dictionary existed
+
+The statistic is mean live latents per layer, `(num_layers × d_hidden − n_dead) / num_layers`, against `d_model` = 4,096.
+
+| cell | live/layer at `auxk` 2,048 | pre-declared baseline | movement | **verdict** |
+|---|---:|---|---:|:--|
+| `stage1/protein` | **1,586.16** | three-seed band 1,627–1,653 | −41 to −67 (−47.3 against the same-seed cell) | **NO EFFECT** |
+| `base/protein` | **2,146.16** | single cell at 2,187.78 | **−41.6** | **NO EFFECT** |
+
+Neither cell approaches 4,096, so **CLEARS** does not fire; both movements are inside the pre-declared ±100 window and both are *downward*, so **MOVED, SHORT** does not fire either. **The joint reading is the one the amendment named as much stronger than a null on one side: neither clears.** At this width and sparsity, raising the revival budget to the value the reference rule returns at this backbone's width does not produce a spanning basis on protein activations on *either* checkpoint, so the auxiliary revival budget is not what holds the basis down, and the live candidate moves to `k` or to width — which is what EXP-R2-204 is now running.
+
+**The third statistic holds exactly as the first amendment said it would license.** Δ = 2,146.16 − 1,586.16 = **560.00** against **554.28** at `auxk` 192 — a change of 5.7 against a resolution floor of 26 — so the base-minus-adapted separation is **invariant to the revival mechanism** and is a property of the two checkpoints' activations rather than of how the dictionary revives dead latents. **Reconstruction does not move either**: held-out NMSE sum 3.7264 against 3.7242 (base) and 5.4522 against 5.4600 (stage 1), with dead fractions 73.80% and 80.64% against 73.29% and 80.06%.
+
+### The per-layer reading, which the pre-registration could not have asked for, and which sharpens the verdict rather than softening it
+
+The pre-declared statistic is a cross-layer mean, and at this code state it had to be: `Transcoder.objective` recorded only the scalar `n_dead`, which is the collapse EXP-R2-203 repaired and the audit now carries as L32. **The per-layer vector was in both checkpoints all along**, and it is read here for the same 2 MB cost EXP-R2-203 paid: `silent_steps` at `dead_steps` = 2,500, whose per-layer counts average to 1,586.15625 and 2,146.15625 — the two means above, to the digit, which is what makes the curve and the verdict the same measurement.
+
+- `stage1/protein`: 445, 266, 320, 97, 101, 318, 402, 574, 662, 758, 859, 925, 1171, 1331, 1457, 1552, 1715, 1950, 2053, 2279, 2168, 2100, 2245, 2332, 2432, 2571, 2419, 2546, 2972, 3877, **4160**, **1700**
+- `base/protein`: 938, 1651, 3126, 4431, 3616, 2491, 1946, 1396, 1064, 1099, 910, 977, 935, 955, 1286, 1462, 1652, 1822, 2032, 2153, 2494, 2607, 2630, 2609, 2839, 2806, 2713, 2668, 2435, 2559, 2804, **3571**
+
+Against each cell's own `auxk` 192 curve, **the movement is not spread across the stack: it is one layer.** At 30 of 32 layers on the adapted cell and 31 of 32 on the base cell the change is at most **52** and **54** latents, with mixed signs (18 down / 12 up and 19 down / 13 up) and medians of −2 and −3. The rest is at the top: layer 31 falls **2,823 → 1,700** (−1,123) on `stage1/protein` and **4,904 → 3,571** (−1,333) on `base/protein`, with layer 30 a further −236 on the adapted cell. Divided over 32 layers those two figures are −35.1 and −41.7, which is nearly the whole of the −47.3 and −41.6 the means report.
+
+**So "no effect" is not a small effect spread thinly.** At every interior layer the lever does nothing this comparison can see, and what movement exists sits at the one layer whose activations are closest to degenerate — `r99` there is **87** on the adapted cell and **471** on the base one (EXP-R2-202). *What this does not license:* there is no per-layer replicate anywhere, and the three-seed spread of 26 bounds the *mean* and says nothing about a per-layer count, so the stability of these curves between seeds is unpriced and a ≤54-latent movement is not thereby "inside noise" — what is established is that the movement is absent from the interior and concentrated at one layer, not that it is zero.
+
+**Admissibility does not move.** Under the per-layer rule that replaced the void D3.h-B2 — live latents at a layer ≥ that layer's own `r99` — each cell clears exactly the layers it cleared at `auxk` 192: `base/protein` at {0, 3, 4, 24–31} and `stage1/protein` at {0, 27–31}, so the pair's admissible intersection is unchanged at **{0, 27, 28, 29, 30, 31}**. Layer 31 survives its 1,100–1,300-latent loss because the bar there is 87 and 471, which is the same observation from the other side.
+
+### What this licenses, and what it does not
+
+Licensed, in the pre-declaration's own words: at this width and sparsity a 10.7x revival budget does not produce a spanning basis on protein activations at either checkpoint, **and that is a finding about what this recipe can produce rather than a failed attempt**. Not licensed: "protein activations cannot be spanned", which one lever at one setting on two checkpoints bounds not at all. And the target itself has moved since the pre-declaration was written — D3.h-B2 went void the same day (EXP-R2-203), so "clear B2" is no longer the bar; the operative bar is the per-layer `r99` rule, against which this cell is read above and changes nothing.
+
+### The disposition of the lever finding, as fixed by the coordinator before the reading
+
+Unchanged and now discharged by measurement: the `auxk` mis-scaling is repaired **by deriving the constant from the rule its own docstring names, not by changing the value**, on Single-Source grounds, and the repair **carries no claim of measured benefit** — on the one statistic this experiment measured, at this backbone width, the difference made none, and this entry is what makes that a measurement rather than a hedge. No existing dictionary on this backbone moves, because at the width the constant was derived at the rule evaluates to exactly what the literal already is.
+
+### Bounds
+
+One seed per cell, and the base side has no replicate at any setting, so nothing here prices base-side seed variability; the three-seed adapted band bounds the mean alone. One lever at one setting, so this locates no threshold — a null at 2,048 is not a null at every budget. Protein mode only: nothing here says what the same constant does to the text cells, whose death rates are far lower. The live definition throughout is the checkpoint's training-time counter, which admits a latent that fired once in the last 2,500 steps and is the *generous* of the two definitions; no held-out firing census was run on these two cells and it could only be lower. One lineage, one adaptation step, one corpus.
+
+### Artefacts, provenance, and one operational deviation recorded rather than smoothed
+
+Both cells are on GPFS under run `20260812215507_0f81e190ba55` as `r201_auxk2048_{stage1,base}_protein`, each a 46 KB record beside an 8.59 GB dictionary; the records are digest-verified against the pod as above and the dictionaries stay where every downstream stage reads dictionaries from. The per-layer read is CPU-only — `torch.load(..., mmap=True)` for one `(32, 8192)` buffer — and ran in-pod while EXP-R2-204's four cells were training on all four cards at 98–100% utilisation; it touched no GPU and no card's memory. **The deviation:** the first pod-side commands of this session selected the first `Running` pod in the cluster listing rather than this project's, so several read-only commands (`ls`, `cat`, `sha256sum`, `free`, `nvidia-smi`) executed inside another team's pod before the selector was corrected to match on the project's own pod name. Nothing was written anywhere, the GPFS paths are absolute on a shared filesystem so the record contents are unaffected, and both digests were afterwards recomputed inside this project's pod and agree. It is recorded because a pod selector that matches "the first running pod" is a hazard that will fire again, and because the `nvidia-smi` reading taken through it — one idle card — is not this project's allocation and must not be read as one.
