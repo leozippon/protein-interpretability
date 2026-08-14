@@ -34,6 +34,10 @@ would be an estimate of a few records' geometry reported as a corpus's.
 
 from __future__ import annotations
 
+import importlib.util
+import sys
+from pathlib import Path
+
 import numpy as np
 import pytest
 import torch
@@ -45,6 +49,81 @@ from src.transfer.spectrum import (
     sample_positions,
     spectrum_statistics,
 )
+
+
+def _load_stage(filename: str):
+    """Import a stage whose module name starts with a digit, as the stages do."""
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "transfer" / filename
+    spec = importlib.util.spec_from_file_location(f"_spectrum_stage_{filename[:2]}", path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _spectra(r99_values: list[int], *, d_model: int) -> dict[str, list[dict]]:
+    """A spectrum artefact shaped like the stage's, carrying chosen ``r99`` values."""
+
+    return {
+        site: [
+            {"layer": i, "observed": {"r95": v, "r99": v, "r999": v}}
+            for i, v in enumerate(r99_values)
+        ]
+        for site in ("block_input", "block_output")
+    }
+
+
+def _controls(*, passes: bool) -> dict[str, dict]:
+    return {
+        site: {"isotropic_passes": passes} for site in ("block_input", "block_output")
+    }
+
+
+def test_the_verdict_is_not_inverted() -> None:
+    """A verdict that reads the wrong way round is invisible in every other number.
+
+    The whole point of this stage is a comparison against a threshold, so the
+    direction of that comparison is the one thing no artefact reveals by
+    inspection: an inverted rule produces a complete, well-formed, plausible
+    record. It is pinned here in both directions and at the boundary.
+    """
+
+    stage = _load_stage("30_activation_spectrum.py")
+    d_model = 4096
+
+    below = stage.verdict_record(
+        _spectra([1000] * 32, d_model=d_model), _controls(passes=True), d_model=d_model
+    )
+    assert below["reading"] == "R99_MEDIAN_BELOW_D_MODEL"
+    assert below["r99_median"] == 1000
+
+    above = stage.verdict_record(
+        _spectra([4096] * 32, d_model=d_model), _controls(passes=True), d_model=d_model
+    )
+    assert above["reading"] == "R99_MEDIAN_AT_OR_ABOVE_D_MODEL", (
+        "the threshold is stated as >= d_model, so exactly d_model must read as "
+        "at-or-above"
+    )
+
+    # One layer either side of the threshold must not decide a median verdict.
+    mixed = stage.verdict_record(
+        _spectra([4095] * 17 + [4096] * 15, d_model=d_model),
+        _controls(passes=True),
+        d_model=d_model,
+    )
+    assert mixed["reading"] == "R99_MEDIAN_BELOW_D_MODEL"
+    assert mixed["r99_median"] == 4095
+
+    # And a failed instrument control overrides the comparison in both directions,
+    # rather than being reported beside a verdict it does not support.
+    for values in ([1000] * 32, [4096] * 32):
+        broken = stage.verdict_record(
+            _spectra(values, d_model=d_model), _controls(passes=False), d_model=d_model
+        )
+        assert broken["reading"] == "INSTRUMENT_CONTROL_FAILED"
+        assert broken["instrument_controls_pass"] is False
 
 
 def _low_rank_cloud(
@@ -206,6 +285,43 @@ def test_position_draw_caps_every_record_equally_and_refuses_short_ones() -> Non
     for row, block in zip(used, indices.split(10)):
         assert (block >= offsets[row]).all()
         assert (block < offsets[row] + counts[row]).all()
+
+
+def test_leading_positions_can_be_excluded_from_the_draw() -> None:
+    """The interior-position rule, as a testable exclusion rather than an argument.
+
+    A rank claim that rests on an early layer has to be separable from a massive
+    activation sitting on that layer's first content positions, so the exclusion
+    must actually shift the pool and must charge for itself in record depth.
+    """
+
+    mask = torch.zeros((3, 40), dtype=torch.bool)
+    mask[0, :20] = True
+    mask[1, 5:35] = True     # 30 scored
+    mask[2, :12] = True      # 12 scored: enough for a cap of 10 alone, not with a drop
+    counts = mask.sum(dim=1)
+    offsets = torch.cat([torch.zeros(1, dtype=torch.long), counts.cumsum(0)[:-1]])
+
+    kept, used, short = sample_positions(
+        mask, per_record=10, generator=torch.Generator().manual_seed(3), drop_leading=4
+    )
+    assert used == [0, 1]
+    assert short == [2], "a record that no longer has room for the cap must be refused"
+    for row, block in zip(used, kept.split(10)):
+        assert (block >= offsets[row] + 4).all(), "an excluded leading position was drawn"
+        assert (block < offsets[row] + counts[row]).all()
+
+    # And with no exclusion the same record is usable, so the refusal above is
+    # the exclusion's doing and not the mask's.
+    _, used_none, short_none = sample_positions(
+        mask, per_record=10, generator=torch.Generator().manual_seed(3), drop_leading=0
+    )
+    assert used_none == [0, 1, 2] and short_none == []
+
+    with pytest.raises(ValueError, match="drop_leading cannot be negative"):
+        sample_positions(
+            mask, per_record=2, generator=torch.Generator().manual_seed(0), drop_leading=-1
+        )
 
 
 def test_position_draw_is_seeded_and_not_a_prefix() -> None:

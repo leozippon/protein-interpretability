@@ -226,6 +226,18 @@ def build_parser() -> argparse.ArgumentParser:
         "ceiling: an unequal draw would weight the longest records",
     )
     parser.add_argument(
+        "--drop-leading-positions",
+        type=int,
+        default=0,
+        help="exclude this many of each record's first scored positions from the "
+        "draw. The content mask already removes special tokens and padding; this "
+        "removes the leading content positions, which is where a LLaMA-family "
+        "massive activation lands once <s> is gone. Appendix B rule 11's "
+        "requirement that a spectrum be read on interior positions, made "
+        "adjustable so that a rank claim resting on an early layer can be tested "
+        "against it rather than argued about",
+    )
+    parser.add_argument(
         "--isotropic-chunk",
         type=int,
         default=4096,
@@ -426,7 +438,10 @@ def accumulate(
         inputs, outputs, mask = STAGE17.capture(model_handle, chunk)
         inputs, outputs = STAGE17.flatten(inputs, outputs, mask)
         indices, used, short = sample_positions(
-            mask, per_record=args.positions_per_record, generator=generator
+            mask,
+            per_record=args.positions_per_record,
+            generator=generator,
+            drop_leading=args.drop_leading_positions,
         )
         short_records += len(short)
         if not used:
@@ -473,6 +488,7 @@ def accumulate(
         "n_records_used": int(used_records),
         "positions_per_record": int(args.positions_per_record),
         "n_records_too_short": int(short_records),
+        "drop_leading_positions": int(args.drop_leading_positions),
         "n_survivors_consumed": int(consumed),
         "n_survivors_available": int(len(survivors)),
         "position_floor": int(MIN_POSITION_MULTIPLE * d_model),
@@ -722,6 +738,10 @@ def main() -> None:
     stem = f"{target.get('rendering_family', args.arm)}_{args.mode or 'native'}_spectrum"
     if target["kind"] == "joint_checkpoint":
         stem = f"{args.rendering}_{args.mode}_{Path(str(args.joint_checkpoint)).name}_spectrum"
+    # Two draws that differ only in how many leading positions they exclude are
+    # two measurements, so they must not share a filename.
+    if args.drop_leading_positions:
+        stem = f"{stem}_drop{args.drop_leading_positions}"
     write_json(args.out / f"{stem}.json", payload)
     print(
         f"[done] {verdict['reading']}  median r99 {verdict['r99_median']:.0f} of "

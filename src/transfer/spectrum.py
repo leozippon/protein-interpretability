@@ -333,7 +333,11 @@ def coordinate_independent_spectrum(
 
 
 def sample_positions(
-    content_mask: torch.Tensor, *, per_record: int, generator: torch.Generator
+    content_mask: torch.Tensor,
+    *,
+    per_record: int,
+    generator: torch.Generator,
+    drop_leading: int = 0,
 ) -> tuple[torch.Tensor, list[int], list[int]]:
     """Which flattened token positions to take from one batch, capped per record.
 
@@ -353,11 +357,23 @@ def sample_positions(
     and not a sample of the longest records. The refused rows are returned so the
     caller can report how much of the draw that cost.
 
+    ``drop_leading`` excludes that many of each record's **first** scored
+    positions from the pool before the draw. Appendix B rule 11 exists because a
+    spectrum taken over all positions can measure the attention sink and the
+    format separators rather than the representation; the content mask already
+    removes special tokens and padding, and this removes the leading content
+    positions, which on a LLaMA-family backbone are where a massive activation
+    lands once ``<s>`` itself is gone. A record then needs
+    ``per_record + drop_leading`` scored positions to be usable, so the exclusion
+    costs draw depth and the refused-record count reports how much.
+
     Returns ``(indices, used_rows, short_rows)``.
     """
 
     if per_record < 1:
         raise ValueError("per_record must be positive")
+    if drop_leading < 0:
+        raise ValueError("drop_leading cannot be negative")
     if content_mask.ndim != 2:
         raise ValueError(
             f"expected a (batch, length) content mask, got shape "
@@ -371,12 +387,12 @@ def sample_positions(
     used: list[int] = []
     short: list[int] = []
     for row in range(counts.numel()):
-        available = int(counts[row])
+        available = int(counts[row]) - drop_leading
         if available < per_record:
             short.append(row)
             continue
         picked = torch.randperm(available, generator=generator)[:per_record]
-        chosen.append(int(offsets[row]) + torch.sort(picked).values)
+        chosen.append(int(offsets[row]) + drop_leading + torch.sort(picked).values)
         used.append(row)
     indices = (
         torch.cat(chosen) if chosen else torch.zeros(0, dtype=torch.long)
