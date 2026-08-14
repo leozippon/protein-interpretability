@@ -100,6 +100,18 @@ KNOWN_VIOLATIONS: tuple[tuple[int, int, str], ...] = (
         193,
         "EXP-R2-193's read, appended after EXP-R2-194 landed while its stage was being written",
     ),
+    # And once more, at the widest separation so far. EXP-R2-194 pre-declared its
+    # recovery comparison, was then paused for hours by a cluster failure, and
+    # ran only after EXP-R2-195 to 200 had been appended by concurrent agents.
+    # Its reading goes where it was written. The gap is six ids rather than one,
+    # which is what a hardware outage does to a chronology and is precisely the
+    # thing that must stay visible: the pre-declaration's value is that it
+    # preceded the numbers, and by a margin the file itself now records.
+    (
+        200,
+        194,
+        "EXP-R2-194's read, appended after 195 to 200 landed during its cluster-outage pause",
+    ),
 )
 
 
