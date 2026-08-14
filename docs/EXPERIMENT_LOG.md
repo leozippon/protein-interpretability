@@ -12164,6 +12164,14 @@ Health gate before dispatch: `Health=ok`, `PodGPFS=read-write`, four card rows, 
 
 Expected wall clock, from the 5.95 h precedent at 8,192: 9–12 h for the width cells, ~6 h for the `k` cells. Artefacts will be written to `results/external_baseline/20260814112509_9fa75fa8a3b3/r204_{d16384,k64}_{base,stage1}/` on GPFS. **The 16,384-wide dictionary is a 17.2 GB file, and the launcher's pull of an 8.59 GB directory already failed twice in EXP-R2-191 on chunk-size mismatch**; if it fails again the JSON record is recovered from GPFS under digest, the dictionary stays where every downstream stage reads dictionaries from anyway, and the incident is reported rather than described as a completion.
 
+### An operational hazard this campaign hit, recorded where the next campaign operator will look
+
+**A backgrounded shell watcher is not a trigger you can rely on for a multi-hour run: it is killed after roughly an hour, and it dies with an empty output file and no signal.** Three of this campaign's watchers were armed that way — a four-cell completion watcher and a card-release trigger among them — and the completion watcher was found dead with nothing in it. **The failure mode is the dangerous one: silence.** A dead watcher and a run that has simply not finished yet produce exactly the same observation, so the operator waits, and the wait costs whatever the trigger was guarding. Here it would have been the card-release trigger for a follow-on arm, which converts directly into idle GPU hours on a cluster whose allocation is already at 16/16.
+
+Three rules follow, and this campaign now runs under all three. *Hang long-campaign triggers on the session-persistent watcher path, not on backgrounded shell.* *Give the watcher a side effect you can check locally* — this one appends a line to `logs/external_baseline/r204_memory_profile.csv` on every poll, so its liveness is a file timestamp on the workstation rather than a pod round trip, and "armed" and "alive" stop being the same claim. *Do not let one watcher hold every trigger.* A single consolidated watcher is a single point of failure for the whole campaign; a second, cheaper watcher on a different interval that checks the first one's timestamp and independently re-checks the one time-critical trigger costs almost nothing and removes the correlated failure.
+
+**And the standing rule underneath them: a trigger time that passes without a signal is a reason to check the run directly, never a reason to keep waiting.** Launching on schedule matters more than detecting the moment elegantly.
+
 ---
 
 ## 2026-08-14 — EXP-R2-202 corrections: a mislabelled column, a threshold that was unreachable by construction, and two follow-ups the coordinator asked for. Rule C survives all three; one of its supporting arguments does not survive unqualified
@@ -12320,11 +12328,11 @@ Both cells are on GPFS under run `20260812215507_0f81e190ba55` as `r201_auxk2048
 
 Raised by the coordinator against EXP-R2-204's own design and fixed here rather than after the protein numbers land. **What had and had not been seen when this was written is stated in full at the end**, because an amendment written after a result is not a pre-registration.
 
-### The defect
+### The defect, and it is worse than a missing control
 
-EXP-R2-204's bands — `L16/L8` ≥ 1.7 capacity-limited, ≤ 1.2 data-limited — are **absolute, and no control demonstrates what this trainer's ratio is when nothing is binding**. That is the shape of the failure that voided D3.h-B2 one level down: a criterion whose attainable range was never shown on a control the method is known to work on. A protein ratio of, say, 1.45 would be unreadable, because protein-specific saturation and ordinary behaviour are not distinguished by any number now on disk.
+**The primary objection is mechanical.** In a TopK dictionary, doubling `d_hidden` at fixed `k` halves each latent's expected share of the competition: twice as many latents contest the same `k` slots per token. Sub-linear growth of the live population is therefore the *expected* behaviour at 2x width **on any data at all**, with no data constraint whatever. So a ratio below 2.0 carries no evidence of saturation by itself, and the interval between 1.2 and 1.7 has no interpretation that the mechanism does not already supply. **EXP-R2-204's bands were therefore uninterpretable in principle and not merely uncontrolled** — a stronger and more damaging statement about that pre-registration than the one that prompted this amendment, and it is recorded that way rather than softened.
 
-**And there is a mechanistic reason to expect the absolute bands to mislead, which is stronger than the methodological objection.** In a TopK dictionary, doubling `d_hidden` at fixed `k` halves each latent's expected share of the competition: twice as many latents contest the same `k` slots per token. Sub-linear growth of the live population is therefore the *expected* behaviour at 2x width **on any data at all**, with no data constraint whatever. A ratio below 2.0 is thus not evidence of saturation, and without a reference the whole 1.2–1.7 interval is uninterpretable.
+The methodological objection corroborates it and is the reason the repair is a control rather than a re-derivation. The bands are **absolute, and nothing on disk demonstrates what this trainer's ratio is when nothing is binding**, which is the shape of the failure that voided D3.h-B2 one level down: a criterion whose attainable range was never shown on a control the method is known to work on. A protein ratio of, say, 1.45 would be unreadable, because protein-specific saturation and ordinary TopK behaviour are not distinguished by any number now on disk. Measuring the reference is what makes the mechanism's contribution subtractable instead of merely acknowledged.
 
 ### The arm
 
@@ -12350,6 +12358,8 @@ The text cells are **not** basis-constrained in the way the protein cells are: t
 
 One further asymmetry decides which text cell is the more informative. `base/text` is already at 92.87% live, so its `f16/f8` **cannot exceed 1.077**; it can show how far the fraction falls and never how far it could rise. `stage1/text` at 59.82% has room up to 1.672, and its starting fraction sits between `base/text` and the protein cells. **`stage1/text` is therefore the primary reference and `base/text` the ceiling case**, and if only one cell survives, that is the order in which the arm is read.
 
+**Both cells run, and the decision to keep the ceiling case was taken deliberately rather than by default.** The ceiling bounds only the *upside*: `f16/f8` cannot exceed 1.077 on `base/text`, but it is unbounded below, and a **fall** in live fraction under doubled width would be a substantive statement about TopK scaling on this backbone — precisely the mechanism this amendment names as the reason the absolute bands were uninterpretable. That cell can still deliver it. So it is *asymmetrically informative* rather than uninformative, and the asymmetry is worth holding rather than trading away. The competing claim on the cards was a possible Crosscoder campaign, whose admissible readout has meanwhile narrowed to one or two layers, so a four-card Crosscoder spend is no longer the obvious next use and may not be dispatched at all. The cost of having kept this cell is bounded and known — a 3.5 h deferral of two cards; the cost of dropping it is a cell unrecoverable without another six hours.
+
 ### Memory, checked before dispatch, and one declared deviation
 
 **The text cohort does not inherit the protein memory result and is materially tighter.** Text realises **2,991.3 scored tokens per step** against protein's 919.5, and its band is `[800, None]` characters under a hard cap of 4 × 1024 = **4,096 tokens per batch which the corpus actually reaches** — unlike the protein stream, whose largest batch over the whole run is about 2,230 tokens. Under the model measured on this campaign's own cards, a fixed cost of 79,871 MiB plus 14.55 MiB per token gives **139,467 MiB against 143,771**, a **3% margin**, where the protein width cells settled at 109,067 MiB.
@@ -12369,3 +12379,178 @@ Cards 2 and 3, taken up when the two `k` cells free them at about six hours. The
 No endpoint live-latent figure exists for any of the four protein cells, and **no live-latent information of any kind exists for either width cell** — the lever this control is about. Both width cells have printed only `dead 0` at step 2,000, which is before `dead_steps` = 2,500 and is trivially zero.
 
 **Mid-training dead counts for the two secondary `k` cells had been seen and are disclosed rather than hidden:** at step 4,000, 104,588 and 126,109, i.e. **4,923.6** and **4,251.1** live latents per layer; at step 6,000, 148,492 and 167,393, i.e. **3,551.6** and **2,961.0**. For orientation, the `d_hidden` 8,192 / `k` 32 baseline stood at 2,848.2 live per layer at its own step 6,000. These bear on the `k` lever, which this amendment does not touch and which decides nothing in the capacity-versus-data question; the width cells, which this control exists to make readable, have produced no number at all.
+
+---
+
+## 2026-08-14 — EXP-R2-205: R2.4's Crosscoder built and certified on known ground truth before it touches a checkpoint. The rank-deficiency question is answered and it is the answer that governs dispatch
+
+D3.h's Crosscoder did not exist anywhere in the repository, and every branch of R2.4's current decision needs it. It is now `src/transfer/crosscoder.py` and `scripts/transfer/32_crosscoder.py`. **No H200 card was used and none was contended for.** Everything below is synthetic data with declared ground truth plus one campaign-width end-to-end pass on a single L20.
+
+### The formulation, and the four places it departs from the published one
+
+Lindsey et al. (2024) §2/§4 and Mishra-Sharma et al. (2025): latents from a sum over per-model encoders, per-model decoders, and the **L1 of per-model decoder norms** — `sum_i f_i(x) sum_m ||W^m_dec,i||` — which both notes state is the term that makes latents model-exclusive at all. Readout is the relative decoder norm `||W^adapted|| / (||W^base|| + ||W^adapted||)`, trimodal at 0 / 0.5 / 1.
+
+*(i) TopK activation with the decoder-norm L1 retained beside it.* The 2025 note sanctions TopK; every dictionary R2.3 fitted on this lineage is TopK at `k` 32 and a Crosscoder whose L0 came from a penalty could not be read against them. But TopK alone carries **no** exclusivity pressure, so the published L1 term is kept as a separate coefficient. `--decoder-norm-penalty 0` is the pure-TopK control. The term and the readout are both invariant under the gauge TopK leaves free (scale a latent's decoders by `c`, its encoder row by `1/c`), which is asserted as a test.
+
+*(ii) Per-site latent banks rather than one layer.* The published diffing experiment trains at one middle layer; R2.4's admission rule is per layer, so a single-layer object cannot answer it. This is a bank of independent two-model crosscoders, one per declared site, in one loop — not the acausal cross-layer variant, which would fold the per-layer question away.
+
+*(iii) Per-`(site, model)` normalisation scalars, frozen before the first step.* `E||x||_2 / sqrt(d_model)`, estimated on a declared warm-up prefix. The readout is a ratio of decoder norms, so an unequalised activation scale would make every latent read as specific to the larger checkpoint. **The ratio the normalisation removes is reported rather than erased**, and on the live pair it is not negligible: `ProLLaMA_Stage_1`'s block output at layers 27 and 28 is **0.617** and **0.627** of `Llama-2-7b-hf`'s on the same text positions.
+
+*(iv) NMSE rather than MSE*, per `(site, role)`, so a Crosscoder's per-site reconstruction is directly comparable with the per-layer transcoder figure R2.3 published at the same site.
+
+Not implemented and not a deviation: the 2025 note's designated-shared-latent mitigation for polysemantic exclusive features. This unit counts and categorises latents and reads none, so the mitigation addresses nothing it measures.
+
+### Site independence is exact, and it is what decides a campaign's shape
+
+Sites are parameter-disjoint and the objective is a sum over them. The two mechanisms that could still have coupled them are removed rather than disclosed: the initialisation is drawn **per site** from a generator keyed to the backbone layer index rather than from one draw over the stacked tensor, and the gradient clip is applied **per site** rather than over one global norm. Checked, not asserted: fitting layer 1 alone and inside a two-site run gives **bitwise identical** decoder norms. So training the whole stack and reporting at the admissible layers yields *the same fitted dictionary there* as training the admissible layers alone — the choice is economics, and the narrow run wins.
+
+### The instrument certificate, at the campaign's own rank ratio
+
+`--synthetic-check` fits the same object on paired activations carrying declared feature counts. Ratios matched to the campaign: `d_hidden`/rank 128/42 = 3.05 against 8,192/~2,700 = 3.03, and `d_model`/rank 64/42 = 1.52 against 4,096/2,700 = 1.52. Shared directions are **rotated** between the two roles, so the checkpoints differ in geometry while sharing every feature's firing pattern — the case the 2024 note distinguishes from a model-specific feature.
+
+| cell | pairing | injected shared / base / adapted | recovered | categorised | live | spurious exclusive | held-out NMSE |
+|---|---|---|---|---|---|---|---|
+| full rank | true | 24 / 12 / 12 | 24 / 12 / 12 | **24 / 12 / 12** | 48 | — | 0.0011 |
+| full rank | shuffled | 24 / 12 / 12 | 24 / 12 / 12 | **0** / 12 / 12 | 98 | — | 0.3582 |
+| rank 42/64 | true | 24 / 12 / 12 | 24 / 12 / 12 | **24 / 12 / 12** | 48 | — | 0.0012 |
+| rank 42/64 | shuffled | 24 / 12 / 12 | 24 / 12 / 12 | **0** / 12 / 12 | 102 | — | 0.3591 |
+| all-shared, rank 42/64 | true | 48 / 0 / 0 | 48 | 48 | 51 | **0 of 51** | 0.0217 |
+| all-shared, rank 42/64 | shuffled | 48 / 0 / 0 | 48 | **0** | 111 | 71 | 0.5873 |
+
+Two things are exact rather than approximate. The live basis under true pairing is **48**, which is the injected feature count and nothing else. And the null destroys **exactly and only** the shared category: a shared feature stays recoverable — it is present in the base checkpoint's activations either way — and its categorisation collapses from 24 to 0, while the model-exclusive features stay correctly categorised 12/12 under both pairings, because an exclusive feature lives in one model whether or not the pairing is true.
+
+### Rank deficiency: the readout does not manufacture specificity; what collapses is the null gap
+
+The operating regime, not a corner case — measured `r99` is 2,588–3,670 against `d_model` 4,096 and reaches 87 at layer 31 on the adapted checkpoint. A rank sweep on **all-shared** data (zero model-specific features injected, so every exclusive latent reported is spurious by construction), rotated directions, `d_hidden` 64 on `d_model` 32:
+
+| rank / `d_model` | live | shared | **spurious exclusive** | shared fraction, true | shared fraction, null | true − null |
+|---|---|---|---|---|---|---|
+| 1.00 | 29 | 29 | **0** | 1.000 | 0.088 | **0.912** |
+| 0.63 | 39 | 39 | **0** | 1.000 | 0.100 | **0.900** |
+| 0.25 | 56 | 51 | **0** | 0.911 | 0.547 | 0.364 |
+| 0.125 | 41 | 30 | **0** | 0.732 | 0.542 | 0.190 |
+
+Also **0** spurious exclusive latents at 0.66 with `d_hidden` 128, at 0.63 with `d_hidden` 120, and at 0.06 with `d_hidden` 120. **Six configurations spanning rank ratios 0.06 to 1.0 and dictionary-to-rank ratios 1.6 to 30, and the spurious count is zero in every one.** A Crosscoder does not respond to low-rank input by inventing model-specific features.
+
+The sweep regenerates from committed code with no scratch script: `32_crosscoder.py --synthetic-check` at four values of `--synthetic-rank` produces the `all_shared` cell of each row, and `tests/test_crosscoder.py` holds the full-rank against severe-rank comparison as an assertion so the collapse cannot silently stop happening.
+
+What rank deficiency costs is the **separation between the measurement and its null**, and it is a cliff rather than a slope: the true-minus-null shared-fraction gap is 0.90–0.91 at ratios 0.63 and above, and 0.19 at 0.125. **This is an independent, quantitative corroboration of the amendment that excluded the degenerate-`r99` layers from R2.4's admissible set**, derived from a construction that knows nothing about the real data. Layer 27's ratio is ≈0.61–0.66 on both protein cells, inside the reliable band; the excluded layers sit at 0.021 (L31 adapted), 0.15 (L30 adapted), 0.23 (L29 adapted) and 0.10 (L0 adapted) — at or below the point where the null stops discriminating.
+
+**One assertion of this programme's was falsified and is retracted rather than relaxed.** The first version of the rank test asserted that rank deficiency announces itself as *under-completion* — fewer live latents than injected features. It does not: the live count moved in both directions across the sweep (18 live on a 40-feature rank-0.06 cloud, 41 on a 24-feature rank-0.125 one, 56 on a 24-feature rank-0.25 one). The live count is a statement about how a dictionary tiles a low-dimensional cone and **is not a rank alarm**. The replacement asserts the two properties that do hold — zero spurious exclusives at every rank, and a null gap that must collapse under severe rank deficiency — and the first of them is strictly stronger than what the retracted test asserted about specificity.
+
+### One end-to-end pass on the live pair, at campaign width, on a single L20
+
+`Llama-2-7b-hf` → `ProLLaMA_Stage_1`, text mode, block output, sites 27–28 fitted with **only 27 admissible**, `d_hidden` 8,192, `k` 32, both pairings, batch 4, cap 512, 260 steps. Correctness only; 260 steps is nowhere near a fitted dictionary and no number from it is a result.
+
+Everything downstream of the premise worked: identical tokenizer digest `fe56f82cb036…`, 32L × 4096d comparability, the near-duplicate screen keeping 32 of 32 at maximum containment 0.0280, 268.5M parameters per Crosscoder (the closed form's `4 · d_model · d_hidden` per site, twice a per-layer transcoder's), and **layer 28 carrying `ADMISSIBILITY_REFUSED` in place of its counts while layer 27 reported**. Artefact schema passes both per-site guards before it is written. Realised widest batch **2,044** scored positions against a 2,048 cap, mean 1,875.6.
+
+**Timing and memory, measured.** 260 steps in 319 s against 60 steps in 132 s — **0.935 s/step** on one L20 for two sites, `d_hidden` 8,192, two dictionaries. Predicted live memory **36,970 MiB**; observed peak *reservation* **43,941 MiB**, 19% above it, which is the direction and roughly the magnitude a reservation should exceed a live requirement on a nearly full card.
+
+### What the artefact refuses
+
+An absent `--admissible-layers`; an admissible layer that was not fitted; an empty admissible set; two roles resolving to the same weights without `--allow-self-pair`; a per-site field written as a scalar, as a wrong-length list, or absent, checked recursively over the whole payload before the write; two Crosscoders in one run identical in pairing, penalty and `k`; configs disagreeing on shape sharing one stream; scales set twice or never; and every identical-input refusal `25_model_diffing_baselines.py` already owned, imported unchanged.
+
+`tests/test_crosscoder.py` holds 37 tests over these and over the recovery, the null, the rank sweep, determinism, site independence and the certificate; `tests/test_cohort_draw_contract.py` gains this stage's declaration of the draw it delegates to `17_train_transcoder.py`. 59 pass.
+
+---
+
+## 2026-08-14 — EXP-R2-206 pre-registered, before any cell exists: the R2.4 Crosscoder campaign, its five criteria, and the specification checks that must reproduce from R2.3's own artefact
+
+Fixed here in advance of dispatch. Every criterion below carries a demonstration that it is attainable, and one carries a demonstration that it can also **reject** — the property whose absence voided D3.h-B1, D3.h-B2 and EXP-R2-202's Rule C threshold in turn. Nothing about the cells has been seen: none has been dispatched.
+
+### The cells
+
+Four in total, two primary and two follow-on, all on `Llama-2-7b-hf` → `ProLLaMA_Stage_1` at the block-output site through `scripts/transfer/32_crosscoder.py`.
+
+*Primary, one per mode.* `--layers 0,27-31 --admissible-layers 27,28 --d-hidden 8192 --k 32`, both pairings fitted in one pass over one capture. Six sites are fitted and a diff is reported at **two**. The four inadmissible sites are not overhead: they are where the amendment behind the admissible set **predicts the readout must degrade**, and testing a criterion where it predicts failure is what this unit has spent a day learning it cannot skip. If they behave as EXP-R2-205's synthetic sweep says they must, the amendment stops being a judgement call and becomes a measured result.
+
+*Follow-on, one per mode.* `--layers 27,28 --d-hidden 16384`, same in every other respect. **Secondary, not a replacement.** The reading that matters most is against R2.3's existing per-layer transcoder figures at the same site, and those are at 8,192; that comparability is what makes a per-site NMSE readable at all.
+
+### The stream, read from R2.3's artefact rather than reconstructed
+
+Every value below is read from `results/transfer/external_baseline/20260812215507_0f81e190ba55/r24_plt_{base,stage1}_{protein,text}/prollama_{protein,text}_plt_d8192_k32_s20260812.json`, which are EXP-R2-191's four cells. **The held-out offset is set by the *declared* `--steps`, not by the realised step count**, so a cell that passed the realised figure would draw a different cohort while appearing to reproduce one:
+
+| mode | `--steps` | `--batch-size` | `--corpus-seed` | `--max-tokens` | `--train-tokens` | offset | realised |
+|---|---|---|---|---|---|---|---|
+| text | **26000** | 4 | 20260812 | 1024 | 34000000 | 106,496 | 11,367 steps, 45,468 seq, 34,002,081 tokens |
+| protein | **56000** | 4 | 20260812 | 1024 | 34000000 | 229,376 | 36,978 steps, 147,912 seq, 34,001,183 tokens |
+
+`--seed 20260814` on both mode cells, which is this object's own initialisation and pairing seed and must be equal across the pair for the certificate; `--auxk 192`, `--eval-sequences 256`, `--eval-every 2000`, `--warm-up-batches 8`, `--decoder-norm-penalty 3e-3`, `--pairings true shuffled`.
+
+**A wrong pair of values was proposed before the artefact was read and is corrected here rather than quietly dropped**: `--corpus-seed 20260806` and `--steps 12000` for the text cell. Both are wrong. The corpus seed is 20260812, and 12,000 declared steps would place the held-out draw at 49,152 records against the cell's actual 106,496 — a different population reported under the dictionary's name, which is exactly the failure the screen exists to make visible.
+
+### Specification checks, which are free and reproduce by construction
+
+The Crosscoder consumes the same stream through the same `capture`, `flatten` and content mask as the transcoder did, so these must reproduce **exactly**. Any deviation voids the cell rather than qualifying it.
+
+* Text: 11,367 realised steps, 45,468 sequences, 34,002,081 scored tokens; near-duplicate screen **1,024 of 1,024 kept** at maximum containment **0.4346**; band `[800, None]` characters.
+* Protein: 36,978 realised steps, 147,912 sequences, 34,001,183 scored tokens; screen **961 of 1,024 kept** at maximum containment **1.0**; band `[32, 1019]` residues.
+* Both: `comparability.n_layers` 32, `d_model` 4096, vocabulary digest `fe56f82cb036…`, and both roles' `weights_sha256` distinct with `self_pair` false.
+* `matched_training` between the two mode cells: `MATCHED`, `distinct_targets` true, `disagreements` empty, `max_tokens [1024, 1024]`; and the four Crosscoder-specific fields agreeing. `UNMATCHED_BUDGET` voids the pair — it would mean the token budget failed to bind.
+
+### The five criteria
+
+**C1 — instrument validity, read before any cell.** On the full-rank mixed synthetic construction: recovered = injected and categorised = injected in all three categories at true pairing; at shuffled pairing, categorised-shared ≤ 25% of the true value while recovered-shared ≥ 75% of injected. *Attainable, demonstrated:* 24/24/24 and 24/24/0 at campaign ratios, 12/12/12 and 12/12/0 at test scale (EXP-R2-205). Held as assertions, so it cannot silently stop holding.
+
+**C2 — false-positive bound in the operating rank regime.** On all-shared synthetic data at the campaign's own `d_hidden`/`r99` and `d_model`/`r99` ratios, exclusive latents ≤ 1% of live latents. *Attainable, demonstrated:* **0 of 51** at ratios 3.05 and 1.52, and zero in five further configurations spanning rank ratios 0.06 to 1.0. **The ratio-matching is the load-bearing part**: C2 must be re-run at 16,384 before the follow-on cells are read, because a bound demonstrated at one dictionary-to-rank ratio says nothing at another.
+
+**C3 — admissibility, in the form the sweep supports, and this is the one to lean on.** A diff may be reported at layer `l` only where both cells clear that layer's `r99`, that `r99` is non-degenerate, **and the realised true-minus-null shared-fraction gap at `l` is at least 0.5**. It is computed from the artefact itself and does not require trusting the `r99` table. *Attainable, demonstrated:* 0.912 and 0.900 at rank ratios 1.00 and 0.63, and layer 27 sits at ≈0.61–0.66 on both protein cells. ***And it can reject, demonstrated:* 0.190 at rank ratio 0.125 and 0.364 at 0.25** — a criterion with no exhibited failure case is a criterion nobody has shown can do anything.
+
+**C4 — the specificity claim, and the direction that makes it satisfiable.** The reportable quantity is the exclusive-latent count at true pairing **with the null's count printed beside it**. Mispairing makes exclusivity *maximal* — the optimum over a factorised joint is a union of two independent dictionaries — so **the shuffled null is a ceiling, not a floor**, and the free-capacity calibration is C2's synthetic all-shared cell instead. A criterion reading "exclusive count above the null" would be unsatisfiable by construction, which is the failure class that voided the last two criteria in this unit and would have made a third.
+
+**C5 — resolution and matching.** Every per-site quantity in the artefact is a vector of length `n_sites`, enforced at the point of writing; and the two mode cells certify `MATCHED` on both halves of the certificate. *Attainable, demonstrated:* the stage refuses to write a collapsed, wrong-length or absent per-site field and the refusal is tested; the certificate is tested over all four Crosscoder-specific fields; `--train-tokens` exists precisely so the second half is reachable at all.
+
+### Void conditions, named in advance
+
+A cell is void, not qualified, if any specification check above deviates; if `matched_training` returns anything other than `MATCHED` between the two mode cells; if C1 fails on the synthetic check at the campaign's settings; or if a cell OOMs. A cell that OOMs is reported as failed and **not** re-run at a smaller site set or width, because the site set and width are what the memory arithmetic was pre-registered against.
+
+**C3 failing at layers 27 and 28 is a result and not a void.** It would say the readout does not separate from its null on real protein activations at the only layers where a diff is licensed, which is a finding about this unit's reach and is to be reported as one.
+
+### Memory and cost, pre-declared so a surprise is visible
+
+Live requirements, from arithmetic recomputed per run and calibrated against EXP-R2-204's measured 14.55 MiB per token: **77,159 MiB (53.7%)** for the six-site text cell at its 4,096-token cap, **66,502 MiB (46.3%)** for the six-site protein cell at its ~2,230-token realised worst case, and **58,367 MiB (40.6%)** for a follow-on 16,384-wide two-site text cell. Fixed terms are 25,711 MiB of bf16 backbones plus ~1,472 MiB of context, measured at 27,579 MiB on an L20. **The full 32-site Crosscoder is not a configuration**: 131,088 MiB of optimiser state alone with both pairings, and still over one card with one pairing in text mode.
+
+Cost, from a model whose anchor check predicts 17,523 s for EXP-R2-191's own 8,192-wide text cell against its measured 16,246 s and 17,472 s: **≈4.4 GPU-h for the text cell and ≈4.7 for the protein cell**, both pairings included, wall clock ≈4.7 h on two cards in parallel. The follow-on pair is ≈3.0 GPU-h each. Cost is token-proportional at a matched budget, so the two modes cost nearly the same despite protein taking 3.25× the steps.
+
+### Schedule
+
+Cards 0 and 1, when the protein width cells complete — projected ~22:15 and **not** at the ~17:25 sparsity-cell release, which the text control arm has first claim on. The 16,384-wide follow-on waits for the text control cells to land, ~01:30–02:30.
+
+### The dispatch, written before it is run
+
+Recorded here rather than left to shell history, for the reason `run_external_baseline_h200.sh` is itself committed: EXP-R2-132's parameters survive only because the stage wrote `vars(args)` into its own artefact, and `vars(args)` cannot tell a flag typed at its default from one that was omitted.
+
+One freeze for both cells, so the pair shares a snapshot and a pin and the two are one comparison rather than two runs:
+
+```
+export H200_POD=<running-pod-name>
+eval "$(scripts/transfer/run_transfer_h200.sh --pin HEAD --freeze-only)"
+
+for cell in text:0:26000 protein:1:56000; do
+  mode=${cell%%:*}; rest=${cell#*:}; gpu=${rest%%:*}; steps=${rest#*:}
+  scripts/transfer/run_external_baseline_h200.sh \
+      --pin "$PIN_COMMIT" --run-id "$RUN_ID" --snapshot-dir "$SNAPSHOT_DIR" \
+      --stage 32_crosscoder.py --label "r206_cc_${mode}_d8192" --gpu "$gpu" \
+      -- --base "$TRANSFER_MODEL_BASE_DIR/Llama-2-7b-hf" \
+         --adapted "$TRANSFER_MODEL_BASE_DIR/ProLLaMA_Stage_1" \
+         --rendering prollama --mode "$mode" --tensor block_output \
+         --layers 0,27-31 --admissible-layers 27,28 \
+         --d-hidden 8192 --k 32 --auxk 192 --decoder-norm-penalty 3e-3 \
+         --train-tokens 34000000 --steps "$steps" --batch-size 4 \
+         --max-tokens 1024 --eval-sequences 256 --eval-every 2000 \
+         --warm-up-batches 8 --corpus-seed 20260812 --seed 20260814 \
+         --pairings true shuffled &
+done
+```
+
+`--device` and `--out` are **not** passed: the driver injects `--device cuda:${GPU}` and its own results directory, and a second spelling of either would be a second declaration of where the run went. The follow-on pair is the same invocation with `--layers 27,28 --d-hidden 16384` and label `r206_cc_${mode}_d16384`.
+
+The synthetic instrument check runs on the workstation, not in the pod — it loads no checkpoint and needs no GPU — and C1 and C2 are read from it before either cell's artefact is opened:
+
+```
+python scripts/transfer/32_crosscoder.py --synthetic-check \
+    --synthetic-d-model 64 --synthetic-shared 24 --synthetic-exclusive 12 \
+    --synthetic-rank 42 --synthetic-tokens 256 --d-hidden 128 --k 4 --auxk 12 \
+    --dead-steps 100 --decoder-norm-penalty 3e-3 --steps 2500 \
+    --learning-rate 3e-3 --weight-decay 0 --out results/transfer/crosscoder
+```
