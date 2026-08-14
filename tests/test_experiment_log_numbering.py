@@ -146,6 +146,21 @@ KNOWN_VIOLATIONS: tuple[tuple[int, int, str], ...] = (
         202,
         "EXP-R2-202's corrections, appended after 203 and 204 landed",
     ),
+    # EXP-R2-201's verdict entry, the second exception this id costs and a
+    # different thing from the first. The status record above says the cells
+    # completed; this is the reading against the bands that experiment froze
+    # before either dictionary existed, owed by its owner and filed later on
+    # reassignment, by which time 202's corrections, 203 and 204 had all landed.
+    # It keeps 201's id for the reason a pre-registration exists at all: a band
+    # declared in advance and the verdict that answers it must resolve to one
+    # name, and filing the reading as a new experiment would leave the band
+    # unanswered under its own id and the answer unmoored from what it was
+    # answering.
+    (
+        204,
+        201,
+        "EXP-R2-201's verdict, filed on reassignment after 202's corrections, 203 and 204 landed",
+    ),
 )
 
 
