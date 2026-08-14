@@ -288,6 +288,30 @@ SITE_INDEPENDENCE_NOTE = (
     "meaningful and is deliberate"
 )
 
+#: Why a per-site reconstruction number may not be read across modes, carried at
+#: every site beside the number it qualifies rather than in a caveat elsewhere.
+#:
+#: This unit's recurring failure has been readings whose limits were written down
+#: somewhere other than where the number appears, so this string is emitted into
+#: each per-site record and not only into the artefact's limitations block.
+CROSS_MODE_NMSE_NOTE = (
+    "FORBIDDEN: this NMSE may NOT be compared across modes as a measure of "
+    "dictionary quality or reconstruction fidelity. A cross-mode NMSE difference "
+    "is confounded with the effective dimension of the activations being "
+    "reconstructed, and the two move in OPPOSITE directions: at layers 27-28 "
+    "R2.3's per-layer transcoders read 0.0670 and 0.0585 held-out NMSE on protein "
+    "against 0.5739 and 0.5369 on text -- roughly ninefold better -- while the "
+    "protein activations at those depths occupy far fewer directions, and the "
+    "adapted checkpoint's effective dimension collapses hard at exactly these "
+    "depths. A low NMSE on a low-dimensional cloud is a statement about how "
+    "little structure the data carries, not about how well the dictionary "
+    "captured it. r99_effective_dimension is carried beside this number so the "
+    "confound is visible here rather than inferable. VALID: comparison WITHIN one "
+    "mode against R2.3's per-layer transcoder figure at the same site and the "
+    "same width, which is the comparison this per-site number exists for and "
+    "which the effective dimension does not confound"
+)
+
 #: What a permutation within one batch is and is not. Stage 25 declares the same
 #: bound for the same reason and this is deliberately the same sentence: a global
 #: permutation would need every position of the split resident at once.
@@ -951,6 +975,127 @@ def assert_admissible_subset(
             "Crosscoder carries no parameters for"
         )
     return tuple(sorted(admitted))
+
+
+def assert_effective_dimension(
+    values: Sequence[int], sites: Sequence[int], *, d_model: int
+) -> tuple[int, ...]:
+    """One measured effective dimension per fitted site, checked before it is used.
+
+    ``r99`` is the smallest number of principal directions carrying 99% of the
+    activation cloud's variance at that site, in that mode
+    (:mod:`src.transfer.spectrum`, measured by
+    ``scripts/transfer/30_activation_spectrum.py``). It is an **input** to this
+    stage and is never inferred here, for the same reason the admissible layer set
+    is: it depends on a measurement another stage owns, on a population and a mode
+    this run does not re-derive.
+
+    It is required rather than optional on a real checkpoint pair, because the
+    number it qualifies -- the per-site reconstruction NMSE -- is not readable
+    without it. A cross-mode NMSE difference is confounded with exactly this
+    quantity and in the opposite direction (see :data:`CROSS_MODE_NMSE_NOTE`), so
+    an artefact that reported the NMSE and not the dimension would be publishing
+    half of a comparison that invites the wrong conclusion.
+
+    ``r99`` cannot exceed ``ceil(0.99 * d_model)`` even on a flat spectrum with
+    infinite samples, which is the attainability defect EXP-R2-202 recorded
+    against its own threshold; the bound is checked here so a value above it is
+    caught as a transcription error rather than reasoned about.
+    """
+
+    supplied = tuple(int(value) for value in values)
+    if len(supplied) != len(sites):
+        raise ValueError(
+            f"{len(supplied)} effective dimensions were given for "
+            f"{len(sites)} fitted sites {list(sites)}; there must be exactly one "
+            "per site, in the same order, because each one qualifies that site's "
+            "own reconstruction number"
+        )
+    ceiling = -(-99 * int(d_model) // 100)
+    bad = {
+        int(layer): value
+        for layer, value in zip(sites, supplied)
+        if not 1 <= value <= ceiling
+    }
+    if bad:
+        raise ValueError(
+            f"effective dimensions {bad} are outside 1..{ceiling}. r99 cannot "
+            f"exceed ceil(0.99 * d_model) = {ceiling} even on a flat spectrum with "
+            "infinite samples, so a value above it is a transcription error"
+        )
+    return supplied
+
+
+def reconstruction_per_site(
+    *,
+    sites: Sequence[int],
+    nmse_by_role: Sequence[Sequence[float]],
+    nmse_total: Sequence[float],
+    live: Sequence[int],
+    effective_dimension: Sequence[int] | None,
+) -> list[dict[str, Any]]:
+    """Each site's reconstruction number **with the quantity that qualifies it**.
+
+    One record per site carrying the NMSE, the effective dimension of the cloud
+    that NMSE was measured against, this Crosscoder's own live basis, and their
+    ratio -- so a reader who takes the number takes its limit with it.
+
+    ``effective_dimension`` is **one ``[base, adapted]`` pair per site**, not one
+    value. The two checkpoints do not share an effective dimension at the same
+    layer and mode -- at layer 28 in protein mode the measured ``r99`` is 2,232 on
+    the pre-adaptation checkpoint against 1,563 on the adapted one, and at layer
+    31 it is 471 against 87 -- so a single value would qualify one role's
+    reconstruction with the other role's geometry.
+
+    ``live_over_r99`` is the Crosscoder's own live basis against the layer's
+    effective dimension. It is **not** R2.4's admission rule and must not be read
+    as it: that rule is stated over the two per-layer transcoders' live bases, one
+    per checkpoint, and this is one dictionary over both. It is the analogous
+    quantity for this object, reported because a reader comparing the two would
+    otherwise construct it themselves and might construct it differently.
+    """
+
+    if effective_dimension is not None and len(effective_dimension) != len(sites):
+        raise ValueError("one effective dimension pair per site, or none at all")
+    records: list[dict[str, Any]] = []
+    for index, layer in enumerate(sites):
+        pair = None if effective_dimension is None else [
+            int(value) for value in effective_dimension[index]
+        ]
+        if pair is not None and len(pair) != 2:
+            raise ValueError(
+                "each site's effective dimension is a [base, adapted] pair, one "
+                "per role, because each role's NMSE is qualified by its own "
+                f"checkpoint's cloud; got {pair} at layer {layer}"
+            )
+        binding = None if pair is None else min(pair)
+        entry: dict[str, Any] = {
+            "layer": int(layer),
+            "held_out_nmse": float(nmse_total[index]),
+            # Index-aligned with r99_effective_dimension below: position 0 is the
+            # base checkpoint in both, position 1 the adapted. A role's NMSE and
+            # the dimension of the cloud that role's NMSE was measured against sit
+            # at the same index, so the pairing is positional rather than asserted.
+            "held_out_nmse_by_role": [float(value) for value in nmse_by_role[index]],
+            "r99_effective_dimension": pair,
+            "live_latents": int(live[index]),
+            "live_over_r99": (
+                None if not binding else float(live[index]) / float(binding)
+            ),
+            "live_over_r99_uses": (
+                "the smaller of the two roles' r99, which is the binding "
+                "constraint on what a shared latent space can resolve"
+            ),
+            "cross_mode_comparison": CROSS_MODE_NMSE_NOTE,
+        }
+        if pair is None:
+            entry["r99_note"] = (
+                "not supplied. This run did not declare the effective dimension at "
+                "this site, so its NMSE cannot be qualified and must not be read "
+                "against another mode's at all"
+            )
+        records.append(entry)
+    return records
 
 
 def assert_per_layer_fields(payload: Any, *, n_sites: int, path: str = "") -> None:

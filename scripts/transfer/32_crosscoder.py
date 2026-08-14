@@ -31,6 +31,21 @@ the run stops. Nothing here weakens any of that, and a Crosscoder trained on
 mispaired positions is exactly the artefact that would look finite and plausible
 while comparing unrelated things.
 
+**A per-site reconstruction number is not readable without the effective
+dimension of what it reconstructed, so the stage refuses to run without it.**
+``--r99-per-site`` is required on a checkpoint pair and is carried inside every
+per-site record rather than only in a limitations block. The reason is an
+interpretive trap sitting in the numbers this unit already has: at layers 27-28
+R2.3's per-layer transcoders read 0.0670 and 0.0585 held-out NMSE on protein
+against 0.5739 and 0.5369 on text, roughly ninefold better, and the naive reading
+is that the protein dictionaries are the better ones. The likelier reading is the
+opposite in spirit -- protein activations at those depths occupy far fewer
+directions, so there is much less structure to reconstruct, and a low NMSE there
+says how little the data does rather than how well the dictionary did it. The two
+quantities move in opposite directions, so **cross-mode NMSE comparison is
+forbidden and within-mode comparison against R2.3's figure at the same site and
+width is what the number exists for**.
+
 **Per-layer admissibility is a required input and is never inferred.** R2.4's
 operative rule, after both of the unit's original basis criteria went void on
 their own text control, is admissibility *at a layer*: a diff may be reported at
@@ -201,6 +216,24 @@ def parse_layers(argument: str) -> tuple[int, ...]:
     return tuple(sorted(layers))
 
 
+def parse_int_vector(argument: str) -> tuple[int, ...]:
+    """``"3690,2709,2588"`` into ``(3690, 2709, 2588)``, order preserved.
+
+    Deliberately **not** :func:`parse_layers`, which sorts and rejects repeats
+    because a layer set is a set. This is a vector of measurements indexed by
+    position: two sites may legitimately share an effective dimension, and sorting
+    it would silently re-associate every value with the wrong layer.
+    """
+
+    values: list[int] = []
+    for piece in argument.replace(" ", "").split(","):
+        if piece:
+            values.append(int(piece))
+    if not values:
+        raise argparse.ArgumentTypeError("an empty vector carries no measurement")
+    return tuple(values)
+
+
 def memory_arithmetic(
     config: cc.CrosscoderConfig,
     *,
@@ -309,11 +342,13 @@ def readout_for(
     exclusive_cut: float,
     shared_halfwidth: float,
     live_threshold: int,
+    effective_dimension: Sequence[int] | None,
 ) -> dict[str, Any]:
     """One fitted Crosscoder's per-site reconstruction and per-site diff readout."""
 
     counts = evaluation.pop("_counts")
     live = cc.live_mask(counts, minimum=live_threshold)
+    live_per_site = [int(value) for value in live.sum(dim=1)]
     readout = cc.specificity_readout(
         model,
         live=live,
@@ -328,16 +363,31 @@ def readout_for(
         # census on the held-out cohort, which is what the readout masks with and
         # what a diff is actually read over, and the checkpoint's own dead-latent
         # counter. Both per site.
-        "live_latents_per_site": [int(value) for value in live.sum(dim=1)],
+        "live_latents_per_site": live_per_site,
         "live_from_silent_steps_per_site": model.live_latents_per_site(),
         "live_threshold": int(live_threshold),
         "nmse_per_site": evaluation["nmse_per_site"],
+        # The reconstruction numbers with the quantity that qualifies them in the
+        # same record. `nmse_per_site` above is the bare vector and is kept
+        # because the per-site guard is keyed on it; this is the form a reader
+        # should take the number from, and it cannot be taken without its limit.
+        "reconstruction_per_site": cc.reconstruction_per_site(
+            sites=model.config.sites,
+            nmse_by_role=evaluation["nmse_by_role_per_site"],
+            nmse_total=evaluation["nmse_per_site"],
+            live=live_per_site,
+            effective_dimension=effective_dimension,
+        ),
         "readout": readout,
     }
 
 
 def null_comparison(
-    true_readout: dict[str, Any], null_readout: dict[str, Any], *, sites: Sequence[int]
+    true_readout: dict[str, Any],
+    null_readout: dict[str, Any],
+    *,
+    sites: Sequence[int],
+    effective_dimension: Sequence[int] | None,
 ) -> dict[str, Any]:
     """The measurement beside its null, per site, at the admissible sites only.
 
@@ -372,21 +422,30 @@ def null_comparison(
                 + entry["fractions"]["adapted_specific"]
             )
 
+        gap = left["fractions"]["shared"] - right["fractions"]["shared"]
         per_site.append(
             {
                 "layer": int(layer),
                 "admissible": True,
                 "shared_fraction": [left["fractions"]["shared"], right["fractions"]["shared"]],
                 "exclusive_fraction": [exclusive(left), exclusive(right)],
-                "shared_fraction_above_null": (
-                    left["fractions"]["shared"] - right["fractions"]["shared"]
-                ),
+                "shared_fraction_above_null": gap,
                 "exclusive_fraction_above_null": exclusive(left) - exclusive(right),
                 "n_live": [left["n_live"], right["n_live"]],
                 "held_out_nmse": [
                     true_readout["nmse_per_site"][index],
                     null_readout["nmse_per_site"][index],
                 ],
+                # C3's gap is read here, and the quantity that decides whether it
+                # can separate at all is this layer's effective dimension: the gap
+                # measures 0.90 at rank ratios of 0.63 and above and 0.19 at
+                # 0.125 (EXP-R2-205). It travels in the same record for the same
+                # reason the NMSE carries it -- so the limit is where the number
+                # is.
+                "r99_effective_dimension": (
+                    None if effective_dimension is None else list(effective_dimension[index])
+                ),
+                "held_out_nmse_cross_mode_comparison": cc.CROSS_MODE_NMSE_NOTE,
             }
         )
     return {
@@ -605,6 +664,19 @@ def build_parser() -> argparse.ArgumentParser:
         "defaulted it to 'everywhere fitted' would report the thing the rule "
         "forbids while looking exactly like the thing it permits",
     )
+    for role in cc.ROLES:
+        parser.add_argument(
+            f"--r99-{role}-per-site", type=parse_int_vector, default=None,
+            help=f"the measured effective dimension r99 of the {role} checkpoint's "
+            "activations at each fitted layer, in --layers order, for THIS mode at "
+            "THIS tensor -- from 30_activation_spectrum.py. REQUIRED on a "
+            "checkpoint pair and never inferred here. Two vectors and not one: the "
+            "two checkpoints do not share an effective dimension at the same layer "
+            "(protein layer 28 reads 2,232 against 1,563), so one vector would "
+            "qualify a role's reconstruction with the other role's geometry. It is "
+            "the quantity that makes a per-site NMSE readable, and it moves "
+            "opposite to the NMSE across modes",
+        )
     parser.add_argument(
         "--pairings", nargs="+", default=list(cc.PAIRINGS), choices=list(cc.PAIRINGS),
         help="which pairings to fit, in one pass over the activations. Both by "
@@ -678,8 +750,12 @@ def resolve(args: argparse.Namespace) -> None:
     if args.dead_steps == 0:
         args.dead_steps = max(1, DEAD_STEPS_SEQUENCES // max(1, args.batch_size))
     args.pairings = tuple(dict.fromkeys(args.pairings))
+    campaign = (
+        "base", "adapted", "rendering", "mode", "layers", "admissible_layers",
+        "r99_base_per_site", "r99_adapted_per_site",
+    )
     if args.synthetic_check:
-        for flag in ("base", "adapted", "rendering", "mode", "layers", "admissible_layers"):
+        for flag in campaign:
             if getattr(args, flag) is not None:
                 raise ValueError(
                     f"--{flag.replace('_', '-')} names a real campaign and is "
@@ -687,17 +763,15 @@ def resolve(args: argparse.Namespace) -> None:
                     "instrument on data whose answer is known"
                 )
         return
-    missing = [
-        flag
-        for flag in ("base", "adapted", "rendering", "mode", "layers", "admissible_layers")
-        if getattr(args, flag) is None
-    ]
+    missing = [flag for flag in campaign if getattr(args, flag) is None]
     if missing:
         raise ValueError(
             "this stage needs "
             + ", ".join(f"--{flag.replace('_', '-')}" for flag in missing)
-            + ". --admissible-layers in particular is never defaulted: it is the "
-            "pre-registered statement of where a diff may be reported"
+            + ". Three of these are never defaulted and all are inputs from other "
+            "measurements: --admissible-layers is the pre-registered statement of "
+            "where a diff may be reported, and the two --r99-*-per-site vectors "
+            "are what make each site's reconstruction number readable at all"
         )
 
 
@@ -771,6 +845,20 @@ def main() -> None:
             f"0..{shape['n_layers'] - 1}"
         )
     admissible = cc.assert_admissible_subset(args.admissible_layers, args.layers)
+    # One [base, adapted] pair per site: each role's reconstruction is qualified
+    # by its own checkpoint's cloud, and the two differ materially at the same
+    # layer -- 2,232 against 1,563 at layer 28 in protein mode.
+    effective_dimension = [
+        [int(base_r99), int(adapted_r99)]
+        for base_r99, adapted_r99 in zip(
+            cc.assert_effective_dimension(
+                args.r99_base_per_site, args.layers, d_model=int(shape["d_model"])
+            ),
+            cc.assert_effective_dimension(
+                args.r99_adapted_per_site, args.layers, d_model=int(shape["d_model"])
+            ),
+        )
+    ]
 
     base_digest = base_model.weights_digest()
     adapted_digest = adapted_model.weights_digest()
@@ -879,6 +967,7 @@ def main() -> None:
                 exclusive_cut=args.exclusive_cut,
                 shared_halfwidth=args.shared_halfwidth,
                 live_threshold=args.live_threshold,
+                effective_dimension=effective_dimension,
             ),
             "training": training_records_out[index].record(),
         }
@@ -931,6 +1020,7 @@ def main() -> None:
             "scale_ratio_per_site: a site where the two checkpoints differ only in "
             "scale is a real difference this readout is not capable of expressing"
         ),
+        "per_site_nmse_is_not_comparable_across_modes": cc.CROSS_MODE_NMSE_NOTE,
         "admissibility_is_not_informativeness": (
             "an admissible layer is one where both cells' dictionaries carry "
             "enough live latents for a diff to be defined. It is not a claim that "
@@ -1021,6 +1111,18 @@ def main() -> None:
                 "shows the protein shortfall is capacity-limited"
             ),
             "site_independence": cc.SITE_INDEPENDENCE_NOTE,
+            "r99_per_site": effective_dimension,
+            "r99_roles": list(cc.ROLES),
+            "r99_source": (
+                "declared by --r99-base-per-site and --r99-adapted-per-site from "
+                "scripts/transfer/30_activation_spectrum.py's measurement at this "
+                "mode, this tensor and these layers. An input, never inferred "
+                "here. It is repeated inside every per-site reconstruction record "
+                "and every per-site null comparison rather than left only here, "
+                "because it is the quantity that qualifies the numbers in those "
+                "records and this unit's recurring failure has been limits written "
+                "down somewhere other than where the number appears"
+            ),
         },
         "normalisation": extra["scales"],
         "cohort": {
@@ -1089,7 +1191,10 @@ def main() -> None:
     }
     if len(models) == 2 and set(args.pairings) == set(cc.PAIRINGS):
         payload["null_comparison"] = null_comparison(
-            fitted["true"], fitted["shuffled"], sites=args.layers
+            fitted["true"],
+            fitted["shuffled"],
+            sites=args.layers,
+            effective_dimension=effective_dimension,
         )
 
     cc.assert_per_layer_fields(payload, n_sites=len(args.layers))

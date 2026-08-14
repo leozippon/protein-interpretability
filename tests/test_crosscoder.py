@@ -54,6 +54,7 @@ from src.transfer.crosscoder import (
     CrosscoderConfig,
     SyntheticGroundTruth,
     assert_admissible_subset,
+    assert_effective_dimension,
     assert_per_layer_fields,
     assert_required_per_site_fields,
     categorise,
@@ -63,6 +64,7 @@ from src.transfer.crosscoder import (
     decoder_norms,
     live_mask,
     pair_backbone_digest,
+    reconstruction_per_site,
     recovery_report,
     relative_decoder_norm,
     specificity_readout,
@@ -454,6 +456,98 @@ def test_no_diff_is_reported_at_an_inadmissible_layer():
 
 
 # ----------------------------------------------- the readout's own properties
+
+
+def test_a_reconstruction_number_never_appears_without_the_dimension_qualifying_it():
+    """The confound must live in the record, not in a caveat somewhere else.
+
+    A cross-mode NMSE difference is confounded with the effective dimension of
+    the activations being reconstructed, and the two move in opposite directions:
+    on this lineage the protein cells reconstruct ninefold better at layers 27-28
+    while occupying far fewer directions. An artefact carrying the NMSE without
+    the dimension publishes half a comparison that invites the wrong conclusion.
+    """
+
+    # The real measured pairs at these layers in protein mode: the two
+    # checkpoints do NOT share an effective dimension, which is why one value per
+    # site would qualify a role's reconstruction with the other role's geometry.
+    records = reconstruction_per_site(
+        sites=(27, 28),
+        nmse_by_role=[[0.03, 0.04], [0.02, 0.03]],
+        nmse_total=[0.07, 0.05],
+        live=[5400, 4800],
+        effective_dimension=[[2516, 2364], [2232, 1563]],
+    )
+    assert [entry["layer"] for entry in records] == [27, 28]
+    for entry in records:
+        assert entry["r99_effective_dimension"] is not None
+        assert len(entry["r99_effective_dimension"]) == len(entry["held_out_nmse_by_role"])
+        assert "FORBIDDEN" in entry["cross_mode_comparison"]
+        assert "WITHIN one" in entry["cross_mode_comparison"]
+    # The binding constraint is the smaller of the two roles', not the first.
+    assert records[0]["live_over_r99"] == pytest.approx(5400 / 2364)
+    assert records[1]["live_over_r99"] == pytest.approx(4800 / 1563)
+
+    # Absent is allowed only by saying so in the record, never by silence.
+    without = reconstruction_per_site(
+        sites=(27,), nmse_by_role=[[0.03, 0.04]], nmse_total=[0.07],
+        live=[5400], effective_dimension=None,
+    )
+    assert without[0]["r99_effective_dimension"] is None
+    assert without[0]["live_over_r99"] is None
+    assert "not supplied" in without[0]["r99_note"]
+
+    with pytest.raises(ValueError, match="\\[base, adapted\\] pair"):
+        reconstruction_per_site(
+            sites=(27,), nmse_by_role=[[0.03, 0.04]], nmse_total=[0.07],
+            live=[5400], effective_dimension=[[2516]],
+        )
+
+
+def test_an_effective_dimension_vector_is_checked_against_its_sites():
+    assert assert_effective_dimension((3690, 2709), (27, 28), d_model=4096) == (3690, 2709)
+    # Two sites may legitimately share a value; that is not a duplicate to reject.
+    assert assert_effective_dimension((2700, 2700), (27, 28), d_model=4096) == (2700, 2700)
+    with pytest.raises(ValueError, match="exactly one"):
+        assert_effective_dimension((3690,), (27, 28), d_model=4096)
+    with pytest.raises(ValueError, match="outside 1"):
+        assert_effective_dimension((0, 2709), (27, 28), d_model=4096)
+    # r99 cannot exceed ceil(0.99 * d_model) even on a flat spectrum.
+    with pytest.raises(ValueError, match="outside 1"):
+        assert_effective_dimension((4096, 2709), (27, 28), d_model=4096)
+    assert assert_effective_dimension((4056,), (27,), d_model=4096) == (4056,)
+
+
+def test_the_effective_dimension_vector_keeps_its_order():
+    """It indexes sites by position; sorting it would re-associate every value."""
+
+    assert STAGE.parse_int_vector("3690,2709,2588") == (3690, 2709, 2588)
+    assert STAGE.parse_int_vector("2700,2700") == (2700, 2700)
+    with pytest.raises(Exception):
+        STAGE.parse_int_vector("")
+
+
+def test_a_checkpoint_pair_run_without_both_effective_dimensions_is_refused():
+    common = ["--base", "x", "--adapted", "y", "--rendering", "prollama",
+              "--mode", "protein", "--layers", "27,28", "--admissible-layers", "27,28"]
+    args = STAGE.build_parser().parse_args(common)
+    assert args.r99_base_per_site is None and args.r99_adapted_per_site is None
+    with pytest.raises(ValueError, match="r99-base-per-site"):
+        STAGE.resolve(args)
+    # One of the two is not enough: each role's NMSE needs its own role's cloud.
+    args = STAGE.build_parser().parse_args(
+        common + ["--r99-base-per-site", "2516,2232"]
+    )
+    with pytest.raises(ValueError, match="r99-adapted-per-site"):
+        STAGE.resolve(args)
+
+
+def test_a_synthetic_check_refuses_an_effective_dimension():
+    args = STAGE.build_parser().parse_args(
+        ["--synthetic-check", "--r99-adapted-per-site", "2700"]
+    )
+    with pytest.raises(ValueError, match="meaningless beside --synthetic-check"):
+        STAGE.resolve(args)
 
 
 def test_the_relative_decoder_norm_is_invariant_to_the_gauge_topk_leaves_free():

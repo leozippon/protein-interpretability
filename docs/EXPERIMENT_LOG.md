@@ -12500,6 +12500,29 @@ The Crosscoder consumes the same stream through the same `capture`, `flatten` an
 
 **C5 — resolution and matching.** Every per-site quantity in the artefact is a vector of length `n_sites`, enforced at the point of writing; and the two mode cells certify `MATCHED` on both halves of the certificate. *Attainable, demonstrated:* the stage refuses to write a collapsed, wrong-length or absent per-site field and the refusal is tested; the certificate is tested over all four Crosscoder-specific fields; `--train-tokens` exists precisely so the second half is reachable at all.
 
+**C6 — per-site NMSE may not be compared across modes, and the confound travels with the number.** This is an interpretive trap already sitting in the figures recorded above, not a hypothetical. R2.3's per-layer transcoders read **0.0670 and 0.0585** held-out NMSE at layers 27–28 on protein against **0.5739 and 0.5369** on text — protein reconstructs roughly ninefold better. The invited conclusion is that the protein dictionaries are the better ones or that protein activations are more faithfully captured. **The likelier reading is the opposite in spirit**: protein activations at those depths occupy far fewer directions, so there is much less structure to reconstruct, and a low NMSE there is a statement about how little the data does rather than how well the dictionary does it. The measured `r99` agrees — at layer 27, 3,708 and 3,506 in text against 2,516 and 2,364 in protein; at layer 28, 3,700 and 3,463 against 2,232 and 1,563.
+
+*So:* **a cross-mode comparison of per-site NMSE is forbidden**, because the two quantities are confounded and move in opposite directions. **Within-mode comparison against R2.3's per-layer transcoder figure at the same site and the same width remains valid**, is unaffected by the confound, and is what this per-site number was built for — which is also why `d_hidden` 8,192 is the primary width.
+
+*Made checkable rather than left as a caveat*, because this unit's recurring failure has been limits written down somewhere other than where the number appears. `--r99-base-per-site` and `--r99-adapted-per-site` are **required** on a checkpoint pair and refused on the synthetic path; the stage will not run without them. Every per-site reconstruction record carries the `[base, adapted]` r99 pair **index-aligned with its `[base, adapted]` NMSE pair**, so the pairing is positional rather than asserted, and every per-site null comparison carries the pair beside C3's gap. **Two vectors and not one, and the data forced it:** the two checkpoints do not share an effective dimension at the same layer and mode — 2,232 against 1,563 at protein layer 28, 471 against 87 at layer 31 — so a single vector would have qualified one role's reconstruction with the other role's geometry. That defect was in the first implementation and was caught by reading the real spectrum artefact rather than by reasoning about it.
+
+### What the effective dimensions predict about the four inadmissible sites
+
+Recorded before the cells run, so the prediction is falsifiable. `r99` as a fraction of `d_model` at the six fitted layers, from `results/transfer/external_baseline/20260814103216_b92b85454445/r202_spectrum_*/`, block output:
+
+| layer | text base | text adapted | protein base | protein adapted |
+|---|---|---|---|---|
+| 0 | 0.610 | 0.599 | 0.130 | 0.097 |
+| **27** | **0.905** | **0.856** | **0.614** | **0.577** |
+| **28** | **0.903** | **0.845** | **0.545** | **0.382** |
+| 29 | 0.894 | 0.783 | 0.467 | 0.229 |
+| 30 | 0.395 | 0.043 | 0.469 | 0.148 |
+| 31 | 0.442 | 0.090 | 0.115 | 0.021 |
+
+EXP-R2-205's sweep puts the true-minus-null shared-fraction gap at 0.90 for ratios of 0.63 and above, 0.36 at 0.25 and 0.19 at 0.125. So: **layers 27 and 28 should separate cleanly in both modes**, with protein layer 28 at 0.382 the weakest of the four admissible readings — which is what "marginal" means for it, now with a number attached. **Layers 30 and 31 should show the collapse in *both* modes**, because the adapted checkpoint's effective dimension is 0.043 and 0.090 in text as well; that makes the degeneracy test modality-independent and gives the text control its own internal check rather than borrowing the protein cells'. Layer 0 and layer 29 in protein should collapse; layer 29 in text should not.
+
+**If the four inadmissible sites separate as cleanly as 27 and 28 do, the prediction is wrong and the amendment behind the admissible set loses its measured support** — and that is to be reported as such rather than explained away.
+
 ### Void conditions, named in advance
 
 A cell is void, not qualified, if any specification check above deviates; if `matched_training` returns anything other than `MATCHED` between the two mode cells; if C1 fails on the synthetic check at the campaign's settings; or if a cell OOMs. A cell that OOMs is reported as failed and **not** re-run at a smaller site set or width, because the site set and width are what the memory arithmetic was pre-registered against.
@@ -12535,6 +12558,11 @@ for cell in text:0:26000 protein:1:56000; do
          --adapted "$TRANSFER_MODEL_BASE_DIR/ProLLaMA_Stage_1" \
          --rendering prollama --mode "$mode" --tensor block_output \
          --layers 0,27-31 --admissible-layers 27,28 \
+         $( [ "$mode" = text ] \
+            && echo --r99-base-per-site 2498,3708,3700,3663,1619,1812 \
+                    --r99-adapted-per-site 2454,3506,3463,3205,177,368 \
+            || echo --r99-base-per-site 533,2516,2232,1914,1920,471 \
+                    --r99-adapted-per-site 396,2364,1563,939,606,87 ) \
          --d-hidden 8192 --k 32 --auxk 192 --decoder-norm-penalty 3e-3 \
          --train-tokens 34000000 --steps "$steps" --batch-size 4 \
          --max-tokens 1024 --eval-sequences 256 --eval-every 2000 \
@@ -12543,7 +12571,7 @@ for cell in text:0:26000 protein:1:56000; do
 done
 ```
 
-`--device` and `--out` are **not** passed: the driver injects `--device cuda:${GPU}` and its own results directory, and a second spelling of either would be a second declaration of where the run went. The follow-on pair is the same invocation with `--layers 27,28 --d-hidden 16384` and label `r206_cc_${mode}_d16384`.
+`--device` and `--out` are **not** passed: the driver injects `--device cuda:${GPU}` and its own results directory, and a second spelling of either would be a second declaration of where the run went. The two `r99` vectors are per mode, per role and in `--layers` order, read from `results/transfer/external_baseline/20260814103216_b92b85454445/r202_spectrum_{base,stage1}_{text,protein}/` at the block-output site. The follow-on pair is the same invocation with `--layers 27,28 --d-hidden 16384`, the r99 vectors cut to those two layers, and label `r206_cc_${mode}_d16384`.
 
 The synthetic instrument check runs on the workstation, not in the pod — it loads no checkpoint and needs no GPU — and C1 and C2 are read from it before either cell's artefact is opened:
 
