@@ -12149,3 +12149,108 @@ The corpus, the corpus seed, the step budget, the batch size and the token cap a
 ### Bounds, declared in advance
 
 One seed per cell, so nothing here prices dictionary-seed variability; the adapted side's three-seed spread of 26 latents per layer bounds the *mean* at 8,192 and is not a valid interval for a ratio of two independently trained dictionaries, and the base side has no replicate at all. One width step, 2x, so this locates no threshold: a CAPACITY verdict says 16,384 is enough to move the count, never that it is enough to span, and a DATA verdict says 2x buys little, never that 4x or 8x would buy nothing — and 12x is known not to fit this backbone. One sparsity step likewise. Protein mode only, so nothing here says what either lever does to a text cell. One corpus, Swiss-Prot, so a protein result is never only a modality result. One lineage and one adaptation step. The live count is the checkpoint's own `silent_steps` definition, which admits a latent that fired once in the last 2,500 training steps and is therefore the *generous* of the two definitions in `src/transfer/transcoders.py`; a stricter held-out firing census can only be lower, and this experiment does not run one. And a live basis that reaches `r99` at every layer is a necessary condition for reading a feature diff as a statement about two models, never a sufficient one: the conditions EXP-R2-201 fixed on a cleared gate — both checkpoints clearing, a replacement for the void B1, and a `MATCHED` certificate within checkpoint — are untouched by anything here.
+
+---
+
+## 2026-08-14 — EXP-R2-204 dispatch record
+
+Four cells launched on one snapshot, frozen once and reused by all four, pinned at commit `bd6ff99`. That commit carries `17_train_transcoder.py`, `src/transfer/transcoders.py`, `near_duplicates.py`, `replaceable.py`, `joint_modes.py`, `21_joint_mode_qualification.py` and both H200 drivers **byte-identical to `04fdfa5`** — checked with `git diff 04fdfa5 bd6ff99` over those paths, which returns empty — so these cells run the same trainer that produced every cell they are read against. **An explicit commit and not `HEAD`, deliberately**: another agent had `17_train_transcoder.py` and `transcoders.py` staged for commit at dispatch time, and `--pin HEAD` resolved at four different instants would have been four different code states. This is the hazard the driver's header records from 2026-08-12, met before it could fire.
+
+Health gate before dispatch: `Health=ok`, `PodGPFS=read-write`, four card rows, all four cards at **0 MiB and 0% with no processes**. Both concurrent agents' forward-pass jobs had cleared. **One hardware observation, recorded rather than acted on:** card 2 reports `ecc.errors.uncorrected.volatile.total = 1` where cards 0, 1 and 3 report 0, with no pending retired pages. One volatile uncorrectable error is not a reason to refuse a card that the cluster still schedules, but it is a reason not to put a decisive cell on it, so **card 2 carries `r204_k64_base`** — the secondary lever — and the two width cells that decide the frozen question sit on cards 0 and 1.
+
+**The pre-declared specification check passes in all four cells, read from in-pod stdout rather than from a launcher exit status.** Every cell reports `screening 1024 candidates against the 229376 training records` and `kept 961 of 1024, max containment 1.0000`, reproducing EXP-R2-191, EXP-R2-201 and EXP-R2-202 exactly. So all six cells of the width comparison are scored on one held-out population, and the four new cells train on the same stream in the same order as the two they are ratioed against.
+
+**The memory arithmetic is confirmed against the running jobs and not only against the formula.** Cell `r204_d16384_base` prints `[model] PLT 4295.6M parameters 32 decoder(s)` — the predicted 4,295,622,656 to the printed precision. Steady-state device memory measured once training was under way: **118,471 MiB on each width card and 70,477 MiB on each `k` card, of 143,771 MiB**, all four at 99–100% utilisation. So the width cells run with **25.3 GB of headroom**, which is more than the pre-registration's worst case predicted and confirms that the 4x-expansion configuration fits. The pre-registered rule stands unchanged: a cell that dies of CUDA OOM is reported as a failed cell and is not re-run smaller under this name.
+
+Expected wall clock, from the 5.95 h precedent at 8,192: 9–12 h for the width cells, ~6 h for the `k` cells. Artefacts will be written to `results/external_baseline/20260814112509_9fa75fa8a3b3/r204_{d16384,k64}_{base,stage1}/` on GPFS. **The 16,384-wide dictionary is a 17.2 GB file, and the launcher's pull of an 8.59 GB directory already failed twice in EXP-R2-191 on chunk-size mismatch**; if it fails again the JSON record is recovered from GPFS under digest, the dictionary stays where every downstream stage reads dictionaries from anyway, and the incident is reported rather than described as a completion.
+
+---
+
+## 2026-08-14 — EXP-R2-202 corrections: a mislabelled column, a threshold that was unreachable by construction, and two follow-ups the coordinator asked for. Rule C survives all three; one of its supporting arguments does not survive unqualified
+
+Four corrections and two new measurements, raised by the coordinator against the EXP-R2-202 read above. Nothing here changes which rule fired.
+
+### 1. The B2 re-read table's counts were PASS counts labelled as if they were FAIL counts
+
+The coordinator's arithmetic is right and the defect is exactly where it was inferred to be. `base/text` cannot have 31 failing layers and a mean of 7,607.9 live latents per layer at once. **The numbers in that table were per-layer PASS counts with the cell-level verdict appended as a word**, so "31/32 FAIL" meant "31 of 32 layers pass, therefore the all-layers gate FAILs". That is unreadable and is corrected here rather than explained.
+
+**The error was confined to that entry's prose.** No committed code computed the column — `30_activation_spectrum.py` measures spectra and issues no B2 verdict — and the artefact JSON carries no such field. The B2/B2′ counts were computed in a session script and transcribed. Restated explicitly, at the block-output site:
+
+| cell | mean live/layer | B2 (live ≥ 4,096): layers PASS | layers FAIL | cell verdict | B2′ (live ≥ `r99`): layers PASS | layers FAIL | cell verdict |
+|---|---:|---:|---:|:--|---:|---:|:--|
+| `base/text` | 7,607.9 | **31** | **1** | FAIL | **32** | **0** | **PASS** |
+| `stage1/text` | 4,900.3 | **21** | **11** | FAIL | **31** | **1** | FAIL |
+| `base/protein` | 2,187.8 | **2** | **30** | FAIL | **11** | **21** | FAIL |
+| `stage1/protein` | 1,633.5 | **1** | **31** | FAIL | **6** | **26** | FAIL |
+
+Failing layer indices, which the previous table did not give: **B2** fails at layer **1** alone in `base/text`; at layers **1 and 5–14** in `stage1/text`; at 30 of 32 layers in `base/protein` (all but 3 and 15); at 31 of 32 in `stage1/protein` (all but 15). **B2′** fails nowhere in `base/text`; at layer **10** alone in `stage1/text`; at 21 layers in `base/protein` and 26 in `stage1/protein`, in both cases a contiguous interior band starting at layer 1.
+
+Arithmetic check, which the previous entry should have carried: the per-layer live counts sum to 243,452 / 156,810 / 70,009 / 52,272, which divided by 32 reproduce the four published means to the decimal. The counts and the means are consistent; only the column heading was not.
+
+**A test now pins the orientation of the one verdict that is in committed code.** `verdict_record`'s threshold comparison is the class of thing that fails invisibly — an inverted comparison yields a complete, well-formed, plausible artefact — so it is checked in both directions, at exactly `d_model`, and under a failed instrument control (`tests/test_spectrum.py`, commit `bd6ff99`).
+
+### 2. The pre-registered threshold was unreachable by construction, and the defect is the pre-registration's
+
+Rules A/B/C were frozen against `r99_med ≥ 4,096`. **`r99` cannot reach 4,096 at any token budget, for any covariance.** `r99` is the smallest `k` whose eigenvalues carry 99% of the total; on a perfectly flat spectrum — an isotropic population, infinite samples — that is `ceil(0.99 × d)` = **4,056**. Reaching `d_model` would require the smallest eigenvalue alone to carry more than 1% of the total, which at `d` = 4,096 is impossible. This is a property of the statistic and not of the sample.
+
+Measured, at `d_model` = 4,096, on isotropic Gaussian draws through the same estimator:
+
+| `N` | `N`/`d_model` | isotropic `r99` | % of 4,056 | % of `d_model` |
+|---:|---:|---:|---:|---:|
+| 40,960 | 10 | 4,013 | 98.9% | 98.0% |
+| **65,536** | **16** | **4,026** | **99.3%** | **98.3%** |
+| 131,072 | 32 | 4,037 | 99.5% | 98.6% |
+| 262,144 | 64 | 4,044 | 99.7% | 98.7% |
+| 1,048,576 | 256 | 4,050 | 99.9% | 98.9% |
+| ∞ | ∞ | **4,056** | 100% | 99.0% |
+
+**So the answer to "what `N` would make Rule A reachable" is: no `N`.** A sixteen-fold larger draw buys 24 of the 70-point gap and the curve asymptotes at 4,056. The campaign's budget is not the limitation — at `N` = 65,536 the estimator is already at 99.3% of the best any budget could do. **Rule A was unattainable and Rule C was guaranteed to fire, and that is a specification error in EXP-R2-202's pre-registration, not a property of the four checkpoints.** It is the same failure class as B1's, one level down: a threshold whose attainability was assumed rather than demonstrated, in an entry that explicitly required attainability before application. The isotropic control is what caught it, which is the one thing that went right.
+
+**Does Rule C's substance survive correction? Yes, and the corrected reading is weaker for one cell and stronger overall.** Read against the estimator's own ceiling instead of `d_model`:
+
+| cell | `r99` median | % of `d_model` | % of 4,026 (this `N`) | % of 4,056 (max possible) | `r99` median, interior 2–29 |
+|---|---:|---:|---:|---:|---:|
+| `base/text` | 3,670 | 89.6% | **91.2%** | 90.5% | 3,690 |
+| `stage1/text` | 2,954 | 72.1% | **73.4%** | 72.8% | 3,160 |
+| `stage1/protein` | 2,709 | 66.1% | **67.3%** | 66.8% | 2,800 |
+| `base/protein` | 2,588 | 63.2% | **64.3%** | 63.8% | 2,617 |
+
+All four sit below all three candidate ceilings, so the *ordering* and the *conclusion that no cell spans its ambient space* are robust. But **"`base/text` does not span" is a materially weaker claim than the entry implied and is reworded here**: at 91% of the attainable ceiling that cell is close to full rank, and the honest statement is that it retains most of its dimensions while the protein cells retain about two thirds.
+
+**What replaces the threshold argument is a comparison that needs no threshold, and it is the stronger finding.** The four cells do not group by modality. `stage1/text` at 73.4% sits **6.1 points** from `stage1/protein` and **17.8 points** from `base/text` — the adapted text mode is nearer the protein cells than it is to the pre-adaptation text mode of its own lineage. No cut anywhere separates "both text" from "both protein" except one chosen in (2,709, 2,954] after seeing the answer. **The withdrawal of "text passes / protein fails" therefore does not depend on the broken threshold at all**, which is what makes it survive the correction. EXP-R2-203, reading the same gate at per-layer resolution from the dictionaries alone, reaches the refusal condition by an independent route.
+
+### 3. The text-mode participation-ratio collapse is broad-depth, not a median artefact
+
+The coordinator asked whether `base/text` 843.7 → `stage1/text` 21.2 is driven by the degenerate early layers. It is not.
+
+| cell | PR median, all 32 | PR median, interior 2–29 | PR median, 4–27 | effective rank median, 2–29 |
+|---|---:|---:|---:|---:|
+| `base/text` | 843.7 | **906.2** | 937.5 | **2,273.0** |
+| `stage1/text` | 21.2 | **23.4** | 21.7 | **294.0** |
+
+Excluding layers 0, 1, 30 and 31 *raises* both figures and leaves the gap intact. Per layer, `base/text` PR exceeds `stage1/text` PR at **28 of 28 interior layers**, median ratio **35×**, range 2.5× to 180×. Effective rank — a whole-spectrum statistic rather than a head-dominated one — separates them at **28 of 28** interior layers too. So the collapse is a genuine broad-depth property of the adapted checkpoint's text mode.
+
+**Its magnitude depends heavily on which statistic is used, and reporting only the largest is not honest.** The same contrast reads **35×** on the participation ratio, **7.7×** on effective rank, and **1.24×** on `r99` (3,670 against 2,954). PR is dominated by the head of the spectrum, so it is the most sensitive to a few dominant directions and the least representative of the whole basis. **The defensible statement is that protein continued-pretraining concentrates the text-mode activation spectrum at every interior depth**, with the concentration strongest in the leading directions; "a 40× collapse" is the PR-specific framing and should not travel without the other two numbers. Whether this costs the text side anything behaviourally is not measured here and no claim is made.
+
+### 4. The rank-1 layer is real, is not a capture artefact, and is a massive activation
+
+Re-measured with each record's first content position excluded from the draw (`--drop-leading-positions 1`, four cells, same seed, same offsets, same screens — all four ADMITTED on verified digests, all four instrument controls passing at isotropic `r99` = 4,026, protein prefix 961 of 1,024 and text 1,024 of 1,024 reproduced).
+
+| cell | layer-1 `r99` | PR | effective rank | top-eigenvalue share | centred variance |
+|---|---:|---:|---:|---:|---:|
+| `base/text`, drop 0 | 1 | 1.00 | 1.00 | 0.999888 | 1.492e4 |
+| `base/text`, drop 1 | **1** | **1.00** | **1.00** | **0.999870** | 1.274e4 |
+| `stage1/text`, drop 0 | 1 | 1.00 | 1.00 | 0.999937 | 1.496e4 |
+| `stage1/text`, drop 1 | **1** | **1.00** | **1.00** | **0.999928** | 1.272e4 |
+
+**It persists exactly.** Dropping the first content position of every one of the 1,024 records changes the top-eigenvalue share in the sixth decimal place. It is not a BOS position — `<s>` is a special token and was never in the draw — not padding, and not a leading-position outlier.
+
+**What it is, on the evidence of the control that was already there.** The coordinate-independent null at that layer reads `r99` = **2**, with the top single *coordinate* carrying **73.6%** of the variance. The one direction is therefore essentially axis-aligned: two of 4,096 coordinates carry the layer, which is the LLaMA-family massive-activation signature and not a general property of text activations. That layer holds **28.1%** (`base/text`) and **26.3%** (`stage1/text`) of the summed centred variance over all 32 layers. Both protein cells are ordinary at the same layer (top-coordinate share 0.4% and 1.7%), under identical code, masking and batching, which is itself evidence against a capture artefact.
+
+**The consequence for the Rule C argument, stated plainly.** Layer 1 remains a true and vivid illustration — a dictionary cannot put 4,096 live latents into a cloud with one direction, and its 90 and 94 live latents are therefore not a recipe failure. But it is a **known pathology of one layer of one model family**, so it must be presented as an illustration and **not** as the load-bearing evidence, which the previous entry's heading ("the layer that settles what B2 was measuring") overstated. **Rule C does not rest on it**: the verdict is a median over 32 layers, and removing layers 0, 1, 30 and 31 entirely leaves the medians at 3,690 / 3,160 / 2,800 / 2,617 — every cell still below every ceiling, and the cells still failing to group by modality. Every whole-cell median moved by at most 5 under the drop-1 re-measurement (3,671 / 2,956 / 2,713 / 2,592), so the entire reading is insensitive to the exclusion.
+
+### What changes in the record
+
+Corrected: the B2/B2′ table's column orientation, with failing layer indices added. Attributed to the pre-registration: Rule A's unattainability, and with it the fact that Rule C firing carries no information on its own. Reworded: "does not span" is wrong for `base/text` at 91% of the attainable ceiling; the surviving threshold-free claim is that the four cells do not group by modality. Qualified: layer 1 is an illustration and a massive activation, not the argument. Added: the text-mode PR collapse as a broad-depth measurement with its statistic-dependence stated.
+
+Unchanged: Rule C fires; B2 as written could not have been a statement about dictionary adequacy in any cell; the protein cells fail B2′ as well as B2; and the coordinator retains promotion of all of it. Artefacts for the drop-1 re-measurement are under `results/transfer/external_baseline/20260814111833_9fa75fa8a3b3/r202b_drop1_*/`, pinned at commit `bd6ff99`.

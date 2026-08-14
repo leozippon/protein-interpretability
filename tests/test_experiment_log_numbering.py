@@ -136,6 +136,16 @@ KNOWN_VIOLATIONS: tuple[tuple[int, int, str], ...] = (
         201,
         "EXP-R2-201's status record, appended when EXP-R2-202 found its unpulled artefacts",
     ),
+    # EXP-R2-202's corrections, raised by the coordinator against its read and
+    # answered with two fresh H200 measurements, by which time 203 and 204 had
+    # both landed. A correction belongs to the entry it corrects, so it keeps
+    # 202's id; filing it as a new experiment would detach a retraction from the
+    # claim being retracted, which is the one thing a log must not let happen.
+    (
+        204,
+        202,
+        "EXP-R2-202's corrections, appended after 203 and 204 landed",
+    ),
 )
 
 
