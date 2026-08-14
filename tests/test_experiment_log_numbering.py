@@ -112,6 +112,30 @@ KNOWN_VIOLATIONS: tuple[tuple[int, int, str], ...] = (
         194,
         "EXP-R2-194's read, appended after 195 to 200 landed during its cluster-outage pause",
     ),
+    # EXP-R2-202 pre-registered its rule, then built a stage, verified it on an
+    # L20 and ran four H200 cells, while a concurrent agent appended EXP-R2-203
+    # in the same window. Its reading goes where it was written. Same reason as
+    # every entry above: the rule counts only because it was frozen before the
+    # eigenvalues existed, and moving the reading up beside it would erase the
+    # file order that is the evidence for that.
+    (
+        203,
+        202,
+        "EXP-R2-202's read, appended after EXP-R2-203 landed during its build-and-run window",
+    ),
+    # A different shape, and it is worth separating from the one above. This is
+    # not a continuation of a live experiment but a *status record* for one whose
+    # local controller died after dispatch: EXP-R2-201's two cells ran to
+    # completion in-pod and were never pulled, and the fact was found while
+    # EXP-R2-202 checked for a prior run before dispatching. It is filed under
+    # 201 because it is about 201, and it lands after 203 because that is when it
+    # was discovered. Renumbering it would attach a six-hour run's completion to
+    # an id that never dispatched it.
+    (
+        203,
+        201,
+        "EXP-R2-201's status record, appended when EXP-R2-202 found its unpulled artefacts",
+    ),
 )
 
 

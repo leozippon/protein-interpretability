@@ -129,6 +129,31 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "infer it. It builds its own Cohort only to reach `input_strings`, which "
         "renders sequences it already holds and selects nothing"
     ),
+    "31_basis_adequacy.py": (
+        "re-reads dictionaries that already exist and must be scored on the "
+        "population they were scored on, so it constructs no cohort of its own: "
+        "it calls 17_train_transcoder.py's held_out_cohort with the corpus seed, "
+        "step budget, batch size and evaluation budget that dictionary's own "
+        "settings block recorded, and refuses the cell when any of them is "
+        "absent. A fresh draw here would be the failure the near-duplicate "
+        "screen exists to make visible -- a different population reported under "
+        "the dictionary's name -- so rule 1 is answered by the run being "
+        "reproduced rather than by a seed this stage chooses"
+    ),
+    "30_activation_spectrum.py": (
+        "measures the rank of the activation cloud a dictionary was fitted on, "
+        "so it must sample the population that dictionary was scored on and not "
+        "a cohort of its own: it draws through 17_train_transcoder.py's seeded "
+        "block-shuffled stream and near-duplicate screen, imported rather than "
+        "reimplemented, at the offset that run's --steps and --batch-size "
+        "produce. The stream is prefix-stable, so the dictionary run's own "
+        "candidates are the first of this draw in the same order and its screen "
+        "reproduces as a prefix, which the artefact reports as a specification "
+        "check. Rule 1 is answered twice over: by --corpus-seed on the stream "
+        "the reproduced run used, and by --seed on this stage's own choice of "
+        "which token positions within each record to take, which is a uniform "
+        "draw under an equal per-record cap rather than a prefix of each record"
+    ),
 }
 
 

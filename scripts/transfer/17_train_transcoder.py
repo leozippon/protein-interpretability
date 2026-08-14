@@ -117,6 +117,7 @@ from src.transfer.replaceable import (  # noqa: E402
 from src.transfer.transcoders import (  # noqa: E402
     DEAD_STEPS_SEQUENCES,
     MATCHED_TRAINING_KEY,
+    FiringCensus,
     MatchedTraining,
     Transcoder,
     TranscoderConfig,
@@ -348,6 +349,152 @@ def flatten(
     return x, y
 
 
+def open_joint_target(
+    checkpoint: Path,
+    *,
+    rendering: str,
+    mode: str,
+    device: str,
+    max_tokens: int,
+    protein_context: str | None,
+    band: tuple[int, int | None],
+) -> tuple[JointReplaceable, dict[str, Any], tuple[int, int | None]]:
+    """Load one mode of a joint checkpoint, and the residue band it may stream.
+
+    Extracted from :func:`main` so that a stage which re-reads a dictionary this
+    trainer wrote opens the *same* checkpoint through the *same* qualification
+    path -- ``21_joint_mode_qualification.py`` owns the load, this owns the
+    rendering, and neither is restated (Appendix B rule 12). A second copy of
+    this sequence would be a second declaration of which weights and which
+    tokenisation a mode means, and the whole point of the matched pair is that
+    there is only one.
+
+    Returns the handle, the facts a record states about it, and the band -- which
+    the protein mode narrows from the measured rendering wrapper and the token
+    cap, and the text mode leaves alone.
+    """
+
+    declaration = joint_modes.rendering(rendering)
+    print(f"[loader] {checkpoint} as {declaration.name}:{mode} on {device}")
+    # The tokenizer alone first, then the rendering, then the weights: a wrong
+    # checkpoint/family/mode triple fails before a multi-gigabyte load.
+    resolved, tokenizer = STAGE21.load_tokenizer(checkpoint)
+    tokenisation = joint_tokenisation(tokenizer, declaration, mode)
+    if tokenisation is not None:
+        band = joint_protein_band(
+            tokenisation, max_tokens=max_tokens, protein_context=protein_context
+        )
+    backbone, checkpoint_facts = STAGE21.load_model(
+        resolved, tokenizer, device=device, dtype="bfloat16"
+    )
+    checkpoint_facts["requested_path"] = str(checkpoint)
+    handle = JointReplaceable(
+        model=backbone,
+        tokenizer=tokenizer,
+        checkpoint=resolved,
+        declaration=declaration,
+        mode=mode,
+        tokenisation=tokenisation,
+        max_tokens=max_tokens,
+        protein_context=protein_context,
+    )
+    target = {
+        "kind": "joint_checkpoint",
+        "rendering_family": declaration.name,
+        "mode": mode,
+        "checkpoint_facts": checkpoint_facts,
+        "rendering": (
+            tokenisation.facts()
+            if tokenisation is not None
+            else {
+                "verdict": "NOT_RESOLVED",
+                "declared_family": declaration.name,
+                "reason": (
+                    "the text mode's scored positions are the tokenizer's own "
+                    "next-token targets and do not depend on the protein "
+                    "rendering, so the declared family is recorded but not "
+                    "resolved against this tokenizer. A protein-mode run "
+                    "resolves it and is refused when it does not hold"
+                ),
+            }
+        ),
+    }
+    return handle, target, band
+
+
+def held_out_cohort(
+    records: Callable[[], Iterator[Any]],
+    *,
+    corpus_seed: int,
+    steps: int,
+    batch_size: int,
+    eval_sequences: int,
+    symbol_unit: str,
+) -> tuple[list[Any], dict[str, Any], int]:
+    """The evaluation cohort, drawn past the training budget and screened.
+
+    Extracted from :func:`main` for the reason the offset itself exists: which
+    records a dictionary is held out on is a property of the run, and a stage
+    that re-reads that dictionary must draw the same ones or it is measuring a
+    different cohort under the same name. One declaration, two callers.
+
+    Returns the cohort, the near-duplicate screen's own record, and the offset it
+    was drawn past -- all three, because the screen and the offset are what make
+    the cohort held out and a caller that reports one without the others is
+    reporting a draw rather than a held-out set.
+    """
+
+    blocks_touched = -(-(steps * batch_size) // SHUFFLE_BLOCK)
+    held_out_offset = blocks_touched * SHUFFLE_BLOCK
+    candidates = list(
+        stream_records(
+            records,
+            seed=corpus_seed,
+            skip=held_out_offset,
+            limit=eval_sequences * HELD_OUT_OVERSAMPLE,
+        )
+    )
+    if len(candidates) < eval_sequences:
+        raise RuntimeError(
+            f"the corpus ran out at the held-out offset: {len(candidates)} of "
+            f"{eval_sequences} sequences past a skip of {held_out_offset}. "
+            "Lower --steps or --eval-sequences rather than evaluating on a "
+            "population the training stream also reaches."
+        )
+    print(
+        f"[held-out] screening {len(candidates)} candidates against the "
+        f"{held_out_offset} training records, on {symbol_unit}"
+    )
+    keep, screen = screen_against_training_stream(
+        [entry[0] for entry in candidates],
+        (
+            entry[0]
+            for entry in stream_records(
+                records, seed=corpus_seed, skip=0, limit=held_out_offset
+            )
+        ),
+        unit=symbol_unit,
+    )
+    survivors = [entry for entry, kept in zip(candidates, keep) if kept]
+    print(
+        f"  kept {screen['n_kept']} of {screen['n_candidates']}, "
+        f"max containment {screen['max_containment']:.4f}"
+    )
+    if len(survivors) < eval_sequences:
+        raise RuntimeError(
+            f"the near-duplicate screen left {len(survivors)} of "
+            f"{eval_sequences} held-out sequences from "
+            f"{len(candidates)} candidates: this corpus region is too close to "
+            "what training reaches. Draw from further out with a larger --steps "
+            "headroom, or raise HELD_OUT_OVERSAMPLE -- do not evaluate on the "
+            "unscreened draw, which is the leakage L30 measured"
+        )
+    held_out = survivors[:eval_sequences]
+    screen["n_held_out_taken"] = len(held_out)
+    screen["oversample_factor"] = HELD_OUT_OVERSAMPLE
+    return held_out, screen, held_out_offset
+
+
 def evaluate(
     model: Transcoder,
     decoder: ReplaceableModel,
@@ -355,10 +502,20 @@ def evaluate(
     *,
     batch_size: int,
 ) -> dict[str, Any]:
-    """Held-out NMSE, on sequences the run never trains on."""
+    """Held-out NMSE and live basis, on sequences the run never trains on.
+
+    The basis is counted here as well as scored, because the two definitions of a
+    live latent answer different questions and only one of them was ever
+    recorded. The checkpoint's own ``silent_steps`` reading says a latent fired
+    somewhere in the last ``dead_steps`` *training* steps; the census below says
+    it fires on the held-out cohort. A dictionary can look complete by the first
+    and be far from it by the second, and the basis-adequacy criterion R2.4 is
+    gated on reads the basis a diff would actually be taken over (EXP-R2-203).
+    """
 
     model.eval()
     totals = torch.zeros(model.config.num_layers, dtype=torch.float64)
+    census = FiringCensus(model.config.num_layers, model.config.d_hidden)
     batches = 0
     with torch.no_grad():
         for start in range(0, len(sequences), batch_size):
@@ -371,6 +528,7 @@ def evaluate(
                 continue
             report = model.objective(x.float(), y.float(), training=False)
             totals += report["nmse_per_layer"].double().cpu()
+            census.update(report["fired_per_latent"].cpu(), int(x.shape[1]))
             batches += 1
     model.train()
     per_layer = (totals / max(batches, 1)).tolist()
@@ -379,6 +537,7 @@ def evaluate(
         "nmse_sum": float(sum(per_layer)),
         "n_batches": batches,
         "n_sequences": len(sequences),
+        "live_basis": census.record(),
     }
 
 
@@ -557,56 +716,15 @@ def main() -> None:
     model_handle: ReplaceableModel
     target: dict[str, Any]
     if joint:
-        declaration = joint_modes.rendering(args.rendering)
-        print(
-            f"[loader] {args.joint_checkpoint} as {declaration.name}:{args.mode} "
-            f"on {args.device}"
-        )
-        # The tokenizer alone first, then the rendering, then the weights: a
-        # wrong checkpoint/family/mode triple fails before a multi-gigabyte load.
-        resolved, tokenizer = STAGE21.load_tokenizer(args.joint_checkpoint)
-        tokenisation = joint_tokenisation(tokenizer, declaration, args.mode)
-        if tokenisation is not None:
-            low, high = joint_protein_band(
-                tokenisation,
-                max_tokens=args.max_tokens,
-                protein_context=args.protein_context,
-            )
-        backbone, checkpoint_facts = STAGE21.load_model(
-            resolved, tokenizer, device=args.device, dtype="bfloat16"
-        )
-        checkpoint_facts["requested_path"] = str(args.joint_checkpoint)
-        model_handle = JointReplaceable(
-            model=backbone,
-            tokenizer=tokenizer,
-            checkpoint=resolved,
-            declaration=declaration,
+        model_handle, target, (low, high) = open_joint_target(
+            args.joint_checkpoint,
+            rendering=args.rendering,
             mode=args.mode,
-            tokenisation=tokenisation,
+            device=args.device,
             max_tokens=args.max_tokens,
             protein_context=args.protein_context,
+            band=(low, high),
         )
-        target = {
-            "kind": "joint_checkpoint",
-            "rendering_family": declaration.name,
-            "mode": args.mode,
-            "checkpoint_facts": checkpoint_facts,
-            "rendering": (
-                tokenisation.facts()
-                if tokenisation is not None
-                else {
-                    "verdict": "NOT_RESOLVED",
-                    "declared_family": declaration.name,
-                    "reason": (
-                        "the text mode's scored positions are the tokenizer's own "
-                        "next-token targets and do not depend on the protein "
-                        "rendering, so the declared family is recorded but not "
-                        "resolved against this tokenizer. A protein-mode run "
-                        "resolves it and is refused when it does not hold"
-                    ),
-                }
-            ),
-        }
     else:
         print(f"[loader] loading {args.arm} and running its self-check")
         model_handle = load_replaceable(
@@ -735,53 +853,15 @@ def main() -> None:
     # attainability before application (Appendix B rule 2), and on a text corpus
     # the screen is expected to drop nothing, which is the demonstration rather
     # than an assumption.
-    blocks_touched = -(-(args.steps * args.batch_size) // SHUFFLE_BLOCK)
-    held_out_offset = blocks_touched * SHUFFLE_BLOCK
     symbol_unit = "characters" if source == "openwebtext" else "residues"
-    candidates = list(
-        stream_records(
-            records, seed=args.corpus_seed, skip=held_out_offset,
-            limit=args.eval_sequences * HELD_OUT_OVERSAMPLE,
-        )
+    held_out, screen, held_out_offset = held_out_cohort(
+        records,
+        corpus_seed=args.corpus_seed,
+        steps=args.steps,
+        batch_size=args.batch_size,
+        eval_sequences=args.eval_sequences,
+        symbol_unit=symbol_unit,
     )
-    if len(candidates) < args.eval_sequences:
-        raise RuntimeError(
-            f"the corpus ran out at the held-out offset: {len(candidates)} of "
-            f"{args.eval_sequences} sequences past a skip of {held_out_offset}. "
-            "Lower --steps or --eval-sequences rather than evaluating on a "
-            "population the training stream also reaches."
-        )
-    print(
-        f"[held-out] screening {len(candidates)} candidates against the "
-        f"{held_out_offset} training records, on {symbol_unit}"
-    )
-    keep, screen = screen_against_training_stream(
-        [entry[0] for entry in candidates],
-        (
-            entry[0]
-            for entry in stream_records(
-                records, seed=args.corpus_seed, skip=0, limit=held_out_offset
-            )
-        ),
-        unit=symbol_unit,
-    )
-    survivors = [entry for entry, kept in zip(candidates, keep) if kept]
-    print(
-        f"  kept {screen['n_kept']} of {screen['n_candidates']}, "
-        f"max containment {screen['max_containment']:.4f}"
-    )
-    if len(survivors) < args.eval_sequences:
-        raise RuntimeError(
-            f"the near-duplicate screen left {len(survivors)} of "
-            f"{args.eval_sequences} held-out sequences from "
-            f"{len(candidates)} candidates: this corpus region is too close to "
-            "what training reaches. Draw from further out with a larger --steps "
-            "headroom, or raise HELD_OUT_OVERSAMPLE -- do not evaluate on the "
-            "unscreened draw, which is the leakage L30 measured"
-        )
-    held_out = survivors[: args.eval_sequences]
-    screen["n_held_out_taken"] = len(held_out)
-    screen["oversample_factor"] = HELD_OUT_OVERSAMPLE
     training = stream_records(records, seed=args.corpus_seed, skip=0, limit=None)
 
     record = TrainingRecord()
@@ -832,6 +912,12 @@ def main() -> None:
                 "held_out_nmse_sum": held["nmse_sum"],
                 "held_out_nmse_per_layer": held["nmse_per_layer"],
                 "n_dead": report["n_dead"],
+                # The per-layer vector beside the cross-layer scalar. The scalar
+                # cannot be un-collapsed after the fact, and a basis-adequacy
+                # reading taken from `d_hidden - n_dead/num_layers` is a mean over
+                # layers wearing a per-layer name (EXP-R2-203).
+                "n_dead_per_layer": report["n_dead_per_layer"],
+                "held_out_live_basis": held["live_basis"],
                 "active_fraction": report["active_fraction"],
                 "tokens": record.tokens,
                 "elapsed_s": round(time.time() - started, 1),
@@ -901,6 +987,23 @@ def main() -> None:
         "loader_gate": loader_gate,
         "training": record.record(),
         "held_out": {**final, "near_duplicate_screen": screen},
+        # The fitted basis, per layer and by both definitions, because R2.4's
+        # adequacy gate is read on it and a cross-layer scalar cannot answer a
+        # per-layer question. `from_silent_steps` is this checkpoint's own
+        # dead-latent counter -- a latent that fired within the last `dead_steps`
+        # training steps; `held_out.live_basis` is the census on the evaluation
+        # cohort. src.transfer.basis_criteria applies the criterion to either.
+        "basis": {
+            "live_per_layer_from_silent_steps": model.live_latents_per_layer(),
+            "dead_steps": config.dead_steps,
+            "d_model": config.d_model,
+            "note": (
+                "live latents at each layer under the checkpoint's own dead-latent "
+                "definition. The held-out census under held_out.live_basis is the "
+                "stricter reading and is a different question, not a better "
+                "estimate of the same one"
+            ),
+        },
         "condition": {
             "arm": model_handle.name,
             "corpus": str(corpus),

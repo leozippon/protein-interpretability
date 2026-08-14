@@ -11522,7 +11522,11 @@ Six points, joint operating point interior with three cells above and two below.
 
 **Health of the four intended cells after the collision, verified rather than inferred from the fact that they are still running — and one half of it is still outstanding.** Three things are established now. Each intended cell's **own** log carries **zero** lines matching `OutOfMemory|CUDA error|Traceback|RuntimeError|Killed|nan|inf`, so the fault was confined to the spurious process and did not surface inside any of them. The `k` 60 process — the one sharing card 2 with the OOM — reports a start time equal to its **original** dispatch, so it was never restarted and the process now running is the one launched before the collision, not a silent replacement. And all four remain live with their expected arguments. **What is not yet established is continuity of the objective across the collision window**: the OOM landed about eight minutes into `k` 60's run and no cell has yet reached its first evaluation at step 2000, so no loss value spanning that window exists to inspect. **That check is outstanding and will be completed when the first evaluations land**; until then the correct statement is that no fault reached these cells, not that their optimisation is confirmed undisturbed. **"No intended cell was lost" is not "nothing went wrong", and only the first is claimed.**
 
+**Continuity check CLOSED, and it passes.** `k` 60's first evaluation covers steps 1 to 2000, so it spans the collision that landed about eight minutes into its run, and it can be read against a reference this arm already has: the F11-era `k` 64 dictionary's own step-2000 evaluation, same backbone, same width, same corpus, same seed, same batch size and the same step. **They are indistinguishable.** Train NMSE sum **16.4906** against **16.3531**, held-out **15.8094** against **15.6634**, elapsed **2363 s** against **2327.9 s** — differences of 0.8%, 0.9% and 1.5%, on a quantity summed over 36 layers, with `k` itself differing (60 against 64) which accounts for the dead-latent gap (10,700 against 8,960) and for some of the NMSE gap. **A process whose optimisation had been disturbed by a co-scheduled job would not track a clean reference run to within one percent at the same step.** So the earlier statement can now be upgraded from *no fault reached these cells* to *the one cell that shared a card with the fault is measurably undisturbed*, and it is upgraded on evidence rather than on the passage of time.
+
 **The repair, and it is verified rather than asserted.** The probe now reads stdout; a self-test against a known-absent and a known-present path returns false and true respectively; and a **card-drain check was added that the original lacked entirely** — nothing is dispatched to a card until it reports under 40 GB, so a repeat of the `k` 16 collision is refused by the launcher instead of by the allocator. The three chains were re-armed and verified **blocking** — the chain log is empty, where the broken version had written four completion lines within minutes. The superseded chain log is kept beside the live one rather than deleted.
+
+**One residue of the incident, found and cleared afterwards.** Each dispatch leaves a **local driver** that polls for its cell's artefact and pulls it back; the spurious `k` 16 cell's pod process died on its OOM, but **its driver went on polling for a result that could never arrive** — an orphan that would have run indefinitely and whose only possible outcome was a false wait. It was stopped once its pod process was confirmed dead and its output directory confirmed to hold no checkpoint. Exactly four drivers now run, one per intended cell. **Related and worth separating from the defect**: the harness reports a backgrounded dispatch wrapper as "killed" when it reaps it, which looks like a lost dispatch and is not one — the drivers were launched under `nohup … < /dev/null &` and survive their wrapper, verified by process age matching original dispatch time. A reaped wrapper and a dead driver are different events and only the second loses a pull.
 
 **Correction, 2026-08-13, made before any training cell was dispatched and marked because it is a resource fact that shaped this design.** The paragraphs above originally stated that **the pod exposes exactly ONE H200** and scheduled every cell serially on that basis, quoting about 62 hours for seven cells. **That is wrong: the pod exposes FOUR**, confirmed by `nvidia-smi -L` returning four devices with distinct UUIDs. The first probe, taken at 21:44, genuinely returned a single device and no processes; the second, at 21:55, returned four with two occupied. Whichever explains it — a reallocation in flight, or a device attach the first probe caught mid-way — **the operative lesson is the one this repository already carries in a different form: a single occupancy probe is a snapshot and not a property, and a campaign must not be sized from one reading of it.** The design is unchanged, because the cell list and its decisive-first ordering were chosen on scientific grounds and not on the card count; what changes is the schedule, from serial on one card to two-at-a-time on the two free cards, and the quoted cost, from about 62 hours to about 26. **The second half of the original note stands and is now confirmed rather than suspected**: cards 0 and 1 carry another agent's two processes at 38,588 MiB each, so the concurrent work this run was told to expect is real and running. Cards 2 and 3 are free and are the only ones this sweep's training cells take. The anchor scoring cell was dispatched to card 0 under the one-card reading and therefore shares that card with another agent's process; it was already past its front sweep when this was found, it is a short scoring pass rather than a training run, and it is left to finish rather than restarted, with the sharing recorded here rather than hidden. **The priority statement is unaffected: if EXP-R2-194 needs these cards it has precedence over this sweep.**
 
@@ -11652,3 +11656,496 @@ Candidates for the negative sign that have been tested and excluded as sufficien
 Text-mode attribution only; the pre-adaptation protein mode is unmeasurable and no result relaxes it. One seed per cell, so nothing here prices dictionary-seed variability on the text side; the protein side has three seeds and the text side one. One cohort at one draw, inherited from EXP-R2-182, with no skip-offset condition. One expansion factor, 2x. Six fronts on 32 blocks samples the depth curve rather than resolving it, and a front is always a prefix, so nothing says *which* blocks carry the damage. The non-monotonicity dissociation rests on **one** base cell. `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` and `summary.md` are not modified here; the withdrawal of EXP-R2-182's joint-checkpoint reading, and D2.h's row, are proposed to the coordinator rather than written.
 
 **Dispatch deviation, recorded at launch.** The plan above queued this cell behind an existing one; it was instead dispatched **immediately, on a card that had just freed**, about nine hours earlier than queueing would have given. **Nothing was displaced and the precedence rule was not bent**, and the check that established it is recorded rather than asserted: EXP-R2-194's three cells (`r194_score_stage1_text`, `r194_score_base_text`, `r194_score_stage1_protein`) had all written logs and **no process belonging to any other campaign was running in the pod** — the only three live processes were this sweep's own. So the card was free in fact and not merely idle at one instant, which is the distinction the EXP-R2-199 probe correction exists to enforce, applied here in the direction of taking a card rather than sizing a campaign. The cell is verified started in-pod: `self-check PASS, NLL 3.1701`, `PLT 236.1M parameters 36 decoder(s)`, matching the 236M this entry predicted. If EXP-R2-194 or any successor needs that card it is still yielded.
+
+---
+
+## 2026-08-14 — EXP-R2-201 pre-declared: can a protein dictionary on this checkpoint clear B2 at all? One cell, one lever, and the lever is a mis-scaled constant rather than a tuning guess
+
+Frozen before the dictionary is trained. EXP-R2-194 established that both protein cells fail B2 — 1,634 and 2,188 live latents per layer against `d_model` 4,096 — so a feature diff over them would be a statement about two fitted bases. That scoping named an unblock rather than a closure: a dictionary whose live basis spans the space would clear the gate, and nothing establishes that one cannot be trained. This cell asks whether one can.
+
+### The lever, and why it is this one
+
+**`auxk`, from 192 to 2,048, and nothing else moves.** The candidates that could plausibly move a live basis are sparsity, the auxiliary revival budget, width and training length. Three are excluded by evidence already on disk and the fourth is a measurable defect.
+
+*Training length is excluded.* Dead latents saturate on the same schedule as the reconstruction plateau — 201,719 of 262,144 by step 12,000 against 209,872 at step 36,978 — so the population is in equilibrium for the last two thirds of the run, not still growing. A longer run buys nothing.
+
+*Sparsity is not anomalous and is deliberately left alone.* At `k` 32 over `d_hidden` 8,192 the active fraction is **0.391%** against the panel arms' measured 0.417%, so this cell already sits at the panel's own operating point. Moving `k` would also collide head-on with the axis EXP-R2-198 to 200 are sweeping on text arms, making this cell uninterpretable beside them.
+
+*Width is the expensive lever and the wrong first one.* If the dead **fraction** were a property of the activations, doubling `d_hidden` would double both live and dead and leave the ratio untouched; clearing B2 at 80% death would need `d_hidden` above 20,480, which does not fit. Width is worth trying only after the fraction is shown to be irreducible.
+
+**The revival budget is binding, and it is mis-scaled by construction.** `TranscoderConfig.auxk` is the literal **192**, and `transcoders.py`'s own docstring states what that literal encodes: the reference implementation uses `min(d_model // 2, n_dead)`, "which is 192 here" — true when `d_model` is 384, ProGen3's width, since 384 // 2 = 192. This backbone is **4,096 wide**, where the same rule gives **2,048**. The constant is the ProGen3 *instantiation* of the rule, applied unchanged to a backbone ten times wider. This is Appendix B rule 12's hazard one level up, in a file that already records being bitten by it once — a literal 128 that silently shadowed 192 at every invocation.
+
+What that costs is measurable. At 6,558 dead latents per layer, `auxk` 192 gives an auxiliary gradient to **2.93%** of the dead population per layer per step; `auxk` 2,048 gives it to **31.2%**, a 10.7x larger budget. **2,048 is not a tuned value**: it is what the rule this repository says it reproduces returns at this width, and it is the only value on this lever that can be justified without reference to the outcome.
+
+*No source change is made.* The default stays 192 for every other run and every concurrent sweep; this cell passes `--auxk 2048` on the command line, on a flag that already exists.
+
+### Configuration, and the certificate it must produce
+
+`17_train_transcoder.py` on the snapshot pinned at `04fdfa5` — the same code that trained the cells this is read against. `--architecture plt --joint-checkpoint ProLLaMA_Stage_1 --rendering prollama --mode protein --d-hidden 8192 --k 32 --batch-size 4 --train-tokens 34000000 --steps 56000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --learning-rate 2e-4 --weight-decay 1e-5 --grad-clip 1.0 --seed 20260812 --corpus-seed 20260812`, and **`--auxk 2048`**.
+
+Every field except `auxk` is identical to EXP-R2-191's `stage1/protein` cell, so `compare_matched_training` against it must return **`MISMATCH` with `disagreements` exactly `["auxk"]`** and `max_tokens_agree true`. Any other disagreement means something moved that was not supposed to and voids the cell.
+
+**Specification check, declared now.** Corpus, seed, step budget and batch are unchanged, so the near-duplicate screen must reproduce **961 of 1,024 kept at maximum containment 1.0000** over 229,376 screened records, exactly. A different screen means a different held-out draw, and the comparison would not be against the same population.
+
+### The verdict, fixed in advance
+
+The statistic is **mean live latents per layer** = `(num_layers × d_hidden − n_dead) / num_layers`, against `d_model` = 4,096. The three-seed protein baseline is tight — 1,653, 1,627 and 1,634 across R2.3's two seeds and EXP-R2-194's — a spread of **26 latents per layer**, so seed noise on this statistic is negligible and any real movement is far outside it.
+
+- **CLEARS** — live/layer **> 4,096**.
+- **MOVED, SHORT** — live/layer **≤ 4,096** but more than **100 above** the 1,627–1,653 baseline band. The mechanism responds to the lever and the budget is not sufficient at this width.
+- **NO EFFECT** — live/layer within 100 of the baseline band. The revival budget is not what holds the basis down.
+- **VOID** — the run does not reach its token budget, the screen does not reproduce, or the certificate disagrees on any field other than `auxk`.
+
+### What each outcome licenses, and what clearing B2 does NOT buy
+
+**This is the part worth fixing in advance, because a cleared gate is the easiest result in this programme to over-read.**
+
+**If it CLEARS.** Licensed: this recipe *can* produce a spanning basis on protein activations at this checkpoint, and the 80.1% death is an artefact of a revival budget carried over from a narrower model rather than a property of protein activations. That is a real unblock — it says R2.4's road is open. **It does not make the protein feature diff admissible on its own, and three conditions remain.** *(i)* B2 must be cleared on **both** checkpoints; a diff compares two dictionaries, and one spanning basis against one under-complete basis is still a mismatched pair, so a clear here licenses a base-side cell rather than a diff. *(ii)* **The question B1 was written to ask is still unanswered.** B1 is void as *formulated* — it divides by the cross-checkpoint residual, which is small at shallow layers, so the ratio is unstable exactly where neither quantity is large — and voiding a badly-formed statistic does not answer the well-formed question underneath it, which is whether the dictionary describes each layer well enough that a difference between two dictionaries is a difference between two models. A replacement statistic is needed and is **not** written here, because a gate designed after seeing which cells must pass it is not a gate. *(iii)* Both members of the diff pair must be retrained at the new setting, so that they certify `MATCHED` within checkpoint and disagree only on the backbone across it.
+
+**And admissible is not informative.** Clearing every condition would license *running* the diff, not any expectation that it finds something, or that what it finds is interpretable. Only admissibility is at stake in this cell.
+
+**If it FAILS (NO EFFECT or MOVED, SHORT).** Licensed: at this width and sparsity, raising the revival budget 10.7x — to the value the reference rule gives at this backbone's width — does not produce a spanning basis on protein activations at this checkpoint. **That is a finding about what this recipe can produce, and it is to be reported as one rather than as a failed attempt.** It moves the live candidate to `k` or to width, and MOVED-SHORT versus NO-EFFECT distinguishes those: a basis that responds to the budget but falls short points at width, while one that does not respond at all points at the top-k competition. What it does **not** license is "protein activations cannot be spanned" — one lever at one setting on one checkpoint bounds nothing of the kind.
+
+### Bounds
+
+One cell, one checkpoint, one mode, one seed. Protein mode only, so nothing here says whether the same constant is holding down the text cells, whose death rates are far lower (7.1% and 40.2%) and which clear B2 already. `auxk` is moved to a principled value rather than swept, so this locates a threshold nowhere — a clear says 2,048 suffices, not that it is necessary. The mis-scaling is stated as a fact about this repository's constant at this backbone width; whether the reference implementation's rule is itself the right rule is not evaluated. Cost is one card for about six hours, matching the cell it is compared against.
+
+> **Amendment, pre-declared before the second cell can produce a number: the BASE-side protein cell runs in parallel at the same setting, on the idle card.**
+>
+> The pre-declaration above says a clear on the adapted side licenses a base-side cell rather than a diff, because one spanning basis against one under-complete basis is still a mismatched pair. Running that cell now rather than in six hours costs an otherwise idle card and buys a **matched pair trained under one code state at one time**, which is cleaner than a pair trained six hours apart. It does not pre-empt the gate: the pair must certify `MATCHED` within checkpoint either way, and no threshold below changes.
+>
+> **Configuration.** Identical to the cell above in every field, including `--auxk 2048`, except `--joint-checkpoint`, which is `Llama-2-7b-hf`. Two certificates are therefore predicted and both are checked: against EXP-R2-191's own `base/protein` cell it must read `MISMATCH` with `disagreements` exactly `["auxk"]`; against this entry's adapted cell it must read `MISMATCH` with `disagreements` exactly `["backbone_sha256"]`, which is the diffing pair's certificate at the new setting. Any third disagreement voids the cell.
+>
+> **Baselines differ in strength between the two sides and this is stated rather than smoothed.** The adapted side has a three-seed live/layer band of 1,627–1,653. The base side has **one** cell at **2,188**, so its NO-EFFECT window is ±100 around a single value rather than around a band, and a base-side movement is correspondingly less well separated from seed noise. Nothing here prices base-side seed variability.
+>
+> **The joint reading, fixed now.** *Both clear* — the recipe yields a spanning basis on protein activations on both checkpoints and a matched pair can be built; the three conditions above still stand and the diff is still not admissible. *Neither clears* — the revival budget is not what holds the basis down on either checkpoint, and the live candidate moves to `k` or width; a null on both sides is much stronger than a null on one. *Base clears, adapted does not* — the adaptation is what makes the basis unspannable at this budget, which is a **localisation to the adapted weights** and the most informative asymmetry available here. *Adapted clears, base does not* — the reverse, and it would be surprising, since the base cell starts with more live latents (2,188 against 1,634); it would be reported as measured and not explained. **A differential response short of clearing is also read**: if one side moves and the other does not, that is a statement about the adaptation that a single cell cannot make, and it is the reason this pair is worth running even if neither clears.
+>
+> **The lever finding is larger than the cell it unblocks, and is recorded as a defect rather than as a setting.** `auxk` is not a hyperparameter that happened to be low: it is a **declared constant carrying the reference rule's value at one backbone width, applied unchanged at a backbone ten times wider**. The file's own docstring states the rule the constant was meant to instantiate — `min(d_model // 2, n_dead)` — and on this checkpoint the constant reaches **2.93%** of the dead population per layer per step where the rule it encodes would reach **31.2%**. That is the Single-Source Principle's failure one level up: the constant and the rule that defines it are two sources for one fact, and the derived one silently won at every width but the one it was derived at. It is the same shape as the defect this file already records — a literal 128 shadowing `TranscoderConfig`'s 192 at every invocation — and it is recorded here as a defect in its own right, independent of whether these two cells clear anything. **No code change is made**: the default stays 192 while other campaigns are training against it, and whether it should change is a separate decision that these cells inform rather than settle.
+
+---
+
+## 2026-08-14 — EXP-R2-201 dispatch record
+
+Both cells launched on the snapshot pinned at `04fdfa5`, the code state that trained the cells they are read against, one card each with cards 2 and 3 left to the concurrent sweeps. Health gate before dispatch: `Health=ok`, `PodGPFS=read-write`, four card rows, CUDA allocate-and-compute liveness on every card. **The pre-declared specification check passes on the adapted cell in-pod — the near-duplicate screen reports `kept 961 of 1024, max containment 1.0000` over 229,376 screened records, reproducing EXP-R2-191's protein draw exactly**, so the held-out population is the same one. Verified started by reading in-pod stdout rather than a launcher exit status, which does not cross that boundary.
+
+> **Second amendment, pre-declared at step 6,000 of 36,978 and before either endpoint exists. Two things are fixed here: a third statistic, and the disposition of the lever finding.**
+>
+> **(a) The base-minus-adapted separation is declared as a statistic now, so that it is not a post-hoc observation later.** Let **Δ = live latents per layer (base) − live latents per layer (adapted)**, measured at the token budget, at each `auxk` setting. At `auxk` 192 the endpoint value is **Δ = 2,188 − 1,634 = 554**, and its mid-training trajectory is 0, 593, 387, 338, 377 at steps 2,000 to 12,000 — so it is established early and roughly flat rather than accumulating. At `auxk` 2,048 it reads **410** at step 6,000 against 387 at the same step under `auxk` 192.
+>
+> *What it would license.* If Δ at the endpoint is close under both budgets, the separation is **invariant to the revival mechanism**, which makes it a property of the two checkpoints' activations rather than of how the dictionary revives dead latents — and it would survive whatever the B2 gate does, since it does not depend on either side clearing. *What bounds it, and this is not a footnote:* the **base side is a single cell at each setting**, so nothing here prices base-side seed variability. The only replicate evidence available anywhere is the adapted side's three-seed spread of 26 latents per layer at `auxk` 192, and that is **not** a valid interval for Δ, which is a difference of two independently-trained dictionaries. A change in Δ smaller than 26 is therefore not resolvable with what exists; a larger one is reported as measured and **cannot be attributed** without base-side replicates that this campaign does not have.
+>
+> **(b) The interim mechanism reading, stated as mechanism rather than as endpoint.** At step 6,000, matched step for matched step, the live basis reads 2,850 against 2,848 on the base side and 2,440 against 2,461 on the adapted side — **+2 and −21 latents per layer for a 10.7x revival budget**, against a three-seed spread of 26. This is worth saying before the endpoint only because the lever is **already at full leverage**: with 5,400–5,750 dead latents per layer at that step, `auxk` 192 reaches 3.3% of them and 2,048 reaches 36%, so the budget difference is an order of magnitude and already in force. That is a mechanism engaged and a trajectory unmoved, not an effect awaiting time. **It is not the verdict**, which remains the final live/layer at the token budget as declared, and both cells run to that budget.
+>
+> **(c) The disposition of the lever finding, fixed by the coordinator before the reading rather than after it.** If the verdict is NO EFFECT on either or both sides, the defect is still repaired — but **the repair is to replace the literal with the rule, not to change the value**. The defect is that a constant and the rule defining it are two sources for one fact; the symptom is that the derived value silently wins at every width but its own. Deriving it removes the second source, and at the width it was derived at it evaluates to exactly what it does today, so no existing dictionary on that backbone moves. What does move is any future run at a different width, and that must be recorded at the point of change together with the fact that **on the one statistic this experiment measured, the difference made none** — so the change is made on Single-Source grounds and **carries no claim of measured benefit**. A CLEARS or MOVED-SHORT verdict yields the same repair with a stronger argument and the measured consequence recorded beside it. In neither case does the default change while any campaign is training against it.
+>
+> **Two things a reading of this pair may not do**, restated because both are easy: a cleared gate does not make the protein feature diff admissible — three conditions stand, one of them a statistic deliberately not yet written — and an unmoved basis does not show that protein activations cannot be spanned by any recipe. One lever at one setting on two checkpoints bounds neither.
+
+---
+
+## 2026-08-14 — EXP-R2-202 pre-registered: is B2 a gate on dictionary adequacy, or on the number of dimensions the activations have? The rank of the cloud, frozen before any eigenvalue exists
+
+Frozen before the stage that measures it has been run on any cell. Nothing below is a result; every number quoted is already on disk, and the four quantities the rule reads do not yet exist anywhere.
+
+### The untested assumption, and why the alternative is not exotic
+
+EXP-R2-194 completed Criterion B on EXP-R2-191's four dictionaries and read B2 — mean live latents per layer against `d_model` = 4,096 — as 7,608 and 4,900 PASS in text mode, 2,188 and 1,634 FAIL in protein mode. Its scoping paragraph attributed the shortfall to a live-basis problem and named "a training-recipe question about revival, sparsity, budget or width" as the unblock. EXP-R2-201 has since run the first of those levers. **Every reading of the protein failure now on disk assumes the recipe is what holds the basis down, and that assumption has never been measured against its alternative.**
+
+The alternative is one line of arithmetic. B2's threshold is `d_model`, which is the dimension of the space the activations are **written in**. That is an upper bound on the dimension of the space they **occupy**, not a measurement of it. If protein activations at this site lie in a subspace of rank well below 4,096, then B2 asks a dictionary for more live latents than the data has directions to put them in, and it is measuring data geometry rather than dictionary adequacy — in which case the gate is unattainable in protein mode for a reason no retraining sweep can move, and the "under-complete basis" reading has to be restated rather than acted on.
+
+**Two facts already on disk fit the second reading better than the first, and neither on its own separates them.** EXP-R2-175 measured cross-checkpoint linear alignment on this lineage: the true-pairing ridge residual is **0.400 in protein mode against 0.684 in text**, both against shuffled-pairing nulls near 1.00. So the protein activations are the *more* linearly alignable of the two, while being the ones that support *fewer* live latents. More alignable and less able to carry a basis is the joint signature a low-dimensional cloud leaves; a recipe failure predicts no relation between the two at all. Separately, this repository has already been bitten once by not measuring this: Appendix B rule 11 exists because a residual-stream participation ratio measured over all positions turned out to be measuring the attention sink, and the corrected interior figures range from **4.86 on ProtGPT2 to 577.3 on ZymCTRL** — a hundred-fold spread across arms, at a site nobody had expected to differ. Nothing on disk measures it on this lineage, at this site, in either mode.
+
+### The statistic, and the site
+
+At the site the dictionaries were fitted at — the per-layer feed-forward module's output before the residual add, every layer 0..31 — the **centred covariance of the activation vectors**, accumulated in float64 over sampled token positions, for each of the four cells (checkpoint × mode) of EXP-R2-191. Per layer:
+
+- **`r95`, `r99`, `r999`** — the smallest `k` whose cumulative eigenvalue mass reaches 95%, 99% and 99.9% of the total.
+- **participation ratio** `PR = (Σλ)² / Σλ²`.
+- **effective rank** `exp(H)`, `H` the Shannon entropy of the normalised eigenvalues.
+- **the sample-rank ceiling `min(N, d_model)`**, reported explicitly beside every rank, because a covariance estimated from fewer than `d_model` samples is rank-limited by its own sampling and would report the budget instead of the data.
+
+The block **input** is measured at the same time and reported beside the output. It costs nothing — the capture returns both tensors — and it is the tensor the encoder reads, so a reader can see whether the conclusion depends on which end of the module is looked at. **The rule below fires on the output site alone**, which is the site the dictionaries decode into; the input site is descriptive and no threshold is attached to it.
+
+### The population, which is not a fresh draw
+
+The held-out side of the same corpus draw: `17_train_transcoder.py`'s own block-shuffled stream, at the same corpus seed 20260812, at the offset its `--steps` and `--batch-size` produce, screened by the same near-duplicate machinery in `src/transfer/near_duplicates.py` at the same threshold. The stage imports that stage rather than restating it, and the stream is prefix-stable, so **the dictionary runs' 1,024 candidates are literally the first 1,024 of this draw in the same order**. The specification check is declared now: the first 1,024 candidates must reproduce **961 kept on Swiss-Prot** and **1,024 kept on OpenWebText**, which is what EXP-R2-191 and EXP-R2-201 both record. A different prefix means a different held-out population and voids the cell.
+
+### The sampling guard, and what it refuses
+
+**N = 65,536 token positions per cell**, which is 16 × `d_model` and above the declared floor of 10 × `d_model` = 40,960. The stage refuses rather than reports below that floor.
+
+The budget is spent as **1,024 distinct held-out records at a hard equal cap of 64 positions each**, drawn uniformly without replacement from within each record by a seeded generator. Equal and capped rather than "as many as fit": token positions within one protein or one document are strongly correlated, so a budget spent on few records measures those records, and an uncapped draw would weight the longest ones. A record carrying fewer than 64 scored positions contributes **nothing** rather than contributing what it has; the count of such records is reported, and it is the declared cost of the equal cap. Positions are the content-masked ones the dictionaries were fitted and scored under — residues alone in protein mode, non-special tokens in text mode — which is also what Appendix B rule 11 requires of a spectrum.
+
+### Instrument controls, and no rule fires without them
+
+**(i) Isotropic Gaussian, and it is a refusal condition.** At each layer and site, `N` isotropic Gaussian vectors whose per-coordinate variance matches that layer's covariance trace divided by `d_model`, streamed through the same accumulator and the same summary. **The estimator is broken if this does not return `r99` near `d_model`,** and the stage refuses its own verdict when it does not. The tolerance is fixed now at **`r99` ≥ 0.95 × `d_model` = 3,891 at every layer and both sites**: at `N/d_model` = 16 the sample spectrum of exactly isotropic data is spread by the Marchenko–Pastur law and its smallest eigenvalues carry the last percent of the mass, so `r99` sits a few percent below `d_model` on data that is genuinely full rank. Five percent accommodates that and is far tighter than anything at stake below, which is at factors rather than percents. The control also prices that finite-sample deflation directly, which is the number a reader needs to calibrate every other one.
+
+**(ii) The shuffled control, and a correction to how it is usually stated.** The obvious form — permute token positions and re-measure — **is not a control**, because a covariance does not see the order of its samples: permuting whole activation vectors leaves it exactly unchanged. The permutation that is a control is **per-coordinate**: independently permute each of the 4,096 coordinates across the sampled positions, which preserves every coordinate's marginal variance exactly and destroys every correlation between coordinates. The covariance it induces is exactly `diag(C)`, so its spectrum is the sorted per-coordinate variances and is computed in closed form. It answers the question that matters — whether a low `r99` is *anisotropy of the individual coordinates*, which a dictionary basis is free to represent, or *correlation between them*, which is what makes a cloud low-dimensional. **What it does not carry is finite-sample noise**: a realised permutation would add off-diagonal terms of order `N^{-1/2}`, and those are not reproduced, so this control is noiseless where the measured spectrum is not. Control (i) at the same `N` is what prices that gap, and both are reported per layer beside the observed spectrum rather than summarised away.
+
+### The frozen decision rule
+
+Let **`r99_med`** be the median over the 32 layers of `r99` at the block-output site, for a given (checkpoint, mode).
+
+- **Rule A — `r99_med ≥ 4,096` in protein mode.** B2's yardstick stands. Protein under-completeness is a training-recipe failure, a retraining sweep is the correct remedy, and B2 is read unchanged.
+- **Rule B — `r99_med < 4,096` in protein mode while the matched text mode has `r99_med ≥ 4,096`.** B2 as written is unattainable in protein mode for reasons of data geometry and not of dictionary quality. B2 is re-specified as **B2′: live latents per layer ≥ `r99` at that layer for that (checkpoint, mode)**, applied symmetrically to text and protein, and **the four existing dictionaries are re-read against B2′ before any new training is admitted.**
+- **Rule C — `r99_med < 4,096` in BOTH modes.** B2 was mis-specified for the whole unit. B2′ applies to all cells, and the existing "text passes / protein fails" reading **must be withdrawn and restated in terms of B2′** rather than qualified.
+
+**B2′ is a variance-based effective dimension and is declared as one.** Directions beyond `r99` carry under 1% of the total variance between all of them, which bounds what a fit at this token budget can resolve; it does **not** assert that those directions are empty, and a direction carrying little variance may still carry a great deal of computation. `r999` is measured and reported per layer for exactly this reason, so a reader can see how much the choice of cut moves the answer instead of taking the cut on trust. If `r99` and `r999` straddle 4,096 in a mode, that is reported as the finding rather than resolved by preferring one of them.
+
+**No rule fires if control (i) fails on any cell.** The measurement is then an instrument failure and the B2 reading stands where EXP-R2-194 left it.
+
+### What each outcome does and does not license
+
+Rule B or C **re-specifies a gate; it does not clear one.** Re-reading four dictionaries against B2′ can only decide whether their live bases are adequate *to the space those activations occupy*, and the three conditions EXP-R2-201's pre-declaration fixed on a cleared gate are untouched by it: B2′ must hold on both checkpoints, the well-formed question underneath the void B1 is still unanswered and its replacement statistic is still deliberately unwritten, and a diff pair must certify `MATCHED` within checkpoint. **Admissible would still not be informative.** Rule B or C also does not retract EXP-R2-201's finding on the revival budget, which is a measurement of what that lever does and stands on its own.
+
+Rule A licenses the retraining sweep EXP-R2-194 named, and no more than that.
+
+**And a low `r99` in protein mode would not be a statement about protein activations in general.** It would be a statement about one lineage, at one site, on one corpus, in one rendering — and the Swiss-Prot/OpenWebText pair is two corpora and not one, so a mode difference here is never only a mode difference.
+
+### Configuration
+
+`scripts/transfer/30_activation_spectrum.py`, new at this entry, with `src/transfer/spectrum.py`. Forward-pass only; nothing is trained. Four cells, one per card, all four concurrent:
+
+| cell | `--joint-checkpoint` | `--mode` | `--steps` |
+|---|---|---|---:|
+| base/text | `Llama-2-7b-hf` | text | 26,000 |
+| base/protein | `Llama-2-7b-hf` | protein | 56,000 |
+| stage1/text | `ProLLaMA_Stage_1` | text | 26,000 |
+| stage1/protein | `ProLLaMA_Stage_1` | protein | 56,000 |
+
+Everything else identical across all four: `--rendering prollama --max-tokens 1024 --batch-size 4 --records 1024 --positions-per-record 64 --seed 20260812 --corpus-seed 20260812`. `--steps` and `--batch-size` are EXP-R2-191's own and are present only to reproduce its held-out offset; they train nothing here. The seed governs the within-record position draw and the isotropic control's draw and is recorded in the artefact.
+
+### Bounds, declared in advance
+
+One site — two tensors of one module — and not the residual stream, so nothing here speaks to the geometry of the stream a lens or a probe reads. One draw per cell and one seed, so nothing prices the variability of the position draw. `r99` is an effective dimension under a variance cut and not an algebraic rank, and no measurement here bounds how much computation the discarded tail carries. The equal per-record cap excludes records shorter than 64 scored positions, so the measured population is the held-out draw restricted to records that long, and the excluded count is reported rather than assumed small. Four cells on one lineage across one adaptation step; nothing here speaks to stage 1 → stage 2, to a panel arm, or to any other protein decoder.
+
+---
+
+## 2026-08-14 — EXP-R2-203 pre-registered: the B2 reading rule at the resolution B2 was declared at. The gate has never been evaluated as specified, and the per-layer vector needed to evaluate it is already in every checkpoint
+
+Frozen before the four per-layer vectors are read. This entry declares a *reading rule*, not a new measurement: no dictionary is trained, no backbone is loaded to produce a number this rule then judges, and every quantity below is recoverable from artefacts that have been on disk since 2026-08-13.
+
+### The defect, reproduced before it is repaired
+
+`src/transfer/transcoders.py::Transcoder.objective` built a per-layer dead mask of shape `(num_layers, d_hidden)` and then recorded `int(dead.sum())` — one scalar for the whole dictionary. Nothing downstream recovered the layer axis, so `17_train_transcoder.py`'s history entries carry `n_dead` alone, and the "live latents per layer" figures EXP-R2-191 and EXP-R2-194 published are the hand-computed cross-layer mean `d_hidden - n_dead/num_layers`. Checked against the four records rather than asserted:
+
+| cell | final `n_dead` | `8192 - n_dead/32` | published |
+|---|---:|---:|---:|
+| `base/text` | 18,692 | 7,607.9 | 7,608 |
+| `stage1/text` | 105,334 | 4,900.3 | 4,900 |
+| `base/protein` | 192,135 | 2,187.8 | 2,188 |
+| `stage1/protein` | 209,872 | 1,633.5 | 1,634 |
+
+**This matters because Criterion B was not declared as a mean.** Its preamble in EXP-R2-191 requires both conditions to hold "in all four cells, **at the layers a difference is reported on**", which is a per-layer condition; the B2 clause then states the statistic as "mean live latents per layer", which is one number for the whole dictionary. The two sentences disagree, and a mean over 32 layers cannot answer the first: a dictionary can average far above `d_model` while individual layers sit far below it. **So the gate that currently blocks R2.4 has never been evaluated at the resolution it was specified at, in either direction** — neither to confirm the protein FAIL nor to confirm the text PASS.
+
+**The vector was never lost.** `silent_steps` is a registered buffer and therefore travels in `state_dict`, so all four checkpoints already carry the per-layer count. Recovering it is a 2 MB read inside an 8.6 GB file: no retraining, no GPU, no corpus.
+
+### The reading rule, fixed now
+
+**Two definitions of a live basis, reported side by side and never blended.**
+
+1. **From the checkpoint (`silent_steps`).** A latent is live at a layer when it fired within the last `dead_steps` = 2,500 training steps, which at `--batch-size 4` is the last 10,000 records. This is the definition the published `n_dead` used, so it is the one that makes the new numbers comparable to the old.
+2. **From the held-out cohort.** A latent is live at a layer when it fires at least *t* times on the 256-sequence evaluation cohort that dictionary was scored on, at **t = 1 and t = 10**, both reported. This is strictly the harder question: `silent_steps` admits a latent that fired once in ten thousand records, which a 256-sequence cohort would never see, so definition 2 is expected to be *lower* than definition 1 and a gap between them is not a discrepancy. The cohort is redrawn through `17_train_transcoder.py`'s own `held_out_cohort`, at each cell's own recorded `--corpus-seed`, `--steps`, `--batch-size` and `--eval-sequences`; **the near-duplicate screen must reproduce that cell's recorded counts exactly** (1,024 of 1,024 on OpenWebText, 961 of 1,024 on Swiss-Prot) or the cell is voided as a different population.
+
+**The verdict is per layer over every layer.** B2 PASSES a cell when *every* layer keeps more than `d_model` = 4,096 live latents, and FAILS otherwise, with the failing layers named. Two further readings are reported beside it and neither is the verdict: the **cross-layer mean**, for continuity with the published figures, and the **interior window 2–29**, for a reader who restricts a diff to the layers Criterion A is read on. The interior window is *not* imported into B2 as its verdict, because A's window exists for degenerate adjacent-layer *denominators* and B2 has no denominator; narrowing B2 by a rule that does not apply to it would be choosing a window after seeing which layers fail.
+
+**The gate is over all four cells**, as declared: three of four passing is a failed gate.
+
+**Criterion B1 stays void** and this rule does not revive it. Its numbers are computed and reported descriptively; no cell is judged by them.
+
+**Criterion A is unchanged** and is re-derived rather than restated — the implementation must reproduce the published medians 3.116 / 0.956 and IQRs [1.999, 4.264] / [0.904, 1.026] from the EXP-R2-175 artefacts, or the implementation is wrong rather than the reading.
+
+### Disclosure: what was already seen, and what it changes
+
+**Eight numbers were seen before this rule was written, and they are recorded here rather than hidden.** While establishing that `silent_steps` survives into the checkpoint at all — the fact this whole entry depends on — the `base/text` cell's first eight per-layer live counts were printed: **6,586, 90, 8,191, 8,192, 8,176, 8,160, 8,033, 7,974**. Nothing about the other three cells, the held-out definition, or layers 8–31 of any cell has been read.
+
+That exposure is why the rule above reports **both** layer windows instead of picking one: layer 1 falls outside Criterion A's interior window, so a rule that adopted that window would have excluded the one already-seen layer that fails — a window chosen after seeing the data. Adopting the all-layers reading as the verdict is the choice that is *not* improved by what was seen, and the interior reading is published beside it so a reader who prefers the narrower window has the number rather than an argument.
+
+### What each outcome licenses
+
+- **Every cell passes at every layer, under both definitions.** Then the published mean reading was right for the right reason, EXP-R2-194's B2 verdict stands unchanged, and this entry is a resolution improvement and nothing more.
+- **The per-layer verdict agrees with the mean verdict in all four cells.** Then the gate's *outcome* was read correctly even though its *statistic* was not, the protein block on R2.4 stands as recorded, and the repair is to the instrument rather than to the conclusion.
+- **The per-layer verdict differs from the mean verdict in any cell.** Then the gate's outcome was never correctly read. The direction decides what follows: a text cell failing per-layer means the pre-registered refusal condition applies to B2 as it did to B1 — a criterion its own control cannot pass is a specification defect — and the protein FAIL can no longer be read as a protein result. A protein cell passing per-layer where the mean failed would unblock R2.4 on those layers. **Neither is announced from this entry alone**; a change to `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` or `summary.md` is the coordinator's and is proposed rather than written.
+- **Definition 2 falls below `d_model` where definition 1 clears it.** That is not a failed gate under the pre-registration, which was written on the training-time counter. It is reported as what it is: the basis a feature diff would actually be taken over is smaller than the basis the gate was read on, and B2's own definition of live is then the thing to revisit.
+
+### Configuration
+
+`scripts/transfer/31_basis_adequacy.py`, new, over the four EXP-R2-191 dictionaries of run `20260812215507_0f81e190ba55` at their GPFS locations, plus the EXP-R2-175 alignment artefacts for Criterion A and B1. The checkpoint reading is CPU-only and runs anywhere; the held-out census loads one 7B backbone per cell and runs in-pod on one H200. **Nothing is retrained and no cell of any other campaign is touched.**
+
+### Bounds, declared in advance
+
+One seed per cell, so nothing here prices how much a per-layer count moves between dictionary seeds — R2.3's three protein seeds bound the *mean* at a spread of 26 latents per layer and say nothing about the per-layer minimum. Two definitions of live, both of them thresholds on firing; neither is a statement about whether a live latent is *useful*. The cohort is one draw at one offset, inherited from EXP-R2-191. And a live basis that spans the space is a necessary condition for reading a feature diff as a statement about two models, never a sufficient one: B2 is one of the conditions §8 lists and clearing it clears only itself.
+
+---
+
+## 2026-08-14 — EXP-R2-202 read: **RULE C**. All four cells sit below `d_model`, the instrument's own ceiling sits below it too, and B2's threshold turns out to be a number this statistic cannot reach
+
+Four cells scored on the snapshot pinned at `34230f3`, all four **ADMITTED on verified digests**. Every instrument control passes, so the frozen rule is read.
+
+### The instrument controls, first, because no rule fires without them
+
+| cell | site | isotropic `r99` (min = median over layers) | floor | coordinate-independent null `r99` (median) | negative eigenvalue mass |
+|---|---|---:|---:|---:|---:|
+| `base/text` | block output | **4,026** | 3,891 | 4,045 | 0 |
+| `base/protein` | block output | **4,026** | 3,891 | 4,032 | 0 |
+| `stage1/text` | block output | **4,026** | 3,891 | 4,028 | 0 |
+| `stage1/protein` | block output | **4,026** | 3,891 | 4,027 | 0 |
+
+The isotropic control returns **4,026 at every one of the 32 layers, in all four cells, at both sites** — not a median over a spread but the identical value 128 times, which is what an estimator with no cell-dependent behaviour should give on data whose true covariance is the same shape everywhere. Negative eigenvalue mass is exactly zero in every cell, so nothing here is being read off a numerically rank-deficient matrix. The estimator recovers a full-rank spectrum, and the four measured spectra may be read.
+
+**And the control says something the pre-registration did not anticipate, which is what a control is for.** `r99` on *exactly isotropic* data at this token budget is **4,026, not 4,096**. The last 1% of the variance of a 4,096-dimensional isotropic cloud is carried by its smallest ~70 sample eigenvalues, which finite sampling spreads downward — the Marchenko–Pastur deflation the pre-registration named and fixed a 5% tolerance for. So **4,026 is the largest `r99` this measurement can return at this `N`**, and B2's threshold of 4,096 sits *above* it. A gate stated as "`r99` ≥ `d_model`" is therefore one no cell could clear at any finite token budget, which is a fact about the threshold rather than about any checkpoint.
+
+### The specification check, which passes exactly as declared
+
+| mode | prefix kept of first 1,024 | declared | max containment | offset | `N` | records (too short) |
+|---|---:|---:|---:|---:|---:|---:|
+| protein (both cells) | **961** | 961 | 1.0000 | 229,376 | 65,536 | 1,024 (41) |
+| text (both cells) | **1,024** | 1,024 | 0.7517 | 106,496 | 65,536 | 1,024 (0) |
+
+Both reproduce EXP-R2-191's and EXP-R2-201's screens exactly, so this is the population those dictionaries were scored on and not a fresh draw. 41 protein records of the extended draw carried fewer than 64 scored positions and were refused rather than partially used; the text draw lost none. `N` = 65,536 = 16 × `d_model` in every cell, above the declared floor of 40,960.
+
+### The verdict, on the rule frozen in EXP-R2-202's pre-registration
+
+Median over 32 layers of `r99` at the block-output site, against `d_model` = 4,096:
+
+| cell | `r99` median | IQR | min–max over layers | `r95` median | `r999` median | PR median | effective rank median | % of `d_model` |
+|---|---:|---|---:|---:|---:|---:|---:|---:|
+| `base/text` | **3,670** | [3,635, 3,706] | 1 – 3,712 | 2,891 | 4,026 | 843.7 | 2,209.9 | 89.6% |
+| `stage1/text` | **2,954** | [2,638, 3,435] | 1 – 3,559 | 1,681 | 3,848 | 21.2 | 245.4 | 72.1% |
+| `stage1/protein` | **2,709** | [1,403, 3,022] | 87 – 3,169 | 1,341 | 3,771 | 63.7 | 292.7 | 66.1% |
+| `base/protein` | **2,588** | [2,419, 2,697] | 471 – 3,409 | 1,249 | 3,716 | 73.7 | 283.4 | 63.2% |
+
+**All four are below 4,096, so RULE C fires.** B2 was mis-specified for the whole unit; B2′ applies to all cells, and per the pre-registration the existing "text passes / protein fails" reading **must be withdrawn and restated in terms of B2′** rather than qualified.
+
+**Threshold sweep, as the standing rule asks.** Rule C holds for every cut in **(3,670, 4,096]**, and also at the instrument ceiling 4,026, so it does not depend on the pre-registered number. Below 3,670 the cells begin to separate, but not where the old reading needs them to: **"both text cells pass and both protein cells fail" requires a cut in (2,709, 2,954], which is 66% to 72% of `d_model`** — a band with no stated meaning, chosen after seeing which cells must fall on which side. The ordering across the four cells (text above protein, base/text highest) is invariant everywhere in the sweep and is reported as the surviving descriptive fact.
+
+*The secondary site agrees and is not the verdict.* At the block input the same medians read 3,896 / 3,464 / 2,988 / 2,680 for `base/text` / `stage1/text` / `stage1/protein` / `base/protein`. Every cell is below `d_model` there too, so nothing turns on which end of the module is looked at.
+
+### The layer that settles what B2 was measuring
+
+At layer 1 in **both text cells**, the feed-forward output's largest eigenvalue carries **0.9999 of the total variance**: `r95` = `r99` = `r999` = **1**, participation ratio **1.00**, effective rank **1.00**. That layer's block output is, to four decimal places, a single direction.
+
+The dictionaries at that layer carry **90** live latents (`base/text`) and **94** (`stage1/text`) — the two figures EXP-R2-203 disclosed as the worst per-layer counts in its text control, and the ones that would make a per-layer B2 read `base/text` as a failing cell. **They are not a dictionary failure.** B2 asks that layer for 4,096 live latents; the activations there have one direction. No recipe — no revival budget, no width, no sparsity, no token budget — can put 4,096 live latents into a rank-1 cloud, and a gate that demands it is measuring the data and reporting the dictionary. This is the mechanism Rule C names, visible in a single layer at a ratio of 4,096 to 1.
+
+The converse layers are equally clear on the protein side: `stage1/protein` reads `r99` **87** at layer 31 and **606** at layer 30 against 2,823 and 4,396 live latents, so those layers are over-supplied rather than under-complete.
+
+### B2′ applied symmetrically, and what it moves
+
+B2′ = live latents at a layer ≥ `r99` at that layer, per cell, at the block-output site. Live counts are the per-layer `silent_steps` reading EXP-R2-203 recovered; they reproduce the four published means exactly (7,607.9 / 4,900.3 / 2,187.8 / 1,633.5), which is what makes them comparable to the figures B2 was read on.
+
+| cell | mean live/layer | median `r99` | B2 as published (mean ≥ 4,096) | B2 per layer (all layers ≥ 4,096) | **B2′** (all layers ≥ `r99`) | median (live − `r99`) |
+|---|---:|---:|:--|---:|:--|---:|
+| `base/text` | 7,607.9 | 3,670 | PASS | 31/32 FAIL | **32/32 PASS** | +4,413 |
+| `stage1/text` | 4,900.3 | 2,954 | PASS | 21/32 FAIL | **31/32 FAIL** (layer 10 only) | +2,261 |
+| `base/protein` | 2,187.8 | 2,588 | FAIL | 2/32 FAIL | **11/32 FAIL** | −229 |
+| `stage1/protein` | 1,633.5 | 2,709 | FAIL | 1/32 FAIL | **6/32 FAIL** | −946 |
+
+**Three things move and one does not.** *(i)* B2′ rescues the text control's worst layers — `base/text` passes at every layer under B2′ and fails 1 of 32 under the published threshold applied per layer, so the failure EXP-R2-203 was about to record on the text control is a threshold artefact. *(ii)* B2′ does **not** rescue the protein cells: they still fail, at 11 and 6 layers of 32, and their median shortfall is −229 and −946 live latents against the dimension the data actually has. *(iii)* The size of the protein shortfall changes by a factor of roughly four — `base/protein` is at 85% of B2′'s requirement where it was at 53% of B2's — so "under-complete by 2.5x" is not a defensible way to describe it. *(iv)* `stage1/text` fails B2′ at exactly one layer, which is a genuine and narrow finding rather than a rescue, and it is reported rather than rounded to PASS.
+
+**So the protein block on R2.4 survives, and its stated reason does not.** The protein dictionaries do not span the space their activations occupy — that is now measured against the right yardstick instead of against `d_model` — but the accompanying reading that this is a *live-basis training-recipe problem* is no longer supported by B2, because B2 also fails a text control at the layers where the data is one-dimensional. EXP-R2-201, read independently, points the same way: a 10.7x revival budget moved the live basis by −47 and −42 latents per layer, which is inside seed noise.
+
+**The B2′ verdict issued here is not the authoritative one.** EXP-R2-203 owns the adequacy criteria as executable code (`src/transfer/basis_criteria.py`, `scripts/transfer/31_basis_adequacy.py`) and carries a second, stricter definition of live — firing on the held-out cohort rather than on a training counter — which can only be lower. B2′ should be issued through that module over both definitions; the table above is the checkpoint definition alone and is offered so the rule this entry pre-registered is answered rather than deferred.
+
+### What this licenses, and what it does not
+
+Licensed: B2 as written was measuring the activations' dimension and reporting it as the dictionary's adequacy, in **all four cells**; the "text passes / protein fails" split is withdrawn as a reading of dictionary quality; and B2′ is the gate R2.4 should be blocked or unblocked on.
+
+**Not licensed, and each of these is easy to take by mistake.** This does **not** unblock the protein feature diff — the protein cells fail B2′ too, and EXP-R2-201's three standing conditions on a cleared gate are untouched. It does **not** say protein activations are low-dimensional *because* they are protein: the text mode is below `d_model` as well, and the corpora are Swiss-Prot and OpenWebText, so a mode difference is never only a mode difference. It does **not** retract EXP-R2-201, which measured a lever and stands on its own. And `r99` is a **variance-based effective dimension**: directions beyond it carry under 1% of the variance and cannot be resolved at this token budget, which is not the claim that they are empty or that they carry no computation. `r999` is in the table for exactly that reason, and it moves the picture — at `r999` the four cells read 4,026 / 3,848 / 3,771 / 3,716, all still below `d_model` but far closer together, so how much of B2's shortfall is geometry depends on where the tail is cut. Rule C is invariant to that choice; the *size* of the protein shortfall is not.
+
+### Bounds
+
+One site (two tensors of one module) and not the residual stream. One draw and one seed per cell, so nothing prices the variability of the position draw. The equal per-record cap excluded 41 protein records per cell as too short, so the protein population is the held-out draw restricted to records of at least 64 scored positions. Four cells on one lineage across one adaptation step. The B2′ table pairs a spectrum measured here with live counts read from a training-time counter, and those two are not measured on the same population — the counter is over the last 10,000 training records and the spectrum is over the held-out draw. `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` and `summary.md` are not modified; the withdrawal of the B2 reading is proposed to the coordinator rather than written.
+
+### Cost and artefacts
+
+Forward-pass only. Four cells, four cards, concurrent: dispatch 10:38–10:39, all four written by 10:44, ~5–6 minutes per cell wall-clock including the near-duplicate screen — against the ~5.2 h a dictionary run costs. Artefacts under `results/transfer/external_baseline/20260814103216_b92b85454445/r202_spectrum_{base,stage1}_{text,protein}/`, schema `r2_transfer_activation_spectrum_v1`, each carrying all 32 layers at both sites with both controls per layer and a cumulative-mass curve at powers of two, so any other variance cut can be re-read without re-running.
+
+---
+
+## 2026-08-14 — EXP-R2-201 status: both cells COMPLETED on 2026-08-14 and their artefacts were never pulled. Recorded here so the run is not lost; the verdict entry is owed by that experiment's owner
+
+Found while checking for a prior run before dispatching EXP-R2-202, as that entry's design required. **Both cells reached their full token budget and wrote complete artefacts**; what failed was the *local driver*, not the measurement. `logs/external_baseline/r201_auxk2048.out` and `..._base.out` each end in `LAUNCHED` followed by a termination message, so the two controllers died shortly after dispatch and never polled, verified or pulled — the in-pod work continued under `setsid nohup` and finished normally, which is exactly the separation that launcher is built to give.
+
+On GPFS under run `20260812215507_0f81e190ba55`, both cells wrote a 46 KB record beside an 8.59 GB dictionary, and both logs end in `[done]` at **34,001,183 scored tokens** over 36,978 steps, matching the declared budget. Re-reading those records against the bands EXP-R2-201 fixed in advance:
+
+| cell | live latents/layer | pre-declared baseline | movement | held-out NMSE sum | dead |
+|---|---:|---|---:|---:|---:|
+| `stage1/protein`, `auxk` 2,048 | **1,586.2** | band 1,627–1,653 | −41 to −67 | 5.4522 | 80.6% |
+| `base/protein`, `auxk` 2,048 | **2,146.2** | single cell at 2,188 | −42 | 3.7264 | 73.8% |
+
+Both movements are inside the pre-declared **NO EFFECT** window of ±100, and both are *downward*, so a 10.7x revival budget did not move the live basis on either checkpoint. The pre-declared third statistic also holds: **Δ = 2,146.2 − 1,586.2 = 560** against **554** at `auxk` 192, a change of 6 against a resolution floor of 26, so the base-minus-adapted separation is **invariant to the revival mechanism** exactly as that amendment said it would license. The step-6,000 interim reading — a mechanism at full leverage and a trajectory unmoved — is confirmed at the endpoint rather than reversed by it.
+
+**This is a status record and not that experiment's verdict entry.** Its pre-declaration fixes what NO EFFECT licenses, what it does not, and the disposition of the `auxk` mis-scaling defect (repair the Single-Source violation, do not change the value, claim no measured benefit), and issuing that reading belongs to whoever owns the entry. What is recorded here is only that the cells completed, where they are, and that the numbers exist — because a finished six-hour pair whose controller died is otherwise indistinguishable on B from one that never ran.
+
+---
+
+## 2026-08-14 — EXP-R2-203 read: **the pre-registered refusal condition fires on D3.h-B2.** Both text controls fail it per layer, so the gate that blocks R2.4's protein side is void on its own control, exactly as B1 is
+
+Read on the rule frozen above, before any of the four per-layer vectors except the eight disclosed there. Nothing was retrained; every number below comes from checkpoints written on 2026-08-13 and from one forward-pass census over the cohorts those checkpoints were already scored on.
+
+### The reproduction checks, first, because no reading is admitted without them
+
+`src/transfer/basis_criteria.py` re-derives D3.h-A from the EXP-R2-175 artefacts and returns **median R 3.116, IQR [1.999, 4.264], 0.821 above 1** on protein and **0.956, [0.904, 1.026], 0.321** on text — the published figures to every decimal EXP-R2-191 printed, from code rather than from a shell. `tests/test_basis_criteria.py` pins them.
+
+The held-out census redraws each cell's cohort through `17_train_transcoder.py`'s own `held_out_cohort`. The near-duplicate screen reproduces each cell's recorded counts exactly — **1,024 of 1,024 kept at maximum containment 0.4346 on OpenWebText, 961 of 1,024 at 1.0000 on Swiss-Prot** — and the held-out NMSE sums come back at **16.0838, 5.7072, 3.7242 and 5.4600**, identical to EXP-R2-194's table. Same population, same dictionary, same score.
+
+### The result
+
+Live latents per layer against `d_model` = 4,096, by both declared definitions. `mean` is the cross-layer figure EXP-R2-191 and EXP-R2-194 published; `verdict` is the per-layer reading over all 32 layers.
+
+| cell | definition | mean | mean reads | min (layer) | layers below 4,096 | **verdict** |
+|---|---|---:|:--|---:|---:|:--|
+| `base/text` | `silent_steps` | 7,607.9 | PASS | **90** (L1) | 1 | **FAIL** |
+| `base/text` | held-out, t≥1 | 7,258.7 | PASS | 68 (L1) | 1 | **FAIL** |
+| `stage1/text` | `silent_steps` | 4,900.3 | PASS | **94** (L1) | **11** | **FAIL** |
+| `stage1/text` | held-out, t≥1 | **3,625.1** | **FAIL** | 71 (L1) | **17** | **FAIL** |
+| `base/protein` | `silent_steps` | 2,187.8 | FAIL | 906 (L10) | 30 | FAIL |
+| `base/protein` | held-out, t≥1 | 1,850.7 | FAIL | 685 (L10) | 31 | FAIL |
+| `stage1/protein` | `silent_steps` | 1,633.5 | FAIL | 95 (L4) | 31 | FAIL |
+| `stage1/protein` | held-out, t≥1 | 1,468.8 | FAIL | 87 (L3) | 32 | FAIL |
+
+At a firing threshold of ten rather than one the picture does not move: `base/text` 7,046.7, `stage1/text` 3,334.0, `base/protein` 1,660.3, `stage1/protein` 1,364.6, and the same verdicts.
+
+**The verdict differs from the mean's verdict in both text cells, and that is the whole finding.** `base/text` averages 7,608 live latents per layer and keeps **90** at layer 1. `stage1/text` averages 4,900 and keeps 94 at layer 1 and under 3,000 across layers 5–14 — **ten of its eleven failing layers are inside the interior window 2–29**, so it fails even under the narrower window a reader might prefer. The per-layer curves:
+
+- `base/text`: 6586, **90**, 8191, 8192, 8176, 8160, 8033, 7974, 7837, 7734, 7370, 7337, 7432, 7399, 7476, 7520, 7770, 8007, 8074, 8124, 8130, 8174, 8180, 8187, 8185, 8186, 8183, 8167, 8120, 8071, 6406, 7981
+- `stage1/text`: 4819, **94**, 7296, 7153, 4600, **2917, 2597, 2869, 2751, 2928, 2725, 3371, 3299, 3499, 3907**, 4144, 4567, 5197, 5774, 5800, 6016, 6284, 6715, 6741, 6781, 6946, 6463, 6244, 5620, 5342, 8110, 5241
+- `base/protein`: 941, 1645, 3115, **4433**, 3641, 2494, 1958, 1409, 1051, 1075, 906, 956, 980, 967, 1232, 1468, 1657, 1856, 2069, 2146, 2460, 2567, 2651, 2613, 2814, 2844, 2714, 2638, 2439, 2568, 2798, **4904**
+- `stage1/protein`: 443, 288, 318, 99, 95, 318, 401, 576, 661, 756, 841, 953, 1212, 1383, 1490, 1525, 1716, 1928, 2094, 2245, 2187, 2100, 2213, 2355, 2447, 2582, 2430, 2524, 2994, 3879, **4396**, 2823
+
+### What this licenses, on the outcome the pre-registration named
+
+This is the third bullet of the frozen rule — *the per-layer verdict differs from the mean verdict* — in the direction that entry named as decisive: **a text cell fails.** EXP-R2-191's own refusal condition is unambiguous about what follows: *"If the text cells of this run fail B2, the gate is one the control cannot pass, which makes it a specification defect and not a protein result: B2 is then void as a gate and its numbers are reported as a descriptive asymmetry only."*
+
+**So D3.h-B2 is VOID on the same condition that voided D3.h-B1, and the two are now symmetric.** What follows, and what does not:
+
+- **The protein cells' failure can no longer be read as a protein result.** "Both protein dictionaries are under-complete, so a feature diff over them would be a statement about two fitted bases" was a statement licensed by B2 being a gate its control passed. It is not, so the licence is withdrawn. **The measurement stands and the attribution does not** — the same shape as EXP-R2-194's own withdrawal.
+- **The descriptive asymmetry is unchanged and is large.** Protein dictionaries carry 2,188 and 1,634 live latents per layer against text's 7,608 and 4,900, and their per-layer minima are 906 and 95. Nothing here says protein and text dictionaries are alike.
+- **Nothing here says a feature diff is now admissible.** B2 stops being a *reason to refuse*; it does not become a *reason to proceed*, and §8's other conditions are untouched. R2.4's protein side is now blocked by nothing that has been measured, which is a different and worse position than being blocked by something.
+- **`docs/INTERPRETABILITY_TRANSFER_AUDIT.md` and `summary.md` are not modified here.** Both carry the B2 reading — the audit's §8 item-5 status block and R2.4's row, and `summary.md`'s R2.4 conclusion. Their revision is proposed to the coordinator, not written. The only change made to the audit under this entry is the naming fix below.
+
+**This converges with EXP-R2-202 from a different direction and neither result depends on the other.** That entry measured the activation cloud's rank and found B2's threshold above the largest value its statistic can return at any finite token budget; this one measured the dictionaries and found the threshold above what the text control reaches at 12 of its 64 cell-layers. One says the threshold is unreachable by construction, the other that it is unreached by the control. Both were frozen before their numbers existed, and both were read the same day by different runs. Read together they are stronger than either; read separately each is sufficient for the void.
+
+### The defect that made this possible, and its repair
+
+`Transcoder.objective` built the per-layer dead mask and recorded only `int(dead.sum())`. It now records `n_dead_per_layer` beside the scalar, and `17_train_transcoder.py` writes that vector into every history entry, a `basis` block carrying the checkpoint's per-layer live count, and a `held_out.live_basis` census over the evaluation cohort at thresholds 1 and 10. The scalar is kept so past records stay readable. `tests/test_basis_criteria.py` holds the invariant that would have caught this: a dictionary whose mean clears the cut while one layer fails it must read FAIL, and the fixture is `base/text`'s own shape.
+
+**`src/transfer/basis_criteria.py`** is new and is the one implementation of D3.h-A, D3.h-B1's void and D3.h-B2. **`scripts/transfer/31_basis_adequacy.py`** applies it to checkpoints and alignment artefacts and writes the verdict. Nineteen tests, including the two that reproduce EXP-R2-191's published Criterion A numbers from the artefacts.
+
+**Naming.** The audit's §9.0 already maps the historical `B1` → D2.a and `B2` → EXP-R2-062, so the D3.h criteria collided with retired item names in the one document where citations are resolved. They are written **D3.h-A**, **D3.h-B1** and **D3.h-B2** there from now on, with a note under the §9.0 table saying the log's bare names resolve to those. Nothing in this log is rewritten.
+
+### Separately: the 41.4% contamination figure now has an artefact
+
+EXP-R2-175's DIAMOND measurement — the one that moved `25_model_diffing_baselines.py` from a record-level split to a near-duplicate-group split, quoted in that function's docstring, in the audit's R2.4 row and in `summary.md` — existed only as prose. No FASTA, no hit table, no JSON. Regenerated by `ops/measure_pool_homology_leakage.py` (new, CPU, DIAMOND 2.1.24 at the declared `--very-sensitive --masking 0 --evalue 1e-3`, identity over the shorter sequence), over the same pool at band 32–507, seed 20260728, skip 0:
+
+| split | ≥95% | =100% | ≥90% | median max identity | no detectable homologue |
+|---|---:|---:|---:|---:|---:|
+| record level | **871 / 2,048 (42.5%)** | 370 (18.1%) | 1,051 (51.3%) | 90.9% | 133 (6.5%) |
+| near-duplicate group | **0 (0.0%)** | 0 | **0 (0.0%)** | 71.7% | 170 (8.3%) |
+| *published (EXP-R2-175)* | *847 / 2,048 (41.4%)* | *356 (17.4%)* | *zero straddling* | *90.1%* | *132 (6.4%)* |
+
+The artefact carries the alignment itself, gzipped and digested beside the summary (`swissprot_pool.fasta.gz`, `swissprot_hits.tsv.gz`, 1,926,846 hits), because the absence of exactly that is what made the original unauditable.
+
+**The pool reproduces exactly** — 10,240 records, **8,951 distinct**, which is EXP-R2-175's own skip-0 table entry to the record. **The split does not, and the reason is stated rather than smoothed:** the pre-repair record-level split was replaced by the group split and no longer exists in the repository, so the row above uses the singleton-group case of the committed splitter at the same seed and fraction. That is the same *procedure* and not the same *2,048 records*, which is why 871 stands where 847 was. Every quantity that decides anything is unmoved: the order of magnitude, the median, the no-homologue count, and — the number the design turns on — **zero at every boundary from 90% up once the split is taken over groups.** The claim is regenerated; the individual figure is not bit-reproducible and this entry says so instead of quietly overwriting it.
+
+### One suggestion examined and declined
+
+`25_model_diffing_baselines.py` permutes its shuffled-pairing null within a batch rather than across the split, and discloses it. The scope was checked rather than assumed: the permutation is `torch.randperm(a.shape[1])` over the batch's **scored token positions**, and at that stage's own cohort — 959,558 held-out positions over 2,048 records at `--batch-size 8` — that is about **3,700 positions per permutation**, not 8. The disclosure also states the bias direction correctly: a within-batch null retains between-batch covariance a global permutation would destroy, so it can only make the null *smaller* and the true-versus-null gap *narrower*. The measured gap is 0.400 and 0.684 against nulls at 1.002 and 1.001, and the reading the gap supports — the fit is correspondence rather than capacity — is the one a conservative null makes harder rather than easier. **No change.** A global permutation would need every position of the split resident at once, which is the memory that stage was written to avoid, in exchange for widening a gap that is already unambiguous.
+
+### Bounds
+
+One seed per cell, so nothing prices how far a per-layer minimum moves between dictionary seeds; the three-seed protein spread of 26 latents per layer bounds the *mean* and says nothing about the minimum. Two definitions of live, both thresholds on firing, and neither says whether a live latent is useful. One cohort at one draw, inherited. The void is a statement about **D3.h-B2 as specified**, not about basis adequacy as an idea: a criterion stated against a threshold its own control can reach would be a different and possibly good gate, and nothing here designs one. And the layer-1 collapse common to all four cells is unexplained by anything measured here — it is the same layer EXP-R2-175 refused to aggregate over for a degenerate adjacent-layer denominator, and whether the two facts share a cause is not answered.
+
+### Configuration and dispatch
+
+`scripts/transfer/31_basis_adequacy.py`, snapshot `20260814104154_20dcdf373723`, frozen once and reused by five cells. `r203_gate_checkpoint` reads all four dictionaries with no GPU work; `r203_heldout_{base,stage1}_{text,protein}` run one card each, cards 0–3, all four free at dispatch and confirmed idle in-pod beforehand. Local verification on the L20 was the two text dictionaries' checkpoint reading only, which is a CPU read of a persisted buffer. Artefacts under `results/external_baseline/20260814104154_20dcdf373723/` on GPFS and pulled to B; the leakage artefact is at `results/transfer/pool_homology_leakage/`.
+
+---
+
+## 2026-08-14 — EXP-R2-204 pre-registered: is the protein live-basis shortfall CAPACITY-limited or DATA-limited? Four protein cells, two levers, and only width can decide it
+
+Frozen before any of the four dictionaries exists. Nothing below is read off a cell of this experiment, because no cell of this experiment has been dispatched.
+
+### The question, and why it is only now well posed
+
+Until EXP-R2-202 the protein dictionaries' live basis was measured against `d_model` = 4,096 and read as under-complete by 2.5x. That yardstick is withdrawn: the activations at the dictionary site do not occupy 4,096 dimensions in either mode, and the estimator's own ceiling at this token budget is 4,026, below the threshold. Against the yardstick that replaced it — the activations' own `r99` at each layer — the protein shortfall is roughly 15–40% in the median rather than 2.5x, and it is a shortfall against a *reachable* number. So for the first time the question "could a differently-configured dictionary span this space" has a definite target, and it is worth one campaign to answer.
+
+**Two of the four candidate levers are already spent.** Training length was excluded by EXP-R2-191 — the dead population is in equilibrium from step 12,000 of 36,978. The auxiliary revival budget was excluded by EXP-R2-201 — a 10.7x increase moved the live basis by **−47 and −42** latents per layer on the two protein cells, downward and inside a ±100 no-effect window. What is left is **width** and **sparsity**, and this experiment runs both, one at a time, on both checkpoints.
+
+**What the two possible answers would mean.** If live latents scale with `d_hidden`, the dictionary was the binding constraint: the shortfall is a capacity problem, it is fixable by paying for it, and R2.4's protein arm proceeds to a Crosscoder once the basis clears the per-layer `r99` bar. If live latents instead saturate near the activations' own `r99` however wide the dictionary is made, the shortfall is intrinsic to the activation geometry at this site, no width buys a spanning basis, and R2.4's protein arm must be **reformulated rather than retrained** — the honest move would be to define the model diff inside the `r99`-dimensional subspace instead of demanding a dictionary that spans a space the data does not fill.
+
+### The design: four cells, protein mode only, one lever at a time
+
+`17_train_transcoder.py`, one dictionary per cell, four cards, all four cells on the snapshot pinned at the commit named in the dispatch record below — which carries `17_train_transcoder.py`, `src/transfer/transcoders.py`, `src/transfer/near_duplicates.py`, `src/transfer/replaceable.py`, `src/transfer/joint_modes.py` and `21_joint_mode_qualification.py` **byte-identical to `04fdfa5`**, the code state that trained every cell these are read against. Verified with `git diff` over those paths before dispatch rather than assumed.
+
+| cell | checkpoint | lever | `d_hidden` | `k` | card |
+|---|---|---|---:|---:|---:|
+| `r204_d16384_base` | `Llama-2-7b-hf` | width | **16384** | 32 | 0 |
+| `r204_d16384_stage1` | `ProLLaMA_Stage_1` | width | **16384** | 32 | 1 |
+| `r204_k64_base` | `Llama-2-7b-hf` | sparsity | 8192 | **64** | 2 |
+| `r204_k64_stage1` | `ProLLaMA_Stage_1` | sparsity | 8192 | **64** | 3 |
+
+Everything else is EXP-R2-191's protein recipe unchanged: `--architecture plt --rendering prollama --mode protein --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 56000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --learning-rate 2e-4 --weight-decay 1e-5 --grad-clip 1.0 --seed 20260812 --corpus-seed 20260812`.
+
+**The text cells are excluded deliberately and this is not an oversight.** The binding case is protein: the text cells clear the `r99` bar at 32 of 32 and 31 of 32 layers already, so a width sweep on them would price a lever on cells that are not blocked. Four cards buy two levers on two checkpoints, or one lever on four cells; two levers is the choice, because the second lever is what separates "width is the answer" from "no dictionary hyper-parameter is the answer".
+
+**Only width can decide the frozen question, and `k` is declared secondary here rather than argued to be secondary later.** A capacity-versus-data question is a question about *scaling with capacity*, and `d_hidden` is the capacity. `k` changes how many latents compete for each token, not how many exist; it is included because the mechanism that kills latents in a TopK dictionary is competition, so if the live count is gated by sparsity rather than by width, that shows up here and nowhere else. **It does not by itself decide the capacity-versus-data question and no branch below is conditioned on it.**
+
+### The memory arithmetic, verified before dispatch
+
+A PLT holds one encoder and one decoder per layer, so its parameter count is `2·L·d_model·d_hidden + L·d_hidden + L·d_model`. At `L` = 32 and `d_model` = 4,096 that is **2,147,876,864** at `d_hidden` 8,192 — which is the number the four EXP-R2-191 records carry, so the formula is checked against disk and not only against arithmetic — and **4,295,622,656** at 16,384.
+
+The trainer builds the dictionary in strict float32 (`Transcoder(config).to(device).float()`) and optimises with AdamW, so the resident state is parameters + gradients + two Adam moments = 4 × 4 bytes per parameter = **68.7 GB** against 143.77 GB per card. That agrees with the coordinator's ~69 GB. **Two terms the coordinator's figure omits, and they are the ones that decide whether this fits:**
+
+- The 7B backbone is resident on the same card in bfloat16: **13.5 GB**.
+- Activations scale with `d_hidden` and with the batch's realised scored-token count. The three `(L, tokens, d_hidden)` float32 tensors on the encode path — the per-layer pre-activations, their stack, and the TopK output — are 6.3 GB *each* at 3,000 tokens and 16,384 hidden, and backward transiently holds gradients of two of them.
+- AdamW's `foreach` path allocates one parameter-sized temporary at the step, **+17.2 GB**, but after the graph is freed, so it does not stack with the activation peak.
+
+At the protein cells' realised mean of **919 scored tokens per step** the peak is about **100 GB**; at a 3,000-token batch about **126 GB**; at the hard cap of 4 × 1024 = 4,096 tokens about **140 GB**. **So the width cells fit, with the honest qualification that the margin at a maximal batch is under 5%.** The 8,192-wide cells and both `k` cells are unaffected — their optimiser state is 34.4 GB and their peak is under 80 GB. **A width cell that dies of CUDA OOM is reported as a failed cell. It is not re-run at a smaller width under this experiment's name**, because a 12,288-wide cell would answer a different question and EXP-R2-191 already records that 12x on this backbone needs 206 GB and does not fit at all.
+
+Cost: the 8,192-wide protein cells took **21,412 s** (5.95 h) of in-pod wall clock. The width cells double the dictionary's matmul work, so **9–12 h** is the planning figure and the launcher's 16 h timeout covers it; the `k` cells should match the 6 h precedent, since TopK changes the sparsity of the latents and not the shape of either matmul.
+
+### The bar this is read against, which is per layer and not a mean
+
+`r99` at layer `l` at the block-output site, from EXP-R2-202's artefacts, for the two protein cells. This is the number a cell's live count at layer `l` must reach:
+
+- `base/protein`: 533, 2659, 3219, 3409, 3325, 3253, 3074, 2938, 2747, 2620, 2613, 2722, 2563, 2515, 2377, 2338, 2433, 2303, 2434, 2500, 2514, 2650, 2689, 2644, 2684, 2507, 2672, 2516, 2232, 1914, 1920, 471
+- `stage1/protein`: 396, 1020, 1480, 1173, 690, 989, 1494, 1976, 2356, 2664, 2753, 2842, 2877, 2919, 3010, 3059, 3094, 3114, 3169, 3113, 3059, 3085, 3120, 3000, 2993, 2657, 2758, 2364, 1563, 939, 606, 87
+
+**The `r99` bar is held fixed at the 8,192-cell measurement and is not re-measured per cell, because it is a property of the activations and not of the dictionary.** The two levers change the dictionary; neither touches the checkpoint, the corpus, the draw or the site, so the spectrum underneath is the same one. Nothing in this experiment licenses a claim that `r99` moved.
+
+**The baseline live counts, disclosed here because they are the denominator of every ratio below and they already exist on disk.** Read from each 8,192-wide protein dictionary's own `silent_steps` buffer at the run's `dead_steps` = 2,500, which is the checkpoint definition of live that EXP-R2-202's B2′ table uses:
+
+- `base/protein` (L8): 941, 1645, 3115, 4433, 3641, 2494, 1958, 1409, 1051, 1075, 906, 956, 980, 967, 1232, 1468, 1657, 1856, 2069, 2146, 2460, 2567, 2651, 2613, 2814, 2844, 2714, 2638, 2439, 2568, 2798, 4904 — **mean 2,187.78**, clearing its own `r99` at **11 of 32** layers.
+- `stage1/protein` (L8): 443, 288, 318, 99, 95, 318, 401, 576, 661, 756, 841, 953, 1212, 1383, 1490, 1525, 1716, 1928, 2094, 2245, 2187, 2100, 2213, 2355, 2447, 2582, 2430, 2524, 2994, 3879, 4396, 2823 — **mean 1,633.5**, clearing its own `r99` at **6 of 32** layers.
+
+Both means reproduce the published 2,187.8 and 1,633.5 to the decimal and both layer counts reproduce EXP-R2-202's B2′ column exactly, which is what makes the read-out procedure an instrument rather than a fresh convention.
+
+### The frozen prediction
+
+Let **L8** be a cell's cross-layer mean live latents per layer at `d_hidden` 8,192 and **L16** the same statistic at 16,384, same checkpoint, same lever-free recipe otherwise. **The ratio is the statistic and the absolute thresholds are derived from it**, so the rounding in the two forms cannot matter:
+
+- **CAPACITY-LIMITED** — `L16 / L8 ≥ 1.7` in both cells, i.e. L16 ≥ **3,719.2** (`base/protein`) and ≥ **2,777.0** (`stage1/protein`). The dictionary was the binding constraint, the shortfall is fixable by width, and R2.4's protein arm proceeds to a Crosscoder once the basis clears the per-layer `r99` bar.
+- **DATA-LIMITED** — `L16 / L8 ≤ 1.2` in both cells, i.e. L16 ≤ **2,625.3** and ≤ **1,960.2**. Live latents saturate near the activations' own `r99` rather than scaling with width; the shortfall is intrinsic to the activation geometry at this site, and R2.4's protein arm must be reformulated rather than retrained.
+- **INCONCLUSIVE** — `L16 / L8` falls strictly between 1.2 and 1.7 in either cell, or the two cells fall in different bands. Reported as inconclusive; **no side is picked**, and in the split case the two checkpoints are reported separately rather than averaged into one verdict.
+
+**A second reading of the same prediction, declared now because this pipeline has already been bitten once by a mean that hid a per-layer fact.** The primary statistic above is a cross-layer mean, which is exactly the collapse EXP-R2-203 had to repair. So the **median over the 32 layers of the per-layer ratio `L16(l) / L8(l)`** is read against the same 1.7 and 1.2 bands, beside it. If the mean-ratio verdict and the median-per-layer-ratio verdict agree, the verdict stands. **If they disagree, the result is reported as DISAGREEMENT and neither side is picked** — a mean that says capacity while the typical layer says data is a fact about the distribution of live latents across layers, and it would be reported as one rather than resolved by choosing the more convenient statistic.
+
+**The adequacy reading, which is separate from the branch above and is the one R2.4 is gated on.** For every cell, new and old: the **full per-layer live-latent curve** and the **count of layers whose live count reaches that layer's `r99`**. No cross-layer mean is reported without the curve beside it. A cell clears the bar only at 32 of 32; anything less is reported as the count.
+
+### The `k` lever, read but not decisive
+
+Same statistic, same baselines. **NO EFFECT** is within ±100 latents per layer of L8, the window EXP-R2-201 fixed against a three-seed spread of 26 and which is reused unchanged for comparability; **MOVED** is outside it, with the direction reported. The mechanical expectation is that doubling `k` raises the live count, since twice as many latents fire per token and a latent that fires is not dead — so a NO EFFECT here would be the informative outcome, and would say the live count is gated by something other than how many latents win the TopK competition. **No branch of the capacity-versus-data question is conditioned on this lever**, and if the `k` cells move while the width cells do not, that is reported as "sparsity moves the live count and width does not", which is a statement about the recipe and not an escape from a DATA-LIMITED verdict.
+
+### The specification checks and the void conditions, fixed now
+
+The corpus, the corpus seed, the step budget, the batch size and the token cap are all unchanged from EXP-R2-191's protein cells, and the training stream depends on exactly those. So the stream is not merely comparable, it is **the same stream**, and every cell must reproduce it exactly:
+
+- **36,978 steps, 147,912 sequences, 34,001,183 realised scored tokens** at `[done]`, in all four cells.
+- The near-duplicate screen must report **961 of 1,024 kept at maximum containment 1.0000 over 229,376 screened records**.
+- `compare_matched_training` must return, against EXP-R2-191's own cell on the same checkpoint: `MISMATCH` with `disagreements` exactly `["d_hidden"]` for a width cell and exactly `["k"]` for a `k` cell, `max_tokens_agree true`. Within a lever and across checkpoints it must return `MISMATCH` with `disagreements` exactly `["backbone_sha256"]`, which is the diffing pair's certificate at the new setting.
+
+**VOID** for a cell that does not reach its token budget, whose screen does not reproduce, or whose certificate disagrees on any field other than the one its lever moves. **FAILED** — not void, not substituted — for a cell that dies of CUDA OOM or of any dispatch error. A failed width cell leaves the frozen question unanswered on that checkpoint and the entry says so.
+
+### Bounds, declared in advance
+
+One seed per cell, so nothing here prices dictionary-seed variability; the adapted side's three-seed spread of 26 latents per layer bounds the *mean* at 8,192 and is not a valid interval for a ratio of two independently trained dictionaries, and the base side has no replicate at all. One width step, 2x, so this locates no threshold: a CAPACITY verdict says 16,384 is enough to move the count, never that it is enough to span, and a DATA verdict says 2x buys little, never that 4x or 8x would buy nothing — and 12x is known not to fit this backbone. One sparsity step likewise. Protein mode only, so nothing here says what either lever does to a text cell. One corpus, Swiss-Prot, so a protein result is never only a modality result. One lineage and one adaptation step. The live count is the checkpoint's own `silent_steps` definition, which admits a latent that fired once in the last 2,500 training steps and is therefore the *generous* of the two definitions in `src/transfer/transcoders.py`; a stricter held-out firing census can only be lower, and this experiment does not run one. And a live basis that reaches `r99` at every layer is a necessary condition for reading a feature diff as a statement about two models, never a sufficient one: the conditions EXP-R2-201 fixed on a cleared gate — both checkpoints clearing, a replacement for the void B1, and a `MATCHED` certificate within checkpoint — are untouched by anything here.

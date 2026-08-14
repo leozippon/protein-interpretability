@@ -66,7 +66,7 @@ import json
 import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 import torch
 import torch.nn.functional as F
@@ -192,6 +192,86 @@ def topk_relu(pre: torch.Tensor, k: int) -> torch.Tensor:
     values, indices = torch.topk(pre, k=k, dim=-1)
     out = torch.zeros_like(pre)
     return out.scatter_(-1, indices, F.relu(values))
+
+
+def live_latents_per_layer(silent_steps: torch.Tensor, dead_steps: int) -> list[int]:
+    """How many latents each layer keeps alive, from a ``silent_steps`` buffer.
+
+    A free function and not only a method because a trained dictionary is 8.6 GB
+    on disk and this reads one 32x8192 buffer out of it: a caller that wants the
+    basis should not have to build the model to get it.
+
+    ``silent_steps`` is ``(num_layers, d_hidden)`` and counts steps since each
+    latent last fired, so a latent is live when it fired within the last
+    ``dead_steps`` of them -- which is the definition the auxiliary revival loss
+    uses during training and therefore the one a checkpoint's own numbers mean.
+    """
+
+    if silent_steps.ndim != 2:
+        raise ValueError(
+            f"silent_steps must be (num_layers, d_hidden); got {tuple(silent_steps.shape)}"
+        )
+    if dead_steps < 0:
+        raise ValueError("dead_steps cannot be negative")
+    live = (silent_steps <= int(dead_steps)).sum(dim=1)
+    return [int(value) for value in live]
+
+
+class FiringCensus:
+    """How often each latent fires, accumulated over a set of batches.
+
+    The second definition of a live basis, and the one that does not depend on a
+    training-time counter: a latent is live on a cohort when it fires on it.
+    ``silent_steps`` says a latent fired somewhere in the last ``dead_steps``
+    *training* steps -- ten thousand sequences at the campaign's setting -- so it
+    admits a latent that fires once in ten thousand records, which a 256-sequence
+    held-out set would never see. The two are different questions and this
+    package answers both rather than choosing.
+
+    Counts and not a boolean, because "fired at least once" over a finite cohort
+    is not robust: one activation in a quarter of a million tokens is a live
+    latent by that reading. The threshold is the caller's and is reported with
+    the count it produced.
+    """
+
+    def __init__(self, num_layers: int, d_hidden: int) -> None:
+        self.counts = torch.zeros(num_layers, d_hidden, dtype=torch.int64)
+        self.tokens = 0
+
+    def update(self, fired_per_latent: torch.Tensor, n_tokens: int) -> None:
+        """Add one batch's per-layer firing counts, as :meth:`Transcoder.objective` returns them."""
+
+        if fired_per_latent.shape != self.counts.shape:
+            raise ValueError(
+                f"a census of {tuple(self.counts.shape)} cannot take a batch of "
+                f"{tuple(fired_per_latent.shape)}"
+            )
+        self.counts += fired_per_latent.to(device=self.counts.device, dtype=torch.int64)
+        self.tokens += int(n_tokens)
+
+    def live_per_layer(self, minimum: int = 1) -> list[int]:
+        """Latents firing at least ``minimum`` times, per layer."""
+
+        if minimum < 1:
+            raise ValueError("a latent that fires fewer than once has not fired")
+        return [int(value) for value in (self.counts >= int(minimum)).sum(dim=1)]
+
+    def record(self, thresholds: Sequence[int] = (1, 10)) -> dict[str, Any]:
+        """The census, at each declared firing threshold."""
+
+        return {
+            "n_tokens": self.tokens,
+            "live_per_layer": {
+                str(threshold): self.live_per_layer(threshold) for threshold in thresholds
+            },
+            "note": (
+                "a latent is live on this cohort when it fires at least the "
+                "threshold number of times on it. Distinct from the checkpoint's "
+                "own silent_steps reading, which admits a latent that fired once "
+                "in the last dead_steps TRAINING steps and would not be seen on a "
+                "cohort this size"
+            ),
+        }
 
 
 class Transcoder(nn.Module):
@@ -332,15 +412,32 @@ class Transcoder(nn.Module):
         per_layer = ((reconstruction - targets) ** 2).mean(dim=(1, 2)) / (variance + 1e-8)
         nmse = per_layer.sum()
 
+        # How many of this batch's tokens each latent fired on, per layer. One
+        # computation, two consumers: the dead-latent bookkeeping below reads its
+        # support, and a held-out evaluation accumulates it into
+        # :class:`FiringCensus` to count a live basis on data the run never
+        # trained on. Recomputing it separately for the second consumer would
+        # double a reduction over a (layers, tokens, d_hidden) tensor.
+        fired_counts = (latents > 0).sum(dim=1)
+
         aux = torch.zeros((), device=inputs.device, dtype=nmse.dtype)
         n_dead = 0
+        dead_per_layer: list[int] | None = None
         if training:
-            fired = (latents > 0).any(dim=1)
+            fired = fired_counts > 0
             self.silent_steps = torch.where(
                 fired, torch.zeros_like(self.silent_steps), self.silent_steps + 1
             )
             dead = self.silent_steps > self.config.dead_steps
-            n_dead = int(dead.sum())
+            # Per layer FIRST and summed second. The scalar is a cross-layer
+            # total and cannot be un-collapsed: `d_hidden - n_dead/num_layers` is
+            # a mean over layers, and the basis-adequacy criterion this feeds is
+            # stated at the layers a difference is reported on, where a mean is
+            # not an answer (EXP-R2-203). The scalar is kept beside it because
+            # every record written before this carries it.
+            per_layer_dead = dead.sum(dim=1)
+            dead_per_layer = [int(value) for value in per_layer_dead]
+            n_dead = int(per_layer_dead.sum())
             if n_dead:
                 residual = (targets - reconstruction).detach()
                 for layer in range(self.config.num_layers):
@@ -377,8 +474,29 @@ class Transcoder(nn.Module):
             "nmse_per_layer": per_layer.detach(),
             "aux": aux.detach(),
             "n_dead": n_dead,
+            # ``None`` and not a vector of zeros when ``training`` is False: the
+            # dead-latent bookkeeping is not advanced on a held-out pass, so no
+            # count exists, and zeros would read as "nothing is dead".
+            "n_dead_per_layer": dead_per_layer,
+            "fired_per_latent": fired_counts.detach(),
             "active_fraction": float((latents > 0).float().mean()),
         }
+
+    # --------------------------------------------------------------- the basis
+
+    def live_latents_per_layer(self, dead_steps: int | None = None) -> list[int]:
+        """Live latents at each layer, from this model's own dead-latent counter.
+
+        The checkpoint's own definition of live: a latent that fired within the
+        last ``dead_steps`` training steps. ``dead_steps`` defaults to the value
+        the run trained under, and is overridable only so that a reader can price
+        how much the count depends on the threshold rather than on the basis.
+        """
+
+        return live_latents_per_layer(
+            self.silent_steps,
+            self.config.dead_steps if dead_steps is None else dead_steps,
+        )
 
 
 @dataclass
