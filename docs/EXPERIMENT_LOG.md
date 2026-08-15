@@ -12921,3 +12921,51 @@ Taken because it turned out to be cheap, not because the aggregate needed repair
 **What this adds.** `R < 1` holds at essentially every layer independently, in both checkpoints, so the aggregate is not an average over layers that disagree and is not carried by a handful of sites. It also separates the two checkpoints more sharply than the aggregate did: base's interior sits almost entirely below stage1's median, so **the 13% gap between 0.75 and 0.84 is structural across depth rather than a difference in where a few layers landed.**
 
 **What this is not, stated plainly.** The 30 per-layer values within one checkpoint are **not independent replicates** — they come from the same four dictionaries and one corpus draw, and layers of one dictionary share an optimiser trajectory. This is a statement about *pervasiveness across depth*, and it is not an error bar. It does not price fit noise and it does not substitute for EXP-R2-207's seed replicates, which remain the only thing that will put an interval on `R`. The reading above stands unchanged: a direction with a number, not yet a verdict with an interval, and `stage1`'s 0.84 remains the defensible bound because `base/text` carries the ceiling confound.
+
+---
+
+## 2026-08-15 — EXP-R2-208 amended before dispatch: the second cell becomes a reduced-λ point in protein, not λ=0 in text
+
+Written before any cell of EXP-R2-208 exists and before a card is free, and it changes the cell set rather than any threshold already frozen. Raised by the coordinator against the entry above, and it follows from that entry's own pre-registration rather than from a new argument.
+
+### Why the original pair could not run the test it named
+
+EXP-R2-208 registered that λ=0 may carry no exclusivity signal **by construction**, because both published notes identify the decoder-norm L1 as what makes latents model-exclusive at all. Follow that through and the consequence is sharper than the caveat as written: if λ=0 fits, its relative decoder norms may go diffuse rather than separating, so **C3 at λ=0 is uninformative either way**. The condition the entry named as mattering most — *a dictionary that fits while C3 still fails at layers 27 and 28 would put the admissibility amendment's degeneracy account in trouble on its own admissible layers* — therefore cannot be tested by λ=0. It needs a λ that both fits and preserves exclusivity, and no such cell was in the round.
+
+**Amended cell set, both protein, both on the two admissible sites:**
+
+| card | cell | λ | what only this cell can do |
+|---|---|---:|---|
+| 0 | `r208_cc_protein_lam0` | 0 | confirm or exonerate the penalty as the cause of the collapse |
+| 1 | `r208_cc_protein_lam3e5` | 3e-5 | the first sweep point toward a usable configuration, and the only cell that can run the named test |
+
+The λ=0 **text** cell is dropped. Cost is low: the mechanism is mode-independent, and protein is both the harder-collapsed mode (1.5% of TopK's budget surviving, against text's 11.2%) and the binding case. **One qualification is recorded against the reason given for dropping it.** The justification offered was that the mode difference is already accounted for by protein training 3.25x longer at the same λ — but that is precisely one of the two explanations this unit stated it *cannot* separate from the other, that protein activations occupy fewer directions and so earn less reconstruction gradient. The decision is right on cost and on mode-independence; it is not right *because* the step-count account is established, because it is not. Both modes are run properly once a λ is identified, which is the round after this one.
+
+### Choosing λ from the dominance arithmetic rather than by preference
+
+The diagnosis put the penalty at 3–16x the reconstruction term at any configuration that actually reconstructs. Inverting that at the **two-site** scale this cell runs:
+
+* *Reconstruction target*, from R2.3's per-layer transcoders at the same mode, sites and width — the only C6-legal reference: `0.0670 + 0.0585` (base, layers 27/28) `+ 0.0935 + 0.0392` (adapted) = **0.2582**.
+* *Penalty at a healthy fit*, `Σᵢ fᵢ‖W_dec,ᵢ‖` over two sites and both roles, with `‖x̂‖ = √d_model = 64`: between **256** (the triangle-inequality bound, all latents aligned) and **1,448** (`√k` slack, k near-orthogonal latents). Geometric mean 609. The factor of 5.7 between the bounds is irreducible without measuring the decoder norms of a dictionary that does not exist yet, and it is carried through rather than hidden.
+
+At λ = 3e-3 that is a penalty of **297%–1683%** of reconstruction, which is the domination the diagnosis named. Solving for a 5–10% share gives λ ∈ [8.9e-6, 1.0e-4] across the full bracket, and **[2.12e-5, 4.24e-5]** on the geometric-mean estimate.
+
+**λ = 3e-5 is chosen**: it is the centre of that interval and a clean 100x reduction from the campaign value. At λ = 3e-5 the predicted share is **3.0%–16.8%**, straddling the 5–10% target exactly as wide as the penalty estimate is uncertain. Stated so it cannot be read as a tuned number: this is one sweep point derived from an arithmetic bound, not a value with evidence behind it.
+
+### What "fits" and "preserves exclusivity" mean for the reduced-λ cell, frozen now
+
+**FITS** — the same bar as the λ=0 cell, unchanged so the two are directly comparable: at layers 27 **and** 28, live latents ≥ **1,000 per site** and `active_fraction` ≥ **1.95e-3**, half of `k/d_hidden`. The floor for a dictionary at all remains `live ≥ k` = 32.
+
+**PRESERVES EXCLUSIVITY** — measured against the λ=0 cell, which is the exclusivity-free reference this round supplies on the same data, the same sites and the same code, differing only in λ. Let `polarised` be the fraction of live latents at **true** pairing whose relative decoder norm is ≤ 0.05 or ≥ 0.95, that is `base_specific + adapted_specific` over `n_live`; the diffuse "intermediate" band is deliberately excluded, because the published mechanism claims polarisation and not merely spread. The cell preserves exclusivity when, at both layers 27 and 28, `polarised` is **at least twice the λ=0 cell's value at the same layer and at least 0.10 in absolute terms**. The absolute floor stops twice-a-negligible-number counting; 0.10 is modest against the 0.50 the instrument returns on synthetic data carrying 50% injected exclusives, and 0.00 on all-shared data (EXP-R2-205). **The comparison is against λ=0 and never against the shuffled null**, because C4 established the null is a ceiling for exclusivity rather than a floor.
+
+### The decision table, so no branch is chosen after the numbers are seen
+
+* **Fits and preserves exclusivity** → C3 at layers 27 and 28 is a valid test. If the gap there is still below 0.5, **the amendment's degeneracy account is in trouble on its own admissible layers, and it is reported plainly and immediately.** If the gap clears 0.5, the Crosscoder readout becomes available at a usable λ and EXP-R2-206 can be re-run rather than repaired.
+* **Fits but does not preserve exclusivity** → 3e-5 is below the exclusivity threshold; the usable λ is bracketed in (3e-5, 3e-3) and the sweep continues upward. **No conclusion about the amendment**, because the readout was not exercised.
+* **Does not fit** → 3e-5 is still too high; the bracket is (0, 3e-5). No conclusion about the amendment.
+
+Only the first branch can fire the named condition, which is an honest statement of how much this round can settle: two cards buy a cause and at most one test.
+
+### Held from the entry above, unchanged
+
+A fitted λ=0 dictionary **must not** be reported as EXP-R2-206 repaired; λ=0 is a diagnostic, and the published formulation's exclusivity term is absent from it. Void conditions, the specification stream, the held-out offsets, the `--steps` values and the attainability demonstration are unchanged. The reduced-λ cell is identical to the λ=0 cell in every argument except `--decoder-norm-penalty`, so the pair is a one-lever comparison.
