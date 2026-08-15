@@ -18,11 +18,18 @@
 #
 # SLOTS are execution barriers of four cards; they are NOT the pre-registered rounds, which each cell's label still
 # names. Priority order from EXP-R2-207 is preserved exactly -- no cell of a lower-priority round starts before every
-# cell of a higher-priority round has started -- and the slots are then packed to four cards so no card idles while
-# work of equal or lower priority is waiting. Re-packing is an edit to this file and a re-freeze.
+# cell of a higher-priority round has started -- and within that constraint the slots are packed for the least idle
+# card time. Re-packing is an edit to this file and a re-freeze.
 #
-#   slot 1  EXP-R2-206 x2 + EXP-R2-207 R1 x2      slot 2  R1 x2 + R2 x2      slot 3  R2 x2 + R3 x2
-#   slot 4  R3 x2 + R4 protein x2                 slot 5  R4 text x2
+#   slot 1  EXP-R2-206 x2 + R1 x2   ~5.95 h      slot 2  R1 x2 + R2 x2   ~5.95 h
+#   slot 3  R2 x2 + R3 protein x2   ~4.9 h       slot 4  R3 text x2      ~3.4 h
+#   slot 5  R4 x4                   ~10.5 h
+#
+# About 30.7 h of wall clock and about 18.6 GPU-h of idle card, against 4 x 30.7 = 123 GPU-h of capacity. The idle is
+# irreducible under a round barrier because a slot costs its slowest cell: R4's protein cells run 10.5 h against its
+# text cells' 6.6-8.1 h, and R3 has only two cells left to fill slot 4 once R2 has claimed the earlier ones. A
+# work-queue that started the next cell the moment a card freed would remove most of it, and is deliberately not what
+# this is -- barriers are what the campaign asked for and what makes a slot boundary a place to intervene.
 #
 # Sources, cell by cell:
 #   r206_*  EXP-R2-206's dispatch block, verbatim, including both per-role r99 vectors in --layers order.
@@ -56,12 +63,14 @@
 3	r207	2	17_train_transcoder.py	r207_r3_d4096_base_protein_s20260812	-	--architecture plt --joint-checkpoint ${TRANSFER_MODEL_BASE_DIR}/Llama-2-7b-hf --rendering prollama --mode protein --d-hidden 4096 --k 32 --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 56000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --learning-rate 2e-4 --weight-decay 1e-5 --grad-clip 1.0 --seed 20260812 --corpus-seed 20260812
 3	r207	3	17_train_transcoder.py	r207_r3_d4096_stage1_protein_s20260812	-	--architecture plt --joint-checkpoint ${TRANSFER_MODEL_BASE_DIR}/ProLLaMA_Stage_1 --rendering prollama --mode protein --d-hidden 4096 --k 32 --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 56000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --learning-rate 2e-4 --weight-decay 1e-5 --grad-clip 1.0 --seed 20260812 --corpus-seed 20260812
 #
-# ---- slot 4: R3 text; R4 protein ----
+# ---- slot 4: R3 text. Two cells, not four: R4 is the campaign's most unequal round (protein 10.5 h against text
+# 6.6-8.1 h), so holding all four of it together and letting two cards stand idle for R3's 3.4 h costs 6.8 GPU-h,
+# where splitting R4 across slots 4 and 5 would cost 30.4. Wall clock falls from about 35.4 h to about 30.7 h too.
 4	r207	0	17_train_transcoder.py	r207_r3_d4096_base_text_s20260812	-	--architecture plt --joint-checkpoint ${TRANSFER_MODEL_BASE_DIR}/Llama-2-7b-hf --rendering prollama --mode text --d-hidden 4096 --k 32 --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 26000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --learning-rate 2e-4 --weight-decay 1e-5 --grad-clip 1.0 --seed 20260812 --corpus-seed 20260812
 4	r207	1	17_train_transcoder.py	r207_r3_d4096_stage1_text_s20260812	-	--architecture plt --joint-checkpoint ${TRANSFER_MODEL_BASE_DIR}/ProLLaMA_Stage_1 --rendering prollama --mode text --d-hidden 4096 --k 32 --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 26000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --learning-rate 2e-4 --weight-decay 1e-5 --grad-clip 1.0 --seed 20260812 --corpus-seed 20260812
-4	r207	2	17_train_transcoder.py	r207_r4_d16384_base_protein_s20260815	-	--architecture plt --joint-checkpoint ${TRANSFER_MODEL_BASE_DIR}/Llama-2-7b-hf --rendering prollama --mode protein --d-hidden 16384 --k 32 --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 56000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --learning-rate 2e-4 --weight-decay 1e-5 --grad-clip 1.0 --seed 20260815 --corpus-seed 20260812
-4	r207	3	17_train_transcoder.py	r207_r4_d16384_stage1_protein_s20260815	-	--architecture plt --joint-checkpoint ${TRANSFER_MODEL_BASE_DIR}/ProLLaMA_Stage_1 --rendering prollama --mode protein --d-hidden 16384 --k 32 --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 56000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --learning-rate 2e-4 --weight-decay 1e-5 --grad-clip 1.0 --seed 20260815 --corpus-seed 20260812
 #
-# ---- slot 5: R4 text ----
-5	r207	0	17_train_transcoder.py	r207_r4_d16384_base_text_s20260815	PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True	--architecture plt --joint-checkpoint ${TRANSFER_MODEL_BASE_DIR}/Llama-2-7b-hf --rendering prollama --mode text --d-hidden 16384 --k 32 --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 26000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --learning-rate 2e-4 --weight-decay 1e-5 --grad-clip 1.0 --seed 20260815 --corpus-seed 20260812
-5	r207	1	17_train_transcoder.py	r207_r4_d16384_stage1_text_s20260815	PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True	--architecture plt --joint-checkpoint ${TRANSFER_MODEL_BASE_DIR}/ProLLaMA_Stage_1 --rendering prollama --mode text --d-hidden 16384 --k 32 --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 26000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --learning-rate 2e-4 --weight-decay 1e-5 --grad-clip 1.0 --seed 20260815 --corpus-seed 20260812
+# ---- slot 5: R4 entire. Protein 10.5 h against text 6.6-8.1 h, so the round is cheapest held together.
+5	r207	0	17_train_transcoder.py	r207_r4_d16384_base_protein_s20260815	-	--architecture plt --joint-checkpoint ${TRANSFER_MODEL_BASE_DIR}/Llama-2-7b-hf --rendering prollama --mode protein --d-hidden 16384 --k 32 --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 56000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --learning-rate 2e-4 --weight-decay 1e-5 --grad-clip 1.0 --seed 20260815 --corpus-seed 20260812
+5	r207	1	17_train_transcoder.py	r207_r4_d16384_stage1_protein_s20260815	-	--architecture plt --joint-checkpoint ${TRANSFER_MODEL_BASE_DIR}/ProLLaMA_Stage_1 --rendering prollama --mode protein --d-hidden 16384 --k 32 --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 56000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --learning-rate 2e-4 --weight-decay 1e-5 --grad-clip 1.0 --seed 20260815 --corpus-seed 20260812
+5	r207	2	17_train_transcoder.py	r207_r4_d16384_base_text_s20260815	PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True	--architecture plt --joint-checkpoint ${TRANSFER_MODEL_BASE_DIR}/Llama-2-7b-hf --rendering prollama --mode text --d-hidden 16384 --k 32 --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 26000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --learning-rate 2e-4 --weight-decay 1e-5 --grad-clip 1.0 --seed 20260815 --corpus-seed 20260812
+5	r207	3	17_train_transcoder.py	r207_r4_d16384_stage1_text_s20260815	PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True	--architecture plt --joint-checkpoint ${TRANSFER_MODEL_BASE_DIR}/ProLLaMA_Stage_1 --rendering prollama --mode text --d-hidden 16384 --k 32 --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 26000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --learning-rate 2e-4 --weight-decay 1e-5 --grad-clip 1.0 --seed 20260815 --corpus-seed 20260812
