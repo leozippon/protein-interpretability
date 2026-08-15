@@ -12844,3 +12844,63 @@ The two hand-launched text-control cells completed. With them the campaign's ver
 **The secondary reading is reported and not used.** The absolute `L16/L8` bands put both protein cells at 1.42 and 1.43 — inside the 1.2–1.7 interval, so neither the capacity-limited nor the data-limited band fires — and both text cells at 1.90 and 1.70, at or above the capacity-limited threshold. The amendment declared these bands uninterpretable in principle without the control, and the control now shows why in the sharpest possible form: **the pure-text reference, which nobody proposes is data-limited, itself comes in at 1.90 and 1.70 rather than 2.0.** Sub-linear growth at doubled width is the mechanical consequence of twice as many latents contesting the same `k` slots, exactly as the amendment argued, so the bands measure the mechanism and not the data. Only the ratio of ratios removes it.
 
 **One confound is recorded against the larger of the two values.** `base/text` sits at **92.87% live at 8,192**, close enough to the ceiling that its `L8` is likely an underestimate of the basis that cell would use if the dictionary were wider — which inflates its `f16/f8`, and so deflates `R` for `base`. `stage1/text` at 59.82% is not ceiling-affected, and it is the checkpoint that returns the *weaker* effect, 0.8433. **The less confounded checkpoint gives the smaller result, so the honest reading of the pair is that the effect is real in direction and its size is bounded below by `stage1`'s value rather than described by `base`'s.** EXP-R2-207's R3 adds the 4,096 point where this ceiling bites hardest and where the entry already pre-registered the artefact it will produce.
+
+---
+
+## 2026-08-15 — EXP-R2-208 pre-registered: the λ=0 Crosscoder diagnostic, and the diagnosis of EXP-R2-206's collapse that motivates it
+
+Frozen before the cell is dispatched and before any card is free. EXP-R2-206's two cells produced no fitted dictionary, so before more cards go to Crosscoders the cause has to be named and tested.
+
+### A correction to EXP-R2-206's design, recorded as a design fault and not as a stage defect
+
+EXP-R2-206 fitted six sites specifically so the amendment could be tested where it predicts the readout must degrade, **and** required the stage to refuse reporting at inadmissible layers. Those two requirements contradict each other, and both were set by the coordinator who approved the design. The consequence is the suppression the reading hit: layers 0, 29, 30 and 31 carry `ADMISSIBILITY_REFUSED` and nothing else — no counts, no fractions, and a `null` relative-norm histogram — so the four extra sites cost GPU time and answered nothing. **The refusal behaviour is correct and is not being changed.** A diagnostic that needs numbers at a degenerate layer must be designed as its own measurement rather than as extra sites on a campaign whose admission gate is doing its job. This entry therefore fits **two** sites.
+
+### The diagnosis, from the artefacts and at zero GPU cost
+
+**The collapse developed during training; it is not an initialisation artefact.** `b_enc` is initialised to zeros and `W_enc` symmetrically, so at step 0 the top-32 pre-activations of 8,192 are necessarily positive and `active_fraction` must begin at exactly `k/d_hidden` = 3.906e-3. The first recorded eval, at step 2,000, already reads **6.78e-05 in protein and 5.50e-04 in text**. Nothing between step 0 and step 2,000 is observable at `--eval-every 2000`, so the collapse is located inside the first 2,000 steps and not resolved more finely than that.
+
+**What the number means.** `active_fraction` is `(latents > 0).mean()`, so `active_fraction · d_hidden` is the number of TopK-selected latents that survive the ReLU. Protein ends at **0.49 of 32, or 1.5% of TopK's budget**; text at **3.60 of 32, or 11.2%**. `topk_relu` selects on pre-activations and *then* applies ReLU, so a latent can be in the top-k and contribute exactly nothing. For only 0.5 of the top 32 out of 8,192 to be positive, essentially the entire pre-activation vector must be non-positive.
+
+**The mechanism I can support: the activation-weighted decoder-norm L1 is a pure shrinkage term with no counter-pressure.** The penalty is `Σ_i f_i · (‖W_dec,i^base‖ + ‖W_dec,i^adapted‖)` averaged over tokens — the published formulation. Its derivative with respect to any active latent's activation is `λ · (‖W^A_i‖ + ‖W^B_i‖)`, strictly positive and independent of whether that latent helps reconstruction. **TopK has already done the sparsity job**, so this term has nothing to trade against except reconstruction. A latent that is not yet useful is pushed monotonically down until its pre-activation goes negative; ReLU then zeroes it, the reconstruction gradient through it becomes exactly zero, and it can only return through the auxiliary revival path. The process is self-reinforcing, which is what a collapse inside 2,000 steps followed by a permanent floor looks like.
+
+**The decisive control already exists and was never recognised as one.** `17_train_transcoder.py`'s objective carries no sparsity penalty at all — its docstring says so in terms: *"There is no sparsity penalty: sparsity is TopK's, entirely."* On the **same activations, the same `d_hidden` 8,192, the same `k` 32 and the same optimiser settings**, that object reaches 2,187.8 and 1,633.5 live latents per layer in protein at held-out NMSE 0.0670 and 0.0935 at layer 27. The Crosscoder adds the decoder-norm L1 and reaches 18 and 15. The two objects differ in exactly two things — the penalty and the two-role encoder sum — and the penalty is the one with a mechanism.
+
+**Why the penalty's small share of the objective is not a counter-argument.** At the endpoint `λ·Σ penalty` is 0.373 against a reconstruction sum of 5.23, about 7%. That is measured *after* the term has driven the activations it multiplies to zero, so it is the fixed point of the pressure rather than a measure of it. At a well-fitted configuration the same term would be large: with `k` 32 near-orthogonal latents reconstructing a unit-RMS `d_model` 4,096 vector in both roles, `Σ_i f_i ‖W_dec,i‖` is between 128 (the triangle-inequality lower bound) and ≈724 per site, so `λ·Σ` over six sites lies between **2.3 and 13.0** against the ≈0.8 reconstruction sum a fitted dictionary would show. **The penalty dominates the objective by roughly 3x to 16x at any configuration that actually reconstructs**, and the cheapest available move for the optimiser is to stop activating. The observed per-site penalty of 51.1 at protein layer 27 sits below even the lower bound, which is another way of saying the reconstruction never got going.
+
+**The signature of the terminal state.** `decoder_penalty_per_site` is exactly **0.00** at protein layers 28, 29, 30 and 31 from the first eval onward — the term vanishes only when every activation at that site is zero. Layer 28 returns to ≈30 at step 26,000, which is the auxiliary revival resurrecting latents there; it does not restore the site.
+
+**The second candidate is exonerated.** The frozen per-`(site, role)` normalisation scalars were estimated on 8 warm-up batches, which is 8,467 positions in protein and 27,714 in text — a mean-norm estimate over that many vectors has negligible standard error. More decisively, the text scalars reproduce an independent earlier measurement: the adapted-over-base ratios at layers 27 and 28 read **0.6096 and 0.6157** against EXP-R2-205's separately measured 0.617 and 0.627. And the sign is wrong for the hypothesis — text carries the more extreme scale ratios and collapsed **less**, not more.
+
+**What remains speculation.** That `b_enc` specifically is what carries the pre-activations negative is inferred from the mechanism, not measured: no artefact records `b_enc`, and the encoder weights could carry it instead. Whether protein collapses harder than text because it trains 3.25x longer at the same λ, or because its activations occupy fewer directions and so earn less reconstruction gradient, is not separated by anything on disk — both are consistent with the trajectories, and this experiment does not distinguish them.
+
+### The cell
+
+Two cells, protein and text, on cards 0 and 1. Pinned **`96b3bd9`** — EXP-R2-206's own commit, reusing that campaign's snapshot `20260815005332_376ec28db1f6` so the code is byte-identical and no relay push is needed. **One lever moves: `--decoder-norm-penalty 3e-3 → 0`**, which is the pure-TopK control the R2.4 design registered and never ran.
+
+`--layers 27,28` with the `r99` vectors cut to those two layers, and `--admissible-layers 27,28`. **The site cut is provably not a confound**: EXP-R2-205 established that sites are parameter-disjoint, with per-site initialisation and per-site gradient clipping, and that fitting one site alone gives *bitwise identical* decoder norms to fitting it inside a wider run. `--steps` stays at **56,000 in protein and 26,000 in text** even though only two sites are fitted, because declared `--steps` sets the held-out offset (229,376 and 106,496 eligible records); changing it would silently score a different population. Everything else is EXP-R2-206's dispatch verbatim.
+
+### Attainability, demonstrated rather than assumed
+
+**The floor for "fitted at all" is `live ≥ k` = 32 per site**, because a dictionary that cannot fill TopK's own budget is not a dictionary. Protein layer 27 currently reads 18 and layer 28 reads 8 — below the floor.
+
+**The bar is demonstrably reachable on this exact cloud.** EXP-R2-191/204's `L8` cells are penalty-free dictionaries at the same width and the same `k` on the same activations, and they carry **2,187.8 and 1,633.5** live latents per layer in protein and **7,607.9 and 4,900.3** in text. That is a demonstration on the real data, not an extrapolation from synthetic. The Crosscoder is a different object — one shared latent space serving two roles, with twice the decoders — so it is not required to match those figures, and the thresholds below sit deliberately beneath them.
+
+### What confirms the penalty and what exonerates it, frozen now
+
+Read at layers 27 and 28 in **protein**, which is the harder mode and the one that collapsed to 1.5%:
+
+* **CONFIRMED** — live latents ≥ **1,000 per site** *and* `active_fraction` ≥ **1.95e-3** (half of `k/d_hidden`). 1,000 is below the 1,633–2,188 a penalty-free dictionary demonstrably reaches here and is ~55x the 18 observed, so this outcome cannot be reached by noise.
+* **EXONERATED** — live latents < **100 per site** *and* `active_fraction` < **3.9e-4** (a tenth of `k/d_hidden`). Removing the term entirely would then have bought less than an order of magnitude, the penalty is not what holds the basis down, and the cause moves to the two-role encoder sum or the shared latent space. That would be a finding about the Crosscoder formulation itself.
+* **PARTIAL** — anything between. The penalty contributes but is not sufficient, reported as partial with no single cause named and no third cell launched on the strength of it.
+
+Text is the corroborating arm and is not the primary read: it collapsed to 11.2% rather than 1.5%, so it has less room to move and a smaller effect there is expected rather than informative.
+
+### What this cell may not be used for, stated before it runs
+
+**A fitted λ=0 dictionary does not license reading a model diff from it.** Both published notes identify the decoder-norm L1 as the term that makes latents model-exclusive *at all*; with λ=0 the relative decoder norm may carry no exclusivity signal by construction, and a trimodal readout is not expected. So λ=0 is a diagnostic of the collapse and **not** a replacement measurement, and a successful fit here must not be reported as EXP-R2-206 repaired. If the penalty is confirmed as the cause, the follow-on is a λ sweep to find a value that both fits and separates — with C3 as the acceptance gate — not the adoption of λ=0.
+
+The one reading that would change more than this: if λ=0 produces a **fitted** dictionary and the C3 true-minus-null gap at layers 27 and 28 still fails its 0.5 bar, then EXP-R2-206's separation failure was never a fitting failure, and the amendment's degeneracy account would be in trouble on its own admissible layers. That outcome is worth naming in advance so it cannot be discovered late.
+
+### Void conditions
+
+Any cell that does not reproduce its mode's stream exactly — protein 36,978 steps / 147,912 sequences / 34,001,183 scored tokens, text 11,367 / 45,468 / 34,002,081 — or whose held-out offset is not 229,376 and 106,496 eligible records respectively, is void. A cell that OOMs or dies is reported as failed and is never silently re-run at another width, penalty or budget.
