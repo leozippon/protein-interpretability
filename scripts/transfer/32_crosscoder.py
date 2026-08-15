@@ -41,10 +41,21 @@ against 0.5739 and 0.5369 on text, roughly ninefold better, and the naive readin
 is that the protein dictionaries are the better ones. The likelier reading is the
 opposite in spirit -- protein activations at those depths occupy far fewer
 directions, so there is much less structure to reconstruct, and a low NMSE there
-says how little the data does rather than how well the dictionary did it. The two
-quantities move in opposite directions, so **cross-mode NMSE comparison is
-forbidden and within-mode comparison against R2.3's figure at the same site and
-width is what the number exists for**.
+says how little the data does rather than how well the dictionary did it.
+
+**The dependence is not confined to modes, and the rule is therefore stated
+positively.** Effective dimension varies across modes, across the two checkpoints
+and across layers, and the reconstruction follows it on all three axes: within
+text the two roles read median ``r99`` 3,670 against 2,954 with NMSE sums 16.08
+against 5.71, the larger cloud reconstructing worse, and the protein pair moves
+the same way; across layers inside one cell the rank correlation between ``r99``
+and NMSE is +0.98, +0.82 and +0.73 in three of the four cells. So **a per-site
+NMSE may be compared only with one fitted to the same cloud -- same mode, same
+role, same site, which means R2.3's per-layer transcoder at that site and
+width -- and never across modes, across the two halves of the ``[base, adapted]``
+pair, or between entries of a per-site vector.** It is a prohibition rather than
+a correction because the relationship is directional and not proportional, with
+one cell running the other way in its interior: there is no factor to divide out.
 
 **Per-layer admissibility is a required input and is never inferred.** R2.4's
 operative rule, after both of the unit's original basis criteria went void on
@@ -445,7 +456,7 @@ def null_comparison(
                 "r99_effective_dimension": (
                     None if effective_dimension is None else list(effective_dimension[index])
                 ),
-                "held_out_nmse_cross_mode_comparison": cc.CROSS_MODE_NMSE_NOTE,
+                "held_out_nmse_comparability": cc.NMSE_COMPARABILITY_NOTE,
             }
         )
     return {
@@ -1020,7 +1031,7 @@ def main() -> None:
             "scale_ratio_per_site: a site where the two checkpoints differ only in "
             "scale is a real difference this readout is not capable of expressing"
         ),
-        "per_site_nmse_is_not_comparable_across_modes": cc.CROSS_MODE_NMSE_NOTE,
+        "per_site_nmse_is_comparable_only_within_one_cloud": cc.NMSE_COMPARABILITY_NOTE,
         "admissibility_is_not_informativeness": (
             "an admissible layer is one where both cells' dictionaries carry "
             "enough live latents for a diff to be defined. It is not a claim that "

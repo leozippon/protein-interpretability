@@ -482,8 +482,15 @@ def test_a_reconstruction_number_never_appears_without_the_dimension_qualifying_
     for entry in records:
         assert entry["r99_effective_dimension"] is not None
         assert len(entry["r99_effective_dimension"]) == len(entry["held_out_nmse_by_role"])
-        assert "FORBIDDEN" in entry["cross_mode_comparison"]
-        assert "WITHIN one" in entry["cross_mode_comparison"]
+        # All three axes the effective dimension varies on must be named where
+        # the number is, not only the cross-mode one: the record hands a reader a
+        # [base, adapted] pair and sits in a per-site vector, so the role and
+        # site comparisons are the ones it invites most.
+        note = entry["nmse_comparability"]
+        assert "FORBIDDEN" in note and "VALID" in note
+        for axis in ("across modes", "across ROLES", "across SITES"):
+            assert axis in note, f"{axis} is not forbidden where the number appears"
+        assert "same mode, same role, same site" in note
     # The binding constraint is the smaller of the two roles', not the first.
     assert records[0]["live_over_r99"] == pytest.approx(5400 / 2364)
     assert records[1]["live_over_r99"] == pytest.approx(4800 / 1563)

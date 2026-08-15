@@ -288,28 +288,42 @@ SITE_INDEPENDENCE_NOTE = (
     "meaningful and is deliberate"
 )
 
-#: Why a per-site reconstruction number may not be read across modes, carried at
-#: every site beside the number it qualifies rather than in a caveat elsewhere.
+#: When a per-site reconstruction number may be read against another one, carried
+#: at every site beside the number it qualifies rather than in a caveat elsewhere.
 #:
 #: This unit's recurring failure has been readings whose limits were written down
 #: somewhere other than where the number appears, so this string is emitted into
 #: each per-site record and not only into the artefact's limitations block.
-CROSS_MODE_NMSE_NOTE = (
-    "FORBIDDEN: this NMSE may NOT be compared across modes as a measure of "
-    "dictionary quality or reconstruction fidelity. A cross-mode NMSE difference "
-    "is confounded with the effective dimension of the activations being "
-    "reconstructed, and the two move in OPPOSITE directions: at layers 27-28 "
-    "R2.3's per-layer transcoders read 0.0670 and 0.0585 held-out NMSE on protein "
-    "against 0.5739 and 0.5369 on text -- roughly ninefold better -- while the "
-    "protein activations at those depths occupy far fewer directions, and the "
-    "adapted checkpoint's effective dimension collapses hard at exactly these "
-    "depths. A low NMSE on a low-dimensional cloud is a statement about how "
-    "little structure the data carries, not about how well the dictionary "
-    "captured it. r99_effective_dimension is carried beside this number so the "
-    "confound is visible here rather than inferable. VALID: comparison WITHIN one "
-    "mode against R2.3's per-layer transcoder figure at the same site and the "
-    "same width, which is the comparison this per-site number exists for and "
-    "which the effective dimension does not confound"
+#:
+#: **The rule is stated positively and narrowly**, because the axis list is not
+#: closed by argument: the achievable NMSE depends on the effective dimension of
+#: the cloud being reconstructed, and that dimension varies across modes, across
+#: the two checkpoints, and across layers. Enumerating prohibitions invites the
+#: next axis to be missed; naming the one valid comparison does not.
+NMSE_COMPARABILITY_NOTE = (
+    "VALID: comparison between dictionaries fitted to THE SAME activation cloud "
+    "-- same mode, same role, same site -- which for this object means against "
+    "R2.3's per-layer transcoder figure at the same site and the same width. That "
+    "is the comparison this number was built for and the effective dimension does "
+    "not confound it. FORBIDDEN: comparison across modes, across ROLES, or across "
+    "SITES, including between the two halves of the [base, adapted] pair beside "
+    "this note and between the entries of any per-site NMSE vector. The "
+    "achievable NMSE depends on how many directions the cloud occupies, so a "
+    "difference read across any of those axes is a difference in what the data "
+    "does and not in how well the dictionary describes it. Measured on this "
+    "lineage's four L8 baseline cells: ACROSS MODES, protein reads 0.0670 and "
+    "0.0585 at layers 27-28 against text's 0.5739 and 0.5369, roughly ninefold "
+    "better, on clouds of markedly lower dimension. ACROSS ROLES within text, "
+    "median r99 3,670 against 2,954 with held-out NMSE sums 16.08 against 5.71 -- "
+    "the larger cloud reconstructing worse -- and the protein pair moves the same "
+    "way, 2,588 against 2,709 with sums 3.72 against 5.46. ACROSS SITES within a "
+    "cell, the Spearman rank correlation between r99 and NMSE over the interior "
+    "layers is +0.98, +0.82 and +0.73 in three of the four cells. The "
+    "relationship is DIRECTIONAL AND NOT PROPORTIONAL, and base/text is an "
+    "exception at -0.04 in its interior, which is why this is a prohibition and "
+    "not a correction: there is no factor to divide out. r99_effective_dimension "
+    "is carried per role beside this number and index-aligned with it, so the "
+    "dependence is visible here rather than inferable"
 )
 
 #: What a permutation within one batch is and is not. Stage 25 declares the same
@@ -992,10 +1006,12 @@ def assert_effective_dimension(
 
     It is required rather than optional on a real checkpoint pair, because the
     number it qualifies -- the per-site reconstruction NMSE -- is not readable
-    without it. A cross-mode NMSE difference is confounded with exactly this
-    quantity and in the opposite direction (see :data:`CROSS_MODE_NMSE_NOTE`), so
-    an artefact that reported the NMSE and not the dimension would be publishing
-    half of a comparison that invites the wrong conclusion.
+    without it. The achievable NMSE depends on this quantity, and it varies across
+    modes, across the two checkpoints and across layers, so an NMSE difference on
+    any of those axes is confounded with it (see
+    :data:`NMSE_COMPARABILITY_NOTE`). An artefact reporting the NMSE and not the
+    dimension would be publishing half of a comparison that invites the wrong
+    conclusion on three axes at once.
 
     ``r99`` cannot exceed ``ceil(0.99 * d_model)`` even on a flat spectrum with
     infinite samples, which is the attainability defect EXP-R2-202 recorded
@@ -1086,7 +1102,7 @@ def reconstruction_per_site(
                 "the smaller of the two roles' r99, which is the binding "
                 "constraint on what a shared latent space can resolve"
             ),
-            "cross_mode_comparison": CROSS_MODE_NMSE_NOTE,
+            "nmse_comparability": NMSE_COMPARABILITY_NOTE,
         }
         if pair is None:
             entry["r99_note"] = (
