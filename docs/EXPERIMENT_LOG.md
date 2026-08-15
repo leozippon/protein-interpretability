@@ -12904,3 +12904,20 @@ The one reading that would change more than this: if λ=0 produces a **fitted** 
 ### Void conditions
 
 Any cell that does not reproduce its mode's stream exactly — protein 36,978 steps / 147,912 sequences / 34,001,183 scored tokens, text 11,367 / 45,468 / 34,002,081 — or whose held-out offset is not 229,376 and 106,496 eligible records respectively, is void. A cell that OOMs or dies is reported as failed and is never silently re-run at another width, penalty or budget.
+
+---
+
+## 2026-08-15 — EXP-R2-204 addendum: `R` resolved per layer, and the effect is pervasive across depth rather than carried by a few sites
+
+Taken because it turned out to be cheap, not because the aggregate needed repair. The `n_dead` route the reading above used is exact for a cross-layer mean, but it cannot say whether `R` describes every layer or an average over layers that disagree. Four of the eight dictionaries were already on the workstation; the other four were read **in the pod, CPU-only**, by `torch.load(..., mmap=True)` on one `(32, d_hidden)` `silent_steps` buffer each — no weights were transferred, no GPU was touched, and EXP-R2-207's four cells continued at 98–100% on all four cards throughout. All eight per-layer vectors reproduce their published cross-layer means exactly, which is the check that the two routes agree before the finer one is read.
+
+| checkpoint | aggregate `R` | per-layer median | interior IQR | interior range | layers with `R` < 1 |
+|---|---:|---:|---|---|---:|
+| base | 0.7464 | 0.7410 | 0.718 – 0.789 | 0.578 – 0.828 | **30 of 30** |
+| stage1 | 0.8433 | 0.8159 | 0.766 – 0.841 | 0.637 – 1.020 | **29 of 30** |
+
+"Interior" is layers 2–31. **Layer 1 is excluded and the reason is a degenerate denominator, not a preference**: the text dictionaries keep only 95 and 74 live latents there at `d_hidden` 16,384 against 90 and 94 at 8,192, so its text ratio is a quotient of two near-dead counts and returns the only values above 1 in either checkpoint (1.190 and 1.579). Layer 0 is retained and behaves normally (0.721 and 0.810).
+
+**What this adds.** `R < 1` holds at essentially every layer independently, in both checkpoints, so the aggregate is not an average over layers that disagree and is not carried by a handful of sites. It also separates the two checkpoints more sharply than the aggregate did: base's interior sits almost entirely below stage1's median, so **the 13% gap between 0.75 and 0.84 is structural across depth rather than a difference in where a few layers landed.**
+
+**What this is not, stated plainly.** The 30 per-layer values within one checkpoint are **not independent replicates** — they come from the same four dictionaries and one corpus draw, and layers of one dictionary share an optimiser trajectory. This is a statement about *pervasiveness across depth*, and it is not an error bar. It does not price fit noise and it does not substitute for EXP-R2-207's seed replicates, which remain the only thing that will put an interval on `R`. The reading above stands unchanged: a direction with a number, not yet a verdict with an interval, and `stage1`'s 0.84 remains the defensible bound because `base/text` carries the ceiling confound.

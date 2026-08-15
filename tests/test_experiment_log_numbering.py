@@ -182,6 +182,14 @@ KNOWN_VIOLATIONS: tuple[tuple[int, int, str], ...] = (
         204,
         "EXP-R2-204's text-control reading, filed under its own id after 205 to 207 had landed",
     ),
+    # And once more for the same reason, one id later: the per-layer resolution of
+    # EXP-R2-204's `R` was taken while EXP-R2-208 was being pre-registered, and it
+    # belongs to 204's verdict rather than to a new experiment.
+    (
+        208,
+        204,
+        "EXP-R2-204's per-layer addendum to the same verdict, appended after EXP-R2-208",
+    ),
 )
 
 
