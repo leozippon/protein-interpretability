@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ############################################################################
+# UNTESTED against a pod. The argument handling and the local verification path
+# were exercised on the workstation with a stubbed access layer; nothing here
+# has crossed the real transit link. Run the checks in "First run" below before
+# trusting it with a result.
+# ############################################################################
+#
+# Retrieve the RECORDS of a completed run and leave the dictionary weights on
+# GPFS -- digest-verified either way.
+#
+# Why this exists. The scientific verdict of a dictionary cell is a ~46 KB JSON;
+# the dictionary beside it is 8.6 GB at d_hidden 8192 and about 17.2 GB at
+# 16384. run_external_baseline_h200.sh pulls a cell with
+#
+#     "${H200_SYNC}" pull "${OUT_DIR}" "${LOCAL_OUT}"
+#
+# and h200_sync.sh's pull is a directory operation -- it tars the whole source
+# directory in the pod, moves the archive, and extracts it. It is ALL-OR-NOTHING
+# PER DIRECTORY: there is no way to ask it for a subset. So today the verdict
+# waits behind the payload by construction, and EXP-R2-204 records that an
+# 8.59 GB directory pull has failed twice on chunk-size mismatch. Under an
+# unstable link that is the wrong default.
+#
+# The smallest change, and it does not touch the access layer. One level below
+# h200_sync.sh, h200_gpfs_pull.sh is already per-FILE and already
+# digest-verified: it reads the remote size and sha256 first, short-circuits
+# when the local copy already matches, stages and pulls in chunks with retries,
+# and refuses on a checksum mismatch. Everything missing was file SELECTION, and
+# that belongs on this side. So this script contributes no transfer code: it
+# chooses the files, drives the existing per-file pull, and then applies the
+# same digest comparison run_external_baseline_h200.sh admits a result on.
+#
+# What is a record and what is a payload. A record is a `*.json`.
+# 17_train_transcoder.py writes `<stem>.pt` (the dictionary) and `<stem>.json`
+# (the record); 32_crosscoder.py writes only a JSON. Nothing else is produced by
+# the stages this is for, so "*.json" is a complete rule for them and is stated
+# as a rule about those stages rather than as a general one.
+#
+# Usage:
+#   export H200_POD=<running-pod-name>
+#   scripts/transfer/pull_records_h200.sh <gpfs-directory> <local-directory>
+#   scripts/transfer/pull_records_h200.sh --with-weights <gpfs-dir> <local-dir>
+#   scripts/transfer/pull_records_h200.sh --dry-run <gpfs-dir> <local-dir>
+#
+# The GPFS directory may be one cell's output directory or a whole run root --
+# the walk recurses and relative paths are preserved, so
+#
+#   pull_records_h200.sh <gpfs>/results/external_baseline/<run-id> results/transfer/external_baseline/<run-id>
+#
+# retrieves every cell's record in one invocation and moves a few hundred KB.
+#
+# Exit codes follow run_external_baseline_h200.sh's vocabulary where they
+# overlap: 2 usage, 4 nothing to pull, 5 digest mismatch (NOT ADMITTED).
+#
+# Two limitations, recorded rather than designed around:
+#   * --with-weights makes the pod sha256 a multi-gigabyte file before the first
+#     byte moves, which holds the exec channel open for minutes. The weights
+#     path therefore inherits the link's fragility; the records path does not,
+#     because it hashes about 46 KB. That asymmetry is the point of the default.
+#   * The remote listing pipes `find -printf '%P\n'` into `xargs sha256sum`,
+#     which is the driver's own line and which breaks on a file name containing
+#     whitespace. No stage here writes one.
+#
+# First run, cheapest disconfirming check first:
+#   1. --dry-run against a completed cell directory: one pod round trip, no
+#      transfer. It proves the pod path exists and the selection is right.
+#   2. Records-only pull of the same cell, then diff the pulled JSON against the
+#      copy the driver already admitted for an earlier cell of the same shape.
+#   3. --with-weights on the SMALLEST completed cell, not a 17.2 GB one.
+
+H200_ACCESS_ROOT="${H200_ACCESS_ROOT:-${HOME}/hangzhou-remote}"
+H200_POD_BASH="${H200_POD_BASH:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_pod_bash.sh}"
+H200_GPFS_PULL="${H200_GPFS_PULL:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_gpfs_pull.sh}"
+
+usage() {
+  sed -n '/^# Usage:/,/^# Exit codes/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+}
+
+WITH_WEIGHTS=0
+DRY_RUN=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --with-weights) WITH_WEIGHTS=1; shift ;;
+    --dry-run) DRY_RUN=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    --) shift; break ;;
+    -*) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
+    *) break ;;
+  esac
+done
+
+[ $# -eq 2 ] || { usage >&2; exit 2; }
+REMOTE_DIR="$1"
+LOCAL_DIR="$2"
+: "${H200_POD:?H200_POD must be exported by the caller}"
+
+log() { printf '[pull-records] %s %s\n' "$(date -Is)" "$*"; }
+
+if [ "${WITH_WEIGHTS}" -eq 1 ]; then
+  FIND_FILTER=""
+  WHAT="every file"
+else
+  FIND_FILTER="-name '*.json'"
+  WHAT="records (*.json)"
+fi
+
+# One pod round trip: the selected files and their digests, in the driver's own
+# form (`find . -type f -printf '%P\n' | sort | xargs sha256sum`), narrowed by
+# the selection. `xargs -r` so an empty selection does not run sha256sum with no
+# arguments and report the whole cwd.
+SUMS="$(mktemp)"
+trap 'rm -f "${SUMS}"' EXIT
+log "listing ${WHAT} under ${REMOTE_DIR}"
+"${H200_POD_BASH}" \
+  "cd '${REMOTE_DIR}' && find . -type f ${FIND_FILTER} -printf '%P\n' | sort | xargs -r sha256sum" \
+  > "${SUMS}"
+
+COUNT="$(wc -l < "${SUMS}" | tr -dc '0-9')"
+if [ -z "${COUNT}" ] || [ "${COUNT}" -eq 0 ]; then
+  echo "no ${WHAT} under ${REMOTE_DIR}; nothing to pull" >&2
+  exit 4
+fi
+log "${COUNT} file(s) selected"
+
+if [ "${DRY_RUN}" -eq 1 ]; then
+  awk '{print $2}' "${SUMS}"
+  log "dry run; nothing transferred"
+  exit 0
+fi
+
+mkdir -p "${LOCAL_DIR}"
+while read -r _sha name; do
+  [ -n "${name}" ] || continue
+  mkdir -p "${LOCAL_DIR}/$(dirname "${name}")"
+  "${H200_GPFS_PULL}" "${REMOTE_DIR}/${name}" "${LOCAL_DIR}/${name}"
+done < "${SUMS}"
+
+# Admission is the driver's rule, unchanged: a result is admitted only if the
+# digests taken on each side agree. h200_gpfs_pull.sh verifies each file as it
+# moves; this re-checks the delivered set as a whole, so a file that never
+# arrived is caught as well as one that arrived wrong.
+if ( cd "${LOCAL_DIR}" && LC_ALL=C sha256sum -c "${SUMS}" >/dev/null 2>&1 ); then
+  log "digests verified; ${LOCAL_DIR} ADMITTED (${COUNT} file(s))"
+  if [ "${WITH_WEIGHTS}" -eq 0 ]; then
+    log "dictionary weights were NOT pulled and remain on GPFS under ${REMOTE_DIR}"
+  fi
+else
+  echo "digest mismatch between pod and B; NOT ADMITTED: ${LOCAL_DIR}" >&2
+  ( cd "${LOCAL_DIR}" && LC_ALL=C sha256sum -c "${SUMS}" 2>&1 | grep -v ': OK$' >&2 ) || true
+  exit 5
+fi
