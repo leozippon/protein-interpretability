@@ -12607,3 +12607,240 @@ python scripts/transfer/32_crosscoder.py --synthetic-check \
     --dead-steps 100 --decoder-norm-penalty 3e-3 --steps 2500 \
     --learning-rate 3e-3 --weight-decay 0 --out results/transfer/crosscoder
 ```
+
+---
+
+## 2026-08-14 — EXP-R2-207 pre-registered: putting an interval on EXP-R2-204's `R`, and turning a two-point ratio into a scaling curve
+
+Frozen before any cell is dispatched, and before EXP-R2-204's protein width cells or text control cells have produced an endpoint. Four rounds, sixteen cells, on the standing authorization to saturate the pod.
+
+### Why this is necessary rather than tidy
+
+EXP-R2-204 registered `R` — the protein live-fraction scaling ratio divided by the text one, matched by checkpoint — as "measured but explicitly unpriced, since nothing on disk prices a ratio of two ratios of independently trained dictionaries." That honesty is also a ceiling: a clean value with no interval is an observation, not a verdict, and it has no answer to *two dictionaries differ by that much anyway*. Seed replicates close it.
+
+Separately, `L16/L8` is a two-point ratio and **cannot distinguish a protein basis saturating toward an asymptote from one scaling linearly with a smaller exponent**. Only the first is data limitation. A third width point makes the distinction readable.
+
+### The rounds
+
+All cells use the trainer at pinned commit `bd6ff99`, the EXP-R2-191 recipe, `--corpus-seed 20260812`, and the same near-duplicate screens.
+
+| round | cells | wall clock on four cards | what it buys |
+|---|---|---:|---|
+| **R1** | protein 8192, {base, stage1} × seeds {20260815, 20260816} | 5.95 h | three-seed spread on both protein `f8` — the denominators of `R` **and** of the curvature exponents |
+| **R2** | text 8192, {base, stage1} × the same two seeds | 4.9 h | three-seed spread on both text `f8`; completes the interval on `R` |
+| **R3** | `d_hidden` 4096, {protein, text} × {base, stage1}, seed 20260812 | 3.7 h | the third width point, and with it curvature |
+| **R4** | `d_hidden` 16384, all four configs, seed 20260815 | 10.5 h | a consistency check on whether the 8192 spread describes 16384 |
+
+Cost model, fitted to this campaign's own measurements as `T = fixed + c·d_hidden`, which puts the fixed backbone and IO cost at ~5,000 s in protein mode and 5,700–8,600 s in text: protein 3.7 / 5.95 / 10.5 h and text 3.2–3.4 / 4.5–4.9 / 6.6–8.1 h at 4096 / 8192 / 16384.
+
+### The seed design, and the axis it deliberately does not cover
+
+**Replicates vary `--seed` only; `--corpus-seed` stays 20260812.** Every cell entering `R` shares one corpus draw, so the noise `R` needs an interval against is **fit noise at fixed data** — initialisation and the within-record position draw. Varying the corpus seed as well would widen the interval while answering a different question.
+
+**Corpus-draw variability is therefore an unmeasured axis of this experiment, and the interval does not cover it.** Recorded here and not only in a report, so the scope travels with the number: nothing below licenses a claim that `R` would survive a different draw of Swiss-Prot or OpenWebText. R2.3's two protein dictionaries moved both seeds together and are not a decomposition of the two effects.
+
+### Three seeds, and the margin stated correctly
+
+Two seeds give a difference, not a distribution — this unit has said so before about two-sample comparisons — so each config gets a third. Attainability is **demonstrated, not assumed**: three protein replicates at this width already exist at 1,653, 1,627 and 1,634 live latents per layer, a CV of **0.83%**. Propagating that through two ratios gives `CV(R) ≈ 1.6%` against an observed `|R − 1| ≈ 0.28`, a margin of **about 17×**. That is ample and it is *between one and two orders of magnitude*, not two; the overstatement is corrected here because a comfortable-looking margin is how an interval stops being examined.
+
+Three seeds give a two-df spread, which is weak in general and sufficient only because the effect is this large.
+
+**The fallback, and it is absolute.** If the three-seed spread does not separate `R` from 1, the result is reported **UNRESOLVED** with a request for more seeds. The interval is not widened, narrowed, or re-specified after the point estimate is seen, and no seed is added *because* of where the estimate landed.
+
+### R3's curvature statistic, and the artefact that will appear in it
+
+With three widths the curvature needs no fitting. Per cell, let
+
+> **α₁ = log₂(L8 / L4)** and **α₂ = log₂(L16 / L8)**
+
+Perfect scaling with width gives α = 1. **Saturation is α₂ < α₁.** The claim of interest is that the protein cells bend and the text cells do not.
+
+**One text-side artefact is pre-registered now so that it is recognised and not interpreted.** `base/text` sits at **92.87%** live at 8192, so at 4096 it will be at or near the 100% ceiling and its `L4` cannot fall far enough for a true α₁. Its α₁ therefore comes out **artificially low**, and the cell will display **α₂ > α₁ — apparent acceleration**. That is exactly the signature that would otherwise read as *the text reference curve bends upward*, a claim nobody should draw from it. **Text-side apparent acceleration at the low end carries no information about scaling.** `stage1/text` at 59.82% is less affected but not clean.
+
+So the reading is asymmetric and will be reported as such: **curvature is clean on the two protein cells, ceiling-affected on the text reference at the low end, and valid on the text reference only in the upper interval 8192→16384.** No protein-versus-text curvature comparison will be presented as though both sides were sound. Extending upward instead of downward is not available — 32,768 needs about 137 GB of optimiser state before the backbone is loaded.
+
+### Memory, checked in advance
+
+At `d_hidden` 4096 the dictionary is 1,074,003,968 parameters: 4,296 MiB in fp32, 17,184 MiB with gradients and both Adam moments, plus 14,327 MiB of backbone and context. Activations run at ~5.5 MiB per token, giving **~43,800 MiB in protein mode** at its ~2,230-token worst case and **~54,000 MiB in text** at its 4,096-token cap, against 143,771. R3 is the least constrained round of the campaign. R1, R2 and R4 reproduce configurations already measured at 110,367, ~127,000 and 109,067–122,657 MiB.
+
+### Specification checks and void conditions
+
+Every cell must reproduce its mode's stream exactly: protein **36,978 steps, 147,912 sequences, 34,001,183 scored tokens**, screen **961 of 1,024** at maximum containment 1.0000 over 229,376 records; text **11,367 steps, 45,468 sequences, 34,002,081 scored tokens**, screen **1,024 of 1,024** at maximum containment 0.4346 over 106,496 records. Against the EXP-R2-204 or EXP-R2-191 cell of the same configuration, `compare_matched_training` must return `MISMATCH` with `disagreements` exactly `["seed"]` for a replicate and exactly `["d_hidden"]` for an R3 cell. Any other disagreement voids the cell. A cell that OOMs or dies is reported as **failed**, never silently re-run at another width or budget.
+
+### Schedule
+
+R1 runs on **four cards together** rather than split across pairs — the Crosscoder lands ~03:00 and EXP-R2-204's text control ~03:00–04:00, so all four free within about an hour and splitting would double R1's wall clock for no gain. If one pair frees materially earlier and would otherwise idle, the two cheapest R1 cells go on it and the remainder join at the four-card point. Order is R1, R2, R3, R4: R1 and R2 are the campaign's cheapest cells and together they close the interval, and R1's denominators are shared by both priorities. The 16,384-wide Crosscoder follow-on is deferred behind R1 and R2 by coordinator decision, on the argument that an unpriced primary verdict outranks a wider version of an instrument whose admissible readout is two layers.
+
+---
+
+## 2026-08-15 — EXP-R2-206 dispatch record, both primary cells, and a defect in the registered dispatch block that would have killed them at launch
+
+The two primary Crosscoder cells are running. Card 0 carries the text cell, card 1 the protein cell; cards 2 and 3 were left untouched under EXP-R2-204's text control and were confirmed at 100% before and after. Run id `20260815005332_376ec28db1f6`, one snapshot frozen once and reused by both cells, dispatched through `scripts/transfer/run_external_baseline_h200.sh` one invocation per cell.
+
+**The pin is `96b3bd9`, not the entry's `--pin HEAD`.** The registered block was written before `caccfc2` (each site's effective dimension carried beside its reconstruction number) and `56af68f` (the cross-role and cross-site NMSE prohibition), both of which bear on the readout these cells produce. `HEAD` is a moving reference in a tree several agents commit into, and the point of pinning is that it is not. Both amendment commits are verified ancestors of the pin, and `git diff 96b3bd9 -- scripts/transfer src` is empty, so the pinned commit and the tree carry identical code; only this document differs.
+
+### The defect in the registered block
+
+EXP-R2-206's dispatch block passes `--base "$TRANSFER_MODEL_BASE_DIR/Llama-2-7b-hf"` in double quotes. `TRANSFER_MODEL_BASE_DIR` is exported by `scripts/transfer/h200_env.sh`, which is sourced **inside the pod** by the driver; nothing on the workstation defines it. Written that way the workstation shell expands it to the empty string, the cell launches with `--base /Llama-2-7b-hf`, and the stage dies at dispatch on a checkpoint directory that does not exist. `--adapted` carries the same defect.
+
+**Corrected by substituting the absolute GPFS model path**, which is what EXP-R2-204's own `.dispatch` records did and what removes the question rather than deferring it: the driver interpolates the stage arguments into a double-quoted `bash -lc` string that crosses `kubectl exec`, so a deferred `$VAR` would have to survive that transport intact to be correct, and an absolute path does not have to survive anything. The `.dispatch` records were read before either cell was treated as launched and both show `--base /gpfs/.../models/Llama-2-7b-hf --adapted /gpfs/.../models/ProLLaMA_Stage_1`; the in-pod `[paths]` lines quoted below show the stage resolving exactly those two directories. This is a correction to the registered block, not a change of measurement: no parameter the entry pre-registered was altered.
+
+### Verified before dispatch
+
+Cards 0 and 1 idle at 4 MiB and 0%; both checkpoint directories present on GPFS; both complete argument lists dry-parsed against `32_crosscoder.py`'s own `build_parser()` on the workstation, returning `layers=(0, 27, 28, 29, 30, 31)`, `admissible=(27, 28)`, both `r99` vectors of length six in `--layers` order, and `pairings=['true', 'shuffled']`. A dry parse is what distinguishes a flag the stage rejects from one it silently defaults.
+
+### Verified after dispatch, from in-pod stdout rather than from the launcher's exit status
+
+Both drivers printed `LAUNCHED` and cleared the 45-second dispatch-failure gate. The stage's own stdout then reported, per cell:
+
+* Loader self-check, identical on both: `32L x 4096d`, vocabulary digest `fe56f82cb036..`, tensor `block_output` — the pre-registered `comparability` triple.
+* Parameter line, identical on both: `2 Crosscoder(s), 6 site(s) x 805.4M parameters each, admissible [27, 28]` — two pairings fitted in one pass, six sites, a diff licensed at two.
+* Text screen: 1,024 candidates against **106,496** training records on characters, **kept 1,024 of 1,024, max containment 0.4346**, cohort band `[800, None]`.
+* Protein screen: 1,024 candidates against **229,376** training records on residues, **kept 961 of 1,024, max containment 1.0000**, cohort band `[32, 1019]`.
+
+Every one of those figures is the value EXP-R2-206 pre-registered, including the two held-out offsets that the entry warned are set by declared `--steps` rather than realised steps. The remaining specification checks — realised steps, sequences and scored tokens, `matched_training` between the two mode cells, distinct `weights_sha256` with `self_pair` false — are endpoint quantities and are not yet readable.
+
+Utilisation seven minutes in: card 0 at **77,703 MiB, 99%** against a pre-declared 77,159 MiB, card 1 at **61,797 MiB, 100%** against a pre-declared 66,502 MiB. The text cell landed within 0.7% of its arithmetic and the protein cell below it, which is the direction the entry expected from a realised worst case.
+
+### Operational deviation, declared
+
+The first freeze aborted at the cluster health probe, which did not reach its `Health=` line inside the default 120-second caller-side bound. That is inconclusive and nothing was transferred; it was re-run at `H200_STATUS_TIMEOUT_SECONDS=300` and passed. The bound is caller-side only and no code, parameter or gate was bypassed — the probe still had to state `Health=ok` before the snapshot moved.
+
+`scripts/transfer/h200_campaign_queue.sh` was deliberately **not** used. It has never run in a pod, and a campaign whose cells were verified against a pre-registration is not where an unexercised launcher should make its debut.
+
+### Where the results will be
+
+On GPFS under `results/external_baseline/20260815005332_376ec28db1f6/r206_cc_{text,protein}_d8192`, pulled by each driver on completion into `results/transfer/external_baseline/20260815005332_376ec28db1f6/<label>` and admitted only on a matching sha256 digest. Expected wall clock ≈4.7 h from 01:23 and 01:24 local, so ≈06:05 local.
+
+**Not done here and still owed before either artefact is read**: the workstation synthetic instrument check that C1 and C2 are read from. EXP-R2-205 demonstrated both, but the entry requires the check at the campaign's own settings before a cell's artefact is opened, and this dispatch did not run it.
+
+---
+
+## 2026-08-15 — EXP-R2-206 read: C1 and C2 pass, and the Crosscoder campaign is void on its own C3 at every admissible site
+
+The owed workstation instrument check was run before either cell's artefact was opened, as the pre-registration requires. It could not be run as written, and the reason is a defect in the stage rather than in the check.
+
+### The defect that blocked the gating check, and the run it had already wasted
+
+`32_crosscoder.py --synthetic-check` echoed the whole of `vars(args)` into the artefact's `settings`. Under `--synthetic-check` the campaign-only arguments are *required* to be absent — `resolve` raises if any is supplied — and two of them, `--r99-base-per-site` and `--r99-adapted-per-site`, end in `_per_site`. So the payload carried `settings.r99_base_per_site: null`, and `assert_per_layer_fields`, which walks the artefact recursively and cannot distinguish a measured per-site result from an argument echo, refused the write. It refused **after all three constructions had trained**: an earlier attempt at 01:58 completed 2,500 steps on each of `recovery`, `rank_deficient` and `all_shared`, both pairings, and then died with no artefact. The criterion that gates the whole Crosscoder readout could not be produced at all.
+
+Fixed by omitting the campaign-only flags from the synthetic settings echo rather than by weakening the guard, which is unchanged and still walks both artefact kinds identically. The flag list is now the module-level `CAMPAIGN_ONLY_FLAGS`, read by both the refusal in `resolve` and the echo, so the two cannot drift apart. `tests/test_crosscoder.py` gains an end-to-end regression that runs the synthetic check at test scale and asserts the artefact is written and passes both per-site guards.
+
+### C1 and C2, at the campaign's own ratios
+
+Run at `d_hidden`/rank 128/42 = 3.05 against the campaign's 8,192/~2,700 = 3.03, and `d_model`/rank 64/42 = 1.52 against 4,096/2,700 = 1.52.
+
+| cell | pairing | injected shared / base / adapted | recovered | categorised | live |
+|---|---|---|---|---|---|
+| full rank (`recovery`) | true | 24 / 12 / 12 | 24 / 12 / 12 | **24 / 12 / 12** | 48 |
+| full rank | shuffled | 24 / 12 / 12 | 24 / 12 / 12 | **0** / 12 / 12 | 98 |
+| rank 42/64 | true | 24 / 12 / 12 | 24 / 12 / 12 | **24 / 12 / 12** | 48 |
+| rank 42/64 | shuffled | 24 / 12 / 12 | 24 / 12 / 12 | **0** / 12 / 12 | 102 |
+| all-shared, rank 42/64 | true | 48 / 0 / 0 | 48 | 48 | 51 |
+| all-shared, rank 42/64 | shuffled | 48 / 0 / 0 | 48 | **0** | 111 |
+
+**C1 PASS.** At true pairing recovered and categorised both equal injected in all three categories, on the full-rank construction and at the campaign ratio alike. At shuffled pairing categorised-shared is 0, which is 0% of the true value against a bound of 25%, while recovered-shared stays 24, which is 100% of injected against a floor of 75%.
+
+**C2 PASS.** On all-shared data at the campaign's ratios the readout reports **0 exclusive latents of 51 live**, 0.00% against a bound of 1%. The shuffled null on the same data reports 71 of 111, confirming the null is a ceiling as C4 states. Every figure reproduces EXP-R2-205's table exactly, so the instrument has not drifted.
+
+The reference true-minus-null shared-fraction gap on this construction is **0.955**. That is the separation the instrument delivers at this rank ratio when the dictionary fits, and it is the number the cells below have to be read against.
+
+### The two cells did not fit, and this is measured rather than inferred
+
+Both cells ran their full budget — protein 36,978 steps and 34,001,183 scored tokens, text 11,367 and 34,002,081 — and neither died. What they produced is not a dictionary.
+
+| cell | live latents per site, layers 0 / 27 / 28 / 29 / 30 / 31 | dead of 8,192 at endpoint |
+|---|---|---|
+| protein | 1 / 18 / 8 / 11 / 2 / 0 | 8,187 / 8,083 / 8,075 / 7,975 / 8,100 / 8,189 |
+| text | 465 / 310 / 197 / 249 / 73 / 132 | 5,571 / 4,035 / 4,943 / 5,599 / 7,046 / 6,894 |
+
+At protein layer 27 the shared latent space carries **18 live latents against an `r99` of 2,516 and 2,364** — `live_over_r99` 0.0076. At text layer 27 it carries 310 against 3,708 and 3,506, `live_over_r99` 0.088. The admissible set was declared in advance from R2.3's per-layer live curves, and on these artefacts the admissibility rule's own premise — that both cells carry at least that layer's `r99` in live latents — is false at both admissible layers in both modes.
+
+**The comparison C6 permits confirms it.** Against R2.3's per-layer transcoder at the same mode, the same role, the same site and the same width — the one comparison C6 sanctions — the Crosscoder's held-out NMSE is worse everywhere:
+
+| mode / role | layer | Crosscoder | R2.3 transcoder | ratio |
+|---|---:|---:|---:|---:|
+| protein / base | 27 | 0.3435 | 0.0670 | 5.1x |
+| protein / adapted | 27 | 0.3707 | 0.0935 | 4.0x |
+| protein / base | 28 | 0.5031 | 0.0585 | 8.6x |
+| protein / adapted | 28 | 0.5242 | 0.0392 | 13.4x |
+| text / base | 27 | 0.9231 | 0.5739 | 1.6x |
+| text / adapted | 27 | 0.5591 | 0.3375 | 1.7x |
+| text / base | 28 | 0.8592 | 0.5369 | 1.6x |
+| text / adapted | 28 | 0.5362 | 0.3243 | 1.7x |
+
+No cross-mode, cross-role or cross-site comparison is drawn from this table and none may be: each row is one cloud against the same cloud.
+
+### C3 fails at all four admissible site-mode combinations
+
+| cell | layer | shared fraction, true | shared fraction, null | true − null | C3 (≥ 0.50) |
+|---|---:|---:|---:|---:|---|
+| protein | 27 | 0.611 | 0.267 | **+0.344** | FAIL |
+| protein | 28 | 1.000 | 1.000 | **+0.000** | FAIL |
+| text | 27 | 0.732 | 0.708 | **+0.025** | FAIL |
+| text | 28 | 0.533 | 0.628 | **−0.095** | FAIL |
+
+Category counts at true pairing with the null beside them, as C4 requires — shared / base-specific / adapted-specific / intermediate:
+
+* protein layer 27 — true 11 / 0 / 0 / 7; null 4 / 2 / 9 / 0
+* protein layer 28 — true 8 / 0 / 0 / 0; null 2 / 0 / 0 / 0
+* text layer 27 — true 227 / 5 / 28 / 50; null 213 / 17 / 70 / 1
+* text layer 28 — true 105 / 6 / 35 / 51; null 142 / 10 / 72 / 2
+
+**Under EXP-R2-206's own pre-registration no diff may be reported at any site in either mode.** C3 was chosen as the criterion to lean on precisely because it is computed from the artefact and does not require trusting the `r99` table, and it rejects here. The protein layer 28 reading is the clearest statement of what happened: both pairings report a shared fraction of exactly 1.000, because 8 and 2 live latents cannot express a fraction that distinguishes anything.
+
+### The pre-registered prediction, and the half of it that cannot be tested at all
+
+The entry predicted that layers 27 and 28 separate cleanly in both modes while 0, 29, 30, 31 collapse, and named text as the sharpest case because the adapted binding ratios there are 0.043 and 0.090.
+
+**The first half failed.** Layers 27 and 28 did not separate cleanly in either mode: the four gaps are 0.344, 0.000, 0.025 and −0.095 against the 0.90–0.91 the synthetic sweep returns at these rank ratios and the 0.955 this session's own instrument check returned.
+
+**The second half is untestable from these artefacts.** The four inadmissible sites carry `ADMISSIBILITY_REFUSED` and nothing else — no counts, no fractions, and `relative_norm_histogram_per_site` is `null` at every one of them. The stage suppresses exactly the numbers the prediction is about. The campaign paid to fit six sites and can read two, and the entry's stated purpose for the four extra sites — "testing a criterion where it predicts failure is what this unit has spent a day learning it cannot skip" — was defeated by the stage's own admissibility refusal. That is a design defect in the campaign, recorded here rather than repaired retroactively.
+
+**So the refusal condition is honoured as written, and the amendment does not get to keep its support.** The condition named was that inadmissible sites separating as cleanly as admissible ones would refute the prediction; that specific comparison could not be made. But the admissibility amendment was to gain *measured* support from this campaign, and it has gained none — the admissible sites failed on their own side of the prediction. **The amendment stands exactly where it stood before EXP-R2-206 ran: as a judgement call with a synthetic corroboration, and with no support from real activations.** It is not refuted, and it is not confirmed; claiming the latter from a campaign whose instrument did not fit would be the failure class this unit has voided three criteria over.
+
+**What is not claimed.** None of this is evidence about the Crosscoder method. C1 and C2 pass at these ratios on data whose answer is known, so the readout is sound when handed a fitted dictionary; these two cells never produced one. Why a TopK Crosscoder at `k` 32 and `d_hidden` 8,192 collapses to tens of live latents on activations where a per-layer transcoder of the same width keeps thousands is the open question, and the `active_fraction` of 6.0e-05 against the 3.9e-03 that `k`/`d_hidden` implies is where it should be opened. No re-run at another width or budget is launched here; the pre-registration forbids treating that as a repair of these cells.
+
+---
+
+## 2026-08-15 — EXP-R2-207 dispatch record: R1's four cells on four cards, pinned to the trainer EXP-R2-204 actually ran
+
+All four H200 cards had been idle since roughly 06:05 local. R1 is four cells and the allocation is four cards, so it went out whole, one card each, ahead of any analysis.
+
+Frozen once at **`bd6ff99`** — the commit EXP-R2-191 and EXP-R2-204 ran, not HEAD, whose trainer has moved several hundred lines and would make these replicates a different measurement from the baselines they exist to be compared against. Run id `20260815084249_9fa75fa8a3b3`. **The snapshot's code hash `9fa75fa8a3b3` is identical to EXP-R2-204's run `20260814112509_9fa75fa8a3b3`**, which is the check that the pin did what it claims: the same twelve hex digits mean the same code, independently of what the working tree has done since.
+
+| label | card | checkpoint | seed |
+|---|---:|---|---:|
+| `r207_r1_base_s20260815` | 0 | `Llama-2-7b-hf` | 20260815 |
+| `r207_r1_stage1_s20260815` | 1 | `ProLLaMA_Stage_1` | 20260815 |
+| `r207_r1_base_s20260816` | 2 | `Llama-2-7b-hf` | 20260816 |
+| `r207_r1_stage1_s20260816` | 3 | `ProLLaMA_Stage_1` | 20260816 |
+
+Every other argument is EXP-R2-204's `.dispatch` record verbatim at `--d-hidden 8192`: `--architecture plt --rendering prollama --mode protein --k 32 --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 56000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --learning-rate 2e-4 --weight-decay 1e-5 --grad-clip 1.0 --corpus-seed 20260812`. `--corpus-seed` is held at 20260812 and only `--seed` varies, as the seed design requires. The three explicit optimiser arguments are the trainer's defaults at this commit, so these cells are argument-identical to `r24_plt_{base,stage1}_protein` except for `--seed`, which is what `compare_matched_training` must return as `disagreements` exactly `["seed"]` at endpoint.
+
+**Model paths were passed as absolute GPFS paths, not as `$TRANSFER_MODEL_BASE_DIR/...`.** That variable is defined only inside the pod; written in double quotes on the workstation it expands to the empty string, which is the defect EXP-R2-206's dispatch record caught before launch. Each cell went out as its own backgrounded command with `H200_POD` exported in the same shell, never as one `&&` list, which is the other way this dispatch shape has lost cells.
+
+**Verified as launched from the pod, not from the launcher's exit status.** Each of the four `.dispatch` records shows the absolute `--joint-checkpoint` path and its own seed; in-pod stdout shows `[loader] .../Llama-2-7b-hf` and `.../ProLLaMA_Stage_1` resolving on `cuda:0` through `cuda:3`, the PLT self-check passing, and the protein screen keeping **961 of 1,024 at maximum containment 1.0000 over 229,376 records** — the pre-registered stream. `nvidia-smi` in the pod reads four cards at 86,445 MiB and 99–100%. Expected ≈5.95 h from 08:48 local.
+
+---
+
+## 2026-08-15 — EXP-R2-204 read: the text control lands and `R` is readable on both checkpoints
+
+The two hand-launched text-control cells completed. With them the campaign's verdict statistic can be computed as registered: `R = (protein f16/f8) ÷ (text f16/f8)`, matched by checkpoint, on **endpoint** live-latent counts per layer.
+
+**How the endpoint counts were read, and why this is sound.** These artefacts predate `live_per_layer_from_silent_steps` and carry only the collapsed scalar `n_dead` in the final history record, so the per-layer count is `n_layers · d_hidden − n_dead` over 32 layers. That route was validated before it was used: on all four `L8` baselines it reproduces the published per-layer means — 7,607.9, 4,900.3, 2,187.8 and 1,633.5 — to the decimal. All eight cells reproduce their mode's stream exactly, protein at 36,978 steps / 147,912 sequences / 34,001,183 scored tokens and text at 11,367 / 45,468 / 34,002,081.
+
+| cell | live latents per layer, `L8` | `L16` | `f16/f8` |
+|---|---:|---:|---:|
+| base / protein | 2,187.8 | 3,098.9 | 1.4164 |
+| base / text | 7,607.9 | 14,437.1 | 1.8976 |
+| stage1 / protein | 1,633.5 | 2,342.1 | 1.4338 |
+| stage1 / text | 4,900.3 | 8,331.8 | 1.7002 |
+
+**`R` = 0.7464 on `base` and 0.8433 on `stage1`.** Both are below 1, so `|R − 1|` is 0.254 and 0.157, and the registered **unresolvable** branch — `|R − 1| < 0.05` — does **not** fire on either checkpoint. The two checkpoints agree in direction: the protein live basis grows with dictionary width more slowly than the text basis does on the same backbone, the same corpus budget and the same recipe. They are reported separately and are not averaged.
+
+**They do not agree in magnitude, and that is the finding this campaign cannot yet price.** 0.75 against 0.84 is a 13% spread between two checkpoints on a statistic whose only error estimate so far is a 1.6% CV propagated from three protein replicates at one width. The gap between the checkpoints is therefore several times the only noise figure available, and nothing on disk yet says whether that is a real lineage difference or fit noise. **EXP-R2-207's R1 and R2 are exactly the seed replicates that answer it and were dispatched this morning; until they land `R` is a direction with a number, not a verdict with an interval.**
+
+**The secondary reading is reported and not used.** The absolute `L16/L8` bands put both protein cells at 1.42 and 1.43 — inside the 1.2–1.7 interval, so neither the capacity-limited nor the data-limited band fires — and both text cells at 1.90 and 1.70, at or above the capacity-limited threshold. The amendment declared these bands uninterpretable in principle without the control, and the control now shows why in the sharpest possible form: **the pure-text reference, which nobody proposes is data-limited, itself comes in at 1.90 and 1.70 rather than 2.0.** Sub-linear growth at doubled width is the mechanical consequence of twice as many latents contesting the same `k` slots, exactly as the amendment argued, so the bands measure the mechanism and not the data. Only the ratio of ratios removes it.
+
+**One confound is recorded against the larger of the two values.** `base/text` sits at **92.87% live at 8,192**, close enough to the ceiling that its `L8` is likely an underestimate of the basis that cell would use if the dictionary were wider — which inflates its `f16/f8`, and so deflates `R` for `base`. `stage1/text` at 59.82% is not ceiling-affected, and it is the checkpoint that returns the *weaker* effect, 0.8433. **The less confounded checkpoint gives the smaller result, so the honest reading of the pair is that the effect is real in direction and its size is bounded below by `stage1`'s value rather than described by `base`'s.** EXP-R2-207's R3 adds the 4,096 point where this ceiling bites hardest and where the entry already pre-registered the artefact it will produce.

@@ -161,6 +161,27 @@ KNOWN_VIOLATIONS: tuple[tuple[int, int, str], ...] = (
         201,
         "EXP-R2-201's verdict, filed on reassignment after 202's corrections, 203 and 204 landed",
     ),
+    # EXP-R2-207 was pre-registered while EXP-R2-206's cells were still training,
+    # so both of 206's later entries — the dispatch record written at launch and
+    # the reading of its artefacts the next morning — land after 207's id. One
+    # exception covers both, because the rule is checked against the running
+    # maximum and both are the same event: a campaign whose id was already
+    # overtaken before it had anything to report.
+    (
+        207,
+        206,
+        "EXP-R2-206's dispatch record and its reading, both appended after EXP-R2-207 was pre-registered",
+    ),
+    # Same shape, one campaign further back. EXP-R2-204's text control was
+    # hand-launched and finished after 205, 206 and 207 had all been registered,
+    # and its reading keeps 204's id because that is where the bands and the
+    # definition of `R` were frozen. Filing it as a new experiment would leave
+    # 204's pre-registration permanently unanswered under its own name.
+    (
+        207,
+        204,
+        "EXP-R2-204's text-control reading, filed under its own id after 205 to 207 had landed",
+    ),
 )
 
 

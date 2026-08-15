@@ -40,6 +40,7 @@ both ways.
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -852,3 +853,39 @@ def test_the_memory_arithmetic_scales_with_the_site_set():
     assert STAGE.memory_arithmetic(narrow, **options)["backbones_bf16_mib"] == (
         STAGE.memory_arithmetic(wide, **options)["backbones_bf16_mib"]
     )
+
+
+def test_a_synthetic_check_can_write_its_own_artefact(tmp_path, monkeypatch):
+    """The instrument check must survive the per-site guards a campaign artefact does.
+
+    This is a regression, and the defect it holds shut cost a full run. ``settings``
+    echoed the whole of ``vars(args)``, and under ``--synthetic-check`` the
+    campaign-only flags are required to be absent -- two of which end in
+    ``_per_site``. So the artefact carried ``r99_base_per_site: null``,
+    :func:`assert_per_layer_fields` walked into it, could not tell an argument echo
+    from a collapsed measurement, and refused the write *after* all three
+    constructions had trained. C1 and C2 gate the Crosscoder readout and are read
+    from this artefact, so the instrument check could not be completed at all.
+    """
+
+    out = tmp_path / "crosscoder"
+    monkeypatch.setattr(sys, "argv", [
+        "32_crosscoder.py", "--synthetic-check",
+        "--synthetic-d-model", "16", "--synthetic-shared", "6",
+        "--synthetic-exclusive", "3", "--synthetic-rank", "10",
+        "--synthetic-tokens", "32", "--d-hidden", "32", "--k", "4",
+        "--auxk", "4", "--dead-steps", "50", "--steps", "12",
+        "--learning-rate", "3e-3", "--weight-decay", "0",
+        "--out", str(out),
+    ])
+    STAGE.main()
+
+    payload = json.loads((out / "crosscoder__synthetic_check.json").read_text())
+    assert payload["kind"] == "synthetic_instrument_check"
+    # The campaign flags describe nothing about a synthetic run and must not be
+    # echoed as nulls; the guards must then pass on the artefact as written.
+    assert not [key for key in payload["settings"] if key.endswith("_per_site")]
+    for flag in STAGE.CAMPAIGN_ONLY_FLAGS:
+        assert flag not in payload["settings"]
+    assert_per_layer_fields(payload, n_sites=1)
+    assert_required_per_site_fields(payload)

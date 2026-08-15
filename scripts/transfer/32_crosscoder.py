@@ -176,6 +176,21 @@ STAGE25 = _load_stage("25_model_diffing_baselines.py")
 SCHEMA_VERSION = "r2_transfer_crosscoder_v1"
 DEFAULT_OUT = REPO / "results/transfer/crosscoder"
 
+#: Arguments that name a real campaign. ``resolve`` requires every one of them
+#: under ``--synthetic-check`` to be absent, so under that flag they are None by
+#: construction -- and two of them end in ``_per_site``. Echoing the whole of
+#: ``vars(args)`` into the artefact therefore wrote ``r99_base_per_site: null``
+#: into ``settings`` and :func:`crosscoder.assert_per_layer_fields`, which walks
+#: the payload recursively and cannot tell a measured per-site result from an
+#: argument echo, refused the write -- after all three constructions had trained.
+#: The instrument check that C1 and C2 are read from could not produce its
+#: artefact at all. Named once here and read by both the refusal and the echo, so
+#: the two cannot drift apart.
+CAMPAIGN_ONLY_FLAGS = (
+    "base", "adapted", "rendering", "mode", "layers", "admissible_layers",
+    "r99_base_per_site", "r99_adapted_per_site",
+)
+
 #: Both checkpoints at one precision, for the reason stage 25 hard-codes it: a
 #: comparison between two checkpoints held at two precisions is partly a
 #: comparison between two quantisations. The dictionary itself trains in float32.
@@ -761,10 +776,7 @@ def resolve(args: argparse.Namespace) -> None:
     if args.dead_steps == 0:
         args.dead_steps = max(1, DEAD_STEPS_SEQUENCES // max(1, args.batch_size))
     args.pairings = tuple(dict.fromkeys(args.pairings))
-    campaign = (
-        "base", "adapted", "rendering", "mode", "layers", "admissible_layers",
-        "r99_base_per_site", "r99_adapted_per_site",
-    )
+    campaign = CAMPAIGN_ONLY_FLAGS
     if args.synthetic_check:
         for flag in campaign:
             if getattr(args, flag) is not None:
@@ -796,9 +808,14 @@ def main() -> None:
             "schema_version": SCHEMA_VERSION,
             "created_utc": datetime.now(timezone.utc).isoformat(),
             "kind": "synthetic_instrument_check",
+            # The campaign-only flags are omitted rather than echoed as null:
+            # under --synthetic-check they are required to be absent, so they
+            # describe nothing about this run, and two of them would enter the
+            # artefact as collapsed per-site fields. See CAMPAIGN_ONLY_FLAGS.
             "settings": {
                 key: (str(value) if isinstance(value, Path) else value)
                 for key, value in vars(args).items()
+                if key not in CAMPAIGN_ONLY_FLAGS
             },
             "provenance": {
                 "runner": {
