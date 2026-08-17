@@ -10,11 +10,12 @@
 # and EXP-R2-208's pair is running under the driver. The runner's own copy comes from whichever snapshot launches it
 # and is independent of the cells' code provenance, so a `cc` key is not needed here.
 #
-# WHY THIS FILE REPLACES campaign_r206_r207.tsv rather than editing it. That manifest's labels are not the labels the
-# cells were dispatched under -- it says `r207_r1_d8192_base_protein_s20260815` where the run is
-# `r207_r1_base_s20260815` -- and the resume rule keys on the output directory, which is the label. Dispatching it
-# today would re-run four completed R1 cells rather than skip them. Every label below is the label its cell will
-# actually carry, and none of them exists on GPFS yet.
+# EVERY LABEL BELOW IS THE LABEL ITS CELL WILL ACTUALLY CARRY, and none of them exists on GPFS yet. That is not a
+# stylistic note. The predecessor of this file, campaign_r206_r207.tsv, named its R1 cells
+# `r207_r1_d8192_base_protein_s20260815` where they were dispatched as `r207_r1_base_s20260815`; the resume rule keys
+# on the output directory, which is the label, so dispatching it would have re-run four completed cells rather than
+# skipped them -- about 24 GPU-hours. That file was deleted rather than annotated, because a manifest is executable and
+# a warning in a comment is not a safety. Diff these labels against the GPFS results listing before dispatching.
 #
 # WHAT IS NOT HERE. R4 (d_hidden 16,384 replicates) is cancelled: `R` is resolved, and pricing the f16 numerators
 # cannot change a conclusion already 23 sd from the null on the weaker checkpoint. The Crosscoder re-run is not here

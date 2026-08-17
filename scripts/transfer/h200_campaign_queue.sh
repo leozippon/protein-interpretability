@@ -75,12 +75,23 @@ set -euo pipefail
 #     "cat <gpfs>/logs/external_baseline/<campaign>.status.tsv"
 #
 # A campaign may need more than one snapshot because its cells are pinned to
-# different commits -- EXP-R2-207's trainer cells are pinned to a commit that
-# predates 32_crosscoder.py, so the Crosscoder cells cannot run from the same
-# freeze. Hence --snapshot <key>=<dir>, repeated, and a `key` column in the
-# manifest. The runner's OWN copy comes from whichever snapshot launched it and
-# is independent of any cell's code provenance: it never imports repository
-# python and only ever invokes each cell's own snapshot entry point.
+# different commits. Hence --snapshot <key>=<dir>, repeated, and a `key` column
+# in the manifest. The runner's OWN copy comes from whichever snapshot launched
+# it and is independent of any cell's code provenance: it never imports
+# repository python and only ever invokes each cell's own snapshot entry point.
+#
+# The worked case, kept here as the reference because it is the one that showed
+# a single freeze cannot serve every campaign. EXP-R2-206's Crosscoder cells
+# need a commit carrying 32_crosscoder.py; EXP-R2-207's trainer cells are pinned
+# to bd6ff99, which predates that file (`git cat-file -e
+# bd6ff99:scripts/transfer/32_crosscoder.py` fails) and which carries
+# 17_train_transcoder.py and src/transfer/transcoders.py byte-identical to
+# 04fdfa5, the code state that trained every baseline those cells are read
+# against. One snapshot for both would either run the Crosscoder against a
+# commit that has no Crosscoder, or run the trainer cells against a trainer that
+# has moved -- HEAD differed from bd6ff99 by 316 insertions and 95 deletions
+# across those two files. So: freeze sequentially, once per pin, and pass every
+# resulting directory to one dispatch.
 #
 # ---------------------------------------------------------------- Manifest
 #
