@@ -13489,3 +13489,33 @@ Raised against the entry above: prominence is a peak over a median, bounded belo
 Appendix B rule 35 is amended: prominence must be reported **beside its null**, because the statistic is bounded below by 1 and cannot be read on its own. The reader used here now emits the observed value, the null, and their ratio on one line, and flags any cell under 10x. This is the same shape as `r99_effective_dimension` travelling beside per-site NMSE — a statistic that cannot be interpreted alone is carried with what interprets it.
 
 **Bound on the calibration itself.** One control realisation per cell, six in total, no repeated draws. This prices the null's central value and not its spread, so the 41x–111x separations are safe by any reasonable tail and the 2.2x one is not. Repeated control draws would be needed to make `base/text` decidable, and that is recorded as a gap rather than attempted.
+
+---
+
+## 2026-08-17 — EXP-R2-202 addendum: the resampling design that prices prominence, and a correction to the gap the previous addendum named
+
+**The correction first, because it invalidates the remedy that entry proposed.** The null-calibration addendum closed with "repeated control draws would be needed to make `base/text` decidable, and that is recorded as a gap rather than attempted." **Repeated control draws would return identical numbers.** `coordinate_independent_spectrum` is, in its own docstring, *"Exactly `diag(covariance)`, sorted"* — a closed-form function of the data with no sampling in it. Drawing it again cannot produce a spread because it has none. (`isotropic_control_spectrum` does take a generator and is stochastic, but it is pinned at the estimator's ceiling of 4,026 in every layer of every cell, so whatever variance it has is invisible.) The gap was real; the remedy named for it was not.
+
+**What is actually missing is the sampling spread of the observed statistic.** The null prices *presence* of structure — what prominence a structureless spectrum returns — and says nothing about how much a structured curve's prominence moves when the tokens it is estimated from are redrawn. Three comparisons currently sit unpriced in a canonical document for exactly that reason, and unpriced entries in canonical documents harden into accepted fact.
+
+### The design
+
+**Four additional draws per cell, varying `--seed` only**, with `--corpus-seed` held at 20260812 and every other argument identical to the cell it replicates — the same replicate convention EXP-R2-207 uses, where `--seed` is the replicate axis and the corpus draw is held. Six cells, four draws each, about two minutes per cell: roughly an hour of one card.
+
+**Corpus-draw variability is therefore an unmeasured axis here too**, exactly as in EXP-R2-207, and nothing below licenses a claim that these spreads would survive a different draw of Swiss-Prot or OpenWebText.
+
+**This is gap-filler and nothing else.** It is dispatched only onto cards that would otherwise idle, behind EXP-R2-209 and R3, one or two cells at a time. It is not a campaign, it does not get a queue manifest, and it never displaces pre-registered work.
+
+### The reading rule, frozen before the first draw lands
+
+With five draws per cell (the existing one plus four), let `s` be the sample standard deviation of prominence and `t₄` = 2.776.
+
+* **Is `base/text` separable from its null?** Decidable if the 95% interval on its mean prominence, `mean ± t₄·s/√5`, excludes its null value of 1.001. If the interval contains 1.001, `base/text` is **not distinguishable from a structureless spectrum** and the canonical text must say so. If it excludes it, "too weak to characterise" is replaced by a measured weak structure.
+* **Is the adapted text pair's 1.170 against 1.096 a real difference?** A two-sample comparison on 5 and 5 draws resolves a difference of 0.074 at 95% when `s ≲ 0.042`. Decidable if the two intervals separate; otherwise the difference stays unpriced.
+* **Is protein's 1.150 against 1.162 as unchanged as it looks?** This one needs an **equivalence** bound rather than a null test, and it is declared now: the two are reported as indistinguishable if the 95% interval on their difference lies entirely within **±0.03** — about a fifth of the base-to-adapted gap and well under half the text pair's difference. Outside that, they are reported as differing or as undecided, whichever the interval supports.
+
+**A comparison that remains undecidable is a reportable outcome and not a reason for more draws.** No cell is added because of where an estimate landed, which is EXP-R2-207's fallback discipline applied to a cheaper measurement. If four draws leave a question open, the answer is "four draws do not resolve this", stated with the spread that was measured.
+
+### Why this is worth an hour of otherwise-idle card
+
+Three sentences currently in `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` D1.d and `summary.md` are marked unpriced or hedged. Each becomes a measurement or an explicit non-measurement. The alternative is that they stay hedged, get quoted without the hedge, and require a fourth retraction — which is the failure mode this session has already met three times.
