@@ -13149,3 +13149,24 @@ That replaces both stand-ins at once: the 0.2582 reconstruction target borrowed 
 **The fallback, if the λ = 0 artefact cannot supply those two numbers**, is the pessimistic end of the frozen bracket rather than a fresh estimate: 5–10% of 0.2582 against `P` = 1,448 gives λ ∈ [8.9e-6, 1.78e-5], centre 1.26e-5, taken as **λ = 1e-5** — a 300x reduction from the campaign value and 3x below the point now running.
 
 **Nothing above is informed by the mid-training numbers in the pod logs**, which show live counts moving in both directions between steps 4,000 and 8,000 and are not the quantity either criterion is stated on. The FITS and PRESERVES EXCLUSIVITY bars are unchanged and remain endpoint quantities.
+
+---
+
+## 2026-08-17 — EXP-R2-208 addendum: the frozen next-λ rule has a gap in the upward direction, named before the endpoint is readable
+
+Found while enumerating the branches so the 12:05 decision would be mechanical, and written now for the same reason the rule itself was: a direction chosen after seeing the numbers is not a rule.
+
+The rule above covers **downward** movement — λ = 0 fits, λ = 3e-5 does not, so the usable value is smaller than 3e-5 and is computed from the λ = 0 cell's own measured penalty. **It does not cover the opposite outcome, and that outcome is reachable.** If λ = 3e-5 *fits* but does not preserve exclusivity, the usable λ lies **between 3e-5 and 3e-3**, because the two requirements pull in opposite directions: fitting wants the penalty small, and polarisation is the thing the penalty is what creates. Both published notes identify the decoder-norm L1 as what makes latents model-exclusive at all, so a λ small enough to fit cleanly can be too small to separate, and the sweep then has to come back up.
+
+**No number is named for that branch here, and that is deliberate.** The dominance arithmetic that produced 3e-5 targets a 5–10% penalty share and has nothing to say about how much penalty polarisation needs — that quantity has never been measured on this cloud, and inventing a bracket for it while two cells are mid-flight would be exactly the tuned number this entry exists to prevent. If the branch fires, it is reported as an open question with the interval [3e-5, 3e-3] bounded on both sides by measurements, and the cards go to EXP-R2-207's remaining cells rather than to a guessed sweep point.
+
+**The four branches, complete:**
+
+| λ = 0 | λ = 3e-5 | what follows |
+|---|---|---|
+| fits | fits **and** preserves exclusivity | the re-run goes out at 3e-5, both modes, two sites |
+| fits | fits, does **not** preserve exclusivity | **gap named above** — usable λ in [3e-5, 3e-3], no number, no dispatch |
+| fits | does not fit | λ_next from the λ = 0 cell's measured reconstruction and penalty |
+| EXONERATED | — | no sweep point at all; the cause moves to the two-role encoder sum |
+
+In every branch except the first, the freed cards go to R2's second pair and R3 rather than idling, and in no branch is a smaller λ dispatched reflexively because a sweep was queued.
