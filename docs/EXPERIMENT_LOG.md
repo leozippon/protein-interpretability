@@ -13557,3 +13557,45 @@ Cost is negligible and needs no card: the decoder slice at one layer is 8,192 ×
 **R2.4's admission list requires "both compared arms to be measurable" and "causal intervention on a model-specific latent".** On this lineage the pre-adaptation checkpoint's protein mode is behaviourally unmeasurable, so a candidate protein-specific latent identified this way **can never be causally validated** — the same bound L33 states, arriving by a different road. The comparison would give R2.4 a protein feature-level *representational* result it currently lacks, and would leave the binding requirement exactly where it is.
 
 **Recommendation.** Worth computing, on its own merits rather than as a fallback: it is nearly free, it has a real null already on disk, and it converts "no protein feature-level comparison exists" into "a protein representational comparison exists, with candidates the causal step cannot reach". It must be framed as a global dissimilarity statistic with a candidate tail, explicitly not as a diff, explicitly not as completing R2.4, and explicitly not as a substitute for the causal step. **If the expectation is that it gives the protein arm what the Crosscoder branch was supposed to give, the answer is no**, and the contingency should close on that rather than on feasibility.
+
+---
+
+## 2026-08-17 — EXP-R2-211 pre-registered: R2.4's stalled third step, the independent-dictionary protein comparison, frozen before anything is computed
+
+R2.4's registered sequence is raw difference → linear alignment → **independent per-mode dictionaries** → Crosscoder. Steps one and two are complete; step three has been stalled since D3.h-B2 blocked it, and B2 is void. This runs step three on dictionaries that already exist, with a null that already exists, at no GPU cost. It is registered on that basis — completing a stalled step of the unit's own plan — and **not** as a rescue for the protein arm, which the availability answer above closed on its own terms.
+
+### Read this before the result
+
+**The admission is marginal, and that is the first fact about it.** At `d_hidden` 8,192 the protein pair clears each layer's own `r99` by **+4.8% at layer 27 and +9.3% at layer 28** on the binding side. Under the ≥10% robustness standard EXP-R2-204's second lever introduced, that is **zero robust layers and two marginal admissions**. Everything below is computed at the edge of where it is defined at all.
+
+**Any candidate this produces is causally unreachable on this lineage.** The pre-adaptation checkpoint's protein mode is behaviourally unmeasurable, so R2.4's admission list — which requires both compared arms measurable and a causal intervention on a model-specific latent — cannot be completed here at any budget (L33). Nothing from this entry may be picked up as a lead for an intervention that cannot be performed.
+
+**One enabling condition, stated because it is what makes the comparison possible at all.** The two checkpoints share a coordinate system: `ProLLaMA_Stage_1` is `Llama-2-7b-hf` continued-pretrained at identical architecture and dimensions with no basis permutation, so decoder directions from the two dictionaries live in the same residual space and a cosine between them is meaningful. Two independently pretrained models would not permit this.
+
+### The statistic, and what it may not be
+
+**Per pair of dictionaries and per layer in {27, 28}:** take live latents only, L2-normalise their decoder directions, form the cosine matrix, and compute a rectangular Hungarian assignment maximising total cosine. **The statistic is the distribution of assigned cosines**, summarised by its median and reported as a quantile curve.
+
+**The forced bijection is not evidence.** Hungarian returns a complete assignment between any two sets whatever, so the existence or count of matches carries no information. Only the distribution, against the null below, does.
+
+**A global dissimilarity statistic plus a candidate tail. No per-latent claims.** The reason is structural rather than cautious: with roughly 2,500 live latents against an effective dimension of 2,364–2,516, this dictionary is **barely over-complete** — nearer two bases of one subspace than two over-complete dictionaries — so individual latent identity is unstable across fits and a matched pair is not a matched feature. A latent in the tail is a **candidate**, and a candidate is not a feature.
+
+### The null: same-model, different-seed — never random directions
+
+**Six same-model pairs against three cross-model same-seed pairs.** Three seeds exist per checkpoint — 20260812 from the baselines, 20260815 and 20260816 from EXP-R2-207's R1 — giving 3 within-`base`, 3 within-`stage1`, and 3 cross-model at matched seed.
+
+**A random-direction null would be wrong and reassuring, which is the dangerous combination.** Chance agreement at this width is small — the expected best cosine against `N` random directions is about `sqrt(2 ln N / d)` ≈ 0.08 — but both dictionaries are fitted to largely overlapping activation structure and will agree on whatever the two clouds share **regardless of which model produced them**. Only a same-model null separates "agrees because the cloud is shared" from "agrees because the model is the same".
+
+### Decision rule, frozen now
+
+Let the six same-model median assigned cosines define a range, and compare the three cross-model medians against it, per layer.
+
+* **DISTINGUISHABLE** — every cross-model median falls below the minimum same-model median, by more than the same-model range. The two checkpoints' protein feature bases differ by more than two fits of one checkpoint differ.
+* **INDISTINGUISHABLE** — the cross-model medians fall inside the same-model range. **This is a real and reportable negative**: at the only layers where these dictionaries are admissible, they cannot tell the two checkpoints apart. It is not a failed measurement and it is not what a reader would assume.
+* **UNDECIDED** — anything else, reported as such.
+
+**No pair is added because of where an estimate landed.** Nine pairs are what exist; if they do not resolve it, the answer is that nine pairs do not resolve it.
+
+### Cost, and the condition for abandoning it
+
+A decoder slice at one layer is 8,192 × 4,096 fp32 = **134 MB**, so six dictionaries at two layers is ~1.6 GB read with `torch.load(..., mmap=True)`, **CPU-only, in the pod**, the route EXP-R2-204's addendum validated. Eighteen Hungarian assignments at ~2,500 × 2,500 should be minutes. **If any single assignment exceeds five minutes, or the read exceeds 10 GB, the entry is abandoned rather than optimised** — it is justified by being nearly free, and it stops being justified if it is not. It never touches a card and it runs behind everything.
