@@ -13454,3 +13454,38 @@ So protein adaptation **introduces prominence into the text activation spectrum 
 **Placed beside the protein arm**, the lineage now reads consistently: the continued-pretraining stage is where both modes' depth structure changes — protein's sharply identified layer-3 peak relocates to the broad region 17–22, and text's featureless curve acquires two modes — while instruction tuning moves neither. Both statements are made with no dictionary in them.
 
 **Bounds.** One lineage, one seed, one corpus draw per cell, one site (`block_output`). `r99` is an effective dimension under a variance cut and says where the cloud is widest, not where computation happens. The prominence figures are ratios within a cell and are not compared across modes, where the clouds differ in dimension for reasons L-per-site-NMSE already prohibits reading across.
+
+---
+
+## 2026-08-17 — EXP-R2-202 addendum: prominence calibrated against its null, and the "base/text has no structure" half withdrawn
+
+Raised against the entry above: prominence is a peak over a median, bounded below by 1 by construction, so it exceeds 1 on any finite sample of anything and "1.009 against 1.096" was a comparison with nothing. EXP-R2-202 recorded two per-layer controls and neither had been read. Zero GPU cost.
+
+**One of the two controls is unusable, and it is the one whose name invites it.** `isotropic_control` returns `r99` = **4,026 at every layer of every one of the six cells** — prominence exactly 1.000, 30 of 30 layers tied. That is the estimator's own ceiling at this token budget, which EXP-R2-202 already recorded; an isotropic Gaussian has equal eigenvalues, so its `r99` is a constant independent of layer and scale. It has **no variance to calibrate against** and is not a null for this statistic. A future reader reaching for "the isotropic control" would get 1.000 and conclude everything is significant.
+
+**The usable null is `coordinate_independent_control`** — per-coordinate variances preserved, cross-coordinate structure destroyed — which does vary and returns prominence excesses of **0.0014 to 0.0038** (mean 0.0028) with 27–29 of 30 layers tied.
+
+| cell | prominence | ties | its own null | null ties | excess ÷ null excess |
+|---|---:|---:|---:|---:|---:|
+| base / protein | 1.317 | 1 | 1.003 | 29 | **111x** |
+| stage1 / protein | 1.150 | 4 | 1.003 | 29 | **48x** |
+| ProLLaMA / protein | 1.162 | 6 | 1.003 | 29 | **48x** |
+| base / text | **1.009** | 23 | 1.001 | 28 | **6.3x** |
+| stage1 / text | 1.170 | 6 | 1.004 | 27 | **44x** |
+| ProLLaMA / text | 1.096 | 8 | 1.002 | 28 | **41x** |
+
+### What survives and what does not
+
+**Survives.** Every cell except `base/text` clears its null by 41x to 111x, and by 25x to 82x against the *largest* null excess observed across all six draws. The protein arm's three statements — a sharply identified peak at layer 3 before adaptation, a broad region 17–22 after, and no further movement at the instruction stage — all rest on prominence figures 39x to 82x the worst-case null. Unaffected.
+
+**Withdrawn: "`base/text` has no depth structure."** At 6.3x its own null and **2.2x the largest null excess in the set**, it is weak but not absent. With one null realisation per cell and six in total the tail of the null is unmeasured, so 2.2x is not a separation I am willing to call either way. The honest statement is that `base/text`'s depth structure is **too weak to characterise**, not that it is zero.
+
+**Narrowed, and it survives in the narrower form.** "Protein adaptation introduces prominence into the text spectrum where the base model had none" becomes **"where the base model has an order of magnitude less"**: prominence excess 0.009 against 0.170 and 0.096, a factor of **19x and 11x**. That comparison is between quantities that both clear their own nulls on one side and is bounded below on the other, so the direction and rough size hold even though the base cell's own value is not separable from its control.
+
+**The lineage statement is unchanged in substance**: the continued-pretraining stage is where both modes' depth structure changes, and the instruction stage moves neither. What changes is that the text half is now a statement about a large ratio between two prominences rather than about presence versus absence.
+
+### Consequence for the rule
+
+Appendix B rule 35 is amended: prominence must be reported **beside its null**, because the statistic is bounded below by 1 and cannot be read on its own. The reader used here now emits the observed value, the null, and their ratio on one line, and flags any cell under 10x. This is the same shape as `r99_effective_dimension` travelling beside per-site NMSE — a statistic that cannot be interpreted alone is carried with what interprets it.
+
+**Bound on the calibration itself.** One control realisation per cell, six in total, no repeated draws. This prices the null's central value and not its spread, so the 41x–111x separations are safe by any reasonable tail and the 2.2x one is not. Repeated control draws would be needed to make `base/text` decidable, and that is recorded as a gap rather than attempted.
