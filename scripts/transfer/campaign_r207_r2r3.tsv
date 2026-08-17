@@ -1,0 +1,39 @@
+# Campaign manifest for h200_campaign_queue.sh: what remains of EXP-R2-207 after R1 landed and R4 was cancelled.
+#
+# Columns, tab-separated: slot <TAB> key <TAB> gpu <TAB> stage <TAB> label <TAB> env <TAB> args
+# `--device` and `--out` are injected by the runner and must never appear in args.
+# ${TRANSFER_MODEL_BASE_DIR} is substituted in-pod after h200_env.sh is sourced, so the model root stays declared once.
+#
+# ONE SNAPSHOT. Every cell here is 17_train_transcoder.py at pinned commit bd6ff99 -- the trainer EXP-R2-191 and
+# EXP-R2-204 ran, byte-identical to 04fdfa5, the code state that trained every baseline these cells are read against.
+# The Crosscoder cells that needed a second snapshot are gone from this campaign: EXP-R2-206 completed and was read,
+# and EXP-R2-208's pair is running under the driver. The runner's own copy comes from whichever snapshot launches it
+# and is independent of the cells' code provenance, so a `cc` key is not needed here.
+#
+# WHY THIS FILE REPLACES campaign_r206_r207.tsv rather than editing it. That manifest's labels are not the labels the
+# cells were dispatched under -- it says `r207_r1_d8192_base_protein_s20260815` where the run is
+# `r207_r1_base_s20260815` -- and the resume rule keys on the output directory, which is the label. Dispatching it
+# today would re-run four completed R1 cells rather than skip them. Every label below is the label its cell will
+# actually carry, and none of them exists on GPFS yet.
+#
+# WHAT IS NOT HERE. R4 (d_hidden 16,384 replicates) is cancelled: `R` is resolved, and pricing the f16 numerators
+# cannot change a conclusion already 23 sd from the null on the weaker checkpoint. The Crosscoder re-run is not here
+# because its lambda is not settled until EXP-R2-208's pair is read at the endpoint; slot 2 leaves two cards free and
+# is where it goes once it is.
+#
+# SLOTS are execution barriers, not the pre-registered rounds. R2's second pair leads slot 1 because the coordinator's
+# priority order puts completing the text `f8` denominator above the curvature point. Slot 1's barrier is set by the
+# text cells at ~4.9 h; the two protein R3 cells beside them run ~3.7 h. Slot 2 is the two text R3 cells at ~3.2-3.4 h.
+#
+# VOID CONDITIONS carried from EXP-R2-207, unchanged. Protein must realise 36,978 steps / 147,912 sequences /
+# 34,001,183 scored tokens with the screen keeping 961 of 1,024 at max containment 1.0000 over 229,376 records; text
+# must realise 11,367 / 45,468 / 34,002,081 with 1,024 of 1,024 at 0.4346 over 106,496. `--steps` is the DECLARED
+# value, 56,000 protein and 26,000 text, because it sets the held-out offset. The three optimiser flags are omitted
+# exactly as the r24_plt_* baselines omitted them, so each cell is argument-identical to its baseline except for the
+# one axis it varies: `--seed` for R2, `--d-hidden` for R3.
+1	r207	0	17_train_transcoder.py	r207_r2_base_text_s20260816	-	--architecture plt --joint-checkpoint ${TRANSFER_MODEL_BASE_DIR}/Llama-2-7b-hf --rendering prollama --mode text --d-hidden 8192 --k 32 --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 26000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --seed 20260816 --corpus-seed 20260812
+1	r207	1	17_train_transcoder.py	r207_r2_stage1_text_s20260816	-	--architecture plt --joint-checkpoint ${TRANSFER_MODEL_BASE_DIR}/ProLLaMA_Stage_1 --rendering prollama --mode text --d-hidden 8192 --k 32 --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 26000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --seed 20260816 --corpus-seed 20260812
+1	r207	2	17_train_transcoder.py	r207_r3_base_protein_d4096	-	--architecture plt --joint-checkpoint ${TRANSFER_MODEL_BASE_DIR}/Llama-2-7b-hf --rendering prollama --mode protein --d-hidden 4096 --k 32 --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 56000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --seed 20260812 --corpus-seed 20260812
+1	r207	3	17_train_transcoder.py	r207_r3_stage1_protein_d4096	-	--architecture plt --joint-checkpoint ${TRANSFER_MODEL_BASE_DIR}/ProLLaMA_Stage_1 --rendering prollama --mode protein --d-hidden 4096 --k 32 --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 56000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --seed 20260812 --corpus-seed 20260812
+2	r207	0	17_train_transcoder.py	r207_r3_base_text_d4096	-	--architecture plt --joint-checkpoint ${TRANSFER_MODEL_BASE_DIR}/Llama-2-7b-hf --rendering prollama --mode text --d-hidden 4096 --k 32 --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 26000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --seed 20260812 --corpus-seed 20260812
+2	r207	1	17_train_transcoder.py	r207_r3_stage1_text_d4096	-	--architecture plt --joint-checkpoint ${TRANSFER_MODEL_BASE_DIR}/ProLLaMA_Stage_1 --rendering prollama --mode text --d-hidden 4096 --k 32 --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 26000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --seed 20260812 --corpus-seed 20260812

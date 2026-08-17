@@ -2,10 +2,14 @@
 set -euo pipefail
 
 # ############################################################################
-# UNTESTED against a pod. The argument handling and the local verification path
-# were exercised on the workstation with a stubbed access layer; nothing here
-# has crossed the real transit link. Run the checks in "First run" below before
-# trusting it with a result.
+# VALIDATED ON THE RECORDS PATH (2026-08-17), which is the default and the
+# reason this file exists. Steps 1 and 2 of "First run" below passed against a
+# real pod: --dry-run selected exactly the one *.json in each of two completed
+# cell directories and moved nothing, and a records-only pull of a cell the
+# driver had already admitted returned a byte-identical file -- 46,377 bytes,
+# sha256 932e7682e132.., verified per-file by h200_gpfs_pull.sh and again by
+# this script's own sha256sum -c -- in 62 s, leaving the 8.6 GB dictionary on
+# GPFS. Step 3, --with-weights, has NOT been run and is still unexercised.
 # ############################################################################
 #
 # Retrieve the RECORDS of a completed run and leave the dictionary weights on
@@ -67,9 +71,12 @@ set -euo pipefail
 # First run, cheapest disconfirming check first:
 #   1. --dry-run against a completed cell directory: one pod round trip, no
 #      transfer. It proves the pod path exists and the selection is right.
+#                                                                 PASSED 08-17.
 #   2. Records-only pull of the same cell, then diff the pulled JSON against the
 #      copy the driver already admitted for an earlier cell of the same shape.
+#                                                                 PASSED 08-17.
 #   3. --with-weights on the SMALLEST completed cell, not a 17.2 GB one.
+#                                                                 NOT RUN.
 
 H200_ACCESS_ROOT="${H200_ACCESS_ROOT:-${HOME}/hangzhou-remote}"
 H200_POD_BASH="${H200_POD_BASH:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_pod_bash.sh}"

@@ -1,6 +1,19 @@
 # Campaign manifest for h200_campaign_queue.sh: EXP-R2-206 (Crosscoder) + EXP-R2-207 (R's interval and the width curve).
 #
-# UNTESTED. No cell below has been dispatched and no line of this file has been parsed by a running program.
+# SUPERSEDED 2026-08-17 -- DO NOT DISPATCH. Kept because the two-snapshot reasoning below is still the reference for a
+# campaign that spans pins, and because the labels are the evidence for why it was retired. The live manifest for what
+# remains of EXP-R2-207 is campaign_r207_r2r3.tsv.
+#
+# Three reasons it must not be dispatched, in order of how much they would cost:
+#   1. THE LABELS ARE NOT THE LABELS THAT RAN. This file says `r207_r1_d8192_base_protein_s20260815`; the cell was
+#      dispatched as `r207_r1_base_s20260815`. The resume rule keys on the output directory, which is the label, so
+#      the four completed R1 cells would be RE-RUN rather than skipped -- about 24 GPU-hours of recomputation.
+#   2. Slot 5 is EXP-R2-207's R4, cancelled on 2026-08-17: `R` is resolved and pricing the f16 numerators cannot
+#      change a conclusion already 23 sd from the null on the weaker checkpoint.
+#   3. Slots 1 and 2 carry EXP-R2-206's Crosscoder cells and R1, all of which completed and were read.
+#
+# It has been parsed since it was written: h200_campaign_queue.sh --dry-run resolved all 18 cells against both real
+# snapshots in the pod on 2026-08-17, which is how defect 1 was found. No cell of it has ever been dispatched.
 #
 # Columns, tab-separated: slot <TAB> key <TAB> gpu <TAB> stage <TAB> label <TAB> env <TAB> args
 # `--device` and `--out` are injected by the runner and must never appear in args.

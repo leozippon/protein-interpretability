@@ -2,11 +2,13 @@
 set -euo pipefail
 
 # ############################################################################
-# UNTESTED. Not one line of this file has been executed anywhere -- not on the
-# workstation, not in a pod, not against a manifest. It was written while the
-# execution gate was closed and reviewed by inspection only. Run the checks in
-# the "First run" section below, in the order given, before it is trusted with
-# a campaign. Nothing here may be described as working until it has.
+# PARTIALLY VALIDATED (2026-08-17). Steps 1 to 3 of "First run" below have been
+# executed and passed, on the workstation and in a real pod against real
+# snapshots. Steps 4 and 5 have NOT: nothing here has ever launched a cell,
+# waited on one, written a status file, taken the lock, crossed a slot barrier,
+# or exercised the resume rule. Those are the paths that do the work, and they
+# remain unexecuted. Do not describe this file as working; describe it as
+# parsing, validating and resolving correctly, which is what was measured.
 # ############################################################################
 #
 # An IN-POD sequential campaign runner: one dispatch, a whole campaign.
@@ -46,13 +48,22 @@ set -euo pipefail
 #
 #   ~/hangzhou-remote/ssh_tunnel/h200_pod_exec.sh -- bash -lc "
 #     setsid nohup bash '${CC_SNAPSHOT}/scripts/transfer/h200_campaign_queue.sh' \
-#       --manifest '${CC_SNAPSHOT}/scripts/transfer/campaign_r206_r207.tsv' \
+#       --manifest '${CC_SNAPSHOT}/scripts/transfer/<campaign>.tsv' \
 #       --snapshot cc='${CC_SNAPSHOT}' \
 #       --snapshot r207='${R207_SNAPSHOT}' \
 #       > /dev/null 2>&1 < /dev/null &
 #     disown
 #     echo QUEUE_LAUNCHED
 #   "
+#
+# A campaign that fits one pin passes one --snapshot and names one key; the two
+# above are the general form, not a requirement.
+#
+# The manifest reaches the pod only INSIDE a snapshot, so revising a manifest
+# means freezing again. That is the intended cost rather than an oversight: the
+# manifest is part of the run's identity in the same way this launcher is, and
+# a manifest written straight onto GPFS would be a campaign definition nobody
+# can trace to a commit. Budget one freeze per manifest revision.
 #
 # `echo QUEUE_LAUNCHED` is not evidence the runner is running -- the access
 # layer returns 0 whatever the remote command did. The evidence is the status
@@ -176,15 +187,34 @@ set -euo pipefail
 # ------------------------------------------------------------- First run
 #
 # Ordered so the cheapest disconfirming check comes first:
-#   1. `bash -n` this file and the manifest's stage list by eye.
+#   1. `bash -n` this file and the manifest's stage list by eye.  PASSED 08-17.
 #   2. On the workstation, --dry-run: it parses and validates the manifest,
-#      prints every resolved command, and touches nothing.
+#      prints every resolved command, and touches nothing.        PASSED 08-17.
 #   3. In the pod, run --dry-run against the real snapshots: this is the first
 #      check that the snapshot paths, stage files and GPFS roots are real.
+#                                                                 PASSED 08-17.
 #   4. Run a one-cell one-slot throwaway manifest whose stage is cheap, and
 #      confirm the status file appears, transitions, and ends `exited-ok`.
+#                                                                 NOT RUN.
 #   5. Re-run step 4 unchanged and confirm the cell reports skipped-complete.
+#                                                                 NOT RUN.
 #   6. Only then dispatch the campaign.
+#
+# What step 3 confirmed in the pod, recorded so it is not re-litigated: bash
+# 5.2.21 (`declare -A` available), `date -u`, `sha256sum`, `mktemp`, `setsid`,
+# `nohup`, `flock`, `xargs -r` on empty input, `find -printf` and `grep -m 1`
+# all present; four cards; and `nvidia-smi --query-gpu=index,memory.used
+# --format=csv,noheader,nounits` emitting `0, 45491`, which is the shape
+# gpu_is_busy's `awk -F', *'` parses. Steps 4 and 5 were deliberately skipped
+# because all four cards were occupied and a throwaway cell would have had to
+# contend with pre-registered work.
+#
+# One property step 3 does NOT check, and the manifest is where it bites: the
+# resume rule keys on the output directory, which is the LABEL. A manifest whose
+# labels differ from the labels its cells were actually dispatched under will
+# re-run completed cells rather than skip them, and a dry run cannot see it
+# because a dry run never consults the results tree. Diff the manifest's labels
+# against `ls <gpfs>/results/external_baseline/<run-id>/` before dispatching.
 
 usage() {
   sed -n '/^# ---------------------------------------------------------------- Usage/,/^# ---------------------------------------------------------------- Manifest/p' \

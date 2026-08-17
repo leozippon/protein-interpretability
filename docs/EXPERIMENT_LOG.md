@@ -13127,3 +13127,25 @@ If the λ pair lands in a branch that yields no usable λ, the next sweep point 
 Named here because it changes what a workstation-only reader can reproduce. `r204_d16384_base_text` and `r204_d16384_stage1_text` were **never pulled to the workstation** — only their `.dispatch` records are local — so `R` cannot be recomputed end to end from this checkout. Their endpoint counts were read **in the pod, CPU-only**, from the 20 KB JSON that sits beside each 17 GB `.pt`: 14,437.0625 and 8,331.7500 live latents per layer, reproducing the published 14,437.1 and 8,331.8. No weights moved, no GPU was touched, and the four training cells were unaffected.
 
 That is the pattern for this situation rather than a workaround for a defect: `h200_sync.sh pull` is a directory operation that tars its whole source, so retrieving a 20 KB record through it means moving 17 GB of weights first. `scripts/transfer/pull_records_h200.sh` was written for exactly this and **has still never run in a pod**, so the CPU-only in-pod read remains the route with evidence behind it — the same one EXP-R2-204's per-layer addendum used and this entry re-validated against two published figures.
+
+---
+
+## 2026-08-17 — EXP-R2-208: the rule for the next λ, frozen before either cell's endpoint is readable
+
+Written while both cells are still training and with nothing read from them but the pre-registered stream checks. The point of writing it now is that a sweep point chosen after seeing where the first one landed is a tuned number, and this campaign has already said so about λ = 3e-5 itself.
+
+**If λ = 3e-5 FITS and preserves exclusivity**, no arithmetic is needed: the re-run goes out at 3e-5 in both modes on the two admissible sites, and this note is spent.
+
+**If λ = 0 EXONERATES the penalty** — live latents below 100 per site and `active_fraction` below 3.9e-4, so removing the term entirely bought less than an order of magnitude — then there is **no next sweep point at all**. The penalty is not what holds the basis down, the cause moves to the two-role encoder sum or the shared latent space, and the follow-on is a different experiment rather than a smaller λ. Dispatching a lower λ in that branch would be answering a question the round just closed.
+
+**The branch that needs arithmetic is the one where λ = 0 fits and λ = 3e-5 does not.** That combination says the penalty is confirmed as the cause and that 3e-5 is still above the usable range — which in the dominance model means the true penalty magnitude sits at the pessimistic end of the bracket, so the share at 3e-5 was nearer 17% than 5%.
+
+**The next λ is then computed from a measured penalty rather than from the bracket, and that is the substantive change.** EXP-R2-208 had to bracket `Σᵢ fᵢ‖W_dec,ᵢ‖` at a healthy fit between 256 and 1,448 — a factor of 5.7 — because no fitted dictionary existed to measure it on. A fitted λ = 0 cell **is** that dictionary. Its artefact carries the per-site decoder penalty and its own held-out reconstruction, so both terms of the ratio become measurements:
+
+> **λ_next = target_share × (held-out reconstruction sum over the two sites and both roles, from the λ = 0 cell) ÷ (Σᵢ fᵢ‖W_dec,ᵢ‖ at that cell's endpoint)**, with `target_share` the same 5–10% band the campaign already froze.
+
+That replaces both stand-ins at once: the 0.2582 reconstruction target borrowed from R2.3's per-layer transcoders, and the geometric-mean 609 penalty. The 5.7x uncertainty the entry carried explicitly rather than hiding is exactly what a fitted λ = 0 cell removes.
+
+**The fallback, if the λ = 0 artefact cannot supply those two numbers**, is the pessimistic end of the frozen bracket rather than a fresh estimate: 5–10% of 0.2582 against `P` = 1,448 gives λ ∈ [8.9e-6, 1.78e-5], centre 1.26e-5, taken as **λ = 1e-5** — a 300x reduction from the campaign value and 3x below the point now running.
+
+**Nothing above is informed by the mid-training numbers in the pod logs**, which show live counts moving in both directions between steps 4,000 and 8,000 and are not the quantity either criterion is stated on. The FITS and PRESERVES EXCLUSIVITY bars are unchanged and remain endpoint quantities.
