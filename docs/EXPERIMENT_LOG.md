@@ -13519,3 +13519,41 @@ With five draws per cell (the existing one plus four), let `s` be the sample sta
 ### Why this is worth an hour of otherwise-idle card
 
 Three sentences currently in `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` D1.d and `summary.md` are marked unpriced or hedged. Each becomes a measurement or an explicit non-measurement. The alternative is that they stay hedged, get quoted without the hedge, and require a fourth retraction — which is the failure mode this session has already met three times.
+
+---
+
+## 2026-08-17 — Availability answer: the independent-dictionary protein comparison is permitted, cheap, has its own null — and cannot complete R2.4
+
+Asked as a contingency for EXP-R2-209's negative branch. Answered before the sweep lands. Nothing built, nothing dispatched.
+
+### 1. It is not licensed — but it is not forbidden either, and the distinction is the whole answer
+
+The amended rule reads: *"a model diff may be reported at layer `l` **only where** both cells' dictionaries carry at least that layer's own `r99` live latents."* **"Only where" is a necessary condition.** Passing it removes a blocker; it grants nothing. The Crosscoder artefact states the same in its own limitations — *"an admissible layer is one where both cells' dictionaries carry enough live latents for a diff to be defined. It is not a claim that a diff there is large, meaningful, or about anything in particular"* — and EXP-R2-204's second lever put it plainly: admissible is still not informative, and clearing the rule removes one of two obstacles.
+
+So B2's voiding withdrew an attribution and did not confer a permission. What it does do is leave the comparison **unblocked**: the rule speaks of "both cells' dictionaries", which is natively the independent-dictionary setting rather than a Crosscoder-specific test, so it governs this comparison and the protein pair satisfies it at layers 27 and 28. **It must carry its own validity argument, which is question 2.**
+
+One qualification that travels with it: at `d_hidden` 8,192 those two layers clear their `r99` by **+4.8% and +9.3%** on the binding side, so under the ≥10% robustness standard the same entry introduced, this comparison would run at **zero robust layers and two marginal admissions**.
+
+### 2. The matching is trustworthy only because the null exists, and only for a distributional statistic
+
+Decoder-direction cosine with a Hungarian assignment is the right candidate and carries two distinct hazards.
+
+**The forced bijection.** Hungarian always returns a complete matching, so *that* latents matched is not evidence of anything. The statistic must be the **distribution of assigned cosines against a null**, never a count of matches. Reported as a count it would manufacture correspondence exactly as feared.
+
+**Chance correspondence is weaker than it looks, and that is not the reassurance it appears to be.** With roughly 2,500 live latents in an effective space of `r99` 2,364–2,516, the expected best cosine between a direction and `N` random ones is about `sqrt(2 ln N / d)` ≈ **0.08**, so random agreement is small. But random directions are the wrong null: both dictionaries are fitted to largely overlapping activation structure and will agree on whatever the two clouds share, *regardless of which model produced them*. Only a same-model null separates "agrees because the cloud is shared" from "agrees because the model is the same".
+
+**A structural caveat that argues against per-latent claims.** At ~2,500 live latents against an effective dimension of ~2,400–2,500, this dictionary is barely over-complete — nearer a basis than an over-complete dictionary. Matching two near-bases of the same subspace is a weaker operation than matching two over-complete dictionaries, and individual latent identity is correspondingly less stable. The defensible product is a **global dissimilarity statistic**, plus a **tail** of latents whose best cross-model match falls below the same-model null, read as candidates and not as findings.
+
+### 3. The null exists, is matched, and costs no GPU
+
+Three seeds per checkpoint — 20260812 from the baselines, 20260815 and 20260816 from R1 — give **6 same-model different-seed pairs** (3 per checkpoint) against **3 cross-model same-seed pairs**. That is the matched design the comparison needs, and R1 supplied it as a by-product of pricing `R`.
+
+Cost is negligible and needs no card: the decoder slice at one layer is 8,192 × 4,096 fp32 = **134 MB**, so six dictionaries at two layers is ~1.6 GB read with `torch.load(..., mmap=True)`, CPU-only, in the pod — the route EXP-R2-204's addendum validated. Four of the six `.pt` files are already on the workstation; the two seed-20260812 baselines are GPFS-only. A Hungarian assignment on ~2,500 × 2,500 is seconds; nine pairs is minutes.
+
+**It is also not actually a contingency.** Nothing about it depends on EXP-R2-209's outcome — it can be computed whether or not a usable λ is found.
+
+### The reason it does not rescue the protein arm
+
+**R2.4's admission list requires "both compared arms to be measurable" and "causal intervention on a model-specific latent".** On this lineage the pre-adaptation checkpoint's protein mode is behaviourally unmeasurable, so a candidate protein-specific latent identified this way **can never be causally validated** — the same bound L33 states, arriving by a different road. The comparison would give R2.4 a protein feature-level *representational* result it currently lacks, and would leave the binding requirement exactly where it is.
+
+**Recommendation.** Worth computing, on its own merits rather than as a fallback: it is nearly free, it has a real null already on disk, and it converts "no protein feature-level comparison exists" into "a protein representational comparison exists, with candidates the causal step cannot reach". It must be framed as a global dissimilarity statistic with a candidate tail, explicitly not as a diff, explicitly not as completing R2.4, and explicitly not as a substitute for the causal step. **If the expectation is that it gives the protein arm what the Crosscoder branch was supposed to give, the answer is no**, and the contingency should close on that rather than on feasibility.
