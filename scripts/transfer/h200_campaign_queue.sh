@@ -2,13 +2,20 @@
 set -euo pipefail
 
 # ############################################################################
-# PARTIALLY VALIDATED (2026-08-17). Steps 1 to 3 of "First run" below have been
-# executed and passed, on the workstation and in a real pod against real
-# snapshots. Steps 4 and 5 have NOT: nothing here has ever launched a cell,
-# waited on one, written a status file, taken the lock, crossed a slot barrier,
-# or exercised the resume rule. Those are the paths that do the work, and they
-# remain unexecuted. Do not describe this file as working; describe it as
-# parsing, validating and resolving correctly, which is what was measured.
+# VALIDATED (2026-08-17). Steps 1 to 5 of "First run" below have all been
+# executed in a real pod and all passed: it parsed and resolved a manifest,
+# launched a real stage as its own child on a real card, read that child's exit
+# status from wait(2), wrote and atomically rewrote the status file through
+# every transition, took and released the lock, crossed the slot barrier, and on
+# an identical re-dispatch reported skipped-complete without launching anything.
+# The artefact its cell produced is bit-identical, on every scientific field, to
+# the one the single-cell driver produced from the same code and arguments.
+#
+# Two limits that remain. It has never run a campaign of more than one cell or
+# more than one slot, so concurrency within a slot and the barrier between two
+# populated slots are exercised only by construction. And a cell that FAILS has
+# never been observed: exited-nonzero, exited-ok-no-artifact and
+# refused-busy-gpu are all unexecuted paths.
 # ############################################################################
 #
 # An IN-POD sequential campaign runner: one dispatch, a whole campaign.
@@ -206,10 +213,21 @@ set -euo pipefail
 #                                                                 PASSED 08-17.
 #   4. Run a one-cell one-slot throwaway manifest whose stage is cheap, and
 #      confirm the status file appears, transitions, and ends `exited-ok`.
-#                                                                 NOT RUN.
+#                                                                 PASSED 08-17.
 #   5. Re-run step 4 unchanged and confirm the cell reports skipped-complete.
-#                                                                 NOT RUN.
+#                                                                 PASSED 08-17.
 #   6. Only then dispatch the campaign.
+#
+# What steps 4 and 5 returned, recorded so the claim is checkable. The cell was
+# EXP-R2-202's own base/protein spectrum cell run from the snapshot frozen at its
+# own pin, under a label with no directory on GPFS. Step 4: launched on cuda:0 as
+# a child pid, exited 0 in three minutes, status file went pending -> running ->
+# exited-ok with the artefact path recorded, `# FAILURES 0` and `# NO-RECORD 0`
+# throughout, slot barrier reached, lock released after the settle. Step 5, the
+# identical manifest re-dispatched: `skipped-complete`, nothing launched, the
+# runner exited 0. And the artefact compares bit-identical to the driver's on
+# `spectrum`, `verdict`, `condition`, `controls` and `loader_gate`; the only
+# fields that differ are the card index and two wall-clock timings.
 #
 # What step 3 confirmed in the pod, recorded so it is not re-litigated: bash
 # 5.2.21 (`declare -A` available), `date -u`, `sha256sum`, `mktemp`, `setsid`,

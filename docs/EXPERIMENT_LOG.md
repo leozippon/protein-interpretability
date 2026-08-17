@@ -13170,3 +13170,241 @@ The rule above covers **downward** movement — λ = 0 fits, λ = 3e-5 does not,
 | EXONERATED | — | no sweep point at all; the cause moves to the two-role encoder sum |
 
 In every branch except the first, the freed cards go to R2's second pair and R3 rather than idling, and in no branch is a smaller λ dispatched reflexively because a sweep was queued.
+
+---
+
+## 2026-08-17 — EXP-R2-208 read: the penalty is CONFIRMED as the cause of the collapse, the anti-collapse arithmetic was right, and exclusivity did not come with it
+
+Both cells completed and were admitted. Read at the endpoint against the frozen table, with the reader validated first on EXP-R2-206's artefacts: it reproduces that campaign's published live counts (18 / 8 protein, 310 / 197 text), all four C3 gaps (+0.344, +0.000, +0.025, −0.095), the category counts, `active_fraction` 6.03e-05 and the per-site penalty 51.06, so the route is the same one that produced the numbers these are compared against.
+
+Both cells reproduce the protein stream exactly — 36,978 steps, 34,001,183 scored tokens, screen 961 of 1,024 at maximum containment 1.0000 over 229,376 records, held-out offset 229,376. Neither is void.
+
+### The primary question, answered decisively
+
+| cell | live L27 | live L28 | `active_fraction` | held-out NMSE L27 / L28 | frozen band |
+|---|---:|---:|---:|---:|---|
+| λ = 3e-3 (EXP-R2-206) | 18 | 8 | 6.03e-05 | 0.3435 / 0.5031 base | did not fit |
+| **λ = 0** | **1,804** | **1,481** | **3.898e-03** | 0.1909 / 0.1196 | **FITS** |
+| **λ = 3e-5** | **1,601** | **1,306** | **3.894e-03** | 0.1937 / 0.1218 | **FITS** |
+
+**CONFIRMED**, on the criterion frozen before either cell ran: live ≥ 1,000 per site at both layers *and* `active_fraction` ≥ 1.95e-3. λ = 0 clears the live bar by 1.8x and 1.5x and returns an `active_fraction` of 3.898e-3 against the 3.906e-3 that `k`/`d_hidden` implies — **99.8% of TopK's budget surviving the ReLU, against 1.5% at λ = 3e-3**. The activation-weighted decoder-norm L1 is what held the basis down. Nothing else changed: same activations, same sites, same width, same `k`, same optimiser, same seed, same corpus draw.
+
+**The C6-legal comparison confirms it is now a dictionary rather than merely a live count.** Against R2.3's per-layer transcoder at the same mode, role, site and width — the one comparison C6 sanctions — λ = 0's held-out NMSE by role is 0.0820 / 0.1089 at layer 27 and 0.0678 / 0.0518 at layer 28, against the transcoder's 0.0670 / 0.0935 and 0.0585 / 0.0392. Ratios of **1.16x to 1.32x**, where EXP-R2-206's were 4.0x to 13.4x. No cross-mode, cross-role or cross-site comparison is drawn from this and none may be.
+
+### The dominance arithmetic was right, and that is worth recording separately
+
+EXP-R2-208 had to bracket `Σᵢ fᵢ‖W_dec,ᵢ‖` at a healthy fit between **256 and 1,448** over two sites and both roles, geometric mean 609, and carried the 5.7x uncertainty explicitly rather than hiding it. A fitted dictionary now measures it: **565.7 at λ = 0** and 459.8 at λ = 3e-5 — inside the bracket, and within 7% of the geometric-mean estimate. The bound was not merely conservative; it was accurate.
+
+**And λ = 3e-5 hit the share it was chosen to hit.** Its realised penalty share is `λ·P / reconstruction` = 3e-5 × 459.8 / 0.3155 = **4.37%**, against the 5–10% target the amendment solved for and the 3.0%–16.8% it predicted. Re-running the frozen formula on the measured quantities prescribes λ ∈ [3.4e-5, 6.9e-5] — essentially where the cell already is.
+
+### What did not come with it, and it is the finding that matters most
+
+**Neither cell preserves exclusivity, and λ = 3e-5 fails its own frozen criterion by two orders of magnitude.** `polarised` — the fraction of live latents at true pairing whose relative decoder norm is ≤ 0.05 or ≥ 0.95 — is **0.000 at λ = 0** and **0.001 and 0.002 at λ = 3e-5**, against an absolute floor of 0.10 and a requirement of twice the λ = 0 value. Both cells put essentially every live latent in the diffuse *intermediate* band: 1,435 of 1,804 at λ = 0 layer 27, 1,251 of 1,601 at λ = 3e-5 layer 27.
+
+**So the tension the amendment worried about is now measured rather than hypothesised.** The dominance arithmetic was built to answer one question — how large may λ be before the penalty dominates the objective and the basis collapses — and it answered it correctly. It says nothing about how large λ must be before the decoder-norm L1 polarises anything, and at a share inside the anti-collapse target band it polarises **nothing**. A usable λ, if one exists, therefore lies well above the share this reasoning recommends, somewhere in the interval **(3e-5, 3e-3)** bounded at both ends by measurements: 3e-5 fits and does not polarise, 3e-3 polarises nothing either because it never fitted.
+
+**One corroboration of C4, sharper than the last.** At λ = 3e-5 layer 28 the *shuffled null* is 30.7% polarised — 256 base-specific and 73 adapted-specific of 1,073 live — against 0.15% at true pairing. The null is a ceiling for exclusivity and not a floor, exactly as C4 states, and comparing a true-pairing polarisation against it would invert the reading.
+
+### C3 fails at both layers in both cells, and this still does not run the named test
+
+| cell | layer | shared true | shared null | gap | C3 (≥ 0.50) |
+|---|---:|---:|---:|---:|---|
+| λ = 0 | 27 | 0.205 | 0.002 | +0.203 | FAIL |
+| λ = 0 | 28 | 0.155 | 0.002 | +0.153 | FAIL |
+| λ = 3e-5 | 27 | 0.217 | 0.003 | +0.215 | FAIL |
+| λ = 3e-5 | 28 | 0.133 | 0.002 | +0.131 | FAIL |
+
+The original entry named a reading that "would change more than this": a fitted dictionary whose C3 still fails would mean EXP-R2-206's separation failure was never a fitting failure, and would put the admissibility amendment's degeneracy account in trouble on its own admissible layers. **That reading is not available here, and its own amendment is why.** The amendment established before dispatch that C3 at λ = 0 is uninformative either way, because with no decoder-norm L1 the relative norms may go diffuse rather than separating — which is precisely what they did. λ = 3e-5 was added to be the cell that could run the test, and it cannot, because it did not preserve exclusivity. **The named test remains unrun, now for a measured reason rather than a structural one.**
+
+**What the round does settle about EXP-R2-206 is narrower and still worth having**: that campaign's collapse *was* a fitting failure, since the same sites at the same width now carry two orders of magnitude more live latents and reconstruct within 1.2–1.3x of a per-layer transcoder. Whether a dictionary that both fits *and* polarises would separate is untested, and no cell in this round could have tested it.
+
+### No sweep point is dispatched, and that is the frozen rule rather than caution
+
+This is exactly the branch named this morning before either endpoint was readable: *fits, does not preserve exclusivity → usable λ in [3e-5, 3e-3], no number, no dispatch.* How much penalty polarisation needs has never been measured on this cloud, the anti-collapse arithmetic is now demonstrated to be silent on it, and the two fitted points available (0 and 3e-5) both return ≈0 and cannot be extrapolated through. Naming a number from them would be the tuned-value failure this campaign has twice written rules to prevent. **The cards went to EXP-R2-207's remaining cells instead.**
+
+The honest next step is a measurement of the polarisation-versus-λ relation rather than another guess at a point on it, and that is a design question for the next round rather than something this entry should settle.
+
+---
+
+## 2026-08-17 — EXP-R2-209 pre-registered: a bounded upward λ sweep, text first, with the stop rule and the negative finding named in advance
+
+Frozen before any cell is dispatched and before a card is free. Four cells in the interval EXP-R2-208 left open, and a rule that ends the sweep whatever it returns.
+
+### What bounds the interval, recomputed from the artefacts rather than taken on report
+
+EXP-R2-206's own category counts price polarisation at λ = 3e-3, and nobody had read them that way. `polarised` is `(base_specific + adapted_specific) / n_live` at true pairing:
+
+| cell | λ | layer | live | polarised | fits? |
+|---|---:|---:|---:|---:|---|
+| text | 3e-3 | 27 | 310 | **0.106** | no |
+| text | 3e-3 | 28 | 197 | **0.208** | no |
+| protein | 3e-3 | 27 | 18 | 0.000 | no |
+| protein | 3e-3 | 28 | 8 | 0.000 | no |
+| protein | 3e-5 | 27 | 1,601 | 0.001 | **yes** |
+| protein | 3e-5 | 28 | 1,306 | 0.002 | **yes** |
+| protein | 0 | 27 / 28 | 1,804 / 1,481 | 0.000 | **yes** |
+
+**In text the question is bracketed at both ends**: polarisation above the 0.10 floor at a λ that does not fit, and — by the protein evidence for the mechanism — fitting at a λ that does not polarise. **In protein it is not bracketed.** Zero polarisation at λ = 3e-3 is measured on **18 and 8 live latents**, which cannot distinguish *does not polarise* from *has nothing to count*. Protein therefore cannot return an interpretable negative, and text leads this round for that reason rather than by preference. Text is also the arm the published method is known to work on.
+
+### The cells
+
+All four are `32_crosscoder.py` at pin **`96b3bd9`**, reusing snapshot `20260815005332_376ec28db1f6`, on the two admissible sites (`--layers 27,28 --admissible-layers 27,28`), with EXP-R2-206's dispatch verbatim in every other respect — `--d-hidden 8192 --k 32 --auxk 192 --seed 20260814 --corpus-seed 20260812 --pairings true shuffled`, `r99` vectors cut to those two layers, and `--steps` at the declared 26,000 in text and 56,000 in protein because it sets the held-out offset. **Exactly one lever moves: λ.**
+
+| round | card | label | mode | λ | why this cell |
+|---|---:|---|---|---:|---|
+| A | 0 | `r209_cc_text_lam1e3` | text | 1e-3 | nearest the λ where polarisation is measured; the first place fitting could return without losing it |
+| A | 1 | `r209_cc_text_lam3e4` | text | 3e-4 | the geometric centre of the open interval |
+| B | 2 | `r209_cc_text_lam1e4` | text | 1e-4 | the low end, where fitting is most likely and polarisation least |
+| B | 3 | `r209_cc_protein_lam3e4` | protein | 3e-4 | the one protein point, at the interval's geometric centre |
+
+λ = 1e-4, 3e-4 and 1e-3 are the geometric interior of (3e-5, 3e-3) at half-decade spacing, and 3e-4 is its exact geometric centre.
+
+**The protein cell's λ is not informed by the text arm, and that is a scheduling limitation stated rather than disguised.** Round A lands about four hours after it is dispatched and round B must go out before then, so no text result can reach the protein choice inside this round. 3e-4 is chosen on the interval's geometry and on the share arithmetic below, not on evidence from text. If the text arm later identifies a different λ as the usable one, the protein point is re-run there and this cell is a bracket sample rather than a matched arm.
+
+**The share arithmetic, registered so it is falsifiable.** On the protein penalty measured at λ = 3e-5 (`Σᵢ fᵢ‖W_dec,ᵢ‖` = 459.8 over two sites, held-out reconstruction 0.3155), the predicted penalty share is at most 15% at 1e-4, **44% at 3e-4**, 146% at 1e-3 and 437% at 3e-3 — upper bounds, because the penalty shrinks the norms it multiplies as λ rises. EXP-R2-206 collapsed at the 437% point and EXP-R2-208 fitted at 4.37%. **No comparable prediction is offered for text**, because no fitted text dictionary exists and the only text penalty on disk (32.9 and 36.9 per site) is the collapsed fixed point rather than a healthy-fit value.
+
+### Criteria, frozen now
+
+**FITS** — unchanged from EXP-R2-208 so cells compare directly across rounds: at layers 27 **and** 28, live latents ≥ **1,000** per site *and* `active_fraction` ≥ **1.95e-3**.
+
+**POLARISES** — `polarised` ≥ **0.10** at both layers 27 and 28, at true pairing.
+
+**The 2× rule from EXP-R2-208 is dropped, and this is the reason rather than a simplification.** That rule asked for at least twice the λ = 0 cell's value. λ = 0's `polarised` is exactly **0.000**, so twice it is zero and the multiplier admits anything above nothing. A ratio against zero is not a second condition; it is decoration on the first. **The absolute 0.10 floor is the entire gate**, and it is attainable on real activations rather than assumed: text at λ = 3e-3 reads 0.106 and 0.208.
+
+**USABLE λ** — FITS **and** POLARISES, at both layers, in text.
+
+**C3 is reported for every cell and is not the usability gate.** C3 is the acceptance gate for reporting a model *diff*, which is the round after this one. A cell may be usable here and still fail C3, and that combination would be informative in its own right — it is the condition EXP-R2-208 named and could not test.
+
+**Void conditions**, unchanged: text must realise 11,367 steps / 34,002,081 scored tokens with the screen keeping 1,024 of 1,024 at maximum containment 0.4346 over 106,496 records; protein 36,978 / 34,001,183 with 961 of 1,024 at 1.0000 over 229,376. A cell that OOMs or dies is reported as failed and never silently re-run at another λ.
+
+### The stop rule, and the negative result named as a result
+
+**If no cell in the text arm both fits and polarises, the sweep stops.** The bracket is not subdivided, no fifth cell is dispatched, and no λ is proposed from an interpolation between two failures.
+
+That outcome would be **a finding, not a failed round**: on this backbone, at layers 27 and 28, at `d_hidden` 8,192 and `k` 32, the activation-weighted decoder-norm L1 cannot simultaneously produce a fitted dictionary and model-exclusive features — the two requirements it is asked to satisfy are separated by more than the interval between collapse and diffuseness. That is a methodological result about applying crosscoders to this lineage and it is reportable as one. It would be scoped to this recipe and these sites, and it would not be a claim about the Crosscoder method in general, because EXP-R2-206's instrument check passes C1 and C2 on data whose answer is known.
+
+**What a positive result licenses, and what it does not.** A usable λ licenses the Crosscoder re-run in both modes with C3 as its acceptance gate. It does **not** license reading a diff from the sweep cell itself: these are single cells at one seed and one corpus draw, and the round after is where a diff may be reported.
+
+### Schedule
+
+Round A goes to cards 0 and 1 when EXP-R2-207's R2 second pair lands, round B to cards 2 and 3 after R3. Cells go out **as cards free, one at a time, rather than batched** — the practice that closed this session's opening 41-hour gap.
+
+---
+
+## 2026-08-17 — EXP-R2-210 pre-registered, conditional on EXP-R2-209's negative branch: causal differential reliance over the fitted λ = 0 crosscoder
+
+Frozen before EXP-R2-209 reads out, so its corrections precede its numbers. **This design executes only if EXP-R2-209 returns no usable λ.** If the sweep finds one, the Crosscoder re-run takes precedence and this entry is dormant, not cancelled.
+
+### Why a causal readout is the successor rather than another sparsity construction
+
+`relative decoder norm` asks whether a latent's *decoders* differ in magnitude between the two roles. That is a property of the dictionary's parameters. The definition D3.h's admission list actually requires is causal — **a latent is model-specific if ablating it changes behaviour in one checkpoint and not the other** — which is measured on the models, is strictly stronger, and **does not need the decoder-norm L1 at all**. It is therefore computable on the λ = 0 dictionary that already exists and already fits: 1,804 and 1,481 live latents, `active_fraction` at 99.8% of the TopK budget, held-out NMSE within 1.16–1.32x of the reference transcoder at the same site.
+
+### Four constraints frozen now, three of them corrections to the obvious design
+
+**1. Additive single-latent perturbation, never replacement.** The intervention subtracts one latent's own contribution `f_i · W_dec,i` from the layer output and leaves the model otherwise intact. It must **not** splice the crosscoder's reconstruction in as a replacement model, and the reason is measured rather than stylistic: R2.3 found behavioural recovery on this joint checkpoint **negative in all four cells**, and after the pre-adaptation control ran, negative in text on the **base** checkpoint too under the same recipe, corpus and seed. Recovery is `(ablated − replacement)/(ablated − clean)`, so negative means the spliced model is worse than mean-ablating the entire block. There is no dynamic range inside that in which to read one latent of ~3,300. Anyone proposing the replacement form later must meet this evidence first.
+
+**2. The control is a matched random-direction ablation, and the shuffled-pairing null is retired for this statistic.** The shuffled null pairs base position `i` against adapted position `π(i)`; it is a null for *pairing correspondence* in a representational readout and says nothing about the size of an intervention's effect. The required control is a **random direction of the same norm ablated at the same site in both checkpoints**. The precedent is L17, where raw numbers read −0.82 against −0.83 — indistinguishable — until a matched random-direction control at −0.441 against −0.208 supplied the scale. An uncontrolled effect size here would be unreadable in exactly that way.
+
+**3. The statistic is differential reliance, and its blind spot is structural.** At λ = 0, `polarised` is **0.000**: no live latent has an extreme relative decoder norm, so every latent decodes into both models with comparable weight. Ablating one therefore removes near-identical vectors from both residual streams, and any difference in behavioural effect is a property of the **downstream models** rather than of the latent. What this measures is *"the same feature carries more of the computation in one checkpoint than the other"* — the **retained-but-reweighted** case. It **structurally cannot see** features *introduced* or *removed* by a training stage, because at λ = 0 there are no latents belonging to one model to introduce or remove. This is written before any number exists so the result cannot later be read as the stronger claim.
+
+**4. Text only, and the protein direction is undefined rather than expensive.** The λ = 0 artefact's own limitation records that the pre-adaptation checkpoint's protein mode is behaviourally unmeasurable on this lineage — context information **+0.0843** nats/token and reversal cost **−0.0013** nats/residue (EXP-R2-152). A causal *difference* needs a behavioural quantity on both sides; on the base side in protein there is none, at any budget.
+
+### Cost, and why no subset is needed
+
+Naive single-latent ablation over ~3,285 live latents × 2 checkpoints × the standard 128-sequence cohort is ≈10⁵ batch-forwards of a 7B model, ~16 GPU-hours per mode. Not required. At `active_fraction` 3.898e-3 each latent fires on about **0.39% of positions**, so latents with disjoint firing supports can be ablated **in the same forward pass**; greedy colouring on the support-overlap graph packs tens of latents per pass and brings the round to roughly **one GPU-hour**. It also sharpens the statistic, since each latent is then scored on the positions where it actually fires.
+
+**No subset, and no gradient or attribution screen for selection.** If a subset is ever used the rule must be frozen before any effect is seen, and it may not be chosen by a first-order proxy: L5 is precisely the case where a plausible selector failed to rank causal importance, at Spearman **−0.062**, p = 0.71.
+
+### Draft limitation for the audit's PART II catalogue, not yet applied
+
+Recorded here for the coordinator to commission once numbers exist, so the canonical documents move once rather than twice. It belongs in the catalogue — unlike `R`, which was a measurement scope caveat and correctly stayed out — because it is a statement about what the method can and cannot resolve.
+
+> **L33** — **A crosscoder diff can report that a retained feature is reweighted, and on this lineage cannot reach "introduced" or "removed" at all.** R2.4's hypothesis claims Model Diffing distinguishes features introduced, removed, or retained by a training stage. Both unreachable cases fail for their own reason and neither is a budget problem. *Removed/introduced in protein*: a causal specificity claim needs a behavioural quantity on both sides, and the pre-adaptation checkpoint's protein mode is behaviourally unmeasurable (+0.0843 nats/token, reversal −0.0013, EXP-R2-152). *Removed/introduced in text*: at the only λ that produces a fitted dictionary, `polarised` is 0.000 — every live latent decodes into both models — so there are no model-exclusive latents whose presence or absence could be read. What remains reachable is differential reliance on shared features. **Method family:** crosscoder / model diffing. **Evidence:** EXP-R2-206, EXP-R2-208, EXP-R2-209. **Scope:** transfer.
+
+### The Stage_1 ↔ ProLLaMA question: available, and the trade-off named
+
+Checked rather than assumed, because it changes this route's ceiling.
+
+**Availability: yes.** `ProLLaMA` is present on GPFS beside `ProLLaMA_Stage_1`, and EXP-R2-152 measured both as behaviourally measurable in **both** modes: protein context information **+0.5505** and **+0.5215**, reversal cost **+0.1442** and **+0.1465**, against the base checkpoint's +0.0843 and −0.0013. **A causal differential-reliance readout is therefore defined in protein on that pair**, which the base ↔ Stage_1 pair can never be.
+
+**The deprioritisation does not transfer as a matter of logic.** Those two stages were called indistinguishable on *context information and reversal cost* — aggregate properties of the output distribution. Differential reliance is an internal causal quantity, and two models with nearly identical output statistics can distribute the same computation differently. Nothing in the earlier finding bounds it.
+
+**But availability and interest are anti-correlated on this lineage, and that should be faced before the round is designed rather than after.** Instruction tuning is pure LoRA and costs **0.10** nats of text and **0.03** of protein, against the **4.69** nats the continued-pretraining stage spent to create the protein mode at all. So the pair where protein is *defined* is the pair where least changed, and the pair where most changed is the pair where protein is *undefined*. This is a power question and it should be answered with an effect-size floor before cards are committed, not discovered as a null.
+
+**It is a round, not a re-read.** The existing λ = 0 crosscoder is fitted on `Llama-2-7b-hf` ↔ `ProLLaMA_Stage_1` and does not cover `ProLLaMA`. A Stage_1 ↔ ProLLaMA readout needs a new crosscoder fitted on that pair — about four hours on one card at λ = 0 on two sites — preceded by an activation spectrum on ProLLaMA's protein mode to set that pair's `r99` and admissible layers, which is a two-minute cell. Cheap, but it is not free and it is not this entry.
+
+---
+
+## 2026-08-17 — EXP-R2-210 addendum: the Stage_1 ↔ ProLLaMA protein round is underpowered by its own arithmetic, and the bound generalises but not as far as stated
+
+Two questions answered before any card is committed: what the protein arm could detect, and whether the obstacle is a property of this lineage or of causal cross-stage diffing itself.
+
+### The power floor, and the round fails it
+
+**The signal budget is fixed by the behavioural difference the two stages actually exhibit.** Instruction tuning costs **0.03** nats/token on protein — context information 0.5505 against 0.5215. If per-latent ablation effects are approximately additive and do not cancel, the sum of differential reliance over all latents is bounded above by that 0.03, and cancellation only shrinks it. So 0.03 nats/token is the **entire** budget the readout has to distribute over roughly 3,300 live latents.
+
+**Compare it with the contrast already designed.** `Llama-2-7b-hf` → `ProLLaMA_Stage_1` in **text** carries **4.69** nats/token, both sides measurable. Same instrument, same latent count, same cohort — and a signal budget **160x larger**.
+
+**That gap cannot be bought back.** Averaging reduces noise as 1/√n, so recovering a factor of 160 in resolution needs **160² ≈ 25,600x** the cohort — 128 sequences becomes 3.3 million. There is no budget at which the protein arm on this pair becomes as readable as the text arm on the other.
+
+**The one escape is circular and is refused.** If the 0.03 nats were concentrated in a handful of latents rather than spread, it would be detectable. But whether adaptation redistributes computation across many latents or a few is precisely what the readout exists to measure, and assuming concentration in order to justify measuring it assumes the answer. **The Stage_1 ↔ ProLLaMA protein round is therefore not run.** An underpowered null there would read as *"this stage did not redistribute computation"* when it would only mean *"this stage barely changed anything"*.
+
+**One correction to my own earlier statement, and it matters in the round's favour.** I wrote that availability and interest are anti-correlated on this lineage. That is true of the **protein arm across stages** and not of the lineage as a whole. Laid out:
+
+| pair | modality | both sides measurable | size of change |
+|---|---|---|---:|
+| base → Stage_1 | **text** | **yes** (+5.5240, +0.8336) | **4.69 nats — the largest in the lineage** |
+| base → Stage_1 | protein | no (+0.0843 before) | creation |
+| Stage_1 → ProLLaMA | text | yes | 0.10 nats |
+| Stage_1 → ProLLaMA | protein | yes | 0.03 nats |
+
+**The single contrast that is both two-sided and well-powered is base → Stage_1 in text — which is EXP-R2-210 exactly as designed.** The round is not a consolation arm; it is the best-powered causal contrast this lineage offers.
+
+### Scrutiny of the generalisation: it holds, in a weaker and more useful form
+
+The proposed general claim was that a stage which *creates* a capability can never be causally diffed in the modality it creates, on any lineage, because the before-model has no behaviour to compare against.
+
+**The mechanism is right.** A causal cross-stage diff compares `Δ_before(i)` against `Δ_after(i)`, and is informative only where **both** checkpoints carry a behavioural estimand above its own null in that modality. As the before-model's signal goes to zero the statistic degenerates: it stops being a difference and becomes the after-model's one-sided measurement wearing a difference's clothes. The binding quantity is **min(signal_before, signal_after)**, and the diff's dynamic range is bounded by the weaker side.
+
+**But "never, on any lineage" over-reaches, and the escape hatch is the one the coordinator asked about.** The exclusion follows from the *shape of the acquisition curve*, not from causal diffing. If a modality is acquired in **one step** — signal 0 → plateau — then the acquiring stage has `signal_before` = 0 and is undiffable, and every remaining diffable stage is by construction one that did not acquire the modality and therefore changed less. If the modality is acquired **gradually** across several stages, each with signal above its null, then every consecutive pair is both diffable *and* substantively different. **A partially-capable intermediate checkpoint does evade the bound.** The general statement must be conditioned on step-wise acquisition rather than asserted universally.
+
+**This lineage is the single-step case, and more sharply than "plateau".** Its protein curve is 0.0843 → 0.5505 → **0.5215**: the second stage does not merely add little, it slightly subtracts. There is no gradual segment anywhere on it to exploit.
+
+**The useful form is a design criterion rather than a prohibition.** A lineage intended to support causal cross-stage diffing in modality M must acquire M gradually enough that consecutive checkpoints are both measurable in M. That is a statement about how to *choose* checkpoint lineages — Direction 1 work — and it is worth more than the experiment that prompted it, because it is actionable before any compute is spent.
+
+### L33 redrafted at that generality, still not applied to the audit
+
+> **L33** — **A causal cross-stage diff is available in a modality only for stages that did not establish that modality, so on a single-step-acquisition lineage it excludes the only stage of large effect.** A causal specificity claim compares a latent's ablation effect before and after a training stage, and is informative only where both checkpoints carry a behavioural estimand above its own null in that modality; the dynamic range is bounded by `min(signal_before, signal_after)`. A stage that *creates* a modality has `signal_before` ≈ 0 there by definition, so it cannot be diffed in the modality it creates — and the stages that can be diffed are exactly those that did not create it, and therefore changed less. **The exclusion follows from step-wise acquisition and not from causal diffing**: a lineage that acquires the modality gradually, with every intermediate checkpoint measurable, is not subject to it, which makes this a criterion for choosing lineages rather than a limit on the method. **Instance:** on the ProLLaMA lineage, protein-mode context information runs 0.0843 → 0.5505 → 0.5215, so the creating stage is undiffable in protein while the only diffable protein pair carries a 0.03 nats/token budget against the 4.69 the creating stage spent — a 160-fold signal gap that 1/√n averaging would need ~25,600x the cohort to close. **Separate clause, failing for an unrelated reason:** even where both sides are measurable, at the only λ that yields a fitted dictionary `polarised` = 0.000 — every live latent decodes into both models — so no latent's presence or absence can be read, and "introduced" and "removed" are unreachable in text as well. What remains reachable in both cases is differential reliance on shared features. **Method family:** crosscoder / model diffing, and any causal cross-stage specificity readout. **Evidence:** EXP-R2-152, EXP-R2-206, EXP-R2-208, EXP-R2-209. **Scope:** transfer.
+
+### The ProLLaMA spectrum cells, and what they extend
+
+Read from EXP-R2-202's own artefacts rather than from report, **with prominence, because an argmax is only a peak if the curve has one** — see the addendum below, which withdraws the text half of this reading before it travelled. What survives: `block_output` `r99` peaks at **layer 3** in base/protein (3,409, a sharply identified peak) and in a **band at layers 17–19** in stage1/protein (3,169 at 18). The text side supports no peak-location statement in either cell. The same artefacts return L27/L28 `r99` of 2,516/2,232 and 2,364/1,563, which are exactly the vectors every Crosscoder dispatch in this campaign has used, so the chain is self-consistent.
+
+A third point on the same lineage says whether the protein shift continues past layer 18, reverses, or stops with the stage that created the mode. It carries no dictionary and costs about two minutes per mode. It is dispatched from the snapshot frozen at `34230f3c` — the pin that produced the first four cells — so the numbers are directly comparable, and it takes the first card that frees with no settled work waiting on it rather than displacing R3 or the sweep.
+
+---
+
+## 2026-08-17 — EXP-R2-202 addendum: `r99` peak locations reported with prominence, and the text half of the peak-shift reading withdrawn before it left this session
+
+Raised by the coordinator against the peak locations I reported an hour earlier, on the suspicion that `base/text` is nearly flat and that an argmax over a flat curve is not a peak. **The suspicion is correct, and the text side fails harder than it was framed: both text cells fail, not one.**
+
+The test is not the argmax but how many other layers tie with it. For each cell, over the interior (layers 2–31):
+
+| cell | argmax | peak / interior median | interior layers within 2% of the peak | within 5% | is a peak location meaningful? |
+|---|---:|---:|---:|---:|---|
+| base / protein | 3 | **1.317** | **1** | 3 | **yes — sharply identified** |
+| stage1 / protein | 18 | **1.150** | 4 (17, 18, 19, 22) | 8 | **as a band 17–19**, not a single layer |
+| base / text | 26 | **1.009** | **23 of 30** | 28 of 30 | **no — the curve is flat** |
+| stage1 / text | 2 | 1.170 | 6 (2, 22, 23, 24, 26, 27) | 10 | **no — bimodal, layer 2 ties a deep band** |
+
+**`base/text` is a flat line.** Its interior spans 0.99 to 1.01 of its own median and 23 of 30 layers sit within 2% of the maximum. Its argmax is wherever noise left the largest value, and reporting it as a peak would manufacture structure from nothing.
+
+**`stage1/text` fails for a different reason and it is not flatness.** At 1.170 the curve does have prominence, but the maximum at layer 2 is tied within 2% by layers 22, 23, 24, 26 and 27. The distribution is bimodal, so "the peak is at layer 2" is a coin toss between an early layer and a deep band, and the apparent 26 → 2 "crossover" is an artefact of choosing one of two tied modes on each side.
+
+**So the protein-side shift survives and the text-side shift is withdrawn.** Base/protein at layer 3 is the one sharply identified peak in the four cells; stage1/protein is a genuine peak but must be read as the band 17–19 rather than as layer 18 exactly. Protein 3 → 17–19 is a real shift with prominence on both endpoints. Text 26 → 2 is not a finding and is not stated.
+
+**One correction to the coordinator's premise, which changes what has to be done about it.** The peak-location shift was described as *already promoted into the audit as a model-side finding*. It is not: `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` contains no peak-location statement at all — its only occurrence of the word is "peaks in the middle third", about the cross-checkpoint residual, a different quantity. The only text carrying the unsound text-side claim was the EXP-R2-210 entry written earlier in this same session, which is uncommitted and has now been corrected in place. **Nothing in the canonical record needs withdrawing**, and the reading never reached it.
+
+**The standing rule this leaves**, promoted to Appendix B rule 35 because it generalises past this measurement — `r99`, live latents, per-site NMSE and decoder penalty are all per-layer curves in play and every one invites the same error. A peak location from a per-layer curve is reported with its prominence — peak over interior median, and the count of interior layers tying within 2% — or it is not reported. The ProLLaMA cells will be read that way, and a third point that lands on a flat or bimodal curve will be recorded as "no peak location" rather than as a continuation of a shift.
+
+**The ProLLaMA cells are still worth running**, on the half that survived: they say whether the protein peak continues past the 17–19 band, returns toward layer 3, or stops with the stage that created the mode. That is now the whole of what they are for.

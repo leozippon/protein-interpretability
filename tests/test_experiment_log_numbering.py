@@ -208,6 +208,19 @@ KNOWN_VIOLATIONS: tuple[tuple[int, int, str], ...] = (
         207,
         "EXP-R2-207's R1 reading and its closing decision, filed under its own id after EXP-R2-208 was registered and dispatched",
     ),
+    # EXP-R2-202's prominence addendum, filed under its own id after 207 to 210
+    # had landed. A later entry quoted that campaign's `r99` peak locations, and
+    # checking them showed two of the four cells cannot support a peak location
+    # at all -- the base/text curve is flat to within 1% over 23 of 30 interior
+    # layers. The correction is a re-reading of EXP-R2-202's own artefacts and of
+    # nothing else, so it keeps 202's id: filing it as a new experiment would
+    # detach a withdrawal from the measurement being withdrawn, which is the one
+    # thing this log must not let happen.
+    (
+        210,
+        202,
+        "EXP-R2-202's peak-prominence addendum and the withdrawal of its text-side peak locations, appended after 207 to 210",
+    ),
 )
 
 

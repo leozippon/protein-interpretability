@@ -1637,3 +1637,96 @@ Both scripts were committed on 2026-08-15 with banners saying no line of either 
 That manifest is marked superseded rather than deleted: its two-snapshot reasoning is still the reference for a campaign spanning pins, and its labels are the evidence for why it was retired. `campaign_r207_r2r3.tsv` replaces it with the six cells that actually remain — R2's second pair leading slot 1 on the coordinator's priority order, R3's two protein cells beside them, R3's two text cells in slot 2 — every label the one its cell will carry, none of them present on GPFS, and all six dry-parsed against the parser at `bd6ff99` to confirm they resolve to the intended configuration with the optimiser defaults the baselines recorded.
 
 **One cost of the design, now measured rather than assumed.** A manifest reaches the pod only inside a snapshot, so revising one means freezing again. That is the right trade — a campaign definition written straight onto GPFS would be untraceable to a commit, the same argument the external-baseline driver makes for living inside its own freeze — but it means the promise is one dispatch per campaign, not one dispatch per change of mind, and the header now says so.
+
+## 2026-08-17 (later) — the campaign queue runner is validated end to end, and its first real campaign is R3
+
+Steps 4 and 5 were run as soon as EXP-R2-208's pair freed a card, on one card with one cheap cell, leaving the other three on pre-registered work throughout.
+
+**Step 4 passed.** The runner launched EXP-R2-202's own base/protein spectrum cell — from the snapshot frozen at that cell's own pin, so the result would be comparable — as its own child on cuda:0. It exited 0 in three minutes. The status file appeared before the cell launched and was rewritten atomically at every transition: `pending` → `running` with a pid → `exited-ok` with the artefact path, `# FAILURES 0` and `# NO-RECORD 0` present in every version, the slot barrier reached, and the lock taken and then released after the settle. The exit code in the status file is the real one from `wait(2)`, which is the thing the single-cell driver cannot report because the access layer returns 0 whatever the remote command did.
+
+**Step 5 passed.** The identical manifest re-dispatched reported `skipped-complete`, launched nothing, and exited 0. The resume rule works, which is what makes a queued campaign survive an interruption rather than restart it.
+
+**A third check the checklist does not ask for also passed**, and it is the one that makes the queue substitutable for the driver rather than merely functional: the artefact is **bit-identical to the driver's** on every scientific field — `spectrum`, `verdict`, `condition`, `controls`, `loader_gate` — with the only differences being the card index and two wall-clock timings. Same code, same arguments, two launch paths, one answer. Its record was retrieved with `pull_records_h200.sh`, so that script has now done real work as well.
+
+**Two limits remain and are written into the runner's banner.** It has never run more than one cell or more than one slot, so concurrency within a slot and the barrier between two populated slots are exercised only by construction. And no cell has ever failed under it, so `exited-nonzero`, `exited-ok-no-artifact` and `refused-busy-gpu` are unexecuted paths. R3 exercises the first of those two.
+
+**Manifest hygiene, applied to the manifests this session created rather than only to the one it inherited.** `campaign_queue_probe.tsv` said in its own header to delete itself once steps 4 and 5 were recorded, and it is deleted. `campaign_r207_r2r3.tsv` is deleted too: both of R2's second-pair cells went out under the single-cell driver as cards freed one at a time, so that file's labels are right but its card assignments are now wrong, and a manifest that would turn cells into `refused-busy-gpu` is the same class of hazard as one whose labels re-run completed work. `campaign_r207_r3.tsv` replaces it with the four cells that remain, on the two cards that will actually be free.
+
+**One constraint that shaped the manifest and is worth stating as a rule.** The queue refuses a busy card rather than waiting for it, so a manifest may only name cards that will be free when it is dispatched. It cannot be used to queue work behind a running job; it sequences work it owns.
+
+## 2026-08-17 (later still) — a test run's appearance of success is not its status
+
+Three near-misses in one session, each at a different layer, none of which a casual look would have caught. Recorded once as a pattern rather than three times as incidents.
+
+**First, the pipe.** `python -m pytest -q 2>&1 | tail -3` reports `tail`'s exit status, which is 0 whatever pytest did. A red suite behind that pipeline is indistinguishable from a green one by exit code alone.
+
+**Second, the buffer.** With output piped, nothing reaches the log until the pipeline ends, so an interim read of the task's output file shows an empty or truncated file for a run that is progressing normally — and equally for one that has died.
+
+**Third, the kill.** A suite backgrounded by the harness was terminated mid-run when its parent call ended. It left a log full of plausible progress dots ending at 15%, no failure text, and no status line. Read quickly, that looks like a suite that passed.
+
+**The rule that follows, and it is cheap.** Run the suite detached the way a stage is detached — `setsid nohup` — writing to a file on Compute, redirect pytest's own stdout and stderr into it, and append `PYTEST_RC=$?` as the last line. Commit only on that line. Absence of the line means the run did not finish, which is a different fact from failure and must not be read as success. The watch on it must fire both when the line appears and when the process disappears without one; a watcher that only looks for the success marker is silent through exactly the failure it exists to catch.
+
+**Fourth, two writers.** The relaunch above was made onto the same path while the run it replaced was still alive — its log had stalled at 286 bytes, which was the block-buffering of a healthy run and not a dead one. `>` truncated the file under the first writer and both then appended to it, after which no status line either produced would have meant anything. This is the failure the campaign queue's lock exists to prevent, reproduced by hand in the tooling around it within an hour of that lock being validated. Give every run its own file and check for a live writer first.
+
+**A trap in the cleanup, worth one line.** `pkill -f "python -m pytest -q"` also matches the harness wrapper whose own command line contains the payload, so it terminates the calling shell — observed, exit 143. Select by exact `/proc/<pid>/cmdline` instead and verify the long-running H200 drivers are still alive afterwards; they were.
+
+The principle these four share — an exit status reports the last process in the chain rather than the work, and finishing is a different fact from succeeding — is Appendix B rule 36, alongside the pod instance it generalises (L20). What stays here is the recipe and the three incidents that earned it.
+
+## 2026-08-17 ~11:20 local — handoff state
+
+**This entry is operational and expires.** It records live state, not findings. If `docs/EXPERIMENT_LOG.md` carries entries dated after it, trust those; everything durable from this session is already in that log and in Appendix B rules 35 and 36. Filed here rather than in a standalone document because a separate handoff file becomes a second source of truth that goes stale without saying so, while a dated chronology entry carries its own timestamp.
+
+### Running now
+
+| card | cell | driver | pin | started | expected |
+|---:|---|---|---|---|---|
+| 0 | `r207_r2_stage1_text_s20260816` | single-cell | `bd6ff99` | 10:36 | ≈15:35 |
+| 1 | `r207_r2_base_text_s20260816` | single-cell | `bd6ff99` | 10:29 | ≈15:25 |
+| 2 | `r207_r2_base_text_s20260815` | single-cell | `bd6ff99` | 07:55 | ≈12:50 |
+| 3 | `r207_r2_stage1_text_s20260815` | single-cell | `bd6ff99` | 07:55 | ≈12:50 |
+
+Each driver polls, pulls and digest-admits its own cell; results land under `results/transfer/external_baseline/<run-id>/<label>/`.
+
+### Next actions, in order
+
+1. **Cards 2–3 free ≈12:50 → dispatch R3** from `scripts/transfer/campaign_r207_r3.tsv` through the queue runner. **A manifest reaches the pod only inside a snapshot, so freeze first**; pass `--snapshot r207=<the bd6ff99 snapshot>` and launch the runner from a snapshot that carries `h200_campaign_queue.sh`. This is the queue's first multi-cell campaign.
+2. **Cards 0–1 free ≈15:25 and ≈15:35 → two ProLLaMA spectrum cells**, one mode per card, ≈2 min each, labels `r202c_spectrum_prollama_{protein,text}`, then **EXP-R2-209 round A**: text λ = 1e-3 and λ = 3e-4.
+3. **Round B** when two more cards free: text λ = 1e-4 and protein λ = 3e-4.
+
+### The three pins, which are not interchangeable
+
+| pin | carries | snapshot on GPFS | used by |
+|---|---|---|---|
+| `bd6ff99` | `17_train_transcoder.py`, byte-identical to `04fdfa5` (the baselines' commit) | `20260815084249_9fa75fa8a3b3` | every EXP-R2-207 cell |
+| `96b3bd9` | `32_crosscoder.py` — **`bd6ff99` predates it entirely** | `20260815005332_376ec28db1f6` | EXP-R2-208, EXP-R2-209 |
+| `34230f3c` | `30_activation_spectrum.py` as it was when the first four spectra ran | `20260814103216_b92b85454445` | spectrum cells only, so the third point stays comparable |
+
+All three snapshots are already on the pod; reuse them with `--pin <commit> --run-id <id> --snapshot-dir <path>` and no relay push happens.
+
+### Pre-registered and dormant
+
+**EXP-R2-209 stop rule.** FITS is live ≥ 1,000 per site at layers 27 *and* 28 with `active_fraction` ≥ 1.95e-3; POLARISES is `polarised` ≥ **0.10** absolute — the 2x-over-λ=0 rule was dropped because λ=0's value is exactly 0.000 and a ratio against zero is not a condition. **If no text cell does both, the sweep stops**: no subdivision, no fifth cell, and the negative is reported as a methodological finding scoped to this recipe and these sites, not as a failed round.
+
+**EXP-R2-210, dormant unless 209 goes negative.** Four frozen constraints, each with a reason that must survive with it: (1) **additive single-latent perturbation, never replacement** — R2.3 measured behavioural recovery on this joint checkpoint as negative in all four cells and negative in text on the base checkpoint too, so a replacement substrate is already below the ablation floor and has no dynamic range for one latent of ~3,300; (2) the control is a **matched random-direction ablation** of the same norm at the same site, and the shuffled-pairing null is retired for this statistic (L17); (3) the statistic is **differential reliance** — retained-but-reweighted only, structurally blind to introduced and removed; (4) **text only**, protein undefined rather than expensive. Cost ≈1 GPU-hour with disjoint-support packing; no subset, and no attribution screen for selection (L5).
+
+### Traps a successor will otherwise re-encounter
+
+- A pod-side variable in double quotes expands to **empty** on the workstation. Pass absolute GPFS model paths.
+- **Diff a manifest's labels against the GPFS results listing before dispatch.** The resume rule keys on the label; a dry run cannot see a mismatch and a wrong one re-runs completed cells.
+- The queue **refuses a busy card** (`refused-busy-gpu`) rather than waiting, so a manifest may only name cards that will be free at dispatch. It cannot backfill behind running work.
+- The queue's `exited-nonzero`, `exited-ok-no-artifact` and `refused-busy-gpu` paths have **never executed**, and multi-cell slots and the barrier between two populated slots are exercised only by construction. R3 is the first test of the latter.
+- Dispatch each cell as its own backgrounded command with `H200_POD` exported **in the same shell**, never as one `&&` list.
+- `pkill -f <pattern>` also matches the harness wrapper whose command line contains the payload and will kill the calling shell. Select by exact `/proc/<pid>/cmdline`.
+- One writer per status file, and check for a live writer before relaunching onto a path (rule 36).
+
+### Settled by coordinator decision — do not reopen
+
+- **`R` is resolved**: base 0.7471 [0.7444, 0.7498], stage1 0.8445 [0.8274, 0.8617], with **0.84 the defensible bound** because `base/text` carries a ceiling confound. The `f16` numerators are unpriced **by decision**; that is a documented gap with a known bound on its consequences, not an open question.
+- **R4 is not dispatched.** Pricing the numerators cannot change a conclusion already 23 sd from the null on the weaker checkpoint.
+- **The Stage_1 ↔ ProLLaMA protein round is refused as underpowered** — a 160-fold smaller signal budget that 1/√n averaging would need ~25,600x the cohort to close.
+- **The text arm is the optimum, not a fallback.** `base → Stage_1` in text is the only contrast on this lineage that is both two-sided and large (4.69 nats/token).
+- **Text-side `r99` peak locations are withdrawn**; the protein shift from layer 3 to the band 17–19 stands (rule 35).
+
+### Working tree
+
+Dirty **on purpose**: the session's log entries, Appendix B rules 35 and 36, `campaign_r207_r3.tsv`, the corrected queue banner and two deleted manifests are staged and waiting on a detached pytest run's own `PYTEST_RC=` line. **Absence of that line means "did not finish", not failure — re-run, do not commit.** `AGENTS.md` and `CLAUDE.md` carry the user's own uncommitted edits and must stay unstaged. Nothing has been pushed this session.
