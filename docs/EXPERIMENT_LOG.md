@@ -13430,3 +13430,27 @@ The test is not the argmax but how many other layers tie with it. For each cell,
 **What is not claimed.** One lineage, one corpus draw, one seed per cell, one site (`block_output`). `r99` is an effective dimension under a variance cut, not an algebraic rank, and a peak in it says where the activation cloud is widest, not where computation happens. No dictionary is involved in any of these numbers, which is the point of them.
 
 **The text arm's reading rule, stated before its cell lands.** The third text point is running now. `base/text` has no peak location at all (1.009x its median, 23 of 30 interior layers tied) and `stage1/text` is prominent but multimodal ({2, 22, 23, 24, 26, 27}), so **no text peak-shift statement is available regardless of what ProLLaMA returns**. The cell can confirm whether ProLLaMA's text curve is flat like the base model's or prominent-but-multimodal like Stage_1's, and it can do nothing else. If it returns an argmax with a large tie set, that is recorded as "no peak location" and not as a third point on a trend that was withdrawn.
+
+---
+
+## 2026-08-17 — EXP-R2-202 third point, text arm: no peak location, but a real prominence statement the argmax would have hidden
+
+Read against the rule stated in the entry above **before this cell landed**: no text peak-shift statement is available whatever it returns, and an argmax with a large tie set is recorded as "no peak location".
+
+| checkpoint / text | argmax | peak / interior median | interior layers tying within 2% |
+|---|---:|---:|---|
+| `Llama-2-7b-hf` | 26 | **1.009** | 23 of 30 — flat, **no peak location** |
+| `ProLLaMA_Stage_1` | 2 | 1.170 | {2, 22, 23, 24, 26, 27} |
+| `ProLLaMA` | 24 | 1.096 | {2, 20, 21, 22, 23, 24, 25, 26} |
+
+**The rule earned its keep twice over here.** The two adapted checkpoints' argmaxes are **2 and 24** — reported alone that is a second dramatic shift, this time *within* the adapted pair and in the opposite direction to the one already withdrawn. It is nothing of the sort: layer 2 is in **both** tie sets, and both cells carry a deep band in the low-to-mid 20s. The apparent 2 → 24 move is the coin toss between two tied modes landing differently, which is exactly the failure the withdrawal was about. Had the third point been read by argmax, this session would have manufactured a second spurious finding an hour after retracting the first.
+
+**But the curves are not uninformative, and this is the positive result.** Prominence is a statement even where location is not:
+
+> **`base/text` has no structure at all — 1.009x its own median, flat to within 1% across 23 of 30 interior layers. Both adapted checkpoints do have structure: 1.170x and 1.096x, each with a shallow early mode at layer 2 and a broad deep band in the low-to-mid 20s.**
+
+So protein adaptation **introduces prominence into the text activation spectrum where the base model had none**, and instruction tuning leaves that structure in place while flattening it somewhat (1.170 → 1.096). That is a claim about *how much* the curve varies with depth and *that* it becomes bimodal, not about where a maximum sits, and it is exactly as strong as the measurement supports.
+
+**Placed beside the protein arm**, the lineage now reads consistently: the continued-pretraining stage is where both modes' depth structure changes — protein's sharply identified layer-3 peak relocates to the broad region 17–22, and text's featureless curve acquires two modes — while instruction tuning moves neither. Both statements are made with no dictionary in them.
+
+**Bounds.** One lineage, one seed, one corpus draw per cell, one site (`block_output`). `r99` is an effective dimension under a variance cut and says where the cloud is widest, not where computation happens. The prominence figures are ratios within a cell and are not compared across modes, where the clouds differ in dimension for reasons L-per-site-NMSE already prohibits reading across.
