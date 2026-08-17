@@ -13099,3 +13099,31 @@ The direction is unchanged and now has an error bar on its protein half: **the p
 **0.84 remains the defensible bound rather than 0.75, and R1 does not change that.** `base/text` sits at 92.87% live at 8,192, close enough to the ceiling that its `L8` understates the basis it would use at greater width, which inflates its `f16/f8` and deflates `R` for `base`. `stage1/text` at 59.82% is not ceiling-affected and returns the weaker effect. The less confounded checkpoint gives the smaller number, so the effect's size is bounded below by `stage1`'s value and is not described by `base`'s. Nothing in R1 touches that confound: it is a property of the text cells, and R1 replicated the protein ones.
 
 **One thing R1 does newly license, with its own limit stated.** The 13% gap between the two checkpoints — 0.7471 against 0.8445, a difference of 0.0974 — is **20x the pooled within-checkpoint sd that protein fit noise supplies**, so on the axis R1 measures the gap is not fit noise. That is weaker than "the gap is a real lineage difference": the text side is unpriced, and a text-side spread would enter both checkpoints' `R` independently. R2 is what closes that, and until it lands the gap is separated from fit noise on one of its two axes rather than on both.
+
+---
+
+## 2026-08-17 — EXP-R2-207 closed on `R`: the verdict stands, R4 is not dispatched, and what takes the cards instead
+
+Coordinator decision, taken against the read above and recorded here so the reason travels with the number rather than living in a message.
+
+**`R` is resolved.** `base` 0.7471 with a 95% interval of [0.7444, 0.7498]; `stage1` 0.8445 with [0.8274, 0.8617]; `stage1`'s **0.84 is the defensible bound**, because `base/text` sits near its live ceiling and that deflates `base`'s value. The protein live basis grows with dictionary width more slowly than the text basis does, on the same backbone, corpus budget and recipe, in both checkpoints.
+
+**R4 is not dispatched, and the decision rests on arithmetic already in the entry above rather than on cost alone.** Fully pricing the two `f16` numerators needs `L16` replicates at 10.5 h per protein cell. Projecting the pre-registered four-component CV of 1.66% — which assumes every unpriced component is as noisy as the noisiest measured one — widens the intervals only to about [0.716, 0.778] and [0.810, 0.879]. Both are still clear of 1, and the weaker checkpoint's estimate is 23 sd from the null on the spread that *is* measured. There is no value of the unmeasured components that changes the conclusion, so the round would buy a tighter bound on a settled question.
+
+**Stated precisely, because "not dispatched" and "no noise" are different claims.** This is a decision **not to measure** the numerators, not a finding that they are noiseless. The text `f8` denominator is being priced right now by R2's first pair; its second pair completes it. The two `f16` numerators remain single-seed **by decision**, and that is a documented gap with a known cost and a known bound on its consequences — not an open question, and not something a later reader should mistake for an oversight.
+
+**R3 keeps its own justification and is not dropped with R4.** Curvature answers a different question from `R`: whether the protein basis is saturating toward an asymptote or scaling with a lower exponent. `R` is a two-point ratio and cannot distinguish those, so the 4,096 point is not a refinement of a settled number — it is the only cell in the campaign that addresses that question at all. Its pre-registered text-side artefact at the low end stands as written.
+
+### Dispatch order when the current round lands
+
+1. **The Crosscoder re-run at a usable λ, in both modes, two sites.** This is R2.4's actual deliverable and the first feature-level model diff on this lineage. It is gated on EXP-R2-208's frozen decision table read **at the endpoint** — live latents per site and `active_fraction` for FITS, and `polarised` against the λ=0 cell for PRESERVES EXCLUSIVITY. The mid-training live counts visible in the pod logs are not that gate and are not read as one. The re-run will carry its own pre-registration and is **a re-run, not EXP-R2-206 repaired**; EXP-R2-208's own entry forbids reporting a fitted dictionary as a repair of cells that never produced one.
+2. **R2's second pair**, text at seed 20260816, which completes the text `f8` denominator and closes the one licence the read above flagged: that the checkpoint gap is currently separated from fit noise on one of its two axes rather than both.
+3. **R3's four cells** at `d_hidden` 4,096.
+
+If the λ pair lands in a branch that yields no usable λ, the next sweep point from the frozen bracket goes out in place of the re-run and items 2 and 3 take the other cards. **Cards are not held idle waiting for a tidy boundary** — 41 hours of that is what this session opened with.
+
+### Where the `L16` text artefacts live, and how they were read
+
+Named here because it changes what a workstation-only reader can reproduce. `r204_d16384_base_text` and `r204_d16384_stage1_text` were **never pulled to the workstation** — only their `.dispatch` records are local — so `R` cannot be recomputed end to end from this checkout. Their endpoint counts were read **in the pod, CPU-only**, from the 20 KB JSON that sits beside each 17 GB `.pt`: 14,437.0625 and 8,331.7500 live latents per layer, reproducing the published 14,437.1 and 8,331.8. No weights moved, no GPU was touched, and the four training cells were unaffected.
+
+That is the pattern for this situation rather than a workaround for a defect: `h200_sync.sh pull` is a directory operation that tars its whole source, so retrieving a 20 KB record through it means moving 17 GB of weights first. `scripts/transfer/pull_records_h200.sh` was written for exactly this and **has still never run in a pod**, so the CPU-only in-pod read remains the route with evidence behind it — the same one EXP-R2-204's per-layer addendum used and this entry re-validated against two published figures.

@@ -193,18 +193,20 @@ KNOWN_VIOLATIONS: tuple[tuple[int, int, str], ...] = (
         204,
         "EXP-R2-204's per-layer and admissible-band addenda to the same verdict, appended after EXP-R2-208",
     ),
-    # EXP-R2-207's R1 reading, appended after EXP-R2-208 was pre-registered,
-    # amended and dispatched. R1's four cells were dispatched under 207's own id
-    # and trained for six hours; 208 was registered and revised in that window
-    # and then went out on the same allocation, so by the time R1's artefacts
-    # were read the maximum had moved past 207. The reading keeps 207's id
-    # because that is where the three-seed design, the interval and the
-    # UNRESOLVED fallback were frozen, and a fallback filed under one id and
-    # answered under another is a fallback nobody can check.
+    # EXP-R2-207's R1 reading and the decision that closed the campaign's primary
+    # statistic, both appended after EXP-R2-208 was pre-registered, amended and
+    # dispatched. R1's four cells went out under 207's own id and trained for six
+    # hours; 208 was registered and revised in that window and then took the same
+    # allocation, so by the time R1's artefacts were read the maximum had moved
+    # past 207. Both entries keep 207's id because that is where the three-seed
+    # design, the interval and the UNRESOLVED fallback were frozen, and a fallback
+    # filed under one id and answered under another is a fallback nobody can
+    # check. One exception covers both, because the rule is checked against the
+    # running maximum.
     (
         208,
         207,
-        "EXP-R2-207's R1 reading, filed under its own id after EXP-R2-208 was registered and dispatched",
+        "EXP-R2-207's R1 reading and its closing decision, filed under its own id after EXP-R2-208 was registered and dispatched",
     ),
 )
 
