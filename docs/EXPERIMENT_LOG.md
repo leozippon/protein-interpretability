@@ -13408,3 +13408,25 @@ The test is not the argmax but how many other layers tie with it. For each cell,
 **The standing rule this leaves**, promoted to Appendix B rule 35 because it generalises past this measurement — `r99`, live latents, per-site NMSE and decoder penalty are all per-layer curves in play and every one invites the same error. A peak location from a per-layer curve is reported with its prominence — peak over interior median, and the count of interior layers tying within 2% — or it is not reported. The ProLLaMA cells will be read that way, and a third point that lands on a flat or bimodal curve will be recorded as "no peak location" rather than as a continuation of a shift.
 
 **The ProLLaMA cells are still worth running**, on the half that survived: they say whether the protein peak continues past the 17–19 band, returns toward layer 3, or stops with the stage that created the mode. That is now the whole of what they are for.
+
+---
+
+## 2026-08-17 — EXP-R2-202 third point: the protein peak-depth shift belongs to the stage that created the mode, and stops there
+
+`ProLLaMA` measured on the same site, the same cohort and the same pin (`34230f3c`) as the original four cells, so the three points are directly comparable — the dispatch records differ only in `--joint-checkpoint`. `self-check PASS`, screen keeping 3,912 of 4,096 with prefix 961 of 1,024, exactly the r202 cells' stream. Read prominence-first under Appendix B rule 35.
+
+| checkpoint / protein | argmax | peak | peak / interior median | interior layers tying within 2% |
+|---|---:|---:|---:|---|
+| `Llama-2-7b-hf` | 3 | 3,409 | **1.317** | **{3}** — sharply identified |
+| `ProLLaMA_Stage_1` | 18 | 3,169 | 1.150 | {17, 18, 19, 22} |
+| `ProLLaMA` | 18 | 3,229 | 1.162 | **{17, 18, 19, 20, 21, 22}** |
+
+**The shift happens once and then stops.** The two adapted checkpoints agree on the argmax (18), on prominence (1.150 and 1.162), and on the region. Instruction tuning — pure LoRA, costing 0.03 nats/token of protein-mode context information — does not move the peak depth at all. Placed against the stage that created the protein mode, which moved it from a sharply identified layer 3 to the high teens, this is a **dose–response consistent with the behavioural lineage**: the stage that spends 4.69 nats to acquire the mode relocates where the activation cloud is widest, and the stage that spends 0.03 leaves it where it is.
+
+**And the third point corrects the second, which is the reason to have taken it.** `ProLLaMA`'s tie set is the **contiguous region 17–22**, filling in layers 20 and 21 that `ProLLaMA_Stage_1` left just outside the 2% band. Read together, the honest description of both adapted cells is **a broad region spanning roughly 17–22 with a shallow interior dip**, not a narrow band.
+
+**A correction to this session's own earlier entry, which is committed and so is corrected here rather than edited.** The prominence addendum wrote `stage1/protein` as "the band **17–19**". Its own table reported the tie set as {17, 18, 19, 22}, so the evidence was right beside the summary, but the summary dropped layer 22 and made the region look tighter than measured. **The correct statement is the region 17–22**, and every downstream use — including the "protein 3 → 17–19" phrasing in that entry and in Appendix B rule 35's instance text — should read **3 → 17–22**. The rule caught its own author one entry after being written, which is the intended behaviour rather than an embarrassment: a tidied band is exactly the failure the rule exists to prevent.
+
+**What is not claimed.** One lineage, one corpus draw, one seed per cell, one site (`block_output`). `r99` is an effective dimension under a variance cut, not an algebraic rank, and a peak in it says where the activation cloud is widest, not where computation happens. No dictionary is involved in any of these numbers, which is the point of them.
+
+**The text arm's reading rule, stated before its cell lands.** The third text point is running now. `base/text` has no peak location at all (1.009x its median, 23 of 30 interior layers tied) and `stage1/text` is prominent but multimodal ({2, 22, 23, 24, 26, 27}), so **no text peak-shift statement is available regardless of what ProLLaMA returns**. The cell can confirm whether ProLLaMA's text curve is flat like the base model's or prominent-but-multimodal like Stage_1's, and it can do nothing else. If it returns an argmax with a large tie set, that is recorded as "no peak location" and not as a third point on a trend that was withdrawn.
