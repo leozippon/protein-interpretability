@@ -182,13 +182,29 @@ KNOWN_VIOLATIONS: tuple[tuple[int, int, str], ...] = (
         204,
         "EXP-R2-204's text-control reading, filed under its own id after 205 to 207 had landed",
     ),
-    # And once more for the same reason, one id later: the per-layer resolution of
-    # EXP-R2-204's `R` was taken while EXP-R2-208 was being pre-registered, and it
-    # belongs to 204's verdict rather than to a new experiment.
+    # And again for the same reason, one id later. Two further readings of
+    # EXP-R2-204's own cells were taken while EXP-R2-208 was being pre-registered
+    # and dispatched -- the per-layer resolution of `R`, and the second lever's
+    # answer to the admissible-band question 204 was admitted to settle. Both
+    # belong to 204's verdict rather than to a new experiment, and one exception
+    # covers both because the rule is checked against the running maximum.
     (
         208,
         204,
-        "EXP-R2-204's per-layer addendum to the same verdict, appended after EXP-R2-208",
+        "EXP-R2-204's per-layer and admissible-band addenda to the same verdict, appended after EXP-R2-208",
+    ),
+    # EXP-R2-207's R1 reading, appended after EXP-R2-208 was pre-registered,
+    # amended and dispatched. R1's four cells were dispatched under 207's own id
+    # and trained for six hours; 208 was registered and revised in that window
+    # and then went out on the same allocation, so by the time R1's artefacts
+    # were read the maximum had moved past 207. The reading keeps 207's id
+    # because that is where the three-seed design, the interval and the
+    # UNRESOLVED fallback were frozen, and a fallback filed under one id and
+    # answered under another is a fallback nobody can check.
+    (
+        208,
+        207,
+        "EXP-R2-207's R1 reading, filed under its own id after EXP-R2-208 was registered and dispatched",
     ),
 )
 

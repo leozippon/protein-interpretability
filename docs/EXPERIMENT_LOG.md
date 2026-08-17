@@ -12969,3 +12969,133 @@ Only the first branch can fire the named condition, which is an honest statement
 ### Held from the entry above, unchanged
 
 A fitted λ=0 dictionary **must not** be reported as EXP-R2-206 repaired; λ=0 is a diagnostic, and the published formulation's exclusivity term is absent from it. Void conditions, the specification stream, the held-out offsets, the `--steps` values and the attainability demonstration are unchanged. The reduced-λ cell is identical to the λ=0 cell in every argument except `--decoder-norm-penalty`, so the pair is a one-lever comparison.
+
+---
+
+## 2026-08-15 — EXP-R2-204 read, second lever and the question it was admitted to answer: the protein arm does have a usable interior band, and the two-layer result was a property of the recipe
+
+The audit records this as open: *"whether R2.4's protein arm has an interior band to work on at all is a question EXP-R2-204 has not yet answered."* EXP-R2-204's four protein cells have now all completed, and they answer it. This reading costs no GPU time — it applies the amended admissibility rule to dictionaries that already exist.
+
+### Why the levers can move the band at all
+
+`r99` is a property of the **activations**, not of the dictionary, so it is identical across every cell here; EXP-R2-202's block-output vectors are reused unchanged. The amended rule's clause (a) — both cells carry at least `r99(l)` live latents at layer `l` — is therefore a statement about the dictionary alone, and a recipe that raises the live basis can clear it at more layers without anything about the protein activations changing. Clause (b) is fixed by `r99` and does not move: **24 of the 28 interior layers pass it in protein**, which is the ceiling on any protein band under this rule.
+
+### The rule reproduces its own published readings before it is used on anything new
+
+Implemented from the audit's statement of the amended rule and checked against what that document already reports: the protein pair at `k` 32 / `d_hidden` 8,192 returns **{27, 28}**, and the text control returns **27 of 28 interior layers**, both exactly as recorded. Clause (a) alone returns {0, 27–31} on the protein pair, also as recorded. The implementation is therefore reading the same rule the audit states.
+
+### The band by recipe, with the text control beside it
+
+| protein recipe | clause (a) alone | **admissible (amended)** | **robust**, binding margin ≥ 10% |
+|---|---|---|---|
+| `k` 32, `d_hidden` 8,192 (EXP-R2-191 baseline) | {0, 27–31} | **{27, 28}** — 2 layers | **none** (+4.8%, +9.3%) |
+| `k` 64, `d_hidden` 8,192 (sparsity lever) | {0, 24–31} | **{24–28}** — 5 layers | {25, 27, 28} — 3 |
+| `k` 32, `d_hidden` 16,384 (width lever) | {0, 19, 20, 22–31} | **{19, 20, 22–28}** — 9 layers | **{23, 24, 25, 26, 27, 28} — 6, contiguous** |
+
+Text control, same rule, same site: **27 of 28** interior layers at 8,192 and **28 of 28** at 16,384. Attainability is demonstrated on the control at both widths, which is Appendix B rule 2 satisfied rather than asserted.
+
+### The robustness column is the honest part of this table and it changes the reading twice
+
+A layer admitted by a margin of 0.3% is admitted by rounding. Reporting the raw counts alone would overstate the width result and would also flatter the baseline, so the binding margin — the smaller of the two cells' margins over `r99`, which is `stage1/protein` at every layer here — is reported beside every band.
+
+**It cuts the width result down**: three of the nine layers at 16,384 are knife-edge — layer 19 at **+0.3%**, layer 20 at **+0.4%** and layer 22 at **+0.0%** (3,121 live against an `r99` of 3,120, a margin of one latent). Those three are not a band and are not counted. What survives is **six contiguous layers, 23 through 28, every one clearing by at least 12.9% on the binding side and by 48.8% and 60.7% at layers 27 and 28.**
+
+**And it cuts the baseline down further.** At `k` 32 / 8,192 the two admissible layers clear by **+4.8%** and **+9.3%** on the binding side, so **neither is robust by the same standard**. The audit already flagged layer 28 as marginal by construction; layer 27 is marginally admitted too, and by a smaller margin than 28. So the honest statement of the starting position is not "a one-to-two-layer result" but **a zero-robust-layer result with two marginal admissions**, and the honest statement of the width result is six robust contiguous layers where there were none.
+
+### What this settles, and what it does not
+
+**Settled:** the protein arm has an interior band to work on. The two-layer intersection is **a property of the `d_hidden` 8,192 / `k` 32 recipe and not of protein activations**, because `r99` never moved and only the dictionary did. Both levers widen the band and width widens it more, which is consistent with the same ordering the live-basis counts show — width +41.6%/+43.4% per layer, sparsity +28.2%/+30.3%, and the auxiliary revival budget nothing at all (EXP-R2-201, −47 and −42).
+
+**Not settled, and the distinction matters more here than usual.** *Admissible was never the same as informative*, and this programme now has a measured instance of exactly that gap: EXP-R2-206's Crosscoder was fitted at layers the rule admits and its readout is void on C3 at every one of them. So a six-layer admissible band is a statement that a dictionary of that width can span those layers' activations, and **not** a prediction that a diff fitted there will separate. Nothing here licenses re-opening R2.4's protein arm on its own; it removes one of the two obstacles and leaves the other — the collapse EXP-R2-208 is diagnosing — standing.
+
+**Single cells, one seed, one corpus draw.** Each recipe is one dictionary per checkpoint. The bands are not replicated, and the knife-edge layers are precisely the ones a second seed would be expected to move; the six robust layers are chosen so that seed noise of the size EXP-R2-207 measures (CV 0.83% on protein live counts) cannot reach them, but that is an argument from a measured spread and not a replicate of these cells.
+
+**One consequence for what is already running.** EXP-R2-208's two Crosscoder cells are fitted at `d_hidden` 8,192 on layers 27 and 28, which remains the correct admissible set *for that width*. This finding does not change those cells and is not a reason to alter them mid-flight. It does mean that if a usable λ is identified, the Crosscoder that follows should be fitted at 16,384 on the six-layer band rather than at 8,192 on two, and the 16,384-wide follow-on the R2.4 plan already defers becomes the better-motivated cell rather than merely a wider one.
+
+---
+
+## 2026-08-17 — EXP-R2-208/207 dispatch record: the λ pair on cards 0 and 1, EXP-R2-207's R2 text replicates on cards 2 and 3
+
+**All four cards had been idle since 2026-08-15 14:45 local, when EXP-R2-207's R1 wrote its last artefact — roughly 41 hours.** A previous agent was stopped before it could dispatch the next round, so the queued work never launched and nothing replaced R1 on the allocation. Four cells went out before any analysis was started, which is the order the standing authorization requires and the order that would have closed this gap two days ago.
+
+| card | label | campaign | pin | snapshot |
+|---:|---|---|---|---|
+| 0 | `r208_cc_protein_lam0` | EXP-R2-208, λ = 0 | `96b3bd9` | `20260815005332_376ec28db1f6` |
+| 1 | `r208_cc_protein_lam3e5` | EXP-R2-208, λ = 3e-5 | `96b3bd9` | `20260815005332_376ec28db1f6` |
+| 2 | `r207_r2_base_text_s20260815` | EXP-R2-207 R2, `Llama-2-7b-hf` | `bd6ff99` | `20260815084249_9fa75fa8a3b3` |
+| 3 | `r207_r2_stage1_text_s20260815` | EXP-R2-207 R2, `ProLLaMA_Stage_1` | `bd6ff99` | `20260815084249_9fa75fa8a3b3` |
+
+**The two pins are not interchangeable and neither was re-frozen.** `96b3bd9` is the commit whose Crosscoder EXP-R2-206 ran; `bd6ff99` is the commit whose trainer EXP-R2-191 and EXP-R2-204 ran, and whose code hash `9fa75fa8a3b3` R1's snapshot already carries. Both snapshots were confirmed present on the pod with their own stage file before any dispatch, so both cells of each pair reused an existing snapshot and **no relay push was performed at all** — the freeze for each pin was paid once, days ago, and the driver's reuse guard verified each run id against the hash of its own pinned commit rather than against the working tree.
+
+### Verified before dispatch
+
+Four cards at **0 MiB and 0%**. Both model directories present on GPFS. All four complete argument lists **dry-parsed against the parser of their own pinned commit** — extracted with `git archive` into a scratch tree outside the repository, because the working tree has moved off both pins (`32_crosscoder.py` is +21/−4 against `96b3bd9`; `17_train_transcoder.py` and `src/transfer/transcoders.py` are several hundred lines off `bd6ff99`), and a dry parse against the tree would therefore have checked the wrong parser. The Crosscoder pair returned `layers=(27, 28)`, `admissible_layers=(27, 28)`, both `r99` vectors of length two in `--layers` order — `(2516, 2232)` base and `(2364, 1563)` adapted, EXP-R2-206's six-element vectors cut to these two sites — `pairings=['true', 'shuffled']`, and `decoder_norm_penalty` `0.0` and `3e-05`. The text pair returned `mode='text'`, `steps=26000`, `seed=20260815`, `corpus_seed=20260812`, and `learning_rate=2e-4 / weight_decay=1e-5 / grad_clip=1.0` from defaults that are **byte-identical at `bd6ff99` and at `04fdfa5`**, the commit the `r24_plt_*_text` baselines ran, so omitting those three flags exactly as the baselines did reproduces their recorded values rather than risking a silent drift.
+
+`--steps` was held at the declared value in both pairs and for the same reason: **declared `--steps` sets the held-out offset**, 229,376 eligible records at 56,000 in protein and 106,496 at 26,000 in text, so cutting it to the realised step count would silently score a different population.
+
+Model paths were passed as **absolute GPFS paths**, never as `$TRANSFER_MODEL_BASE_DIR/...`, which is defined only inside the pod and expands to the empty string on the workstation. Each cell went out as **its own backgrounded command with `H200_POD` exported in the same shell**, never as one `&&` list. `scripts/transfer/h200_campaign_queue.sh` was again **not** used: it has still never run in a pod.
+
+### Verified after dispatch, from in-pod stdout rather than from the launcher's exit status
+
+Every driver printed `LAUNCHED`, wrote its `.dispatch` record, and cleared the 45-second dispatch-failure gate. The stages' own stdout then reported:
+
+* **λ pair, both cells identical**: loader `32L x 4096d`, vocabulary digest `fe56f82cb036..`, tensor `block_output`; `2 Crosscoder(s), 2 site(s) x 268.5M parameters each, admissible [27, 28]`; protein screen **kept 961 of 1,024 at max containment 1.0000 over 229,376 training records**, cohort band `[32, 1019]`.
+* **R2 pair, both cells identical**: `[loader] ... as prollama:text`, `self-check PASS`, `PLT 2147.9M parameters 32 decoder(s)`; text screen **kept 1,024 of 1,024 at max containment 0.4346 over 106,496 training records**; `[train] 26000 steps, batch 4, stopping at 34000000 scored tokens`.
+
+Both screens and both held-out offsets are the pre-registered values, so neither pair has tripped a void condition at the point where a void condition is first readable.
+
+Utilisation seven minutes in: cards 0 and 1 at **42,747 MiB, 84% and 94%**; cards 2 and 3 at **124,203 MiB, 100% and 99%**. The λ pair sits at about two thirds of EXP-R2-206's 61,797 MiB because it fits two sites rather than six — `268.5M x 2` against `805.4M x 6` — which is the arithmetic the site cut implies and is the first confirmation that the cut took effect on the card and not only in the argument list.
+
+### Expected wall clock, and what is deliberately not predicted
+
+R2 is the campaign's own cost model at text 8,192, ≈4.9 h from 07:55 local, so ≈12:50. The λ pair is **not** predicted from that model: EXP-R2-206's six-site protein cell took ≈4.7 h at the same declared steps, and a two-site cell shares that run's backbone and IO cost while carrying a third of the dictionary, so it should finish at or before the same point — but no cost model in this repository has been fitted to a site count, and stating one from a single six-site observation would be an extrapolation, not an estimate.
+
+---
+
+## 2026-08-17 — EXP-R2-207 R1 read: `R` has an interval, it separates from 1 on both checkpoints, and only the protein half of it is priced
+
+R1's four cells completed on 2026-08-15 at 14:44–14:45 local and were admitted on matching digests. With the seed-20260812 baselines they give **three seeds per protein cell**, which is what EXP-R2-204's `R` was registered as lacking.
+
+### Every cell is valid on its own pre-registered checks
+
+All six protein cells — R1's four and the two `r24_plt_*_protein` baselines — reproduce the protein stream **exactly**: 36,978 steps, 147,912 sequences, 34,001,183 scored tokens, screen 961 of 1,024 at maximum containment 1.0000 over 229,376 records. No cell is void.
+
+`compare_matched_training` against the seed-20260812 baseline of the same checkpoint returns `MISMATCH` with `disagreements` **exactly `["seed"]`** on all four replicates. That is the specification check the pre-registration named for a replicate, and it passes on every cell.
+
+Endpoint live latents per layer are read from `n_dead` in the final history record as `n_layers · d_hidden − n_dead` over 32 layers — the route EXP-R2-204 validated. It is re-validated here before use: it returns **2187.7812** and **1633.5000** on the two baselines, against the published 2,187.8 and 1,633.5.
+
+### The three-seed spread on protein `L8`
+
+| checkpoint | s20260812 | s20260815 | s20260816 | mean | sd | CV |
+|---|---:|---:|---:|---:|---:|---:|
+| base / protein | 2,187.78 | 2,187.44 | 2,182.19 | 2,185.80 | 3.14 | **0.143%** |
+| stage1 / protein | 1,633.50 | 1,616.81 | 1,643.06 | 1,631.13 | 13.29 | **0.814%** |
+
+`stage1`'s spread reproduces the 0.83% the pre-registration propagated from three earlier protein replicates. `base`'s is 5.7x tighter, and that is used below only in the direction that costs the result something.
+
+### `R`, with an interval
+
+`R = (protein L16/L8) ÷ (text L16/L8)`, matched by checkpoint. Only the protein `L8` denominator varies across R1's seeds; the text `L16/L8` ratio is the single-seed 1.8976 and 1.7002 EXP-R2-204 reported, recomputed here from the artefacts and reproducing those figures exactly.
+
+| checkpoint | `R` per seed | mean | sd | 95% CI on the mean (t, 2 df) | `\|R − 1\|` |
+|---|---|---:|---:|---|---:|
+| base | 0.7464 / 0.7465 / 0.7483 | **0.7471** | 0.0011 | **[0.7444, 0.7498]** | 0.253 |
+| stage1 | 0.8433 / 0.8520 / 0.8384 | **0.8445** | 0.0069 | **[0.8274, 0.8617]** | 0.155 |
+
+**The pre-registered fallback does not fire.** The three-seed spread separates `R` from 1 on both checkpoints: the upper limit of each interval is far below 1, `|R − 1|` is 236 and 23 times the respective sd, and EXP-R2-204's `|R − 1| < 0.05` unresolvable band is not entered. The result is therefore reported as resolved and **no seed is added**, which is what the pre-registration requires in either direction — the fallback was written so that the decision to add seeds could not be taken after seeing where the estimate landed.
+
+**Priced against the pessimistic spread as well, so `base`'s tight sd does nothing load-bearing.** A two-df sd is a weak estimate, and `base`'s happens to be small. Repricing `base` at `stage1`'s measured CV gives `[0.7320, 0.7622]`, still nowhere near 1. Going further: the upper limit of either interval would reach 1 only at a CV of **13.6%** on `base` and **7.4%** on `stage1`, against a per-component figure the pre-registration put at 0.83% and R1 measures at 0.14% and 0.81%. Separation from 1 does not depend on which of the two spreads is believed.
+
+### What is priced and what is not, stated plainly
+
+**R1 prices exactly one of the four components of `R`: the protein `f8` denominator.** The text `f8` denominator is still a single dictionary at seed 20260812, and both `f16` numerators — protein and text — are single dictionaries at seed 20260812. **The intervals above are therefore a floor on the fit-noise width of `R`, not the full width.** R2, dispatched this morning on cards 2 and 3, supplies the text `f8` replicates and is what the pre-registration named as completing the interval; R4 would add a second seed to the four `L16` cells, which is a two-point spread rather than a distribution. If the remaining components each carry a CV near the pre-registered 0.83%, the complete four-component figure would be ≈1.66% and the intervals would widen to about `[0.716, 0.778]` and `[0.810, 0.879]` — still separated from 1, but that is an arithmetic projection from an assumed CV and **not a measurement**, and it is written here only so the size of what is missing is visible.
+
+**Corpus-draw variability remains outside the interval entirely.** Every cell shares `--corpus-seed 20260812` by design, so this prices initialisation and the within-record position draw and says nothing about a different draw of Swiss-Prot or OpenWebText.
+
+### The reading, and the bound that survives it
+
+The direction is unchanged and now has an error bar on its protein half: **the protein live basis grows with dictionary width more slowly than the text basis does**, on the same backbone, the same corpus budget and the same recipe, in both checkpoints.
+
+**0.84 remains the defensible bound rather than 0.75, and R1 does not change that.** `base/text` sits at 92.87% live at 8,192, close enough to the ceiling that its `L8` understates the basis it would use at greater width, which inflates its `f16/f8` and deflates `R` for `base`. `stage1/text` at 59.82% is not ceiling-affected and returns the weaker effect. The less confounded checkpoint gives the smaller number, so the effect's size is bounded below by `stage1`'s value and is not described by `base`'s. Nothing in R1 touches that confound: it is a property of the text cells, and R1 replicated the protein ones.
+
+**One thing R1 does newly license, with its own limit stated.** The 13% gap between the two checkpoints — 0.7471 against 0.8445, a difference of 0.0974 — is **20x the pooled within-checkpoint sd that protein fit noise supplies**, so on the axis R1 measures the gap is not fit noise. That is weaker than "the gap is a real lineage difference": the text side is unpriced, and a text-side spread would enter both checkpoints' `R` independently. R2 is what closes that, and until it lands the gap is separated from fit noise on one of its two axes rather than on both.
