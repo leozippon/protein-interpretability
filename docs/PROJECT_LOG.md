@@ -1670,9 +1670,11 @@ Three near-misses in one session, each at a different layer, none of which a cas
 
 **Fifth and sixth, in the other direction.** A watcher that tested "status line present?" and "process alive?" as separate steps caught the window between pytest exiting and its own echo landing, and reported a suite that had passed 1,340 tests as unfinished. And a grep whose pattern could not match the text it searched for returned nothing, which was reported as "the claim was never in the audit" and used to withdraw a correct statement. Both err where the earlier four did not -- they make success look like failure -- but they are the same object: an instrument's silence read as a fact about the world rather than about the query. The principle is Appendix B rule 36; verify before retracting to the same standard as before asserting.
 
+**Seventh, a watcher that never fired.** Two cards idled because the only card monitor armed was scoped to the pair a different dispatch needed and broke on firing, leaving the allocation unwatched; the dispatch that should have followed was stated in prose in several reports and armed nowhere. Fixed by a standing allocation watch that is resource-scoped rather than condition-scoped, never terminates, reports any change in the idle set, and treats an unreachable pod as UNKNOWN rather than idle. Every dispatch that happened on time today had a monitor behind it; this one had only an intention.
+
 **A trap in the cleanup, worth one line.** `pkill -f "python -m pytest -q"` also matches the harness wrapper whose own command line contains the payload, so it terminates the calling shell — observed, exit 143. Select by exact `/proc/<pid>/cmdline` instead and verify the long-running H200 drivers are still alive afterwards; they were.
 
-The principle these six share — an exit status reports the last process in the chain rather than the work, and finishing is a different fact from succeeding — is Appendix B rule 36, alongside the pod instance it generalises (L20). What stays here is the recipe and the three incidents that earned it.
+The principle these seven share — an exit status reports the last process in the chain rather than the work, and finishing is a different fact from succeeding — is Appendix B rule 36, alongside the pod instance it generalises (L20). What stays here is the recipe and the three incidents that earned it.
 
 ## 2026-08-17 ~11:20 local — handoff state
 
