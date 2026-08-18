@@ -1,0 +1,29 @@
+# Queue-runner failure-vocabulary probe. THROWAWAY -- delete once the states are recorded.
+#
+# Columns, tab-separated: slot <TAB> key <TAB> gpu <TAB> stage <TAB> label <TAB> env <TAB> args
+#
+# WHY. R3 completed the runner's structural validation, so every success path is exercised and no error path is. That
+# asymmetry is the problem: the first time a real cell fails under the queue, we would learn simultaneously whether the
+# cell failed and whether the runner handles failure, and those must not be confounded at 3am. This manifest exercises
+# all three unexecuted states in one dispatch. No cell trains anything and no cell touches a GPU.
+#
+# THE THREE STATES, and how each is provoked:
+#   qv_fail_nonzero    an argument the stage's parser rejects -> argparse exits 2. Verified on the workstation.
+#                      Must record exit 2 (not a sentinel guess), must count in `# FAILURES`, and must NOT sink the
+#                      campaign -- slot 2 below exists to prove execution continues past it.
+#   qv_refused_busy    a card that is occupied at dispatch. Must be refused rather than launched, and the refusal must
+#                      be visible in the status file rather than silent.
+#   qv_ok_no_artifact  `--help`: exits 0 and writes nothing. Verified on the workstation. Must be recorded DISTINCTLY
+#                      from both success and failure and must count in `# NO-RECORD` rather than `# FAILURES`, because
+#                      a nonzero exit is a defect while a silent zero-exit is a measurement outcome.
+#
+# SAFETY, and it is the reason the busy-card cell is `--help` rather than anything heavier. If the idle-card guard
+# FAILS and that cell launches anyway, it must be harmless: `--help` prints usage, exits 0, allocates no device memory
+# and cannot contend with the pre-registered training cell occupying that card. A probe for a guard must not damage
+# anything when the guard is what is broken.
+#
+# CARD CHOICE. cuda:3 must be IDLE at dispatch and cuda:0 must be BUSY. Check both before launching; if cuda:0 has
+# freed, the refusal cell proves nothing and the manifest must be re-pointed at whichever card is occupied.
+1	spec	3	30_activation_spectrum.py	qv_fail_nonzero	-	--this-flag-does-not-exist
+1	spec	0	30_activation_spectrum.py	qv_refused_busy	-	--help
+2	spec	3	30_activation_spectrum.py	qv_ok_no_artifact	-	--help
