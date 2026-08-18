@@ -14595,3 +14595,22 @@ At L28 the noise clause binds rather than the 8% clause, because that site's see
 **If it stands**, the 8-row fractions are reported as the headline with the model's residual headroom stated beside them: about 5% more latents at 16 rows and 10-11% more at infinite sampling. **If it fires**, the 16-row cells become the headline and the 8-row cells are reported as the under-sampled measurement they were, with no retraction of the effect itself.
 
 This is separate from and does not replace the model test. `p95(16) = 0.04740` at L27 and `0.05210` at L28 remain staked exactly as recorded, and they test whether the two-component model holds at all; this criterion tests what the headline requires given whatever the model turns out to be.
+
+### The seed-spread estimate is unstable, and a control-seed replicate is running to decompose it (2026-08-18)
+
+**Both 2-row cells are in, and they expose a weakness in the noise clause of the criterion fixed earlier today.** The two cells at each rung differ only in which dictionary they read: `--seed` and `--control-seed` are 20260818 in every cell, so nothing about the measurement draw varies between them.
+
+| rung | site | seed 20260814 | seed 20260815 | spread | relative to mean |
+| --- | --- | --- | --- | --- | --- |
+| 2 rows | L27 | 0.102254 | 0.117214 | 0.014960 | **13.63%** |
+| 2 rows | L28 | 0.129319 | 0.130575 | 0.001256 | **0.97%** |
+| 8 rows | L27 | 0.131650 | 0.134446 | 0.002796 | **2.10%** |
+| 8 rows | L28 | 0.163212 | 0.156270 | 0.006942 | **4.35%** |
+
+**The spread varies by more than an order of magnitude across rungs and reverses between sites.** L27 falls 13.63% to 2.10% as sample size quadruples, which is what sampling noise should do; L28 *rises* from 0.97% to 4.35%, which it should not. Underneath, the L27 threshold itself differs by 11.3% between the two dictionaries at 2 rows -- 0.078467 against 0.070082 -- and that difference, not the effect distribution, is what moves the fraction.
+
+**The honest reading is that none of these four numbers is a reliable noise estimate.** Each is a single absolute difference between two observations, so it carries roughly its own magnitude in uncertainty, and the apparent pattern -- one site behaving and the other not -- is exactly what two-point estimates produce whether or not anything real is happening. This is the same shape as the two-point `sd^2 = a/n + b` fits recorded earlier: exactly determined, zero residual, no way to see that it is wrong.
+
+**The criterion fixed earlier is not being changed, and its inputs stay frozen.** It is evaluated on the seed spread measured at 8 rows from the two dictionary-seed cells, which are the two rows already in the table above, and those values do not move. Restating a criterion after seeing data is the failure this unit has voided three criteria for, and noticing that an input is noisy is not licence to redefine it.
+
+**What is running instead is a decomposition, dispatched to an idle card.** An 8-row cell on the seed 20260814 dictionary with `--control-seed 20260819` and everything else identical. The spreads above conflate two sources -- variation between fitted dictionaries and variation in the matched random control draw -- and this cell isolates the second, because the dictionary is held fixed and only the control changes. If the control-draw component is small, the spreads above are dictionary variation and the criterion's noise clause is measuring what it should. If it is comparable to them, the clause is dominated by a draw that could be averaged away cheaply, and that is worth knowing before the same design is used again. **It is diagnostic context and explicitly not an input to the criterion.**
