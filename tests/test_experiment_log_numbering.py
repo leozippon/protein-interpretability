@@ -249,6 +249,7 @@ KNOWN_VIOLATIONS: tuple[tuple[int, int, str], ...] = (
     # successor designs written during the four hours 209 was on the cards.
     (211, 209, "EXP-R2-209's round A interim reading, filed after 210 and 211 were registered mid-run"),
     (211, 209, "EXP-R2-209's wording amendment, replacing a registered negative that overshot four sampled points"),
+    (211, 209, "EXP-R2-209's admissibility finding: no Crosscoder cell clears the bar, which moots the crossing band"),
 )
 
 

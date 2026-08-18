@@ -13684,3 +13684,56 @@ Written before round B completes the round, so the sentence the stop rule will l
 **The trade-off is the finding, and it is a better one than the absence would have been.** "No usable λ exists" is unfalsifiable from four points. "Fitting and exclusivity trade off across a factor of 3.3 in λ and cross without a measured overlap" is what the campaign established, is quantitative, and tells the next design where the question lives. It also makes the mechanism concrete: the decoder-norm L1 buys exclusivity with live latents, at a rate this campaign has now measured.
 
 **The crossing-band probe is deferred by coordinator decision and is not prepared.** One cell at the geometric centre of (3e-4, 1e-3) is the obvious move and is exactly what the stop rule forbids as part of this campaign — subdividing the bracket after seeing where the estimate landed is how a tuned value is laundered into a pre-registered round. If it is worth doing it gets its own pre-registration, its own justification and its own stop rule, decided **after** the stop fires on round B rather than overtaking it. No cards are reserved for it and it does not shape how round B is read.
+
+---
+
+## 2026-08-17 — EXP-R2-209: no Crosscoder in this programme has ever cleared the admissibility bar, and that moots the crossing band
+
+Asked before the crossing-band decision. Answered from the artefacts. Nothing dispatched.
+
+### 1. The rule applies, and the interpretive question does not need settling
+
+The Crosscoder stage **implements** it. Its own artefact carries `admissibility.rule`: *"a diff may be reported at layer `l` only where BOTH cells' dictionaries carry at least that layer's own `r99` live latents, and only where that layer's `r99` is itself non-degenerate."* The campaign has applied it to a Crosscoder since EXP-R2-206, whose read already observed that "the admissibility rule's own premise … is false at both admissible layers in both modes."
+
+The phrase "both cells' dictionaries" was written for two independent dictionaries and does not map cleanly onto one joint latent space with per-role decoders. **But the verdict does not depend on resolving that**, because nothing clears even the most permissive reading anyone could argue for:
+
+| cell | mode | λ | layer | live | `r99` base / adapted | live ÷ max | live ÷ **min** |
+|---|---|---:|---:|---:|---|---:|---:|
+| r206 | protein | 3e-3 | 27 / 28 | 18 / 8 | 2516,2364 / 2232,1563 | 0.01 / 0.00 | 0.01 / 0.01 |
+| **r208 λ=0** | protein | 0 | 27 / 28 | **1804 / 1481** | as above | 0.72 / 0.66 | 0.76 / **0.95** |
+| r208 λ=3e-5 | protein | 3e-5 | 27 / 28 | 1601 / 1306 | as above | 0.64 / 0.59 | 0.68 / 0.84 |
+| r206 | text | 3e-3 | 27 / 28 | 310 / 197 | 3708,3506 / 3700,3463 | 0.08 / 0.05 | 0.09 / 0.06 |
+| **r209 λ=3e-4** | text | 3e-4 | 27 / 28 | **1646 / 1440** | as above | 0.44 / 0.39 | 0.47 / 0.42 |
+| r209 λ=1e-3 | text | 1e-3 | 27 / 28 | 709 / 629 | as above | 0.19 / 0.17 | 0.20 / 0.18 |
+
+**Nothing clears.** The closest any cell comes is λ=0 protein at layer 28, at 0.95 of the *smaller* of the two roles' `r99` — and the smaller is the permissive reading, not the defensible one. For a joint dictionary the defensible floor is `live ≥ max(r99_base, r99_adapted)`, since the shared space must at least span the larger of the two activation clouds; the strict bound is their sum, reached only if the two models' active subspaces were disjoint. **The correct bar for a joint dictionary has never been stated in this programme**, and stating it is now a prerequisite for any Crosscoder diff.
+
+### 2. The four-fold gap against the transcoder is not established
+
+It compares a **penalised** text Crosscoder against an **unpenalised** text transcoder, and a layer-specific count against a 32-layer mean. On the one comparison that is like-for-like:
+
+**In protein, where a penalty-free Crosscoder exists**, λ=0 carries 1,804 and 1,481 against the transcoder's ≈2,477 and ≈1,709 on the binding side at the same layers — **0.73 and 0.87, not 0.25.** So the two-role encoder sum appears to cost on the order of 15–30% of the live basis, not three quarters.
+
+**The penalty-free text cell that would settle it was never run.** EXP-R2-208's amendment dropped the λ=0 text cell, and this log recorded at the time that the reason given for dropping it — that the mode difference is explained by protein training 3.25x longer — was one of the two accounts the unit had already said it could not separate. That gap is now load-bearing: the one number needed to say whether the two-role construction is intrinsically expensive in text does not exist.
+
+### 3. The crossing band cannot deliver an instrument, so the question is moot rather than deferred
+
+Live latents fall monotonically with λ across the measured range — 1,646 at 3e-4 down to 709 at 1e-3 — so **any λ inside the crossing band yields at most 1,646, which is 0.44 of `max(r99)` and 0.47 of the minimum.** A probe there would resolve where the two criteria cross and would still produce a dictionary far below any adequacy bar. **λ is the wrong lever.**
+
+**Width is the right one, and this was already established.** EXP-R2-204's second lever measured that doubling width raises the live basis by 41.6% and 43.4% and widens the protein admissible band from two marginal layers to nine, six of them robust — and its closing paragraph already recommended that a Crosscoder following a usable λ be fitted at 16,384 on the six-layer band rather than at 8,192 on two. The Crosscoder route is **width-limited, not λ-limited**.
+
+### The criterion error, and it is mine
+
+EXP-R2-208's FITS bar of 1,000 live per site was explicitly benchmarked against "the 1,633–2,188 a penalty-free dictionary demonstrably reaches here" — the **transcoder's** live count. It was built as a **collapse diagnostic** for the question that entry asked, *did removing the penalty stop the collapse*, and for that question it was correct and remains so.
+
+**The error is downstream of it.** EXP-R2-209 defined `USABLE = FITS and POLARISES`, which silently promoted a collapse diagnostic into an adequacy criterion. A dictionary can stop collapsing and still be far too small to carry a diff, and that is exactly what every cell in this campaign is. I wrote EXP-R2-209's criteria; the bar itself was sound where it was set and the promotion of it was not.
+
+**So the sweep has been run against a criterion that was never the binding one.** The binding one is admissibility, and no Crosscoder in this programme has ever cleared it at any layer in any mode.
+
+### What this does and does not retract
+
+**It does not retract any measurement.** The trade-off between fitting and exclusivity is real, quantitative and unaffected: across a factor of 3.3 in λ, live falls 1,646 → 709 while polarisation rises 0.048 → 0.30. That is a statement about how the objective behaves, and it stands.
+
+**It scopes what those numbers were ever going to license.** Every C3 reading in EXP-R2-206 and every polarisation figure in EXP-R2-209 was computed on a basis below the adequacy bar. EXP-R2-206 already declared its own readout void on C3; the present finding says the same thing at the level of the campaign rather than the cell, and it was reachable from the first artefact rather than the seventh.
+
+**The larger statement, at the level it belongs:** on this lineage, at `d_hidden` 8,192 and `k` 32, **no Crosscoder configuration reached — at any λ from 0 to 3e-3, in either mode — has produced a latent basis large enough for a model diff to be reportable at any layer under any reading of the admissibility rule.** Before another Crosscoder cell is dispatched, two things are owed: a stated basis-adequacy bar for joint dictionaries, and a width at which it is reachable.
