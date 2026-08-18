@@ -14132,3 +14132,43 @@ Four cells, four cards, one slot, through the queue runner from snapshot `202608
 | 3 | `r212_w16384_text_lam3e4_s20260814` | text | 3e-4 |
 
 **Verified after launch rather than assumed**: `# FAILURES 0`, `# NO-RECORD 0`, all four `running`, and — the check that mattered, since this was the `env` column's first real use — **`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` read out of the cell's own `/proc/<pid>/environ`**, not inferred from the manifest.
+
+---
+
+## 2026-08-18 — EXP-R2-212 text arm: adequacy is reached at 16,384, and the same round shows width cannot deliver exclusivity
+
+Three text cells completed cleanly — `exited-ok`, exit 0, no error lines, ~2 h 53 m each — and were pulled and digest-admitted. The protein cell is still running.
+
+### The necessary condition is met, by a wide margin
+
+| cell | layer | live | bar | live ÷ bar | polarised | adequate |
+|---|---:|---:|---:|---:|---:|---|
+| λ = 0, s20260814 | 27 / 28 | 5,545 / 6,078 | 3,708 / 3,700 | 1.50 / 1.64 | 0.000 | **YES** |
+| λ = 0, s20260815 | 27 / 28 | 5,571 / 6,188 | 3,708 / 3,700 | 1.50 / 1.67 | 0.000 | **YES** |
+
+**Mean 5,558 and 6,133, clearing by 50% and 66%, with seed spreads of 0.3% and 1.3%.** This is the first Crosscoder in the programme to carry a basis adequate for a diff to be reportable at all — the question EXP-R2-212 was registered to answer, answered positively and unambiguously.
+
+### My width model was wrong, in the direction I said to hold loosely
+
+Realised growth is **x2.035 and x1.894**, against a projection of x1.416–1.50. I argued at length that constant capacity fraction — x2.0 — "exceeds every growth factor measured anywhere" and that the analogues at comparable capacity gave x1.42. **The Crosscoder's capacity fraction held constant across the doubling** — 33.3% → 33.9% and 39.5% → 37.4% — where every transcoder's fell.
+
+**The failed assumption is precisely the one I flagged as the model's real uncertainty**: all four analogues were single-model transcoders, and a Crosscoder does not scale like one. Holding it loosely was right; the model itself was not. Had the experiment been sized on my projection alone it would have been run at 32,768 for no reason, at twice the cost and with a compounded extrapolation.
+
+### And the sufficiency probe answers the other half — negatively, with a mechanism
+
+| λ = 3e-4 | layer | live | polarised | polarised **count** |
+|---|---:|---:|---:|---:|
+| 8,192 | 27 / 28 | 1,646 / 1,440 | 0.048 / 0.058 | **79 / 84** |
+| 16,384 | 27 / 28 | 3,004 / 2,917 | 0.024 / 0.027 | **72 / 79** |
+
+**Polarisation halves when width doubles, and the reason is dilution rather than loss.** The *number* of polarised latents is width-invariant — 79 → 72 and 84 → 79 — while the live basis doubles. **Width does not create model-specific latents; it adds shared and intermediate ones.**
+
+**That closes the sufficiency question by arithmetic rather than by another sweep.** With a polarised count fixed near 75, a fraction of 0.10 requires a live basis of **≤ 750** — a fifth of the adequacy bar. Adequacy needs a large basis; exclusivity as measured needs a small one; **and width moves them apart rather than together.** Interpolating between the two measured points at 16,384, the λ that lands on the adequacy bar carries polarisation near 0.015, against 0.02 at 8,192 — the gap widened.
+
+### What this establishes and what it does not
+
+**Established**: an adequate joint basis is reachable at 16,384 at λ = 0, replicated, with the bar cleared by 50–66%. The route is not closed by basis size.
+
+**Established negatively, and this is the stronger finding**: increasing width cannot buy the exclusivity a diff also requires, because the polarised count does not respond to width. The trade-off named at the EXP-R2-209 stop is not resolved by the lever that fixes adequacy.
+
+**Not established**: whether exclusivity is reachable by any other lever. `polarised` is a decoder-norm statistic, and EXP-R2-210's causal differential-reliance route was registered precisely because that statistic is a proxy. **An adequate λ = 0 dictionary at 16,384 now exists, and EXP-R2-210's design is written against exactly such an object** — so the causal route is no longer blocked by the absence of a fitted, adequate joint dictionary. That is where this leads next, not to another λ or another width.
