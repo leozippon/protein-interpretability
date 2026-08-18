@@ -14425,3 +14425,21 @@ Found while scrubbing a pod name the H200 driver had written into a freeze log o
 **Not redacted, and this is an accepted limitation rather than an oversight.** `evidence/p0_2_full_launch_20260722/launch_receipt.json` and `evidence/p0_2_screening_20260722/terminal_receipt.json` each carry a pod name, and **both are digest-anchored**: this log records their SHA-256 at the point each is cited, and both digests verify today. Redacting either would change its content, break the anchor, and leave a receipt that no longer verifies -- which is strictly worse than a receipt naming a pod that has not existed since July, because the receipt's entire purpose is to be checkable. **A verification-anchored record is frozen; the guardrail's intent is served by the current pod being absent rather than by editing history.** If these ever need to be reissued, the correct route is a new receipt with a new digest and a note superseding the old, not an edit.
 
 **One adjacent finding, reported rather than acted on.** `docs/PROJECT_LOG.md` also records a node identifier and a private IP beside one of the redacted pod names. That is the same class of detail but a different guardrail from the one I was asked to enforce, and widening scope unasked is how a redaction pass turns into an unreviewable diff. Flagged for a decision.
+
+### The save flag is inert, and EXP-R2-210 is running on both text dictionaries (2026-08-18)
+
+**Both text refits reproduce their own per-seed pairs exactly.** Seed 20260814 returns live [5545, 6078] against an expected [5545, 6078]; seed 20260815 returns [5571, 6188] against [5571, 6188]. The shuffled arms reproduce too -- [4137, 3789] and [3796 at L28] match the cells being reproduced -- so the agreement is on **four numbers per seed and eight in total, at a new pin, exact rather than approximate**. Two independent exact reproductions is the evidence the earlier registration wanted and a single one could not give: one match is compatible with coincidence, two on eight numbers is not. `--save-dictionary` does not perturb the fit, and the fit is deterministic given its seed.
+
+Both verdicts were produced by a standing watcher that compares each landing record against **its own seed's** pair and writes MATCH or MISS, rather than by hand against a remembered figure -- which is the specific error that made this check necessary.
+
+**The artefacts are 2,147,946,633 bytes each, against 2.15 GB derived in advance** from `n_sites x n_roles x 2 x d_model x d_hidden x 4`. The prediction was made to avoid carrying the 8.6 and 17.2 GB figures that belong to the many-site transcoders, and it lands within 0.1%.
+
+**EXP-R2-210 is now running on both dictionaries**, one per card, at `--rows-per-latent 8`. Three things in its own output confirm the chain end to end:
+
+- The **fail-closed cohort guard accepted**, in its first live use. It loaded each dictionary, checked identity and all five cohort fields against what the trainer recorded, and proceeded -- so the readout is running on the population its dictionary was held out on rather than on a fresh draw under the same name.
+- The stage **re-derives the same held-out cohort**, 256 records past a skip of 106,496, identical to the refit's own log.
+- Its census **independently recomputes live per site** as [5545, 6078] and [5571, 6188]. That is a third confirmation of the same quantity, now measured by a different stage from persisted weights rather than reported by the trainer that fitted them.
+
+**The registered deviation's arithmetic is confirmed by the stage itself.** `--rows-per-latent 8` projects 92,984 forward passes against 2,975,488 at the full cohort, and 94,072 against 3,010,304 for the second seed -- **3.1%** in both cases, which is the 46-of-1,474 ratio the sizing argument was built on, arrived at independently by the stage's own cost model. The full-cohort figure is the one the pre-registered default would have spent.
+
+**Protein refits continue** on the other two cards at step 28,000 of 56,000. Their expected pairs are [2725, 2214] and [2714, 2235] and the same watcher will verify them; per L33 they are not inputs to this stage.
