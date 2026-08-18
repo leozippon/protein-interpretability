@@ -1748,3 +1748,19 @@ R3 was the runner's first real campaign and it exercised every remaining success
 **One card idled inside the campaign and it was not a defect.** When slot 2's first cell finished, its card sat idle while the other cell ran on. That is the slot design: a barrier means the faster card waits. It is the price of the guarantee that no slot starts before the previous one finishes, and it is worth knowing when packing a manifest — pair cells of similar cost within a slot, or accept the tail.
 
 **What is still untested is the entire failure vocabulary.** No cell has ever failed under this runner, so `exited-nonzero`, `exited-ok-no-artifact` and `refused-busy-gpu` remain unexecuted. Every success path is exercised and no error path is, which is the honest summary and is now the banner's wording.
+
+## 2026-08-17 (late) — the queue runner's failure vocabulary, exercised on purpose
+
+The runner had every success path exercised and no error path, which is the worse of the two asymmetries: the first real failure under it would have taught us simultaneously that a cell failed and whether the runner handles failure. Three cells in two slots, none training anything, none touching a GPU, closed all three.
+
+**`exited-nonzero`.** A stage given an argument its parser rejects exited **2**, and the status file records **2** — the real code from `wait(2)`, not a sentinel inferred from a log. It counted in `# FAILURES`. **The campaign did not sink on it**: slot 1 completed, the runner settled, and slot 2 launched sixty seconds later, which is what the second slot was in the manifest to prove.
+
+**`refused-busy-gpu`.** A cell named on an occupied card was refused rather than launched — `cuda:0 is not idle; REFUSED (not launched)` — with the state visible in the status file rather than silently dropped, and the occupied card's memory unchanged throughout. This is the property that shaped three scheduling decisions during the day and had until now only been reasoned about.
+
+**`exited-ok-no-artifact`.** A command exiting 0 without writing landed in **`# NO-RECORD` and not in `# FAILURES`**. That separation is the point rather than a detail: a nonzero exit is a defect and a silent zero-exit is a measurement outcome, and an operator reading one line has to be able to tell which they have.
+
+**One safety property of the probe worth keeping for the next one.** The cell testing the busy-card guard was `--help`. If that guard had been broken the cell would have launched — onto a card carrying a pre-registered training cell — so it had to be harmless in exactly the case it was probing. It prints usage, exits 0, and allocates no device memory. **A probe for a guard must not damage anything when the guard is what fails.**
+
+The manifest was deleted immediately, under the same rule the earlier probe followed: a manifest that fails on purpose is precisely the kind of file that must not survive to be dispatched by accident.
+
+What remains unexercised is now a scale rather than a path — the largest campaign run through it is four cells in two slots on two cards.

@@ -18,10 +18,24 @@ set -euo pipefail
 # 23:10:36Z, exactly the 60 s SLOT_SETTLE_SECONDS -- with real exit codes from
 # wait(2) and `# FAILURES 0` throughout.
 #
-# One limit remains, and it is the whole failure vocabulary: no cell has ever
-# failed under this runner, so exited-nonzero, exited-ok-no-artifact and
-# refused-busy-gpu are still unexecuted paths. Every success path is exercised;
-# no error path is.
+# FULLY VALIDATED as of 2026-08-17: every success path and every error path has
+# executed in a real pod. The failure vocabulary was exercised deliberately by a
+# throwaway three-cell manifest (deleted after, as a manifest that fails on
+# purpose must not survive to be dispatched by accident):
+#   exited-nonzero        a rejected argument, recorded with the REAL exit code 2
+#                         from wait(2), counted in `# FAILURES`, and the campaign
+#                         continued -- slot 2 launched 60 s after slot 1 completed
+#                         rather than the run sinking on the failure.
+#   refused-busy-gpu      a cell named on an occupied card was refused, not
+#                         launched, and the refusal is visible in the status file.
+#                         The occupied card was untouched.
+#   exited-ok-no-artifact a command exiting 0 without writing was recorded in
+#                         `# NO-RECORD` and NOT in `# FAILURES`, which is the
+#                         distinction the two counters exist for: a nonzero exit is
+#                         a defect, a silent zero-exit is a measurement outcome.
+#
+# What remains unexercised is not a path but a scale: the largest campaign run
+# here is four cells in two slots on two cards.
 # ############################################################################
 #
 # An IN-POD sequential campaign runner: one dispatch, a whole campaign.
