@@ -13886,3 +13886,49 @@ Text falls short at 16,384 by 15–19%. Protein was already projected short on l
 **What it does add is unique and is the reason it still matters**: three seeds make it **the first replicated Crosscoder measurement in this programme**. Every number in the projection above is a single fit, including the 2,121 the whole extrapolation starts from. Without the spread, "3,004–3,041 against 3,708" compares two unreplicated quantities and the 15–19% shortfall has no error bar of its own.
 
 So: **confirmatory on the bar, and load-bearing for whether any of the surrounding arithmetic is quotable.**
+
+---
+
+## 2026-08-17 — EXP-R2-212 correction: 32,768 at two sites is feasible, and the "out of reach at every width" conclusion is withdrawn
+
+**The premise was wrong and it was my error.** I wrote that 32,768 is infeasible on memory, citing EXP-R2-207's ~137 GB figure. That figure is for a **32-site single-model transcoder**. Every Crosscoder in this campaign fits **two sites**, and parameters scale with site count. **This is Appendix B rule 34's `variant` clause — a number transferred across a variant it was not measured on — applied by the author of that clause on the day it was written.**
+
+### The memory arithmetic, from the artefact's own decomposition
+
+Measured for a two-site text Crosscoder at `d_hidden` 8,192: dictionary fp32 **2,048 MiB**, optimiser state **8,193 MiB** (exactly 4x the parameters, both pairings), backbones **25,711 MiB**, working set **6,144 MiB** at **1.5 MiB/token**. Working-set-per-token scales exactly with site count — 6 sites read 4.5, 2 sites read 1.5, a ratio of 3.00 against a site ratio of 3.00.
+
+**Reservation is not requirement, and here it runs the other way**: the artefact's analytic total is 40,048 MiB while `nvidia-smi` showed **55,819 MiB** on the card. The live figure is **1.394x** the analytic one, and that factor is applied below rather than ignored.
+
+| 2 sites | dict fp32 | optimiser | backbones | working | analytic | **live (x1.394)** | of 143,771 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `d_hidden` 16,384 | 4,096 | 16,384 | 25,711 | 12,288 | 58,479 | **81,508** | 57%, 43% headroom |
+| `d_hidden` 32,768 | 8,192 | 32,768 | 25,711 | 24,576 | 91,247 | **127,180** | **88%, 12% headroom** |
+
+Working set is assumed linear in `d_hidden`, which over-states it — part of it is `d_model`-sized and does not scale — so the figures are conservative. **32,768 at two sites fits, with 12% headroom. It is tight, not infeasible.**
+
+### The projection extended, and its weakness stated
+
+| width | text live | capacity | protein L27 / L28 |
+|---|---:|---:|---:|
+| 8,192 (measured) | 2,121 | 25.9% | 1,804 / 1,481 |
+| 16,384 | 3,003 – 3,042 | 18.3% | 2,554–2,587 / 2,097–2,124 |
+| **32,768** | **4,253 – 4,362** | 13.0% | **3,617–3,710 / 2,969–3,045** |
+| bar | 3,708 | — | 2,516 / 2,232 |
+
+**At 32,768 both modes clear** — text by 15–18%, protein by 33–47%. At 16,384 neither does.
+
+**This compounds a transfer that has already been wrong twice, and the compounding is the weak point.** All four measured growth factors are for the *first* doubling; **none exists for 16,384 → 32,768**, so the second step assumes the growth-versus-capacity relationship is stable along the width axis and not merely within one doubling.
+
+**What makes it quotable anyway is the margin.** Break-even needs only **x1.322 per doubling**, below the lowest measured factor (x1.416). Taking the first doubling as measured, **the second may degrade to x1.22–1.24 before text fails**, against a trend that suggests ~x1.43 at that capacity. The conclusion survives a substantial degradation it has no reason to expect.
+
+**It remains a reason to run the experiment, not a prediction of its result.**
+
+### Worth the cards — yes, with sequencing
+
+**Run it, after the λ = 0 replicates land.** The entire two-step extrapolation starts from a single number, 2,121, which is one fit at one seed. The replicates price that anchor and nothing else prices it.
+
+**On the test proposed — clears by more than the seed spread — the spread is the wrong yardstick and I would not want it used as the right one.** A 15–18% margin against a transcoder-scale seed spread of 0.1–0.8% is not close, but the seed spread measures the *anchor*, not the *projection*, whose uncertainty is the compounded transfer and which no replicate prices. The replicates decide whether the anchor is trustworthy; the projection's own risk is unquantified and stays that way until a cell runs.
+
+**Go straight to 32,768 rather than stepping through 16,384.** The intermediate is projected to fall short by 18–19%, so it would consume a card to confirm a failure; the direct cell answers the question. **The accepted cost is diagnosability**: if 32,768 fails we will not know which doubling degraded. That is worth naming as the price of the faster route rather than discovering it afterwards.
+
+**Registered as an attainability measurement, not a gated experiment** — the EXP-R2-212 framing already in force. An outcome of "clears" opens the first admissible Crosscoder on this lineage; "falls short" bounds the construction rather than the width, and both are reportable.
