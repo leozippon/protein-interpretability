@@ -13950,3 +13950,30 @@ Approved at 32,768, two sites, after the λ = 0 replicates land. Manifest writte
 **An OOM is a failure and stops the round.** Width, sites and batch are the recipe; a cell rescued by cutting any of them is incomparable with everything it would be read against, which is worse than a failed cell. The allocator path is the only permitted recovery and is already applied.
 
 **The compounding stays stated as it is.** Break-even needs x1.322 per doubling against a lowest measured x1.416, so the projection survives a degradation it has no particular reason to expect — **a reason to run, not a prediction of the result**. If a cell falls short, the finding is about the **two-role construction** and not about width or memory, and the entry must be written so it cannot be misread as "we ran out of memory".
+
+---
+
+## 2026-08-17 — EXP-R2-209 STOP: all four cells in, none usable, and the sweep ends as registered
+
+The fourth cell landed and was admitted. **The stop rule fires**: no cell both fits and polarises, the bracket is not subdivided, no fifth cell is dispatched, and no λ is proposed from an interpolation between failures.
+
+| mode | λ | live 27 / 28 | `active_fraction` | polarised 27 / 28 | C3 gap 27 / 28 | FITS | POLARISES |
+|---|---:|---:|---:|---:|---:|---|---|
+| text | 1e-4 | 2,121 / 2,198 | 3.906e-03 | 0.002 / 0.005 | +0.196 / +0.193 | yes | no |
+| text | 3e-4 | 1,646 / 1,440 | 3.905e-03 | 0.048 / 0.058 | +0.158 / +0.115 | yes | no |
+| text | 1e-3 | 709 / 629 | 3.418e-03 | 0.295 / 0.300 | +0.027 / −0.018 | no | yes |
+| **protein** | **3e-4** | **555 / 453** | 3.824e-03 | **0.086 / 0.119** | **+0.391 / +0.353** | no | no |
+
+**The finding, in the amended form.** At the λ measured, no configuration both fits and polarises. **Fitting and exclusivity trade off against each other and cross without a measured overlap** — in text, across a factor of 3.3 in λ, live falls 1,646 → 709 while polarisation rises 0.048 → 0.30. The band between 3e-4 and 1e-3 is unprobed and nothing here says whether a usable value lies in it.
+
+### The protein cell is the most interesting of the four and does not change the verdict
+
+It comes **closest to C3 of anything in the programme** — true-minus-null shared-fraction gaps of **+0.391 and +0.353** against a bar of 0.50, where the best text cell reaches +0.196 and EXP-R2-206's protein cell reached +0.344 on eighteen live latents. It also **clears the polarisation floor at layer 28** (0.119) while missing it at 27 (0.086), and reconstructs well — held-out NMSE 0.2330 and 0.1519. But at 555 and 453 live latents it is far below FITS, so it fails the conjunction, and the criterion requires both layers in any case.
+
+**It also shows the trade-off itself is mode-dependent.** At the *same* λ = 3e-4, text carries 1,646 live at 0.048 polarised while protein carries 555 at 0.086. Protein reaches polarisation at lower λ and collapses at lower λ; the curve is shifted, not merely scaled. So the crossing band located in text does not transfer to protein, and a single sweep cannot serve both modes.
+
+### What the stop does not settle, and what supersedes it
+
+**None of these cells was ever admissible.** Against the adequacy bar — `live ≥ max(r99_base, r99_adapted)`, 3,708/3,700 in text and 2,516/2,232 in protein — the best cell in this round reaches **0.59** of it and the protein cell **0.22**. The sweep was run against FITS, which is a collapse diagnostic; the binding criterion is adequacy, and the whole λ axis at `d_hidden` 8,192 sits below it. **That finding, not this one, is what governs whether a Crosscoder diff is reportable**, and it is why the successor is EXP-R2-212 at 32,768 rather than any further λ.
+
+**Registered as a result and not a failed round.** The trade-off is quantitative, the mode-dependence is new, and the C3 gaps say the readout is closer to separating in protein than anywhere else measured — all of which are statements about how the objective behaves. What none of them is, is a usable instrument.
