@@ -13639,3 +13639,30 @@ What the three seeds do supply is that the confound is **reproducible rather tha
 ### What is still unpriced, unchanged
 
 The two `f16` numerators remain single dictionaries at seed 20260812, **by decision** — 10.5 h per protein cell, and the projection already on record shows they cannot change the conclusion. Two of four components are priced; the gap is documented, bounded, and not an open question. Corpus-draw variability remains outside all of it.
+
+---
+
+## 2026-08-17 — EXP-R2-209 round A read (interim): the two requirements cross without overlapping, and no usable λ has appeared
+
+Both round A cells are admitted and valid — text stream 11,367 steps / 34,002,081 scored tokens, screen 1,024 of 1,024 at 0.4346 over 106,496, held-out offset 106,496. Round B's two cells are still running, so this is an interim reading of a four-cell round; the stop rule is not executed until all four are in.
+
+| λ | `active_fraction` | live 27 | live 28 | polarised 27 | polarised 28 | FITS | POLARISES | USABLE |
+|---:|---:|---:|---:|---:|---:|---|---|---|
+| 3e-5 *(protein, EXP-R2-208)* | 3.894e-03 | 1,601 | 1,306 | 0.001 | 0.002 | yes | no | no |
+| **3e-4** | **3.905e-03** | **1,646** | **1,440** | **0.048** | **0.058** | **yes** | **no** | **no** |
+| **1e-3** | 3.418e-03 | **709** | **629** | **0.295** | **0.300** | **no** | **yes** | **no** |
+| 3e-3 *(EXP-R2-206)* | 4.390e-04 | 310 | 197 | 0.106 | 0.208 | no | yes | no |
+
+**The transition is sharp and the two requirements pass each other without meeting.** Across a factor of 3.3 in λ, live latents fall from 1,646 to 709 while polarisation rises from 0.048 to 0.30. At 3e-4 the dictionary fits about as well as it can — `active_fraction` 3.905e-03 against the 3.906e-03 that `k`/`d_hidden` implies, so essentially every TopK selection survives the ReLU — and polarises at **less than half the 0.10 floor**. At 1e-3 polarisation is comfortable at 0.30 and the live basis has collapsed below the 1,000 bar.
+
+**λ = 3e-4 is nonetheless the most informative cell of the campaign so far**, because it is the first Crosscoder on this lineage that both fits *and* shows non-trivial polarisation: 0.048 and 0.058 are 25x to 30x λ = 3e-5's 0.001 and 0.002. The mechanism is real and dose-dependent; what is in doubt is whether it reaches a usable level before the basis collapses.
+
+**C3 fails at every measured λ** and is not the gate here: +0.158 and +0.115 at 3e-4, +0.027 and −0.018 at 1e-3.
+
+**No Crosscoder re-run is dispatched.** The condition for it was a usable λ, and none exists among the measured points. Round B's λ = 1e-4 lies on the fitting side of the crossing and cannot supply one; the formal verdict waits for it and for the protein cell, as registered.
+
+**And no λ is proposed by interpolation.** The pre-registration forbids exactly this: *"the bracket is not subdivided, no fifth cell is dispatched, and no λ is proposed from an interpolation between two failures."* The gap between 3e-4 and 1e-3 is where a usable value would have to live, and pointing at it after seeing these numbers is the tuned-value failure the rule exists to prevent.
+
+### One reader defect found and fixed before any of this was read
+
+The endpoint reader hardcoded the **protein** stream in its void check, having been built and validated on protein cells only. The first text cell it saw was reported **VOID** on a perfectly valid stream. It is now mode-aware and re-validated against the protein cells whose verdicts are already recorded, which reproduce unchanged. Same defect class as the records-pull loop: validated on one case, used on another.

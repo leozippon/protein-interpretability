@@ -243,6 +243,11 @@ KNOWN_VIOLATIONS: tuple[tuple[int, int, str], ...] = (
     # sweep and its successors were being registered; the reading keeps 207's id
     # because that is where the seed design and the interval were frozen.
     (211, 207, "EXP-R2-207's R2 reading, pricing the text denominator, filed after 208 to 211"),
+    # EXP-R2-209's round A reading, filed under its own id after 210 and 211 were
+    # registered while its cells trained. The sweep's stop rule and its criteria
+    # were frozen under 209, so its readings keep that id; 210 and 211 are the
+    # successor designs written during the four hours 209 was on the cards.
+    (211, 209, "EXP-R2-209's round A interim reading, filed after 210 and 211 were registered mid-run"),
 )
 
 
