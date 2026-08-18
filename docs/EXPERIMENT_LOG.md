@@ -14233,3 +14233,30 @@ Five draws per cell across six cells, `--seed` varying and `--corpus-seed` held,
 ### What these intervals cover, and it is less than their width suggests
 
 The standard deviations are **0.0001 to 0.0008**, which is small enough to invite over-confidence. They price **position-draw noise at a fixed corpus draw**, because the design varied `--seed` only with `--corpus-seed` held — the convention `R` was priced under. What this measures is that position-draw noise is **negligible** for this estimator at 65,536 sampled positions; it is not a general error bar. **Corpus-draw variability remains outside every interval above, as registered**, and no claim here survives a different draw of OpenWebText or Swiss-Prot on this evidence alone.
+
+---
+
+## 2026-08-18 — EXP-R2-202: "localised to the continued-pretraining stage" is narrowed, because Q2 falsifies it for text prominence
+
+The claim promoted to D1.d and `summary.md` — accepted *in place of* "dose–response" on the argument that it was what three checkpoints establish — is now partly false, and the canonical text says the narrower thing.
+
+**Against the pre-registered ±0.03 substantive bound**, prominence across the lineage:
+
+| mode | base | stage1 | ProLLaMA | continued-pretraining | instruction tuning |
+|---|---:|---:|---:|---:|---:|
+| protein | 1.3176 | 1.1495 | 1.1619 | **−0.168 (5.6x bound)** | +0.012 (0.4x, **within**) |
+| text | 1.0084 | 1.1705 | 1.0959 | **+0.162 (5.4x bound)** | **−0.075 (2.5x bound)** |
+
+**What survives**: localisation holds for **protein** — location and prominence both — and for **peak location in both modes**, since the instruction stage moves neither.
+
+**What fails**: the instruction stage **measurably and substantively reduces text prominence**, at 2.5x the bound. It is not a stage at which nothing happens.
+
+**And a finding the earlier phrasing obscured**: the continued-pretraining stage moves prominence **in opposite directions in the two modes** — protein down 0.168, text up 0.162, both ~5.5x the bound. A claim that it "changes depth structure in both modes" is true but hides that the changes have opposite sign.
+
+### Significance is nearly uninformative at this precision; the bound does the work
+
+With standard deviations of 0.0001–0.0008, **essentially any non-zero difference has an interval excluding zero**. Statistical significance is therefore close to worthless as a criterion here, and every judgement above is made against the **pre-registered ±0.03 substantive bound** instead — which is why fixing it in advance mattered. The protein instruction-stage difference is *statistically* real and *substantively* negligible at 0.4x the bound; reporting it as "a real difference" without the bound would be true and misleading. **An estimator this precise will manufacture significant-looking findings indefinitely if significance is the criterion.**
+
+### The claim's full history, recorded as a sequence rather than an endpoint
+
+`base/text` depth structure: asserted as present (one draw) → **withdrawn** as too weak to characterise (null calibration, 6.3x) → **reinstated** as weak but decisively measurable (five draws, [1.0082, 1.0086] against 1.0014). Each step followed the evidence available at the time. A claim that moves twice on improving evidence is rigour when the steps are visible and instability when only the endpoint is.

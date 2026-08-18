@@ -252,6 +252,7 @@ KNOWN_VIOLATIONS: tuple[tuple[int, int, str], ...] = (
     (211, 209, "EXP-R2-209's admissibility finding: no Crosscoder cell clears the bar, which moots the crossing band"),
     (212, 209, "EXP-R2-209's STOP entry, filed after EXP-R2-212 was registered during its fourth cell's run"),
     (212, 202, "EXP-R2-202's resampling read, filed under its own id after 209 to 212 had landed"),
+    (212, 202, "EXP-R2-202's narrowing of the localisation claim, the second entry filed under 202 after 212"),
 )
 
 
