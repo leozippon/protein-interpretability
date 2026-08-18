@@ -1,5 +1,7 @@
 # Research Status Log
 
+> **Redaction, 2026-08-18.** Historical pod names in this file were replaced with `<pod-name-redacted>` under the repository guardrail that no pod name is persisted in a repository file. Only the name was removed; no other text was altered, and every surrounding fact is unchanged. The pods named were disposable and long gone, and the currently selected pod never appeared here. The two receipts under `evidence/` were deliberately **not** redacted: their SHA-256 digests are recorded in this log as verification anchors, and altering a receipt would invalidate the thing it exists to prove.
+
 Last updated: 2026-08-09 CST
 
 Append-only. Historical entries record the paths and framings that existed when they were written and are not normalized to the current layout.
@@ -28,7 +30,7 @@ Append-only. Historical entries record the paths and framings that existed when 
 - Added CC-BY-4.0 license notes to `data/indelmissense/v1/`.
 - The temporary Hangzhou jump-host SSH outage recovered; final H200 outputs were pulled successfully.
 - Released the idle Opus H200 hold pod after confirming no active experiment process and 0 MiB / 0% GPU use; no running BioCC GPU pod remains.
-- Later submitted a new 1-GPU H200 hold pod at the user's request: `jiaotongdamoxing-zhk-zip-hold-1gpu-0513b-master-0`, running on `i-d5cvmv6heob1nidq4ujg` / `192.168.20.204` with 0 MiB / 0% GPU use at creation time.
+- Later submitted a new 1-GPU H200 hold pod at the user's request: `<pod-name-redacted>`, running on `i-d5cvmv6heob1nidq4ujg` / `192.168.20.204` with 0 MiB / 0% GPU use at creation time.
 - English execution packet: `archive/conversation_history/OPUS_PLAN_EXECUTION_20260515.md`.
 
 ---
@@ -466,7 +468,7 @@ Specs are driver-reported, verified 2026-07-28, not vendor nominal — the L20's
   - Result: proxy FAIL. On nine staged ProteinGym / VAMP-like abundance assays, the SAE-family signal beats AlphaMissense on only 1/9 usable assays.
 - Created English Opus packet: `archive/conversation_history/OPUS_RESCUE_EXECUTION_20260518.md`.
 - R1-Save-1 low-MSA stratification remains unlaunched. UniRef50 FASTA and DIAMOND tarballs are staged, but there is no cached per-protein MSA-depth table / DIAMOND database; after the new R1-Save-2 and R1-Save-3 negatives, this should be an explicit Opus decision before spending more compute.
-- H200 state after the run: pod `jiaotongdamoxing-zhk-zip-hold-1gpu-0513b-master-0` remains reserved but is idle with 0 MiB GPU memory and 0% utilization.
+- H200 state after the run: pod `<pod-name-redacted>` remains reserved but is idle with 0 MiB GPU memory and 0% utilization.
 
 ## Final R1/R2 Rescue Attempt (2026-05-13 CST)
 
@@ -482,7 +484,7 @@ Specs are driver-reported, verified 2026-07-28, not vendor nominal — the L20's
   - top-32 output: `results/circuit_analysis/attention_sink_set_ablation_top32_20260518/`.
   - Result: FAIL in both strict and exploratory gates. top-8 sink sets have near-zero feature drops and small dNLL effects; top-32 also fails and ZymCTRL random same-layer heads produce larger NLL shifts than the sink set.
   - Interpretation: R2 should drop both single-head and distributed-head causal attention-sink mechanism claims.
-- Current H200 state after final rescue runs: pod `jiaotongdamoxing-zhk-zip-hold-1gpu-0513b-master-0` remains allocated and idle with 0 MiB / 0% GPU utilization.
+- Current H200 state after final rescue runs: pod `<pod-name-redacted>` remains allocated and idle with 0 MiB / 0% GPU utilization.
 
 ## Directory Organization (2026-05-14 PT)
 
@@ -495,7 +497,7 @@ Specs are driver-reported, verified 2026-07-28, not vendor nominal — the L20's
 ## R2 Attention-Output Sparse Pilot (2026-05-14 PT)
 
 - Added `scripts/43_attention_output_transcoder_pilot.py`.
-- Ran a ZymCTRL layer-23 attention-output sparse pilot on the 1-GPU H200 hold pod `jiaotongdamoxing-zhk-zip-hold-1gpu-0513b-master-0`.
+- Ran a ZymCTRL layer-23 attention-output sparse pilot on the 1-GPU H200 hold pod `<pod-name-redacted>`.
 - Local output: `results/circuit_analysis/attention_output_transcoder_pilot_20260514_l23/`.
 - Runtime log: `logs/runtime/r2_attention_output_transcoder_pilot_20260514_l23.log`.
 - Result packet: `archive/conversation_history/R2_ATTENTION_OUTPUT_TRANSCODER_PILOT_20260514.md`.
@@ -738,7 +740,7 @@ Specs are driver-reported, verified 2026-07-28, not vendor nominal — the L20's
 - Restored the omitted 12--18 May R2 chronology in the project experiment log.
 - The analytic planted simulator passed synthetic plumbing checks. A later trained-GRU control was a post-hoc development smoke whose step budget was adjusted after observing an interim output; it is not a frozen confirmatory sensitivity, specificity, FDR or equivalence result. Nested recoverability likewise passed synthetic plumbing only. Neither is a pretrained-model biological or causal result.
 - Its prospectively frozen unexposed replacement was then executed once and passed all specified synthetic sensitivity, specificity, FDR, localization, dose-recovery and matched-control-equivalence gates across seeds 11/29/47. Supplementary Table 11 and its source-data receipts report this bounded pipeline calibration. The comparator is fixed, not a learned biological circuit; the real held-out pretrained P0-7 gate remains open and its raw synthetic artifacts still require the licensed DOI deposit.
-- Re-reviewed `~/hangzhou-remote`, verified the four-GPU H200 pod `damoxing-zhk-zipbio-master-0`, hashed the deployed datasets, froze disjoint UniRef50 and ZymCTRL train/validation/test manifests and passed a masked ZymCTRL H200 smoke test.
+- Re-reviewed `~/hangzhou-remote`, verified the four-GPU H200 pod `<pod-name-redacted>`, hashed the deployed datasets, froze disjoint UniRef50 and ZymCTRL train/validation/test manifests and passed a masked ZymCTRL H200 smoke test.
 - The first three TopK CLT queues (seeds 17/29/43) were discarded after the uncapped dead-feature resampler replaced roughly two thirds of the dictionary at step 15,000 and seed 43 became non-finite. Seeds 17/29 were terminated despite remaining finite because they were no longer comparable.
 - A bounded deterministic resampler, finite-state checks and an exact atomic checkpoint/resume contract now pass full-width stability, byte-identical resume and 37.25-GB checkpoint-publication smokes. An archive/tree-bound launcher passed the second independent audit, and replacement seeds 17/29/43 are running finite ProtGPT2 training on GPUs 0/1/2 under a fresh GPFS root.
 - GPU 3 is running the first production exact activation cache (ProtGPT2) for the P0-2 alternative-dictionary panel; GPUs 0--2 are occupied by the replacement TopK queues. No P0-2 quality gate has passed.

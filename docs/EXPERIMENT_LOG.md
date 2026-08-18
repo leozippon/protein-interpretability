@@ -1,5 +1,7 @@
 # Research 2 — CLT Experiment Log
 
+> **Redaction, 2026-08-18.** Historical pod names in this file were replaced with `<pod-name-redacted>` under the repository guardrail that no pod name is persisted in a repository file. Only the name was removed; no other text was altered, and every surrounding fact is unchanged. The pods named were disposable and long gone, and the currently selected pod never appeared here. The two receipts under `evidence/` were deliberately **not** redacted: their SHA-256 digests are recorded in this log as verification anchors, and altering a receipt would invalidate the thing it exists to prove.
+
 > This append-only file records experiment chronology. Historical terminology and superseded hypotheses remain as provenance. Current citable findings, retractions, evidence boundaries, and the scientific plan are authoritative in `INTERPRETABILITY_TRANSFER_AUDIT.md`; `RESEARCH_PLAN.md` maps admitted work to executable comparisons and stages. No historical wording in this log overrides those documents.
 
 ## EXP-R2-001: Baseline CLT Training on H200 (2026-04-02)
@@ -668,7 +670,7 @@ The July assessment identified a gap in this chronological log: the central 13--
 
 ### H200 execution
 
-The updated remote health check passed. The selected pod is `damoxing-zhk-zipbio-master-0`, with four H200 GPUs (143,771 MiB each), about 1.8 TiB host memory available and GPFS/OSS mounts. A four-step ZymCTRL masked training smoke test passed and wrote hash-pinned configuration and trainer state; all GPUs returned to 0 MiB afterward.
+The updated remote health check passed. The selected pod is `<pod-name-redacted>`, with four H200 GPUs (143,771 MiB each), about 1.8 TiB host memory available and GPFS/OSS mounts. A four-step ZymCTRL masked training smoke test passed and wrote hash-pinned configuration and trainer state; all GPUs returned to 0 MiB afterward.
 
 The master's documented `/gpfs` path is actually an ext4 directory and is not the GPU pod's GPFS mount. The checksum-verified helper transfer therefore lands on the master and requires a second explicit `kubectl cp` bridge into the pod. The production P0-2 archive SHA-256 is `556f7ef8519a1d669921d195919cfa229885c664c925f0f309b9fc77bc4bc684`.
 
@@ -979,7 +981,7 @@ The deterministic r8 package contains exactly eight manifested code/config files
 - cache runner: `1e3ffdcb2b721bc0d119dc15bdf1804b3cac43bc98bf2174caacd882d59a801e`;
 - full-panel launcher: `c87a45e3454b687c15853e6d90b2958cb263e7ef6c6c385b0aa70295864af5d1`.
 
-The archive and launcher were sent through the checksum-verified master GPFS handoff and explicitly copied into pod `damoxing-zhk-zipbio-master-0`. The pod independently rechecked the archive/manifest hashes, all eight content hashes, the exact inventory and absence of links before atomically publishing the pristine `code_p0_2_exact_cache_bf16_r8` tree.
+The archive and launcher were sent through the checksum-verified master GPFS handoff and explicitly copied into pod `<pod-name-redacted>`. The pod independently rechecked the archive/manifest hashes, all eight content hashes, the exact inventory and absence of links before atomically publishing the pristine `code_p0_2_exact_cache_bf16_r8` tree.
 
 At 21:11:06 CST a bounded r8 ProtGPT2 preflight started on GPU 3 and completed at 21:11:21. Its v3 report records all floating model parameters as bfloat16, all captured CLT inputs/MLP outputs finite before storage conversion, float16 cache storage and exactly two selected valid rows in each split. It is marked `p0_2_eligible=false` and `production_cache_reuse_forbidden=true`. Wall time was 12.83 seconds; peak allocated/reserved accelerator memory was 1,935,082,496/2,199,912,448 bytes. Hashes are:
 
@@ -1020,7 +1022,7 @@ Focused adversarial verification passed 33 tests. The final complete R2 suite pa
 
 ### H200 read-only progress audit
 
-The refreshed `~/hangzhou-remote` pod helper was used with explicit pod `damoxing-zhk-zipbio-master-0`. At 22:14 CST the canonical GPFS logs were finite through steps 39,550/39,700/39,750 for TopK seeds 17/29/43. The latest complete step-35,000 checkpoint-manifest SHA-256 values were `13ae8fb16dea3694951ca8e53e7eaef6044cd8e20b5378edc1208854f43a51af`, `ad3dd29150c49b6cb5bc161de7b7908defac8869d47f17edb895dfce3e2946e4` and `2369c1c288273f67af89f157bb38be4012c18f9faf0b61a5752007c592b64a9e`. Older OSS queue logs were identified as superseded artifacts outside this production lineage; their rows are not used to assess the active jobs.
+The refreshed `~/hangzhou-remote` pod helper was used with explicit pod `<pod-name-redacted>`. At 22:14 CST the canonical GPFS logs were finite through steps 39,550/39,700/39,750 for TopK seeds 17/29/43. The latest complete step-35,000 checkpoint-manifest SHA-256 values were `13ae8fb16dea3694951ca8e53e7eaef6044cd8e20b5378edc1208854f43a51af`, `ad3dd29150c49b6cb5bc161de7b7908defac8869d47f17edb895dfce3e2946e4` and `2369c1c288273f67af89f157bb38be4012c18f9faf0b61a5752007c592b64a9e`. Older OSS queue logs were identified as superseded artifacts outside this production lineage; their rows are not used to assess the active jobs.
 
 The r8 ProtGPT2 exact-cache PID remained alive in GPFS-heavy extraction with 173 GiB staged and no completion receipt. GPUs 0--2 used about 54.8 GiB each, GPU 3 used about 2.8 GiB, host memory had about 1.8 TiB available and GPFS had about 46 TiB free. No H200 issue required user intervention. Process liveness, partial checkpoints and staged cache bytes do not pass P0-2.
 
@@ -1034,7 +1036,7 @@ The r8 ProtGPT2 exact-cache PID remained alive in GPFS-heavy extraction with 173
 
 ### Verified execution progress
 
-The refreshed `~/hangzhou-remote` helpers were used with explicit pod `damoxing-zhk-zipbio-master-0`. At 12:04 CST, all three bfloat16 ProtGPT2 online TopK runs had completed 200,000/200,000 steps and atomically published complete final checkpoints. Final checkpoint-manifest SHA-256 values were:
+The refreshed `~/hangzhou-remote` helpers were used with explicit pod `<pod-name-redacted>`. At 12:04 CST, all three bfloat16 ProtGPT2 online TopK runs had completed 200,000/200,000 steps and atomically published complete final checkpoints. Final checkpoint-manifest SHA-256 values were:
 
 - seed 17: `e1e0702090b5c556d45abe736e136f5713ba55144488556e1797d3a0ba1dd6bb`;
 - seed 29: `cbbd80cee07730b725e6be171569f86ceed75b713bfe1d3254b13afe025f4cbd`;
@@ -1938,7 +1940,7 @@ Reading. The claim that survives is narrow and should be written narrowly: on a 
 
 Pure staging task, no GPU work, no repo code changes. Closes the gap the EXP-R2-057 addendum flagged ("DialoGPT-small staged to GPFS and verified by SHA-256, Qwen2.5-0.5B and Llama-3.2-3B in transfer") and makes `models/` on GPFS carry the complete eleven-checkpoint panel the convergence-control and scale-ladder work depends on.
 
-**Pod.** `damoxing-zhk-zipbio-master-0` (running, 4x H200, 0 MiB / 0% used at both start and end of the session) selected per the "contains `zip`, not the `0gpu` one" rule; the excluded candidate was `jiaotongdamoxing-zhk-zip-npj-revision-0gpu-0716-master-0`. GPFS free space 46,188,371,968 KiB (~44 TiB) confirmed via `df -T` inside the pod before starting, filesystem type `gpfs`.
+**Pod.** `<pod-name-redacted>` (running, 4x H200, 0 MiB / 0% used at both start and end of the session) selected per the "contains `zip`, not the `0gpu` one" rule; the excluded candidate was `<pod-name-redacted>`. GPFS free space 46,188,371,968 KiB (~44 TiB) confirmed via `df -T` inside the pod before starting, filesystem type `gpfs`.
 
 **Transfer helper behaviour.** `h200_gpfs_push.sh` only takes a single local file; `h200_sync.sh` handles a directory by tarring the whole tree locally, pushing the tar, and extracting remotely, with no include/exclude filter. Pushed `gpt2-large` **file by file** with `h200_gpfs_push.sh` (config.json, generation_config.json, generation_config_for_text_generation.json, merges.txt, tokenizer.json, tokenizer_config.json, vocab.json, README.md, model.safetensors — 9 files, ~3.25 GB) rather than tarring, specifically to drop the local `.cache/huggingface/download/*` metadata that `h200_sync.sh` would otherwise have carried along. `Llama-3.2-3B` did not need a push at all: `models/_staging/Llama-3.2-3B.tar` (6,434,703,360 bytes) was already present, already pod-verified, and already excluded the redundant 6.4 GB `original/consolidated.00.pth` (non-HF Llama format) and `.cache/` — this is the "Llama-3.2-3B in transfer" state the prior log entry described. Extracted with `tar --strip-components=1` and immediately removed the tar plus a stale `_staging/DialoGPT-small.tar` left over from an earlier completed push.
 
@@ -14413,3 +14415,13 @@ All three protein lambda = 0 seeds at `d_hidden` 16,384 are in. Adequacy is `liv
 **Both axes return negative, and the exclusivity zero is a real negative rather than an unattainability artefact.** That distinction is the one thing here that needed checking, because at lambda = 0 the decoder-norm penalty -- the mechanism that makes latents model-exclusive at all -- is switched off, so a zero could have meant only that the statistic cannot be reached. It can: **the shuffled null attains 0.3% to 1.7% exclusivity at the same lambda, on the same cells.** The instrument produces exclusive latents at lambda = 0 when the pairing is destroyed, and produces none when it is true. Rule 2's check applied to a null rather than a control, and it passes, so the zero carries information.
 
 **What this answers.** A single admissible layer cannot support a feature-level protein difference claim here, and that is now a measurement rather than a forecast: there are no model-specific latents to report, on any seed, at either site. The shared enrichment is genuine and large against its null but falls well short of the registered bar, so no criterion passes. The honest description is a two-sided negative: at L27 the two checkpoints' protein representations admit a common sparse basis far beyond chance, and their difference is distributed across the intermediate band rather than concentrated into features either model can be said to own. It should be reported in the registered sequence as that, and not presented as a protein feature-level comparison.
+
+### Pod names in tracked files: eleven redacted, two receipts accepted as a limitation (2026-08-18)
+
+Found while scrubbing a pod name the H200 driver had written into a freeze log of its own accord. The guardrail is that no pod name is persisted in a repository file, manifest, or durable log, and it was already breached in **tracked** files before this session. **No live exposure: the currently selected pod's name appears nowhere**, and all three names found are disposable pods from May and July that no longer exist.
+
+**Redacted, because prose costs nothing to alter and loses nothing.** Eleven occurrences across `docs/EXPERIMENT_LOG.md` (six) and `docs/PROJECT_LOG.md` (five), replaced with `<pod-name-redacted>` and annotated at the head of each file with the date, the guardrail, and the fact that only the name was removed. A reader who meets the marker can see that text was altered and why, which is the property that keeps a redacted narrative a record.
+
+**Not redacted, and this is an accepted limitation rather than an oversight.** `evidence/p0_2_full_launch_20260722/launch_receipt.json` and `evidence/p0_2_screening_20260722/terminal_receipt.json` each carry a pod name, and **both are digest-anchored**: this log records their SHA-256 at the point each is cited, and both digests verify today. Redacting either would change its content, break the anchor, and leave a receipt that no longer verifies -- which is strictly worse than a receipt naming a pod that has not existed since July, because the receipt's entire purpose is to be checkable. **A verification-anchored record is frozen; the guardrail's intent is served by the current pod being absent rather than by editing history.** If these ever need to be reissued, the correct route is a new receipt with a new digest and a note superseding the old, not an edit.
+
+**One adjacent finding, reported rather than acted on.** `docs/PROJECT_LOG.md` also records a node identifier and a private IP beside one of the redacted pod names. That is the same class of detail but a different guardrail from the one I was asked to enforce, and widening scope unasked is how a redaction pass turns into an unreviewable diff. Flagged for a decision.
