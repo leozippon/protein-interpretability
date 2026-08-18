@@ -11,11 +11,17 @@ set -euo pipefail
 # The artefact its cell produced is bit-identical, on every scientific field, to
 # the one the single-cell driver produced from the same code and arguments.
 #
-# Two limits that remain. It has never run a campaign of more than one cell or
-# more than one slot, so concurrency within a slot and the barrier between two
-# populated slots are exercised only by construction. And a cell that FAILS has
-# never been observed: exited-nonzero, exited-ok-no-artifact and
-# refused-busy-gpu are all unexecuted paths.
+# STRUCTURALLY COMPLETE as of 2026-08-17 (EXP-R2-207's R3, four cells in two
+# slots on two cards). Beyond the one-cell probe it has now launched two cells
+# concurrently within a slot, held the barrier until both exited, settled, and
+# launched the next slot -- slot 1 complete at 23:09:36Z, slot 2 launched at
+# 23:10:36Z, exactly the 60 s SLOT_SETTLE_SECONDS -- with real exit codes from
+# wait(2) and `# FAILURES 0` throughout.
+#
+# One limit remains, and it is the whole failure vocabulary: no cell has ever
+# failed under this runner, so exited-nonzero, exited-ok-no-artifact and
+# refused-busy-gpu are still unexecuted paths. Every success path is exercised;
+# no error path is.
 # ############################################################################
 #
 # An IN-POD sequential campaign runner: one dispatch, a whole campaign.

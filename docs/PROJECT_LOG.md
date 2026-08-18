@@ -1734,3 +1734,17 @@ All three snapshots are already on the pod; reuse them with `--pin <commit> --ru
 ### Working tree
 
 Dirty **on purpose**: the session's log entries, Appendix B rules 35 and 36, `campaign_r207_r3.tsv`, the corrected queue banner and two deleted manifests are staged and waiting on a detached pytest run's own `PYTEST_RC=` line. **Absence of that line means "did not finish", not failure — re-run, do not commit.** `AGENTS.md` and `CLAUDE.md` carry the user's own uncommitted edits and must stay unstaged. Nothing has been pushed this session.
+
+## 2026-08-17 (evening) — the campaign queue is structurally complete; only its failure vocabulary is untested
+
+R3 was the runner's first real campaign and it exercised every remaining success path. Four cells, two slots, two cards, dispatched once and never touched again.
+
+**Intra-slot concurrency**: slot 1 launched `r207_r3_base_protein_d4096` on cuda:2 and `r207_r3_stage1_protein_d4096` on cuda:3 in the same second, as two children of the runner, and both exited 0 with an artefact after 3 h 22 m.
+
+**The barrier between two populated slots**, which had been exercised only by construction: slot 1 completed at 23:09:36Z and slot 2 launched at 23:10:36Z — exactly the 60-second `SLOT_SETTLE_SECONDS`, which exists so the next slot's idle-card check gets a settle rather than a race. Nothing in slot 2 started before every cell of slot 1 had exited.
+
+**Exit codes are the real ones.** Each cell is a child of the runner, so its status comes from `wait(2)` rather than from a sentinel grep of its log — the thing the single-cell driver structurally cannot do, because the access layer returns 0 whatever the remote command did. `# FAILURES 0` and `# NO-RECORD 0` held in every version of the status file.
+
+**One card idled inside the campaign and it was not a defect.** When slot 2's first cell finished, its card sat idle while the other cell ran on. That is the slot design: a barrier means the faster card waits. It is the price of the guarantee that no slot starts before the previous one finishes, and it is worth knowing when packing a manifest — pair cells of similar cost within a slot, or accept the tail.
+
+**What is still untested is the entire failure vocabulary.** No cell has ever failed under this runner, so `exited-nonzero`, `exited-ok-no-artifact` and `refused-busy-gpu` remain unexecuted. Every success path is exercised and no error path is, which is the honest summary and is now the banner's wording.
