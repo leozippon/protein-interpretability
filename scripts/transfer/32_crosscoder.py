@@ -128,6 +128,7 @@ if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from src.transfer import crosscoder as cc  # noqa: E402
+from src.transfer import differential_reliance as dr  # noqa: E402
 from src.transfer import joint_modes  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
     DEFAULT_CORPUS_DRAW_SEED,
@@ -188,7 +189,7 @@ DEFAULT_OUT = REPO / "results/transfer/crosscoder"
 #: the two cannot drift apart.
 CAMPAIGN_ONLY_FLAGS = (
     "base", "adapted", "rendering", "mode", "layers", "admissible_layers",
-    "r99_base_per_site", "r99_adapted_per_site",
+    "r99_base_per_site", "r99_adapted_per_site", "save_dictionary",
 )
 
 #: Both checkpoints at one precision, for the reason stage 25 hard-codes it: a
@@ -647,6 +648,16 @@ def run_synthetic_check(args: argparse.Namespace) -> dict[str, Any]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
+        "--save-dictionary", type=Path, default=None,
+        help="write the fitted TRUE-pairing Crosscoder here, for a causal readout. "
+             "A readout over latents needs W_dec and the frozen normalisation "
+             "scales, and neither is recoverable from this stage's JSON, so "
+             "without this flag no fitted Crosscoder survives the run. Written "
+             "through differential_reliance.save_crosscoder so the checkpoint pair "
+             "travels with the weights. About 2.15 GB fp32 at two sites and "
+             "d_hidden 16,384.",
+    )
+    parser.add_argument(
         "--base",
         type=Path,
         default=None,
@@ -999,6 +1010,21 @@ def main() -> None:
             ),
             "training": training_records_out[index].record(),
         }
+        # Only the true pairing. The shuffled model is a different fitted object
+        # -- a null for the readout, not a dictionary anything is read from -- so
+        # persisting it would double 2.15 GB for nothing. This lives in the stage
+        # rather than in crosscoder.py because differential_reliance imports
+        # crosscoder, so the reverse import would be circular.
+        if args.save_dictionary is not None and model.config.pairing == "true":
+            dr.save_crosscoder(
+                args.save_dictionary, model,
+                backbone_pair_sha256=pair_digest, mode=args.mode, tensor=args.tensor,
+                extra={"steps": args.steps, "fit_batch_size": args.batch_size,
+                       "eval_sequences": args.eval_sequences,
+                       "corpus_seed": args.corpus_seed,
+                       "max_tokens": args.max_tokens, "seed": args.seed},
+            )
+            print(f"[dictionary] wrote {args.save_dictionary}", flush=True)
 
     matched = MatchedTraining(
         target=f"{declaration.name}:{args.mode}",

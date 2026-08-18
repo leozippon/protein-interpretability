@@ -14287,3 +14287,37 @@ Fixed by computing the bar from `k` and `d_hidden` rather than storing it. Re-va
 If the remaining seeds put layer 28 over its bar, that licenses a **representational Crosscoder diff at layers 27 and 28 in protein** — the protein feature-level comparison this unit exists for, and the first admissible one. It would come with candidates that **cannot be causally validated on this lineage**, because the pre-adaptation checkpoint's protein mode is behaviourally unmeasurable (L33).
 
 **That is the protein arm's best available outcome and should be reported as such** — not as a lesser version of the text result. The text arm clears more comfortably and is the arm where causal validation is available; the protein arm is the one the programme is for. They are different results, and neither substitutes for the other.
+
+---
+
+## 2026-08-18 — `32_crosscoder.py` gains `--save-dictionary`, because no fitted Crosscoder has ever survived a run
+
+The causal route was blocked on something simpler than a missing stage: **the trainer writes its JSON readout and lets the fitted object fall out of scope.** `grep` for `torch.save`, `save_crosscoder` or `state_dict()` across the stage and `crosscoder.py` returns nothing. A causal readout needs `W_dec` and the frozen normalisation scales, neither recoverable from a histogram, so **no Crosscoder weights exist on disk anywhere in this programme** — including the adequate λ = 0 text dictionary the whole route depends on.
+
+Stage 33 and `src/transfer/differential_reliance.py` arrived in commit `3549a4a`; my earlier "no stage implements it" was true when written and is now stale.
+
+### What I changed, and the judgements in it
+
+**The save lives in the stage, not in `crosscoder.py`, and the reason is stronger than convenience**: `differential_reliance` imports `Crosscoder` and `CrosscoderConfig` at its line 96, so the reverse import **would be circular**. Verified rather than assumed.
+
+**Guarded on `pairing == "true"`, which is right.** The shuffled model is a different fitted object — `crosscoder.py`'s own comment says so — a null for the readout rather than a dictionary anything is read from. Saving it would double 2.15 GB for nothing.
+
+**`save_dictionary` is added to `CAMPAIGN_ONLY_FLAGS`**, which the coordinator's sketch did not include. That list is read by both the `--synthetic-check` refusal and the settings echo, precisely so the two cannot drift — the defect that voided EXP-R2-206's first instrument check. A flag naming a real output path is meaningless beside a synthetic fit, and it now refuses with that message rather than echoing `save_dictionary: null` into a synthetic artefact.
+
+**Verified**: `--help` shows the flag; `--synthetic-check --save-dictionary` refuses; 78 tests pass across `test_crosscoder.py` and `test_differential_reliance.py`.
+
+### Round-trip verified before any card is committed
+
+A 2.15 GB file that loads into something subtly different would surface hours into a causal campaign. Checked on a small fitted Crosscoder through the exact call path the stage uses: **7 of 7 tensors bit-identical, `W_dec` and `b_dec` exact, the frozen scales exact, `scale_is_set` true after load, and the manifest carrying the pair digest, mode, tensor and the `extra` block.**
+
+### One consequence of the change that makes the refit's check load-bearing
+
+**The flag does not exist at pin `96b3bd9`**, which is where every Crosscoder in this campaign ran. A refit with `--save-dictionary` must therefore run at a **new pin**, so the refitted dictionary is produced by different code from the cell whose adequacy is established. The change adds a flag and a save call and does not touch the fit — but "does not touch the fit" is a claim, not a fact.
+
+**So reproducing 5,558 and 6,133 is not a formality; it is the evidence that the change is inert.** If the refit lands elsewhere, either the change is not inert or the fit is not seed-deterministic, and both need knowing before a causal campaign reads that dictionary.
+
+### Scheduling
+
+**Behind the protein UNDECIDED seeds**, which resolve whether the protein arm is adequate — the question the unit exists for. The refit is one card for ~2 h 53 m and waits for one to free.
+
+**And the causal campaign is a campaign, not gap-filler.** The 16–47 minute figure was out by roughly 8x: the cohort is 256 rather than 128, both checkpoints must run, and the matched random-direction control is a second full arm that was never costed. **7.8–15.5 GPU-hours** depending on rows per latent. It gets scheduled as a campaign.
