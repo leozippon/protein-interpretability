@@ -14614,3 +14614,24 @@ This is separate from and does not replace the model test. `p95(16) = 0.04740` a
 **The criterion fixed earlier is not being changed, and its inputs stay frozen.** It is evaluated on the seed spread measured at 8 rows from the two dictionary-seed cells, which are the two rows already in the table above, and those values do not move. Restating a criterion after seeing data is the failure this unit has voided three criteria for, and noticing that an input is noisy is not licence to redefine it.
 
 **What is running instead is a decomposition, dispatched to an idle card.** An 8-row cell on the seed 20260814 dictionary with `--control-seed 20260819` and everything else identical. The spreads above conflate two sources -- variation between fitted dictionaries and variation in the matched random control draw -- and this cell isolates the second, because the dictionary is held fixed and only the control changes. If the control-draw component is small, the spreads above are dictionary variation and the criterion's noise clause is measuring what it should. If it is comparable to them, the clause is dominated by a draw that could be averaged away cheaply, and that is worth knowing before the same design is used again. **It is diagnostic context and explicitly not an input to the criterion.**
+
+### The 4-row rung closes, and the seed-spread pattern raises a concern about the criterion I just fixed (2026-08-18)
+
+**All three cheap rungs now carry a seed pair.** Every cell below differs only in which dictionary it reads; `--seed` and `--control-seed` are 20260818 throughout.
+
+| site | rung | seed 20260814 | seed 20260815 | absolute spread | relative |
+| --- | --- | --- | --- | --- | --- |
+| L27 | 2 | 0.102254 | 0.117214 | 0.014960 | 13.63% |
+| L27 | 4 | 0.119748 | 0.134805 | 0.015057 | 11.83% |
+| L27 | 8 | 0.131650 | 0.134446 | **0.002796** | **2.10%** |
+| L28 | 2 | 0.129319 | 0.130575 | 0.001256 | 0.97% |
+| L28 | 4 | 0.149720 | 0.141726 | 0.007994 | 5.49% |
+| L28 | 8 | 0.163212 | 0.156270 | 0.006942 | 4.35% |
+
+**The L27 pattern is the concern.** Its absolute spread is essentially identical at 2 and 4 rows -- 0.014960 and 0.015057 -- and then collapses more than fivefold at 8 rows to 0.002796. A quantity that is flat across a doubling and then drops fivefold across the next one is not behaving like either component of the model. With one difference per rung, the most likely explanation is that the 8-row pair happened to land close together, which a two-point estimate can do at any time.
+
+**This bears directly on the criterion fixed earlier today, and the criterion is not changing.** Its second clause requires an excess above twice the seed spread measured at 8 rows, which is `2 x 0.002796 = 0.005592` at L27. If L27's underlying spread is nearer the 0.0150 seen at both lower rungs than the 0.0028 seen at this one, that clause is around five times weaker than intended, and an observed 8% excess -- 0.01064 in absolute terms -- would sit inside the noise rather than outside it. Recording that is not licence to restate the threshold: the criterion was fixed before the data and stays fixed, and this unit has voided three criteria for exactly the move of adjusting one after seeing more.
+
+**The direction of the error is the safe one, which is why it can be left alone.** A noise clause that is too weak makes the criterion **more** likely to fire, and firing means the headline is declared incomplete and re-read at 16 rows. The cost of a spurious fire is compute; the cost of a spurious pass would be an incomplete headline reported as final. The criterion therefore errs toward more measurement, which is the error worth having, and a fire at L27 that clears 8% only narrowly should be reported with this table beside it rather than as a clean trigger.
+
+**A second decomposition cell is running** at 4 rows with `--control-seed 20260819`, matching the 8-row one already in flight. Between them they measure control-draw variation at two rungs, which tests whether that component shrinks with sample size like a sampling term or holds constant like the systematic floor rule 39 attributes it to. Both remain diagnostic and neither is an input to the criterion.
