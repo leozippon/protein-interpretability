@@ -13737,3 +13737,52 @@ EXP-R2-208's FITS bar of 1,000 live per site was explicitly benchmarked against 
 **It scopes what those numbers were ever going to license.** Every C3 reading in EXP-R2-206 and every polarisation figure in EXP-R2-209 was computed on a basis below the adequacy bar. EXP-R2-206 already declared its own readout void on C3; the present finding says the same thing at the level of the campaign rather than the cell, and it was reachable from the first artefact rather than the seventh.
 
 **The larger statement, at the level it belongs:** on this lineage, at `d_hidden` 8,192 and `k` 32, **no Crosscoder configuration reached — at any λ from 0 to 3e-3, in either mode — has produced a latent basis large enough for a model diff to be reportable at any layer under any reading of the admissibility rule.** Before another Crosscoder cell is dispatched, two things are owed: a stated basis-adequacy bar for joint dictionaries, and a width at which it is reachable.
+
+---
+
+## 2026-08-17 — EXP-R2-212 pre-registered: the joint-dictionary adequacy bar, and an attainability probe that is a measurement rather than a gate
+
+Frozen before anything is dispatched. Nothing here is a gated experiment; the first cell's purpose is to find out whether the bar can be reached at all.
+
+### The bar
+
+> **A Crosscoder diff may be reported at layer `l` only where the shared latent space carries at least `max(r99_base(l), r99_adapted(l))` live latents**, and only where that layer's `r99` is itself non-degenerate.
+
+The floor is `max` because one shared basis must span the larger of the two activation clouds; it cannot represent what the wider model uses with fewer directions than that cloud occupies. **The conservative alternative is `r99_base + r99_adapted`**, which is the right bar if the two models' active subspaces are close to disjoint, and the truth lies between — the overlap is measurable from the cross-checkpoint residual this programme already records, and is not measured here.
+
+**This supersedes FITS for adequacy and only for adequacy.** EXP-R2-208's `live ≥ 1,000 per site` was benchmarked against a transcoder's live count as a **collapse diagnostic**, and for its own question — did removing the penalty stop the collapse — it was correct and remains valid. What was wrong was EXP-R2-209 defining `USABLE = FITS and POLARISES`, which promoted a diagnostic into an adequacy criterion. Both criteria now stand, for different questions, and neither substitutes for the other.
+
+### The modality inversion, and the qualification it needs
+
+The bar is **markedly lower in protein** — 2,516/2,232 and 2,364/1,563 — than in text — 3,708/3,700 and 3,506/3,463 — because it is set by the data's own effective dimension and protein's activations occupy fewer directions. Among the cells actually measured, protein is therefore the arm closest to clearing (0.95 of the permissive reading at λ=0, layer 28) and text is furthest (0.47). **On this lineage the bar is easier to meet in protein, which is the reverse of every earlier stage of this unit and the reverse of what EXP-R2-209 was designed around.**
+
+**But that ordering may be an artefact of the missing cell rather than a property of the modes.** Text's best measured figure comes from a *penalised* cell, λ = 3e-4; the penalty-free text Crosscoder does not exist. So "protein is closer" is a statement about the cells that were run, not about the constructions.
+
+### Why attainability cannot be asserted here, and what the probe is
+
+This unit's standing rule is that a criterion must be shown reachable before it is applied. **It cannot be, and the honest response is to measure reach rather than route around the rule.** The only evidence is EXP-R2-204's +41.6%/+43.4% live gain from doubling width, measured on **single-model transcoders**, whose transfer to a two-role Crosscoder is unverified. Applied naively to the λ = 0 protein cell it gives:
+
+| layer | projected live at 16,384 | bar | outcome |
+|---:|---:|---:|---|
+| 27 | 2,554 – 2,587 | 2,516 | clears by **1.5–2.8%** |
+| 28 | 2,097 – 2,124 | 2,232 | **short by 4.8–6.0%** |
+
+The rule requires **both** admissible layers, so on the only projection available **the 16,384 protein Crosscoder does not clear** — and the layer that does clear does so by under 3%, a margin no one should pre-register as attainable. Registering a 16,384 cell as a gated experiment would be asserting reachability that the arithmetic contradicts.
+
+**So the next Crosscoder cell is registered as a measurement of the instrument's reach.** Its stated question is *how large a live basis does a two-role Crosscoder attain, relative to the bar and relative to a transcoder on the same activations*. **An outcome of "the bar is not reachable at any width that fits on a card" is a complete and reportable answer**, not a failure.
+
+### The first cell is the one that was dropped, and it is not redundant
+
+**Run the λ = 0 text Crosscoder at `d_hidden` 8,192 on the two admissible sites, before any 16,384 cell.** Four reasons, in order of weight.
+
+**It may clear the bar outright.** Projecting protein's measured Crosscoder-to-transcoder ratio of **0.73–0.87** onto text gives 2,522–3,039 if the binding transcoder's live at those layers sits at its `r99` floor, and 3,568–4,248 if it sits near its 32-layer mean of 4,900. The bar is 3,700–3,708. **The prediction straddles it.** Only measurement resolves which side, and if it clears then no width increase is needed at all.
+
+**It is the cheapest cell in the decision.** A text Crosscoder at 8,192 on two sites is about two hours on one card — EXP-R2-209's text cells took 6,720 s — against several hours and a far larger memory footprint for a 16,384 cell.
+
+**If it does not clear, it calibrates the width projection for both modes.** The unverified transfer the projection depends on is exactly the Crosscoder-to-transcoder ratio, and right now that ratio is known in protein only.
+
+**And the protein λ = 0 cell does not answer it.** The ratio may be mode-dependent, which is this programme's most repeated finding; and even an identical ratio lands somewhere entirely different, because text's transcoder live counts are two to three times protein's while its bar is only about 1.5x higher.
+
+### One process note, recorded because the pattern is now twice
+
+The λ = 0 text cell was dropped by EXP-R2-208's amendment, over an objection recorded in this log at the time — that the reason given rested on an account the unit had already said it could not separate. It is now the single most informative cell available. Together with the Stage_1 ↔ ProLLaMA question, that is **twice in one day that a decision to economise removed the control a later question turned out to need.** Recorded as a pattern about which cells are safe to drop — controls that discriminate between two live explanations are not — rather than as a criticism of either decision, both of which were reasonable on what was known.
