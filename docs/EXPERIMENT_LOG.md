@@ -13599,3 +13599,43 @@ Let the six same-model median assigned cosines define a range, and compare the t
 ### Cost, and the condition for abandoning it
 
 A decoder slice at one layer is 8,192 × 4,096 fp32 = **134 MB**, so six dictionaries at two layers is ~1.6 GB read with `torch.load(..., mmap=True)`, **CPU-only, in the pod**, the route EXP-R2-204's addendum validated. Eighteen Hungarian assignments at ~2,500 × 2,500 should be minutes. **If any single assignment exceeds five minutes, or the read exceeds 10 GB, the entry is abandoned rather than optimised** — it is justified by being nearly free, and it stops being justified if it is not. It never touches a card and it runs behind everything.
+
+---
+
+## 2026-08-17 — EXP-R2-207 R2 read: both of `R`'s denominators are now priced, and the ceiling argument is untouched by it
+
+R2's four cells are admitted. `R` was closed to further *compute* on 2026-08-17; this costs a CPU pass over artefacts already paid for, and takes `R` from one of four components priced to **two of four**.
+
+**Every cell is valid.** All six text cells reproduce the stream exactly — 11,367 steps, 45,468 sequences, 34,002,081 scored tokens, screen 1,024 of 1,024 at maximum containment 0.4346 over 106,496 records — and `compare_matched_training` against the seed-20260812 text baseline returns `MISMATCH` with `disagreements` exactly `["seed"]` on all four replicates.
+
+### The newly priced denominator
+
+| checkpoint / text | s20260812 | s20260815 | s20260816 | mean | CV |
+|---|---:|---:|---:|---:|---:|
+| base | 7,607.88 | 7,635.31 | 7,653.97 | 7,632.39 | **0.304%** |
+| stage1 | 4,900.31 | 4,887.16 | 4,912.62 | 4,900.03 | **0.260%** |
+
+Against protein's 0.143% and 0.814%. Text fit noise is small and comparable — no surprise hiding in the component that had never been replicated.
+
+### `R` with both denominators priced
+
+| checkpoint | `R` | propagated 95% CI | matched-seed CI | previously (protein only) | `\|R−1\|` |
+|---|---:|---|---|---|---:|
+| base | **0.7495** | [0.7433, 0.7558] | [0.7415, 0.7575] | 0.7471 [0.7444, 0.7498] | 0.2505, **77 sd** |
+| stage1 | **0.8445** | [0.8265, 0.8624] | [0.8327, 0.8562] | 0.8445 [0.8274, 0.8617] | 0.1555, **33 sd** |
+
+Propagation is primary — protein and text fits are independent, so `CV(R)² = CV(protein)² + CV(text)²` giving 0.336% and 0.855% — with the matched-seed sample reported as a check. They agree.
+
+**The separation from 1 does not change character.** Both upper limits remain far below 1 at 77 and 33 standard deviations. `base`'s point estimate moves 0.7471 → 0.7495 because its text mean rose slightly with the new seeds; `stage1`'s is unchanged to four decimals. The intervals widen for `base`, whose protein CV was implausibly tight, and are essentially unchanged for `stage1`, where the protein term still dominates. **No reversal, and no seed added.**
+
+### The ceiling argument is not tested by this, and the reason is worth stating
+
+The hope was that pricing `base/text`'s fit noise would test the argument that its near-ceiling live fraction is why 0.84 rather than 0.75 is the defensible bound. **It does not, because fit noise is variance and the ceiling is bias.** A cell pinned near its ceiling has its `L8` *understated* — a systematic downward error that repeats identically at every seed and therefore contributes nothing to a spread.
+
+What the three seeds do supply is that the confound is **reproducible rather than incidental**: `base/text` reads **92.87%, 93.20% and 93.43%** live of 8,192, mean 93.17%, and *rising* with seed. So the cell sits at its ceiling every time it is fitted. **That strengthens the argument rather than testing it** — `base`'s `f16/f8` is inflated by a bias present in all three replicates, its `R` is correspondingly deflated, and `stage1/text` at 59.8% live carries no such bias while returning the weaker effect.
+
+**0.84 remains the defensible bound**, now resting on a measured and repeatable ceiling rather than on a single observation of one.
+
+### What is still unpriced, unchanged
+
+The two `f16` numerators remain single dictionaries at seed 20260812, **by decision** — 10.5 h per protein cell, and the projection already on record shows they cannot change the conclusion. Two of four components are priced; the gap is documented, bounded, and not an open question. Corpus-draw variability remains outside all of it.

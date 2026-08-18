@@ -24,6 +24,7 @@ checked to still exist so the list cannot quietly go stale.
 
 from __future__ import annotations
 
+import collections
 import re
 import unittest
 from pathlib import Path
@@ -221,6 +222,27 @@ KNOWN_VIOLATIONS: tuple[tuple[int, int, str], ...] = (
         202,
         "EXP-R2-202's peak-prominence addendum and the withdrawal of its text-side peak locations, appended after 207 to 210",
     ),
+    # EXP-R2-202 kept accruing entries as its spectra were re-read: the null
+    # calibration that withdrew "base/text has no depth structure", the lineage's
+    # third protein point, the third text point, and the resampling design frozen
+    # to price the statistic. Each is a re-reading of EXP-R2-202's own artefacts
+    # and keeps its id; each is declared separately, because one declaration
+    # standing for an unbounded number of entries is how this list stops being a
+    # record.
+    (210, 202, "EXP-R2-202's null calibration, which withdrew the flat-base/text reading"),
+    (210, 202, "EXP-R2-202's third protein point (ProLLaMA) and the band 17-19 correction"),
+    (210, 202, "EXP-R2-202's third text point, read against a rule fixed before it landed"),
+    (210, 202, "EXP-R2-202's prominence resampling design, frozen before any draw"),
+    # Second occurrences of three transitions already declared above. Each names
+    # its own entry rather than being folded into the first declaration.
+    (207, 206, "EXP-R2-206's reading, the second of its two entries appended after 207"),
+    (208, 204, "EXP-R2-204's admissible-band addendum, the second of its two entries after 208"),
+    (208, 207, "EXP-R2-207's closing decision on R, the second of its two entries after 208"),
+    # EXP-R2-207's R2 reading, filed under its own id after EXP-R2-208 to 211 had
+    # landed. R2 was dispatched under 207 and its cells were admitted while the
+    # sweep and its successors were being registered; the reading keeps 207's id
+    # because that is where the seed design and the interval were frozen.
+    (211, 207, "EXP-R2-207's R2 reading, pricing the text denominator, filed after 208 to 211"),
 )
 
 
@@ -302,9 +324,18 @@ class ExperimentIdsAreMonotonic(unittest.TestCase):
         self.assertGreater(max(self.ids), 150, "the parse did not reach the latest entries")
 
     def test_no_new_id_goes_backwards_or_skips(self):
-        found = violations(self.ids)
-        known = [(previous, current) for previous, current, _ in KNOWN_VIOLATIONS]
-        unexpected = [pair for pair in found if pair not in known]
+        # Counted, not membership-tested. The same transition can occur more than
+        # once -- several entries of one experiment appended after the maximum
+        # moved past it -- and under a membership test ONE declaration silently
+        # excused ALL of them. Measured on 2026-08-17: 34 violating entries against
+        # 27 declarations, with `(210, 202)` covering five. That is the exception
+        # list becoming a hole, which is what its own docstring says it must not
+        # be. One declaration per occurrence was the original intent -- the author
+        # wrote `(172, 171)` twice for exactly this reason -- and counting is what
+        # enforces it.
+        found = collections.Counter(violations(self.ids))
+        known = collections.Counter((p, c) for p, c, _ in KNOWN_VIOLATIONS)
+        unexpected = sorted((found - known).elements())
         self.assertEqual(
             unexpected,
             [],
@@ -317,11 +348,12 @@ class ExperimentIdsAreMonotonic(unittest.TestCase):
     def test_every_declared_exception_still_exists(self):
         # The other half of the guard. An exception list that outlives what it
         # excuses stops being a record and starts being a hole.
-        found = violations(self.ids)
+        found = collections.Counter(violations(self.ids))
+        surplus = collections.Counter((p, c) for p, c, _ in KNOWN_VIOLATIONS) - found
         stale = [
             f"{previous} -> {current} ({why})"
             for previous, current, why in KNOWN_VIOLATIONS
-            if (previous, current) not in found
+            if surplus[(previous, current)]
         ]
         self.assertEqual(
             stale,
