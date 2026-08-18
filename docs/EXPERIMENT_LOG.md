@@ -14172,3 +14172,39 @@ Realised growth is **x2.035 and x1.894**, against a projection of x1.416–1.50.
 **Established negatively, and this is the stronger finding**: increasing width cannot buy the exclusivity a diff also requires, because the polarised count does not respond to width. The trade-off named at the EXP-R2-209 stop is not resolved by the lever that fixes adequacy.
 
 **Not established**: whether exclusivity is reachable by any other lever. `polarised` is a decoder-norm statistic, and EXP-R2-210's causal differential-reliance route was registered precisely because that statistic is a proxy. **An adequate λ = 0 dictionary at 16,384 now exists, and EXP-R2-210's design is written against exactly such an object** — so the causal route is no longer blocked by the absence of a fitted, adequate joint dictionary. That is where this leads next, not to another λ or another width.
+
+---
+
+## 2026-08-18 — The width-invariant polarised count does NOT survive scrutiny, and the width-scaling correction that does
+
+### Scrutinised as asked, and the proposal fails on the second check
+
+The observation was that the polarised *count* held near 75 across a doubling of width, suggesting the number of genuinely model-specific directions is a property of the checkpoint pair rather than of the dictionary. **It is not.** The count across λ at fixed width 8,192, text:
+
+| λ | polarised count, L27 / L28 | live |
+|---:|---:|---:|
+| 0 | **0 / 3** | 2,747 / 3,271 |
+| 1e-4 | **5 / 10** | 2,121 / 2,198 |
+| 3e-4 | **79 / 83** | 1,646 / 1,440 |
+| 1e-3 | **209 / 189** | 709 / 629 |
+| 3e-3 | **33 / 41** | 310 / 197 |
+
+**The count runs from 0 to 209 across λ at one width.** It is emphatically a property of the penalty's operating point, not of the checkpoint pair. The ~75 is simply where λ = 3e-4 sits, and the width-invariance observed (79 → 73, 83 → 79) is invariance **at one λ**, not a pair invariant. Had it been a property of the models it would have appeared at every λ that produces polarisation at all; instead it triples from 3e-4 to 1e-3 and then collapses at 3e-3 with the basis.
+
+**Check three, the null, does not rescue it either — though it is interesting.** At λ = 3e-4 the shuffled-pairing null carries **722 / 685** polarised at 8,192 and **836 / 841** at 16,384, an order of magnitude above the true pairing's 79/83 and 73/79, and *growing* with width where the true count is flat. So the invariance is not a construction artefact — the null behaves differently — but a statistic whose value moves by 200x across λ cannot be a property of the pair whatever its null does. C4's ceiling result is confirmed a third time.
+
+**Check one is moot and is not run.** Whether the ~75 at two widths span the same subspace would be worth knowing about the penalty's behaviour, but it cannot rescue a claim already falsified by λ-dependence, and it would cost decoder-weight reads for a question that no longer bears on the model diff.
+
+**What survives is modest and worth one sentence**: at a fixed λ, the number of latents the decoder-norm L1 designates as exclusive does not respond to a doubling of width. That is a statement about the penalty, it explains the dilution mechanism, and it is not a model diff.
+
+### The width-scaling correction, recorded as a finding in its own right
+
+> **A Crosscoder's capacity fraction is width-invariant where a transcoder's falls.** Doubling `d_hidden` from 8,192 to 16,384 on the same activations: the two-role Crosscoder's live basis grew **x2.035 and x1.894** at λ = 0 and **x1.825 and x2.026** at λ = 3e-4, holding capacity at 33.3% → 33.9%, 39.5% → 37.4%, 20.1% → 18.3% and 17.6% → 17.8%. The four single-model transcoders on the same backbone grew **x1.416 to x1.898** with capacity falling in every case — 92.9% → 88.1%, 59.8% → 50.9%, 26.7% → 18.9%, 19.9% → 14.3%.
+
+Evidence: four measured transcoder pairs, one measured Crosscoder pair at two λ. **This should size every dictionary on this project**: a Crosscoder converts width into basis at close to one-for-one, so width is a far more effective lever on it than the transcoder data predicted — and the projection built from transcoder analogues under-called this one by 35%.
+
+### EXP-R2-210's cost at the adequate dictionary, and the gap that blocks it
+
+Re-derived at 5,558 and 6,133 live latents, **11,691 to ablate**. Firing density at `k` 32 and `d_hidden` 16,384 is **0.195%** of positions, half the 0.391% at 8,192 — so **disjoint-support packing gets denser as the dictionary widens** and the wider object is *cheaper per latent*. Naive is 374,112 batch-forwards, about 31 GPU-hours; packed at 40–120 latents per pass it is **16–47 minutes**.
+
+**But EXP-R2-210 cannot be run today, because no stage implements it.** The transfer stages end at `32_crosscoder.py`; there is no additive single-latent ablation, no matched random-direction control, and no disjoint-support packer anywhere in the repository. "Run EXP-R2-210" is a build task before it is a compute task, and the four frozen constraints are a specification for that build rather than flags on an existing stage. That should be scheduled as engineering, on a card-free workstation, rather than queued as a campaign.

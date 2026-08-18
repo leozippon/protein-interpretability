@@ -1742,6 +1742,8 @@ EXP-R2-035 (results-wipe diagnosis), EXP-R2-037 (H200 migration), EXP-R2-041/042
 
 Each earned by a failure in this programme.
 
+**A Crosscoder's capacity fraction is width-invariant where a transcoder's falls (2026-08-18).** Doubling `d_hidden` 8,192 → 16,384 on the same activations grew the two-role Crosscoder's live basis x1.825–x2.035 across two λ, holding capacity at 33.3→33.9%, 39.5→37.4%, 20.1→18.3% and 17.6→17.8%; the four single-model transcoders on the same backbone grew x1.416–x1.898 with capacity falling in every case. **A Crosscoder converts width into basis at close to one-for-one and a transcoder does not**, so transcoder growth figures under-size a Crosscoder — they under-called this one by 35%. Size future dictionaries on the matching construction. (EXP-R2-204, EXP-R2-212.)
+
 **These bite their own authors, which is the evidence they are load-bearing rather than ceremonial.** On 2026-08-17 three of them caught the agent that had written them, within hours: rule 35 on a peak band summarised more tightly than its own tie set supported, rule 36 on a `pkill` substring glob after the exact-match fix had been recorded, and rule 34's `variant` clause on a memory figure carried from a 32-site transcoder to a 2-site Crosscoder. **The pattern is worth as much as the rules: every one bit on a number carried from one context to another, and none on a number computed fresh.** Reuse is where the danger is.
 
 1. **Never take the first N records of a biological corpus.** Sample under a seeded permutation and report a skip-offset sensitivity. (Three instances.)
