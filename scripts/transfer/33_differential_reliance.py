@@ -15,16 +15,19 @@ checkpoints, the cohort, the admissibility input and the artefact. It never fits
 a dictionary: the dictionary is an input, and a run whose dictionary does not name
 this checkpoint pair, this mode and this tensor is refused before a forward pass.
 
-**The dictionary has to be an input, and today no stage writes one.**
-``32_crosscoder.py`` writes a JSON readout and lets the fitted object fall out of
-scope, so no crosscoder weights exist on disk in this repository. A causal
+**The dictionary is an input, and the trainer now writes one.**
+``32_crosscoder.py`` used to write a JSON readout and let the fitted object fall
+out of scope, so no crosscoder weights existed on disk in this repository and
+this stage had nothing to read. It now takes ``--save-dictionary`` and persists
+the TRUE-pairing model through ``differential_reliance.save_crosscoder``; the
+shuffled model is deliberately not saved, being a null for this readout rather
+than a dictionary anything is read from. The reason the blocker was named here
+rather than worked around still stands and is why no fallback exists: a causal
 readout cannot be recovered from a readout -- it needs ``W_dec`` and the frozen
-normalisation scales -- so ``--dictionary`` names a file written by
-``differential_reliance.save_crosscoder`` and the round is blocked until one
-exists. That is a two-line addition to the trainer, owned by the trainer, and it
-is named here rather than worked around because inferring a decoder from a
-histogram is exactly the kind of reconstruction that would produce finite numbers
-about nothing.
+normalisation scales -- and inferring a decoder from a histogram is exactly the
+kind of reconstruction that would produce finite numbers about nothing. A run
+whose dictionary does not name this checkpoint pair, mode and tensor is refused,
+as is one whose recorded cohort fields disagree with the draw requested.
 
 **Two passes over the cohort, and why the first one is not optional.** The census
 pass records which latents fire and in which sequences, because both the live

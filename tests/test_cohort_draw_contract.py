@@ -171,6 +171,24 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "which token positions within each record to take, which is a uniform "
         "draw under an equal per-record cap rather than a prefix of each record"
     ),
+    "33_differential_reliance.py": (
+        "DRAWS A COHORT and delegates the draw, for 31_basis_adequacy.py's reason "
+        "rather than 32_crosscoder.py's: it reads a Crosscoder that already exists "
+        "and must ablate on the population that dictionary was held out on, so a "
+        "cohort of its own would be a different population reported under the "
+        "dictionary's name. It calls 17_train_transcoder.py's held_out_cohort with "
+        "the corpus seed, step budget, evaluation budget and -- the one that is "
+        "easy to get wrong -- the DICTIONARY's fit batch size rather than this "
+        "stage's own, because the held-out offset is steps x batch_size and "
+        "re-deriving it at the measurement's batch size would silently move the "
+        "window. Rule 1 is answered by --corpus-seed, and here it is also enforced "
+        "rather than merely passed: save_crosscoder records those five fields in "
+        "the dictionary and assert_dictionary_matches refuses the run when any of "
+        "them disagrees, so a mismatched population cannot reach a number. That "
+        "guard is active rather than dormant -- it compares only fields the "
+        "artefact actually recorded, and all five are recorded and were verified "
+        "to refuse one at a time on 2026-08-18"
+    ),
 }
 
 
