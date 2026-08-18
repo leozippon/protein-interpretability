@@ -13786,3 +13786,48 @@ The rule requires **both** admissible layers, so on the only projection availabl
 ### One process note, recorded because the pattern is now twice
 
 The λ = 0 text cell was dropped by EXP-R2-208's amendment, over an objection recorded in this log at the time — that the reason given rested on an account the unit had already said it could not separate. It is now the single most informative cell available. Together with the Stage_1 ↔ ProLLaMA question, that is **twice in one day that a decision to economise removed the control a later question turned out to need.** Recorded as a pattern about which cells are safe to drop — controls that discriminate between two live explanations are not — rather than as a criticism of either decision, both of which were reasonable on what was known.
+
+---
+
+## 2026-08-17 — EXP-R2-212 cell 1 registered: λ = 0 text at 8,192, three seeds, and why the second card is a replicate rather than a width probe
+
+Registered before dispatch. This is the cell EXP-R2-208's amendment removed, reinstated as the highest-value pending measurement in the programme.
+
+### The prediction, stated before the cell runs so neither outcome is a surprise
+
+Projecting the only Crosscoder-to-transcoder ratio that exists — **0.73–0.87**, measured in protein at λ = 0 — onto text gives **2,522–3,039** if the binding transcoder's live at layers 27 and 28 sits at its `r99` floor, and **3,568–4,248** if it sits near its 32-layer mean of 4,900. The bar is **3,700 and 3,708**.
+
+**The predicted range contains the threshold.** That is the property that makes the cell worth a card, and both outcomes are informative:
+
+* **Clears** — the Crosscoder route is open at current width, no width increase is needed, and the 16,384 probe becomes unnecessary.
+* **Falls short** — the measured ratio re-bases the width projection that every subsequent decision depends on, including the arithmetic that currently says a 16,384 protein cell fails layer 28 by 5–6%.
+
+### Both cards to this cell at two seeds, and a third to follow
+
+The second card goes to a **replicate of the same cell at a different seed**, not to a 16,384 protein width probe. Three reasons.
+
+**The decisive quantity has no error bar and the answer will land near the bar.** Every live-latent figure in this campaign is a single fit at one seed, and the comparisons being drawn from them are margins of a few percent — λ = 0 protein sits at 0.95 of the permissive reading, a 5% shortfall, with no idea whether a Crosscoder's live count moves 1% or 10% across seeds. A prediction that straddles the threshold will produce a result near the threshold, and **a near-threshold number without a spread is unreadable**. This session has hit that failure repeatedly; running the replicate alongside rather than afterwards is the cheap fix.
+
+**Two seeds give a difference, not a distribution** — this unit's own standing position — so a **third seed follows on the first card round B frees**, matching the three-seed convention `R` was priced with. `--seed` varies; `--corpus-seed` is held at 20260812.
+
+**The 16,384 protein probe is worth deferring on the coordinator's own argument**, which I agree with over the suggestion to run it now: its value is conditional on width mattering, and if this cell clears the bar at 8,192 the width question is moot. It also costs six to eight hours against this cell's two.
+
+### The cells
+
+All are `32_crosscoder.py` at pin `96b3bd9`, reusing snapshot `20260815005332_376ec28db1f6`, **λ = 0**, text mode, two admissible sites, `r99` `3708,3700` / `3506,3463`, `--steps 26000` for the 106,496 offset, and every other argument EXP-R2-206's dispatch verbatim.
+
+| card | label | seed |
+|---:|---|---:|
+| 0 | `r212_cc_text_lam0_s20260814` | 20260814 — the seed every other Crosscoder cell used |
+| 1 | `r212_cc_text_lam0_s20260815` | 20260815 |
+| later | `r212_cc_text_lam0_s20260816` | 20260816 |
+
+### Read against the adequacy bar, and against nothing else
+
+The verdict is **live ≥ max(r99_base, r99_adapted)** at both layers 27 and 28 — 3,708 and 3,700 — reported as a three-seed mean with its spread. FITS and POLARISES are reported for continuity with EXP-R2-209 and **are not the gate**; this cell exists to measure adequacy, which is the criterion the sweep should have been run against.
+
+**If the mean clears the bar but the spread crosses it, that is reported as undecided** and a fourth seed is not added for it — the same fallback discipline `R` carried.
+
+### One consequence for the modality inversion
+
+If this cell lands near the top of its projected range, **the apparent inversion disappears entirely**: text's ordering against protein was computed from a penalised cell, and a penalty-free text figure above 3,700 would put text at or over its bar while protein sits at 0.95 of the permissive reading of its own. The inversion is therefore held as provisional until this cell reads, and the qualification already recorded stands.
