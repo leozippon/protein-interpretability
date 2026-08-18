@@ -14091,3 +14091,44 @@ At 16,384 the λ = 3e-4 cell projects to **2,331–2,798** against a bar of 3,70
 ### Sequencing
 
 **The freeze goes ahead now** — it needs only the manifest, not the third seed — so it is off the critical path. **Dispatch waits for the third seed**, which is running on the card EXP-R2-212 needs, so waiting costs nothing: the other three cards stay on two-minute gap-filler draws and no silicon idles. If the third seed moves the anchor enough to matter, the design is revisited before dispatch rather than after.
+
+---
+
+## 2026-08-17 — EXP-R2-212: λ = 0 read complete on three seeds, and the 16,384 campaign dispatched
+
+### The λ = 0 measurement at 8,192, three seeds
+
+| | s20260814 | s20260815 | s20260816 | mean | sd |
+|---|---:|---:|---:|---:|---:|
+| layer 27 | 2,747 | 2,820 | **2,625** | **2,731** | 99 (**3.6%**) |
+| layer 28 | 3,271 | 3,193 | 3,250 | **3,238** | 40 (1.2%) |
+
+**The first replicated Crosscoder measurement in this programme.** Polarisation is 0.000–0.001 across all three, as at every λ ≤ 3e-5.
+
+**The necessary condition fails at 8,192**: 0.74 and 0.88 of the bar. That is the answer the cell was run for, and it is unambiguous — the three-seed range does not approach 3,708 at either layer.
+
+**Two things the replication bought that a single fit would not have.** The third seed pulled layer 27's mean *down*, from 2,784 on two seeds to 2,731 on three, and widened the spread from 2.5% to **3.6%**. And the noise is **three times larger at layer 27 than at layer 28** — 3.6% against 1.2% — so the binding layer is also the noisier one, which is exactly the combination that makes a single fit misleading.
+
+### The projection to 16,384, restated on three seeds
+
+| layer | anchor | x1.416 (pessimistic) | x1.50 (central) |
+|---:|---:|---:|---:|
+| 27 | 2,731 | 3,867 — **+4%** | 4,096 — **+10%** |
+| 28 | 3,238 | 4,585 — +24% | 4,857 — +31% |
+
+**Layer 27 on the pessimistic factor now clears by about 1.1 standard deviations of seed noise** — 159 latents against a propagated sd of 140 — against 2.6 on the central factor. Layer 28 clears on every assumption. **The rule requires both layers, so the outcome turns on the noisier layer at the thinner margin.**
+
+**That is a reason to run the cell, not a reason to hesitate.** The predicted range now contains the threshold, which is the property that makes an experiment worth doing. The alternative — 32,768 — buys a wider margin only by reinstating the compounded second extrapolation this design was retargeted to remove; and if layer 27 falls short at 16,384 while layer 28 clears, the round yields a **measured** one-doubling growth factor, which is strictly better than the assumed one 32,768 would otherwise be projected with.
+
+### Dispatch record
+
+Four cells, four cards, one slot, through the queue runner from snapshot `20260817215951_3744c660315e` at pin `8422a56`, with the stage taken from the pin-`96b3bd9` snapshot so every Crosscoder in the programme shares one code state.
+
+| card | cell | mode | λ |
+|---:|---|---|---:|
+| 0 | `r212_w16384_text_s20260814` | text | 0 |
+| 1 | `r212_w16384_text_s20260815` | text | 0 |
+| 2 | `r212_w16384_protein_s20260814` | protein | 0 |
+| 3 | `r212_w16384_text_lam3e4_s20260814` | text | 3e-4 |
+
+**Verified after launch rather than assumed**: `# FAILURES 0`, `# NO-RECORD 0`, all four `running`, and — the check that mattered, since this was the `env` column's first real use — **`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` read out of the cell's own `/proc/<pid>/environ`**, not inferred from the manifest.
