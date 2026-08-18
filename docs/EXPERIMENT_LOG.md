@@ -14260,3 +14260,30 @@ With standard deviations of 0.0001–0.0008, **essentially any non-zero differen
 ### The claim's full history, recorded as a sequence rather than an endpoint
 
 `base/text` depth structure: asserted as present (one draw) → **withdrawn** as too weak to characterise (null calibration, 6.3x) → **reinstated** as weak but decisively measurable (five draws, [1.0082, 1.0086] against 1.0014). Each step followed the evidence available at the time. A claim that moves twice on improving evidence is rigour when the steps are visible and instability when only the endpoint is.
+
+---
+
+## 2026-08-18 — EXP-R2-212 protein arm, first seed: layer 27 clears, layer 28 misses by eighteen latents
+
+| layer | live | bar | verdict |
+|---:|---:|---:|---|
+| 27 | **2,725** | 2,516 | **clears by 8.3%** |
+| 28 | **2,214** | 2,232 | **short by 0.8% — eighteen latents** |
+
+The rule requires both layers, so on this seed the protein arm is **not adequate**. It is the closest any Crosscoder in the programme has come, and it misses by less than a percent.
+
+**This is UNDECIDED, not a failure, and the registered rule already covers it.** A 0.8% shortfall sits inside the seed spread measured on the text arm (0.3% and 1.3%). The frozen rule — a mode whose range crosses its bar is undecided and gets further seeds, and if the range still crosses it is reported undecided and stops — applies exactly. **Two further protein seeds are already running**, dispatched to fill idle cards rather than by design, so the question resolves without a new decision.
+
+### A threshold that did not survive the change of width
+
+The cell first read **PARTIAL**, and that was an artefact. FITS's `active_fraction` bar is defined as **half of `k`/`d_hidden`**, which is 1.95e-3 at `d_hidden` 8,192 — and my reader hardcoded that literal. At 16,384, `k`/`d_hidden` is **1.953e-3**, so the hardcoded number *is the ceiling*: a cell could pass it only by perfect saturation. The protein cell reads `active_fraction` 1.949e-3, which is **99.8% of its own ceiling** and therefore fully saturated, yet fell fractionally under a bar meant to sit at half that.
+
+Fixed by computing the bar from `k` and `d_hidden` rather than storing it. Re-validated against the 8,192 protein cell whose verdict is on record, which still reads FITS; the 16,384 cell now reads **FITS**, as it should. **This is rule 34's `variant` clause for the third time today** — a constant defined in one configuration and carried into another — and the third time it has bitten a number rather than a method.
+
+**Adequacy is unaffected**, because the bar there is `max(r99)`, and `r99` is a property of the activations rather than of the dictionary, so it does not move with width. The 8.3% and −0.8% stand.
+
+### What a clearing protein result would license, stated now
+
+If the remaining seeds put layer 28 over its bar, that licenses a **representational Crosscoder diff at layers 27 and 28 in protein** — the protein feature-level comparison this unit exists for, and the first admissible one. It would come with candidates that **cannot be causally validated on this lineage**, because the pre-adaptation checkpoint's protein mode is behaviourally unmeasurable (L33).
+
+**That is the protein arm's best available outcome and should be reported as such** — not as a lesser version of the text result. The text arm clears more comfortably and is the arm where causal validation is available; the protein arm is the one the programme is for. They are different results, and neither substitutes for the other.
