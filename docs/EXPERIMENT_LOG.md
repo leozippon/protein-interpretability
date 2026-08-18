@@ -14061,3 +14061,33 @@ Five reasons, and the second is the one that matters.
 **Answering the necessary condition at the lowest width that answers it is the right economy**, and the +6% worst case is 2.4x the measured seed spread of 2.5%, so a two-seed result there would be readable rather than ambiguous.
 
 **Held, not dispatched.** The third seed is still running and the width change is a design decision registered at 32,768 with coordinator approval, so it is proposed rather than taken. Nothing is lost by waiting: the manifest is not frozen and the cards are on gap-filler.
+
+---
+
+## 2026-08-17 — EXP-R2-212 retargeted to 16,384, with the argument for why this is not parameter shopping
+
+The width registered was 32,768; a result arrived; the width changed. **That is the shape of post-hoc parameter selection**, and a reader who does not have the surrounding thread should be able to tell the difference from the entry alone. Three facts distinguish it.
+
+**The criterion did not move.** The bar is `live ≥ max(r99_base, r99_adapted)` = 3,708 and 3,700, exactly as registered before any 32,768 arithmetic existed. Width is an implementation parameter chosen to make a fixed criterion reachable; it is not a threshold tuned to a result. Nothing about what counts as success has changed.
+
+**The new width is the harder test.** At 32,768 the projection cleared by 15–18%; at 16,384 the binding case is layer 27 at **+6% on the most pessimistic growth factor**. The change moves toward the width where failure is *more* likely, which is the opposite of shopping for a width that passes.
+
+**It was forced by an anchor correction that went against the predictor's own forecast.** I projected λ = 0's headroom over λ = 1e-4 as small, requiring +75% to clear; it delivered **+31% and +47%**. A parameter revised because a measurement contradicted the forecaster is following evidence, not selecting for it — and the revision made the experiment harder rather than easier.
+
+### Does the missed forecast widen the width model's uncertainty?
+
+**No, and the reason is that the two claims are different kinds of claim.**
+
+The miss was a specific conceptual error, and it is worth naming precisely. I argued that because λ = 1e-4 already reached `active_fraction` 3.906e-03 — the theoretical maximum — the penalty was "provably inert" and λ = 0 could add little. **`active_fraction` is a per-token survival rate: what fraction of TopK selections survive the ReLU. `live` is a set cardinality: how many distinct latents are ever selected across the corpus.** A penalty can leave every selection surviving while still concentrating selection onto a smaller set, which is exactly what happened — same saturated `active_fraction` at both λ, 2,121 distinct latents at 1e-4 and 2,784 at 0. **I read a saturated per-token statistic as evidence about a set-cardinality statistic.**
+
+The width model is not that kind of claim. It is empirical: four measured 8,192 → 16,384 pairs relating live-count growth to capacity fraction, and the Crosscoder's 34% capacity sits **between** two measured analogues at 26.7% and 59.8%, so the central estimate interpolates rather than extrapolates. A reasoning error about what one statistic implies about another does not calibrate that.
+
+**What does remain the width model's real uncertainty, unchanged by this miss, is that all four analogues are single-model transcoders.** That transfer has been wrong twice today in other guises and is the thing to hold loosely — not the growth numbers themselves.
+
+### The sufficiency probe stays, and is more clearly not a candidate
+
+At 16,384 the λ = 3e-4 cell projects to **2,331–2,798** against a bar of 3,708 — 0.63 to 0.75 of it, further below than the 0.89 it projected at 32,768. **That is fine and does not weaken it**, because its job was never to be a candidate instrument. It is the only measurement of whether polarisation moves with width at all, that relationship is unmeasured at every width, and it is the only thing that can reopen the route if adequacy clears at λ = 0 with polarisation at zero.
+
+### Sequencing
+
+**The freeze goes ahead now** — it needs only the manifest, not the third seed — so it is off the critical path. **Dispatch waits for the third seed**, which is running on the card EXP-R2-212 needs, so waiting costs nothing: the other three cards stay on two-minute gap-filler draws and no silicon idles. If the third seed moves the anchor enough to matter, the design is revisited before dispatch rather than after.

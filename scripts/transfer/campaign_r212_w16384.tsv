@@ -1,0 +1,29 @@
+# EXP-R2-212 attainability probe: two-site Crosscoders at d_hidden 16,384, both modes, two seeds each.
+#
+# Columns, tab-separated: slot <TAB> key <TAB> gpu <TAB> stage <TAB> label <TAB> env <TAB> args
+#
+# DISPATCH ONLY AFTER the lambda=0 text replicates are read. If they clear the adequacy bar at 8,192 the text cells
+# here are unnecessary and this manifest must be cut before use; the projection says they will not, but "unlikely" is
+# not "measured".
+#
+# ONE CELL PER CARD, four cards, one wave. Each cell is ~81,508 MiB live of 143,771 by the measured decomposition
+# (analytic 58,479 x the observed 1.394 allocator overhead) -- 57% of the card, 43% headroom.
+#
+# THE ENV COLUMN CARRIES THE ALLOCATOR SETTING, and this is the first use of that column. PYTORCH_CUDA_ALLOC_CONF is
+# an allocator setting and NOT a recipe parameter -- it changes how device memory is reserved and reused, not what is
+# computed -- so live-latent counts stay comparable with cells trained without it. Declared as a deviation. Applied
+# from the START rather than after a loss, because the precedent cell survived its squeeze only by releasing 31 GB of
+# cache and a cell under memory pressure has almost none to release. EXP-R2-193's text cells had to be HAND-LAUNCHED for this, since
+# run_external_baseline_h200.sh sources h200_env.sh from the frozen snapshot and forwards no caller environment; the
+# queue's env column removes that need, so these cells keep a dispatch record instead of being hand-launched.
+#
+# IF A CELL OOMs IT IS A FAILURE AND THE ROUND STOPS. Width, sites and batch are the recipe; a cell rescued by
+# reducing any of them is incomparable with everything it would be read against, which is worse than a failed cell.
+# The allocator path above is the only permitted recovery and it is already applied.
+#
+# VOID CONDITIONS unchanged: protein 36,978 steps / 34,001,183 scored tokens, screen 961 of 1,024 at 1.0000 over
+# 229,376; text 11,367 / 34,002,081, screen 1,024 of 1,024 at 0.4346 over 106,496.
+1	cc	0	32_crosscoder.py	r212_w16384_text_s20260814	PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True	--base /gpfs/jiaotongdamoxing/zhk_zip/models/Llama-2-7b-hf --adapted /gpfs/jiaotongdamoxing/zhk_zip/models/ProLLaMA_Stage_1 --rendering prollama --tensor block_output --layers 27,28 --admissible-layers 27,28 --d-hidden 16384 --k 32 --auxk 192 --decoder-norm-penalty 0 --train-tokens 34000000 --batch-size 4 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --warm-up-batches 8 --corpus-seed 20260812 --pairings true shuffled --mode text --r99-base-per-site 3708,3700 --r99-adapted-per-site 3506,3463 --steps 26000 --seed 20260814
+1	cc	1	32_crosscoder.py	r212_w16384_text_s20260815	PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True	--base /gpfs/jiaotongdamoxing/zhk_zip/models/Llama-2-7b-hf --adapted /gpfs/jiaotongdamoxing/zhk_zip/models/ProLLaMA_Stage_1 --rendering prollama --tensor block_output --layers 27,28 --admissible-layers 27,28 --d-hidden 16384 --k 32 --auxk 192 --decoder-norm-penalty 0 --train-tokens 34000000 --batch-size 4 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --warm-up-batches 8 --corpus-seed 20260812 --pairings true shuffled --mode text --r99-base-per-site 3708,3700 --r99-adapted-per-site 3506,3463 --steps 26000 --seed 20260815
+1	cc	2	32_crosscoder.py	r212_w16384_protein_s20260814	PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True	--base /gpfs/jiaotongdamoxing/zhk_zip/models/Llama-2-7b-hf --adapted /gpfs/jiaotongdamoxing/zhk_zip/models/ProLLaMA_Stage_1 --rendering prollama --tensor block_output --layers 27,28 --admissible-layers 27,28 --d-hidden 16384 --k 32 --auxk 192 --decoder-norm-penalty 0 --train-tokens 34000000 --batch-size 4 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --warm-up-batches 8 --corpus-seed 20260812 --pairings true shuffled --mode protein --r99-base-per-site 2516,2232 --r99-adapted-per-site 2364,1563 --steps 56000 --seed 20260814
+1	cc	3	32_crosscoder.py	r212_w16384_text_lam3e4_s20260814	PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True	--base /gpfs/jiaotongdamoxing/zhk_zip/models/Llama-2-7b-hf --adapted /gpfs/jiaotongdamoxing/zhk_zip/models/ProLLaMA_Stage_1 --rendering prollama --tensor block_output --layers 27,28 --admissible-layers 27,28 --d-hidden 16384 --k 32 --auxk 192 --decoder-norm-penalty 3e-4 --train-tokens 34000000 --batch-size 4 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --warm-up-batches 8 --corpus-seed 20260812 --pairings true shuffled --mode text --r99-base-per-site 3708,3700 --r99-adapted-per-site 3506,3463 --steps 26000 --seed 20260815
