@@ -14513,3 +14513,24 @@ This is my judgement rather than an instruction, taken because two cards were ot
 **A fourth curve point is running to give the fit a lever arm.** `--rows-per-latent 2`, about 12 positions, projecting 23,246 passes -- the ladder is now 23,246 / 46,492 / 92,984 / 185,968, a clean factor of two at each step. The sizing argument's own method is to fit `sd^2 = a/n + b` to the control and read the knee where the two terms cross; that is a two-parameter fit, and three points barely determine it while four across an **8x range of positions, 12 to 92**, make it testable rather than merely solvable. It went to an idle card and displaces nothing.
 
 **A fourth query-shaped error, and a new variant of it.** Reading progress with `cut -c1-42` truncated `passes so far 26138` to `261`, which read as the counter having gone backwards from 7,065. Appendix B rule 36's new clause covers a grep that returns *nothing*; this returned something, mangled. **The positive control must therefore be against a known value, not merely a known presence** -- confirm the command reproduces a figure you already know, rather than confirming it produces output at all. Extended in the rule accordingly.
+
+### EXP-R2-210 headline cells complete, both seeds; the curve is not yet readable (2026-08-18)
+
+**The two 8-row headline cells are in.** At `--rows-per-latent 8`, about 46 positions per latent:
+
+| cell | site | control p95 | control sd | fraction above p95 | median D |
+| --- | --- | --- | --- | --- | --- |
+| seed 20260814 | L27 | 0.05285 | 0.02508 | 0.1317 | 0.00361 |
+| seed 20260814 | L28 | 0.05675 | 0.02831 | 0.1632 | 0.00559 |
+| seed 20260815 | L27 | -- | -- | 0.1340 | 0.00400 |
+| seed 20260815 | L28 | -- | -- | 0.1560 | 0.00520 |
+
+**The rule 39 decomposition is confirmed on this configuration rather than imported.** From 23 to 46 positions the control spread falls by a factor of **0.836** at L27 and **0.892** at L28, where pure sampling noise predicts 0.707. The threshold is already falling more slowly than `1/sqrt(n)` at the headline's own operating point, which is the signature of a systematic per-direction floor contributing a material share. That is the first time the two-component model has been demonstrated on this backbone pair rather than assumed from the sizing study's other configurations.
+
+**Two-point fits are arithmetic, not evidence, and they disagree.** Fitting `sd^2 = a/n + b` through 23 and 46 gives a floor of 0.0189 and a knee at **35 positions** at L27, and a floor of 0.0246 and a knee at **15 positions** at L28. Two points determine a two-parameter model exactly, with zero residual and no way to detect that the model is wrong, so these numbers are reported to be superseded. The 12-position cell now running and the 92-position cells make the fit over-determined, at which point the residual becomes informative and the disagreement between sites becomes readable as either real structure or fit instability.
+
+**Signal against seed noise, which is the reason the curve was not readable from one seed.** The fraction above threshold moves +0.0119 at L27 and +0.0135 at L28 between 23 and 46 positions. Seed-to-seed spread at 46 positions is **0.0024 at L27 and 0.0072 at L28**. So the movement is 5.1x seed noise at L27 and only **1.9x at L28** -- meaning an 8-versus-16 comparison of similar size could not be distinguished from seed variation at L28 without a seed replicate at 16. Two further cells are therefore running on the second seed at 16 and at 4 rows, which turns the curve from four points into four points with a noise estimate at each rung. This is the direct reason the earlier plan was insufficient, and it was invisible until the second headline seed landed.
+
+**No verdict on the registered comparison.** The pre-registered reading is against 8 versus 16, the 16-row cells are running, and nothing here anticipates them.
+
+**The declared second round's trigger appears unmet, and is not being called yet.** The whole-basis configuration was declared available "if the effect histogram piles up at the threshold." A 15.5% reduction in threshold between 23 and 46 positions admitted about 10% more latents at L27, which is close to proportionate and indicates a smooth density near the cut rather than a concentration at it. That inference rests on two points and is recorded as preliminary; it will be re-read when the 92-position cells land, and the second round is neither triggered nor cancelled on this basis.
