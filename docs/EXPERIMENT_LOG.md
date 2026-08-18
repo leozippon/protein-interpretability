@@ -14018,3 +14018,46 @@ Registered before the cells exist, because the failure this guards against is th
 **Why λ = 3e-4 is the right probe.** It carries the largest polarisation among the λ that keep a substantial basis. Reaching the 0.10 floor from 0.048 needs a factor of about two; from λ = 1e-4's 0.002 it would need fifty, and λ = 1e-3 has already collapsed. **Note what this cell cannot do**: at a projected 3,300–3,385 it is *below* the bar, so even a strong polarisation result does not make that cell admissible. What it buys is the relationship — if polarisation at fixed λ rises materially with width, a λ between 0 and 3e-4 may both clear and polarise at 32,768 and the route reopens; if it stays flat, width does not resolve the trade-off and the route closes on evidence rather than on projection.
 
 **This is a deliberate departure from symmetry** and from the replicate-everything instinct I argued for earlier today. The argument that carried then — a near-threshold number without a spread is unreadable — applies to text, whose margin is 15–18%, and applies weakly to protein at 33–47%. Trading that weak replicate for the only available measurement of an unmeasured degree of freedom is the better use of the card, and rule 37's test is met: the cell dropped is one whose outcome is genuinely predictable from what is already measured.
+
+---
+
+## 2026-08-17 — EXP-R2-212 cell 1 read (two of three seeds): λ = 0 does not clear at 8,192, but 16,384 now clears on every analogue
+
+Two seeds admitted and valid on the text stream; the third is running.
+
+| seed | layer 27 | layer 28 | capacity | polarised |
+|---|---:|---:|---:|---:|
+| s20260814 | 2,747 | 3,271 | 33.5% / 39.9% | 0.000 / 0.001 |
+| s20260815 | 2,820 | 3,193 | 34.4% / 39.0% | 0.000 / 0.001 |
+| **mean** | **2,784** | **3,232** | 34.0% / 39.5% | ~0.000 |
+
+**The seeds agree to 2.5%** — a range of 73 and 78 latents — which is the first spread ever measured on a Crosscoder live count and is small enough that the anchor is solid before the third seed lands.
+
+**The necessary condition fails at 8,192**: 0.75 and 0.87 of the bar, short by 25% and 13%. **And polarisation is 0.000 as measured before**, so nothing about sufficiency changes.
+
+### My own expectation was too pessimistic, and the correction matters
+
+I wrote that the headroom above λ = 1e-4's 2,121 was "unlikely to be large" and that clearing needed +75%. The actual gain from λ = 1e-4 to λ = 0 is **+31% and +47%** — not enough to clear, so the conclusion stands, but far more than I projected. **The consequence is that the anchor for every width projection moves from 2,121 to 2,784, and the capacity fraction from 25.9% to 34.0%.**
+
+### Re-projected, 16,384 clears on every analogue
+
+| layer | anchor | x1.416 (26% analogue) | x1.50 (interpolated) | x1.700 (60% analogue) |
+|---:|---:|---:|---:|---:|
+| 27 | 2,784 | 3,941 — **+6%** | 4,175 — **+13%** | 4,732 — +28% |
+| 28 | 3,232 | 4,577 — **+24%** | 4,848 — +31% | 5,494 — +48% |
+
+Every cell in that table clears its bar. The binding case is layer 27 on the most pessimistic growth factor, at +6%; the central estimate is +13%, and the pessimistic factor is itself the analogue for a **26%** capacity cell while this one sits at **34–39%**, where the measured trend gives more growth rather than less.
+
+### Recommendation: run EXP-R2-212 at 16,384, not 32,768
+
+Five reasons, and the second is the one that matters.
+
+1. **It clears on every measured analogue**, so 32,768 is no longer required to answer the necessary condition.
+2. **It is a one-step extrapolation instead of two.** The compounding was the honest weakness of the 32,768 design — no growth factor for a second doubling exists anywhere on disk. Testing at 16,384 removes that entirely rather than arguing around it.
+3. **Memory is 81,508 MiB, 57% of the card**, against 88% at 32,768 — no squeeze, and the allocator setting stays on anyway as cheap insurance.
+4. Roughly three hours a cell rather than five and a half.
+5. **If layer 27 fails at the pessimistic end, 32,768 is still available** — and we would then have a *measured* one-doubling growth factor to project the second with, instead of assuming one.
+
+**Answering the necessary condition at the lowest width that answers it is the right economy**, and the +6% worst case is 2.4x the measured seed spread of 2.5%, so a two-seed result there would be readable rather than ambiguous.
+
+**Held, not dispatched.** The third seed is still running and the width change is a design decision registered at 32,768 with coordinator approval, so it is proposed rather than taken. Nothing is lost by waiting: the manifest is not frozen and the cards are on gap-filler.
