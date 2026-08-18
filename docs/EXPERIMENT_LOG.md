@@ -13977,3 +13977,44 @@ It comes **closest to C3 of anything in the programme** — true-minus-null shar
 **None of these cells was ever admissible.** Against the adequacy bar — `live ≥ max(r99_base, r99_adapted)`, 3,708/3,700 in text and 2,516/2,232 in protein — the best cell in this round reaches **0.59** of it and the protein cell **0.22**. The sweep was run against FITS, which is a collapse diagnostic; the binding criterion is adequacy, and the whole λ axis at `d_hidden` 8,192 sits below it. **That finding, not this one, is what governs whether a Crosscoder diff is reportable**, and it is why the successor is EXP-R2-212 at 32,768 rather than any further λ.
 
 **Registered as a result and not a failed round.** The trade-off is quantitative, the mode-dependence is new, and the C3 gaps say the readout is closer to separating in protein than anywhere else measured — all of which are statements about how the objective behaves. What none of them is, is a usable instrument.
+
+---
+
+## 2026-08-17 — EXP-R2-212 amended before dispatch: what a clear result does and does not license, and the fourth cell becomes a sufficiency probe
+
+Registered before the cells exist, because the failure this guards against is the FITS-versus-adequacy error one level up — a criterion answering one question read as though it answered another.
+
+### The question EXP-R2-212 tests is necessary, not sufficient
+
+**λ = 0 at 32,768 asks: can this construction carry an adequate basis at a width that fits on a card?** λ = 0 is chosen because it maximises the basis, so a failure there closes the route regardless of anything else and is a complete answer.
+
+**A clear result opens the question rather than closing it.** λ = 0's polarisation is **measured at 0.000**, and a reportable diff needs adequacy *and* exclusivity. So clearing establishes that an adequate basis is reachable and says nothing whatever about whether an adequate *and* exclusive one is. **The entry must not be read as "the Crosscoder route works at 32,768".**
+
+### Nothing on disk speaks to polarisation against width, so sufficiency cannot be projected
+
+**Every Crosscoder ever fitted in this programme is at `d_hidden` 8,192** — eight cells, four λ, two modes, one width. There is therefore no measurement of how polarisation behaves as width grows, and none can be inferred.
+
+**That matters because on width-invariant polarisation the route is already closed.** Projecting the 8,192 text trade-off up two doublings:
+
+| λ | live @8,192 | polarised @8,192 | projected live @32,768 | clears 3,708? |
+|---:|---:|---:|---:|---|
+| 1e-4 | 2,121 | 0.002 | 4,253 – 4,362 | **yes** |
+| 3e-4 | 1,646 | 0.048 | 3,300 – 3,385 | no |
+| 1e-3 | 709 | 0.300 | 1,422 – 1,458 | no |
+
+**The λ that clears does not polarise and the λ that polarises does not clear** — the same trade-off, shifted up but not resolved. A λ landing exactly on the bar would be ≈2e-4, where polarisation interpolates to about **0.02, a fifth of the floor**. So **the route depends entirely on polarisation improving with width, and that is precisely the quantity nothing measures.**
+
+### The fourth cell therefore becomes a sufficiency probe rather than a fourth replicate
+
+| card | cell | λ | what it buys |
+|---:|---|---:|---|
+| 0 | `r212_w32768_text_s20260814` | 0 | necessary condition, text — the tighter margin |
+| 1 | `r212_w32768_text_s20260815` | 0 | its replicate |
+| 2 | `r212_w32768_protein_s20260814` | 0 | necessary condition, protein |
+| 3 | **`r212_w32768_text_lam3e4_s20260814`** | **3e-4** | **the only measurement of polarisation against width** |
+
+**Why replication moves to text and away from protein.** Replication is worth most where the margin is tight: text projects to clear by 15–18%, protein by **33–47%**. A wide margin makes a single fit unambiguous, and if protein instead lands near its bar the third-seed rule already registered turns it into UNDECIDED and buys its replicate in a second wave. Spending the fourth card on a protein replicate would tighten a margin that is already wide.
+
+**Why λ = 3e-4 is the right probe.** It carries the largest polarisation among the λ that keep a substantial basis. Reaching the 0.10 floor from 0.048 needs a factor of about two; from λ = 1e-4's 0.002 it would need fifty, and λ = 1e-3 has already collapsed. **Note what this cell cannot do**: at a projected 3,300–3,385 it is *below* the bar, so even a strong polarisation result does not make that cell admissible. What it buys is the relationship — if polarisation at fixed λ rises materially with width, a λ between 0 and 3e-4 may both clear and polarise at 32,768 and the route reopens; if it stays flat, width does not resolve the trade-off and the route closes on evidence rather than on projection.
+
+**This is a deliberate departure from symmetry** and from the replicate-everything instinct I argued for earlier today. The argument that carried then — a near-threshold number without a spread is unreadable — applies to text, whose margin is 15–18%, and applies weakly to protein at 33–47%. Trading that weak replicate for the only available measurement of an unmeasured degree of freedom is the better use of the card, and rule 37's test is met: the cell dropped is one whose outcome is genuinely predictable from what is already measured.
