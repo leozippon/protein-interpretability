@@ -10,6 +10,7 @@ about the wrong object.
 from __future__ import annotations
 
 import importlib.util
+import json
 import math
 import sys
 from pathlib import Path
@@ -762,3 +763,65 @@ def test_admissibility_is_an_input_and_is_never_widened():
         cc.assert_admissible_subset([29], [27, 28])
     with pytest.raises(ValueError, match="refusal to run"):
         cc.assert_admissible_subset([], [27, 28])
+
+
+def test_the_synthetic_check_recovers_a_known_injected_effect(tmp_path, monkeypatch):
+    """The stage's own known-answer path, which nothing exercised until 2026-08-18.
+
+    This is the only place the causal readout's central claim is falsifiable
+    against a ground truth, and it had zero coverage while the stage was already
+    computing on real dictionaries -- the same shape as a guard that has never
+    refused, and invisible for the same reason: 686 lines of passing tests read
+    as coverage. What is asserted here is the contract that makes the instrument
+    trustworthy, not the exact values, so it fails on a regression of the
+    intervention, the packing rule, the matched control or the statistic without
+    pinning arithmetic that is allowed to drift.
+    """
+
+    stage = _stage_33()
+    out = tmp_path / "synthetic"
+    monkeypatch.setattr(
+        sys, "argv",
+        ["33_differential_reliance.py", "--synthetic-check",
+         "--out", str(out), "--device", "cpu"],
+    )
+    stage.main()
+
+    written = list(out.glob("*.json"))
+    assert len(written) == 1, f"expected one artefact, got {written}"
+    payload = json.loads(written[0].read_text(encoding="utf-8"))
+    assert payload["kind"] == "synthetic_instrument_check"
+
+    # The known answer: a declared gain implies a predicted differential
+    # reliance, and the instrument must recover it rather than merely produce a
+    # finite number in the right neighbourhood.
+    truth = payload["ground_truth"]
+    assert truth["absolute_error_nats"] < 0.01, truth
+    assert math.isclose(
+        truth["measured_differential_reliance"],
+        truth["predicted_differential_reliance"],
+        rel_tol=0.01,
+    ), truth
+
+    # Two checkpoints that are the same checkpoint must differ by exactly zero.
+    # A near-zero here would mean the intervention leaks.
+    determinism = payload["determinism"]
+    assert determinism["identical_checkpoints_read_exactly_zero"] is True
+    assert determinism["repeated_pass_bitwise_identical"] is True
+
+    # The registered packing rule was position-disjoint and unsound, because
+    # attention mixes across positions above the intervention site. Row
+    # granularity replaced it, and the standard is bitwise identity: a packing
+    # rule either changes nothing about each measurement or it is a different
+    # measurement.
+    assert payload["packing"]["bitwise_identical_to_single_latent_passes"] is True
+
+    # A latent constructed orthogonal to the injected channel must read ~0, and
+    # the injected effect must stand clear of the matched random control.
+    assert abs(payload["equal_reliance"]["mean_differential_reliance"]) < 0.05
+    assert payload["matched_random_control"][
+        "injected_effect_in_control_standard_deviations"] > 3.0
+
+    # The reading constraint travels with the artefact rather than living only
+    # in the log: this is reliance, not possession.
+    assert "differential_reliance_not_possession" in payload["limitations"]
