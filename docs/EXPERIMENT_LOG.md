@@ -13932,3 +13932,21 @@ Working set is assumed linear in `d_hidden`, which over-states it — part of it
 **Go straight to 32,768 rather than stepping through 16,384.** The intermediate is projected to fall short by 18–19%, so it would consume a card to confirm a failure; the direct cell answers the question. **The accepted cost is diagnosability**: if 32,768 fails we will not know which doubling degraded. That is worth naming as the price of the faster route rather than discovering it afterwards.
 
 **Registered as an attainability measurement, not a gated experiment** — the EXP-R2-212 framing already in force. An outcome of "clears" opens the first admissible Crosscoder on this lineage; "falls short" bounds the construction rather than the width, and both are reportable.
+
+---
+
+## 2026-08-17 — EXP-R2-212 dispatch design: four cells at 32,768, both modes, two seeds, allocator setting from the start
+
+Approved at 32,768, two sites, after the λ = 0 replicates land. Manifest written and dry-run; **not frozen and not dispatched**, because the λ = 0 read can still cut it.
+
+**Both modes, two seeds, one cell per card, one wave.** At ~127,180 MiB live of 143,771 a card holds exactly one cell, and four cards hold the full 2 x 2. Replication therefore costs no mode and none is dropped. Text is the tighter test and the higher bar (+15–18% projected); protein carries the wider margin (+33–47%) and is the research target. **If only one clears, which one is the finding**: protein clearing opens the arm the unit exists for, text clearing opens the arm where causal validation is actually available (L33). Neither substitutes for the other.
+
+**Two seeds give a difference and not a distribution**, which is this unit's standing position and the reason the λ = 0 cells got three. The rule here is frozen now: **if the two-seed range for a mode crosses its bar, that mode is UNDECIDED and one third seed is dispatched for it; if the three-seed range still crosses, it is reported undecided and stops.** That resolves an undecided rather than pursuing a verdict, which is the distinction EXP-R2-207's fallback draws.
+
+**`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` on every cell, from the start, declared as a deviation.** It is an allocator setting and not a recipe parameter — it changes how device memory is reserved and reused, not what is computed — so live-latent counts stay comparable with cells trained without it. Applied from the start because the precedent cell survived its squeeze only by releasing **31 GB of cache**, and a cell at 88% of the card has almost none to release.
+
+**It is carried in the queue's `env` column, which removes the hand-launch the precedent needed.** EXP-R2-193 recorded that this variable *cannot* be injected through the single-cell driver — the in-pod command sources `h200_env.sh` from the frozen snapshot and the transport forwards no caller environment — so those cells were hand-launched, which is the practice that left EXP-R2-132 with no dispatch record at all. The `env` column solves it properly. **It has never been exercised**, so the export idiom was tested on the workstation before the manifest was written, and the setting will be confirmed from the process environment in the pod after launch rather than assumed.
+
+**An OOM is a failure and stops the round.** Width, sites and batch are the recipe; a cell rescued by cutting any of them is incomparable with everything it would be read against, which is worse than a failed cell. The allocator path is the only permitted recovery and is already applied.
+
+**The compounding stays stated as it is.** Break-even needs x1.322 per doubling against a lowest measured x1.416, so the projection survives a degradation it has no particular reason to expect — **a reason to run, not a prediction of the result**. If a cell falls short, the finding is about the **two-role construction** and not about width or memory, and the entry must be written so it cannot be misread as "we ran out of memory".
