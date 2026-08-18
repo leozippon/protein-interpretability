@@ -14208,3 +14208,28 @@ Evidence: four measured transcoder pairs, one measured Crosscoder pair at two λ
 Re-derived at 5,558 and 6,133 live latents, **11,691 to ablate**. Firing density at `k` 32 and `d_hidden` 16,384 is **0.195%** of positions, half the 0.391% at 8,192 — so **disjoint-support packing gets denser as the dictionary widens** and the wider object is *cheaper per latent*. Naive is 374,112 batch-forwards, about 31 GPU-hours; packed at 40–120 latents per pass it is **16–47 minutes**.
 
 **But EXP-R2-210 cannot be run today, because no stage implements it.** The transfer stages end at `32_crosscoder.py`; there is no additive single-latent ablation, no matched random-direction control, and no disjoint-support packer anywhere in the repository. "Run EXP-R2-210" is a build task before it is a compute task, and the four frozen constraints are a specification for that build rather than flags on an existing stage. That should be scheduled as engineering, on a card-free workstation, rather than queued as a campaign.
+
+---
+
+## 2026-08-18 — EXP-R2-202 resampling read: all three registered questions answered, and two of my own hedges overturned
+
+Five draws per cell across six cells, `--seed` varying and `--corpus-seed` held, read against the rule frozen before the first draw.
+
+| cell | n | mean prominence | sd | its null |
+|---|---:|---:|---:|---:|
+| base / text | 5 | **1.0084** | 0.0001 | 1.0014 |
+| stage1 / text | 5 | **1.1705** | 0.0008 | 1.0038 |
+| ProLLaMA / text | 5 | **1.0959** | 0.0005 | 1.0024 |
+| base / protein | 5 | 1.3176 | 0.0003 | — |
+| stage1 / protein | 5 | **1.1495** | 0.0004 | — |
+| ProLLaMA / protein | 5 | **1.1619** | 0.0002 | — |
+
+**Q1 — is `base/text` separable from its null? YES, and this overturns my own withdrawal.** Its interval is [1.0082, 1.0086] against a null of 1.0014, excluding it by seventy times the half-width. I withdrew "base/text has depth structure" on 2026-08-17 as *too weak to characterise*, on one draw at 6.3x its null. With five draws it is weak but **decisively measurable**. The withdrawal was correct on the evidence then available and is now itself withdrawn: **`base/text` has weak, real depth structure at 1.0084, an order of magnitude below either adapted checkpoint's excess but not absent.**
+
+**Q2 — is the adapted text pair's difference real? YES.** 1.1705 against 1.0959, difference **0.0747, CI [0.0737, 0.0757]**. I recorded this as unpriced; it is now priced and resolved. **Instruction tuning measurably reduces text-mode depth prominence.**
+
+**Q3 — is the protein pair equivalent? YES by the registered bound, and the nuance matters.** Difference **+0.0124, CI [+0.0119, +0.0128]** — entirely inside the pre-registered ±0.03, so **equivalent**. But the interval also **excludes zero**, so the difference is real and merely small. **Equivalence at ±0.03 means "any difference is below 0.03", not "no difference".** D1.d's claim that the instruction stage leaves the protein profile *where* it found it is about location and stands — the region is 17–22 in both — but prominence does move, by +1.2%.
+
+### What these intervals cover, and it is less than their width suggests
+
+The standard deviations are **0.0001 to 0.0008**, which is small enough to invite over-confidence. They price **position-draw noise at a fixed corpus draw**, because the design varied `--seed` only with `--corpus-seed` held — the convention `R` was priced under. What this measures is that position-draw noise is **negligible** for this estimator at 65,536 sampled positions; it is not a general error bar. **Corpus-draw variability remains outside every interval above, as registered**, and no claim here survives a different draw of OpenWebText or Swiss-Prot on this evidence alone.
