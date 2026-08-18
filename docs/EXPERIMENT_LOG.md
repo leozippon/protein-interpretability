@@ -14534,3 +14534,29 @@ This is my judgement rather than an instruction, taken because two cards were ot
 **No verdict on the registered comparison.** The pre-registered reading is against 8 versus 16, the 16-row cells are running, and nothing here anticipates them.
 
 **The declared second round's trigger appears unmet, and is not being called yet.** The whole-basis configuration was declared available "if the effect histogram piles up at the threshold." A 15.5% reduction in threshold between 23 and 46 positions admitted about 10% more latents at L27, which is close to proportionate and indicates a smooth density near the cut rather than a concentration at it. That inference rests on two points and is recorded as preliminary; it will be re-read when the 92-position cells land, and the second round is neither triggered nor cancelled on this basis.
+
+### The two-component model holds on this configuration, and predictions for the 16-row cells are fixed before they land (2026-08-18)
+
+**Three points now, so the fit is over-determined and the residual is finally informative.** Seed 20260814, control spread at 2, 4 and 8 rows per latent:
+
+| site | sd(2) | sd(4) | sd(8) | fitted `a` | fitted floor `sd_inf` | knee | max relative residual on `sd^2` |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| L27 | 0.037296 | 0.030007 | 0.025079 | 0.002022 | **0.01959** | **5.27 rows** | **1.25%** |
+| L28 | 0.038713 | 0.031594 | 0.028308 | 0.001880 | **0.02348** | **3.41 rows** | **2.29%** |
+
+**`sd^2 = a/n + b` fits within 1.25% and 2.29% across a fourfold range.** The two-component decomposition of Appendix B rule 39 is therefore demonstrated on this backbone pair rather than imported from the sizing study's other configurations, which is what the curve was run to establish. Successive ratios are 0.805 then 0.836 at L27, and 0.816 then 0.896 at L28, against 0.707 for pure sampling -- the departure from `1/sqrt(n)` is visible in the raw numbers before any fitting.
+
+**The operating point is past the knee but not at the floor, and those are different statements.** The knee -- where the sampling term equals the systematic floor -- sits at 5.27 rows at L27 and 3.41 at L28, so `--rows-per-latent 8` is 1.5x and 2.3x beyond it. That answers the question the deviation was challenged on. But **9.9% and 8.7% of threshold reduction remain between 8 and 16 rows**, and 21.9% and 17.1% remain to the floor, so the headline is not at the asymptote. Whether the residual 10% moves detection verdicts is exactly what the 16-row cells measure, and nothing here anticipates it.
+
+**Predictions fixed now, before those cells land.** The ratio of the p95 threshold to the control spread is stable to within 1% across every cell measured -- 2.104, 2.086, 2.107 at L27 and 2.026, 2.015, 2.005 at L28 -- so the threshold tracks the spread and the fitted model predicts it directly:
+
+| site | predicted sd(16) | predicted p95(16) | predicted asymptotic p95 |
+| --- | --- | --- | --- |
+| L27 | 0.02258 | **0.04740** | 0.04111 |
+| L28 | 0.02586 | **0.05210** | 0.04730 |
+
+If the 16-row cells land near these, the model is validated on four points and the knee estimates stand. If they miss, the two-component model is wrong on this configuration and the knee -- and with it the justification for the operating point -- has to be re-derived. This is a stronger test than the registered verdict comparison, because it stakes a number rather than an agreement, and it costs nothing extra: the cells are already running.
+
+**The fraction above threshold is still climbing**, +0.0175 then +0.0119 at L27 and +0.0204 then +0.0135 at L28. It falls with each doubling but has not stopped, which is consistent with a threshold that is near but not at its floor, and is the reason the verdict comparison at 16 rows is not a formality.
+
+**A fourth rung on the second seed is running** at 2 rows, so each of 2, 4, 8 and 16 will carry a seed replicate and every point on the curve will have a noise estimate.
