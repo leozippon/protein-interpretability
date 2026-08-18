@@ -2,8 +2,10 @@
 set -euo pipefail
 
 # ############################################################################
-# VALIDATED ON THE RECORDS PATH (2026-08-17), which is the default and the
-# reason this file exists. Steps 1 and 2 of "First run" below passed against a
+# VALIDATED ON THE RECORDS PATH (2026-08-17), single-file AND multi-file, the
+# second only after a defect that single-file testing could not see: the per-file
+# loop lost its stdin to the pull command and ran exactly one iteration. See the
+# comment at that loop. Steps 1 and 2 of "First run" below passed against a
 # real pod: --dry-run selected exactly the one *.json in each of two completed
 # cell directories and moved nothing, and a records-only pull of a cell the
 # driver had already admitted returned a byte-identical file -- 46,377 bytes,
@@ -77,6 +79,10 @@ set -euo pipefail
 #                                                                 PASSED 08-17.
 #   3. --with-weights on the SMALLEST completed cell, not a 17.2 GB one.
 #                                                                 NOT RUN.
+#   4. A MULTI-FILE selection -- a whole run root rather than one cell. Added
+#      after step 2 passed on a single file and the multi-file path then failed
+#      on the first real use. Any loop must be exercised with more than one
+#      iteration before it is called validated.        PASSED 08-17 after the fix.
 
 H200_ACCESS_ROOT="${H200_ACCESS_ROOT:-${HOME}/hangzhou-remote}"
 H200_POD_BASH="${H200_POD_BASH:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_pod_bash.sh}"
@@ -142,7 +148,16 @@ mkdir -p "${LOCAL_DIR}"
 while read -r _sha name; do
   [ -n "${name}" ] || continue
   mkdir -p "${LOCAL_DIR}/$(dirname "${name}")"
-  "${H200_GPFS_PULL}" "${REMOTE_DIR}/${name}" "${LOCAL_DIR}/${name}"
+  # `< /dev/null` is load-bearing. h200_gpfs_pull.sh reads stdin, and inside a
+  # `while read ... done < file` loop that means it consumes the loop's remaining
+  # input: the first iteration ran, swallowed the other eleven lines, and the loop
+  # ended silently having pulled nothing. The digest check caught it -- exit 5, NOT
+  # ADMITTED, four records missing -- but only because those four were not already
+  # on disk from an earlier directory pull.
+  #
+  # This is invisible with a one-file selection, which is exactly how it survived
+  # validation: a loop exercised with a single iteration is not an exercised loop.
+  "${H200_GPFS_PULL}" "${REMOTE_DIR}/${name}" "${LOCAL_DIR}/${name}" < /dev/null
 done < "${SUMS}"
 
 # Admission is the driver's rule, unchanged: a result is admitted only if the

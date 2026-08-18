@@ -1764,3 +1764,17 @@ The runner had every success path exercised and no error path, which is the wors
 The manifest was deleted immediately, under the same rule the earlier probe followed: a manifest that fails on purpose is precisely the kind of file that must not survive to be dispatched by accident.
 
 What remains unexercised is now a scale rather than a path — the largest campaign run through it is four cells in two slots on two cards.
+
+## 2026-08-17 (late) — the records pull was validated on one file and broken on many
+
+`pull_records_h200.sh` was marked validated this morning after a single-cell pull returned a byte-identical record. Its headline use — *"retrieves every cell's record in one invocation"* over a whole run root — was tried for the first time tonight on EXP-R2-207's twelve records and **retrieved nothing**.
+
+**The mechanism.** The per-file loop is `while read -r _sha name; do ...; "${H200_GPFS_PULL}" ...; done < "${SUMS}"`, and `h200_gpfs_pull.sh` reads stdin. Inside a loop whose stdin is the redirected list, that command consumes the rest of the list: iteration one ran, swallowed the remaining eleven lines, and the loop ended. The log shows exactly one file handled and then the verification step.
+
+**Why it looked fine this morning.** A one-file selection makes a loop that runs once and dies indistinguishable from a loop that works. The validation was a single cell with a single record, so the defect was invisible by construction rather than by bad luck.
+
+**What worked, and it is the only reason this surfaced as a failure.** The digest check compared the delivered set against the remote listing, found four records missing, and refused: `exit 5, NOT ADMITTED`. Without it the four R3 records would have been quietly absent and the curvature read would have failed later with no explanation. The admission rule earned its place.
+
+**The fix** is `< /dev/null` on the inner call, with the reason written at the line so it is not "tidied" away. Re-run: twelve records, eight short-circuited as already synchronised, four verified and pulled, ADMITTED, weights untouched on GPFS.
+
+**The lesson generalises an existing rule rather than adding one.** Appendix B rule 34 said a pilot certifies the code path it exercised *for the duration it ran*; it now reads *duration or extent*, with this as the instance. A loop exercised once is not an exercised loop.
