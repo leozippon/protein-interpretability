@@ -248,12 +248,13 @@ def save_crosscoder(
     dictionary silently read against the wrong checkpoints produces finite
     numbers about nothing.
 
-    ``extra`` should carry the fit's cohort parameters -- ``steps``,
+    ``extra`` must carry the fit's cohort parameters -- ``steps``,
     ``fit_batch_size``, ``eval_sequences``, ``corpus_seed``, ``max_tokens`` --
     because the held-out offset is ``steps x batch_size`` and a reader that
     re-derives the cohort from different ones measures a different population
-    under the same name. :func:`assert_dictionary_matches` checks whichever of
-    them are present.
+    under the same name. :func:`assert_dictionary_matches` refuses a dictionary
+    that omits any field the reader asks it to check, so a dictionary saved
+    without them is unusable rather than silently unchecked.
     """
 
     if not bool(model.scale_is_set):
@@ -353,12 +354,22 @@ def assert_dictionary_matches(
     or a site index the backbone does not have. Each of them yields a finite
     number, which is exactly why none of them may be a warning.
 
-    ``cohort`` is the fifth and is checked only against fields the dictionary
-    actually recorded, because the trainer does not record them today. It is
-    written this way rather than left out so the check turns itself on the moment
-    :func:`save_crosscoder` is called with them: the held-out offset is
+    ``cohort`` is the fifth and is fail-closed: every field the caller asks to
+    have checked must be present in the dictionary's manifest, and a dictionary
+    that omits one is refused rather than passed. The held-out offset is
     ``steps x batch_size``, so a mismatch there measures a different population
     under the same name and nothing downstream would show it.
+
+    This was once written to compare only fields the dictionary happened to
+    record, so that the check would turn itself on when the trainer began
+    recording them. That was a reasonable accommodation while no trainer wrote
+    dictionaries at all, and it became a hazard the moment one did: a field whose
+    name drifted between the save site and this one would be skipped in silence,
+    and the guard would report success while checking nothing. An absent check is
+    indistinguishable from a passed check, so the fields are required rather than
+    welcomed. The caller supplies the list, which keeps one source for what the
+    cohort is -- widen ``fit_cohort`` at the reader and this refuses the older
+    dictionaries that cannot answer it, which is the intended direction.
     """
 
     cohort = dict(cohort or {})
@@ -381,6 +392,15 @@ def assert_dictionary_matches(
             "is a refusal and not a warning"
         )
     recorded = dict(manifest.get("extra") or {})
+    unrecorded = sorted(field for field in cohort if field not in recorded)
+    if unrecorded:
+        raise ValueError(
+            f"this dictionary's manifest records no {unrecorded}, so the cohort "
+            "it was fitted on cannot be compared with the one being requested. A "
+            "dictionary that cannot be checked is refused rather than used: "
+            "skipping the comparison would make an absent check indistinguishable "
+            "from a passed one, and the held-out offset is steps x batch size"
+        )
     disagreeing = {
         field: (recorded[field], value)
         for field, value in cohort.items()

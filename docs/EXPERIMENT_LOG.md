@@ -14349,3 +14349,17 @@ It was demonstrated rather than argued, and **the failure is asymmetric in exact
 **Declared second round, available if the effect histogram piles up at the threshold:** the 15.5-hour whole-basis configuration — **whole-basis, never a subset chosen after seeing effects**, which would condition the selection on the outcome.
 
 **Generalised as Appendix B rule 39**, which I agree it warrants.
+
+### The cohort guard was fail-open; it is now fail-closed (2026-08-18)
+
+Yesterday's verification established that all five cohort fields were checked and none dormant. That was true and it was not sufficient: the guard compared under `if field in recorded`, so it was checking five fields **because the trainer happened to write those five names**, not because it required them. The distinction is invisible while the names agree and total while they do not.
+
+**The failure it admitted.** `32_crosscoder.py` translates one name at the save site, writing `"fit_batch_size": args.batch_size`. Had that translation been omitted or misspelled, the field would have been absent from the manifest, the comparison would have skipped it in silence, and the guard would have reported a match while comparing four fields out of five. The held-out offset is `steps x batch_size`, so the consequence is a readout run on a different population under the dictionary's own name -- surfacing as an inexplicable causal result rather than as a refusal. This is rule 36's family one level down: **an absent check is indistinguishable from a passed check.**
+
+**Why the leniency existed and why it had to go.** It was written so the check would "turn itself on the moment `save_crosscoder` is called with them", which was a reasonable accommodation while no trainer wrote dictionaries at all. The trainer now does, so the accommodation has outlived its reason. It also protects an empty population: `--save-dictionary` postdates every Crosscoder run in this repository, so there exists no dictionary lacking these fields for a strict check to break.
+
+**The change.** Every field the caller asks to have checked must be present in the manifest, and a dictionary omitting one is refused, naming the field it cannot check. The required list is the caller's `fit_cohort` rather than a constant inside the guard, which keeps one source for what the cohort is: widening `fit_cohort` at the reader now refuses older dictionaries that cannot answer it, which is the intended direction rather than a regression.
+
+**Tests, including the one that encoded the old behaviour.** An existing case asserted the fail-open path directly -- "a field the dictionary never recorded cannot make it disagree" -- and is inverted rather than supplemented, because leaving it would have pinned the defect. The new negative path drops each of the five fields in turn from a complete manifest and requires a refusal naming that field, and refuses a manifest carrying no extras at all. **Both tests were mutation-checked**: with the refusal disabled, exactly those two fail and the other 35 pass, so neither is vacuous.
+
+**Scope.** No published number is affected. The guard has never yet run against a real dictionary -- the first one will be written by the pending `--save-dictionary` refit -- so this is a repair made before the instrument's first use rather than a correction to a result.

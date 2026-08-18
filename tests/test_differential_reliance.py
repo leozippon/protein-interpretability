@@ -548,12 +548,7 @@ def test_a_dictionary_of_the_wrong_width_or_depth_is_refused(tmp_path):
 
 
 def test_a_dictionary_fitted_on_another_cohort_is_refused(tmp_path):
-    """The held-out offset is steps x batch size, so those are properties of the fit.
-
-    The check is against whatever the dictionary recorded, and it must not fire on
-    fields it did not record -- otherwise it would refuse every dictionary written
-    before the trainer started recording them.
-    """
+    """The held-out offset is steps x batch size, so those are properties of the fit."""
 
     _, path = _fitted(
         tmp_path, extra={"steps": 26_000, "fit_batch_size": 4, "eval_sequences": 256}
@@ -571,10 +566,12 @@ def test_a_dictionary_fitted_on_another_cohort_is_refused(tmp_path):
         **common,
         cohort={"steps": 26_000, "fit_batch_size": 4, "eval_sequences": 256},
     )
-    # A field the dictionary never recorded cannot make it disagree.
-    dr.assert_dictionary_matches(
-        manifest, **common, cohort={"steps": 26_000, "corpus_seed": 20260812}
-    )
+    # A field the dictionary never recorded is a refusal, not a pass: see
+    # test_a_dictionary_that_cannot_be_checked_is_refused for why.
+    with pytest.raises(ValueError, match="records no"):
+        dr.assert_dictionary_matches(
+            manifest, **common, cohort={"steps": 26_000, "corpus_seed": 20260812}
+        )
     with pytest.raises(ValueError, match="fitted, requested"):
         dr.assert_dictionary_matches(
             manifest, **common, cohort={"steps": 20_000, "fit_batch_size": 4}
@@ -583,6 +580,66 @@ def test_a_dictionary_fitted_on_another_cohort_is_refused(tmp_path):
         dr.assert_dictionary_matches(
             manifest, **common, cohort={"fit_batch_size": 16}
         )
+
+
+def test_a_dictionary_that_cannot_be_checked_is_refused(tmp_path):
+    """An absent check must not be indistinguishable from a passed one.
+
+    The cohort comparison once ran only over fields the manifest happened to
+    carry, so a field the trainer never wrote was skipped in silence. That is
+    fail-open: had the name drifted between ``save_crosscoder`` and this guard --
+    and the trainer does translate one, writing ``fit_batch_size`` from its own
+    ``batch_size`` -- the guard would have reported success while comparing
+    nothing, and the damage would have surfaced as an inexplicable causal result
+    rather than as a refusal. Nothing is being preserved by the leniency either:
+    ``--save-dictionary`` postdates every Crosscoder run in this repository, so
+    there are no dictionaries in existence that lack these fields.
+    """
+
+    common = {
+        "backbone_pair_sha256": "abc123",
+        "mode": "text",
+        "tensor": "block_output",
+        "d_model": 8,
+        "n_layers": 32,
+    }
+    complete = {
+        "steps": 26_000,
+        "fit_batch_size": 4,
+        "eval_sequences": 256,
+        "corpus_seed": 20260812,
+        "max_tokens": 512,
+    }
+    _, path = _fitted(tmp_path, extra=complete)
+    _, manifest = dr.load_crosscoder(path)
+    dr.assert_dictionary_matches(manifest, **common, cohort=complete)
+
+    # Drop one field at a time from what the dictionary recorded: each omission
+    # must refuse, naming the field it cannot check.
+    for omitted in sorted(complete):
+        partial = {k: v for k, v in complete.items() if k != omitted}
+        room = tmp_path / omitted
+        room.mkdir()
+        _, short_path = _fitted(room, extra=partial)
+        _, short_manifest = dr.load_crosscoder(short_path)
+        with pytest.raises(ValueError, match=f"records no.*{omitted}"):
+            dr.assert_dictionary_matches(
+                short_manifest, **common, cohort=complete
+            )
+        # The surviving fields are still compared rather than the whole check
+        # being abandoned once one field is missing.
+        with pytest.raises(ValueError, match="records no"):
+            dr.assert_dictionary_matches(
+                short_manifest, **common, cohort=complete | {"steps": 1}
+            )
+
+    # A dictionary carrying no extras at all is refused, not waved through.
+    bare = tmp_path / "bare"
+    bare.mkdir()
+    _, bare_path = _fitted(bare, extra={})
+    _, bare_manifest = dr.load_crosscoder(bare_path)
+    with pytest.raises(ValueError, match="records no"):
+        dr.assert_dictionary_matches(bare_manifest, **common, cohort=complete)
 
 
 def test_a_file_that_is_not_a_dictionary_is_refused(tmp_path):
