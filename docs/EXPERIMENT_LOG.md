@@ -13666,3 +13666,21 @@ Both round A cells are admitted and valid — text stream 11,367 steps / 34,002,
 ### One reader defect found and fixed before any of this was read
 
 The endpoint reader hardcoded the **protein** stream in its void check, having been built and validated on protein cells only. The first text cell it saw was reported **VOID** on a perfectly valid stream. It is now mode-aware and re-validated against the protein cells whose verdicts are already recorded, which reproduce unchanged. Same defect class as the records-pull loop: validated on one case, used on another.
+
+---
+
+## 2026-08-17 — EXP-R2-209 amendment: the pre-registered negative overshoots what four λ can support, and the evidence governs
+
+Written before round B completes the round, so the sentence the stop rule will licence is fixed before the data that licences it is in — which is the only order in which fixing it is not motivated reasoning.
+
+**The registered wording was**: *"on this backbone, at layers 27 and 28, at `d_hidden` 8,192 and `k` 32, the decoder-norm-L1 crosscoder cannot simultaneously produce a fitted dictionary and model-exclusive features."* Four sampled λ cannot support "cannot". They can support that none of the four does.
+
+**The accurate form, which replaces it:**
+
+> At the four λ measured — 3e-5, 3e-4, 1e-3, 3e-3 — no configuration both fits and polarises. **Fitting and exclusivity trade off against each other, and across a factor of 3.3 in λ they cross without a measured overlap**: at 3e-4 the dictionary fits about as well as the recipe allows (`active_fraction` 3.905e-03 against the 3.906e-03 that `k`/`d_hidden` implies, live 1,646 and 1,440) and polarises 0.048 and 0.058, under half the floor; at 1e-3 it polarises 0.295 and 0.300 and the live basis has fallen to 709 and 629, under the bar. **The band between 3e-4 and 1e-3 is unprobed**, and nothing here says whether a usable value lies in it.
+
+**Why the amendment rather than the registered sentence.** A pre-registered wording is a commitment against moving the goalposts when results disappoint. It is not a licence to assert something stronger than what was measured on the grounds that it was written down first, and the failure mode it guards against runs in both directions: a registered claim that overshoots is as much a way of getting an unearned result as a criterion loosened after the fact. **Where the registered phrasing exceeds the evidence, the evidence governs**, and the log says so rather than quietly substituting the weaker sentence.
+
+**The trade-off is the finding, and it is a better one than the absence would have been.** "No usable λ exists" is unfalsifiable from four points. "Fitting and exclusivity trade off across a factor of 3.3 in λ and cross without a measured overlap" is what the campaign established, is quantitative, and tells the next design where the question lives. It also makes the mechanism concrete: the decoder-norm L1 buys exclusivity with live latents, at a rate this campaign has now measured.
+
+**The crossing-band probe is deferred by coordinator decision and is not prepared.** One cell at the geometric centre of (3e-4, 1e-3) is the obvious move and is exactly what the stop rule forbids as part of this campaign — subdividing the bracket after seeing where the estimate landed is how a tuned value is laundered into a pre-registered round. If it is worth doing it gets its own pre-registration, its own justification and its own stop rule, decided **after** the stop fires on round B rather than overtaking it. No cards are reserved for it and it does not shape how round B is read.
