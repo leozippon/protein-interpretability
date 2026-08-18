@@ -14443,3 +14443,36 @@ Both verdicts were produced by a standing watcher that compares each landing rec
 **The registered deviation's arithmetic is confirmed by the stage itself.** `--rows-per-latent 8` projects 92,984 forward passes against 2,975,488 at the full cohort, and 94,072 against 3,010,304 for the second seed -- **3.1%** in both cases, which is the 46-of-1,474 ratio the sizing argument was built on, arrived at independently by the stage's own cost model. The full-cohort figure is the one the pre-registered default would have spent.
 
 **Protein refits continue** on the other two cards at step 28,000 of 56,000. Their expected pairs are [2725, 2214] and [2714, 2235] and the same watcher will verify them; per L33 they are not inputs to this stage.
+
+### Stage 33's known-answer test, run for the first time; and a rows-per-latent curve registered before it reads (2026-08-18)
+
+**All four refits verify MATCH.** Protein joins text: [2725, 2214] and [2714, 2235] against the same expected pairs, with the shuffled arms and their category counts reproducing as well. Across two modalities, two seeds, true and shuffled, **sixteen numbers reproduce exactly at a new pin**. The save flag is inert and the fit is deterministic given its seed; this is closed.
+
+**`--synthetic-check` had never been run, and is exercised by no test.** Stage 33's only falsifiability path -- the place its central claim is checkable against a known answer -- had zero occurrences in `tests/test_differential_reliance.py` and no artefact anywhere, while the stage was already computing results on the real dictionaries. It is small (`d_model` 32, three layers), so it belongs on the local workstation under this repository's own division of labour rather than on an H200 card, and that is where it was run.
+
+**It passes, and passes informatively.**
+
+| check | result |
+| --- | --- |
+| known injected effect | predicted 1.53674, measured 1.53622, **absolute error 0.00052 nats** |
+| identical checkpoints | differential reliance reads **exactly zero** |
+| repeated pass | bitwise identical |
+| row-granularity packing | **bitwise identical to single-latent passes** |
+| latents orthogonal to the injected channel | mean -0.0008, sd 0.0385 |
+| injected effect against the matched control | **5.29 control standard deviations** |
+
+The packing line is the one that matters most historically: the registration's position-disjoint rule was unsound, and the row-granularity replacement is here verified bitwise on the instrument rather than only argued.
+
+**Its own declared limits are sharper than what I registered, and one governs the reading.** The artefact states that the readout "STRUCTURALLY CANNOT see a feature INTRODUCED or REMOVED by a training stage" -- it measures the retained-but-reweighted case -- and it gives the reason in this dictionary's own terms: at lambda = 0 polarised is 0.000, every live latent decodes into both checkpoints with comparable weight, so ablating one removes near-identical vectors from both residual streams. **That is L33's shape applying to the text arm as well**, and it is a stronger constraint than "differential reliance, not possession". Two further limits are recorded honestly by the stage: the toy's control spread is inflated because a random direction overlaps the injected one by about `1/sqrt(d_model)`, which is a fifth at 32 and a sixty-fourth at the campaign's 4096, so the real floor is tighter than the toy's; and the check does not exercise the Crosscoder encoder, since its latent coefficients are declared rather than read from a fitted dictionary.
+
+**Registered before it reads: a three-point rows-per-latent curve on the real configuration.** `--rows-per-latent 8` is the deviation the whole readout rests on, and its justification cites a threshold flat from 52 to 183 positions while the operating point is ~46 -- an interval that excludes the configuration being run. The only evidence covering 46 is a graded sweep from the sizing study, which is a different measurement on a different setup. Two further cells now run at **4 and 16 rows** against the 8 already running, same dictionary, same seed 20260814, same everything else, so rows-per-latent is the only varying factor.
+
+The pre-registered reading, fixed now:
+
+- **Verdicts agree at 4, 8 and 16** -- the deviation is safe with margin, and the knee sits below 23 positions on this configuration.
+- **4 disagrees, 8 and 16 agree** -- the knee lies between 23 and 46, the operating point is above it, and the deviation is justified by direct evidence rather than borrowed evidence.
+- **8 and 16 disagree** -- the operating point is below the knee, `--rows-per-latent 8` is unsafe here, and the headline run must be re-read at 16 or higher.
+
+This is my judgement rather than an instruction, taken because two cards were otherwise idle for the length of a ~15-hour run and this is the one assumption carrying every number the run will produce.
+
+**Revised timing, materially different from the projection.** At 6,308 of 92,984 projected passes after about an hour, each 8-row cell is tracking **~15 hours**, against ~7.8 GPU-hours projected for the same work. The 16-row cell should be about double and the 4-row cell about half.
