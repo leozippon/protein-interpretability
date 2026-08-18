@@ -120,6 +120,12 @@ REQUIRED_PER_SITE_FIELDS: tuple[str, ...] = (
     "live_latents_per_site",
     "measured_latents_per_site",
     "passes_per_site",
+    # Required rather than optional because it is a SIZING INPUT and not a
+    # diagnostic: the mean number of cohort sequences a live latent fires
+    # somewhere in is what decides whether disjoint-support packing packs at all,
+    # and an artefact that omits it invites the next campaign to re-derive a
+    # packing saving that does not exist.
+    "mean_cohort_rows_per_live_latent_per_site",
 )
 
 #: Suffix marking a per-site field, the same convention

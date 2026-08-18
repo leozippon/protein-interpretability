@@ -618,6 +618,7 @@ def test_a_collapsed_per_site_field_is_refused():
         "live_latents_per_site": [5558, 6133],
         "measured_latents_per_site": [5558, 6133],
         "passes_per_site": [11, 13],
+        "mean_cohort_rows_per_live_latent_per_site": [108.4, 101.2],
     }
     cc.assert_per_layer_fields(good, n_sites=2)
     dr.assert_required_per_site_fields(good)
@@ -643,6 +644,26 @@ def test_a_missing_per_site_field_is_refused():
         dr.assert_required_per_site_fields(
             {"site_per_site": [{"layer": 27}], "live_latents_per_site": [1]}
         )
+
+
+def test_the_packing_sizing_input_is_required_not_optional():
+    """Cohort-row occupancy decides whether packing packs, so it may not be omitted.
+
+    It is the number that refuted the registered packing saving. An artefact that
+    dropped it would let the next campaign re-derive a saving that is not there,
+    which is why it sits in the required list beside the counts rather than in a
+    diagnostics block a reader may skip.
+    """
+
+    assert "mean_cohort_rows_per_live_latent_per_site" in dr.REQUIRED_PER_SITE_FIELDS
+    without = {
+        "site_per_site": [{"layer": 27}],
+        "live_latents_per_site": [1],
+        "measured_latents_per_site": [1],
+        "passes_per_site": [1],
+    }
+    with pytest.raises(ValueError, match="mean_cohort_rows_per_live_latent_per_site"):
+        dr.assert_required_per_site_fields(without)
 
 
 def test_row_assignment_takes_the_declared_number_of_distinct_rows():

@@ -455,6 +455,10 @@ def run_synthetic_check(args: argparse.Namespace) -> dict[str, Any]:
         "live_latents_per_site": [n_latents],
         "measured_latents_per_site": [n_latents],
         "passes_per_site": [len(dr.pack_disjoint_supports(supports))],
+        # One row each by construction, which is the fully packable case and the
+        # opposite of what the real cohort gives; carried so the synthetic
+        # artefact is held to the same sizing discipline as a campaign one.
+        "mean_cohort_rows_per_live_latent_per_site": [1.0],
         "limitations": {
             "differential_reliance_not_possession": dr.RELIANCE_BLIND_SPOT,
             "synthetic_scope": (
@@ -771,6 +775,7 @@ def main() -> None:
                 accumulators[(arm, role, int(site))] = dr.RelianceAccumulator(latent_index)
 
     passes_per_site = [0 for _ in sites]
+    members_per_site = [0 for _ in sites]
     print("[measure] streaming the cohort once more, with interventions")
     for offset, chunk in chunked(cohort, args.batch_size):
         batch, clean_base, clean_adapted = paired_clean(
@@ -788,6 +793,7 @@ def main() -> None:
                 continue
             packs = dr.pack_disjoint_supports(here)
             passes_per_site[index] += len(packs)
+            members_per_site[index] += len(here)
             column = {
                 latent: position
                 for position, latent in enumerate(measured_latents[index])
@@ -930,15 +936,61 @@ def main() -> None:
             ),
         },
         "control": {"rule": dr.CONTROL_RULE, "seed": int(args.control_seed)},
-        "packing": {
-            "rule": dr.PACKING_RULE,
-            "passes_per_site": passes_per_site,
-            # The quantity that decides whether packing packs at all, measured on
-            # this cohort rather than assumed. A latent firing somewhere in most
-            # sequences shares a row with almost every other latent and therefore
-            # colours alone; --rows-per-latent is the lever that lowers this, and
-            # a campaign that leaves it at the full cohort should expect one
-            # latent per pass.
+        # Everything a successor campaign needs to size an ablation round on this
+        # lineage, measured here rather than assumed there. This block is a SIZING
+        # INPUT, not a diagnostic: `occupancy` is the quantity that decides whether
+        # packing packs at all, and reading it as a curiosity is how the 16-47
+        # minute estimate happened.
+        "sizing": {
+            "how_to_size_a_successor_campaign": (
+                "the unit of work is one (latent, sequence-row) CELL and there are "
+                "live x rows_per_latent x 2 checkpoints x 2 arms of them; forward "
+                "passes are ceil(cells / batch_rows). PACKING DOES NOT REDUCE "
+                "CELLS -- it only stops a pass leaving rows idle -- so the ONLY "
+                "lever that removes work is rows_per_latent, and the saving "
+                "against the full cohort is exactly cohort_rows / rows_per_latent. "
+                "The number of different latents a pass can carry is "
+                "min(batch_rows, cohort_rows / rows_per_latent), because latents "
+                "sharing a sequence cannot share a pass. Check that against "
+                "mean_cohort_rows_per_live_latent_per_site below: a latent that "
+                "fires somewhere in a large fraction of the cohort shares a row "
+                "with almost every other latent, so at rows_per_latent = "
+                "cohort_rows the colouring degenerates to ONE latent per pass and "
+                "there is no packing saving at any batch size"
+            ),
+            "why_more_positions_per_latent_buy_little": (
+                "the per-latent mean has a standard error going as "
+                "1/sqrt(positions), but the DETECTION THRESHOLD is the "
+                "across-latent spread of the matched control, and that has two "
+                "parts. Sampling noise shrinks with positions. A SYSTEMATIC "
+                "per-direction component does not: a given direction of a given "
+                "norm genuinely moves the two checkpoints by different amounts, "
+                "and averaging more positions of the SAME direction cannot reduce "
+                "a property of the direction. Measured on a paired backbone whose "
+                "difference is real (d_model 512, 256 latents): the null "
+                "population's spread is FLAT at 0.0278 nats across a 15x range of "
+                "positions, 6 to 92; fitting sd^2 = a/n + b to the control gives a "
+                "systematic floor of 0.046 nats against a sampling term of 0.010 "
+                "at 46 positions; and the threshold moves 0.0476 -> 0.0458 nats "
+                "from 46 to 92 positions, a factor of 1.04 where 1/sqrt(n) alone "
+                "predicts 1.41. A graded sweep of true effects from 0.02 to 0.50 "
+                "nats returns IDENTICAL detection verdicts at 46 and at 92. "
+                "Replicated on a real 3B llama over openwebtext: the threshold "
+                "falls 0.0234 -> 0.0197 between 27 and 52 positions, then "
+                "0.0197 -> 0.0195 to 97 positions, then does not move at all to "
+                "183 -- flat to four decimal places across a 3.5x range where "
+                "sampling alone predicts 1.87x. Both curves fall as 1/sqrt(n) while "
+                "sampling noise dominates and flatten once it no longer does, "
+                "which is what identifies the two components rather than assuming "
+                "them; the flattening sets in around fifty positions per latent. "
+                "So rows_per_latent buys resolution only up to that point, and "
+                "spending past it buys almost nothing"
+            ),
+            "cohort_rows": len(cohort),
+            "live_latents_per_site": live_per_site,
+            # Mean number of cohort sequences a live latent fires somewhere in.
+            # Divide cohort_rows by this to get the largest number of latents that
+            # could ever share a pass at the full cohort.
             "mean_cohort_rows_per_live_latent_per_site": [
                 (
                     float(hits[index][:, live[index]].double().sum(dim=0).mean())
@@ -947,6 +999,28 @@ def main() -> None:
                 )
                 for index in range(len(sites))
             ],
+            "cohort_row_occupancy_fraction_per_site": [
+                (
+                    float(hits[index][:, live[index]].double().sum(dim=0).mean())
+                    / max(1, len(cohort))
+                    if int(live[index].sum())
+                    else 0.0
+                )
+                for index in range(len(sites))
+            ],
+            # What the colouring actually achieved here, against the ceiling the
+            # cost model predicts. The two differ whenever a latent takes more
+            # than one row of a batch.
+            "realised_latents_per_pass_per_site": [
+                (members_per_site[index] / passes_per_site[index])
+                if passes_per_site[index]
+                else 0.0
+                for index in range(len(sites))
+            ],
+        },
+        "packing": {
+            "rule": dr.PACKING_RULE,
+            "passes_per_site": passes_per_site,
             "cohort_rows": len(cohort),
             # Sized on the latents this run actually measures -- the live basis at
             # the ADMISSIBLE sites -- rather than on the whole fitted dictionary,
