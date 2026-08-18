@@ -13831,3 +13831,58 @@ The verdict is **live ≥ max(r99_base, r99_adapted)** at both layers 27 and 28 
 ### One consequence for the modality inversion
 
 If this cell lands near the top of its projected range, **the apparent inversion disappears entirely**: text's ordering against protein was computed from a penalised cell, and a penalty-free text figure above 3,700 would put text at or over its bar while protein sits at 0.95 of the permissive reading of its own. The inversion is therefore held as provisional until this cell reads, and the qualification already recorded stands.
+
+---
+
+## 2026-08-17 — EXP-R2-212: the width projection for text, and why the constant-capacity assumption is not merely weaker but outside the measured range
+
+Asked because two defensible assumptions give opposite answers. They are not equally defensible, and the second question settles the first.
+
+### The 26% capacity fraction is a property of the operating point, not of the construction
+
+At fixed width 8,192, the text Crosscoder's live basis as a fraction of `d_hidden`:
+
+| λ | layer 27 | layer 28 |
+|---:|---:|---:|
+| 1e-4 | **25.9%** | **26.8%** |
+| 3e-4 | 20.1% | 17.6% |
+| 1e-3 | 8.7% | 7.7% |
+| 3e-3 | 3.8% | 2.4% |
+
+**It moves by an order of magnitude across λ at one width.** So "the Crosscoder holds about 26% of `d_hidden`" is not a structural constant; it is where λ = 1e-4 happens to sit. Carrying it through a width change assumes scale-invariance of a quantity that is not even λ-invariant at fixed width. That is not a refutation — λ and width are different axes — but it removes the intuition the assumption rested on.
+
+### The measured scaling is better supported, and the reason is a mechanism rather than a preference
+
+The four transcoder cells on this backbone scale 8,192 → 16,384 like this, ordered by where they sit relative to capacity:
+
+| cell | capacity @8,192 | capacity @16,384 | growth |
+|---|---:|---:|---:|
+| stage1/protein | 19.9% | 14.3% | **x1.434** |
+| base/protein | 26.7% | 18.9% | **x1.416** |
+| stage1/text | 59.8% | 50.9% | x1.700 |
+| base/text | 92.9% | 88.1% | x1.898 |
+
+**Growth rises monotonically with capacity fraction**, and the mechanism is plain: a cell near its ceiling is capacity-limited, so extra width converts almost one-for-one into live latents; a cell far from its ceiling is data- or construction-limited, so extra width is largely wasted.
+
+**The text Crosscoder sits at 25.9%/26.8% — almost exactly `base/protein`'s 26.7%.** So the right analogue is not the campaign-wide "+42%" but the two cells at comparable capacity, which give **x1.416 and x1.434**.
+
+| layer | projected at 16,384 | bar | outcome |
+|---:|---:|---:|---|
+| 27 | 3,004 – 3,041 | 3,708 | **short by 18–19%** |
+| 28 | 3,113 – 3,151 | 3,700 | **short by 15–16%** |
+
+**The constant-capacity assumption requires x2.000, which exceeds every growth factor measured** — the maximum observed anywhere is x1.898, at 92.9% capacity. It asks a cell in the region of *lowest* observed growth to exceed the best observed growth. Stated as a break-even: text needs **x1.748 at layer 27 and x1.683 at layer 28** to clear, and growth in that range is observed only in cells at 60–93% capacity. The Crosscoder is at 26%.
+
+**The transfer that remains, stated.** All four analogues are single-model transcoders and the step to a two-role Crosscoder is the same unverified transfer that has misled twice today. What is transferred here is a *relationship* — growth against capacity fraction — evaluated at the Crosscoder's own capacity, rather than a bare number. That is more robust than the earlier projection and it is still a transfer. **The projection can be made; it is not free of assumption.**
+
+### The consequence, if it holds
+
+Text falls short at 16,384 by 15–19%. Protein was already projected short on layer 28 by 4.8–6.0%, and the rule needs both layers. **32,768 is not available** — EXP-R2-207 recorded ~137 GB of optimiser state for a *transcoder* at that width before the backbone loads, and a two-role Crosscoder with both pairings is far worse. So on this projection **an admissible Crosscoder is out of reach at every width that fits on a card**, and the obstacle is the two-role construction rather than the penalty or the width.
+
+### What the λ = 0 text cell now adds, stated before it lands
+
+**Its role has changed and it should not be read as decisive on the bar.** λ = 1e-4 already reaches `active_fraction` 3.906e-03, the theoretical maximum, so the penalty is provably inert on the TopK-survival axis; λ = 0 can only recover latents whose *selection* the residual term still biases against. To clear the bar from 2,121 it would need **+75%**, and the last threefold reduction in λ bought +29%.
+
+**What it does add is unique and is the reason it still matters**: three seeds make it **the first replicated Crosscoder measurement in this programme**. Every number in the projection above is a single fit, including the 2,121 the whole extrapolation starts from. Without the spread, "3,004–3,041 against 3,708" compares two unreplicated quantities and the 15–19% shortfall has no error bar of its own.
+
+So: **confirmatory on the bar, and load-bearing for whether any of the surrounding arithmetic is quotable.**
