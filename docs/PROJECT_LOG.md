@@ -1778,3 +1778,39 @@ What remains unexercised is now a scale rather than a path — the largest campa
 **The fix** is `< /dev/null` on the inner call, with the reason written at the line so it is not "tidied" away. Re-run: twelve records, eight short-circuited as already synchronised, four verified and pulled, ADMITTED, weights untouched on GPFS.
 
 **The lesson generalises an existing rule rather than adding one.** Appendix B rule 34 said a pilot certifies the code path it exercised *for the duration it ran*; it now reads *duration or extent*, with this as the instance. A loop exercised once is not an exercised loop.
+
+## 2026-08-17 ~19:50 local — handoff state, superseding the 11:20 entry
+
+Operational, expires, same rules as before: if `docs/EXPERIMENT_LOG.md` carries entries dated after this, trust those. **The 11:20 handoff entry above is stale in every card assignment and should not be read for current state** — its pins table and its list of traps remain correct and are not repeated here.
+
+### Running now
+
+| card | cell | pin | dispatched (UTC) | expected |
+|---:|---|---|---|---|
+| 0 | `r212_cc_text_lam0_s20260814` | `96b3bd9` | 02:41 | ≈21:35 local |
+| 1 | `r212_cc_text_lam0_s20260815` | `96b3bd9` | 02:42 | ≈21:35 local |
+| 2 | `r209_cc_text_lam1e4` (round B) | `96b3bd9` | 01:40 | ≈20:35 local |
+| 3 | `r209_cc_protein_lam3e4` (round B) | `96b3bd9` | 02:03 | ≈23:15 local |
+
+### Next actions, in order
+
+1. **Round B lands → EXP-R2-209's stop fires.** Read against the **amended** wording, not the registered one: the finding is the fitting-versus-exclusivity trade-off crossing without a measured overlap, not "no usable λ exists".
+2. **λ = 0 text lands → read against the adequacy bar**, `live ≥ max(r99_base, r99_adapted)` = 3,708 and 3,700, as a two-seed mean, then **dispatch the third seed** (`s20260816`) on the first free card. Mean clearing with the spread crossing is reported **undecided**; no fourth seed.
+3. **Gap-filler, in this order**: 16 prominence-resampling draws remain — one each for `base_text` and `stage1_text`, two for `prollama_text`, four each for the three protein cells. Then EXP-R2-211, which is CPU-only in-pod and needs no card.
+4. **Deferred**: the 16,384 protein width probe (behind the λ = 0 text result); EXP-R2-209's crossing-band probe (moot unless the adequacy picture changes); EXP-R2-210 (dormant unless the sweep's negative stands).
+
+### Settled since the 11:20 entry — do not reopen
+
+* **`R` has both denominators priced**: base 0.7495 [0.7433, 0.7558], stage1 0.8445 [0.8265, 0.8624], 0.84 still the bound. Numerators unpriced by decision.
+* **No Crosscoder in this programme clears the admissibility bar** at any layer, mode or λ — the binding criterion is adequacy, not FITS, and the sweep was run against the wrong one.
+* **The adequacy bar is now stated**: `live ≥ max(r99_base, r99_adapted)`, sum as the conservative alternative (EXP-R2-212).
+* **The queue runner is fully validated**, success and failure paths both; only scale is untested.
+* **`pull_records_h200.sh` multi-file was broken and is fixed** — it lost its loop stdin and pulled nothing; validate loops with more than one iteration.
+* **Text-side `r99` peak locations are withdrawn**; protein 3 → the region 17–22 stands, null-calibrated.
+* New standing rules: **35** (prominence with its null), **36** (an instrument's silence is evidence about the query), **37** (a discriminating control is not safe to drop for economy); **34** extended to duration, extent *or variant*.
+
+### Two working notes
+
+**The modality inversion is provisional.** Protein looks like the arm closest to the adequacy bar, but text's figure comes from a penalised cell; if the λ = 0 text cell lands near the top of its projected 3,568–4,248 range the inversion disappears.
+
+**A monitor is only as good as its scope.** The standing allocation watch is resource-scoped and never terminates, and it exists because a condition-scoped single-shot watcher let two cards idle. Do not replace it with one aimed at the next planned action.
