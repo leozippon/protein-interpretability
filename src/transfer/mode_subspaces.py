@@ -153,14 +153,30 @@ from .statistics import MINIMUM_BOOTSTRAP_UNITS, paired_group_bootstrap
 
 SCHEMA_VERSION = "r2_transfer_mode_subspaces_v1"
 
-#: This stage has **no** entry in ``docs/INTERPRETABILITY_TRANSFER_AUDIT.md``. The
-#: frozen criteria are the ones in this module and nowhere else, and that is
-#: recorded in the artefact rather than left for a reader to discover: a number
-#: from this stage may not be cited as a programme finding until the run is
-#: logged in ``docs/EXPERIMENT_LOG.md`` and the design is admitted to the audit.
-#: Stating an audit identifier this stage does not have would be worse than
-#: stating none.
-PRE_REGISTRATION_STATUS = "UNREGISTERED_IN_THE_AUDIT"
+#: The entry that froze this stage's criteria before any campaign number existed.
+#:
+#: This constant read ``UNREGISTERED_IN_THE_AUDIT`` from the day the stage was
+#: written until EXP-R2-215 was recorded, and the refusal it carried was real: the
+#: artefact said so, and the limitations block said no number might be cited until
+#: a log entry existed. **Both halves are kept rather than deleted.** The status
+#: now names the entry, and :data:`PRE_REGISTRATION_SCOPE` keeps the rest of what
+#: the refusal was protecting -- that a frozen design is not a logged run, and a
+#: campaign artefact still has to reach ``docs/EXPERIMENT_LOG.md`` before it is
+#: cited. Replacing a refusal with an identifier and nothing else would discharge
+#: more than the entry actually discharges.
+PRE_REGISTRATION = "EXP-R2-215"
+PRE_REGISTRATION_STATUS = f"PRE_REGISTERED_{PRE_REGISTRATION}"
+
+#: What the pre-registration does and does not license, carried into every artefact.
+PRE_REGISTRATION_SCOPE = (
+    f"{PRE_REGISTRATION} (D2.i) freezes this stage's estimand, its decision rule and "
+    "its refusals before any campaign number existed, and it records that this is an "
+    "Objective 1/2 measurement which audit section 7.0's recombination ceiling does "
+    "not gate. What it does NOT do is admit a result: a run of this stage is citable "
+    "only once its own artefact is recorded in docs/EXPERIMENT_LOG.md against this "
+    "identifier, and a pre-registration is a statement about the design rather than "
+    "about any number produced under it"
+)
 
 #: The evidence the behavioural refusal is keyed to. Quoted here once so the
 #: message a run fails with and the artefact's own limitations block cannot drift.

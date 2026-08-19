@@ -1,0 +1,34 @@
+# Campaign manifest for h200_campaign_queue.sh: EXP-R2-215 (D2.i), mode subspaces on the ProLLaMA lineage.
+#
+# Columns, tab-separated: slot <TAB> key <TAB> gpu <TAB> stage <TAB> label <TAB> env <TAB> args
+# `--device` and `--out` are injected by the runner and must never appear in args.
+# ${TRANSFER_MODEL_BASE_DIR} is substituted in-pod after h200_env.sh is sourced, so the model root stays declared once.
+#
+# ONE SNAPSHOT, key `d2i`. Every cell is one comparison and must run one code hash.
+#
+# CARD 3 ONLY, and one cell per slot. Cards 0 and 1 carry the D3.j campaign; card 2 reports an uncorrected
+# volatile ECC error while every other card reports zero, and this estimand is a DIFFERENCE BETWEEN TWO FORWARD
+# PASSES over the same weights -- the one case where a silently corrupted value is indistinguishable from a
+# result rather than showing up as a crash. The queue refuses a busy card instead of waiting, so a manifest may
+# only name cards that will be free when it is dispatched.
+#
+# SLOTS 1-3 ARE THE FIRST DRAW AND 4-6 THE SECOND, in that order deliberately: an interrupted campaign then
+# leaves a complete first draw rather than half of each. EXP-R2-215 freezes the second draw as mandatory
+# (Appendix B rule 1), and 20260729 is the seed EXP-R2-152 re-drew this same lineage at, so the two draws are a
+# second sample of one population rather than a second window of one permutation. --position-seed is held FIXED
+# across the pair on purpose: with a different cohort the within-record draw is over different records anyway,
+# and moving both would confound cohort sensitivity with position sensitivity.
+#
+# --batch-size 8 rather than the workstation smoke test 4. It changes how records group into batches and
+# therefore which positions the seeded per-batch draw selects, so it is part of a draw identity and is held
+# IDENTICAL across all six cells; it is not a free knob and must not be varied between the two draws.
+#
+# Llama-2-7b-hf enters with BOTH modes named and text=5.5240 protein=0.0843 (EXP-R2-152, protein re-measured at
+# EXP-R2-174). Its protein mode is admitted for occupancy, which is representational, and refused for every
+# behavioural cell by its own measured number rather than by its name.
+1	d2i	3	38_mode_subspaces.py	d2i_stage1_draw1	-	--checkpoint ${TRANSFER_MODEL_BASE_DIR}/ProLLaMA_Stage_1 --rendering prollama --modes text protein --layers 0,4,8,12,16,20,24,31 --rank-ladder 1,2,4,8,16,32,64,128,256,512 --overlap-statistic mean_squared_cosine --decision-rule residual_licensed_v1 --records 640 --damage-records 64 --positions-per-record 64 --batch-size 8 --max-tokens 512 --context-information text=0.8336 protein=0.5505 --cohort-draw-seed 20260728
+2	d2i	3	38_mode_subspaces.py	d2i_prollama_draw1	-	--checkpoint ${TRANSFER_MODEL_BASE_DIR}/ProLLaMA --rendering prollama --modes text protein --layers 0,4,8,12,16,20,24,31 --rank-ladder 1,2,4,8,16,32,64,128,256,512 --overlap-statistic mean_squared_cosine --decision-rule residual_licensed_v1 --records 640 --damage-records 64 --positions-per-record 64 --batch-size 8 --max-tokens 512 --context-information text=0.7368 protein=0.5215 --cohort-draw-seed 20260728
+3	d2i	3	38_mode_subspaces.py	d2i_llama2_draw1	-	--checkpoint ${TRANSFER_MODEL_BASE_DIR}/Llama-2-7b-hf --rendering prollama --modes text protein --layers 0,4,8,12,16,20,24,31 --rank-ladder 1,2,4,8,16,32,64,128,256,512 --overlap-statistic mean_squared_cosine --decision-rule residual_licensed_v1 --records 640 --damage-records 64 --positions-per-record 64 --batch-size 8 --max-tokens 512 --context-information text=5.5240 protein=0.0843 --cohort-draw-seed 20260728
+4	d2i	3	38_mode_subspaces.py	d2i_stage1_draw2	-	--checkpoint ${TRANSFER_MODEL_BASE_DIR}/ProLLaMA_Stage_1 --rendering prollama --modes text protein --layers 0,4,8,12,16,20,24,31 --rank-ladder 1,2,4,8,16,32,64,128,256,512 --overlap-statistic mean_squared_cosine --decision-rule residual_licensed_v1 --records 640 --damage-records 64 --positions-per-record 64 --batch-size 8 --max-tokens 512 --context-information text=0.8336 protein=0.5505 --cohort-draw-seed 20260729
+5	d2i	3	38_mode_subspaces.py	d2i_prollama_draw2	-	--checkpoint ${TRANSFER_MODEL_BASE_DIR}/ProLLaMA --rendering prollama --modes text protein --layers 0,4,8,12,16,20,24,31 --rank-ladder 1,2,4,8,16,32,64,128,256,512 --overlap-statistic mean_squared_cosine --decision-rule residual_licensed_v1 --records 640 --damage-records 64 --positions-per-record 64 --batch-size 8 --max-tokens 512 --context-information text=0.7368 protein=0.5215 --cohort-draw-seed 20260729
+6	d2i	3	38_mode_subspaces.py	d2i_llama2_draw2	-	--checkpoint ${TRANSFER_MODEL_BASE_DIR}/Llama-2-7b-hf --rendering prollama --modes text protein --layers 0,4,8,12,16,20,24,31 --rank-ladder 1,2,4,8,16,32,64,128,256,512 --overlap-statistic mean_squared_cosine --decision-rule residual_licensed_v1 --records 640 --damage-records 64 --positions-per-record 64 --batch-size 8 --max-tokens 512 --context-information text=5.5240 protein=0.0843 --cohort-draw-seed 20260729

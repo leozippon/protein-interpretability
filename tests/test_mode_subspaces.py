@@ -783,12 +783,27 @@ def test_the_stage_derives_its_output_name_from_the_checkpoint_modes_and_layers(
         assert piece in stem.split("write_json", 1)[0]
 
 
-def test_the_stage_declares_its_pre_registration_status_honestly():
-    # There is no audit entry for this stage. Claiming one would be worse than
-    # claiming none, and a reader has to be able to see which they have.
-    assert ms.PRE_REGISTRATION_STATUS == "UNREGISTERED_IN_THE_AUDIT"
+def test_the_stage_names_its_pre_registration_and_still_refuses_to_call_it_admission():
+    # The entry that froze the design is named, so a reader can find the criteria
+    # this run was decided under. What the entry does NOT do is admit a result, and
+    # the artefact has to keep saying so: the constant used to carry a refusal, and
+    # replacing a refusal with an identifier alone would discharge more than the
+    # pre-registration actually discharges.
+    assert ms.PRE_REGISTRATION == "EXP-R2-215"
+    assert ms.PRE_REGISTRATION in ms.PRE_REGISTRATION_STATUS
+    assert "docs/EXPERIMENT_LOG.md" in ms.PRE_REGISTRATION_SCOPE
     stage = _stage()
-    assert "docs/EXPERIMENT_LOG.md" in stage.LIMITATIONS["unregistered"]
+    assert (
+        stage.LIMITATIONS["pre_registration_is_not_admission"]
+        == ms.PRE_REGISTRATION_SCOPE
+    )
+
+
+def test_the_named_pre_registration_exists_in_the_experiment_log():
+    # A stage may not name an identifier the log does not carry: that is the one
+    # failure mode worse than naming none at all.
+    log = (REPO_ROOT / "docs" / "EXPERIMENT_LOG.md").read_text(encoding="utf-8")
+    assert f"## 2026-08-19 — {ms.PRE_REGISTRATION} pre-registered" in log
 
 
 def test_the_decision_rule_thresholds_cannot_be_passed_on_the_command_line():
@@ -812,6 +827,7 @@ def test_the_written_artefact_carries_the_per_layer_guard_and_the_limitations():
     stage = _stage()
     for key in (
         "objective_scope",
+        "pre_registration_is_not_admission",
         "eigen_order_identifiability",
         "unigram_estimator",
         "resampling_unit",
@@ -868,6 +884,9 @@ def test_the_stage_writes_a_readable_synthetic_artefact_end_to_end(tmp_path):
     assert payload["passed"] is True
     assert payload["certificate"]["certificate"] == "PASSED"
     assert payload["pre_registration"]["status"] == ms.PRE_REGISTRATION_STATUS
+    assert payload["pre_registration"]["entry"] == "EXP-R2-215"
+    assert "objective_scope" in payload["limitations"]
+    assert "pre_registration_is_not_admission" in payload["limitations"]
     assert payload["pre_registration"]["decision_rule"]["name"] == "residual_licensed_v1"
     assert payload["provenance"]["runner"]["sha256"]
     assert set(payload["provenance"]["modules"]) >= {"src/transfer/mode_subspaces.py"}

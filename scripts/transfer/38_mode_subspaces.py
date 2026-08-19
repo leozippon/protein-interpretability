@@ -1411,13 +1411,7 @@ LIMITATIONS: dict[str, Any] = {
         "one cohort draw at one seed per mode, one checkpoint per run. Nothing here "
         "is a replicate"
     ),
-    "unregistered": (
-        "this stage has no entry in docs/INTERPRETABILITY_TRANSFER_AUDIT.md. Its "
-        "frozen criteria are the named decision rule in src/transfer/mode_subspaces.py "
-        "and nowhere else, and no number from it may be cited as a programme finding "
-        "until the run is recorded in docs/EXPERIMENT_LOG.md and the design is "
-        "admitted to the audit"
-    ),
+    "pre_registration_is_not_admission": ms.PRE_REGISTRATION_SCOPE,
 }
 
 
@@ -1430,7 +1424,9 @@ def main() -> None:
         "schema_version": SCHEMA_VERSION,
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "pre_registration": {
+            "entry": ms.PRE_REGISTRATION,
             "status": ms.PRE_REGISTRATION_STATUS,
+            "scope": ms.PRE_REGISTRATION_SCOPE,
             "required_never_defaulted_flags": [
                 "--layers",
                 "--overlap-statistic",
