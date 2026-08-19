@@ -15245,3 +15245,19 @@ The retained per-draw diagnostic shows **one permuted draw reaching 1.32× the i
 **Tests: `tests/test_concept_injection.py`, 50 passed** (re-run for this entry, 54.7 s). The new ones assert that a side above the cap raises, that the capped selection is reproducible from its seed and differs under another, that a cap below the floor is refused, and that a concept the cap cannot lift is flagged below the threshold — so the invariant that caught this defect is itself now a test rather than a runtime accident.
 
 **No stage-36 result exists on real weights.**
+
+---
+
+## 2026-08-19 — EXP-R2-213 addendum to the amendment-4 implementation note: the draw-variance detector is one-sided on the one row it selects
+
+Appended rather than edited into the entry above, which is committed; it sharpens a consequence that entry left implicit in a count.
+
+**The two facts, and they are already on record separately.** Amendment 3's second-seed draw-variance check is the designated detector for point-estimate draw sensitivity below `DRAW_STABILITY_GROUP_THRESHOLD = 24`, and on the realised draw it selects exactly one concept, `go_atp_binding`. That concept's **bearing side is fully consumed** — 13 of the 13 groups available after straddling exclusion — so there is no bearing-side draw to vary and **its draw variance is entirely non-bearing-side variance**.
+
+**Put together they say something neither says alone: the detector cannot see bearing-side instability on the one concept where the threshold says instability is most likely.** The check varies only the side that was sampled, and on this row the sampled side is the non-bearing one.
+
+**This is correct behaviour and not a defect.** You cannot resample a side you have taken in full, and no configuration of the check repairs it — the constraint is the concept's own annotation count, not the cap, the seed or the budget.
+
+**What follows for reading the result.** The check **must not be read as clearing that row**. If `go_atp_binding` returns a verdict near its bar, second-seed agreement is **weaker evidence for it than for any other concept**, because the agreement is over a narrower source of variation. The row is therefore flagged on **two independent grounds** — the cap could not equalise it, and its variance detector is one-sided — and the two are not the same flag counted twice.
+
+Recorded here because it is an irreducible limitation of the instrument on one row, and the Restraint Principle asks for those to be stated rather than left to be inferred from a count that happens to equal its own maximum.
