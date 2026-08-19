@@ -14635,3 +14635,29 @@ This is separate from and does not replace the model test. `p95(16) = 0.04740` a
 **The direction of the error is the safe one, which is why it can be left alone.** A noise clause that is too weak makes the criterion **more** likely to fire, and firing means the headline is declared incomplete and re-read at 16 rows. The cost of a spurious fire is compute; the cost of a spurious pass would be an incomplete headline reported as final. The criterion therefore errs toward more measurement, which is the error worth having, and a fire at L27 that clears 8% only narrowly should be reported with this table beside it rather than as a clean trigger.
 
 **A second decomposition cell is running** at 4 rows with `--control-seed 20260819`, matching the 8-row one already in flight. Between them they measure control-draw variation at two rungs, which tests whether that component shrinks with sample size like a sampling term or holds constant like the systematic floor rule 39 attributes it to. Both remain diagnostic and neither is an input to the criterion.
+
+### The staked p95(16) prediction missed at L27; the model is descriptive, not predictive (2026-08-18)
+
+**First 16-row anchor, seed 20260814.** L27: p95 0.050514, sd 0.023435, fraction 0.133093. L28: p95 0.053358, sd 0.026911, fraction 0.164034.
+
+**Against what was staked before the cell ran:**
+
+| site | staked p95(16) | measured | error | predicted 8->16 drop | actual drop |
+| --- | --- | --- | --- | --- | --- |
+| L27 | 0.04740 | **0.050514** | **+6.57%** | -10.3% | **-4.4%** |
+| L28 | 0.05210 | **0.053358** | **+2.41%** | -8.2% | **-6.0%** |
+
+**This is a miss at L27 and it is recorded as one.** The three-point fit's in-sample residual was 1.25% at that site, and the extrapolation one doubling beyond the data was off by 6.57% -- five times worse. The model over-predicted how much threshold reduction remained: it expected the cut to fall by a tenth between 8 and 16 rows and it fell by less than half that. L28's 2.41% is within a plausible reading of "near", but L27's is not, and a prediction that has to be graded generously site by site has not been confirmed.
+
+**What the model is, corrected.** Refitting on all four rungs:
+
+| site | floor `sd_inf` 3pt -> 4pt | knee 3pt -> 4pt | max residual 3pt -> 4pt |
+| --- | --- | --- | --- |
+| L27 | 0.01959 -> **0.02019** | 5.27 -> **4.82 rows** | 1.25% -> **3.79%** |
+| L28 | 0.02348 -> **0.02419** | 3.41 -> **3.07 rows** | 2.29% -> **3.74%** |
+
+The residual triples when the fourth rung is included, so `sd^2 = a/n + b` remains a good *description* of the measured range and a poor *predictor* one step outside it. The floor is higher and the knee earlier than the three-point fit said -- meaning the headline was closer to the asymptote than the model claimed, not further. **The correct conclusion is about the model, not about the result: two-component fits on this configuration should be used to interpolate and not to extrapolate, and any future sizing that leans on one should measure the rung it intends to run.**
+
+**The re-read criterion cannot be evaluated yet and is not being evaluated.** It requires the seed-averaged fraction at 16 rows, and the seed 20260815 anchor is still running. What can be said is the same-seed change, which is not the registered quantity: at seed 20260814 the fraction moves from 0.131650 to 0.133093 at L27 (**+1.10%**) and from 0.163212 to 0.164034 at L28 (**+0.50%**). Both are far below the +8% and +8.7% triggers, and also far below the +5.1% and +5.6% the model predicted. No verdict is taken until the second anchor lands.
+
+**A control-seed replicate at 16 rows is now running**, matching those already in flight at 4 and 8. At the largest rung the sampling term is smallest, so what remains when only the control directions change is closest to the systematic floor itself. Three rungs of control-draw variation is the most direct test available of the mechanism Appendix B rule 39 attributes the floor to, on this configuration rather than by assumption.
