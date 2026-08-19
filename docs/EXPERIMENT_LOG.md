@@ -15638,3 +15638,145 @@ Pool **1,880** structures, 361 distinct CATH superfamilies, drawn from the asset
 
 **Nothing in this amendment has been run on a model.** No progress figure moves.
 
+
+---
+
+## 2026-08-19 — EXP-R2-213 stage-35 definitive read: the cross-modal ladder loses to 3-mer statistics in protein mode, D3.g halts, and this is §7.0's first classification
+
+**This is the campaign's deciding result and it is a measured negative, read against criteria frozen on 2026-08-18 before any cohort existed.** The claim under test — that a direction estimated in one checkpoint's text mode aligns with the same checkpoint's protein mode at sequence level — is **rejected on the deciding arm**, by a 3-mer frequency surrogate, on both adapted checkpoints. Under §7.0 clause 5 the result lies inside the recombination ceiling, so **D3.g halts and is classified as recombination**. Stage 36 never ran and nothing here is a claim about it.
+
+### The run
+
+`RUN_ID 20260819081019_00a3ffc9fcbf`, code pin **`1f5def0`** (`1f5def05c3c43ec55a2da81529abc3eed8363213`, recorded as `code_source` in all six dispatch records). Six cells, one dispatch each, **no relaunches**: three checkpoints × two modes, `35_concept_alignment.py` at `--decision-layer 22 --layers 16,22,27 --alignment-method procrustes --pca-components 64 --pooling mean_content --gallery-size 1000 --excess-ratio 2.0`, `--rendering prollama` throughout, `amendments_implemented: ['amendment 1']` in every artefact. Cards **0, 1 and 3** only; **card 2 was never used**. Elapsed about 5¼ hours from the run identifier to the last artefact on the workstation clock; the dispatch stamps are pod-side and the artefact mtimes workstation-side, so the two are reported rather than differenced. One identical module-digest set and one runner digest (`4dd89241…`) across all six cells. `go-basic.obo` — **31,933,366 bytes, `eee63704…`** — staged and digest-verified, resolved before any model load. Artefacts under `results/transfer/external_baseline/20260819081019_00a3ffc9fcbf/<label>/`.
+
+### What this supersedes, and why the first campaign's numbers were not wrong
+
+The first campaign (`20260819021144_aad2ec7a8215`) returned `VOID_SPECIFICATION_DEFECT` on the protein cells and **withheld the masked arm entirely** — its `layer22__masked` cell carries `withheld: true` and nothing else. That verdict was a **gate defect, not a measurement defect**: A35-0 was evaluated against the *whole* decisive baseline set, so a raw arm that cleared `shuffled_pair` and lost to a fragment surrogate was reported as a specification defect about the instrument, when it is the frozen **surface-statistics** branch about the method. Corrected at `1f5def0`, A35-0 now gates on `shuffled_pair` alone, and the artefact states why in its own field: *"A raw arm that cannot clear shuffled_pair has not aligned anything at all… A raw arm that clears shuffled_pair and loses to a composition or 3-mer surrogate is the frozen SURFACE-STATISTICS branch… Gating this decision on the whole decisive set reports the second as the first."*
+
+**Every raw-arm quantity is bit-identical between the two campaigns.** Checked exhaustively rather than spot-checked: 36 raw-arm quantities per cell — every ladder rung's top-1 at every layer and split, and every baseline arm's top-1 — over all six cells, **216 comparisons, zero differences**. The only additions in the second campaign are the six `bridge_specific` baseline rows, which exist because amendment 1 introduced bridge concepts. **What the correction changed was gate logic and reporting; it did not change one measured number, and that reproducibility across a re-dispatch on a different set of cards is itself evidence the instrument is stable.**
+
+### The headline: the deciding masked arm, measured for the first time
+
+`ProLLaMA_Stage_1`, protein mode, **masked** description variant, layer 22, `eval` split — n = 4,499 records, **3,752 near-duplicate bootstrap groups**, common gallery 1,000, chance 0.0010. Procrustes, the declared deciding rung:
+
+| quantity | value |
+|---|---:|
+| top-1 | **0.0107** |
+| top-1 excess over chance | **+0.0097** |
+| recall@5 | 0.0487 |
+| recall@10 | 0.0778 |
+
+Against the six applicable decisive baselines, on the primary statistic, with paired group-bootstrap 95% intervals of the *difference*:
+
+| baseline | excess | interval of the difference | A35-1 |
+|---|---:|---|---|
+| `shuffled_pair` | +0.00007 | [+0.0064, +0.0131] | **pass** |
+| `shuffled_fit` | −0.00011 | [+0.0066, +0.0133] | **pass** |
+| `rank_matched` | +0.00068 | [+0.0059, +0.0122] | **pass** |
+| `description_only` | +0.00011 | [+0.0062, +0.0132] | **pass** |
+| `composition` | +0.0037 | [+0.0016, +0.0102] | **pass** |
+| **`kmer` (3-mer)** | **+0.0272** | **[−0.0249, −0.0113]** | **FAIL** |
+
+The `kmer` interval excludes zero **in the wrong direction**. On the excess-over-chance scale that clause (ii) is defined on, the surrogate beats the model by **2.82×**.
+
+### The precision is the result, and it must not be flattened
+
+**The model beats bulk amino-acid composition by 2.64× and loses to 3-mer fragment statistics by 2.82×, on the same gallery, the same records and the same map.** Those two facts are the finding. The binding constraint is specifically **fragment statistics**, not composition, and the model is not empty: it clears every shuffled, rank-matched and description-only null decisively, and it clears composition by more than the factor the gate asks for.
+
+"A surrogate beat it" and "the model is empty" are both wrong readings. What is true is narrower and more informative: **at sequence level, on this lineage, whatever the protein mode contributes to cross-modal retrieval is contained inside what a 3-mer frequency vector already contains.** That is precisely §7.0 clause 1's definition of recombination made concrete.
+
+**The conclusion does not turn on the deciding rung.** At the same layer and split the strongest rung run, `affine`, reads excess **+0.0241** — still below the surrogate's +0.0272 — and on the family-disjoint split it reads +0.0024 against procrustes' +0.0032. The `mean` rung reads +0.0008. No rung of the ladder clears the fragment channel.
+
+**The mask costs about a sixth and does not change the verdict.** The raw arm, with the concept's own name present, reads excess +0.0114 at the same cell against the masked arm's +0.0097, and fails against `kmer` too.
+
+**The second adapted checkpoint reproduces it.** `ProLLaMA`, protein mode, masked, layer 22, `eval`: model excess **+0.0154**, composition +0.0048 (**pass**, 3.23×), `kmer` +0.0343 (**FAIL**, interval of the difference [−0.0268, −0.0121], surrogate ahead by 2.22×). Two checkpoints, same direction, same binding baseline.
+
+### The family-disjoint split: not beaten, indistinguishable
+
+On `family_holdout` (n = 4,999, 4,178 groups) the masked arm reads excess **+0.0032**, and both surrogates fail their clauses **by underpowering rather than by winning**: `composition` +0.0016 with the difference interval **[−0.0008, +0.0042]** and `kmer` +0.0020 with **[−0.0012, +0.0038]**. Both straddle zero.
+
+**State this plainly: on the unseen-family split the model is not beaten by the surrogates, it is indistinguishable from them.** An underpowered failure is a failure of the gate, not a pass — A35-1 requires the interval to exclude zero *and* the 2× excess, and neither holds — but it is a different fact from the `eval` split's loss and must not be reported as the same one.
+
+### A35-0 across all six cells: the corrected gate working
+
+Every cell: verdict **ATTAINABLE**, gate baseline `shuffled_pair`, gate split `eval`, `attainable: true`. **Every masked arm was computed and nothing was withheld anywhere.** The gate that had suppressed the entire deciding arm of the campaign now fires as designed: it separates *the instrument cannot align anything* from *the instrument aligns something and a surrogate aligns more*, which are statements about different objects.
+
+### The frozen branch per cell, and stage 36
+
+| cell | stage verdict | frozen branch | statement about |
+|---|---|---|---|
+| `stage1_protein` | **FAIL** | **`surface_statistics`** | **the method** |
+| `prollama_protein` | **FAIL** | **`surface_statistics`** | **the method** |
+| `llama2_protein` | REFERENCE_ONLY | `pre_adaptation_reference` | attribution |
+| `stage1_text` | PASS | `authorised` | existence, on this lineage at this site |
+| `prollama_text` | PASS | `authorised` | existence, on this lineage at this site |
+| `llama2_text` | PASS | `authorised` | existence, on this lineage at this site |
+
+Both protein cells trigger **STOP-35**, and both refuse the hand-off by name: `causal_handoff.emitted: false`, *"the stage verdict is FAIL. Any A35-1 failure on eval ends the campaign: stage 36 is UNAUTHORISED and no concept-vector hand-off is emitted"*. The three text cells emit their own concept vectors and carry `stage36_authorised: true` for themselves — that is the within-mode control passing, and it is **not** authorisation for the cross-modal injection, which needs a protein-mode arm that did not pass.
+
+**Stage 36 not running is the pre-registered consequence, executed by the stage itself, and not a decision taken after seeing the number.** The branch table that produced it was frozen on 2026-08-18: *"a composition or 3-mer surrogate breaks A35-1(ii) → surface-statistics branch: the alignment is reported as an alignment of amino-acid composition rather than of concept, stage 36 is not authorised"*.
+
+### A35-1b: amendment 1's vindication, and it fired on exactly one cell
+
+Eleven bridge concepts now exist, all GO: DNA binding, RNA binding, ATP binding, DNA repair, translation, membrane, kinase activity, oxidoreductase activity, hydrolase activity, metal ion binding, transmembrane transport.
+
+On `stage1_protein` the bridge-restricted retrieval reaches **0.5146** of the full retrieval on the raw arm and **0.5862** on the masked arm at `eval` — full over bridge of **1.94** and **1.71**, both **just under the frozen 2.0**. Amendment 1's escape hatch therefore declares the baseline **non-gating** for this cell, `gating: false`, with the achieved ratio recorded and the reason stated in the artefact.
+
+**Say the point plainly: this is the cell whose bridge subspace nearly reproduces the full retrieval, which is what a genuine concept alignment predicts, and under the frozen text it would have been refused for behaving as the hypothesis says it should.** The other five cells clear the margin comfortably — bridge over full between 0.18 and 0.25 in the three text cells and on the pre-adaptation protein reference, 0.46–0.48 on `prollama_protein` — so the clause **gates** there and only there did the hatch open. An escape hatch that fires on one cell out of six, and on the one cell where the hypothesis predicts it should, is doing exactly what it was added for.
+
+### A35-4: the residual alignment is not attributable to protein adaptation
+
+All four measured cells return `ATTRIBUTION_WITHDRAWN_MEASUREMENT_STANDS` with `binding: true` on the `masked` arm.
+
+| cell | split | model top-1 | `Llama-2-7b-hf` reference | interval of the difference |
+|---|---|---:|---:|---|
+| `stage1_protein` | eval | 0.0107 | 0.0104 | [−0.0043, +0.0049] |
+| `stage1_protein` | family_holdout | 0.0042 | 0.0042 | [−0.0026, +0.0026] |
+| `prollama_protein` | eval | 0.0164 | 0.0104 | [+0.0004, +0.0118] |
+| `prollama_protein` | family_holdout | 0.0024 | 0.0042 | [−0.0042, +0.0002] |
+
+`stage1_protein` is **statistically identical to the un-adapted base model on both splits** — the family-disjoint difference is exactly 0.0. `prollama_protein` is significantly above the reference on `eval`, but at **1.57×**, short of the 2× bar, and it is below the reference on the family-disjoint split.
+
+**The conclusion: whatever small alignment the protein mode shows is not attributable to protein adaptation.** The measurement stands and the attribution is withdrawn, under a rule fixed before the numbers existed.
+
+### The text-side finding, which is a separate substantive result
+
+Same instrument, text mode, masked arm, layer 22, procrustes, both splits:
+
+| checkpoint | eval top-1 | family_holdout top-1 | share of the reference's excess retained |
+|---|---:|---:|---:|
+| `Llama-2-7b-hf` (reference) | **0.2387** | **0.1722** | — |
+| `ProLLaMA_Stage_1` | **0.0954** | 0.0546 | eval 39.7%, family-disjoint 31.3% |
+| `ProLLaMA` | **0.1065** | 0.0580 | eval 44.4%, family-disjoint 33.3% |
+
+All four intervals exclude zero **negatively**: `stage1_text` [−0.1585, −0.1282] and [−0.1292, −0.1075]; `prollama_text` [−0.1484, −0.1183] and [−0.1255, −0.1038].
+
+**Both protein-adapted checkpoints retrieve a protein's own curated description substantially worse than the base model they were adapted from, retaining 31–44% of its excess over chance.** Adaptation did not merely fail to add a cross-modal bridge; on this task it **subtracted**, measurably, and the loss is present on the group-disjoint and the family-disjoint split alike.
+
+**This bears on R1.2 independently of R3.2, and it must not sit under a label that also covers a tie.** D1.d already localised a text cost on this lineage — the protein continued-pretraining stage spends 4.69 nats/token, 85% of the base model's text context information (EXP-R2-152) — and attributed most of it to the transformer body rather than the vocabulary interface (EXP-R2-163/166). This is a **different estimand**: a semantic retrieval task over curated descriptions, needing no next-token likelihood at all, and it shows the degradation persists there. Two estimands, one direction, one lineage.
+
+### §7.0 clause 5, applied — the rule's first use
+
+The deciding statistic sits **inside the recombination ceiling** for this cohort and readout: the ceiling is what the clause-1 family achieves here, the binding member is the 3-mer conditional at excess +0.0272, and the model reads +0.0097 with the paired interval of the difference wholly negative.
+
+Therefore, under §7.0 clause 5:
+
+- **D3.g halts and is classified as recombination.** Not "weak evidence of a cross-modal bridge", not "a bridge that needs more power".
+- **It is not narrowed to a subcohort.** No per-concept, per-family or per-layer subset is searched for a cell that passes.
+- **It is not re-run at more data, more seeds or more layers.** Layers 16 and 27 are reported and decide nothing; the verdict is at the one pre-registered layer.
+- **The line reopens only on a new contradiction set** admitted under clauses 3 and 4 before any model is read. That is what D3.j, D3.k and D3.l exist for.
+
+**This also closes the D3.g → D3.i dependency.** D3.i, cross-modal causal circuit translation, was admitted gated behind D3.g yielding a stable, leakage-controlled concept bridge. D3.g has now returned a measured negative on exactly that precondition, so **D3.i is unreachable by this route** — not merely unstarted. It is not re-gated behind a repair of D3.g; a successor would have to establish a bridge on a contradiction set, which is a different design.
+
+### What this does *not* say
+
+It does not say the instrument failed — **the identical ladder passes every applicable baseline on all three checkpoints in text mode, on both splits**, which is what makes the protein-mode failure attributable to the protein mode. It does not say the protein mode carries no concept information — it beats composition, and every null, decisively. It does not reach pure-protein decoders: the experiment is defined only on a checkpoint that has a text mode, which on this panel is one lineage. It does not reach position-level correspondence, which L31 puts out of scope on this tokenizer. And it says nothing whatever about stage 36, which never ran.
+
+### Bounds
+
+One checkpoint lineage, one rendering, one cohort, one seed, one draw. The skip-offset and second-draw sensitivity Appendix B rule 1 asks for is a second run of this stage against a second cohort draw and **has not been done**; every interval here is a within-draw interval. The resampling unit is the near-duplicate group and those are close to singletons on this cohort, so the interval is close to a record bootstrap while the family group is the wider unit of independence. Every quantity is a pooled activation, a linear map between two clouds of them, or a ranking derived from those — nothing here is a behavioural claim about either mode. The verdict is read at one pre-registered layer on the masked variant, per layer, with no cross-layer mean anywhere (L32). The protein symbol unit is the token at about 1.536 residues per token, so no magnitude here is commensurable with a residue-unit arm's (L23, Appendix B rule 26). Leakage into *pretraining* is closed by nothing here: Swiss-Prot lies inside UniRef50 by construction.
+
+### Promotion recommendation
+
+**Recommend promoting this to the citable register as two rows rather than one, entered below as F13 and F14.** Two, because the entry contains two logically independent results with different evidence bases and different caveat sets: F13 is about a **method** and needs the protein mode; F14 is about what protein adaptation **did to a lineage's text mode** and needs no protein mode at all. §1.2 already paid for merging: F12's row had to be amended to separate a retrieval finding from a hydropathy finding whose caveats did not travel together. The single-draw scope is written into both rows rather than treated as a blocker — the `eval` difference sits about 2.7 interval half-widths from zero and reproduces on a second checkpoint — and the second-draw sensitivity is recorded as the open item it is. If the coordinator prefers one row or none, both are reversible; the measurement is unaffected either way.
+
