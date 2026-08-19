@@ -31,9 +31,9 @@ def env_path(variable: str, default: Path) -> Path:
 
     The same code runs on the local L20 host and inside H200 pods, which mount
     their checkpoints and corpora elsewhere. Every location is therefore a named
-    variable whose default is the local value, so an unset environment
-    reproduces local behaviour exactly and relocating a host is a matter of
-    exports rather than of edits.
+    variable, and relocating a host is a matter of exports rather than of edits.
+    The defaults are the authoring host's historical layout and are not
+    guaranteed to resolve anywhere, this host included.
 
     Existence is deliberately not checked here. A module-level check would make
     importing the package depend on data that a given measurement never touches,

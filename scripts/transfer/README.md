@@ -80,14 +80,18 @@ Check current GPU and memory state, then run a small direct stage invocation rat
 ```bash
 nvidia-smi
 free -h
+export TRANSFER_TEXT_MODEL_BASE_DIR=/Data/public
+export TRANSFER_MODEL_BASE_DIR=/Data/public/models_R2
 python scripts/transfer/01_cohort_power.py --help
 python scripts/transfer/01_cohort_power.py \
   --kind text \
   --arms gpt2-large \
-  --n-seq 20 \
+  --n-seq 64 \
   --device cuda:0 \
   --out /tmp/interpretability_transfer_smoke/cohort_power
 ```
+
+Both exports are required and neither has a working default on B: text arms resolve `TRANSFER_TEXT_MODEL_BASE_DIR` and protein arms `TRANSFER_MODEL_BASE_DIR`, and the declared defaults under the repository's parent do not exist on this host. The cohort size is not free either — `truncation_curve` needs 200 surviving 128-token windows, which 20 sequences do not supply on this arm.
 
 Use each entry point's `--help` for its current interface. Keep validation outputs outside `results/` when they are disposable.
 

@@ -111,6 +111,48 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "record count and byte-identical membership are census quantities over "
         "every record, so there is nothing to sample and no order to be biased by"
     ),
+    "34_sequence_description_cohort.py": (
+        "its records are Swiss-Prot XML *entries*, not FASTA sequences: it needs "
+        "the accession, the curated name, the function comments and the GO "
+        "cross-references, none of which a Cohort carries, so it reads the release "
+        "through src.transfer.sequence_description.iter_swissprot_entries. Rule 1 "
+        "is answered by a seeded reservoir over every eligible entry of the whole "
+        "release -- a uniform draw in one pass, which is stronger than a permuted "
+        "window and is what the 933 MB stream affords -- and --max-entries-scanned "
+        "records in the artefact that a capped scan is a corpus prefix and not a "
+        "sample"
+    ),
+    "35_concept_alignment.py": (
+        "consumes the frozen cohort 34_sequence_description_cohort.py wrote and "
+        "constructs nothing: its units are that stage's records, in that stage's "
+        "splits, and a cohort of its own would be a second definition of what "
+        "'held out' means on a protein corpus, which is L30's defect. It reads the "
+        "file through src.transfer.concept_alignment.load_cohort, which re-checks "
+        "the group disjointness the manifest certifies rather than trusting it. "
+        "Rule 1's hazard is absent for the records and present for two draws this "
+        "stage does make, and both are seeded by --seed and reach the artefact: the "
+        "common retrieval gallery, drawn once per split from the near-duplicate "
+        "grouping and reused by every arm and null draw so the paired comparisons "
+        "are paired, and the pairing permutations of the shuffled-pair, "
+        "shuffled-fit and rank-matched nulls. A second cohort draw is a second run "
+        "of stage 34 followed by a second run of this one"
+    ),
+    "36_concept_injection.py": (
+        "consumes the same frozen cohort as 35_concept_alignment.py and constructs "
+        "nothing, for the same reason: its units are stage 34's records in stage "
+        "34's splits, and a cohort of its own would be a second definition of what "
+        "'held out' means on a protein corpus, which is L30's defect. It reads the "
+        "file through src.transfer.concept_alignment.load_cohort and fits every "
+        "direction on the 'fit' split while measuring on --eval-split, so the two "
+        "are that stage's declaration and not this one's. Rule 1's hazard is absent "
+        "for the records and present for three draws this stage does make, and all "
+        "three are seeded and reach the artefact: A36-3(b)'s norm-matched random "
+        "directions and A36-6's generation sampling from --seed, and A36-5's "
+        "label permutations from --seed + 1. Its own reduction, when cost forces "
+        "one, is not a draw either -- --max-concepts drops concepts in ascending "
+        "order of their eval bearing-group count, which is a deterministic "
+        "quantity of the cohort it was handed"
+    ),
     "16_fitness_recovery.py": (
         "its units are DMS variants of one wild type, not corpus sequences, so it "
         "draws through src.transfer.fitness.load_assay rather than the FASTA "

@@ -14744,3 +14744,349 @@ The agreement to three figures is a coincidence of magnitude and is reported as 
 **What this does and does not establish.** It establishes that the 8-row measurement is **complete**, not merely valid: a 92-position run finds essentially the same set. It does not touch what the statistic means, and the two reading constraints stand unchanged. This is differential **reliance**, not possession; and at lambda = 0 the readout **structurally cannot see a feature introduced or removed**, because polarised is 0.000 and every live latent decodes into both checkpoints with comparable weight, so a difference in ablation effect is a property of the two models' differing reliance on a shared feature.
 
 **A misdiagnosis of my own, recorded because the shape recurs.** When the card went idle I read the `rows16` control replicate's log, found no artefact, and concluded it had died silently. It had not: that cell runs on a different card and was healthy, with CPU time equal to elapsed. The idle card belonged to the **second anchor, which had completed**. I attributed a card to the wrong cell and then built a failure diagnosis on top of the attribution. This is the same shape as the false stall alarm earlier today -- a correct observation read against the wrong reference -- and the check that resolves it is the same one: map process to card explicitly before concluding anything about either.
+
+---
+
+## 2026-08-18 — EXP-R2-213 pre-registered: D3.g sequence–description causal concept alignment, three stages, every threshold frozen before a cohort exists
+
+Frozen before any of the three stages has produced a number. The bar this instantiates is the audit's §8 item 4, unchanged since D3.g was admitted as a candidate; nothing here weakens it and nothing here restates it as a new bar. What this entry adds is the half §8 deliberately left open — which statistic each of its clauses is read on, what threshold that statistic has to clear, what counts as a stop, and which branch is taken for each way this can fail. **No stage has been run and no number in this entry is a result.** Every figure below is either a threshold or a prior measurement cited to justify one.
+
+### The claim under test, stated once
+
+A direction estimated in the **text** mode of one checkpoint, from curated descriptions masked of the concept's own surface forms, moves that same checkpoint's **protein** mode in the concept-consistent direction; the movement is graded in the injection coefficient, specific to the injected concept, and visible to an instrument that is not the model.
+
+Three stages carry it: `34_sequence_description_cohort.py` builds the pairs, the concepts and the splits; `35_concept_alignment.py` runs the representational ladder; `36_concept_injection.py` is the claim-bearing causal stage. Each is authorised only by the one below it passing, and the authorisation rules are frozen here rather than decided when the numbers land.
+
+### Standing conditions that apply to all three stages
+
+**Two checkpoints, and both are run.** `ProLLaMA_Stage_1` (LoRA continued pretraining with `embed_tokens` and `lm_head` fully retrained) and `ProLLaMA` (instruction tuning, LoRA only) are the only two qualified in both modes (EXP-R2-152), which is what lets any effect be attributed to a training stage. `Llama-2-7b-hf` enters stage 35 as a **representational reference only** and never as an arm: its protein mode is behaviourally unmeasurable — context information **+0.0843** nats/token and reversal cost **−0.0013** nats/residue — so a behavioural readout there would measure nothing, and stage 36 refuses it by name.
+
+**Sequence level, and that is forced rather than chosen.** §8 excludes raw activation equality and unpaired token positions as estimands, and L31 is why the second half is not negotiable on this family: a multi-residue vocabulary assigns tokens by sequence context, so residue *i* has no token of its own on much of any cohort — single substitutions leave mutant and wild type token-aligned on **47.0–54.5%** of instances on the panel's BPE protein arm — and, worse than the loss, the survivors are the BPE-stable subset rather than a random one. ProLLaMA writes residues into an unmodified LLaMA-2 SentencePiece vocabulary, so nothing here attempts a residue-to-word correspondence. Each mode is reduced to one pooled vector per record over that mode's own declared content positions.
+
+**Per layer, never as a cross-layer mean.** Every criterion below is stated at one layer of the declared depth grid and is evaluated at that layer; a pass at one layer is a pass at that layer and at no other. L32 and Appendix B rule 33 are the reason — a criterion stated per unit and read as a mean over units gave the D3.h diffing unit a verdict its own per-layer vector contradicted.
+
+**Eight units, everywhere.** Every interval is a group bootstrap over near-duplicate groups and is refused below `MINIMUM_BOOTSTRAP_UNITS = 8` per side. A comparison with fewer than eight groups on either side is not reported with a wider interval; it is not reported.
+
+**float32 throughout.** The estimands are cross-entropy differences of order 0.01–0.1 nats against a bfloat16 quantisation step of 0.0625 at logit scale, and the two conditions differ only by the injected delta, so the rounding does not cancel between them (Appendix B rule 15b).
+
+### Stage 34 — the cohort, and the two leakage controls that decide whether anything downstream is readable
+
+Genuine sequence↔description pairs from the Swiss-Prot XML release (`fullName` plus the `CC FUNCTION` free text), with concepts drawn from GO — closed under `is_a` and `part_of` over `go-basic.obo` — and from EC.
+
+**C34-1 — concept-name masking is a refusal, not a threshold.** Every declared surface form of a concept's own identity is replaced by one fixed placeholder, so neither the string nor its length survives: the GO term name and its EXACT/NARROW synonyms, the EC number string and the ENZYME nomenclature description of that EC, the Pfam and InterPro entry names the record carries, and accession-style identifiers. A cohort in which any masked description still contains a declared surface form is refused before a checkpoint is loaded. Records whose description quotes their own sequence, or a declared shingle of it, are excluded and counted. The raw description is retained beside the masked one because the *difference* between the two results is the leak measurement; **the deciding variant is `masked`**. This is the control D3.b did not have, and D3.b is why it is first: its sole positive protein arm was ZymCTRL's and it dissolved to nothing once its EC conditioning tag was held fixed (L15, 1.73 nats).
+
+**C34-2 — what masking cannot reach is declared now rather than discovered later.** Paraphrase survives every lexical procedure: masking `kinase activity` does not remove *catalyses the transfer of a phosphate group from ATP*. Masking is a control and not a fix. That residual is bounded from one side by the per-concept raw-versus-masked leak rates this stage reports and from the other by stage 35's composition, 3-mer and `bridge_specific` baselines, and it is the reason branch B2 below exists.
+
+**C34-3 — the split is over near-duplicate groups, and the leakage curve is reported for both split types off one alignment.** Record-level splits are not splits on this corpus: L30 measured **871 of 2,048 held-out records (42.5%) keeping a ≥95%-identity relative and 370 (18.1%) byte-identical**, so an exact-string guard reaches 18.1 of those 42.5 points. DIAMOND is run all-against-all **once**, and the straddling-pair count is read off that single alignment at five identity boundaries — **≥95%, ≥90%, ≥80%, ≥70%, ≥50%** — for the record-level split and the near-duplicate-group split alike, so the two are compared on one measurement rather than on two. **Pass requires zero straddling pairs at ≥90% and above under the group split.** That threshold is attainable and was shown attainable before it was set here: it is what L30 measured on the production pool under the same relation and cut. The residual below 90% is declared, not hidden — L30's own figure is 855 of 2,043 held-out records keeping a ≥70% relative.
+
+**C34-4 — a family-disjoint holdout, and it carries the gate's unseen-family clause alone.** Built by `families.py`, at least eight family groups per side, unlabelled units refused by default. §8's "reproduce on an unseen protein family" is read on this split and on no other.
+
+**C34-5 — concept admission, stated per concept and per split.** A concept enters the campaign only if, in **each** of `eval` and `family_holdout`, it has at least **8 distinct near-duplicate groups bearing it and 8 not bearing it**. The floor is `MINIMUM_BOOTSTRAP_UNITS` and is a statistical requirement rather than a tuned number.
+
+**C34-6 — the floor's attainability is measured before it is applied.** Stage 34 writes the surviving-concept count as a function of the per-cell group floor at **4, 8, 16 and 32**, so the count at 8 is read off a curve rather than asserted. This is Appendix B rule 2's arithmetic half, which is the half that failed twice in the D3.h unit: check that the statistic can reach the number, then that a control can.
+
+**STOP-34.** Fewer than **8 admissible concepts in `eval`, or fewer than 4 in `family_holdout`**, stops the campaign here: the cohort does not support the estimand, stages 35 and 36 are not run, and the counts are the reported result. Concepts are never added or dropped after any stage-35 or stage-36 number has been seen.
+
+### Stage 35 — the representational ladder
+
+Pooled sequence-level representations on both sides, maps fitted on the `fit` split alone, nearest-neighbour retrieval as the readout. Every arm and every baseline in a comparison is scored at a **common gallery size** with its chance level stated, because an accuracy compared across arms of different size is partly a reading of sample size (Appendix B rule 21). The primary quantity is top-1 accuracy in excess of chance; top-5 and top-10 are reported beside it.
+
+**A35-0 — attainability, and it runs before any baseline is read.** The **raw-description** arm is this stage's positive control: it is the easy case, where the concept's own name is present in the text. If the identical ladder on raw descriptions does not clear A35-1's margin over `shuffled_pair`, the ladder is **void as a specification defect** and the masked arm is not read at all. A masked null produced by an instrument that cannot align even the unmasked case is uninterpretable, not negative.
+
+**A35-1 — beat every applicable baseline, on both counts.** For each of `shuffled_pair`, `shuffled_fit`, `rank_matched`, `composition`, `kmer`, `description_only` and `bridge_specific`, the masked arm must satisfy **both**:
+
+* (i) the paired group bootstrap 95% interval of the *difference* excludes zero, over at least 8 groups; and
+* (ii) `(acc_masked − chance) ≥ 2 × (acc_baseline − chance)`.
+
+Clause (ii) is not decoration. Significance against a null is a detection criterion and admitting an alignment is a counting decision, which is exactly the distinction that forced the retraction of the "significantly above its own null" induction-head counts.
+
+**A35-2 — both splits.** A35-1 must hold on the group-disjoint `eval` split **and** on the family-disjoint `family_holdout` split. A pass on `eval` with a failure on `family_holdout` is reported as *reproduces within the corpus and not across families*, and it does **not** authorise stage 36.
+
+**A35-3 — the ladder order, and the adapter stays locked.** `nearest_neighbour` → `mean` → `procrustes` → `affine`, each run and reported before the next is read. If `nearest_neighbour`, which fits nothing, already satisfies A35-1 and A35-2, no map is fitted and the rest of the ladder costs zero — §8's own "zero if an affine or retrieval baseline saturates the target". The bottleneck Adapter MLP is admitted only after the linear ladder passes A35-1 and A35-2, only to test whether non-linearity adds **family-disjoint** value, and its capacity is reported beside every number it produces.
+
+**A35-4 — the pre-adaptation reference, and the attribution branch that comes with it.** `Llama-2-7b-hf` is run through the identical pipeline as `REFERENCE_ONLY`. If its alignment matches the adapted checkpoints' within the group bootstrap, the alignment exists and is **not attributable to protein adaptation**; that narrows the attribution and does not retract the measurement, and the verdict must say so rather than leave it to a reader.
+
+**STOP-35.** A35-1 failing on `eval` for any applicable baseline stops the campaign at stage 35: stage 36 is not authorised, no adapter is trained, and the outcome is a measured negative about linear cross-modal concept alignment at sequence level on this lineage. It is registered as a result, not as a failed round.
+
+### Stage 36 — causal cross-modal injection, the claim-bearing stage
+
+A residual-stream write of `alpha · sigma · u` at the declared layer and at every content position of the protein rendering, with `u` the unit concept direction estimated in **text** mode from **masked** descriptions and `sigma` the population scale along it. The write is at the site the direction was estimated at, never another; the conditioning prompt is outside it. The coefficient ladder is symmetric through zero at **α ∈ {−4, −2, −1, −0.5, 0, +0.5, +1, +2, +4} σ**, nine rungs.
+
+**A36-0 — hook invariants, before any effect is computed.** A null patch moves the logits by at most the declared tolerance and a large patch moves them, the second check using a seeded *random* direction rather than a constant, because a block-entry normalisation nearly annihilates a constant. An unbound hook passes every null test while silently measuring an unpatched model.
+
+**A36-1 — the coherence floor, declared before the run and then swept.** A rung is admissible only where injection inflates the mean NLL of held-out **non-concept-bearing** sequences by at most **0.25 nats/token** against α = 0. The number is anchored rather than free: these checkpoints' protein-mode context information is **0.5505** and **0.5215** nats/token (EXP-R2-152), so the bound admits damage of at most half the entire directional signal the mode has. Per Appendix B rule 17 the verdict is re-read at bounds **0.10, 0.25 and 0.50** nats/token, and either the conclusion is invariant across them or the dependence is itself the finding. **If the whole ladder falls outside the admissible range, the result is that no coefficient range admits this readout**; the bound is not widened after seeing which rungs it excludes.
+
+**A36-2 — the within-text-mode positive control, and it is a hard gate.** The same direction is injected into **text** mode over the same ladder, and the concept-consistent shift must satisfy A36-3(a) and A36-3(b) there at at least one admissible α. **If it does not, the protein side is not read at all**: the stage returns VOID for the instrument and says so in its own field, and a protein null is uninterpretable rather than negative. This is fixed before any number exists precisely so that a protein zero cannot afterwards be read as a finding — Appendix B rule 40 moved to design time, where rule 2 already lives.
+
+**A36-3 — readout A, the graded NLL shift, primary.** `Δ(α) = [NLL_bearing(α) − NLL_bearing(0)] − [NLL_nonbearing(α) − NLL_nonbearing(0)]` on held-out sequences, bootstrapped over near-duplicate groups with at least 8 per side. The predicted direction is `Δ(α) < 0` for `α > 0`. Admission requires all three:
+
+* (a) at one admissible `α > 0`, the 95% interval of `Δ(α)` excludes zero;
+* (b) `|Δ(α)| ≥ 2 ×` the 95th percentile of the norm-matched random-direction control at the same α and the same site, computed over **at least 8 distinct random directions** — more *directions* and not more positions, because with a random-direction control the detection floor is set by direction-to-direction variation and sampling stops buying resolution at a measurable knee (Appendix B rule 39);
+* (c) the effect is graded: Spearman ρ between α and `Δ(α)` over the nine rungs is **≤ −0.8**, `Δ(0) = 0` by construction, and the sign reverses for `α < 0`. An effect that appears at one α and does not grade is reported as an unexplained discontinuity, not as the graded intervention §8 asks for.
+
+**A36-4 — specificity, per concept and never as a mean.** The full concept × injected-concept matrix is computed. A concept is admitted only where its own diagonal entry exceeds the **95th percentile of its own row's off-diagonal entries**. The mean diagonal minus mean off-diagonal is reported and may **not** substitute for the per-concept condition; that substitution is L32 and Appendix B rule 33 exactly. A campaign whose mean separates while no individual concept clears its own row is reported as a null, with the mean stated.
+
+**A36-5 — permuted-concept control.** Directions estimated from permuted concept labels must **fail** A36-3. If they pass it, the readout is void: the direction is carrying something the label assignment does not.
+
+**A36-6 — readout B, HMMER/Pfam-A, an instrument that is not the model.** Sequences generated under injection at an admissible α are annotated with HMMER 3.4 against Pfam-A, the tool prepared the way `homology.prepare_diamond` prepares DIAMOND — verify the published digest, extract outside the repository, read the version back from the built binary. **Attainability first (Appendix B rule 40):** at α = 0 the generator must annotate at a non-zero rate on this cohort, and that rate is reported before any injected rate is read. If it is zero, readout B is **void**, because no increase is measurable against it and a null would be indistinguishable from an unreachable statistic. Given a non-zero base rate, admission requires the concept-consistent annotation fraction under injection to exceed the α = 0 fraction with a group bootstrap interval excluding zero, and to exceed the norm-matched random-direction control's 95th percentile.
+
+**A36-7 — two checkpoints, and what each configuration attributes.** Both are run. An effect on both is not attributable to instruction tuning. An effect on `ProLLaMA` alone localises to instruction tuning. An effect on `ProLLaMA_Stage_1` alone is the only configuration implicating continued pretraining, and it carries the caveat that these two stages differ by only 0.10 nats/token in text and 0.03 in protein, so a null *between* them may be a power result rather than a mechanism result.
+
+**No subset chosen by effect.** Concepts, layers and rungs are fixed by this entry. If cost forces a reduction, the reduction rule is frozen now: drop concepts in ascending order of their `eval` group count, a quantity known before any activation is captured. A control is never dropped for economy — twice in one day of this programme an economy removed the control that discriminated between two live explanations (Appendix B rule 37).
+
+**STOP-36.** Four distinct stops, each with its own reading:
+
+* A36-2 does not fire → **VOID for the instrument**; the protein side is not read and the entry closes on the instrument failure.
+* No rung survives A36-1 → **no admissible coefficient range**; closed, and the bound is not moved.
+* A36-2 fires and A36-3 fails at every admissible α → a **measured negative**: a text-derived concept direction does not causally steer this checkpoint's protein mode at sequence level, at this site, inside the admissible range. Registered as a result.
+* A36-5 passes on permuted labels, or A36-4 admits no concept → **void** and **null** respectively, and neither is reported as the other.
+
+### The pre-declared branches, one line each, so no outcome needs a decision after the fact
+
+| what happens | branch taken | what it is a statement about |
+|---|---|---|
+| Stage 34 admits too few concepts | STOP-34; counts reported | the cohort, not the model |
+| Group split leaves straddling pairs at ≥90% | STOP-34; the split is not a split | the evaluation interface (L30) |
+| Raw-description arm fails A35-0 | ladder VOID as a specification defect | the instrument, not the modality |
+| A composition or 3-mer surrogate breaks A35-1(ii) | **surface-statistics branch**: the alignment is reported as an alignment of amino-acid composition rather than of concept, stage 36 is not authorised, and if the surrogate also *exceeds* the masked arm the model is reported as adding nothing over composition | the method — F12's shape, where a single-parameter hydropathy baseline reversed a model result |
+| A35-1 passes on `eval` and fails on `family_holdout` | reproduces within the corpus and not across families; stage 36 not authorised | generalisation, not existence |
+| `Llama-2-7b-hf` matches the adapted checkpoints | alignment stands, attribution to protein adaptation withdrawn | attribution |
+| Text positive control does not fire in stage 36 | **VOID**; protein side not read | the instrument — a protein null here would be uninterpretable, not negative |
+| Coherence floor admits no rung | no admissible coefficient range | the intervention's dynamic range |
+| A36-3 fails with the positive control firing | measured negative, registered as a result | the model, at this site and range |
+| Permuted-concept vectors pass A36-3 | void | the instrument |
+| Only the mean of A36-4 separates | null, with the mean stated | the statistic, per rule 33 |
+| HMMER annotates nothing at α = 0 | readout B void; readout A stands alone and the claim is worded as resting on the model's own likelihood with no independent instrument | the readout's reach |
+
+### Cost, and the bound
+
+Stage 34 is CPU-only: one streaming pass over the gzipped Swiss-Prot XML release, a GO closure over `go-basic.obo`, and one DIAMOND all-against-all on the pool over the route `homology` already validated. Stage 35 is two forward passes per record per mode per checkpoint with no training, plus a ridge solve and an SVD. Stage 36 is where the cost is: nine rungs × admitted concepts × two checkpoints × two modes, plus at least eight random directions per admissible rung, plus generation for readout B. §8 estimates the item at **5–12 GPU-h after a paired-data power audit**, and that figure covers stage 35 with a single-concept stage 36; the full specificity matrix does not fit inside it. **The declared bound for the whole campaign is 24 GPU-h across both checkpoints.** If the frozen design does not fit, the concept set is reduced by the rule above — never by dropping a control, a rung or a split — and the reduction is recorded with its count.
+
+### What no outcome of this campaign licenses
+
+Passing every clause above establishes that a direction estimated in one mode of a set of weights has a graded, concept-specific causal effect in the other mode, visible to an annotator that is not the model. It does **not** establish that the checkpoint encodes biological knowledge: retrieval-awareness and independent biological validation are separate clauses of the §8 bar, and leakage into *pretraining* is not closed by anything here — Swiss-Prot lies inside UniRef50 by construction, so every evaluation protein reachable from public data is a candidate training member whatever family it belongs to. Nor does it license anything about pure-protein decoders: the experiment is defined only on a checkpoint that has a text mode at all, which on this panel is one lineage.
+
+**Nothing in this entry has been run.** No cohort has been built, no map fitted, no injection performed.
+
+### The operator guide's "Validate On B" recipe could not run, and it failed for two reasons rather than one (2026-08-18)
+
+Found while correcting stale documentation, verified by running it. `nvidia-smi` and `free -h` first: cards 1 and 7 idle at 46,068 MiB each, 316 Gi available of 503 Gi; the run took card 1.
+
+**Defect 1, the one that was being looked for.** The block invokes `01_cohort_power.py --arms gpt2-large` with no export, and `gpt2-large` resolves `TRANSFER_TEXT_MODEL_DIR`, whose default is `TEXT_MODEL_BASE / "gpt2-large"` under the repository's parent. That directory does not exist on B — the text checkpoints are at `/Data/public` and the protein ones at `/Data/public/models_R2` — so the recipe cannot load a model. `TRANSFER_MODEL_BASE_DIR` alone does not fix it and neither does the pod convention of aliasing the two roots, because B does not share one models directory: with `TRANSFER_MODEL_BASE_DIR=/Data/public/models_R2` set and nothing else, `PANEL["gpt2-large"].path` still resolves to the non-existent default. The variable that fixes this arm is `TRANSFER_TEXT_MODEL_BASE_DIR=/Data/public`, which is the value already on record for the local text ladder, and `TRANSFER_TEXT_MODEL_DIR=/Data/public/gpt2-large` is equivalent for this arm alone.
+
+**Defect 2, found only by running it.** With the exports in place the stage still fails, and not on paths: `truncation_curve` raises `only 80 truncation windows survive a 128-token context requirement; need 200`. `--n-seq 20` cannot supply the curve on this arm. At `--n-seq 64` the stage completes and passes — `unigram(disjoint)` 7.5958, `clean_ce` 2.6797, context information **+4.9161** nats/token, PASS (measurable) — which is the arm's expected reading.
+
+**Both are fixed in `scripts/transfer/README.md`**, with the reason for each stated beside the block so the next reader does not have to rediscover either. The general point is the one Appendix B rule 12 already carries in another form: a documented recipe that has never been executed is a claim, not a procedure, and the two failure modes here are exactly the two that a reading of the block cannot distinguish — a missing variable and an argument the stage's own power check refuses. Artefacts under ignored `logs/smoke/readme_check/` (rule 29).
+
+---
+
+## 2026-08-19 — EXP-R2-213 amendment 1: A35-1's decisive baseline set, read before any cohort exists, because one of its gates is unattainable
+
+**This is a pre-data amendment and its status matters more than its content.** No cohort has been built and no estimand of stages 34, 35 or 36 has been measured. What exists is an attainability probe: the implementer ran stage 35 on real weights against a **scratch fixture**, which is not the pre-registered cohort and produces no result of this campaign, for the sole purpose of checking that A35-1's thresholds can be reached before they are applied. That is Appendix B rule 2's arithmetic half executed on schedule rather than discovered afterwards, and it is the same class of defect that voided both D3.h adequacy criteria — one unreachable by the statistic at any sample size, one failing on its own text control. **The frozen entry of 2026-08-18 is not edited.** Its text stands as provenance; the criteria below supersede it where they overlap, and a reader of A35-1 must read this block with it.
+
+### The defect, and why the original bar was wrong in two different ways
+
+At the settings probed, `bridge_specific` cannot clear clause (ii). With eight bridge concepts spanning much of a 24-dimensional PCA subspace, the concept-restricted retrieval is very nearly the unrestricted retrieval, so `(acc_masked − chance) ≥ 2 × (acc_bridge − chance)` has no headroom. **It failed on the text control**, at 0.1667 against 0.2083 — a ratio of 1.4 on the excess-over-chance scale clause (ii) is written on, against the 2.0 the clause demands. A gate the positive control cannot pass is a specification defect, not a finding about the arm it excludes.
+
+**The second way it was wrong is conceptual and it is the more important one.** At the limit the bar is backwards. If a genuine cross-modal concept alignment *is* carried by the concepts defined on both sides, then `bridge_specific ≈ full` is the **predicted** outcome, not a failure — the original clause would have refused the alignment for behaving exactly as the hypothesis says it should. `bridge_specific` prices a *restriction*, and a restriction that loses nothing is informative in its own right; it was mis-specified as a null to be beaten.
+
+### The amended criteria, authoritative from here
+
+**A35-1 — beat every applicable baseline, on both counts, on the primary retrieval statistic.** The statistic is **`description → sequence` retrieval** at a common gallery size, scored as **top-1 accuracy in excess of chance**; the retrieval direction is part of the criterion and was absent from the frozen text. The **decisive set is six baselines** — `shuffled_pair`, `shuffled_fit`, `rank_matched`, `composition`, `kmer`, `description_only` — and for each of them the masked arm must satisfy both:
+
+* (i) the paired group bootstrap 95% interval of the *difference* excludes zero, over at least 8 near-duplicate groups; and
+* (ii) `(acc_masked − chance) ≥ 2 × (acc_baseline − chance)`.
+
+Clause (ii) is unchanged in form and in strictness. **The composition and 3-mer surrogates remain fully decisive at 2× on both splits**, and they are the baselines most likely to kill the result as well as the only ones that bound the paraphrase residual C34-2 names from the other side; nothing in this amendment relaxes the protein side of the bar.
+
+**Two reported quantities are explicitly non-decisive under A35-1, and this is now stated rather than inferred.** The **concept-axis AUC** is a diagnostic and decides nothing; an AUC excess is never compared against a retrieval excess, because they are not the same scale and a comparison between them would be a unit error of the kind Appendix B rule 27 catalogues. And **`nearest_neighbour` is a rung of the method ladder, not a baseline** — A35-3 already places it as the training-free first rung — so it is never one of the arms the masked arm is required to beat. Where it saturates the target, A35-3's cost clause still applies and no map need be fitted; that is a scheduling decision and not a verdict.
+
+**A35-1b — the concept restriction, reported as a diagnostic and gating only if it is shown it can.** The interpretable quantity is the ratio **`bridge / full`** on the primary statistic, reported on both splits. Clause (ii) becomes decisive against `bridge_specific` **only if** the raw-description arm demonstrates, at the run's own settings, that a 2× margin against it is reachable. If it is not reachable, clause (ii) is **declared non-applicable for this baseline with the measured reason and the achieved ratio recorded**, and A35-1b is reported rather than gating. **This preserves §8's "beat every applicable baseline" rather than narrowing it**: the word carrying the load is *applicable*, and this amendment makes applicability a matter of measured attainability instead of assumption. A baseline that the positive control cannot be separated from is not an applicable baseline; declaring it one is how a criterion becomes decorative.
+
+**`description_only` gets its retrieval definition written in**, so that clause (ii) compares like with like. It is a retrieval arm on the **identical gallery**, in two constructions, **both reported**: a query-independent ranking of the gallery by its own typicality, and a ridge fitted on the `fit` split from the description representation to log sequence length, ranking the gallery by agreement with observed length. That is "the text side's own self-information plus gallery structure" made computable rather than asserted.
+
+**The deciding rung, and `mean` is refused as it.** A mean shift never reads the pairing: permuting the `fit` pairing returns the identical map, so `mean` cannot be distinguished from `shuffled_fit` by construction and a `mean` verdict against `shuffled_fit` would make the null the truth under another name — the criterion would be **vacuous rather than passed**, which is the failure mode EXP-R2-209's dropped 2× rule had (twice zero is zero) in a different dress. `mean` is still fitted and still reported as the rung below. A35-1's verdict is therefore read on the rungs that do read the pairing, `procrustes` and `affine`; that is a consequence of this refusal rather than a separate decision.
+
+### A declared pre-data power note, and it is not a result
+
+At the settings probed, attainability of clause (ii) depends on **`--pca-components` relative to the bridge-concept count** and on the **`eval` split's size**: a subspace narrow enough for eight concepts to span most of it removes the headroom the clause needs, and a small evaluation split coarsens every excess-over-chance quantity the clause compares. Neither number is fixed here, because fixing them from a scratch fixture would be tuning a threshold on a probe. What is fixed is the obligation: **whoever dispatches reports the attainability check before the masked arm is read**, which A35-0 already requires, and reports it against the statistic that will carry the verdict rather than against a neighbouring one.
+
+### One label correction, and it is carried through every document this amendment touches
+
+**There is no limitation L33.** The catalogue in the audit's §5 runs **L1 to L32**, verified by enumeration. The label was propagated from an upstream reading rather than from the catalogue, and where the pre-adaptation behavioural bound has been cited as "L33" the citation is replaced by its actual evidence: **EXP-R2-152, re-measured at EXP-R2-174** — `Llama-2-7b-hf` protein-mode context information **+0.0843** nats/token and reversal cost **−0.0013** nats/residue, against `ProLLaMA_Stage_1`'s **+0.1442**. The frozen entry of 2026-08-18 and the audit and summary text written with it cite EXP-R2-152 and never L33, verified by grep over every line added; the draft limitation carrying that label in the entries of 2026-08-17 is left exactly as written, because those entries are provenance and rewriting them would hide where the label came from.
+
+**Still nothing has been run.** No cohort, no map on the pre-registered cohort, no injection.
+
+---
+
+## 2026-08-19 — EXP-R2-213 amendment 2: the deciding cohort is `--go-evidence non_iea`, named before any count was seen
+
+**Pre-data, and the reason it belongs on record now rather than in an explanation later.** No stage-34 artefact at full scale exists, and no stage-35 or stage-36 number exists. A cohort chosen after its counts are visible is a cohort chosen *on* those counts; this one is chosen on a stated confound, before the population it selects has been built, so a later reader checks the ground rather than the outcome.
+
+### The confound, found by the stage's author in the cohort's own `limitations` block
+
+Under `--go-evidence all` a GO label and the family label the `family_holdout` split is cut on **are not independent**. UniProt writes an IEA annotation (`ECO:0007669`) from a UniRule rule that fires on a family signature, so the GO term and the Pfam family are two readings of one piece of evidence and a "concept" can be a relabelling of family identity.
+
+**It lands in the worst available place.** The family-disjoint split is the one carrying §8's "reproduce on an unseen protein family" clause **alone**, so precisely there a family-identity effect would read as concept alignment — and A35-1's surrogate branch would not catch it, because family identity is not amino-acid composition and not 3-mer frequency. The baselines that bound the surface-statistics residual do not bound this one.
+
+**EC concepts are less exposed, and that is worth stating rather than assuming symmetry.** An EC number in Swiss-Prot is curated by construction, so the EC arm does not carry this circularity. It carries a different hazard, which the cohort already controls: the EC string and the ENZYME nomenclature description are surface forms and are masked under C34-1, which is the L15 lesson applied where it belongs.
+
+### The decision
+
+**The primary cohort is `--go-evidence non_iea`** — curated, non-electronic evidence only — which breaks the circularity at its source instead of bounding it afterwards. A **`--go-evidence all` cohort is built alongside it as a declared sensitivity cohort**, for two reasons that are both about visibility: the cost of the restriction should be measurable rather than assumed, and a fallback should exist before it is needed rather than be improvised when it is.
+
+Both are full-scan, `--family-source pfam`, `--pool-size 20000`, seed 20260818. Pfam rather than CATH on measured coverage — **0.964 against 0.668** on this corpus, both measured by the stage's author — and the trade between the two sources is already on record from the family-split work: CATH annotates fewer proteins and merges them into half as many larger, remoter groups, which is what makes it the stricter split and also the thinner one.
+
+**Named before the counts, and the fallback is a declared change rather than a substitution.** The deciding cohort is `non_iea` as of this entry, with no count from either population in hand. If the primary trips STOP-34 — fewer than 8 admissible concepts in `eval`, or fewer than 4 in `family_holdout` — the sensitivity cohort becomes the deciding one **by a recorded amendment that carries the confound with it**, and every number read on it is reported as resting on a population whose GO labels are not independent of its own family split. What is refused is swapping one cohort for the other and reporting the result as though the population had never changed. No concept and no cohort moves because of where an estimate landed, which is C34-5's rule applied one level up.
+
+### C34-1 fired before any checkpoint was loaded, and it caught two real defects
+
+Recorded because a control that has never refused anything is indistinguishable from one that cannot, and this one refused.
+
+**ENZYME wraps a long name across lines.** `enzyme.dat` continues a long `DE` or `AN` name onto the next line and marks the entry's end with the full stop, so 2.4.1.227's `AN` arrives as `UDP-...-pyrophosphoryl-` on one line and `undecaprenol N-acetylglucosamine transferase.` on the next. Read line per line that yields a **fragment** as a declared surface form, and a fragment is wrong in both directions: one ending in a hyphen matches nothing until its neighbour is masked, and it would also mask half a name out of a description that never carried the whole one. Names are now rejoined, with an empty join after a trailing hyphen because the wrap is mid-word there and a single space otherwise.
+
+**One masking pass is not enough, and that is how the first defect surfaced.** Masking changes the neighbours of the text it leaves behind, so a form whose match was blocked by an alphanumeric neighbour becomes matchable once that neighbour becomes a placeholder: `pyrophosphoryl-` cannot match inside `pyrophosphoryl-undecaprenol` and matches immediately in `pyrophosphoryl-[MASK]`. **Three records of a 1,200-record smoke pool survived a single-pass mask that way.** The substitution now iterates until a pass replaces nothing, which is what C34-1's "no declared surface form survives" actually requires; and a form that would match inside the placeholder is **refused** rather than masked, because replacing text inside the placeholder with the placeholder grows the string on every pass and the fixed point would not exist. Both are now tests.
+
+**What the episode is evidence for.** C34-1 was specified as a refusal rather than as a threshold so that it would fail loudly on the cohort instead of quietly on the alignment, and the refusal is what located both defects — before a checkpoint was loaded, at zero GPU cost, and by the fixed-point check rather than by inspection. It also shows the shape of what C34-2 declares out of reach: both defects concern *surface forms*, which are the part masking can reach, and neither of them touches paraphrase, which it cannot.
+
+**Still nothing measured.** No full-scale cohort, no map, no injection.
+
+---
+
+## 2026-08-19 — EXP-R2-213 stage-34 read: both cohorts admitted, the primary stands, and the fallback was not needed
+
+**What this entry is, and what it is not.** This is the first outcome EXP-R2-213 has produced, read against the criteria frozen on 2026-08-18 and the cohort decision frozen in amendment 2. It is a **cohort-construction result**. It says that a population exists with the properties the gate requires; it says nothing whatever about whether the two modes of a checkpoint align, and nothing about any causal effect. **Stages 35 and 36 have produced nothing.** No representation has been pooled, no map fitted, no direction injected.
+
+Both cohorts were built at full scale on the B workstation, and both returned `COHORT_ADMITTED` with `stop: []`. Every frozen flag sits at its pre-registered value — verified field by field against the artefacts' own `settings` block rather than against the dispatch line: `max_entries_scanned` 0 (`scan_is_corpus_prefix: false`, so a full release scan and not a prefix), `family_source` pfam, band 64–512, `pool_size` 20,000, `holdout_fraction` 0.25, `fit_fraction` 0.7, seed 20260818, `min_concept_groups_per_cell` 8 and `min_family_groups_per_side` 8, `stop_min_concepts_eval` 8 and `stop_min_concepts_family_holdout` 4, `straddling_refusal_boundary` 90.0. Nothing was weakened and no cell was retried.
+
+### Cohort A — `--go-evidence non_iea`, the primary
+
+`results/transfer/sequence_description_cohort_non_iea`, 802 s wall.
+
+**Scan and pool.** 574,627 entries scanned → 215,880 eligible; 2,088,077 GO annotations seen → 652,071 kept under the policy (31.2%), with **0** GO ids remapped through `alt_id` and **0** unknown to ontology release `releases/2026-01-23`. Pool 20,000 records, 19,385 distinct sequences, length 64 / 308 / 512. Family-label coverage over the 224,022 otherwise-eligible entries: **pfam 0.9637, cath 0.6780**. Near-duplicate grouping returns 16,540 groups, largest 39, 14,670 singletons.
+
+**Splits.** fit 10,502 / eval 4,499 / family_holdout 4,999; the family holdout carries 695 test against 1,902 train groups; fit/eval 8,610 against 3,752 groups, verdict `GROUP_DISJOINT`. The certificate is `SPLITS_VERIFIED`, recomputed from the returned labels rather than trusted from the construction — 2,597 family groups, 3,991 distinct curated families, 975 of them in the holdout. Fit/eval boundary containment maxes at 0.499 with `n_above_half` **0**, so no held-out record reaches the joining threshold against any single training record.
+
+**The leakage table is the load-bearing part of this read.** One DIAMOND 2.1.24 alignment (`--very-sensitive --masking 0`, e-value 1e-3), 657,861 hits, read at the five pre-registered boundaries. Straddling **pairs** at 95 / 90 / 80 / 70 / 50:
+
+| split | n held out | 95 | 90 | 80 | 70 | 50 |
+|---|---:|---:|---:|---:|---:|---:|
+| record_level | 4,500 | 1,053 | 1,880 | 3,176 | 5,729 | 24,478 |
+| near_duplicate_group | 4,499 | **0** | **0** | 423 | 2,766 | 20,405 |
+| family_holdout vs fit+eval | 4,999 | **0** | **0** | **0** | **0** | 37 |
+
+Held-out **records** keeping a relative at or above the boundary, which is L30's own statistic: record-level **602 (13.4%)** at ≥95 with 196 byte-identical, **793 (17.6%)** at ≥90 and **1,133 (25.2%)** at ≥80; under the group split **0 (0.0%)** at ≥95, **0 (0.0%)** at ≥90 and 257 (5.7%) at ≥80, with **no** byte-identical relative anywhere. On the family holdout, 4 records (0.08%) reach ≥50 and none reaches ≥70, and 95.5% have no detectable homologue on the training side at all. **C34-3 is satisfied**: zero straddling pairs at ≥90 and above under the committed group split.
+
+**What that table is evidence for, stated narrowly.** It is an **independent internal reproduction of the defect L30 names**, on a corpus drawn afresh, under **one** alignment in which the split is the only variable — so the record-level and group-level rows are not two measurements compared, they are two readings of the same 657,861 hits. That is what makes the contrast attributable to the splitting procedure rather than to the aligner, the pool or the draw. It is also a **cohort** measurement and not a restatement of L30: L30's figures belong to a different pool at a different band, and nothing here supersedes or revises them.
+
+**Concepts.** **17 of 17 admitted, 0 rejected** — `go_dna_binding`, `go_rna_binding`, `go_atp_binding`, `go_metal_ion_binding`, `go_kinase_activity`, `go_hydrolase_activity`, `go_oxidoreductase_activity`, `go_transmembrane_transport`, `go_translation`, `go_dna_repair`, `go_membrane`, `ec_oxidoreductase`, `ec_transferase`, `ec_hydrolase`, `ec_lyase`, `ec_isomerase`, `ec_ligase`. The floor curve over the intersection of both deciding splits reads **4: 17, 8: 17, 16: 16, 32: 15**, so **C34-6 is satisfied and the count at the declared floor of 8 is read off a curve** rather than asserted — which is the half of Appendix B rule 2 that the D3.h unit twice failed to run before applying a threshold.
+
+**Masking.** 25,684 spans replaced across the 20,000 descriptions (run log), 21,868 masked terms in the artefact, 16,175 records carrying at least one, a mean **11.86%** of description characters removed. Per-concept description leak, raw → masked: **all 17 concepts reach exactly 0.000**, from raw rates as high as `ec_ligase` 0.533, `ec_isomerase` 0.394, `go_dna_repair` 0.384, `go_membrane` 0.380 and `go_translation` 0.344. **C34-1 holds as a refusal rather than as a threshold** — the term set is re-applied to the masked text and the run raises if any span survives — and the raw column is what makes the masked column worth having: on five of seventeen concepts more than a third of bearing descriptions named the concept outright.
+
+**Digests, recomputed here rather than copied from the report.** `cohort.json` 47,870 B `de91db01dfe9aed025a6e75f0d5fcb8d3edad67fe554c78b555b616f82656e15`; `records.jsonl` 38,497,283 B `58871ab58bd92bd292810801792decd1635f3d55c47cab9f5193ea69ac46377c`; `pool.fasta.gz` `0553301ac525631967071e5d85ff6d84a32803196d482651dce63c4728b4df5a`; `hits.tsv.gz` `6333c7268832a904909deb4427f160219344ec97b6e5be32a1a6e26a9dd48af6`; runner `d005fdeaa16a465b23fac11eda2d2005d31cdc4c06781a4bf6ad708d191cd2a5`.
+
+### Cohort B — `--go-evidence all`, the declared sensitivity cohort
+
+`results/transfer/sequence_description_cohort_go_all`, 855 s wall, `COHORT_ADMITTED`. 340,442 eligible; pool 20,000, 19,409 distinct, length 64 / 265 / 512; 16,704 near-duplicate groups, largest 68; fit 10,500 / eval 4,500 / family_holdout 5,000; `GROUP_DISJOINT` and `SPLITS_VERIFIED`. Leakage over 497,595 hits: record_level 894 / 1,484 / 3,640 / 6,757 / 20,769; group **0 / 0** / 507 / 3,630 / 17,570; family_holdout **0 / 0 / 0 / 0 / 0**. 17 of 17 admitted with the floor curve flat at 4: 17, 8: 17, 16: 17, 32: 17. All 17 masked leak rates 0.000. `cohort.json` `102f75b1f74a429e95c96e25d5f5ba9816bf6d1ffb5befe66a0452d16ba90f83`; `records.jsonl` 45,163,623 B `490b862823a05a07a3307135951be35f7b4aa279d9db6def25c33d4b327318f8`.
+
+### What the non-IEA restriction cost, read against what amendment 2 predicted
+
+Amendment 2 chose `non_iea` on a confound and named the sensitivity cohort so the cost would be visible rather than assumed. It is now measured, and it separates cleanly into four parts.
+
+**It cost nothing at the deciding threshold.** 17 of 17 concepts admitted in both cohorts, at the frozen per-cell floor of 8 in both deciding splits. **The circularity break is free where the gate is set.**
+
+**It cost margin.** A's floor curve bends to 16 at a floor of 16 and 15 at 32, where B stays flat at 17, and the concepts that fall out are the sparse ones and they fall out of `family_holdout`. The restriction is free at 8 and would not have been free at 32.
+
+**It cost population, and almost all of it through one rejection.** 215,880 against 340,442 eligible, **−36.6%**, of which `no_go_or_ec_annotation` accounts for 130,386 against 1,755 — so **128,631 in-band Swiss-Prot entries carry GO only through IEA**. Every other rejection count is identical between the two runs (`function_text_too_short` 92,496, `length_out_of_band` 126,171, `non_standard_residue` 1,552, `description_quotes_own_sequence` 0, `no_recommended_name` 0), which is the check that the two populations differ in the one axis the policy names and in nothing else.
+
+**It cost GO-concept density sharply, and only GO — which is the asymmetry amendment 2 predicted from EC being curated by construction.** In A the GO concepts carry large `undefined` cells (about 3,011 in eval and 3,580 in `family_holdout` for the binding concepts, against about 324 and 461 in B), so bearing groups collapse: `go_atp_binding` holds **9** bearing groups in `family_holdout` against **603** in B, and 15 against 510 in eval; `go_metal_ion_binding` 395 against 5,076 records. The EC concepts barely move, and one moves the other way — `ec_transferase` carries 985 eval bearing groups in A against 712 in B. The prediction was made before these numbers existed and it holds in direction and in kind.
+
+**And it shifted pool composition toward better-studied, longer, less clonal proteins**: median length 308 against 265, largest near-duplicate group 39 against 68. That is a property of the population, not a defect, and it is recorded because a downstream reading on cohort A is a reading on that population.
+
+### Verdict against the frozen rule
+
+**Cohort A stands as the primary and the declared fallback was not needed.** It clears **C34-1** (masking refusal, all 17 masked leak rates 0.000 measured rather than assumed), **C34-3** (zero straddling pairs at ≥90 under the group split, on the same alignment that shows the record-level split failing), **C34-4** (family-disjoint holdout, `SPLITS_VERIFIED`, 975 curated families held out), **C34-5** (17 concepts at ≥8 bearing and ≥8 non-bearing groups in each deciding split) and **C34-6** (the floor curve). **STOP-34 did not fire** — 17 admitted concepts in `eval` against the threshold of 8, and 17 in `family_holdout` against 4.
+
+**Schema conformance, verified independently of the stage that wrote it.** Both `records.jsonl` files hold exactly 20,000 lines; every record's key set is exactly the 16 declared `RECORD_FIELDS` with zero mismatches across all 40,000 records, and `split` takes only the three declared `SPLIT_NAMES` values. Key order on disk is alphabetical because the writer sorts keys; the **field set** is the contract, not the order.
+
+### Two caveats that constrain stages 35 and 36, recorded here because they are pre-data for those stages
+
+**One concept sits one group above the floor.** `go_atp_binding` holds **9** bearing groups in `family_holdout` against a floor of 8, so its holdout interval will be the widest in the panel, and `go_dna_repair` at 22 the second widest. Nothing about that licenses dropping either — the floor is the floor — but a `family_holdout` result on those two concepts must be read with its interval and not with the panel's.
+
+**The reduction order is already fixed and no discretion remains.** EXP-R2-213 froze the rule as ascending `eval` group count, which on cohort A resolves to: `go_atp_binding` (15), `go_dna_repair` (49), `go_kinase_activity` (52), `go_translation` (63), `go_metal_ion_binding` (71), `go_transmembrane_transport` (74). Whoever dispatches stage 36 under the 24 GPU-h bound drops in that order, and the order was computed before any activation was captured.
+
+### One number corrected forward, and one carried limitation set
+
+**CATH coverage is 0.678 (A) and 0.675 (B), not the 0.668 that amendment 2 states.** Amendment 2's figure came from a capped smoke run; these are measured at full scale over the eligible entries of each run. Pfam is 0.964 and 0.965, unchanged, and it remains the reason for the choice — the ordering and the margin are what the decision rests on, so **amendment 2's decision is unaffected and only its number moves**. Amendment 2 is not edited: this log is append-only and its wording is provenance, so the correction lives here and a reader of that figure should arrive at this entry through it.
+
+**The cohort carries its own limitations block and all five of them travel to stages 35 and 36**, none of them repaired by this read: annotation is not independent evidence (the reason the primary is `non_iea` at all, and a biological-knowledge claim still needs evidence from outside UniProt under either policy); a curated function comment is a house style over a small vocabulary and not a sample of natural language about proteins; masking is lexical and paraphrase survives it, so a masked-description result is a **floor** on the leak-free result rather than a leak-free result; there is no control over model pretraining, because Swiss-Prot lies inside UniRef50 by construction and these splits control leakage between this cohort's own sides and nothing else; and the cohort is sequence-level only, so a downstream estimand wanting residue-level correspondence must declare its own and cannot read it off here.
+
+**No alignment result exists, and none is implied by anything above.**
+
+---
+
+## 2026-08-19 — EXP-R2-213 amendment 3: A36-5's strictness defect corrected, a balanced evaluation draw authorised, the layer and the bound fixed, and A36-6's referent named
+
+**Status first, because it decides how everything below may be weighed.** No stage-36 number exists on real weights. The only stage-36 numbers in hand come from a **synthetic known-answer fixture with a planted effect** — that is instrument validation, not data, and a fixture's geometry is not the campaign's. Every decision here is therefore pre-data for the estimand it governs, and each one is labelled by kind so a reader can weigh them separately rather than as one block:
+
+| item | kind | what it does |
+|---|---|---|
+| 1 — A36-5 | **correction of a defect**, whose effect is a **relaxation** | replaces a max-based void with a percentile bar symmetric with A36-3(b) |
+| 2 — balanced evaluation draw | **addition** | authorises a named extension of the reduction rule that changes the *population* the estimand is computed over |
+| 3 — layer and bound | **relaxation** of the cost bound, paired with a **restriction** | one layer only, and 24 → 40 GPU-h |
+| 4 — A36-6 Pfam referent | **addition** | authorises a derivation that was not in the frozen text, with its attainability evidence |
+
+### Item 1 — A36-5 was mis-specified, and this is the correction
+
+**The defect.** As frozen, A36-5 voids the readout if **any** of the ≥8 permuted-concept draws passes A36-3. The implementer measured what that costs: with the effect planted, **one of eight concepts is voided this way in each cell**, and the void probability **grows with `--permuted-directions`**. A criterion that becomes stricter the better you measure its own control is mis-specified. It is the same class of error as an uncorrected multiple comparison, which this programme already catalogues, and the control size is not supposed to be an input to the verdict. The stage's own declared-hazard block names it (`a36_5_strictness_scales_with_its_control_size`) and recorded it as unresolved because the rule was frozen; this entry resolves it.
+
+**The amended criterion, authoritative from here.**
+
+> **A36-5 (amended) — the permuted-concept control, distributional and symmetric with A36-3(b).** Concept vectors are re-estimated from permuted concept labels over at least 8 draws, and admission requires `|Δ_real(α)| ≥ --random-null-margin × p95(|Δ_permuted(α)|)` over those draws, at the same α and the same site. `--random-null-margin` stays frozen at **2.0**. The per-draw pass count against A36-3, and each draw's distance to its own bar, remain **reported diagnostics and are not the gate** — so a marginal outcome reads as *"one draw of eight, at 1.02× the bar"* rather than as a flat void. A permuted pass **rate** that is high must be discussed in the read and may not be silently absorbed by the percentile.
+
+**Why this is a correction and not a weakening, stated because it does relax the gate.** The maximum of a sample is not an estimator of anything: its expectation moves with the sample size, so the frozen form made the bar a function of the control budget. The 95th percentile is an estimator, it does not drift with the number of draws, and **A36-3(b) already uses exactly that statistic against the isotropic control** — so this reuses a decision rule already frozen in this design instead of inventing a second one. The relaxation is the removal of a size-dependence, not the removal of a requirement.
+
+**The geometry that motivates it, which also says the real run sits in the safe regime.** A permuted-label refit's difference-of-means lies in the span of the planted directions plus noise, so its component on any one concept falls as **1/√(concept count)**; A36-3(b)'s bar is set by isotropic directions, whose component falls as **1/√(width)**. On the fixture at **3 concepts and width 32**, the worst of eight permuted refits carried **0.886** of the planted direction and passed every clause of A36-3. Rebuilt at **8 concepts and width 128**, **0 of 32** permuted draws pass, with worst `|Δ|/bar` **0.617×** against the planted direction's **1.19×**. The real checkpoints are width **4,096** with 8 concepts, far inside the separating regime — so the tension is measured rather than assumed not to bind.
+
+**And one part of it is irreducible, recorded as a property rather than as a fixed problem.** A36-5 and A36-3(b) draw from **different populations** — permuted-label refits live in the span of the concept directions, isotropic controls do not — and the two are in tension the **lower** the activation cloud's effective dimension. Nothing in this amendment removes that. It is why the width-versus-concept-count arithmetic above has to be checked per run rather than inherited from this entry.
+
+### Item 2 — a balanced per-concept evaluation draw, authorised as a named addition
+
+**The frozen design does not fit its own bound, and the frozen reduction rule cannot close the gap.** Measured throughput is **161.2 ms/record** protein and **142.3 ms/record** text on the 4,499-record `eval` split, so one protein pass is 725 s and the pass count is `K·9·17` protein plus `K·9·9` text: **181 GPU-h at K=2** and **362 at K=4** across both checkpoints, 7–30× outside the 24 GPU-h bound. The frozen reduction rule names **concepts** only, and dropping concepts cannot recover an order of magnitude without emptying the specificity matrix the design exists to compute.
+
+**The waste is structural rather than incidental, and it is visible in the cohort's own counts.** Every admitted concept is a small positive class against nearly the whole split: on the `eval` split's 3,752 near-duplicate groups, `go_atp_binding` carries **15** bearing groups against 3,737 non-bearing (1:249), `go_dna_repair` 49, `go_kinase_activity` 52, `go_translation` 63, `go_metal_ion_binding` 71 and `go_transmembrane_transport` 74; the EC concepts are the densest at 165 (`ec_ligase`) to 985 (`ec_transferase`). So the interval on a bearing-versus-non-bearing difference is governed by the **tens** of units on the bearing side, while the overwhelming majority of the compute drives the non-bearing arm to a precision no reported quantity consumes.
+
+**Authorised: every bearing group the concept has, plus a seeded equal-size (1:1) draw of non-bearing groups.** Four conditions, all frozen here:
+
+* **one seed, recorded in the artefact**, and the **same draw across every α rung, every concept and both checkpoints**, so that no two reported numbers rest on different populations;
+* **achieved group counts per concept per side reported**, with **≥8 per side** required (`MINIMUM_BOOTSTRAP_UNITS`) — a concept that cannot meet it on the bearing side was already inadmissible at stage 34, so this condition can only bind on the drawn side;
+* **a second, independent seeded draw for at least one concept on one checkpoint, reported** — **required, not optional**. Balancing turns the non-bearing arm from the whole split into a *sample*, which introduces a draw variance the full-split design did not carry, and that variance must be **measured** rather than assumed small. This is the same discipline that priced `R`'s denominators rather than asserting their noise;
+* the drawn population is fixed by this entry and is never re-drawn after any effect is seen.
+
+**What this changes and what it does not.** It changes the **population the estimand is computed over**, which is precisely why it needs authorising before any number exists rather than being treated as an implementation detail. It does **not** change the estimand's definition: Δ(α) is the same difference of differences on the same held-out records. And it raises power per unit of compute rather than lowering it — the bearing side is untouched and it is the bearing side that sets the interval.
+
+**One motivating figure could not be reproduced, and it is recorded rather than adopted or dropped.** The imbalance was put to me as *"the admissible EC concepts carry 19–34 bearing groups against ~3,730 non-bearing."* The non-bearing half reproduces — ~3,730 is what you get by counting **all** `eval` groups minus the bearing ones, which folds the `undefined` cells in and is a different convention from `cohort.json`'s own `non_bearing_groups` field, so the convention has to travel with the number. The bearing half does **not** reproduce: recomputed from `records.jsonl` by top-class prefix on the `ec` column, and agreeing with `cohort.json`'s `counts_per_split` to the unit, the EC concepts carry **165, 239, 261, 368, 508 and 985** bearing groups in `eval` — an order of magnitude above 19–34. The concepts that actually sit in the tens are the **GO** ones, which are also exactly the six the frozen reduction rule drops first. **The authorisation stands on the recomputed numbers**, which make the same structural case and make it more strongly; the 19–34 figure is not carried anywhere, and whatever population it was measured on should be identified before it is quoted again. This is Appendix B rule 34's shape — a number carried across a variant it was not measured on — caught on the way in this time.
+
+### Item 3 — one layer, and the bound raised to 40 GPU-h
+
+**Stage 36 runs at exactly one layer.** L32 forbids reading a per-layer criterion as a mean over layers, and running several layers and reporting the best would manufacture the freedom this design exists to remove. The layer is **stage 35's already-pre-registered decision layer**, so choosing it creates no new post-hoc degree of freedom: it is fixed by a decision that precedes any stage-36 activation.
+
+**With item 2, K=8 across both checkpoints at one layer costs about 9.6 GPU-h.** The frozen bound rises from 24 to **40 GPU-h**, and the headroom is earmarked here so it cannot be spent elsewhere: the K=8 two-checkpoint run, the mandatory draw-variance replicate of item 2, and **one** contingency re-run. It is **not** for a second layer and **not** for widening any control. A control is still never dropped for economy (Appendix B rule 37), and the reduction rule remains the only authorised way to shed work.
+
+### Item 4 — A36-6's Pfam referent, named, and the attainability evidence that gates it
+
+**The derivation is authorised and was not in the frozen text.** EXP-R2-213's concepts are GO and EC terms and **none of them is a Pfam accession**, so a Pfam-annotated generation cannot be scored against a concept without a referent mapping. The implementer derived one from the cohort's **own `pfam` column on the `fit` split alone** — 3 to 11 families per EC concept, at the `--pfam-referent-min-bearing` threshold. Fit-split-only is what keeps it out of the evaluation population, and it is authorised on that basis and by name.
+
+**Readout B is not void, and A36-6 requires that to be shown rather than assumed.** HMMER **3.4** built from the vendored archive; Pfam-A verified against its published digest and `hmmpress`-ed to **27,481 profiles**; real hits at **E = 2.4e-31** and **E = 4.6e-34**; and an **α = 0 annotation rate of 0.208 over 24 sequences with seven distinct families**. Non-zero, so an increase is measurable against it and A36-6's rule-40 precondition is met. The staged instruments were checked to exist for this entry: the HMMER 3.4 tarball and `Pfam-A.hmm.gz` with its `.sha256` are both vendored in the repository.
+
+**CLEAN cannot run offline, and that is reported as an unavailable instrument rather than stubbed.** Its trained weights and the ESM-1b encoder it needs are both absent — the CLEAN source tarball is staged and no `.pth`/`.pt` weight file exists anywhere under it — and this host has no route to fetch either. So **no EC prediction is produced**, the absence is recorded with the missing files named, and nothing substitutes for it. A stub here would have been an instrument that always agrees.
+
+### The irreducible limitations these carry into stage 36, in the implementer's own terms
+
+**Swiss-Prot lies inside UniRef50 by construction**, so every evaluation protein is a candidate member of a protein decoder's pretraining corpus, and **nothing in stage 36 can license a knowledge claim**. Passing every clause establishes a graded, concept-specific causal effect visible to an instrument that is not the model — and no more than that.
+
+**Masking is lexical and paraphrase survives it.** Removing a concept's own surface forms does not remove the same fact in other words, so a masked-description result is a **floor** on the leak-free result rather than a leak-free result.
+
+**The magnitudes are nats per token at about 1.53 residues per token** and **must never be quoted beside a per-residue arm's** figure. That is L23's unit confound, which has already reversed one cross-arm ordering in this programme.
+
+**No stage-36 number exists on real weights.** The fixture has a planted answer and was built to have one; nothing in this entry is a measurement of a model.
