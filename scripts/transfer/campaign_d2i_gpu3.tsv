@@ -4,13 +4,22 @@
 # `--device` and `--out` are injected by the runner and must never appear in args.
 # ${TRANSFER_MODEL_BASE_DIR} is substituted in-pod after h200_env.sh is sourced, so the model root stays declared once.
 #
-# ONE SNAPSHOT, key `d2i`. Every cell is one comparison and must run one code hash.
+# ONE SNAPSHOT, key `d2i`. Every cell of this campaign is one comparison and must run one code hash.
 #
-# CARD 3 ONLY, and one cell per slot. Cards 0 and 1 carry the D3.j campaign; card 2 reports an uncorrected
-# volatile ECC error while every other card reports zero, and this estimand is a DIFFERENCE BETWEEN TWO FORWARD
-# PASSES over the same weights -- the one case where a silently corrupted value is indistinguishable from a
-# result rather than showing up as a crash. The queue refuses a busy card instead of waiting, so a manifest may
-# only name cards that will be free when it is dispatched.
+# CARD 3 ONLY. This is one of three manifests -- cards 0, 1 and 3 -- frozen together and differing in nothing
+# but the gpu column. The column is static and a manifest reaches the pod only inside a snapshot, so "dispatch
+# onto the first card that frees" cannot be written as one file; it is written as one file per admissible card,
+# with the dispatcher choosing at launch. CARD 2 IS DELIBERATELY ABSENT: it reports one uncorrected volatile ECC
+# error while the other three report zero, and this estimand is a difference between two forward passes read
+# down to rank-1 ablations where the damages to be resolved are small -- the case where a single silently
+# corrupted value is indistinguishable from a result rather than showing up as a crash. That is the same
+# reasoning that put this stage in float32 rather than bfloat16.
+#
+# The queue REFUSES a busy card rather than waiting for it, which is what makes choosing a card at launch safe:
+# losing a race costs a refusal and nothing else. All three manifests are dispatched with --campaign campaign_d2i
+# so the status file is one observation channel whichever card is used, and a cell completed under one card is
+# skipped by a re-dispatch under another -- the completion test is a *.json in the cell's own output directory,
+# which is keyed by run id and label rather than by card.
 #
 # SLOTS 1-3 ARE THE FIRST DRAW AND 4-6 THE SECOND, in that order deliberately: an interrupted campaign then
 # leaves a complete first draw rather than half of each. EXP-R2-215 freezes the second draw as mandatory
@@ -19,8 +28,8 @@
 # across the pair on purpose: with a different cohort the within-record draw is over different records anyway,
 # and moving both would confound cohort sensitivity with position sensitivity.
 #
-# --batch-size 8 rather than the workstation smoke test 4. It changes how records group into batches and
-# therefore which positions the seeded per-batch draw selects, so it is part of a draw identity and is held
+# --batch-size 8 rather than the workstation smoke test's 4. It changes how records group into batches and
+# therefore which positions the seeded per-batch draw selects, so it is part of a draw's identity and is held
 # IDENTICAL across all six cells; it is not a free knob and must not be varied between the two draws.
 #
 # Llama-2-7b-hf enters with BOTH modes named and text=5.5240 protein=0.0843 (EXP-R2-152, protein re-measured at
