@@ -80,23 +80,31 @@ reused is that stage's hook discipline, not its search.
 ``A36-4`` each concept's own diagonal must exceed the **95th percentile of its own
     row's off-diagonal entries**. The mean diagonal minus mean off-diagonal is reported
     and may not substitute for it -- that substitution is L32 exactly.
-``A36-5`` permuted-concept directions must **fail** A36-3; if one passes, the readout is
-    void.
+``A36-5`` **as amended (amendment 3):** the effect must exceed the margin times the
+    95th percentile of the permuted-label control's ``|Delta|`` over at least eight
+    draws -- A36-3(b)'s own rule against a second control population. The frozen text
+    voided the readout if any single permuted refit passed A36-3; that is retained as
+    a reported diagnostic, per draw and with each draw's distance to its bar.
 ``A36-6`` readout B's attainability is read first: at ``alpha = 0`` the generator must
     annotate at a non-zero rate against Pfam-A, or readout B is void.
 
-**One tension between the frozen clauses is recorded rather than resolved here.** A36-5
-requires a permuted-label refit to fail A36-3, and A36-3(b)'s bar is set by *isotropic*
-random directions. Those are not the same population: a permuted refit lies in the span
-of the concept structure plus the representation cloud's own noise, so its component on a
-concept direction is systematically larger than an isotropic vector's, which falls only
-as one over the root of the width. The two clauses therefore pull against each other, and
-the pull is stronger the lower the cloud's effective dimension and the fewer the concepts.
-On the known-answer fixture this is measured rather than argued: at three concepts and
-width 32 the worst of eight permuted refits carried 0.89 of the planted direction and
-passed every clause of A36-3, and at eight concepts and width 128 none of thirty-two
-draws passes. Every permuted draw's verdict and its distance from the bar reach the
-artefact, because the campaign's margin is not the fixture's.
+**The population mismatch behind A36-5 is irreducible and is recorded rather than
+resolved.** A36-3(b)'s bar comes from *isotropic* random directions; a permuted-label
+refit is not isotropic -- it lies in the span of the concept structure plus the
+representation cloud's own noise -- so its component on a concept direction is
+systematically larger. The two controls therefore bound different things, and amendment 3
+does not remove that: it stops the *maximum* of the permuted sample from being the
+criterion, which is a separate defect.
+
+The geometry is measured rather than argued, and it is what shows the real run sits in
+the safe regime. A permuted refit's component on one concept direction falls as one over
+the root of the **concept count**, while the isotropic bar falls as one over the root of
+the **width**. At three concepts and width 32 the worst of eight refits carried **0.886**
+of the planted direction and passed every clause of A36-3. At eight concepts and width
+128, **0 of 32** pass, with the worst reaching **0.617** of its bar against the planted
+direction's **1.19**. The real checkpoints are width **4096** with eight or more admitted
+concepts, so both curves move the right way there -- but the campaign's margin is not the
+fixture's, which is why every permuted draw's distance to its bar reaches the artefact.
 
 **Which checkpoints may enter** is not decided here.
 ``concept_alignment.assert_behavioural_read_permitted`` is the one declaration, and it
@@ -132,6 +140,119 @@ SCHEMA_VERSION = "r2_transfer_concept_injection_v1"
 
 #: EXP-R2-213 is the pre-registration every threshold in this module is quoted from.
 PRE_REGISTRATION = "EXP-R2-213"
+
+#: Amendments to that entry which this module implements, each recorded in the
+#: artefact so that a reader never has to infer which text a number was produced
+#: under. Amendment 3 was decided **before any campaign number existed** -- the only
+#: stage-36 numbers in being at the time were this module's own known-answer
+#: fixture -- and it makes three changes, two of them relaxations of the frozen
+#: text and one an addition:
+#:
+#: * **A36-5 becomes distributional** (:func:`evaluate_a36_5`). The frozen text
+#:   voids the readout if *any* permuted-label refit passes A36-3; the amended rule
+#:   requires the real effect to exceed the margin times the 95th percentile of the
+#:   permuted control's ``|Delta|`` over at least eight draws. This is a relaxation,
+#:   and the reason it is a safe one is that it reuses A36-3(b)'s own rule against a
+#:   second control population rather than inventing a second rule: the maximum of a
+#:   sample estimates nothing and moves with the draw count, while a percentile
+#:   estimates something. The per-draw pass count and each draw's distance to its
+#:   bar are retained as reported diagnostics, which is what makes the relaxation
+#:   auditable.
+#: * **A balanced per-concept evaluation draw is admitted** as a named addition to
+#:   the frozen reduction rule (:func:`balanced_evaluation_draw`).
+#: * **A36-6's Pfam referent is authorised by name**, derived from the cohort's own
+#:   ``pfam`` column on the fit split alone (:func:`pfam_referent`).
+PRE_REGISTRATION_AMENDMENTS: tuple[str, ...] = ("amendment 3", "amendment 4")
+
+AMENDMENT_3_NOTE = (
+    "EXP-R2-213 amendment 3, decided before any campaign number existed: A36-5 is "
+    "distributional rather than any-draw (a RELAXATION of the frozen text, reusing "
+    "A36-3(b)'s percentile rule against the permuted population, with the per-draw "
+    "pass count and distances retained as diagnostics); a balanced per-concept "
+    "evaluation draw is admitted as a named addition to the reduction rule, with a "
+    "mandatory second-seed draw-variance measurement; and A36-6's fit-split Pfam "
+    "referent is authorised by name"
+)
+
+#: EXP-R2-213 amendment 4: the per-side bearing-group cap. Every concept contributes
+#: at most this many near-duplicate groups to each side of its own Delta.
+#:
+#: **It is a criterion improvement and not an economy**, and the reason is A36-4.
+#: Within one row of the specificity matrix, cell ``(A, B)`` is Delta for concept
+#: ``B`` computed on ``B``'s own subset at ``B``'s own group count -- so the
+#: off-diagonal referent set itself mixes precisions, and uncapped a 15-group
+#: diagonal could be compared against a percentile taken over 985-group cells. The
+#: heterogeneity is therefore *within* row as well as across rows, and the cap
+#: equalises the diagonal and every off-diagonal cell of a row simultaneously, which
+#: is what makes the row's 95th percentile a like-for-like referent. On the
+#: production cohort it collapses the spread from 65.7x to 2.13x.
+#:
+#: Two things it does **not** do, recorded because either would be read into it.
+#: Capping equalises *noise*, not *signal*: A36-4 still compares raw effects, so a
+#: concept with a genuinely larger effect still dominates its row, and a capped
+#: matrix must never be read as a matrix of t-statistics. And it cannot equalise a
+#: concept that never had the groups -- ``go_atp_binding`` carries 15 and reaches no
+#: cap at or above 16, so its row is flagged rather than averaged in.
+FROZEN_PER_SIDE_CAP = 32
+
+#: Below roughly this many near-duplicate groups per side the *point estimate*
+#: becomes draw-sensitive, which is a different failure from a wide interval and is
+#: not visible in one. Measured on the known-answer fixture by subsampling groups: at
+#: 12 per side a single unlucky subsample moved ``|Delta|`` from about 0.00095 to
+#: 0.00075 and ``|Delta|/bar`` from 1.2 to **0.78**, across the decision boundary,
+#: while its interval stayed at 28% of ``|Delta|``. At 24 and above the ratio is flat
+#: (1.06-1.27, no trend in n). This is why :data:`FROZEN_PER_SIDE_CAP` is 32 and not
+#: 16: cap 32 leaves exactly one concept below the threshold, cap 16 would put all
+#: seventeen below it. Amendment 3's second-seed draw-variance check is the
+#: designated detector for this mode, and it is wired to every concept that sits
+#: below this line.
+DRAW_STABILITY_GROUP_THRESHOLD = 24
+
+#: What the cap is safe *because of*, recorded so that the reasoning is not later
+#: compressed into "power saturates at 32", which is false.
+#:
+#: The interval does not saturate: its half-width scales as one over the root of the
+#: group count with no knee (half-width times root-n measured flat at 0.00047-0.00073
+#: on the fixture), so 64 to 128 buys the same 29% that 32 to 64 does. The cap is
+#: safe for a different reason. A36-3(a) is not the binding gate -- the interval
+#: half-width sits at 8-16% of ``|Delta|`` across every count from 8 to 64, clearing
+#: (a) throughout. **A36-3(b) binds, and it compares point estimates**: its bar is
+#: the 95th percentile of the random-direction control's ``|Delta|``, which rises only
+#: about 22% from 64 groups per side to 8 because it is set mostly by genuine
+#: direction-to-direction variation rather than by estimation noise. The decisive
+#: ratio ``|Delta|/bar`` accordingly shows no trend in the group count.
+CAP_SAFETY_NOTE = (
+    "the interval does NOT saturate -- it scales as 1/sqrt(n) with no knee. The cap is "
+    "safe because A36-3(a) is not the binding gate (its half-width is 8-16% of |Delta| "
+    "throughout) while A36-3(b) binds and compares POINT ESTIMATES, and (b)'s bar is "
+    "set mostly by direction-to-direction variation rather than estimation noise, so it "
+    "rises only ~22% from 64 groups per side to 8 and |Delta|/bar shows no trend in n. "
+    "This must not be remembered as 'power saturates at 32'"
+)
+
+#: Why the cap retires the frozen reduction rule instead of inverting it. Cost is
+#: ``K x passes x |union|``: one pass scores the union and yields Delta for every
+#: concept, so concepts are **equal-cost given the union** and differ only in how much
+#: they inflate it. Uncapped that is wildly unequal -- ``ec_transferase`` adds 832
+#: marginal records to the union and ``go_membrane`` 435, against tens for the small GO
+#: concepts -- which is what made the frozen rule (drop in ascending bearing count)
+#: keep the most expensive concepts. Capped at 32 the union is 539 records for all
+#: seventeen and a concept's marginal cost is near-uniform, so no reduction is needed
+#: and the rule never fires.
+COST_MODEL_NOTE = (
+    "cost is K x passes x |union|, not a sum over concepts: one pass scores the union "
+    "and yields Delta for every concept, so concepts are equal-cost given the union and "
+    "differ only in how much they inflate it. That is why the cap retires the frozen "
+    "reduction rule rather than inverting it -- at all 17 concepts and cap 32 the rule "
+    "never fires"
+)
+
+#: How the evaluation population is chosen. ``full_split`` is the frozen behaviour --
+#: every record of the declared split. ``balanced_1to1`` is amendment 3's addition:
+#: every near-duplicate group a concept bears, plus a seeded equal-size draw of
+#: groups it does not. Declared rather than defaulted, so the authorisation is
+#: visible at the call site.
+EVALUATION_DRAWS = ("full_split", "balanced_1to1")
 
 #: A36-3's nine rungs, in units of sigma. Frozen: a stage that could choose its own
 #: ladder could choose it after seeing which rungs worked.
@@ -660,9 +781,68 @@ def _delta_metric(truth: np.ndarray, predicted: np.ndarray) -> float:
     return float(predicted[bearing].mean() - predicted[~bearing].mean())
 
 
+@dataclass(frozen=True)
+class ConceptCell:
+    """One concept's three-valued membership over the scored records.
+
+    The cohort's rule is three-valued and not two: a record with no annotation of
+    the relevant sort is **undefined** for the concept and enters neither side,
+    "which is the only honest reading of a curated database where absence of an
+    annotation is absence of curation" (``sequence_description.ConceptSpec``). On
+    the production cohort that is not a corner case -- ``ec_hydrolase`` has 508
+    bearing, 2,065 non-bearing and **1,292 undefined** groups in ``eval`` -- so a
+    two-valued reading would fold 1,292 groups of unknown status into the
+    non-bearing arm of Delta and silently change the estimand.
+
+    ``included`` additionally carries the evaluation draw: under
+    :data:`EVALUATION_DRAWS` ``balanced_1to1`` it is the concept's own balanced
+    subset, and under ``full_split`` it is every defined record.
+    """
+
+    concept: str
+    bearing: np.ndarray
+    defined: np.ndarray
+    included: np.ndarray
+
+    def __post_init__(self) -> None:
+        shapes = {self.bearing.shape, self.defined.shape, self.included.shape}
+        if len(shapes) != 1:
+            raise ValueError(f"{self.concept}: membership arrays disagree in shape")
+        if bool(np.any(self.included & ~self.defined)):
+            raise ValueError(
+                f"{self.concept}: a record the cohort leaves UNDEFINED for this concept "
+                "was included in its evaluation subset; undefined records enter neither "
+                "side of Delta"
+            )
+
+    @property
+    def subset(self) -> np.ndarray:
+        return self.included
+
+    def counts(self) -> dict[str, int]:
+        return {
+            "bearing": int((self.included & self.bearing).sum()),
+            "non_bearing": int((self.included & ~self.bearing).sum()),
+            "undefined_excluded": int((~self.defined).sum()),
+            "defined_not_drawn": int((self.defined & ~self.included).sum()),
+        }
+
+
 def _paired_shift(
-    baseline: ScoredResponse, injected: ScoredResponse, bearing: Sequence[bool]
+    baseline: ScoredResponse,
+    injected: ScoredResponse,
+    bearing: Sequence[bool],
+    *,
+    subset: Sequence[bool] | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """The per-record shift, the bearing flags and the groups, on the scored subset.
+
+    ``subset`` is the concept's own evaluation population: the records the cohort
+    defines it on, intersected with the evaluation draw. Rows outside it are dropped
+    before anything is computed, so an undefined record cannot reach either arm and
+    a balanced draw cannot be diluted by records it did not draw.
+    """
+
     if baseline.record_ids != injected.record_ids:
         raise ValueError(
             "the injected and uninjected passes scored different records, so the "
@@ -671,17 +851,28 @@ def _paired_shift(
     flags = np.asarray(list(bearing), dtype=bool)
     if flags.shape != baseline.nll_per_token.shape:
         raise ValueError("the bearing flags do not align with the scored records")
-    if flags.all() or (~flags).all():
-        raise ValueError(
-            "this cohort carries only one class of this concept, so Delta is undefined"
-        )
-    return injected.nll_per_token - baseline.nll_per_token, flags, np.asarray(
-        baseline.dup_groups
+    keep = (
+        np.ones(flags.shape, dtype=bool)
+        if subset is None
+        else np.asarray(list(subset), dtype=bool)
     )
+    if keep.shape != flags.shape:
+        raise ValueError("the evaluation subset does not align with the scored records")
+    shift = (injected.nll_per_token - baseline.nll_per_token)[keep]
+    flags = flags[keep]
+    if flags.size == 0 or flags.all() or (~flags).all():
+        raise ValueError(
+            "this concept's evaluation subset carries only one class, so Delta is "
+            "undefined on it"
+        )
+    return shift, flags, np.asarray(baseline.dup_groups)[keep]
 
 
 def per_side_group_counts(
-    dup_groups: Sequence[str], bearing: Sequence[bool]
+    dup_groups: Sequence[str],
+    bearing: Sequence[bool],
+    *,
+    subset: Sequence[bool] | None = None,
 ) -> dict[str, int]:
     """Distinct near-duplicate groups on each side of a concept.
 
@@ -692,6 +883,9 @@ def per_side_group_counts(
 
     groups = np.asarray(list(dup_groups))
     flags = np.asarray(list(bearing), dtype=bool)
+    if subset is not None:
+        keep = np.asarray(list(subset), dtype=bool)
+        groups, flags = groups[keep], flags[keep]
     return {
         "bearing": int(np.unique(groups[flags]).size),
         "non_bearing": int(np.unique(groups[~flags]).size),
@@ -699,9 +893,13 @@ def per_side_group_counts(
 
 
 def require_per_side_group_floor(
-    dup_groups: Sequence[str], bearing: Sequence[bool], *, label: str
+    dup_groups: Sequence[str],
+    bearing: Sequence[bool],
+    *,
+    label: str,
+    subset: Sequence[bool] | None = None,
 ) -> dict[str, int]:
-    counts = per_side_group_counts(dup_groups, bearing)
+    counts = per_side_group_counts(dup_groups, bearing, subset=subset)
     short = {side: value for side, value in counts.items() if value < MINIMUM_BOOTSTRAP_UNITS}
     if short:
         raise ValueError(
@@ -714,7 +912,11 @@ def require_per_side_group_floor(
 
 
 def delta_point(
-    baseline: ScoredResponse, injected: ScoredResponse, bearing: Sequence[bool]
+    baseline: ScoredResponse,
+    injected: ScoredResponse,
+    bearing: Sequence[bool],
+    *,
+    subset: Sequence[bool] | None = None,
 ) -> float:
     """Delta(alpha) alone, with no interval.
 
@@ -723,7 +925,7 @@ def delta_point(
     economy removes no control and no draw (Appendix B rule 37).
     """
 
-    shift, flags, _ = _paired_shift(baseline, injected, bearing)
+    shift, flags, _ = _paired_shift(baseline, injected, bearing, subset=subset)
     return _delta_metric(flags.astype(int), shift)
 
 
@@ -735,6 +937,7 @@ def delta_nll_shift(
     seed: int,
     n_bootstrap: int,
     label: str = "delta",
+    subset: Sequence[bool] | None = None,
 ) -> dict[str, Any]:
     """A36-3's Delta with its group-bootstrap interval.
 
@@ -745,7 +948,7 @@ def delta_nll_shift(
     declared here; this stage adds none.
     """
 
-    shift, flags, groups = _paired_shift(baseline, injected, bearing)
+    shift, flags, groups = _paired_shift(baseline, injected, bearing, subset=subset)
     counts = require_per_side_group_floor(groups, flags, label=label)
     bootstrap = paired_group_bootstrap(
         flags.astype(int),
@@ -786,7 +989,11 @@ def delta_nll_shift(
 
 
 def coherence_record(
-    baseline: ScoredResponse, injected: ScoredResponse, bearing: Sequence[bool]
+    baseline: ScoredResponse,
+    injected: ScoredResponse,
+    bearing: Sequence[bool],
+    *,
+    subset: Sequence[bool] | None = None,
 ) -> dict[str, Any]:
     """A36-1: what the injection cost the NON-BEARING sequences.
 
@@ -795,9 +1002,14 @@ def coherence_record(
     floor is read on the sequences the concept is not supposed to help.
     """
 
-    shift, flags, _ = _paired_shift(baseline, injected, bearing)
-    weights = baseline.scored_tokens.astype(np.float64)
-    entropy_shift = injected.entropy_per_token - baseline.entropy_per_token
+    shift, flags, _ = _paired_shift(baseline, injected, bearing, subset=subset)
+    keep = (
+        np.ones(baseline.nll_per_token.shape, dtype=bool)
+        if subset is None
+        else np.asarray(list(subset), dtype=bool)
+    )
+    weights = baseline.scored_tokens.astype(np.float64)[keep]
+    entropy_shift = (injected.entropy_per_token - baseline.entropy_per_token)[keep]
     return {
         "criterion": "A36-1",
         "non_bearing_nll_inflation_nats_per_token": float(
@@ -810,7 +1022,7 @@ def coherence_record(
             np.average(shift[flags], weights=weights[flags])
         ),
         "baseline_non_bearing_nll_nats_per_token": float(
-            np.average(baseline.nll_per_token[~flags], weights=weights[~flags])
+            np.average(baseline.nll_per_token[keep][~flags], weights=weights[~flags])
         ),
         "n_non_bearing": int((~flags).sum()),
         "rule": "a rung is admissible only where the non-bearing inflation is at most "
@@ -880,37 +1092,66 @@ def graded_record(deltas: Mapping[float, float]) -> dict[str, Any]:
     }
 
 
-def random_direction_control(values: Sequence[float]) -> dict[str, Any]:
-    """A36-3(b): the norm-matched random-direction control at one alpha and site.
+def _control_distribution(
+    values: Sequence[float], *, criterion: str, population: str
+) -> dict[str, Any]:
+    """One control population's ``Delta`` distribution at one alpha and site.
 
-    Reported as a distribution over **distinct directions**, with the 95th
-    percentile of ``|Delta|`` as the bar. The absolute value is taken because the
-    criterion is written on ``|Delta(alpha)|``: a control direction that happens to
-    move the bearing sequences the wrong way is still evidence about how large a
-    move an arbitrary direction of this norm produces, and dropping its magnitude
-    would make the bar easier.
+    The 95th percentile of ``|Delta|`` is the bar in both places it is used, and the
+    absolute value is taken because the criterion is written on ``|Delta(alpha)|``: a
+    control direction that happens to move the bearing sequences the wrong way is
+    still evidence about how large a move a direction of this kind produces, and
+    dropping its magnitude would make the bar easier.
+
+    One implementation, two named callers, because A36-3(b) and amended A36-5 are the
+    same statistic against two different populations -- and stating that is the whole
+    argument for the amendment.
     """
 
     sample = np.asarray([float(value) for value in values], dtype=np.float64)
     if sample.size < MINIMUM_CONTROL_DIRECTIONS:
         raise ValueError(
-            f"{sample.size} random direction(s) is below the "
+            f"{sample.size} {population} direction(s) is below the "
             f"{MINIMUM_CONTROL_DIRECTIONS}-direction floor EXP-R2-213 states for "
-            "A36-3(b); with a random-direction control the detection floor is set by "
-            "direction-to-direction variation, so the count of DIRECTIONS is what has "
-            "to be met"
+            f"{criterion}; the detection floor is set by direction-to-direction "
+            "variation, so the count of DIRECTIONS is what has to be met"
         )
     if not np.isfinite(sample).all():
-        raise ValueError("a random-direction control draw is non-finite")
+        raise ValueError(f"a {population} control draw is non-finite")
     return {
-        "criterion": "A36-3(b)",
+        "criterion": criterion,
+        "population": population,
         "n_directions": int(sample.size),
         "signed": ca.null_distribution(sample),
         "absolute_p95": float(np.percentile(np.abs(sample), 95.0)),
         "absolute_mean": float(np.abs(sample).mean()),
-        "bar_note": "the 95th percentile of |Delta| over distinct norm-matched random "
+        "absolute_max": float(np.abs(sample).max()),
+        "bar_note": f"the 95th percentile of |Delta| over distinct {population} "
         "directions at the same alpha and the same site",
     }
+
+
+def random_direction_control(values: Sequence[float]) -> dict[str, Any]:
+    """A36-3(b): the norm-matched random-direction control at one alpha and site."""
+
+    return _control_distribution(
+        values, criterion="A36-3(b)", population="norm-matched isotropic random"
+    )
+
+
+def permuted_label_control(values: Sequence[float]) -> dict[str, Any]:
+    """A36-5 as amended: the permuted-label control at one alpha and site.
+
+    The population a random direction cannot supply. A permuted refit keeps the
+    representation cloud, the estimator and the class balance and destroys only the
+    correspondence between a description and its concept, so it lies in the span of
+    the concept structure plus the cloud's own noise rather than being isotropic --
+    which is exactly why it is a second population and needs its own bar.
+    """
+
+    return _control_distribution(
+        values, criterion="A36-5", population="permuted-label refit"
+    )
 
 
 def evaluate_a36_3(
@@ -979,6 +1220,73 @@ def evaluate_a36_3(
     }
 
 
+def evaluate_a36_5(
+    *,
+    deltas: Mapping[float, Mapping[str, Any]],
+    permuted_controls: Mapping[float, Mapping[str, Any]],
+    firing_alphas: Sequence[float],
+    margin: float,
+    per_draw: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """A36-5 as amended: the real effect must clear the permuted control's percentile.
+
+    The frozen text voids the readout if *any* permuted-label refit passes A36-3.
+    Amendment 3 replaces that with the criterion A36-3(b) already uses, applied to
+    the permuted population: ``|Delta| >= margin x`` the 95th percentile of the
+    permuted control's ``|Delta|`` over at least eight draws, at a rung where the
+    effect fires. This is a **relaxation** of the frozen text, and what makes it a
+    safe one is that it is not a second rule: the maximum of a sample estimates
+    nothing and grows with the draw count, so an any-draw void gets strictly harder
+    as the control is enlarged, which is a property no control should have. A
+    percentile estimates something.
+
+    ``per_draw`` is retained and reported rather than collapsed, because the
+    relaxation is only auditable if a reader can see how many draws would have
+    voided under the frozen rule and how close each came to its bar.
+    """
+
+    rungs = [float(alpha) for alpha in firing_alphas]
+    per_alpha: dict[str, Any] = {}
+    for alpha in rungs:
+        control = permuted_controls[alpha]
+        value = float(deltas[alpha]["delta_nats_per_token"])
+        bar = float(margin) * float(control["absolute_p95"])
+        per_alpha[str(alpha)] = {
+            "delta_nats_per_token": value,
+            "permuted_control_bar": bar,
+            "permuted_control_p95": float(control["absolute_p95"]),
+            "n_permuted_directions": int(control["n_directions"]),
+            "clears": bool(abs(value) >= bar) and value < 0.0,
+        }
+    clearing = [alpha for alpha in rungs if per_alpha[str(alpha)]["clears"]]
+    vacuous = not rungs
+    passing = [
+        entry["direction"] for entry in per_draw if entry.get("passes_a36_3")
+    ]
+    return {
+        "criterion": "A36-5",
+        "rule": "amended: |Delta| >= margin x the permuted control's 95th percentile of "
+        "|Delta| at a rung where the effect fires",
+        "amended_by": f"{PRE_REGISTRATION} amendment 3",
+        "relaxation": "the frozen text voided the readout if ANY permuted draw passed "
+        "A36-3; that criterion gets strictly harder as the control is enlarged, which "
+        "is a property no control should have. The per-draw outcomes below are what the "
+        "frozen rule would have read",
+        "margin": float(margin),
+        "per_alpha": per_alpha,
+        "clearing_alphas": clearing,
+        "vacuous": vacuous,
+        "vacuous_note": "A36-3 fired at no admissible positive rung, so there is no "
+        "effect for this criterion to be asked about. The verdict reads A36-3 first and "
+        "reports a measured negative rather than dressing one as a control failure",
+        "passed": bool(clearing) or vacuous,
+        "frozen_rule_would_have_voided": bool(passing),
+        "permuted_draws_passing_a36_3": passing,
+        "n_permuted_draws": len(per_draw),
+        "per_draw": list(per_draw),
+    }
+
+
 def operating_alpha(evaluation: Mapping[str, Any], *, rule: str) -> float | None:
     """The declared rung a concept's specificity and generation are read at.
 
@@ -995,6 +1303,254 @@ def operating_alpha(evaluation: Mapping[str, Any], *, rule: str) -> float | None
 
 
 # ------------------------------------------------------------------- the nulls
+
+
+def admitted_concepts(manifest: Mapping[str, Any]) -> tuple[str, ...]:
+    """The concept ids the cohort stage ADMITTED, read and never derived.
+
+    ``34_sequence_description_cohort.py`` admits a concept under C34-5 by measured
+    per-cell group counts in both deciding splits, with the floor's attainability
+    read off a curve first, and it records the surviving list. Deriving a concept
+    set here instead -- by enumerating the ``ec`` or ``go`` columns, say -- would
+    evaluate concepts nobody checked against the floor, at counts nobody measured,
+    and would put the campaign outside the pre-registration entirely.
+    """
+
+    concepts = manifest.get("concepts")
+    if not isinstance(concepts, Mapping) or "admitted" not in concepts:
+        raise ValueError(
+            "the cohort manifest carries no concepts.admitted list, so the admitted "
+            "concept set cannot be read; this stage does not derive one"
+        )
+    admitted = tuple(str(value) for value in concepts["admitted"])
+    if not admitted:
+        raise ValueError(
+            "the cohort admitted no concept, so there is nothing for this stage to "
+            "measure; STOP-34 governs that outcome and stage 36 is not authorised"
+        )
+    return admitted
+
+
+def require_admitted_concepts(
+    requested: Sequence[str], manifest: Mapping[str, Any], *, source: Path | str
+) -> tuple[str, ...]:
+    """Refuse any requested concept the cohort did not admit, naming both.
+
+    Refuse rather than warn, and never fall back to a derived set: an interval on a
+    concept that failed C34-5 is not a weaker result, it is an unreportable one.
+    """
+
+    admitted = admitted_concepts(manifest)
+    unknown = [name for name in requested if name not in admitted]
+    if unknown:
+        raise ValueError(
+            f"{unknown} are not admitted concepts of {source}. This stage measures the "
+            "concepts 34_sequence_description_cohort.py admitted under C34-5 and "
+            "derives no set of its own; the admitted ids are "
+            f"{list(admitted)}"
+        )
+    if len(set(requested)) != len(requested):
+        raise ValueError(f"the requested concept set carries a duplicate: {list(requested)}")
+    if len(requested) < 2:
+        raise ValueError(
+            "at least two concepts are required: with one there is no off-diagonal and "
+            "A36-4 is vacuous"
+        )
+    return tuple(requested)
+
+
+def assert_stage35_handoff(
+    handoff: Mapping[str, Any], *, layer: int, site: str, pooling: str, source: Path | str
+) -> dict[str, Any]:
+    """Refuse a layer, site or pooling that is not the one stage 35 handed off.
+
+    EXP-R2-213 states every criterion at one layer and reads it there (L32), and
+    amendment 3 fixes that layer as stage 35's already pre-registered decision
+    layer -- so choosing it here creates no new post-hoc freedom, and *checking* it
+    is what makes that true rather than asserted. The site and the pooling are
+    checked in the same call because a direction is only a direction with respect
+    to the tensor and the aggregation it was estimated under.
+    """
+
+    if not handoff.get("emitted"):
+        raise ValueError(
+            f"{source} emitted no causal hand-off, so stage 35 did not authorise a "
+            "causal stage on this cell; A35-2 and STOP-35 govern that outcome"
+        )
+    mismatches = {
+        field: (declared, observed)
+        for field, declared, observed in (
+            ("layer", int(handoff["layer"]), int(layer)),
+            ("site", str(handoff["site"]), str(site)),
+            ("pooling", str(handoff["pooling"]), str(pooling)),
+        )
+        if declared != observed
+    }
+    if mismatches:
+        raise ValueError(
+            f"this run disagrees with {source}'s causal hand-off on "
+            f"{ {k: {'stage35': v[0], 'requested': v[1]} for k, v in mismatches.items()} }. "
+            "The layer is stage 35's pre-registered decision layer and the site and "
+            "pooling are the ones the directions were estimated under; a mismatch means "
+            "the direction being steered is not the direction that was measured"
+        )
+    return {
+        "source": str(source),
+        "layer": int(handoff["layer"]),
+        "site": str(handoff["site"]),
+        "pooling": str(handoff["pooling"]),
+        "description_variant": str(handoff.get("description_variant")),
+        "checked": ["layer", "site", "pooling"],
+    }
+
+
+def balanced_evaluation_draw(
+    dup_groups: Sequence[str],
+    cells: Mapping[str, tuple[Sequence[bool], Sequence[bool]]],
+    *,
+    seed: int,
+    cap: int | None = None,
+) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    """EXP-R2-213 amendment 3: every bearing group, plus a 1:1 seeded non-bearing draw.
+
+    Authorised as a named addition to the frozen reduction rule. The frozen design
+    scores the whole declared split, where a concept's interval is governed by its
+    bearing groups while almost all of the compute goes to estimating a non-bearing
+    mean to a precision nothing reads -- on the production cohort ``go_atp_binding``
+    has 15 bearing groups against 1,359 non-bearing.
+
+    **One seeded permutation of the groups serves every concept**, and each concept
+    takes the leading groups of it that are non-bearing *for that concept*, until it
+    has as many as it bears. That is what makes the draws overlap heavily rather
+    than being independent per concept, so the union stays small; and it is what
+    makes the population fixed once -- the same draw is reused across every rung,
+    every concept and both checkpoints, so no two reported numbers rest on different
+    populations. Undefined records are never drawn: a concept's complement is taken
+    from the groups it is *defined and not bearing* on.
+
+    What it costs, stated because it is a real cost the full-split design did not
+    carry: the non-bearing arm becomes a *sample*, so it carries draw variance. That
+    variance is not assumed small -- the stage measures it against a second,
+    independent seed and reports it, on every concept that sits below
+    :data:`DRAW_STABILITY_GROUP_THRESHOLD`.
+
+    ``cap`` is amendment 4's per-side bearing-group cap. It is applied to **both**
+    sides -- a concept contributes at most ``cap`` bearing groups and the same number
+    of non-bearing ones -- and it is taken from the same seeded permutation, so the
+    capped selection is reproducible from the recorded seed alone and is identical
+    across every rung, every concept and both checkpoints. See
+    :data:`FROZEN_PER_SIDE_CAP` for why it is a criterion improvement rather than an
+    economy, and :data:`CAP_SAFETY_NOTE` for why it does not weaken the gate that
+    binds.
+    """
+
+    if cap is not None and cap < MINIMUM_BOOTSTRAP_UNITS:
+        raise ValueError(
+            f"a per-side cap of {cap} is below the {MINIMUM_BOOTSTRAP_UNITS}-unit "
+            "bootstrap floor, so it would refuse every concept it applied to"
+        )
+    groups = np.asarray([str(value) for value in dup_groups])
+    order = np.random.default_rng(seed).permutation(np.unique(groups))
+    rank = {group: index for index, group in enumerate(order)}
+    included: dict[str, np.ndarray] = {}
+    record: dict[str, Any] = {}
+    for concept, (bearing, defined) in cells.items():
+        flags = np.asarray(list(bearing), dtype=bool)
+        known = np.asarray(list(defined), dtype=bool)
+        if flags.shape != groups.shape or known.shape != groups.shape:
+            raise ValueError(f"{concept}: membership does not align with the groups")
+        # Both sides are ordered by the ONE seeded permutation and taken as a prefix,
+        # which is what makes the capped selection reproducible from the seed.
+        bearing_set = set(np.unique(groups[known & flags]).tolist())
+        non_bearing_set = set(np.unique(groups[known & ~flags]).tolist())
+        # A near-duplicate group can STRADDLE the boundary -- carry both a bearing and
+        # a non-bearing record of the same concept -- and such a group cannot be
+        # assigned to a side. It is excluded from both, exactly as an undefined record
+        # is: the resampling unit is the group, so a group in both arms would be
+        # resampled into both at once and its per-side count would exceed any cap. The
+        # cohort stage measures the same quantity as ``groups_on_both_sides``, and this
+        # reproduces its counts (11 on go_membrane, 1 to 4 on the other GO concepts,
+        # 0 on all six EC concepts); it was found by amendment 4's cap invariant
+        # firing on go_rna_binding at 33 groups against a cap of 32.
+        straddling = sorted(bearing_set & non_bearing_set, key=lambda g: rank[g])
+        bearing_available = sorted(bearing_set - set(straddling), key=lambda g: rank[g])
+        non_bearing_available = sorted(
+            non_bearing_set - set(straddling), key=lambda g: rank[g]
+        )
+        take = (
+            len(bearing_available)
+            if cap is None
+            else min(int(cap), len(bearing_available))
+        )
+        drawn = set(bearing_available[:take]) | set(non_bearing_available[:take])
+        keep = np.array([g in drawn for g in groups], dtype=bool) & known
+        included[concept] = keep
+        counts = per_side_group_counts(groups, flags, subset=keep)
+        if cap is not None and max(counts.values()) > int(cap):
+            raise RuntimeError(
+                f"{concept}: the draw put {counts} groups on a side against a cap of "
+                f"{cap}; the cap is an invariant of the selection, not a target"
+            )
+        short = {
+            side: value
+            for side, value in counts.items()
+            if value < MINIMUM_BOOTSTRAP_UNITS
+        }
+        if short:
+            raise ValueError(
+                f"{concept}: the balanced draw at cap {cap} leaves {short} "
+                f"near-duplicate group(s), below the {MINIMUM_BOOTSTRAP_UNITS}-unit "
+                "per-side floor. Refused rather than reported with a wider interval"
+            )
+        smaller_side = min(counts.values())
+        record[concept] = {
+            "bearing_groups": counts["bearing"],
+            "non_bearing_groups_drawn": counts["non_bearing"],
+            "bearing_groups_available": len(bearing_available),
+            "non_bearing_groups_available": len(non_bearing_available),
+            "straddling_groups_excluded": len(straddling),
+            "capped": bool(cap is not None and len(bearing_available) > int(cap)),
+            "undefined_records_excluded": int((~known).sum()),
+            "records_scored": int(keep.sum()),
+            "smaller_side_groups": smaller_side,
+            "above_draw_stability_threshold": bool(
+                smaller_side >= DRAW_STABILITY_GROUP_THRESHOLD
+            ),
+        }
+    union = np.zeros(groups.shape, dtype=bool)
+    for keep in included.values():
+        union |= keep
+    below = [
+        concept
+        for concept, entry in record.items()
+        if not entry["above_draw_stability_threshold"]
+    ]
+    return included, {
+        "rule": "balanced_1to1",
+        "seed": int(seed),
+        "per_side_cap": None if cap is None else int(cap),
+        "authorised_by": f"{PRE_REGISTRATION} amendments 3 and 4",
+        "per_concept": record,
+        "union_records_scored": int(union.sum()),
+        "union_groups_scored": int(np.unique(groups[union]).size),
+        "draw_stability_threshold_groups": DRAW_STABILITY_GROUP_THRESHOLD,
+        "concepts_below_draw_stability_threshold": below,
+        "straddling_note": "a near-duplicate group carrying both a bearing and a "
+        "non-bearing record of the same concept is excluded from both sides, as an "
+        "undefined record is: the resampling unit is the group, so a group in both arms "
+        "would be resampled into both at once. The counts reproduce the cohort stage's "
+        "own groups_on_both_sides",
+        "cap_note": "the cap is applied to BOTH sides from the same seeded "
+        "permutation, so the selection is reproducible from the seed alone and is "
+        "identical across every rung, every concept and both checkpoints. It equalises "
+        "noise and NOT signal, so a capped specificity matrix must never be read as a "
+        "matrix of t-statistics",
+        "cap_safety_note": CAP_SAFETY_NOTE,
+        "cost_model_note": COST_MODEL_NOTE,
+        "note": "one seeded permutation of the near-duplicate groups serves every "
+        "concept, which is what fixes the population once and keeps the union small; "
+        "undefined records are never drawn",
+    }
 
 
 def norm_matched_random_directions(
@@ -1158,7 +1714,7 @@ def specificity_matrix(
 OUTCOMES = (
     "TRANSFERS",
     "VOID_INSTRUMENT",
-    "VOID_PERMUTED_CONTROL_PASSES",
+    "PERMUTED_CONTROL_NOT_CLEARED",
     "NO_ADMISSIBLE_COEFFICIENT_RANGE",
     "MEASURED_NEGATIVE",
     "NULL_NO_CONCEPT_CLEARS_ITS_ROW",
@@ -1170,7 +1726,7 @@ def verdict(
     concept: str,
     text_control: Mapping[str, Any] | None,
     protein: Mapping[str, Any] | None,
-    permuted_passes: Sequence[str],
+    permuted: Mapping[str, Any] | None,
     specificity_row: Mapping[str, Any] | None,
     admissible: Sequence[float],
 ) -> dict[str, Any]:
@@ -1195,12 +1751,22 @@ def verdict(
                 "at one admissible rung; below this the protein side is not read",
             }
         ),
-        "A36-5_permuted_control": {
-            "passed": not list(permuted_passes),
-            "permuted_directions_passing_a36_3": list(permuted_passes),
-            "rule": "a permuted-label direction that passes A36-3 means the direction "
-            "carries something the label assignment does not",
-        },
+        "A36-5_permuted_control": (
+            None
+            if permuted is None
+            else {
+                "passed": bool(permuted["passed"]),
+                "clearing_alphas": list(permuted["clearing_alphas"]),
+                "frozen_rule_would_have_voided": bool(
+                    permuted["frozen_rule_would_have_voided"]
+                ),
+                "permuted_directions_passing_a36_3": list(
+                    permuted["permuted_draws_passing_a36_3"]
+                ),
+                "rule": permuted["rule"],
+                "amended_by": permuted["amended_by"],
+            }
+        ),
         "A36-1_admissible_range": {
             "passed": bool([alpha for alpha in admissible if alpha > 0.0]),
             "admissible_alphas": [float(alpha) for alpha in admissible],
@@ -1231,8 +1797,11 @@ def verdict(
         "A36-2_text_positive_control"
     ]["passed"]:
         outcome = "VOID_INSTRUMENT"
-    elif not gates["A36-5_permuted_control"]["passed"]:
-        outcome = "VOID_PERMUTED_CONTROL_PASSES"
+    elif (
+        gates["A36-5_permuted_control"] is not None
+        and not gates["A36-5_permuted_control"]["passed"]
+    ):
+        outcome = "PERMUTED_CONTROL_NOT_CLEARED"
     elif not gates["A36-1_admissible_range"]["passed"]:
         outcome = "NO_ADMISSIBLE_COEFFICIENT_RANGE"
     elif gates["A36-3_graded_effect"] is None or not gates["A36-3_graded_effect"]["passed"]:
@@ -1253,8 +1822,9 @@ def verdict(
             "VOID_INSTRUMENT": "the text-mode positive control did not fire, so the "
             "protein side is not read; a protein null here would be uninterpretable "
             "rather than negative",
-            "VOID_PERMUTED_CONTROL_PASSES": "a permuted-label direction passed A36-3, so "
-            "the readout is measuring something the label assignment does not carry",
+            "PERMUTED_CONTROL_NOT_CLEARED": "the effect does not exceed the margin "
+            "times the permuted-label control's 95th percentile at any firing rung, so "
+            "it is within what a relabelling of the same cloud produces",
             "NO_ADMISSIBLE_COEFFICIENT_RANGE": "the coherence floor admits no positive "
             "rung; the bound is not widened, and this is a statement about the "
             "intervention's dynamic range",

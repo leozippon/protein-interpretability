@@ -583,7 +583,14 @@ def _verdict_inputs(**overrides):
         "concept": "c",
         "text_control": dict(firing),
         "protein": dict(firing),
-        "permuted_passes": [],
+        "permuted": {
+            "passed": True,
+            "clearing_alphas": [1.0],
+            "frozen_rule_would_have_voided": False,
+            "permuted_draws_passing_a36_3": [],
+            "rule": "amended",
+            "amended_by": "EXP-R2-213 amendment 3",
+        },
         "specificity_row": {
             "admitted": True,
             "diagonal_effect": 0.4,
@@ -608,9 +615,17 @@ def test_a_failing_text_control_voids_the_run_before_anything_else_is_read():
     outcome = ci.verdict(**_verdict_inputs(text_control=failing))
     assert outcome["outcome"] == "VOID_INSTRUMENT"
     # Even with everything else failing, the instrument branch is the one reported.
+    failing_permuted = {
+        "passed": False,
+        "clearing_alphas": [],
+        "frozen_rule_would_have_voided": True,
+        "permuted_draws_passing_a36_3": ["c::permuted_000"],
+        "rule": "amended",
+        "amended_by": "EXP-R2-213 amendment 3",
+    }
     outcome = ci.verdict(
         **_verdict_inputs(
-            text_control=failing, protein=failing, permuted_passes=["c::permuted_000"]
+            text_control=failing, protein=failing, permuted=failing_permuted
         )
     )
     assert outcome["outcome"] == "VOID_INSTRUMENT"
@@ -618,9 +633,17 @@ def test_a_failing_text_control_voids_the_run_before_anything_else_is_read():
 
 def test_each_stop_36_branch_is_reachable_and_distinct():
     assert ci.verdict(**_verdict_inputs())["outcome"] == "TRANSFERS"
+    not_cleared = {
+        "passed": False,
+        "clearing_alphas": [],
+        "frozen_rule_would_have_voided": False,
+        "permuted_draws_passing_a36_3": [],
+        "rule": "amended",
+        "amended_by": "EXP-R2-213 amendment 3",
+    }
     assert (
-        ci.verdict(**_verdict_inputs(permuted_passes=["c::permuted_003"]))["outcome"]
-        == "VOID_PERMUTED_CONTROL_PASSES"
+        ci.verdict(**_verdict_inputs(permuted=not_cleared))["outcome"]
+        == "PERMUTED_CONTROL_NOT_CLEARED"
     )
     assert (
         ci.verdict(**_verdict_inputs(admissible=(-1.0, 0.0)))["outcome"]
@@ -630,6 +653,17 @@ def test_each_stop_36_branch_is_reachable_and_distinct():
     failing["passed"] = False
     failing["condition_c"] = False
     assert ci.verdict(**_verdict_inputs(protein=failing))["outcome"] == "MEASURED_NEGATIVE"
+    # STOP-36's order: a concept with no effect is a measured negative, not a
+    # control failure. Under the amended A36-5 the criterion asks whether the
+    # EFFECT clears the permuted percentile, so with nothing firing it is vacuous.
+    vacuous = ci.evaluate_a36_5(
+        deltas={}, permuted_controls={}, firing_alphas=[], margin=2.0, per_draw=[]
+    )
+    assert vacuous["vacuous"] is True and vacuous["passed"] is True
+    assert (
+        ci.verdict(**_verdict_inputs(protein=failing, permuted=vacuous))["outcome"]
+        == "MEASURED_NEGATIVE"
+    )
     unspecific = {"admitted": False, "diagonal_effect": 0.01, "off_diagonal_p95": 0.4}
     assert (
         ci.verdict(**_verdict_inputs(specificity_row=unspecific))["outcome"]
@@ -638,7 +672,7 @@ def test_each_stop_36_branch_is_reachable_and_distinct():
     assert set(ci.OUTCOMES) >= {
         "TRANSFERS",
         "VOID_INSTRUMENT",
-        "VOID_PERMUTED_CONTROL_PASSES",
+        "PERMUTED_CONTROL_NOT_CLEARED",
         "NO_ADMISSIBLE_COEFFICIENT_RANGE",
         "MEASURED_NEGATIVE",
         "NULL_NO_CONCEPT_CLEARS_ITS_ROW",
@@ -712,10 +746,16 @@ def _stage_args(**overrides):
         checkpoint=Path("/models/ProLLaMA_Stage_1"),
         rendering="prollama",
         cohort=Path("/cohort"),
-        concepts=(("go_propagated", "GO:0016787"), ("ec", "3.2.1")),
+        concepts=("ec_hydrolase", "go_atp_binding"),
         pooling="mean_content",
         eval_split="eval",
         generation_readout="refused",
+        stage35_artefact=Path("/stage35.json"),
+        evaluation_draw="balanced_1to1",
+        evaluation_draw_seed=11,
+        draw_variance_seed=12,
+        evaluation_draw_cap=ci.FROZEN_PER_SIDE_CAP,
+        draw_variance_concept=None,
         generation_refusal_reason="declared for the test",
         layer=16,
         alphas=ci.FROZEN_ALPHA_LADDER,
@@ -799,13 +839,13 @@ def test_the_artefact_basename_is_derived_from_checkpoint_concepts_split_and_lay
     variants = [
         _stage_args(),
         _stage_args(layer=20),
-        _stage_args(concepts=(("ec", "3.2.1"), ("ec", "2.7.11"))),
+        _stage_args(concepts=("ec_lyase", "ec_ligase")),
         _stage_args(eval_split="family_holdout"),
         _stage_args(checkpoint=Path("/models/ProLLaMA")),
     ]
     names = set()
     for args in variants:
-        concepts = [STAGE.concept_name(concept) for concept in args.concepts]
+        concepts = list(args.concepts)
         names.add(
             f"concept_injection__{Path(args.checkpoint).name}__{args.rendering}"
             f"__{args.eval_split}__L{args.layer:02d}"
@@ -821,19 +861,268 @@ def test_the_text_side_is_the_masked_description_and_is_not_configurable():
     )
 
 
-def test_the_reduction_rule_drops_the_smallest_eval_group_counts_first():
-    records = [
-        {"accession": f"a{i}", "dup_group": f"g{i}", "ec": ["1.1.1"], "go": []}
-        for i in range(20)
-    ]
-    for record in records[:3]:
-        record["go"] = ["GO:rare"]
-    for record in records[:12]:
-        record["ec"] = ["1.1.1", "2.2.2"]
-    args = _stage_args(
-        concepts=(("ec", "1.1.1"), ("ec", "2.2.2"), ("go", "GO:rare")), max_concepts=2
+# ------------------------------------------------- amendment 3 and the concept scope
+
+
+MANIFEST = {
+    "concepts": {"admitted": ["ec_hydrolase", "go_atp_binding", "ec_ligase"]},
+    "settings": {"go_obo": "/nonexistent/go-basic.obo"},
+}
+
+
+def test_a_concept_the_cohort_did_not_admit_is_refused():
+    """The scope guard: an unadmitted concept has group counts nobody checked."""
+
+    with pytest.raises(ValueError) as error:
+        ci.require_admitted_concepts(
+            ["ec_hydrolase", "ec:3.2.1.4"], MANIFEST, source="cohort.json"
+        )
+    message = str(error.value)
+    assert "ec:3.2.1.4" in message
+    assert "cohort.json" in message
+    assert "ec_hydrolase" in message  # the admitted list is named
+    assert ci.require_admitted_concepts(
+        ["ec_hydrolase", "ec_ligase"], MANIFEST, source="cohort.json"
+    ) == ("ec_hydrolase", "ec_ligase")
+
+
+def test_a_manifest_without_an_admitted_list_is_refused_not_derived():
+    with pytest.raises(ValueError, match="derives no concept set|no concepts.admitted"):
+        ci.admitted_concepts({"concepts": {"declared": []}})
+    with pytest.raises(ValueError, match="admitted no concept"):
+        ci.admitted_concepts({"concepts": {"admitted": []}})
+
+
+def test_a_single_admitted_concept_is_refused_because_a36_4_would_be_vacuous():
+    with pytest.raises(ValueError, match="at least two concepts"):
+        ci.require_admitted_concepts(["ec_hydrolase"], MANIFEST, source="c")
+
+
+def test_undefined_records_enter_neither_arm_of_delta(planted):
+    """The three-valued rule, on the machinery that has to respect it."""
+
+    name = planted["names"][0]
+    bearing = planted["bearing"][name]
+    defined = np.ones(bearing.shape, dtype=bool)
+    defined[: len(defined) // 3] = False  # a third of the cohort is undefined
+    cell = ci.ConceptCell(
+        concept=name, bearing=bearing, defined=defined, included=defined
     )
+    counts = cell.counts()
+    assert counts["undefined_excluded"] == int((~defined).sum())
+    assert counts["bearing"] + counts["non_bearing"] == int(defined.sum())
+    with pytest.raises(ValueError, match="UNDEFINED"):
+        ci.ConceptCell(
+            concept=name,
+            bearing=bearing,
+            defined=defined,
+            included=np.ones(bearing.shape, dtype=bool),
+        )
+    # Delta on the defined subset is not Delta on everything.
+    response = _response(planted, planted["directions"][name], 1.0)
+    everything = ci.delta_point(planted["baseline"]["protein"], response, bearing)
+    subset_only = ci.delta_point(
+        planted["baseline"]["protein"], response, bearing, subset=defined
+    )
+    assert everything != pytest.approx(subset_only)
+
+
+def test_the_balanced_draw_is_one_to_one_seeded_and_refuses_a_short_side():
+    groups = [f"g{index:03d}" for index in range(60)]
+    bearing = np.array([index < 20 for index in range(60)])
+    defined = np.array([index != 59 for index in range(60)])
+    included, record = ci.balanced_evaluation_draw(
+        groups, {"c": (bearing, defined)}, seed=1
+    )
+    counts = ci.per_side_group_counts(groups, bearing, subset=included["c"])
+    assert counts == {"bearing": 20, "non_bearing": 20}
+    assert record["per_concept"]["c"]["non_bearing_groups_available"] == 39
+    assert record["seed"] == 1
+    # Undefined records are never drawn.
+    assert not bool(included["c"][59])
+    # Same seed, same draw -- the population is fixed once.
+    again, _ = ci.balanced_evaluation_draw(groups, {"c": (bearing, defined)}, seed=1)
+    assert np.array_equal(included["c"], again["c"])
+    other, _ = ci.balanced_evaluation_draw(groups, {"c": (bearing, defined)}, seed=2)
+    assert not np.array_equal(included["c"], other["c"])
+    # A side below the floor is refused, not warned about.
+    thin = np.array([index < 3 for index in range(60)])
+    with pytest.raises(ValueError, match="below the 8-unit per-side floor"):
+        ci.balanced_evaluation_draw(groups, {"c": (thin, defined)}, seed=1)
+
+
+def test_the_per_side_cap_is_an_invariant_and_is_reproducible_from_the_seed():
+    """Amendment 4: a count above the cap must be impossible, not merely unlikely."""
+
+    groups = [f"g{index:03d}" for index in range(400)]
+    bearing = np.array([index < 200 for index in range(400)])
+    defined = np.ones(400, dtype=bool)
+    included, record = ci.balanced_evaluation_draw(
+        groups, {"c": (bearing, defined)}, seed=7, cap=ci.FROZEN_PER_SIDE_CAP
+    )
+    counts = ci.per_side_group_counts(groups, bearing, subset=included["c"])
+    # Both sides at the cap, neither above it, and the availability recorded.
+    assert counts == {"bearing": 32, "non_bearing": 32}
+    assert max(counts.values()) <= ci.FROZEN_PER_SIDE_CAP
+    entry = record["per_concept"]["c"]
+    assert entry["capped"] is True
+    assert entry["bearing_groups_available"] == 200
+    assert entry["smaller_side_groups"] == 32
+    assert entry["above_draw_stability_threshold"] is True
+    assert record["per_side_cap"] == ci.FROZEN_PER_SIDE_CAP
+
+    # Reproducible from the recorded seed alone, and different under another seed.
+    again, _ = ci.balanced_evaluation_draw(
+        groups, {"c": (bearing, defined)}, seed=7, cap=ci.FROZEN_PER_SIDE_CAP
+    )
+    assert np.array_equal(included["c"], again["c"])
+    other, _ = ci.balanced_evaluation_draw(
+        groups, {"c": (bearing, defined)}, seed=8, cap=ci.FROZEN_PER_SIDE_CAP
+    )
+    assert not np.array_equal(included["c"], other["c"])
+
+    # A cap cannot take a side below the bootstrap floor: refused, not warned.
+    with pytest.raises(ValueError, match="below the 8-unit bootstrap floor"):
+        ci.balanced_evaluation_draw(groups, {"c": (bearing, defined)}, seed=7, cap=4)
+    thin = np.array([index < 5 for index in range(400)])
+    with pytest.raises(ValueError, match="below the 8-unit per-side floor"):
+        ci.balanced_evaluation_draw(
+            groups, {"c": (thin, defined)}, seed=7, cap=ci.FROZEN_PER_SIDE_CAP
+        )
+
+
+def test_a_concept_the_cap_cannot_lift_is_flagged_below_the_stability_threshold():
+    """`go_atp_binding`'s shape: fewer groups than any admissible cap."""
+
+    groups = [f"g{index:03d}" for index in range(400)]
+    # 15 bearing groups, as go_atp_binding carries on the production cohort.
+    bearing = np.array([index < 15 for index in range(400)])
+    defined = np.ones(400, dtype=bool)
+    _, record = ci.balanced_evaluation_draw(
+        groups, {"tiny": (bearing, defined)}, seed=7, cap=ci.FROZEN_PER_SIDE_CAP
+    )
+    entry = record["per_concept"]["tiny"]
+    assert entry["bearing_groups"] == 15
+    assert entry["capped"] is False  # it never reached the cap
+    assert entry["smaller_side_groups"] < ci.DRAW_STABILITY_GROUP_THRESHOLD
+    assert entry["above_draw_stability_threshold"] is False
+    assert record["concepts_below_draw_stability_threshold"] == ["tiny"]
+
+
+def test_resolve_freezes_the_cap_and_refuses_sixteen():
+    with pytest.raises(ValueError, match="needs --evaluation-draw-cap"):
+        STAGE.resolve(_stage_args(evaluation_draw_cap=None))
+    with pytest.raises(ValueError, match="freezes it at 32"):
+        STAGE.resolve(_stage_args(evaluation_draw_cap=16))
+    with pytest.raises(ValueError, match="freezes it at 32"):
+        STAGE.resolve(_stage_args(evaluation_draw_cap=64))
+    with pytest.raises(ValueError, match="belong to the balanced draw"):
+        STAGE.resolve(
+            _stage_args(
+                evaluation_draw="full_split",
+                evaluation_draw_seed=None,
+                draw_variance_seed=None,
+            )
+        )  # the cap is still set, which full_split has nothing to cap
+
+
+def test_a36_5_is_distributional_and_reports_what_the_frozen_rule_would_have_said():
+    deltas = {1.0: {"delta_nats_per_token": -0.010}}
+    controls = {1.0: ci.permuted_label_control([0.002, -0.0018, 0.0015] + [0.001] * 5)}
+    per_draw = [
+        {"direction": "c::permuted_000", "passes_a36_3": True, "max_abs_delta_over_control_bar": 1.02},
+        {"direction": "c::permuted_001", "passes_a36_3": False, "max_abs_delta_over_control_bar": 0.4},
+    ]
+    outcome = ci.evaluate_a36_5(
+        deltas=deltas,
+        permuted_controls=controls,
+        firing_alphas=[1.0],
+        margin=ci.FROZEN_RANDOM_NULL_MARGIN,
+        per_draw=per_draw,
+    )
+    assert outcome["passed"] is True
+    # The frozen any-draw rule would have voided this concept; that is reported.
+    assert outcome["frozen_rule_would_have_voided"] is True
+    assert outcome["permuted_draws_passing_a36_3"] == ["c::permuted_000"]
+    assert outcome["per_draw"] == per_draw
+    weak = ci.evaluate_a36_5(
+        deltas={1.0: {"delta_nats_per_token": -0.002}},
+        permuted_controls=controls,
+        firing_alphas=[1.0],
+        margin=ci.FROZEN_RANDOM_NULL_MARGIN,
+        per_draw=per_draw,
+    )
+    assert weak["passed"] is False
+
+
+def test_the_permuted_control_refuses_fewer_than_eight_draws():
+    with pytest.raises(ValueError, match="direction floor"):
+        ci.permuted_label_control([0.001] * 7)
+
+
+def test_the_stage35_handoff_fixes_the_layer_site_and_pooling():
+    handoff = {
+        "emitted": True,
+        "layer": 16,
+        "site": ci.INJECTION_SITE,
+        "pooling": "mean_content",
+        "description_variant": "masked",
+    }
+    ok = ci.assert_stage35_handoff(
+        handoff, layer=16, site=ci.INJECTION_SITE, pooling="mean_content", source="s35"
+    )
+    assert ok["layer"] == 16 and ok["checked"] == ["layer", "site", "pooling"]
+    with pytest.raises(ValueError, match="disagrees with"):
+        ci.assert_stage35_handoff(
+            handoff, layer=20, site=ci.INJECTION_SITE, pooling="mean_content", source="s35"
+        )
+    with pytest.raises(ValueError, match="disagrees with"):
+        ci.assert_stage35_handoff(
+            handoff, layer=16, site=ci.INJECTION_SITE, pooling="last_content", source="s35"
+        )
+    with pytest.raises(ValueError, match="emitted no causal hand-off"):
+        ci.assert_stage35_handoff(
+            {"emitted": False}, layer=16, site=ci.INJECTION_SITE,
+            pooling="mean_content", source="s35",
+        )
+
+
+def test_resolve_requires_both_draw_seeds_and_refuses_a_repeated_one():
+    with pytest.raises(ValueError, match="needs --evaluation-draw-seed"):
+        STAGE.resolve(_stage_args(evaluation_draw_seed=None))
+    with pytest.raises(ValueError, match="needs --draw-variance-seed"):
+        STAGE.resolve(_stage_args(draw_variance_seed=None))
+    with pytest.raises(ValueError, match="must differ"):
+        STAGE.resolve(_stage_args(draw_variance_seed=11))
+    with pytest.raises(ValueError, match="belong to the balanced draw"):
+        STAGE.resolve(_stage_args(evaluation_draw="full_split"))
+    STAGE.resolve(
+        _stage_args(
+            evaluation_draw="full_split",
+            evaluation_draw_seed=None,
+            draw_variance_seed=None,
+            evaluation_draw_cap=None,
+        )
+    )
+
+
+def test_the_reduction_rule_drops_the_smallest_eval_group_counts_first(monkeypatch):
+    """The frozen rule, on three-valued membership rather than a raw column."""
+
+    records = [{"accession": f"a{i}", "dup_group": f"g{i}"} for i in range(30)]
+    table = {
+        "big": np.array([i < 20 for i in range(30)]),
+        "mid": np.array([i < 12 for i in range(30)]),
+        "small": np.array([i < 9 for i in range(30)]),
+    }
+    monkeypatch.setattr(
+        STAGE,
+        "concept_membership",
+        lambda name, recs: (table[name], np.ones(len(recs), dtype=bool)),
+    )
+    args = _stage_args(concepts=("big", "mid", "small"), max_concepts=2)
     kept, reduction = STAGE.select_concepts(args, records)
-    assert reduction["dropped"] == ["go|GO:rare"]
-    assert set(kept) == {"ec|1.1.1", "ec|2.2.2"}
-    assert reduction["eval_group_counts_per_side"]["go|GO:rare"]["bearing"] == 3
+    assert reduction["dropped"] == ["small"]
+    assert set(kept) == {"big", "mid"}
+    assert reduction["eval_group_counts_per_side"]["small"]["bearing"] == 9
+    assert "interaction_with_the_balanced_draw" in reduction

@@ -39,10 +39,24 @@ positive control decides whether the protein side is read at all: if it does not
 stage returns VOID and the protein side is not read, because a protein null measured by
 an instrument that has not been shown to work is uninterpretable rather than negative.
 
+**Scope: the concepts are the cohort's admitted ones, and nothing else can be run.**
+`--concepts` takes admitted concept **ids** -- `ec_hydrolase`, `go_atp_binding` -- which
+are the coarse pre-declared concepts of `sequence_description.CONCEPTS`, each admitted
+under C34-5 by measured per-cell group counts. The list is read from the cohort artefact
+and anything outside it is refused, naming the offenders; there is no derived fallback. An
+earlier version of this stage took `namespace:term` pairs, which would have let a specific
+EC number like `3.2.1.4` be evaluated at group counts nobody checked against the floor.
+The membership rule is likewise the cohort's own and is **three-valued**: a record with no
+annotation of the relevant sort is undefined for the concept and enters neither arm.
+
 **Reduction, if cost forces it.** The frozen rule is to drop concepts in ascending order
 of their `eval` bearing-group count, a quantity known before any activation is captured,
 and never to drop a control, a rung or a split. `--max-concepts` applies exactly that
-rule and records which concepts were dropped with their counts.
+rule and records which concepts were dropped with their counts. Note the interaction the
+artefact also records: under the full split a pass costs the same whatever a concept
+bears, so the rule drops the weakest concepts; under amendment 3's balanced draw a
+concept's cost is proportional to what it bears, so the same rule drops the cheapest and
+keeps the most expensive.
 
 **The instrument check runs before any real number is trusted.** `--synthetic` plants
 concept directions in a toy decoder whose response is known by construction and runs the
@@ -51,30 +65,45 @@ controls, the same verdict -- on two cells: one where the direction genuinely st
 modes, and one where it steers text only. The first must be recovered and the second must
 not.
 
-**Cost, measured rather than estimated.** The scored pass count is
-`K * 9 * (1 + random + permuted)` in protein mode and `K * 9 * (1 + random)` in text,
-for `K` concepts: the controls are run at every rung and not only at the admissible ones,
-because A36-1 re-reads the verdict at three coherence bounds and each admits a different
-rung set, so a control that existed only at the primary bound's rungs could not serve the
-other two. One protein pass costs **0.073 s per cohort record** on an L20 at float32
-(measured on `ProLLaMA_Stage_1`, layer 16, 133-residue mean, 0.80 ms per scored token,
-and flat in batch size from 4 to 32, so the pass is compute-bound). At `K = 8` and a
-300-record evaluation split that is about **22 GPU-h across both checkpoints**, which
-fits the campaign's 24 GPU-h bound with no margin; the frozen reduction to four concepts
-brings it to about 11. TF32 is deliberately not enabled: it would be roughly fourfold
-faster and its 10-bit mantissa is not a safe substrate for a 0.01-nat cross-entropy
-difference.
+**Amendment 3 (EXP-R2-213), decided before any campaign number existed:** A36-5 is
+distributional rather than any-draw, a balanced per-concept evaluation draw is admitted
+with a mandatory second-seed variance measurement, and A36-6's fit-split Pfam referent is
+authorised by name. The layer is stage 35's own pre-registered decision layer, and
+`--stage35-artefact` is read so that the layer, the site and the pooling are *checked*
+against its causal hand-off rather than asserted.
+
+**Cost, measured on the production cohort rather than estimated.** The scored pass count
+is `K * (9 + 4*random + 9*permuted)` in protein mode and `K * (9 + 4*random)` in text: the
+concept's own ladder runs at all nine rungs, the controls' *criteria* are read only at
+positive rungs, and the permuted control keeps nine so that its per-draw A36-3 diagnostic
+survives. One protein pass costs **0.161 s per scored record** on an L20 at float32
+(measured on `ProLLaMA_Stage_1`, layer 16, the cohort's own 328-residue mean, 211 scored
+tokens per record at 0.76 ms each, flat in batch size from 4 to 32, so the pass is
+compute-bound); a text pass costs **0.142 s**. TF32 is deliberately not enabled: it would
+be roughly fourfold faster and its 10-bit mantissa is not a safe substrate for a 0.01-nat
+cross-entropy difference.
+
+**What that comes to, and it does not fit.** The production cohort's `eval` split is
+4,499 records in 3,752 near-duplicate groups, and the admitted concepts carry 15 to 985
+bearing groups. Under `balanced_1to1` the union of all 17 concepts' subsets is 4,154 of
+those 4,499 records -- `ec_transferase` alone draws 2,449 -- so the balanced draw buys
+almost nothing at full breadth. Measured, for one layer across both checkpoints: **946
+GPU-h** at all 17 concepts, **428** at the eight the frozen reduction rule keeps, and
+**69** at the eight it drops. Against a 40 GPU-h bound, no `K = 8` selection fits. The
+arithmetic and the options belong to the coordinator, not to this stage, which is why
+nothing here reduces the design further on its own.
 """
 
 from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 import torch
@@ -87,6 +116,7 @@ if str(Path(__file__).resolve().parent) not in sys.path:
 
 from src.transfer import concept_alignment as ca  # noqa: E402
 from src.transfer import concept_injection as ci  # noqa: E402
+from src.transfer import sequence_description as sd  # noqa: E402
 from src.transfer import joint_modes  # noqa: E402
 from src.transfer.arms import REPO  # noqa: E402
 from src.transfer.io import sha256_file, write_json  # noqa: E402
@@ -133,6 +163,12 @@ TEXT_FIELD = "description_masked"
 #: is what a second definition of a held-out set costs on a protein corpus.
 FIT_SPLIT = "fit"
 
+#: How the mandatory second-seed draw rides through the same sweeps: as a pseudo-
+#: concept with the concept's own membership and an independently drawn subset. It is
+#: never a measured concept, and it is stripped out of the concept set, the
+#: specificity matrix and the verdicts.
+DRAW_VARIANCE_SUFFIX = "::draw2"
+
 CAMPAIGN_ONLY_FLAGS = (
     "checkpoint",
     "rendering",
@@ -141,6 +177,8 @@ CAMPAIGN_ONLY_FLAGS = (
     "pooling",
     "eval_split",
     "generation_readout",
+    "stage35_artefact",
+    "evaluation_draw",
 )
 
 #: Required on both paths: these are the frozen criteria, and supplying them under
@@ -215,6 +253,39 @@ LIMITATIONS = [
         "coefficient would no longer be population-sigmas along the concept direction",
     },
     {
+        "id": "undefined_is_a_third_cell",
+        "what": "the cohort's membership rule is three-valued: a record with no "
+        "annotation of the relevant sort is UNDEFINED for a concept and enters neither "
+        "side. On the production cohort that is most of the split for some concepts -- "
+        "ec_hydrolase has 508 bearing, 2,065 non-bearing and 1,292 UNDEFINED groups in "
+        "eval",
+        "how_this_stage_answers_it": "labels come from "
+        "sequence_description.concept_label through the ontology the cohort itself "
+        "recorded, so undefined records are excluded from both arms of Delta and from "
+        "the coherence floor. A two-valued reading over the raw annotation column would "
+        "have folded those 1,292 groups of unknown status into the non-bearing arm and "
+        "silently changed the estimand",
+    },
+    {
+        "id": "concept_scope",
+        "what": "a stage that accepted a raw annotation term could evaluate concepts the "
+        "cohort never admitted, at group counts nobody checked against C34-5's floor",
+        "how_this_stage_answers_it": "--concepts takes ADMITTED concept ids and "
+        "require_admitted_concepts refuses anything outside the list the cohort artefact "
+        "records, naming the offenders and the artefact. There is no derived fallback",
+    },
+    {
+        "id": "balanced_draw_variance",
+        "what": "amendment 3's balanced draw turns the non-bearing arm from the whole "
+        "declared split into a sample, which introduces draw variance the full-split "
+        "design did not carry",
+        "how_this_stage_answers_it": "measured, not assumed: one seed fixes the "
+        "population for every rung, concept and checkpoint, and a second independent "
+        "seed is run on one concept and reported beside the first as a first-class "
+        "output. Because a subset selects rows of an already-scored pass, that "
+        "measurement costs no additional forward pass",
+    },
+    {
         "id": "corpus_exposure",
         "what": "Swiss-Prot lies inside UniRef50 by construction, so every evaluation "
         "protein is a candidate pretraining member whatever family it belongs to",
@@ -229,8 +300,9 @@ LIMITATIONS = [
         "how_this_stage_answers_it": "the referent is derived from the cohort's own "
         "pfam column on the FIT split alone, so the evaluation split never defines the "
         "target it is scored against; a concept whose referent is empty has readout B "
-        "refused with that reason rather than scored against an invented mapping. This "
-        "derivation is an implementation of A36-6 and is not itself pre-registered",
+        "refused with that reason rather than scored against an invented mapping. The "
+        "derivation is authorised by name in EXP-R2-213 amendment 3 and was not in the "
+        "frozen text",
     },
     {
         "id": "a36_5_against_a36_3b",
@@ -291,21 +363,20 @@ def parse_alphas(argument: str) -> tuple[float, ...]:
     return ladder
 
 
-def parse_concepts(argument: str) -> tuple[tuple[str, str], ...]:
-    """Concepts as 'namespace:term' pairs, e.g. 'go_propagated:GO:0016787,ec:3.2.1'."""
+def parse_concepts(argument: str) -> tuple[str, ...]:
+    """Concept ids the cohort ADMITTED, e.g. 'ec_hydrolase,go_atp_binding'.
 
-    concepts: list[tuple[str, str]] = []
-    for part in str(argument).split(","):
-        item = part.strip()
-        if not item:
-            continue
-        if ":" not in item:
-            raise argparse.ArgumentTypeError(
-                f"{item!r} is not 'namespace:term'; a concept is a term of one of the "
-                "cohort's annotation namespaces and the namespace decides what it means"
-            )
-        namespace, term = item.split(":", 1)
-        concepts.append((namespace.strip(), term.strip()))
+    Ids and not ``namespace:term`` pairs, and the difference is not cosmetic. The
+    cohort's concepts are the coarse pre-declared ones of
+    ``sequence_description.CONCEPTS`` -- ``ec_hydrolase`` is EC class 3, not the EC
+    number ``3.2.1.4`` -- each admitted under C34-5 by measured per-cell group counts.
+    A stage that accepted a raw annotation term would happily evaluate a specific EC
+    number that was never admitted, at group counts nobody checked against the floor.
+    :func:`src.transfer.concept_injection.require_admitted_concepts` refuses anything
+    outside the admitted list.
+    """
+
+    concepts = [part.strip() for part in str(argument).split(",") if part.strip()]
     if len(concepts) < 2:
         raise argparse.ArgumentTypeError(
             "at least two concepts are required: with one there is no off-diagonal and "
@@ -314,15 +385,6 @@ def parse_concepts(argument: str) -> tuple[tuple[str, str], ...]:
     if len(set(concepts)) != len(concepts):
         raise argparse.ArgumentTypeError("the concept set carries a duplicate")
     return tuple(concepts)
-
-
-def concept_name(concept: tuple[str, str]) -> str:
-    return f"{concept[0]}|{concept[1]}"
-
-
-def split_concept(name: str) -> tuple[str, str]:
-    namespace, term = name.split("|", 1)
-    return namespace, term
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -467,6 +529,69 @@ def build_parser() -> argparse.ArgumentParser:
         "generation are read at. The smallest admissible positive rung at which A36-3(a) "
         "and (b) both fire -- smallest rather than strongest, because picking the "
         "strongest would be selection on the outcome",
+    )
+    parser.add_argument(
+        "--stage35-artefact",
+        type=Path,
+        default=None,
+        help="35_concept_alignment.py's artefact for this checkpoint and cell. REQUIRED "
+        "on a campaign: its causal hand-off carries the decision layer, the site and "
+        "the pooling, and this stage refuses a --layer, --injection-site or --pooling "
+        "that disagrees. Amendment 3 fixes the layer as stage 35's already "
+        "pre-registered decision layer, and checking it is what makes that true rather "
+        "than asserted",
+    )
+    parser.add_argument(
+        "--evaluation-draw",
+        default=None,
+        choices=ci.EVALUATION_DRAWS,
+        help="REQUIRED: which population Delta is computed over. 'full_split' is the "
+        "frozen behaviour -- every record the cohort DEFINES the concept on. "
+        "'balanced_1to1' is EXP-R2-213 amendment 3's addition: every near-duplicate "
+        "group the concept bears, plus a seeded equal-size draw of groups it does not. "
+        "Declared rather than defaulted so the authorisation is visible at the call site",
+    )
+    parser.add_argument(
+        "--evaluation-draw-seed",
+        type=int,
+        default=None,
+        help="REQUIRED with --evaluation-draw balanced_1to1: the ONE seed the draw is "
+        "made from. One seeded permutation of the groups serves every concept, every "
+        "rung and both checkpoints, so no two reported numbers rest on different "
+        "populations",
+    )
+    parser.add_argument(
+        "--evaluation-draw-cap",
+        type=int,
+        default=None,
+        help="REQUIRED with --evaluation-draw balanced_1to1: EXP-R2-213 amendment 4's "
+        "per-side bearing-group cap, frozen at 32. It is a CRITERION IMPROVEMENT and "
+        "not an economy: within one row of A36-4's matrix each cell is Delta for the "
+        "scored concept on its own subset at its own group count, so uncapped a "
+        "15-group diagonal could be compared against a percentile over 985-group "
+        "cells. The cap equalises the diagonal and every off-diagonal cell of a row at "
+        "once. 32 rather than 16 because below about 24 groups per side the point "
+        "estimate becomes draw-sensitive",
+    )
+    parser.add_argument(
+        "--draw-variance-seed",
+        type=int,
+        default=None,
+        help="REQUIRED with --evaluation-draw balanced_1to1, and it must differ from "
+        "--evaluation-draw-seed: a second independent draw for one concept, whose "
+        "result is reported beside the first. Balancing turns the non-bearing arm from "
+        "the whole split into a SAMPLE, so it carries draw variance the full-split "
+        "design did not, and that variance is measured rather than assumed small",
+    )
+    parser.add_argument(
+        "--draw-variance-concept",
+        default=None,
+        help="extra concepts, comma-separated, to add to the second-seed draw-variance "
+        "measurement. Every concept below the draw-stability threshold is covered "
+        "automatically and cannot be opted out of: that check is the designated "
+        "detector for point-estimate draw sensitivity, so it is wired to the concepts "
+        "that need it. If no concept is below the threshold the smallest is still "
+        "measured, because amendment 3 makes the check mandatory",
     )
     parser.add_argument(
         "--max-concepts",
@@ -643,6 +768,44 @@ def resolve(args: argparse.Namespace) -> None:
             "--generation-readout refused needs --generation-refusal-reason; a refusal "
             "without its reason is indistinguishable from an omission"
         )
+    if args.evaluation_draw == "balanced_1to1":
+        if args.evaluation_draw_cap is None:
+            raise ValueError(
+                "--evaluation-draw balanced_1to1 needs --evaluation-draw-cap; "
+                f"EXP-R2-213 amendment 4 freezes it at {ci.FROZEN_PER_SIDE_CAP}"
+            )
+        if int(args.evaluation_draw_cap) != ci.FROZEN_PER_SIDE_CAP:
+            raise ValueError(
+                f"--evaluation-draw-cap is {args.evaluation_draw_cap} and amendment 4 "
+                f"freezes it at {ci.FROZEN_PER_SIDE_CAP}. 16 was refused despite "
+                "fitting the earlier bound: below about "
+                f"{ci.DRAW_STABILITY_GROUP_THRESHOLD} groups per side the point "
+                "estimate becomes draw-sensitive, and a cap of 16 would put every "
+                "concept there"
+            )
+        for flag in ("evaluation_draw_seed", "draw_variance_seed"):
+            if getattr(args, flag) is None:
+                raise ValueError(
+                    f"--evaluation-draw balanced_1to1 needs --{flag.replace('_', '-')}. "
+                    "The draw's seed fixes the population once, and the second seed is "
+                    "the mandatory measurement of the draw variance balancing "
+                    "introduces (EXP-R2-213 amendment 3)"
+                )
+        if args.draw_variance_seed == args.evaluation_draw_seed:
+            raise ValueError(
+                "--draw-variance-seed must differ from --evaluation-draw-seed; a second "
+                "draw from the same seed is the same draw and measures nothing"
+            )
+    elif (
+        args.evaluation_draw_seed is not None
+        or args.draw_variance_seed is not None
+        or args.evaluation_draw_cap is not None
+    ):
+        raise ValueError(
+            "--evaluation-draw-seed, --draw-variance-seed and --evaluation-draw-cap "
+            "belong to the balanced draw; under full_split there is no draw for them to "
+            "seed or cap"
+        )
     if args.generation_readout == "hmmer_pfam":
         if args.hmmer_root is None or args.pfam_root is None:
             raise ValueError(
@@ -674,6 +837,7 @@ def sweep_direction(
     n_bootstrap: int,
     device: Any,
     dtype: torch.dtype,
+    subsets: Mapping[str, Any] | None = None,
 ) -> dict[float, dict[str, Any]]:
     """One direction over the whole ladder, scored against every concept's labels.
 
@@ -704,6 +868,7 @@ def sweep_direction(
         deltas: dict[str, Any] = {}
         coherence: dict[str, Any] = {}
         for name, flags in bearing.items():
+            subset = None if subsets is None else subsets[name]
             if name in bootstrap_for and float(alpha) in positive:
                 deltas[name] = ci.delta_nll_shift(
                     baseline,
@@ -712,12 +877,17 @@ def sweep_direction(
                     seed=seed,
                     n_bootstrap=n_bootstrap,
                     label=f"{direction.concept}@{alpha}:{name}",
+                    subset=subset,
                 )
             else:
                 deltas[name] = {
-                    "delta_nats_per_token": ci.delta_point(baseline, response, flags)
+                    "delta_nats_per_token": ci.delta_point(
+                        baseline, response, flags, subset=subset
+                    )
                 }
-            coherence[name] = ci.coherence_record(baseline, response, flags)
+            coherence[name] = ci.coherence_record(
+                baseline, response, flags, subset=subset
+            )
         out[float(alpha)] = {"delta": deltas, "coherence": coherence}
     return out
 
@@ -799,6 +969,61 @@ def load_handles(args: argparse.Namespace) -> tuple[Path, dict[str, Any], dict[s
     return resolved, facts, handles
 
 
+ONTOLOGY: dict[str, Any] = {}
+
+
+def load_concept_rules(manifest: Mapping[str, Any]) -> dict[str, Any]:
+    """The cohort's own concept specs and GO ontology, loaded once from its manifest.
+
+    The membership rule is three-valued and belongs to
+    ``src.transfer.sequence_description``; it is imported rather than re-derived, and
+    the ontology comes from the OBO path the cohort itself recorded, so this stage
+    labels a record exactly as the cohort did. A second implementation here would be
+    a second definition of what "does not bear this concept" means, and the
+    difference is 1,292 groups of unknown status on one production concept.
+    """
+
+    if ONTOLOGY:
+        return ONTOLOGY
+    obo = Path(str(manifest["settings"]["go_obo"]))
+    ONTOLOGY["specs"] = {spec.concept_id: spec for spec in sd.CONCEPTS}
+    ONTOLOGY["ontology"] = sd.load_go_ontology(obo)
+    ONTOLOGY["go_obo"] = str(obo)
+    return ONTOLOGY
+
+
+def concept_membership(
+    name: str, records: Sequence[Mapping[str, Any]]
+) -> tuple[np.ndarray, np.ndarray]:
+    """``(bearing, defined)`` for one concept, under the cohort's three-valued rule.
+
+    ``defined`` is false where the cohort leaves the concept UNDEFINED for a record --
+    no annotation of the relevant sort -- and such a record enters neither arm of
+    Delta and neither side of the coherence floor. ``concept_alignment.concept_labels``
+    is deliberately not used: it is two-valued over a raw annotation column and would
+    fold every undefined record into the non-bearing arm.
+    """
+
+    spec = ONTOLOGY["specs"].get(name)
+    if spec is None:
+        raise ValueError(
+            f"{name} is not a declared concept of src.transfer.sequence_description; "
+            f"declared ids are {sorted(ONTOLOGY['specs'])}"
+        )
+    labels = [
+        sd.concept_label(
+            spec,
+            go_propagated=record["go_propagated"] or (),
+            ec=record["ec"] or (),
+            ontology=ONTOLOGY["ontology"],
+        )
+        for record in records
+    ]
+    bearing = np.asarray([value == 1 for value in labels], dtype=bool)
+    defined = np.asarray([value is not None for value in labels], dtype=bool)
+    return bearing, defined
+
+
 def select_concepts(
     args: argparse.Namespace, eval_records: Sequence[Any]
 ) -> tuple[list[str], dict[str, Any]]:
@@ -809,13 +1034,13 @@ def select_concepts(
     """
 
     counts = {}
-    for concept in args.concepts:
-        namespace, term = concept
-        flags = ca.concept_labels(eval_records, namespace, term)
+    for name in args.concepts:
+        bearing, defined = concept_membership(name, eval_records)
         groups = ci.per_side_group_counts(
-            [record["dup_group"] for record in eval_records], flags
+            [record["dup_group"] for record in eval_records], bearing, subset=defined
         )
-        counts[concept_name(concept)] = groups
+        groups["undefined_records"] = int((~defined).sum())
+        counts[name] = groups
     ordered = sorted(counts, key=lambda name: (counts[name]["bearing"], name))
     if args.max_concepts is None or args.max_concepts >= len(ordered):
         kept, dropped = ordered, []
@@ -828,6 +1053,12 @@ def select_concepts(
         "dropped": dropped,
         "rule": "drop concepts in ascending order of their eval bearing-group count; "
         "never drop a control, a rung or a split (EXP-R2-213)",
+        "interaction_with_the_balanced_draw": "under the full split a pass costs the "
+        "same whatever a concept bears, so the frozen rule drops the weakest concepts. "
+        "Under amendment 3's balanced draw a concept's cost is proportional to what it "
+        "bears, so the same rule now drops the CHEAPEST concepts and keeps the most "
+        "expensive. The rule is applied as frozen and the interaction is recorded; it is "
+        "not resolved here",
     }
 
 
@@ -859,6 +1090,20 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
 
     cohort = ca.load_cohort(args.cohort)
     print(f"[cohort] {len(cohort)} records, splits {cohort.counts()}", flush=True)
+    # The admitted concept set is READ, and anything outside it is refused. This
+    # stage derives no concept set of its own; see require_admitted_concepts.
+    admitted = ci.require_admitted_concepts(
+        args.concepts, cohort.manifest, source=args.cohort
+    )
+    handoff = ci.assert_stage35_handoff(
+        json.loads(Path(args.stage35_artefact).read_text())["causal_handoff"],
+        layer=int(args.layer),
+        site=args.injection_site,
+        pooling=args.pooling,
+        source=args.stage35_artefact,
+    )
+    print(f"[scope] {len(admitted)} admitted concepts; stage 35 hand-off {handoff}", flush=True)
+    load_concept_rules(cohort.manifest)
     fit_records = [record for record in cohort.records if record["split"] == FIT_SPLIT]
     eval_records = [record for record in cohort.records if record["split"] == args.eval_split]
     if not fit_records or not eval_records:
@@ -871,22 +1116,147 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
     if len(names) < 2:
         raise ValueError("fewer than two concepts survive; A36-4 would be vacuous")
 
+    specs = ONTOLOGY["specs"]
     masking = {
-        name: ci.assert_descriptions_masked(cohort.records, split_concept(name)[1])
+        name: ci.assert_descriptions_masked(cohort.records, specs[name].name)
         for name in names
     }
-    bearing = {
-        mode_split: {
-            name: ca.concept_labels(records, *split_concept(name)) for name in names
-        }
-        for mode_split, records in (("fit", fit_records), ("eval", eval_records))
+    membership = {
+        split: {name: concept_membership(name, records) for name in names}
+        for split, records in (("fit", fit_records), ("eval", eval_records))
     }
-    for name in names:
-        ci.require_per_side_group_floor(
-            [record["dup_group"] for record in eval_records],
-            bearing["eval"][name],
-            label=f"{name} in {args.eval_split}",
+    bearing = {
+        split: {name: pair[0] for name, pair in cells.items()}
+        for split, cells in membership.items()
+    }
+    groups_eval = [record["dup_group"] for record in eval_records]
+    if args.evaluation_draw == "balanced_1to1":
+        included, draw_record = ci.balanced_evaluation_draw(
+            groups_eval,
+            {name: membership["eval"][name] for name in names},
+            seed=args.evaluation_draw_seed,
+            cap=args.evaluation_draw_cap,
         )
+    else:
+        included = {name: membership["eval"][name][1] for name in names}
+        draw_record = {
+            "rule": "full_split",
+            "seed": None,
+            "note": "every record the cohort DEFINES the concept on; undefined records "
+            "enter neither side",
+            "per_concept": {
+                name: {"records_scored": int(included[name].sum())} for name in names
+            },
+        }
+    # The mandatory draw-variance measurement rides along as a second pseudo-concept
+    # with the same membership and an independently seeded subset. Because a subset
+    # selects rows of an already-scored pass, it costs no extra forward pass at all --
+    # provided its records are in the scored union, which is why it is folded in here
+    # rather than run afterwards.
+    variance_names: list[str] = []
+    variance_included: dict[str, np.ndarray] = {}
+    if args.evaluation_draw == "balanced_1to1":
+        # Every concept the cap could not lift above the draw-stability threshold is
+        # covered, and cannot be opted out of: this check is the designated detector
+        # for point-estimate draw sensitivity, so it is wired to the concepts that need
+        # it rather than to whichever one an operator names. On the production cohort
+        # the rule catches go_atp_binding, whose 15 bearing groups no cap can equalise.
+        below = list(draw_record["concepts_below_draw_stability_threshold"])
+        extra = [
+            part.strip()
+            for part in str(args.draw_variance_concept or "").split(",")
+            if part.strip()
+        ]
+        unknown = [name for name in extra if name not in names]
+        if unknown:
+            raise ValueError(
+                f"--draw-variance-concept names {unknown}, which are not among the "
+                f"measured concepts {names}"
+            )
+        variance_names = sorted(set(below) | set(extra))
+        if not variance_names:
+            # Amendment 3 makes the measurement mandatory, so it runs on the concept
+            # with the fewest groups even when every concept clears the threshold.
+            variance_names = [
+                min(
+                    names,
+                    key=lambda name: draw_record["per_concept"][name][
+                        "smaller_side_groups"
+                    ],
+                )
+            ]
+        second, second_record = ci.balanced_evaluation_draw(
+            groups_eval,
+            {name: membership["eval"][name] for name in variance_names},
+            seed=args.draw_variance_seed,
+            cap=args.evaluation_draw_cap,
+        )
+        variance_included = {name: second[name] for name in variance_names}
+        draw_record["draw_variance"] = {
+            "concepts": variance_names,
+            "seed": int(args.draw_variance_seed),
+            "coverage_rule": "every concept below the draw-stability threshold of "
+            f"{ci.DRAW_STABILITY_GROUP_THRESHOLD} groups per side, plus any named by "
+            "--draw-variance-concept; the threshold set cannot be opted out of",
+            "concepts_below_threshold": below,
+            "per_concept": second_record["per_concept"],
+        }
+        print(
+            f"[draw variance] covering {variance_names} "
+            f"(below threshold: {below or 'none'})",
+            flush=True,
+        )
+
+    # A subset selects ROWS of a scored pass, so the balanced draw only reduces
+    # compute if it also decides which records are scored. The scored population is
+    # the union of every concept's drawn subset plus the variance draw's.
+    scored_mask = np.zeros(len(eval_records), dtype=bool)
+    for keep in included.values():
+        scored_mask |= keep
+    for keep in variance_included.values():
+        scored_mask |= keep
+    scored_records = [
+        record for record, keep in zip(eval_records, scored_mask) if keep
+    ]
+    draw_record["records_scored_by_the_forward_passes"] = len(scored_records)
+    draw_record["records_in_the_declared_split"] = len(eval_records)
+
+    def reindex(mask: np.ndarray) -> np.ndarray:
+        return np.asarray(mask, dtype=bool)[scored_mask]
+
+    scored_groups = [record["dup_group"] for record in scored_records]
+    scored_membership = {
+        name: (
+            reindex(bearing["eval"][name]),
+            reindex(membership["eval"][name][1]),
+        )
+        for name in names
+    }
+    cells = {
+        name: ci.ConceptCell(
+            concept=name,
+            bearing=scored_membership[name][0],
+            defined=scored_membership[name][1],
+            included=reindex(included[name]),
+        )
+        for name in names
+    }
+    for name in variance_names:
+        pseudo = f"{name}{DRAW_VARIANCE_SUFFIX}"
+        cells[pseudo] = ci.ConceptCell(
+            concept=pseudo,
+            bearing=scored_membership[name][0],
+            defined=scored_membership[name][1],
+            included=reindex(variance_included[name]),
+        )
+    for name in cells:
+        counts = ci.require_per_side_group_floor(
+            scored_groups,
+            cells[name].bearing,
+            label=f"{name} in {args.eval_split} under {args.evaluation_draw}",
+            subset=cells[name].subset,
+        )
+        print(f"[draw] {name}: {counts} groups, {cells[name].counts()}", flush=True)
 
     resolved, facts, handles = load_handles(args)
     print(f"[load] {resolved} at {INFERENCE_DTYPE} on {args.device}", flush=True)
@@ -917,7 +1287,7 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
     }
 
     batches = {
-        mode: ci.prepare_batches(handles[mode], eval_records, batch_size=args.batch_size)
+        mode: ci.prepare_batches(handles[mode], scored_records, batch_size=args.batch_size)
         for mode in JOINT_MODES
     }
     invariant_record = {
@@ -952,12 +1322,13 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
             direction,
             alphas=args.alphas,
             layer=int(args.layer),
-            bearing=bearing["eval"],
+            bearing={name: cells[name].bearing for name in cells},
             bootstrap_for=bootstrap_for,
             seed=args.seed,
             n_bootstrap=args.bootstrap_draws,
             device=device,
             dtype=dtype,
+            subsets={name: cells[name].subset for name in cells},
         )
 
     random_sweeps: dict[str, dict[str, list[dict[float, dict[str, Any]]]]] = {}
@@ -966,8 +1337,13 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
     }
     permuted_sweeps: dict[str, list[tuple[str, dict[float, dict[str, Any]]]]] = {}
     for name in names:
+        # The variance pseudo-concept is bootstrapped too, so both draws carry an
+        # interval and the comparison is between two intervals rather than two points.
+        bootstrap_names = [name]
+        if name in variance_names:
+            bootstrap_names.append(f"{name}{DRAW_VARIANCE_SUFFIX}")
         for mode in JOINT_MODES:
-            concept_sweeps[mode][name] = sweep(mode, directions[name], [name])
+            concept_sweeps[mode][name] = sweep(mode, directions[name], bootstrap_names)
         print(f"[ladder] {name} scored in both modes", flush=True)
         random_sweeps[name] = {
             mode: [
@@ -1027,6 +1403,27 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
                 args=args,
             )
             permuted.append(permuted_entry(label, evaluation))
+        # A36-5 as amended: the permuted draws form a control DISTRIBUTION at each
+        # rung, read the way A36-3(b) reads the isotropic one.
+        permuted_controls = {
+            float(alpha): ci.permuted_label_control(
+                [
+                    float(sweep_result[float(alpha)]["delta"][name]["delta_nats_per_token"])
+                    for _, sweep_result in permuted_sweeps[name]
+                ]
+            )
+            for alpha in args.alphas
+        }
+        a36_5 = ci.evaluate_a36_5(
+            deltas={
+                alpha: primary["protein"]["a36_3"]["per_alpha"][str(alpha)]
+                for alpha in primary["protein"]["a36_3"]["a_and_b_firing_alphas"]
+            },
+            permuted_controls=permuted_controls,
+            firing_alphas=primary["protein"]["a36_3"]["a_and_b_firing_alphas"],
+            margin=float(args.random_null_margin),
+            per_draw=permuted,
+        )
         operating = primary["protein"]["operating_alpha"]
         if operating is not None:
             for scored in names:
@@ -1046,6 +1443,14 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
                 for mode in JOINT_MODES
             },
             "permuted_label_control": permuted,
+            "permuted_label_control_distribution": {
+                str(alpha): permuted_controls[float(alpha)] for alpha in args.alphas
+            },
+            "a36_5": a36_5,
+            "evaluation_draw": {
+                **draw_record["per_concept"][name],
+                "cell": cells[name].counts(),
+            },
             "operating_alpha": operating,
         }
 
@@ -1057,13 +1462,43 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
     complete = [name for name in names if per_concept[name]["operating_alpha"] is not None]
     excluded = sorted(set(names) - set(complete))
     if len(complete) >= 2:
-        cells = {
+        cells_for_matrix = {
             (injected, scored): matrix_cells[(injected, scored)]
             for injected in complete
             for scored in complete
         }
-        specificity = ci.specificity_matrix(cells, complete, rule=args.specificity_rule)
+        specificity = ci.specificity_matrix(cells_for_matrix, complete, rule=args.specificity_rule)
         specificity["concepts_excluded_for_want_of_an_operating_alpha"] = excluded
+        # A36-4's precision equalisation, and the rows it could not reach. The cap
+        # equalises the diagonal and every off-diagonal cell of a row at once, which
+        # is what makes the row's 95th percentile a like-for-like referent -- but a
+        # concept that never had the groups cannot be lifted by any cap, so its row
+        # is FLAGGED here rather than averaged in.
+        specificity["precision_equalisation"] = {
+            "per_side_cap": None
+            if args.evaluation_draw != "balanced_1to1"
+            else int(args.evaluation_draw_cap),
+            "groups_per_side": {
+                name: draw_record["per_concept"][name]["smaller_side_groups"]
+                for name in complete
+            },
+            "rows_the_cap_could_not_equalise": [
+                name
+                for name in complete
+                if not draw_record["per_concept"][name][
+                    "above_draw_stability_threshold"
+                ]
+            ],
+            "why_this_matters": "within one row, cell (A, B) is Delta for concept B on "
+            "B's own subset at B's own group count, so the off-diagonal referent set "
+            "itself mixes precisions and uncapped a 15-group diagonal could be compared "
+            "against a percentile over 985-group cells. The heterogeneity is within-row "
+            "as well as across-row and the cap addresses both",
+            "what_it_does_not_do": "capping equalises NOISE and not SIGNAL. A36-4 still "
+            "compares raw effects, so a concept with a genuinely larger effect still "
+            "dominates its row, and this matrix must never be read as a matrix of "
+            "t-statistics",
+        }
     else:
         specificity = {
             "criterion": "A36-4",
@@ -1084,11 +1519,7 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
             protein=per_concept[name]["by_coherence_bound"][
                 str(float(args.coherence_max_nll_inflation))
             ]["protein"]["a36_3"],
-            permuted_passes=[
-                entry["direction"]
-                for entry in per_concept[name]["permuted_label_control"]
-                if entry["passes_a36_3"]
-            ],
+            permuted=per_concept[name]["a36_5"],
             specificity_row=(
                 specificity.get("per_concept", {}).get(name)
                 if specificity.get("status") != "NOT_COMPUTED"
@@ -1103,12 +1534,104 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
     for name in names:
         print(f"[verdict] {name}: {verdicts[name]['outcome']}", flush=True)
 
+    draw_variance: dict[str, Any] | None = None
+    if variance_names:
+        threshold = ci.DRAW_STABILITY_GROUP_THRESHOLD
+        positive = [alpha for alpha in args.alphas if float(alpha) > 0.0]
+        per_concept_variance: dict[str, Any] = {}
+        for name in variance_names:
+            pseudo = f"{name}{DRAW_VARIANCE_SUFFIX}"
+            ladder = concept_sweeps["protein"][name]
+            rows = {}
+            for alpha in positive:
+                first = ladder[float(alpha)]["delta"][name]
+                second = ladder[float(alpha)]["delta"][pseudo]
+                half = (
+                    None
+                    if not first.get("delta_ci95")
+                    else (first["delta_ci95"][1] - first["delta_ci95"][0]) / 2.0
+                )
+                rows[str(alpha)] = {
+                    "draw_1": {
+                        "delta_nats_per_token": first["delta_nats_per_token"],
+                        "delta_ci95": first.get("delta_ci95"),
+                        "n_groups_per_side": first.get("n_groups_per_side"),
+                    },
+                    "draw_2": {
+                        "delta_nats_per_token": second["delta_nats_per_token"],
+                        "delta_ci95": second.get("delta_ci95"),
+                        "n_groups_per_side": second.get("n_groups_per_side"),
+                    },
+                    "difference": float(
+                        second["delta_nats_per_token"] - first["delta_nats_per_token"]
+                    ),
+                    "difference_over_draw_1_ci_halfwidth": (
+                        None
+                        if not half
+                        else float(
+                            abs(
+                                second["delta_nats_per_token"]
+                                - first["delta_nats_per_token"]
+                            )
+                            / max(1e-12, half)
+                        )
+                    ),
+                }
+            entry = draw_record["per_concept"][name]
+            per_concept_variance[name] = {
+                "smaller_side_groups": entry["smaller_side_groups"],
+                "above_draw_stability_threshold": entry[
+                    "above_draw_stability_threshold"
+                ],
+                "covered_because": (
+                    "below the draw-stability threshold"
+                    if not entry["above_draw_stability_threshold"]
+                    else "named by --draw-variance-concept, or the smallest concept when "
+                    "every concept clears the threshold"
+                ),
+                "per_alpha": rows,
+            }
+            for alpha, row in rows.items():
+                print(
+                    f"[draw variance] {name} a={alpha}: "
+                    f"{row['draw_1']['delta_nats_per_token']:+.6f} vs "
+                    f"{row['draw_2']['delta_nats_per_token']:+.6f} "
+                    f"(ratio to CI half-width "
+                    f"{row['difference_over_draw_1_ci_halfwidth']})",
+                    flush=True,
+                )
+        draw_variance = {
+            "criterion": f"{ci.PRE_REGISTRATION} amendments 3 and 4, mandatory",
+            "concepts": variance_names,
+            "seeds": [int(args.evaluation_draw_seed), int(args.draw_variance_seed)],
+            "per_side_cap": int(args.evaluation_draw_cap),
+            "draw_stability_threshold_groups": threshold,
+            "concepts_below_threshold": list(
+                draw_record["concepts_below_draw_stability_threshold"]
+            ),
+            "per_concept": per_concept_variance,
+            "reading": "balancing turns the non-bearing arm from the whole declared "
+            "split into a SAMPLE, so it carries draw variance the full-split design did "
+            "not. This is that variance, measured against a second independent seed on "
+            "every concept the cap could not lift above the stability threshold. The "
+            "ratio of the between-draw difference to the within-draw interval "
+            "half-width is the number to read: at or below one the draw is not moving "
+            "the result beyond its own sampling error. It is the designated detector "
+            "for point-estimate draw sensitivity, which a wide interval does not show "
+            f"-- measured on the fixture, at 12 groups per side a single subsample moved "
+            "|Delta|/bar from about 1.2 to 0.78 across the decision boundary while its "
+            "interval stayed at 28% of |Delta|",
+            "cost_note": "a subset selects rows of an already-scored pass, so every "
+            "second-draw record was folded into the scored union and this measurement "
+            "cost no additional forward pass",
+        }
+
     generation = run_generation_readout(
         args,
         handles["protein"],
         directions,
         fit_records=fit_records,
-        bearing_fit=bearing["fit"],
+        bearing_fit={name: bearing["fit"][name] for name in names},
         operating={name: per_concept[name]["operating_alpha"] for name in names},
         device=device,
         dtype=dtype,
@@ -1128,7 +1651,16 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
             "representation_site": ca.REPRESENTATION_SITE,
             "representation_site_note": ca.REPRESENTATION_SITE_NOTE,
         },
+        "concept_scope": {
+            "admitted_by_the_cohort": list(admitted),
+            "measured": list(names),
+            "rule": "the admitted list is READ from the cohort artefact and anything "
+            "outside it is refused; this stage derives no concept set of its own",
+            "stage35_handoff": handoff,
+        },
         "concept_reduction": reduction,
+        "evaluation_draw": draw_record,
+        "draw_variance": draw_variance,
         "invariants": invariant_record,
         "baseline": {
             mode: {
@@ -1497,6 +2029,9 @@ def run_synthetic_check(args: argparse.Namespace) -> dict[str, Any]:
                 for mode in JOINT_MODES
             }
             permuted = []
+            permuted_deltas: dict[float, list[float]] = {
+                float(alpha): [] for alpha in args.alphas
+            }
             for draw in ci.permuted_label_directions(
                 representations,
                 bearing[name],
@@ -1505,15 +2040,34 @@ def run_synthetic_check(args: argparse.Namespace) -> dict[str, Any]:
                 n_draws=args.permuted_directions,
                 seed=args.seed + 1,
             ):
+                drawn = sweep("protein", draw, [name])
                 evaluation = evaluate_concept(
                     concept=name,
-                    sweep=sweep("protein", draw, [name]),
+                    sweep=drawn,
                     controls=controls["protein"],
                     alphas=args.alphas,
                     bound=args.coherence_max_nll_inflation,
                     args=args,
                 )
                 permuted.append(permuted_entry(draw.concept, evaluation))
+                for alpha in args.alphas:
+                    permuted_deltas[float(alpha)].append(
+                        float(drawn[float(alpha)]["delta"][name]["delta_nats_per_token"])
+                    )
+            permuted_controls = {
+                alpha: ci.permuted_label_control(values)
+                for alpha, values in permuted_deltas.items()
+            }
+            a36_5 = ci.evaluate_a36_5(
+                deltas={
+                    alpha: evaluations["protein"]["a36_3"]["per_alpha"][str(alpha)]
+                    for alpha in evaluations["protein"]["a36_3"]["a_and_b_firing_alphas"]
+                },
+                permuted_controls=permuted_controls,
+                firing_alphas=evaluations["protein"]["a36_3"]["a_and_b_firing_alphas"],
+                margin=float(args.random_null_margin),
+                per_draw=permuted,
+            )
             operating = evaluations["protein"]["operating_alpha"]
             if operating is not None:
                 for scored in names:
@@ -1545,6 +2099,10 @@ def run_synthetic_check(args: argparse.Namespace) -> dict[str, Any]:
                     else controls["protein"][operating]
                 ),
                 "permuted_label_control": permuted,
+                "permuted_label_control_distribution": {
+                    str(alpha): permuted_controls[float(alpha)] for alpha in args.alphas
+                },
+                "a36_5": a36_5,
                 "operating_alpha": operating,
             }
         complete = [name for name in names if per_concept[name]["operating_alpha"] is not None]
@@ -1571,11 +2129,7 @@ def run_synthetic_check(args: argparse.Namespace) -> dict[str, Any]:
                 concept=name,
                 text_control=per_concept[name]["text"]["a36_3"],
                 protein=per_concept[name]["protein"]["a36_3"],
-                permuted_passes=[
-                    entry["direction"]
-                    for entry in per_concept[name]["permuted_label_control"]
-                    if entry["passes_a36_3"]
-                ],
+                permuted=per_concept[name]["a36_5"],
                 specificity_row=(
                     specificity.get("per_concept", {}).get(name)
                     if specificity.get("status") != "NOT_COMPUTED"
@@ -1641,7 +2195,7 @@ def run_synthetic_check(args: argparse.Namespace) -> dict[str, Any]:
         "torch_threads": int(torch.get_num_threads()),
         "cells": cells,
         "known_answer_recovered": all(
-            cell["recovered_expected_outcome"] for cell in cells.values()
+            cell["every_concept_matches_expected"] for cell in cells.values()
         ),
         "reading": {
             "shared_concept": "the planted direction is read by the head in both modes, "
@@ -1673,6 +2227,8 @@ def main() -> None:
         "schema_version": SCHEMA_VERSION,
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "pre_registration": ci.PRE_REGISTRATION,
+        "pre_registration_amendments": list(ci.PRE_REGISTRATION_AMENDMENTS),
+        "amendment_note": ci.AMENDMENT_3_NOTE,
         "settings": {
             key: (
                 str(value)
@@ -1721,7 +2277,7 @@ def main() -> None:
         destination = args.out / f"concept_injection__synthetic_check__L{args.layer:02d}.json"
     else:
         payload.update(run_campaign(args))
-        names = [concept_name(concept) for concept in args.concepts]
+        names = [str(concept) for concept in args.concepts]
         destination = args.out / (
             "concept_injection__"
             + re.sub(r"[^A-Za-z0-9._-]+", "-", Path(args.checkpoint).resolve().name)

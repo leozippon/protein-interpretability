@@ -15090,3 +15090,158 @@ Amendment 2 chose `non_iea` on a confound and named the sensitivity cohort so th
 **The magnitudes are nats per token at about 1.53 residues per token** and **must never be quoted beside a per-residue arm's** figure. That is L23's unit confound, which has already reversed one cross-arm ordering in this programme.
 
 **No stage-36 number exists on real weights.** The fixture has a planted answer and was built to have one; nothing in this entry is a measurement of a model.
+
+---
+
+## 2026-08-19 — EXP-R2-213 amendment 4: all 17 concepts at a bearing-group cap of 32, the reduction rule retired, and two scope errors fixed before dispatch
+
+**Status, unchanged from amendment 3 and restated because it governs everything below.** No stage-36 number exists on real weights. The evidence here is a **synthetic known-answer fixture with a planted effect**, plus arithmetic over **measured per-record costs**. A fixture validates an instrument and measures nothing about a model; a cost model is arithmetic, not a result. Items by kind, so they are weighed separately rather than as one block:
+
+| item | kind | what it does |
+|---|---|---|
+| all 17 concepts, reduction rule retired | **restructuring** — a frozen rule is retired rather than inverted | at all-17/cap-32 the rule never fires, so it is removed instead of being applied backwards |
+| per-side bearing-group cap of 32 | **criterion improvement**, and a **restriction** on the population | equalises the precision of A36-4's diagonal and its off-diagonal referent simultaneously |
+| bound 40 → 125 GPU-h | **relaxation** | pays for the breadth that makes A36-4's row percentile a percentile |
+| two scope errors | **corrections of defects** | both would have corrupted the estimand before any number was read |
+| the power-saturation rationale | **correction of a mis-framed question**, no criterion changes | "power saturates at 32" is false and must not be remembered |
+| draw-stability threshold | **addition** | names the failure mode that refuses cap 16, and extends amendment 3's variance check to cover it |
+
+### The decision
+
+**Stage 36 runs all 17 admitted concepts at a per-side bearing-group cap of 32, at one layer, across both checkpoints, retaining the nine-rung permuted control, at a measured 122.4 GPU-h. The compute bound rises from 40 to 125 GPU-h.** The frozen reduction rule is **retired**, not inverted: at all-17/cap-32 there is nothing for it to drop and it never fires.
+
+### Why an amendment was needed at all: a relaxation in one criterion silently changed the meaning of another
+
+**Amendment 2 made cost proportional to a concept's bearing count. The reduction rule was written when cost was concept-independent.** The rule drops in ascending `eval` bearing-group count, which was the cheap and sensible order under the full-split design. Under the balanced draw it inverted: it **drops the cheapest concepts and keeps the most expensive**. Measured at the same K, the largest 8 concepts cost **428 GPU-h** against **69 GPU-h** for the smallest 8 — a factor of 6.2 in exactly the wrong direction.
+
+**And at full breadth the balanced draw bought almost nothing.** The union of all 17 uncapped balanced subsets is **4,154 of the 4,499 eval records**, because `ec_transferase` alone draws 2,449. A device introduced to cut cost by sampling the non-bearing arm recovers 8% of the split when 17 concepts each sample it.
+
+**This is the finding of this amendment and it generalises past this design.** Neither the rule nor the balanced draw was wrong in isolation; the *interaction* was, and it was invisible in each one's own text because each was written against a different cost model. It was caught by measuring the grid before dispatch rather than by reasoning about it. The same shape has now bitten this programme twice in one campaign — first when `FITS`, a collapse diagnostic, was promoted to an adequacy criterion, and now when a drop order written for a flat cost model was carried into a proportional one.
+
+### The corrected cost model, which is why the cap and not the inversion is the answer
+
+Cost is **`K × passes × |union|`**. Concepts are therefore **equal-cost given the union**, and differ only in how much they **inflate** it. Uncapped, `ec_transferase` adds **832** marginal records and `go_membrane` **435**, while the small GO concepts add tens. **Capping collapses the union to 539 records for all 17**, which makes a concept's marginal cost near-uniform — and that is precisely the quantity the rule's inversion was about. Fix the union and the drop order stops mattering.
+
+### The measured grid
+
+One layer, both checkpoints, at the measured **0.161 s/record** protein and **0.142 s/record** text:
+
+| configuration | union (records) | min / max per side | precision ratio | GPU-h |
+|---|---:|---:|---:|---:|
+| all 17, cap 16 | 274 | 15 / 16 | 1.07× | 62.2 |
+| **all 17, cap 32 — chosen** | **539** | **15 / 32** | **2.13×** | **122.4** |
+| all 17, cap 64 | 1,047 | 15 / 64 | 4.27× | 237.8 |
+| all 17, cap 128 | 1,796 | 15 / 128 | 8.53× | 407.9 |
+| all 17, uncapped | 4,166 | 15 / 985 | 65.67× | 946.3 |
+| largest 8, uncapped | — | — | — | 427.7 |
+| smallest 8, uncapped | — | — | — | 68.9 |
+
+**The grid was checked for internal consistency before being recorded, and it is coherent.** Every precision ratio is exactly `max / 15`, where 15 is `go_atp_binding`'s `eval` bearing-group count as recorded in the stage-34 artefact, and 985 is `ec_transferase`'s — both reproduced from `records.jsonl` independently. Every GPU-h figure is exactly linear in `|union|` at a single constant of 0.2271 h/record, to zero deviation across a fifteenfold range of unions, which is what the cost model asserts and is a check the model could have failed.
+
+### The cap is a criterion improvement rather than a concession to the bound, and the reason is subtler than "capping saves compute"
+
+A36-4 compares each concept's diagonal against **its own row's off-diagonal 95th percentile**, and the precision heterogeneity is **within-row as well as across-row**. Cell (A,B) is Δ for concept **B** computed on **B's own subset at B's own n** — so the off-diagonal referent set is itself a mixture of precisions, and a 15-group diagonal could be compared against a percentile taken over cells measured at 985 groups. **The cap equalises the diagonal and every off-diagonal cell at once**, which is what makes the row percentile a like-for-like referent. Without it, A36-4's comparison is partly a reading of which concepts happened to be dense.
+
+**Two caveats travel with the cap.**
+
+**Capping equalises noise, not signal.** A36-4 still compares raw effects, so the capped matrix must **never** be read as a matrix of t-statistics. Equal *n* makes the referent comparable; it does not turn the entries into standardised quantities.
+
+**`go_atp_binding` at 15 bearing groups is the one row no cap can equalise**, because a cap can only reduce. It is to be **flagged in the artefact rather than averaged in**, and it is also the concept the draw-stability threshold below puts inside its own risk zone — the same row, for two independent reasons.
+
+### A mis-framed question of mine, corrected explicitly so it is not re-derived wrongly
+
+**I asked where power saturates. It does not saturate.** The interval scales as `1/√n` throughout, with no knee: half-width × √n is flat at **0.00047–0.00073**, so 64 → 128 buys **29%** exactly as 32 → 64 does — which is `1 − 1/√2`, i.e. the plain scaling and nothing else.
+
+**The reason a cap is nevertheless safe is a different reason, and it is the one to remember.** A36-3(a) clears throughout, with the CI half-width at only **8–16% of |Δ|** for every *n* from 8 to 64. So **A36-3(b) is the binding gate, and A36-3(b) compares point estimates**. Its bar, `q95(|Δ_random|)`, rises only about **22%** from n=64 to n=8, because that bar is set mostly by genuine direction-to-direction variation rather than by estimation noise — which is Appendix B rule 39's decomposition showing up in this design. The decisive **|Δ|/bar ratio sits at 1.06–1.27 with no trend in n**. **This must not be remembered as "power saturates at 32".** It is: the interval gate is slack, the point-estimate gate is binding, and the binding gate's bar is nearly *n*-independent.
+
+### The draw-stability threshold, which is why cap 16 is refused although it fits the old bound
+
+Below roughly **24 groups per side** the verdict becomes **point-estimate draw-sensitive**: an n=12 subsample moved `|Δ|/bar` from about **1.2 to 0.78**, across the decision boundary. That is not an interval widening, it is the point estimate itself moving far enough to flip a gate that compares point estimates — the exact failure mode the previous section identifies as binding.
+
+**Cap 32 leaves exactly one concept in that zone (`go_atp_binding`, at 15); cap 16 would put all 17 there.** So cap 16's 62.2 GPU-h is not a cheaper version of the same measurement, and it is refused on stability rather than on cost.
+
+**Amendment 3's second-seed draw-variance check is hereby designated the detector for this failure mode, and is extended to cover `go_atp_binding`.** That check was already mandatory; it now has a named target and a named thing it is looking for.
+
+### What the breadth buys, since it is what the bound increase pays for
+
+The 17×17 matrix gives **272 off-diagonal cells against 56** for an 8×8, so **A36-4's row percentile is taken over 16 entries rather than 7** — a genuine 95th percentile rather than a near-maximum. A 95th percentile over 7 entries is the max in all but name, which is the same statistical mistake amendment 1 removed from A36-5, and it would have re-entered the design through the back door of a reduced concept set. **A36-4 is the gate most likely to separate a real concept channel from a diffuse one**, and that is what justifies 122.4 h over the 89.6 h four-rung variant.
+
+**The nine-rung ladder is kept, and amendment 3 is why.** Amendment 3 made the per-draw A36-3 diagnostic load-bearing for reading a marginal outcome — "one draw of eight, at 1.02× the bar" — and that reading needs the rungs. The synthetic positive cell's `concept_4` is the demonstration: it is exactly the case the diagnostic exists to render legible.
+
+### Two scope errors found and fixed before dispatch, both of which would have corrupted the estimand
+
+**One — the stage could evaluate concepts the cohort never admitted.** It accepted `namespace:term` pairs and derived its own concept set by counting the raw `ec` column, so a specific EC number that was never admitted could be run **at group counts nobody had checked against C34-5's floor**. `--concepts` now takes admitted **ids** and the stage **refuses** anything outside the artefact's `concepts.admitted`, naming the offenders and the artefact. No derived fallback and no warn path — a warn path here is a silent path, because nothing downstream would look wrong.
+
+**Two — and this is the worse one, found while fixing the first.** The cohort's membership rule is **three-valued**: a record carrying no annotation of the relevant sort is **undefined** for the concept and enters **neither** arm. Stage 36 was using a **two-valued** labeller over the raw column. On `ec_hydrolase`/`eval` that would have folded **1,292 groups of unknown status into the non-bearing arm of Δ** — a silent change of estimand, not an error that surfaces as a wrong number. Labels now come through the ontology path the cohort recorded, and undefined records are excluded from **both** arms of Δ **and** from the coherence floor. The artefact records the undefined count per concept per split so the exclusion is auditable rather than asserted.
+
+**And this identifies the provenance of the "19–34 bearing groups" figure that amendment 3 recorded as unreproducible.** It came from those **self-derived specific EC numbers**, not from the admitted EC classes, whose `eval` bearing-group counts are **165, 239, 261, 368, 508 and 985**. So the figure was real but measured on a population the design never admitted — Appendix B rule 34's shape a second time in this campaign, and the reason amendment 3 declined to carry it forward was correct. The stage's own docstring now states the admitted range as 15 to 985, which is the artefact's range.
+
+### The synthetic re-run under amendment 3
+
+**The positive cell is now `TRANSFERS` on all eight concepts.** `concept_4`'s void is gone — its single passing permuted draw sat at **1.02× a bar the distributional rule no longer reads** — and **no verdict moved the wrong way**, which is the check that amendment 1 relaxed a size-dependence rather than a requirement. **This is instrument validation on a planted effect and it measures nothing about any model.**
+
+**The negative cell's permuted controls were still computing when this was written, and that is left open** rather than anticipated. A negative cell that has not finished is not a negative cell that passed.
+
+**No stage-36 number exists on real weights.**
+
+---
+
+## 2026-08-19 — EXP-R2-213 amendment 4 implementation note: a near-duplicate group can sit in both arms of Δ, and the cap is what caught it
+
+**Status, so the evidence is weighed correctly.** There is still **no stage-36 result on real weights**. What follows is a **synthetic known-answer fixture with a planted effect**, plus the **realised counts of the authorised draw**, which are cohort arithmetic. A fixture validates an instrument; realised counts describe a population. Neither is a measurement of a model.
+
+### The defect, which is the finding here, and it is cross-stage
+
+**The cap's own `max(counts) > cap` invariant fired immediately**, on `go_rna_binding`: **33 non-bearing groups against a cap of 32**.
+
+**The cause is that a near-duplicate group can straddle the bearing/non-bearing boundary for a concept.** A group drawn as *bearing* also contributed a *non-bearing* record, so one group sat in **both arms** of Δ.
+
+**This is an invalid interval, not a miscount.** The resampling unit is the **group**, so the bootstrap would have resampled that group into both arms of the same draw — the two arms would not have been independent, and the interval would have been wrong in a way no count check downstream would surface.
+
+**Two things make this worth a headed record rather than a line.**
+
+**First, stage 34 had already measured it.** The fix's straddling counts reproduce the cohort manifest's own **`groups_on_both_sides`** field *exactly* — verified against the artefact for this entry: **GO concepts 1 to 11** on the `eval` split (`go_kinase_activity`, `go_translation` and `go_transmembrane_transport` at 1, up to `go_membrane` at 11), and **all six EC concepts at 0**. So the quantity was in the artefact all along and the consumer was silently double-counting it. **That is a Single-Source failure at a stage boundary**: measured upstream, ignored downstream, with no disagreement visible because the downstream stage never read the field that would have contradicted it. It is the same shape as an earlier failure in this campaign where a trainer's own per-layer vector contradicted the cross-layer mean a gate was read on, except that here the two stages are different programs and the field crossing between them is the record.
+
+**Second, it surfaced only because the cap created an invariant for it to violate.** Uncapped, the double count sat inside a 985-group arm and was invisible — one group in 985 changes no number anyone would look at twice. **The cap was authorised for precision equalisation and paid for itself as a detector**, which is the general lesson: a constraint that makes a quantity checkable finds errors that a larger, looser design cannot express. This was not the reason the cap was chosen, and it is worth recording that it was not, because the argument for capping is now stronger than the argument that was made for it.
+
+**The fix.** Straddling groups are excluded from **both** sides — the same principle already applied to undefined records under amendment 4's second scope fix — and the count is recorded per concept as **`straddling_groups_excluded`**.
+
+### The cross-stage implication, flagged for whoever reads stage 35
+
+**A35-1 is untouched.** Stage 35's decisive statistic is `description → sequence` retrieval, which carries **no bearing/non-bearing contrast**, so no gated quantity in stage 35 can be affected by a boundary-straddling group.
+
+**But stage 35 also reports a concept-axis AUC as a diagnostic, and that quantity does partition records by concept membership.** It is explicitly **non-decisive** under amendment 1 — an AUC excess is never compared against a retrieval excess, and nothing gated depends on it — so this is not a defect in stage 35. It is stated here plainly so that a future reader of that diagnostic meets the fact rather than rediscovering it.
+
+### The authorised draw as realised (cap 32, seed 20260819)
+
+**16 of 17 concepts sit exactly at 32 / 32.**
+
+**`go_atp_binding` is the exception and it is the row already flagged**: 15 bearing groups less 2 straddling gives **13 / 13**, with its **bearing side fully consumed**. So no cap at or above 16 can equalise it — the constraint is the concept's own annotation, not the cap — and **its draw variance comes entirely from the non-bearing side**. It is recorded in `specificity.precision_equalisation.rows_the_cap_could_not_equalise` and is never averaged in.
+
+**Union 522 records / 462 groups**, against the declared `eval` split of 4,499 records.
+
+**Cost 118.6 GPU-h** for both checkpoints at one layer with the nine-rung permuted control — protein 44.9 plus text 14.4 per checkpoint — against the **125 GPU-h** authorised in amendment 4, so **inside the bound with about 6 hours of margin**. Two arithmetic checks were made rather than assumed: the per-checkpoint parts sum and double to the headline exactly (44.9 + 14.4 = 59.3, ×2 = 118.6), and amendment 4's own cost constant of 0.2271 h/record predicts **118.5 h** at a union of 522 against the 122.4 h it projected at 539 — so the realised figure is the model's, evaluated at the realised union, and not a new number.
+
+**The draw-variance coverage rule auto-selects exactly `['go_atp_binding']`, with no special case.** It follows from `DRAW_STABILITY_GROUP_THRESHOLD = 24`: 13 is below it and 32 is not, so the selection is forced by the threshold rather than chosen. Draw 1 gives 31 records, draw 2 gives 27, overlap 14 — so **the second draw adds 13 records to the scored union** and the mandatory variance check therefore costs records rather than an additional forward pass.
+
+### Amendment 3's correction is now vindicated empirically rather than only argued
+
+The retained per-draw diagnostic shows **one permuted draw reaching 1.32× the isotropic A36-3(b) bar in the positive cell and 2.15× in the negative cell**, with **`frozen_rule_would_have_voided: False`** under the distributional rule.
+
+**That is exactly the marginal case the frozen any-draw rule converted into a void, observed rather than hypothesised.** Amendment 1 corrected A36-5 on the argument that the maximum of a sample is not an estimator; this is the same conclusion arriving as data from the instrument's own control. It is also the justification for the roughly 33 GPU-h paid to keep the nine-rung ladder: without the rungs the per-draw diagnostic would not exist, and a marginal outcome would be unreadable.
+
+### Synthetic known-answer verdicts, both cells, `known_answer_recovered: True`
+
+**Negative cell (`text_only_concept`): 8 of 8 `MEASURED_NEGATIVE`, and nothing reports `TRANSFERS`.** Δ carries the **wrong sign throughout** — +5.7e-5 rising to +4.7e-4 across α = +0.5 to +4 — with ρ = **+1.0**, no sign reversal, and |Δ|/bar at 0.94–0.96, so A36-3's clauses (a), (b) and (c) all fail. **A36-5 is correctly vacuous** (`clearing=[]`, `passed=True`): the gate-ordering fix working as intended, so the outcome reads as a **measured negative** rather than as a control failure dressed as one. **A36-4 reports `NOT_COMPUTED` for want of an operating rung**, which is the honest verdict and not "failed" — there was no admissible α at which to compute a specificity matrix.
+
+**Positive cell: 8 of 8 `TRANSFERS`, and `concept_4`'s spurious void is gone.** `concept_0` reads ρ = **−1.0** with sign reversal, all nine rungs admissible, and |Δ|/bar **2.60 / 2.60 / 2.59 / 2.59** at α = 0.5 / 1 / 2 / 4 **against both the isotropic and the permuted bars**. A36-4 admits 8 of 8.
+
+**A planted effect measures the instrument and nothing about any model.** These cells were built to contain the answers they recover; the campaign's own margins are not this fixture's, which is why the artefact reports every draw's distance from its bar rather than only a boolean.
+
+### Encoded rather than only recorded, which is what stops it drifting
+
+`resolve` now **refuses any cap other than 32**, naming the draw-stability reason in the refusal, and naming that 16 was refused despite fitting the earlier bound. The three corrections to the reasoning are in the module itself rather than only in this log: **`COST_MODEL_NOTE`**, **`CAP_SAFETY_NOTE`** — which ends *"This must not be remembered as 'power saturates at 32'"* — and **`FROZEN_PER_SIDE_CAP = 32`**, with **`DRAW_STABILITY_GROUP_THRESHOLD = 24`** carrying its measured evidence beside it. All four were verified present for this entry.
+
+**Tests: `tests/test_concept_injection.py`, 50 passed** (re-run for this entry, 54.7 s). The new ones assert that a side above the cap raises, that the capped selection is reproducible from its seed and differs under another, that a cap below the floor is refused, and that a concept the cap cannot lift is flagged below the threshold — so the invariant that caught this defect is itself now a test rather than a runtime accident.
+
+**No stage-36 result exists on real weights.**
