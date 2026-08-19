@@ -14708,3 +14708,20 @@ The agreement to three figures is a coincidence of magnitude and is reported as 
 **Neither of these rests on more than one difference yet.** A third control draw is running at 8 rows and another at 4, because a two-point spread cannot show that it is wrong -- the rule recorded earlier today after two-point fits produced knees that a third point moved by 30%.
 
 **The criterion is still not evaluated.** It is defined on the seed-averaged fraction at 16 rows and the second anchor is still running. Nothing above is a verdict on it.
+
+### Three control draws at 4 rows: the two-point spread was unreliable, and the conclusion survives anyway (2026-08-18)
+
+**The first three-point spread estimate in this campaign**, all on one dictionary at one rung with only `--control-seed` varying:
+
+| site | draws (fraction) | mean | sd | range | earlier two-point difference | understatement |
+| --- | --- | --- | --- | --- | --- | --- |
+| L27 | 0.119748, 0.123174, 0.125338 | 0.122753 | 0.002819 (2.30%) | 4.55% | 2.79% | **1.63x** |
+| L28 | 0.149720, 0.137710, 0.144126 | 0.143852 | 0.006010 (4.18%) | 8.35% | 8.35% | **1.00x** |
+
+**The two-point estimate understated the spread by 1.63x at one site and was exact at the other, which is the hazard rather than an exception to it.** A single difference between two draws lands somewhere in the distribution of pairwise gaps, and nothing in the number itself says where. Being right at L28 was luck of the same kind that made it wrong at L27, and neither could have been detected without the third draw. This is the third time today the rule has paid: two-point fits gave knees of 35 and 15 positions that a third rung moved to 5.27 and 3.41 rows, and the 8-row dictionary spread of 2.10% sits against 11.83% and 13.63% at the rungs either side of it.
+
+**The conclusion from the previous entry survives, and now with a margin that is measured rather than assumed.** The control-draw spreads at 8 rows -- 1.10% at L27 and 0.51% at L28 -- are two-point estimates and therefore suspect in the same way. Inflating them by the worst understatement factor observed here, 1.63x, gives **1.79% and 0.83%**, still an order of magnitude below the +8% and +8.7% triggers. So the finding that the 8-to-16 movement is the size of control-draw noise does not depend on the two-point estimates being accurate; it survives the worst correction the data supports. A third draw at 8 rows is running and will replace the inference with a measurement.
+
+**A control draw at 2 rows is running**, extending the control-draw curve to a third rung. Across 4 and 8 rows that spread falls roughly fourfold in the fraction, which is what a pure sampling term should do; a third rung makes it possible to ask whether it scales as `1/sqrt(n)` rather than merely to observe that it falls. That is the sharpest available statement about what the matched control contributes, and it costs about an hour.
+
+**The criterion remains unevaluated.** It is defined on the seed-averaged fraction at 16 rows and the second anchor is still running.
