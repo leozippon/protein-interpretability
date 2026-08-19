@@ -14678,3 +14678,33 @@ The residual triples when the fourth rung is included, so `sd^2 = a/n + b` remai
 **The criterion remains unchanged.** This is the second time today that a measurement has raised a concern about one of its inputs, and the answer is the same: the criterion was fixed before the data, the concern is recorded, and the direction of the error is toward firing rather than passing, which costs compute rather than correctness.
 
 **A third control draw is running at 4 rows**, because everything above rests on one difference. This is the hazard recorded earlier today after two-point fits produced knees of 35 and 15 positions that a third point moved to 5.27 and 3.41 rows: a two-point estimate cannot show that it is wrong. Establishing at the cheap rung whether control-draw spread is stable across draws is what licenses reading the two-point estimates at 8 and 16 rows, where a third draw would cost five and seven hours instead of two.
+
+### The 8-to-16 movement is exactly the size of control-draw noise, at both sites (2026-08-18)
+
+**Second decomposition point, at the headline rung.** Same dictionary, same rows, only `--control-seed` differs:
+
+| site | rung | control-draw spread (fraction) |
+| --- | --- | --- |
+| L27 | 4 | 2.82% |
+| L28 | 4 | 8.36% |
+| L27 | 8 | **1.10%** |
+| L28 | 8 | **0.51%** |
+
+**Two things follow, and the second is the striking one.**
+
+**Control-draw variation shrinks sharply with sample size** -- 2.82% to 1.10% at L27 and 8.36% to 0.51% at L28. It therefore behaves as a precision term rather than as a floor. **This does not contradict Appendix B rule 39**, and the distinction matters: rule 39 concerns the *level* at which the threshold plateaus, which the fitted `b > 0` still says is positive, whereas what is measured here is how precisely that threshold is *estimated* from a given draw. A quantile taken over 5,545 control directions is well determined and becomes better determined as each direction's effect is measured on more positions. The two statements are about different quantities and both hold.
+
+**The 8-to-16 movement is the same size as redrawing the control, to three significant figures, at both sites.**
+
+| site | 8 -> 16 same-seed change | control-draw spread at 8 rows | ratio |
+| --- | --- | --- | --- |
+| L27 | +0.001443 | 0.001443 | **1.000** |
+| L28 | +0.000822 | 0.000823 | **0.999** |
+
+The agreement to three figures is a coincidence of magnitude and is reported as one; two independent quantities of this kind do not land on each other that precisely for a reason. **The substantive conclusion does not depend on the coincidence**: doubling the positions per latent moves the fraction by about as much as leaving the sample alone and drawing different random control directions. A change indistinguishable from noise is not evidence of additional latents, and this is what "the headline is at the floor" looks like when it is measured rather than fitted.
+
+**It also retires the concern raised two entries ago.** L28's control-draw spread of 8.36% at 4 rows was the same order as the +8.7% trigger, which would have been uncomfortable had it held at the rung the criterion uses. It does not: at 8 rows that spread is **0.51%**, an order of magnitude below the trigger, and L27's is 1.10%. The criterion's exposure to control-draw noise at its own rung is negligible.
+
+**Neither of these rests on more than one difference yet.** A third control draw is running at 8 rows and another at 4, because a two-point spread cannot show that it is wrong -- the rule recorded earlier today after two-point fits produced knees that a third point moved by 30%.
+
+**The criterion is still not evaluated.** It is defined on the seed-averaged fraction at 16 rows and the second anchor is still running. Nothing above is a verdict on it.
