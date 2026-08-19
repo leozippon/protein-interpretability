@@ -15780,3 +15780,179 @@ One checkpoint lineage, one rendering, one cohort, one seed, one draw. The skip-
 
 **Recommend promoting this to the citable register as two rows rather than one, entered below as F13 and F14.** Two, because the entry contains two logically independent results with different evidence bases and different caveat sets: F13 is about a **method** and needs the protein mode; F14 is about what protein adaptation **did to a lineage's text mode** and needs no protein mode at all. §1.2 already paid for merging: F12's row had to be amended to separate a retrieval finding from a hydropathy finding whose caveats did not travel together. The single-draw scope is written into both rows rather than treated as a blocker — the `eval` difference sits about 2.7 interval half-widths from zero and reproduces on a second checkpoint — and the second-draw sensitivity is recorded as the open item it is. If the coordinator prefers one row or none, both are reversible; the measurement is unaffected either way.
 
+
+---
+
+## 2026-08-19 — EXP-R2-214 amendment 3 (D3.j): the ceiling becomes a curve over k = 1…7, and the curve exposes a one-sided discriminant in the design's own logic
+
+**Read this first: nothing below is a result.** The numbers are a **48-record smoke run** on one seed plus a CPU-side ceiling curve, produced to demonstrate that the instrument works and to size the campaign. The implementing agent states plainly that the CHEMISTRY readings are an **instrument demonstration**, and item 7 records why that framing is the correct one rather than a modest one. The campaign this amendment governs is in flight; this entry is written **before** it returns, which is what makes items 1 to 3 amendments rather than reactions.
+
+**Artefacts.** Smoke cells under the implementing agent's scratch output directory, one JSON per arm at `seed 20260819`; the campaign-scale refusal cell is in the repository at `results/transfer/external_baseline/20260819141512_05734337be45/d3j_coverage_refusal_gpt2_large/`. Stage `37_alphabet_chemistry.py`, committed at **`ff8065b`**.
+
+### Item 1 — DEFECT IN THE FROZEN TEXT: the ceiling was too flat to bind, and is now a curve
+
+EXP-R2-214 froze D3.j's ceiling as the **k = 3** fragment conditional. Measured, that rung does **1.7–3.0%** of a decoder's own damage on this estimand, so §7.0's "at least twice the ceiling" degenerates into "greater than zero" and the standing null stops doing any work. **Amended, pre-data: the ceiling is read at every order the staged `uniref50_high_order` background supports, and the verdict is read at the *binding* order — the most demanding rung on the curve — never the friendliest.** `verdict_by_ceiling_order` and `survives_every_ceiling_order` are carried in the artefact so a reader can see the whole curve rather than the chosen point.
+
+Measured on `progen2-small`, 48 records, arm mean absolute damage **0.5621** nats/token. The point is that it climbs:
+
+| k | ceiling mean \|damage\| | adequacy ratio | k-mer coverage | observations per k-mer |
+|---:|---:|---:|---:|---:|
+| 1 | **0.00000** | **0.0000** | 1.000 | 8.6e8 |
+| 2 | 0.01441 | 0.0256 | 1.000 | 4.3e7 |
+| **3** *(the frozen rung)* | 0.01668 | **0.0297** | 1.000 | 2.1e6 |
+| 4 | 0.01978 | 0.0352 | 1.000 | 1.1e5 |
+| 5 | 0.02854 | 0.0508 | 1.000 | 5,323 |
+| 6 | 0.07663 | 0.1363 | 0.9992 | 265 |
+| **7** | 0.31905 | **0.5676** | **0.8595** | **13.2** |
+
+At k = 7 the corpus fragment model does **57% of the arm's own damage**. That is a null with teeth; k = 3 was not.
+
+**k = 1 is the curve's own reachability anchor and is not decoration.** An order-1 model reads no context, so its Δ is exactly **0.00000** for every pair by construction — and every higher order shares the same indexing, so a curve whose first point is not exactly zero is an indexing defect, caught before any verdict is read. **The honest limit of the curve is stated rather than implied**: at k = 7, 86.0% coverage on 13.2 observations per k-mer is where a dense count vector stops being an estimate, which is why 7 is a ceiling and not a choice (k = 8 is 25.6 G cells).
+
+**The verdict survives the amendment.** CHEMISTRY at all seven orders and all three cuts, `survives_every_ceiling_order: true`. At the binding order: Δ_arm **+0.2232** with its own interval **[+0.0917, +0.3623]**, Δ_ceiling(k = 7) **+0.00541**, difference **+0.2178 [+0.0781, +0.3758]** over 20 resampling groups.
+
+### Item 2 — the curve exposed a flaw in the design's own logic, and this is the important half
+
+D3.j-A4 predicts **Δ_ceiling < 0** under the corpus-symbol account: the fragment model should be damaged *more* by the distributionally dissimilar substitute. **It is not negative. It is ≈ 0 at every order**, sitting between −0.0096 and +0.0150 across all three cuts and all seven orders, against the arm's +0.22.
+
+The reason is measured, not guessed. The distributional axis that admits a pair to the contradiction set is a **k = 3 context-profile cosine**, and it **does not order the fragment model's own substitution damage at any order**: Spearman(ceiling damage, distributional axis) runs **−0.042, −0.016, −0.029, −0.178, −0.190, −0.099** at k = 2 through 7. So the two quantities this design calls "corpus statistics" — the axis that admits a pair, and the ceiling the arm must clear — **are not one quantity**.
+
+**The consequence bounds what the running campaign can claim, and it must be stated in those terms.** The discriminant is currently **one-sided**. It reads *"the arm separates the quadrants and nothing else does"*, not *"the arm separates them in the direction the chemical account predicts and against the direction the corpus account predicts"*. D3.j was admitted under §7.0 clause 4 for a **two-sided** contradiction, so what is running is weaker than what it was admitted for, and any CHEMISTRY it returns inherits that.
+
+### Item 3 — D3.j-B, pre-registered now, before the campaign returns
+
+**Registered here so it is not a reaction to a number.** **D3.j-B** is the same intervention with the distributional axis defined **as the fragment model's own substitution damage** rather than as a context-profile cosine. That makes the admission axis and the ceiling **one quantity**, which is what restores the two-sided discriminant: a pair enters the contradiction set precisely because the fragment model is damaged more by the substitute chemistry calls similar, so the corpus account then predicts Δ < 0 by construction rather than by hope.
+
+**Frozen: D3.j-B runs after the current campaign, regardless of its outcome.**
+
+- If the campaign returns **CHEMISTRY**, D3.j-B is the **confirmatory** test — whether the effect survives a genuinely two-sided contradiction set.
+- If it returns **DISTRIBUTION** or a null, D3.j-B is what **determines whether that was the axis mismatch rather than the model**.
+
+**This changes the pre-registered admission rule, which is why it is a new registration and not an amendment to the running one.** And the in-flight campaign is **not halted, re-scoped or altered**: a running measurement is not adjusted because a better design was identified while it ran. It will be reported against the rule it was dispatched under, with item 2's bound attached.
+
+### Item 4 — two controls recorded as evidence rather than assertion
+
+**The amendment is not circular.** On sequence **sampled from the k = 6 conditional** the ceiling's damage rises with order, while on **uniform-random residues** it does not — so the rise on real protein is a property of protein rather than of sparse high-order counts inflating noise at the top of the curve. *This control is reported by the implementing agent and no retained artefact carries it; it is recorded as a stated check rather than an auditable one, which is the same standing this programme gave D3.l's contact-density figure.*
+
+**BLOSUM62 does not converge on the corpus axis as order rises; it moves away.** Spearman(BLOSUM, corpus context axis) goes **−0.0099 (p = 0.892) at k = 3** to **−0.0995 (p = 0.172) at k = 5**, while the **corpus axis's own** correlation with the chemical axis falls **+0.1736 → +0.0478** over the same step, and the k = 5 axis is only **+0.7572** correlated with the k = 3 admission axis — so the reordering between orders is genuine and not noise. *(Read carefully: the +0.1736 → +0.0478 pair is the **corpus** axis against chemistry, not BLOSUM against chemistry; BLOSUM's own correlation with the chemical axis is **+0.386** at k = 3, recorded in the artefact's axis block.)*
+
+**A substitution matrix is therefore not a long-context corpus statistic.** This retroactively supports placing BLOSUM62 on the ceiling side — but **for a different reason than the one originally given**. EXP-R2-214 put it there because it is estimated from aligned families and is therefore evolutionary statistics under §7.0 clause 1, which remains true and remains the reason of record. What is new is that it is *not* a proxy for the fragment channel either, so it is a second and partly independent statistics estimator rather than a redundant one.
+
+### Item 5 — the realised contradiction set and the arm-admission refusals, both measurements
+
+**190 unordered pairs. Spearman(chemical axis, corpus axis) = +0.1736, p = 0.0166** — nearly independent, which is why a contradiction set of this size exists at all. Quadrant counts by cut, chemically-similar/distributionally-dissimilar first:
+
+| cut | CS-DD | CD-DS | readable at the 8-per-side floor |
+|---|---:|---:|---|
+| tercile *(declared)* | 17 | 18 | yes |
+| quartile | 9 | 11 | yes |
+| quintile | **5** | 9 | **no** |
+
+**The quintile rung does not reach the floor and is reported as a measurement, which is exactly why the sweep is not decoration** (Appendix B rule 17). The stage measures damage once, on the loosest readable rung, and reads the stricter rungs off the same damages at no extra forward pass.
+
+**Arm admission is by measured single-symbol coverage, not by a list.** `progen2-small`, `progen2-medium`, `zymctrl` and `bygpt5-medium-en` all read coverage **1.000** and are admitted. **`gpt2-large` is refused at 0.0053678** — 19,647 of 3,660,170 alphabet characters over 4,096 documents, measured at campaign scale in the repository artefact; the 48-record smoke read 0.005169, and both are far below the declared 0.99 floor. **`protgpt2` is refused at 0.00551.** Both are written `NOT_MEASURABLE` with **nothing measured behind the gate**.
+
+**`gpt2-large` was the coordinator's proposed text control and was refused by measurement rather than by argument**, and replaced by the byte-level `bygpt5-medium-en`, which reads 1.000. That is the intended behaviour of a gate that consults the data instead of a declaration, and it is worth recording that it fired on the design's own author.
+
+### Item 6 — the campaign in flight, recorded as dispatched and not as a result
+
+Committed at **`ff8065b`**, `RUN_ID 20260819141512_05734337be45`. All seven high-order background vectors staged and SHA-256 verified end to end, including **k = 7 at 10,240,000,128 bytes in 2,121 s** — **the k-mer background is not in the resource manifest and had never been staged**, which is a gap this campaign found rather than a step it repeated.
+
+**Scale.** Per protein cell, 4,096 records × 256 tokens × 750 damage calls = **786,432,000 forward tokens** (verified arithmetic). The campaign total of ≈**3.44 G scored-forward tokens**, the **263×** multiple over the smoke run, and the **57.4 L20-equivalent hours** are the dispatcher's **projections and are recorded as such**: the retained smoke cells sum to 10,092,326 forward tokens, so the stated multiple could not be reproduced from the retained artefacts and depends on which cells it is taken over. **The projection is nonetheless consistent with the smoke's own measured throughput** — scaling `progen2-small`'s 211.6 s per 2,988,947 forward tokens to 786.4 M gives about 15.5 L20-hours per protein cell — which is the check worth having, because a projection agreeing with a measured rate is different from a projection agreeing with itself.
+
+Cards 0, 1 and 3; **card 2 excluded for an uncorrected volatile ECC error**. A gated dispatcher refuses every protein cell unless the byte-level text control returns `PASS`, and **both branches of that check were verified against the pod before arming** — the failure branch as well as the success branch, which is Appendix B rule 15's lesson applied at dispatch time.
+
+### Item 7 — the honest status, in the implementing agent's own terms
+
+**The CHEMISTRY readings are an instrument demonstration and not a result.** Three reasons, each measured:
+
+1. **The estimand's null is not doing the work claimed for it.** Item 2: the discriminant is one-sided, and D3.j was admitted for a two-sided contradiction.
+2. **Every number is at 48 records and one seed**, and the composition-free secondary reading already disagrees with the primary on one arm: `progen2-medium`'s embedding-distance-controlled difference is **+0.470 [−0.129, +0.932]**, spanning zero, while its Δ excludes it. One arm where two readings of the same cell disagree at n = 48 is a sample-size statement, and it is the one that would be quoted first if this were reported as a finding.
+3. **§7.0 clause 5's last sentence stands.** A pass licenses a candidate and nothing more; §8's causal, retrieval-aware and independent-biological clauses are all open, and none is touched by anything here.
+
+**Nothing here shows a model *using* chemistry for anything.** What it shows is narrower: a decoder's likelihood depends on which residue it reads in a way that tracks four declared physicochemical descriptors rather than corpus co-occurrence, on the **35 pairs** where the two disagree at the declared cut. That is a statement about a likelihood, not about a mechanism, and the causal clause that would make it a mechanism has not been run.
+
+**No progress figure moves.** Nothing has been measured at a readable budget.
+
+
+---
+
+## 2026-08-19 — EXP-R2-215 pre-registered: D2.i, do text and protein continuation occupy distinct computational subspaces under identical weights
+
+**Taking `EXP-R2-215`**, the next free identifier (the log runs through EXP-R2-214). This entry exists to discharge a refusal the stage enforces on itself: `38_mode_subspaces.py` writes `PRE_REGISTRATION_STATUS = "UNREGISTERED_IN_THE_AUDIT"` into every artefact it produces and states in its own limitations block that *"no number from it may be cited as a programme finding until the run is recorded in `docs/EXPERIMENT_LOG.md` and the design is admitted to the audit."* **That refusal was correct and this entry removes it.** The stage is built and instrument-validated; **no campaign has been run and no number below is a result.**
+
+### Scope: this is Objective 1/2, and §7.0 does not gate it
+
+**§7.0's recombination ceiling is not this stage's admission rule, and the rule says so itself** — a measurement of what a model *does* is itself the result and no knowledge claim is in play. The stage carries the same statement as its own `objective_scope` limitation. It is recorded here in the entry, plainly, so that **nobody later reads a mode-subspace overlap as evidence about biology**. Nothing D2.i can return is an Objective-3 finding, and a distinct-subspaces verdict would say something about computation, not about knowledge.
+
+### The question, and the property that makes it askable here
+
+Under **identical weights**, do text continuation and protein continuation occupy distinct *computational* subspaces? The ProLLaMA lineage is the only place this is askable: one weight set, one tokenizer, and two behaviourally measurable modes (EXP-R2-152).
+
+**No token alignment is required, and that is the design's enabling property.** Nothing in the measurement pairs a position of one run with a position of another. It compares **subspaces of `R^d_model`** — which dimensions a mode occupies and which it needs — and a subspace comparison carries no position index. L31's finding that a single substitution leaves a multi-residue-BPE arm token-aligned on only **47.0–54.5%** of instances, with a non-random survivor set, therefore does not reach it. **That is precisely why this design is available on the lineage where §7.0's declined block refuses role swap, analogue patch and intra-fragment intervention**, and it is worth naming: the same tokenizer property that blocks position-level work is silent on a subspace estimand.
+
+### The four-step estimand, frozen
+
+1. **Occupancy**, per layer per mode: the spectrum of the centred covariance of that mode's activations at the layer's feed-forward output. **Reported as several rank statistics and never reduced to one.** R1.2 measured the same contrast at **35×** on the participation ratio, **7.7×** on effective rank and **1.24×** on the 99%-variance dimension, and the fixture reproduces the hazard with the three statistics disagreeing by **5–70×** on one cloud. They disagree by construction — the participation ratio is dominated by the largest eigenvalues, effective rank reads the whole spectrum, a variance-cut rank reads one point of the cumulative curve — so a single-statistic occupancy claim is mostly a claim about the choice of statistic.
+2. **Necessity**, causally: ablate the top-`r` principal directions and measure likelihood damage to **that mode's own** continuation. A direction a mode occupies but does not need is not part of its computation, and occupancy alone cannot tell the two apart.
+3. **Overlap** between the two modes' **necessary** subspaces, **always against its stated chance level**. High-dimensional random subspaces overlap substantially by construction; the closed form `max(r_a, r_b) / d` is verified against Monte-Carlo in the fixture. The declared statistic is `mean_squared_cosine`, with the first-principal-angle cosine reported beside it as the statistic to read when a claim is about one shared *direction* rather than a shared subspace.
+4. **Cross-mode driveability**: the full 2×2 — each mode's basis ablated and evaluated in each mode — with paired intervals.
+
+### The licensing clause, which is the one that matters
+
+**A "mode-specific" direction whose ablation only shifts the unigram output distribution is a bias term, not distinct computation.** Every ablation's damage is decomposed per position into the shift in the model's own held-out marginal and the residual context information, and **the headline claim is licensed by the residual or not at all**. If the residual is small the finding is *"the modes differ in their unigram statistics"* — materially weaker, and it must be reported as such rather than as a subspace result. The frozen decision rule (`residual_licensed_v1`) makes this a verdict rather than a caveat: a layer reads `UNIGRAM_ONLY` when it clears the damage clauses and fails the residual floor.
+
+**The estimator is bias-corrected because a plug-in one is not usable at this effect size.** `q` is the model's own mean predictive distribution over the measured positions, estimated **held out across near-duplicate groups** — a position in half A scored against the `q` accumulated on half B and vice versa (Appendix B rule 3). L12 records a plug-in unigram bias of up to **+1.02 nats** on a protein arm against +0.009 at residue level, and the smoke measured plug-in and held-out estimators differing by **−0.26 to +0.06 nats** across cells, which is **the same order as the effects being measured**. Both values are computed and the difference is reported as the measured bias at that cohort size.
+
+**Frozen constants of the decision rule:** `necessity_fraction` 0.5, `residual_share_floor` 0.5, `overlap_margin` 0.25, `logit_tolerance` 1e-3, `min_positions_per_dimension` 10.
+
+### The refusals, frozen
+
+- **`Llama-2-7b-hf` enters in text mode only, and as a representational reference.** Every behavioural cell of its protein mode is written `BEHAVIOURAL_READ_REFUSED`, citing context information **+0.0843 nats/token** and reversal cost **−0.0013 nats/residue** (EXP-R2-152, re-measured on a second cohort draw at EXP-R2-174). **This is not given a limitation number: the catalogue ends at L32 and there is no L33.**
+- **Occupancy requires at least 10 × `d_model` positions per cell** or the rank statistics are written `OCCUPANCY_UNDERSAMPLED`. The smoke correctly refused itself at **512 positions against a floor of 40,960**.
+- **Every criterion is per layer and never a cross-layer mean** (L32, Appendix B rule 33).
+- **The resampling unit is the near-duplicate group, never the record** — L30 measured 871 of 2,048 held-out records (42.5%) keeping a ≥95%-identity relative, so a record-level unit reports an interval narrower than the evidence supports.
+
+### Instrument validation: done, and what it establishes
+
+The synthetic certificate is **PASSED on all eight checks**. Verified from the retained artefact (`mode_subspaces__synthetic_check__residual_licensed_v1`, deterministic across two independent runs of the suite, `seed 20260819`, `d_model` 96, planted context rank 12, 576 positions over 24 groups):
+
+| check | reading |
+|---|---|
+| overlap recovers the planted value | planted **0.5000**, recovered **0.49965**, tolerance 0.05 |
+| chance level reproduces its closed form | closed form **0.1250** against Monte-Carlo **0.12555** |
+| null ablation is a no-op | **exactly 0.0** nats in both modes |
+| decomposition closes | max absolute residual **1.17e-15** against a 1e-9 tolerance |
+| own basis beats the rank-matched random control | text 0.3902 against 0.0198 (**19.7×**), protein 0.4042 against 0.0062 (**65.7×**) |
+| a planted **bias** block reads as unigram | residual share text **0.017** / protein **0.027**, against a ≤ 0.20 bound |
+| a planted **context** block reads as residual | residual share text **0.979** / protein **0.883**, against a ≥ 0.60 bound |
+| the overlap null does not fire | reported not-applicable where nothing is planted, since the correct answer there *is* the chance level |
+
+*Four of these figures were briefed to me from a run whose artefact is not retained in the repository — overlap 0.49995, decomposition 1.33e-15, own-over-random 23× and 79×, and bias-block residual shares 0.108 / 0.080. Every verdict, bound and tolerance agrees between the two, and the differences are draw-level. The retained numbers are the ones recorded above; the briefed ones are noted so a reader who has seen them is not left reconciling two tables.* The 0.08–0.11 residual quoted for the softmax argument below belongs to that same non-retained run.
+
+**Verdict attainability was tested rather than assumed, and that is worth naming as such.** Three geometries were planted and each returned the outcome it was planted for: **0 shared directions → `DISTINCT_SUBSPACES`**, **6 → `MIXED`**, **12 → `SHARED_SUBSPACE`**, all `passed: true`. **This is Appendix B rule 2 applied to a *verdict* rather than to a threshold** — a verdict a planted geometry cannot reach is a verdict the rule decided in advance — and it is the first time this programme has run that check on the verdict space itself. The module also records that the remaining two outcomes, `NO_MEASURED_DAMAGE` and `VOID_INSTRUMENT`, are states of the *instrument* rather than of the planted geometry, so no fixture that plants an effect can reach them; they are exercised as unit tests of `layer_verdict` instead.
+
+### Irreducible limitations, all measured on the fixture rather than argued
+
+- **A top-`r` principal basis is identified only where eigenvalues `r` and `r+1` separate.** Two clouds planted to occupy **literally the same span** returned top-8 bases overlapping at **0.668** — exactly the 8/12 chance value inside that span — because the spectrum there was flat. Every overlap figure is bounded by this, so **the relative eigenvalue gap travels with every basis and every rung**, and an overlap below chance is evidence of distinct subspaces **only where the spectra are separated at the rank being read**.
+- **At a saturated rung the paired own-minus-other contrast compares two estimates of one subspace, not two modes.** Two identical planted spans read **0.9987** mean squared cosine and the contrast still excluded zero. The necessary rank is therefore the **smallest** rung reaching the necessity fraction, and **a run whose necessary rank equals its ladder's top rung must be read as saturated** and not as asymmetric.
+- **No intervention on a softmax model is exactly unigram-only.** Removing a constant from the logits leaves an `x`-dependent normaliser, giving a **0.08–0.11** residual on the fixture. That is why the clause is a *share* bounded at 0.20 rather than a test against zero — a design that tested against zero would fail on arithmetic, which is the failure class Appendix B rule 2 was written for.
+- **One tensor.** Everything is read on each layer's feed-forward output — the term that block adds to the residual stream, not the residual stream itself and not the attention contribution, which this layout has already added by the time the feed-forward runs. **A direction a mode needs in the residual stream but in no block's write to it is invisible here.**
+- **Nested ablation only.** Necessity is read as a function of *occupancy* rank, so a direction a mode needs but barely varies along sits low in that order and is reached only at a high rung. Searching for the most necessary rank-`r` subspace is a different and far costlier estimand and is not attempted.
+- **The matched cohort matches on records, positions per record and total scored positions, and cannot match three things**: rendered input length; the symbol unit (L23 — a protein token carries about 1.54 residues against a text token's roughly 4 characters, and **every magnitude here is per token**); and the corpora, which are Swiss-Prot and OpenWebText and are two populations, so a mode difference is never only a mode difference.
+- **Single draw per run**, and the damage cohort is a *prefix* of the occupancy cohort's own seeded draw rather than a second sample of it — its cost scales with records while the covariance's precision scales with positions.
+
+### Cost, and the declared campaign
+
+**Measured: 4.90 GPU-h on one L20** — damage 4.60, occupancy capture 0.19, model loads 0.11 — for 3 checkpoints × 8 layers × a 10-rung ladder × three bases per rung, at 640 occupancy records × 64 positions and 64 damage records.
+
+**The H200 figure of 1.0–1.6 GPU-h is an extrapolation from a bandwidth argument and not a measurement, and is recorded as such.** This programme has already paid for a projection quoted as a rate (Appendix B rules 34 and 40 in their two directions), so the L20 number is the one with evidence behind it and the H200 number is a plan.
+
+**Frozen: the second draw Appendix B rule 1 asks for is run**, because it doubles a cost this small. A single-draw D2.i result would carry the same open sensitivity F13 carries, and at 4.90 GPU-h there is no reason to accept it.
+
+### Two structural registrations every new numbered stage must make
+
+A new stage in this repository has to appear in **two places outside its own module** or the suite goes red: an entry in the cohort-draw contract (`tests/test_cohort_draw_contract.py`) and a row in the stage table of `docs/RESEARCH_PLAN.md`. **Both are in place for `38_mode_subspaces.py`** and were verified for this entry. Recording it because **this is a structural coupling rather than a defect of any one stage**: the contract and the plan are single sources for facts a stage cannot own privately — which cohort draw it consumes, and what it is for — and a stage that skips them has not so much broken a test as declined to declare itself. The next stage author will hit the same coupling and should hit it knowing why it exists.
+
+**Nothing has been measured at a readable budget. No progress figure moves.**
+

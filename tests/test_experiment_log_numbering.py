@@ -1,4 +1,4 @@
-"""Experiment ids must not go backwards, because concurrent appends make them collide.
+"""A *new* experiment id must not go backwards, because concurrent appends make ids collide.
 
 Agents append to `docs/EXPERIMENT_LOG.md` at the same time. Each reads the tail,
 takes what looks like the next free id, and writes — and two of them reading the
@@ -7,11 +7,33 @@ record in the worst possible way: two unrelated experiments answer to one name,
 so a later reference resolves to whichever one the reader finds first.
 
 **Uniqueness is the wrong invariant.** One experiment legitimately owns several
-entries — a pre-registration, its reading, a repair — and forcing distinct ids on
-them would break the link the shared id exists to make. What actually fails is
-*ordering*: an id assigned from a stale tail is smaller than one already used, or
-skips over ids taken in between. So the rule is monotonicity, checked in file
-order: the id sequence never decreases and never rises by more than one.
+entries — a pre-registration, its amendments, its dispatch record, its reading, a
+correction — and forcing distinct ids on them would break the link the shared id
+exists to make. A reading *must* carry the id of the pre-registration it reads;
+that is the whole point of freezing a decision rule under an id.
+
+**Every occurrence is the wrong sequence.** Whenever two pre-registrations are
+open at once — the normal state of this programme, not an accident — the earlier
+one's later entries land *after* the later one's id, because they are appended
+when they were written. Charging that as an out-of-order id makes the check fire
+on the convention it is supposed to protect. Between 2026-08-10 and 2026-08-18 it
+did so thirty-odd times and detected nothing, and each firing was answered by
+another named exception; the list was on its way to becoming the hole its own
+convention forbids.
+
+So the rule is monotonicity over the ids in the order each is **first
+introduced**: that sequence never decreases and never rises by more than one. A
+later entry re-using an id already in the log is a continuation of the experiment
+that owns it, and is not a position in the sequence at all.
+
+What that gives up, stated plainly rather than left to be re-derived: an id that
+has already been introduced is indistinguishable, by id order alone, from a
+legitimate continuation, so a genuinely new experiment that files itself under a
+stale id already in the log is not caught here. That case was never caught
+reliably anyway — the common collision, where two agents read the same tail and
+both take the same next id, sits *at* the running maximum and violated nothing
+under either rule. What this file checks is what id order can actually decide:
+introductions never go backwards and never skip.
 
 The rule is checked against a frozen list of the violations that already exist.
 Historical entries are **not** rewritten to satisfy it — the chronology is the
@@ -41,12 +63,12 @@ HEADING = re.compile(r"^##\s+(\d{4}-\d{2}-\d{2})\s+—\s+EXP-R2-(\d+)", re.M)
 
 #: Violations of the rule that already exist, as `(previous id, id, why)`.
 #:
-#: Recorded rather than repaired. The first eight are the numbering drift of the
-#: 2026-07-30 to 2026-08-05 period, when ids were reserved in blocks and several
-#: were assigned to work that was never logged under them; the four in the
-#: 2026-08-10 band are pre-registration/reading pairs that were separated by
-#: other entries appended in between, which is the same shape as the last one and
-#: is not a defect.
+#: Recorded rather than repaired. All of them are the numbering drift of the
+#: 2026-07-30 to 2026-08-05 period, when ids were reserved in blocks and many
+#: were assigned to work that never headed an entry of its own. Nothing later
+#: appears here: every out-of-order id since then has been a continuation of an
+#: experiment already in the log, which the first-occurrence rule admits by
+#: construction rather than by declaration.
 KNOWN_VIOLATIONS: tuple[tuple[int, int, str], ...] = (
     (66, 68, "ids reserved in a block during the 2026-07-30 audit"),
     (68, 72, "as above"),
@@ -54,205 +76,9 @@ KNOWN_VIOLATIONS: tuple[tuple[int, int, str], ...] = (
     (77, 86, "as above; EXP-R2-080 to 085 are named inside entries rather than heading them"),
     (89, 91, "as above"),
     (91, 93, "as above"),
-    (93, 92, "EXP-R2-092's results entry follows its launch, which 093 was appended between"),
-    (93, 86, "EXP-R2-086's completion entry, appended after later work"),
+    (93, 92, "EXP-R2-092 was launched under a sub-heading inside EXP-R2-091's entry, so its id first heads an entry at its results"),
     (93, 115, "the 2026-08-04 block; 094 to 114 head no entry of their own"),
     (115, 128, "as above, 116 to 127 likewise"),
-    (152, 150, "EXP-R2-150's reading, appended after 151 and 152 were launched"),
-    (154, 152, "EXP-R2-152's reading, appended after 153 and 154"),
-    # EXP-R2-171 ran across a session in which other agents appended six entries,
-    # so its pre-declarations and readings are interleaved with higher ids. Each
-    # continuation is appended in the order it was written, and every one shows up
-    # here as a violation against whatever the maximum had reached. The order is
-    # the evidence: a pre-declaration counts only because it was written before
-    # the numbers existed, and reordering the file to tidy the sequence would
-    # destroy exactly the property that makes it worth anything. Four entries,
-    # four exceptions, each declared rather than excused by a looser rule --
-    # nothing here can distinguish a continuation from a collision structurally,
-    # because both are an id that has been seen before, so the separation has to
-    # be a human statement and this is it.
-    (
-        172,
-        171,
-        "EXP-R2-171's repaired reading, deliberately left after EXP-R2-172",
-    ),
-    (172, 171, "EXP-R2-171's studentised pre-declaration, left after 172 for the same reason"),
-    (178, 171, "EXP-R2-171's studentised reading, appended after 173 to 178 had landed"),
-    # EXP-R2-191 pre-declared a gate, then trained for five hours while another
-    # agent ran EXP-R2-192 to completion in the same window. Its reading is
-    # appended where it was written, after 192, for the reason the docstring
-    # above gives: a pre-declaration counts only because it preceded the
-    # numbers, and moving the reading up to sit beside it would put the two
-    # adjacent in a file whose order is what evidences that. One entry, one
-    # declared exception.
-    (
-        192,
-        191,
-        "EXP-R2-191's read, appended after EXP-R2-192 landed during its training window",
-    ),
-    # The same shape once more. EXP-R2-193 pre-registered a confirmatory test of
-    # EXP-R2-192's length-matched control and then implemented and ran it, while
-    # a concurrent agent appended EXP-R2-194 in the same window. Its reading is
-    # appended where it was written, after 194, rather than renumbered to 195:
-    # renumbering would sever the pre-registration from its own reading, which is
-    # the link that makes a pre-registration worth anything at all.
-    (
-        194,
-        193,
-        "EXP-R2-193's read, appended after EXP-R2-194 landed while its stage was being written",
-    ),
-    # And once more, at the widest separation so far. EXP-R2-194 pre-declared its
-    # recovery comparison, was then paused for hours by a cluster failure, and
-    # ran only after EXP-R2-195 to 200 had been appended by concurrent agents.
-    # Its reading goes where it was written. The gap is six ids rather than one,
-    # which is what a hardware outage does to a chronology and is precisely the
-    # thing that must stay visible: the pre-declaration's value is that it
-    # preceded the numbers, and by a margin the file itself now records.
-    (
-        200,
-        194,
-        "EXP-R2-194's read, appended after 195 to 200 landed during its cluster-outage pause",
-    ),
-    # EXP-R2-202 pre-registered its rule, then built a stage, verified it on an
-    # L20 and ran four H200 cells, while a concurrent agent appended EXP-R2-203
-    # in the same window. Its reading goes where it was written. Same reason as
-    # every entry above: the rule counts only because it was frozen before the
-    # eigenvalues existed, and moving the reading up beside it would erase the
-    # file order that is the evidence for that.
-    (
-        203,
-        202,
-        "EXP-R2-202's read, appended after EXP-R2-203 landed during its build-and-run window",
-    ),
-    # A different shape, and it is worth separating from the one above. This is
-    # not a continuation of a live experiment but a *status record* for one whose
-    # local controller died after dispatch: EXP-R2-201's two cells ran to
-    # completion in-pod and were never pulled, and the fact was found while
-    # EXP-R2-202 checked for a prior run before dispatching. It is filed under
-    # 201 because it is about 201, and it lands after 203 because that is when it
-    # was discovered. Renumbering it would attach a six-hour run's completion to
-    # an id that never dispatched it.
-    (
-        203,
-        201,
-        "EXP-R2-201's status record, appended when EXP-R2-202 found its unpulled artefacts",
-    ),
-    # EXP-R2-202's corrections, raised by the coordinator against its read and
-    # answered with two fresh H200 measurements, by which time 203 and 204 had
-    # both landed. A correction belongs to the entry it corrects, so it keeps
-    # 202's id; filing it as a new experiment would detach a retraction from the
-    # claim being retracted, which is the one thing a log must not let happen.
-    (
-        204,
-        202,
-        "EXP-R2-202's corrections, appended after 203 and 204 landed",
-    ),
-    # EXP-R2-201's verdict entry, the second exception this id costs and a
-    # different thing from the first. The status record above says the cells
-    # completed; this is the reading against the bands that experiment froze
-    # before either dictionary existed, owed by its owner and filed later on
-    # reassignment, by which time 202's corrections, 203 and 204 had all landed.
-    # It keeps 201's id for the reason a pre-registration exists at all: a band
-    # declared in advance and the verdict that answers it must resolve to one
-    # name, and filing the reading as a new experiment would leave the band
-    # unanswered under its own id and the answer unmoored from what it was
-    # answering.
-    (
-        204,
-        201,
-        "EXP-R2-201's verdict, filed on reassignment after 202's corrections, 203 and 204 landed",
-    ),
-    # EXP-R2-207 was pre-registered while EXP-R2-206's cells were still training,
-    # so both of 206's later entries — the dispatch record written at launch and
-    # the reading of its artefacts the next morning — land after 207's id. One
-    # exception covers both, because the rule is checked against the running
-    # maximum and both are the same event: a campaign whose id was already
-    # overtaken before it had anything to report.
-    (
-        207,
-        206,
-        "EXP-R2-206's dispatch record and its reading, both appended after EXP-R2-207 was pre-registered",
-    ),
-    # Same shape, one campaign further back. EXP-R2-204's text control was
-    # hand-launched and finished after 205, 206 and 207 had all been registered,
-    # and its reading keeps 204's id because that is where the bands and the
-    # definition of `R` were frozen. Filing it as a new experiment would leave
-    # 204's pre-registration permanently unanswered under its own name.
-    (
-        207,
-        204,
-        "EXP-R2-204's text-control reading, filed under its own id after 205 to 207 had landed",
-    ),
-    # And again for the same reason, one id later. Two further readings of
-    # EXP-R2-204's own cells were taken while EXP-R2-208 was being pre-registered
-    # and dispatched -- the per-layer resolution of `R`, and the second lever's
-    # answer to the admissible-band question 204 was admitted to settle. Both
-    # belong to 204's verdict rather than to a new experiment, and one exception
-    # covers both because the rule is checked against the running maximum.
-    (
-        208,
-        204,
-        "EXP-R2-204's per-layer and admissible-band addenda to the same verdict, appended after EXP-R2-208",
-    ),
-    # EXP-R2-207's R1 reading and the decision that closed the campaign's primary
-    # statistic, both appended after EXP-R2-208 was pre-registered, amended and
-    # dispatched. R1's four cells went out under 207's own id and trained for six
-    # hours; 208 was registered and revised in that window and then took the same
-    # allocation, so by the time R1's artefacts were read the maximum had moved
-    # past 207. Both entries keep 207's id because that is where the three-seed
-    # design, the interval and the UNRESOLVED fallback were frozen, and a fallback
-    # filed under one id and answered under another is a fallback nobody can
-    # check. One exception covers both, because the rule is checked against the
-    # running maximum.
-    (
-        208,
-        207,
-        "EXP-R2-207's R1 reading and its closing decision, filed under its own id after EXP-R2-208 was registered and dispatched",
-    ),
-    # EXP-R2-202's prominence addendum, filed under its own id after 207 to 210
-    # had landed. A later entry quoted that campaign's `r99` peak locations, and
-    # checking them showed two of the four cells cannot support a peak location
-    # at all -- the base/text curve is flat to within 1% over 23 of 30 interior
-    # layers. The correction is a re-reading of EXP-R2-202's own artefacts and of
-    # nothing else, so it keeps 202's id: filing it as a new experiment would
-    # detach a withdrawal from the measurement being withdrawn, which is the one
-    # thing this log must not let happen.
-    (
-        210,
-        202,
-        "EXP-R2-202's peak-prominence addendum and the withdrawal of its text-side peak locations, appended after 207 to 210",
-    ),
-    # EXP-R2-202 kept accruing entries as its spectra were re-read: the null
-    # calibration that withdrew "base/text has no depth structure", the lineage's
-    # third protein point, the third text point, and the resampling design frozen
-    # to price the statistic. Each is a re-reading of EXP-R2-202's own artefacts
-    # and keeps its id; each is declared separately, because one declaration
-    # standing for an unbounded number of entries is how this list stops being a
-    # record.
-    (210, 202, "EXP-R2-202's null calibration, which withdrew the flat-base/text reading"),
-    (210, 202, "EXP-R2-202's third protein point (ProLLaMA) and the band 17-19 correction"),
-    (210, 202, "EXP-R2-202's third text point, read against a rule fixed before it landed"),
-    (210, 202, "EXP-R2-202's prominence resampling design, frozen before any draw"),
-    # Second occurrences of three transitions already declared above. Each names
-    # its own entry rather than being folded into the first declaration.
-    (207, 206, "EXP-R2-206's reading, the second of its two entries appended after 207"),
-    (208, 204, "EXP-R2-204's admissible-band addendum, the second of its two entries after 208"),
-    (208, 207, "EXP-R2-207's closing decision on R, the second of its two entries after 208"),
-    # EXP-R2-207's R2 reading, filed under its own id after EXP-R2-208 to 211 had
-    # landed. R2 was dispatched under 207 and its cells were admitted while the
-    # sweep and its successors were being registered; the reading keeps 207's id
-    # because that is where the seed design and the interval were frozen.
-    (211, 207, "EXP-R2-207's R2 reading, pricing the text denominator, filed after 208 to 211"),
-    # EXP-R2-209's round A reading, filed under its own id after 210 and 211 were
-    # registered while its cells trained. The sweep's stop rule and its criteria
-    # were frozen under 209, so its readings keep that id; 210 and 211 are the
-    # successor designs written during the four hours 209 was on the cards.
-    (211, 209, "EXP-R2-209's round A interim reading, filed after 210 and 211 were registered mid-run"),
-    (211, 209, "EXP-R2-209's wording amendment, replacing a registered negative that overshot four sampled points"),
-    (211, 209, "EXP-R2-209's admissibility finding: no Crosscoder cell clears the bar, which moots the crossing band"),
-    (212, 209, "EXP-R2-209's STOP entry, filed after EXP-R2-212 was registered during its fourth cell's run"),
-    (212, 202, "EXP-R2-202's resampling read, filed under its own id after 209 to 212 had landed"),
-    (212, 202, "EXP-R2-202's narrowing of the localisation claim, the second entry filed under 202 after 212"),
 )
 
 
@@ -261,23 +87,39 @@ def heading_ids() -> list[tuple[str, int]]:
     return [(m.group(1), int(m.group(2))) for m in HEADING.finditer(text)]
 
 
-def violations(ids: list[int]) -> list[tuple[int, int]]:
-    """Every id that is below the running maximum, or more than one above it.
+def introductions(ids: list[int]) -> list[int]:
+    """The ids in the order each is first introduced, with later re-use dropped.
 
-    Against the running maximum rather than the immediate predecessor, and the
-    difference is not cosmetic. An entry deliberately left out of order — a
-    reading appended after a later experiment, because reordering it would
-    falsify the chronology that makes it evidence — is one event, but it breaks
-    an adjacent-pair rule twice: once stepping down into it and once stepping
-    back up out of it. The second break then falls on whichever innocent entry
-    happens to follow, and excusing it would mean excusing a real collision if
-    one ever landed there. The running maximum is also exactly what the rule is
-    trying to say: take the next id above everything already used.
+    An experiment's amendments, dispatch records, readings and corrections all
+    carry its id, appended where they were written. Only the entry that first
+    puts an id in the log claims a position in the numbering sequence.
     """
 
+    seen: set[int] = set()
+    order: list[int] = []
+    for identifier in ids:
+        if identifier not in seen:
+            seen.add(identifier)
+            order.append(identifier)
+    return order
+
+
+def violations(ids: list[int]) -> list[tuple[int, int]]:
+    """Every id introduced below the running maximum, or more than one above it.
+
+    Against the running maximum rather than the immediate predecessor, and the
+    difference is not cosmetic. An id introduced out of order is one event, but
+    it breaks an adjacent-pair rule twice: once stepping down into it and once
+    stepping back up out of it. The second break then falls on whichever innocent
+    entry happens to follow, and excusing it would mean excusing a real collision
+    if one ever landed there. The running maximum is also exactly what the rule
+    is trying to say: take the next id above everything already used.
+    """
+
+    introduced = introductions(ids)
     found: list[tuple[int, int]] = []
-    running = ids[0]
-    for current in ids[1:]:
+    running = introduced[0]
+    for current in introduced[1:]:
         if current < running or current > running + 1:
             found.append((running, current))
         running = max(running, current)
@@ -292,23 +134,41 @@ class TheRuleBites(unittest.TestCase):
     cases are the ones the guard exists for.
     """
 
-    def test_a_repeated_id_is_allowed_because_one_experiment_owns_several_entries(self):
-        self.assertEqual(violations([170, 171, 171, 171, 172]), [])
+    def test_only_the_first_occurrence_of_an_id_enters_the_sequence(self):
+        self.assertEqual(introductions([170, 171, 170, 172, 171]), [170, 171, 172])
 
-    def test_a_stale_tail_read_that_reuses_an_earlier_id_is_caught(self):
-        # The defect itself: two agents read the tail at 170, both take 171, and
-        # the second appends after the first has already moved the log to 172.
-        self.assertEqual(violations([170, 171, 172, 171]), [(172, 171)])
+    def test_a_continuation_appended_after_the_log_moved_on_is_allowed(self):
+        # EXP-R2-171 is pre-registered, EXP-R2-172 is registered while it runs,
+        # and 171's reading is then appended under its own id. The reading is the
+        # answer to a rule frozen under 171 and must carry that id.
+        #
+        # This is also the blind spot named in the module docstring: a *new*
+        # experiment mis-filed under 171 would be admitted here too, because id
+        # order cannot tell the two apart. See the docstring for why that is the
+        # right trade rather than an oversight.
+        self.assertEqual(violations([170, 171, 172, 171, 173]), [])
+
+    def test_a_new_id_introduced_below_the_running_maximum_is_caught(self):
+        # The defect itself, and the reason this file exists: an agent reads a
+        # stale tail at 168, takes 169 for a NEW experiment, and appends after
+        # the log has already reached 172.
+        self.assertEqual(violations([170, 171, 172, 169]), [(172, 169)])
 
     def test_a_skipped_id_is_caught(self):
         self.assertEqual(violations([170, 171, 174]), [(171, 174)])
 
-    def test_one_endorsed_interleave_costs_exactly_one_exception(self):
-        # Why the rule reads against the running maximum. An entry left out of
-        # order on purpose is one event; an adjacent-pair rule would charge it
-        # twice and land the second charge on the innocent entry after it, which
-        # is where a real collision would otherwise be excused.
-        self.assertEqual(violations([170, 171, 172, 171, 173]), [(172, 171)])
+    def test_a_continuation_neither_absorbs_a_skip_nor_manufactures_one(self):
+        # Dropping the continuation from the sequence must not change which
+        # transitions are charged: 174 is still a skip past 172, and the 170 in
+        # between neither hides it nor adds a spurious step of its own.
+        self.assertEqual(violations([170, 171, 172, 170, 174]), [(172, 174)])
+
+    def test_the_rule_reads_against_the_running_maximum(self):
+        # Why the rule uses the running maximum. An id introduced out of order is
+        # one event; an adjacent-pair rule would charge it twice and land the
+        # second charge on the innocent entry after it, which is where a real
+        # collision would otherwise be excused.
+        self.assertEqual(violations([170, 171, 172, 169, 173]), [(172, 169)])
 
     def test_a_clean_run_is_accepted(self):
         self.assertEqual(violations([25, 26, 27, 28]), [])
@@ -334,24 +194,21 @@ class ExperimentIdsAreMonotonic(unittest.TestCase):
         self.assertGreater(max(self.ids), 150, "the parse did not reach the latest entries")
 
     def test_no_new_id_goes_backwards_or_skips(self):
-        # Counted, not membership-tested. The same transition can occur more than
-        # once -- several entries of one experiment appended after the maximum
-        # moved past it -- and under a membership test ONE declaration silently
-        # excused ALL of them. Measured on 2026-08-17: 34 violating entries against
-        # 27 declarations, with `(210, 202)` covering five. That is the exception
-        # list becoming a hole, which is what its own docstring says it must not
-        # be. One declaration per occurrence was the original intent -- the author
-        # wrote `(172, 171)` twice for exactly this reason -- and counting is what
-        # enforces it.
+        # Counted, not membership-tested. An id is introduced once, so the same
+        # transition cannot arise twice and a declaration cannot silently excuse
+        # more occurrences than exist; counting also makes a duplicated
+        # declaration show up as stale below instead of being absorbed.
         found = collections.Counter(violations(self.ids))
         known = collections.Counter((p, c) for p, c, _ in KNOWN_VIOLATIONS)
         unexpected = sorted((found - known).elements())
         self.assertEqual(
             unexpected,
             [],
-            "an experiment id was appended out of order. Agents append "
+            "a new experiment id was introduced out of order. Agents append "
             "concurrently, so a stale tail read gives two experiments one id; "
-            "take the next id above the current maximum. Offending transitions: "
+            "take the next id above the current maximum. A later entry of an "
+            "experiment already in the log keeps that experiment's id and is not "
+            "checked here. Offending introductions: "
             + ", ".join(f"{previous} -> {current}" for previous, current in unexpected),
         )
 
