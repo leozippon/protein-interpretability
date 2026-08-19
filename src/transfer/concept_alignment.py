@@ -128,21 +128,35 @@ is a detection criterion and does not license a comparative claim.
     against a retrieval excess under one criterion. It prices text-side
     self-information plus gallery structure: a description that says what kind of
     protein it is has already said something about how long it is.
-``bridge_specific``
-    the **same retrieval task** restricted to the span of the concepts *defined
-    on both sides* -- carried by the curated annotation and named in the
-    description, which is what the cohort's ``masked_terms`` records. Restricted
-    by the orthogonal projector onto that span rather than by re-coordinating in
-    the concept directions, which are not orthonormal. If the full-space
-    alignment does not beat this, the alignment carries nothing beyond the shared
-    annotation vocabulary.
 
-**Attainability comes before control.** The raw-description arm -- concept name
-present -- is read first, and if it cannot clear the frozen criteria the whole
-ladder is void as a specification defect and the masked arm is not read at all.
-A bar the positive control cannot reach is a property of the specification and
-not a result about proteins; two of D3.h's criteria were voided for skipping
-exactly this ordering, one of them unreachable at any sample size.
+:data:`A35_1B_BASELINE` -- ``bridge_specific`` -- is deliberately **not** in that
+set, and amendment 1 is why. It is the **same retrieval task** restricted to the
+span of the concepts *defined on both sides*: carried by the curated annotation
+and named in the description, which is what the cohort's ``masked_terms``
+records. Restricted by the orthogonal projector onto that span rather than by
+re-coordinating in the concept directions, which are not orthonormal. The
+amendment moved it out of the decisive set on a measured attainability failure
+and on a conceptual one: at the limit the original bar was backwards, because if
+a genuine cross-modal alignment *is* carried by the concepts declared on both
+sides then ``bridge ~ full`` is what the hypothesis predicts. A restriction that
+loses nothing is informative in its own right, so the reported quantity is the
+ratio ``bridge / full`` on the primary statistic and clause (ii) becomes decisive
+against it only where the raw-description arm demonstrates, at the run's own
+settings, that the declared margin against it is reachable.
+
+**Attainability comes before control, and the gate is one baseline.** The
+raw-description arm -- concept name present -- is read first, and if it does not
+clear A35-1's margin over :data:`A35_0_GATE_BASELINE` the whole ladder is void as
+a specification defect and the masked arm is not read at all. A bar the positive
+control cannot reach is a property of the specification and not a result about
+proteins; two of D3.h's criteria were voided for skipping exactly this ordering,
+one of them unreachable at any sample size. The gate is ``shuffled_pair`` alone
+because that is what EXP-R2-213 names, in the singular, and the distinction it
+carries is load-bearing: a raw arm that clears ``shuffled_pair`` and loses to a
+3-mer surrogate is a **measured** result on the surface-statistics branch, which
+is a statement about the method, while a raw arm that cannot clear
+``shuffled_pair`` is a statement about the instrument. Gating A35-0 on the whole
+decisive set collapses the two and files the first under the second.
 
 The **pre-adaptation reference** is a separate invocation of the same pipeline
 on ``Llama-2-7b-hf`` and is representational only. Its protein mode is
@@ -198,8 +212,13 @@ from src.transfer.statistics import (
 # Principle forbids, for a function that resamples nothing of its own.
 
 __all__ = [
+    "A35_0_GATE_BASELINE",
+    "A35_0_GATE_NOTE",
+    "A35_1B_BASELINE",
+    "A35_1B_NOTE",
     "A35_1_BASELINES",
     "ALIGNMENT_METHODS",
+    "AMENDMENT_1_NOTE",
     "AlignmentMap",
     "COHORT_FIELDS",
     "CONCEPT_VECTOR_METHODS",
@@ -209,6 +228,8 @@ __all__ = [
     "DEFAULT_RIDGE_GRID",
     "NONLINEAR_ADAPTER_NOTE",
     "POOLINGS",
+    "PRE_REGISTRATION",
+    "PRE_REGISTRATION_AMENDMENTS",
     "PROTEIN_MODE_BEHAVIOURAL_STATUS",
     "REPRESENTATION_SITE",
     "REPRESENTATION_SITE_NOTE",
@@ -221,6 +242,7 @@ __all__ = [
     "assert_behavioural_read_permitted",
     "assert_ladder_reported",
     "assert_per_layer_only",
+    "attainability_gate",
     "baseline_row",
     "bridge_concepts",
     "composition_features",
@@ -235,6 +257,7 @@ __all__ = [
     "auc_metric",
     "common_gallery",
     "load_cohort",
+    "masked_term_vocabulary",
     "mean_metric",
     "mode_representations",
     "metrics_from_ranks",
@@ -299,10 +322,34 @@ PRIMARY_STATISTIC_NOTE = (
     "sizes. MRR and the other cut-offs are reported beside it and decide nothing"
 )
 
+#: The pre-registration every threshold in this module is quoted from, and the
+#: amendments to it this module implements. Declared here and echoed into the
+#: artefact -- 36_concept_injection.py's ``PRE_REGISTRATION_AMENDMENTS`` is the
+#: same declaration for the causal stage -- so that a reader never has to infer
+#: which text a number was produced under, and so that a recorded amendment the
+#: executing code does not implement is a detectable gap rather than a silent one
+#: (``tests/test_concept_alignment.py`` checks the declaration against the frozen
+#: constants it implies).
+PRE_REGISTRATION = "EXP-R2-213"
+PRE_REGISTRATION_AMENDMENTS: tuple[str, ...] = ("amendment 1",)
+
+AMENDMENT_1_NOTE = (
+    "EXP-R2-213 amendment 1, decided before any cohort existed: A35-1's decisive "
+    "set is SIX baselines read on description -> sequence top-1 accuracy in excess "
+    "of chance, and bridge_specific is not one of them. It becomes A35-1b, a "
+    "reported restriction diagnostic whose interpretable quantity is the "
+    "bridge/full ratio, gating only where the raw-description arm demonstrates at "
+    "the run's own settings that the declared margin against it is reachable. The "
+    "concept-axis AUC and the training-free nearest_neighbour rung are explicitly "
+    "non-decisive"
+)
+
 #: The baselines EXP-R2-213 requires, each under BOTH of its conditions: the
 #: paired group-bootstrap 95% interval of the difference excludes zero, and the
 #: excess over chance is at least ``excess_ratio`` times the baseline's. Frozen
 #: as a tuple so a missing baseline is a refusal rather than a shorter table.
+#: **Six**, per amendment 1; ``bridge_specific`` left this set and is
+#: :data:`A35_1B_BASELINE`.
 A35_1_BASELINES = (
     "shuffled_pair",
     "shuffled_fit",
@@ -310,7 +357,44 @@ A35_1_BASELINES = (
     "composition",
     "kmer",
     "description_only",
-    "bridge_specific",
+)
+
+#: A35-1b's baseline: reported always, decisive only where the raw arm shows the
+#: margin against it is reachable. It is not a member of :data:`A35_1_BASELINES`
+#: and a run that put it back there would be running the pre-amendment criterion.
+A35_1B_BASELINE = "bridge_specific"
+
+A35_1B_NOTE = (
+    "A35-1b (EXP-R2-213 amendment 1): the concept restriction, reported as the "
+    "ratio bridge/full on the primary statistic on BOTH splits, and gating under "
+    "clause (ii) only if the raw-description arm demonstrates at the run's own "
+    "settings that the declared margin against it is attainable. Where it is not, "
+    "clause (ii) is declared non-applicable for this baseline with the measured "
+    "reason and the achieved ratio recorded. The word carrying the load in §8's "
+    "'beat every applicable baseline' is APPLICABLE, and the amendment makes "
+    "applicability a matter of measured attainability rather than assumption: a "
+    "baseline the positive control cannot be separated from is not an applicable "
+    "baseline, and declaring it one is how a criterion becomes decorative"
+)
+
+#: The ONE baseline A35-0's attainability gate is taken on. EXP-R2-213 names it in
+#: the singular -- "if the identical ladder on raw descriptions does not clear
+#: A35-1's margin over ``shuffled_pair``, the ladder is void as a specification
+#: defect" -- and its own branch table gives the two outcomes opposite subjects.
+A35_0_GATE_BASELINE = "shuffled_pair"
+
+A35_0_GATE_NOTE = (
+    "A35-0 is gated on shuffled_pair ALONE, under A35-1's two clauses, because "
+    "that is the baseline EXP-R2-213 names and because the two failures are "
+    "statements about different things. A raw arm that cannot clear shuffled_pair "
+    "has not aligned anything at all and the ladder is VOID as a specification "
+    "defect -- about the instrument, not the modality. A raw arm that clears "
+    "shuffled_pair and loses to a composition or 3-mer surrogate is the frozen "
+    "SURFACE-STATISTICS branch -- about the method -- and it is a measured "
+    "negative read on the masked arm, not a void. Gating this decision on the "
+    "whole decisive set reports the second as the first. The full raw-arm baseline "
+    "table is reported either way and is what the surface-statistics branch is "
+    "read off"
 )
 
 #: The cohort's three sides and its record schema, imported from the module that
@@ -1456,30 +1540,61 @@ def declared_concepts(
     return concepts
 
 
+def _normalised(forms: Any) -> set[str]:
+    """Surface forms as they compare: stripped and case-folded, nothing else.
+
+    ``mask_description`` records the **canonical** form it matched rather than the
+    spelling it found, so both sides of the comparison are drawn from one
+    vocabulary and an exact match is the right test. Case is folded because the
+    producer's term set is assembled from several releases -- UniProt's spelling
+    of a GO term beside the ontology's -- which differ in capitalisation and not
+    in identity.
+    """
+
+    return {form.strip().lower() for form in _terms(forms) if form.strip()}
+
+
+def masked_term_vocabulary(records: Sequence[Mapping[str, Any]]) -> frozenset[str]:
+    """Every surface form the cohort stage actually removed from a description."""
+
+    return frozenset(
+        form
+        for record in records
+        for form in _normalised(record["masked_terms"])
+    )
+
+
 def bridge_concepts(
-    records: Sequence[Mapping[str, Any]], concepts: Sequence[tuple[str, str]]
+    records: Sequence[Mapping[str, Any]],
+    concepts: Sequence[tuple[str, str]],
+    *,
+    surface_forms: Mapping[tuple[str, str], Sequence[str]],
 ) -> list[tuple[str, str]]:
     """Concepts defined on **both** sides: annotated, and named in the description.
 
-    The cohort's ``masked_terms`` is what makes the second half decidable -- it is
-    the list of strings the cohort stage removed from ``description_raw`` to build
-    ``description_masked``, so a concept whose term appears there is one the text
-    side states in its own words. A concept present only in the annotation is a
-    protein-side concept, and restricting to the intersection is what the gate's
-    bridge-specific baseline asks for.
+    Both halves are decided against one object. A concept's *identifier* -- a GO
+    id, an EC number, a Pfam accession -- is not what a curated description calls
+    it, and ``masked_terms`` is a vocabulary of names: the strings the cohort
+    stage removed from ``description_raw`` to build ``description_masked``. Keying
+    this test on the identifier compares two vocabularies that cannot meet, and on
+    the production cohort it did exactly that -- of 3,970 distinct masked terms
+    none was GO-id-shaped or Pfam-accession-shaped, and the intersection was
+    empty for all 1,174 declared concepts.
+
+    So ``surface_forms`` is supplied by the caller from
+    :func:`src.transfer.sequence_description.concept_surface_forms`, which is the
+    same function the cohort stage derives the masked forms from. A concept the
+    cohort declares no surface form for has no declared text side and is
+    therefore not a bridge concept; that is a property of the declaration and is
+    reported as a count rather than inferred here.
     """
 
-    masked = {
-        term.lower()
-        for record in records
-        for term in _terms(record["masked_terms"])
-    }
-    bridge: list[tuple[str, str]] = []
-    for namespace, term in concepts:
-        needle = term.lower()
-        if any(needle in item or item in needle for item in masked):
-            bridge.append((namespace, term))
-    return bridge
+    vocabulary = masked_term_vocabulary(records)
+    return [
+        key
+        for key in concepts
+        if vocabulary & _normalised(surface_forms.get(key, ()))
+    ]
 
 
 # ------------------------------------------------------------------ surrogates
@@ -1938,6 +2053,70 @@ def baseline_row(
     }
 
 
+def attainability_gate(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """A35-0's gate: one baseline, both of A35-1's clauses, and it says which one.
+
+    EXP-R2-213 states A35-0 in the singular -- "if the identical ladder on raw
+    descriptions does not clear A35-1's margin over ``shuffled_pair``, the ladder
+    is void as a specification defect and the masked arm is not read at all" --
+    and its branch table gives the two failures opposite subjects: a raw arm
+    failing A35-0 is about *the instrument, not the modality*, while a
+    composition or 3-mer surrogate breaking A35-1(ii) is the surface-statistics
+    branch and is about *the method*. Reading the gate off the whole decisive set
+    merges them, and a measured negative on the second branch then reaches the
+    record as a void.
+
+    The gate is deliberately the row's own two clauses and nothing else: the
+    detection floor is a run-level flag rather than a frozen criterion, and at the
+    pre-registered ``--decision-threshold 0.0`` clause (ii) already subsumes it,
+    because :func:`baseline_row` requires a strictly positive excess before it can
+    be met. The floor is still read on the raw arm's full verdict, which is
+    reported beside this gate.
+    """
+
+    matches = [
+        row
+        for row in rows
+        if row["baseline"] == A35_0_GATE_BASELINE and row["axis"] == "primary_top1"
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"A35-0's gate is taken on {A35_0_GATE_BASELINE!r} on the primary "
+            f"statistic and {len(matches)} such rows were reported. The gate cannot "
+            "fall back to another baseline: which one it was taken on is the whole "
+            "distinction between a void instrument and a measured negative"
+        )
+    row = matches[0]
+    if not row["applicable"]:
+        raise ValueError(
+            f"A35-0's gate baseline {A35_0_GATE_BASELINE!r} is reported as "
+            f"inapplicable ({row['inapplicable_reason']!r}). It permutes the query "
+            "side and leaves the gallery untouched, so it is applicable in every "
+            "cell this stage runs; an inapplicable one means the row is not the "
+            "row this gate names"
+        )
+    passes = row["passes_both_conditions"]
+    if passes is True:
+        status = "cleared"
+    elif passes is False:
+        status = "not_cleared"
+    else:
+        status = "not_evaluable"
+    return {
+        "gate_baseline": A35_0_GATE_BASELINE,
+        "attainable": passes is True,
+        "status": status,
+        "difference_interval_excludes_zero": row["difference_interval_excludes_zero"],
+        "interval_status": row["interval_status"],
+        "meets_excess_ratio": row["meets_excess_ratio"],
+        "excess_ratio_required": row["excess_ratio_required"],
+        "observed_excess": row["observed_excess"],
+        "baseline_excess": row["baseline_excess"],
+        "row": dict(row),
+        "note": A35_0_GATE_NOTE,
+    }
+
+
 def admission_verdict(
     rows: Sequence[Mapping[str, Any]],
     *,
@@ -1949,12 +2128,18 @@ def admission_verdict(
 ) -> dict[str, Any]:
     """EXP-R2-213's decision, and the reason for it.
 
-    Only the rows the pre-registration names decide anything: the decisive set is
-    exactly :data:`A35_1_BASELINES`, every one of which must be present. A
-    baseline missing from the table is a refusal rather than a shorter table, and
-    a baseline outside it -- the ambient nearest-neighbour read, the analytic
-    chance level, the whole concept axis -- is reported and non-decisive, because
+    Only the rows the pre-registration names decide anything: the frozen decisive
+    set is :data:`A35_1_BASELINES`, every one of which must be present. A baseline
+    missing from the table is a refusal rather than a shorter table, and a
+    baseline outside it -- the ambient nearest-neighbour read, the analytic chance
+    level, the whole concept axis -- is reported and non-decisive, because
     widening a frozen criterion is as much a change to it as softening one.
+
+    :data:`A35_1B_BASELINE` is the one row whose decisiveness is *measured* rather
+    than frozen (amendment 1). It reaches this function already carrying the
+    caller's A35-1b decision in its own ``decisive`` flag, which is the flag
+    :func:`baseline_row` exists to carry, so there is still exactly one place a
+    verdict is computed from a table of rows.
 
     ``PASS`` requires the observed excess over chance to clear ``detection_floor``
     and every decisive, applicable baseline to satisfy **both** conditions.
@@ -1967,6 +2152,17 @@ def admission_verdict(
     whose protein mode is behaviourally unmeasurable. Its rows are still reported
     in full: the pre-adaptation reference is a representational comparison and
     that is the whole of what it can be.
+
+    **``REFERENCE_ONLY`` is not a failure and is not evaluated as one.** It says
+    "this checkpoint is not an arm"; ``FAIL`` says "this arm lost". So the
+    criteria are read on the reference's own numbers first and reported as
+    ``criteria_verdict``, and the reference label is an overlay on top of them
+    rather than a branch that pre-empts them. A reference arm exists precisely to
+    be compared against on the deciding variant, so a caller that needs to know
+    whether the reference's own ladder holds up -- A35-0's attainability, or
+    whether its masked arm is worth computing -- reads ``criteria_verdict`` and
+    never has to infer it from a label that could only ever be one value.
+    ``verdict`` stays ``REFERENCE_ONLY`` and authorises nothing.
     """
 
     decisive = [row for row in rows if row["decisive"]]
@@ -1996,6 +2192,37 @@ def admission_verdict(
         }
     )
     below_floor = float(observed_excess) < float(detection_floor)
+    if below_floor:
+        criteria_verdict = "FAIL"
+        criteria_reason = (
+            f"the primary statistic's excess over chance is {observed_excess:.4f}, "
+            f"below the pre-registered detection floor of {detection_floor}"
+        )
+    elif failed:
+        criteria_verdict = "FAIL"
+        criteria_reason = (
+            "did not satisfy both pre-registered conditions against "
+            + ", ".join(failed)
+            + f" -- a paired 95% interval excluding zero AND an excess over chance at "
+            f"least {excess_ratio}x the baseline's"
+        )
+    elif unpowered:
+        criteria_verdict = "UNDERPOWERED"
+        criteria_reason = (
+            "every decisive baseline was beaten on the conditions that could be "
+            "evaluated, and "
+            + ", ".join(unpowered)
+            + f" carries no usable interval: fewer than {MINIMUM_BOOTSTRAP_UNITS} "
+            "resampling units, which is below the floor a percentile interval may be "
+            "published at"
+        )
+    else:
+        criteria_verdict = "PASS"
+        criteria_reason = (
+            f"cleared the detection floor at an excess of {observed_excess:.4f} and "
+            f"satisfied both conditions against every decisive applicable baseline: "
+            f"{sorted(row['baseline'] for row in applicable)}"
+        )
     if mode == "protein" and behavioural_status.get("measurable") is not True:
         verdict = "REFERENCE_ONLY"
         reason = (
@@ -2008,48 +2235,27 @@ def admission_verdict(
                 )
             )
             + ". The rows below are a representational comparison and no admission "
-            "decision is recorded for them"
-        )
-    elif below_floor:
-        verdict = "FAIL"
-        reason = (
-            f"the primary statistic's excess over chance is {observed_excess:.4f}, "
-            f"below the pre-registered detection floor of {detection_floor}"
-        )
-    elif failed:
-        verdict = "FAIL"
-        reason = (
-            "did not satisfy both pre-registered conditions against "
-            + ", ".join(failed)
-            + f" -- a paired 95% interval excluding zero AND an excess over chance at "
-            f"least {excess_ratio}x the baseline's"
-        )
-    elif unpowered:
-        verdict = "UNDERPOWERED"
-        reason = (
-            "every decisive baseline was beaten on the conditions that could be "
-            "evaluated, and "
-            + ", ".join(unpowered)
-            + f" carries no usable interval: fewer than {MINIMUM_BOOTSTRAP_UNITS} "
-            "resampling units, which is below the floor a percentile interval may be "
-            "published at"
+            "decision is recorded for them. Its own numbers read "
+            + f"{criteria_verdict}, which is reported as criteria_verdict and "
+            "authorises nothing: REFERENCE_ONLY says this checkpoint is not an arm, "
+            "not that this arm lost"
         )
     else:
-        verdict = "PASS"
-        reason = (
-            f"cleared the detection floor at an excess of {observed_excess:.4f} and "
-            f"satisfied both conditions against every one of "
-            f"{list(A35_1_BASELINES)}"
-        )
+        verdict, reason = criteria_verdict, criteria_reason
     return {
         "verdict": verdict,
         "reason": reason,
+        "criteria_verdict": criteria_verdict,
+        "criteria_reason": criteria_reason,
         "primary_statistic": PRIMARY_STATISTIC,
         "primary_statistic_note": PRIMARY_STATISTIC_NOTE,
         "observed_excess": float(observed_excess),
         "detection_floor": float(detection_floor),
         "excess_ratio": float(excess_ratio),
+        "pre_registration": PRE_REGISTRATION,
+        "amendments_implemented": list(PRE_REGISTRATION_AMENDMENTS),
         "decisive_baselines": list(A35_1_BASELINES),
+        "decisive_applicable_baselines": sorted(row["baseline"] for row in applicable),
         "n_decisive_applicable": len(applicable),
         "baselines_failing_a_condition": failed,
         "baselines_without_a_usable_interval": unpowered,

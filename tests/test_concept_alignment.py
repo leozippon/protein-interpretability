@@ -32,8 +32,28 @@ arrays the map was fitted from.
 been fitted, and the mean rung may not be the deciding one at all, because
 A35-1's shuffled-fit baseline is vacuous for a map that never reads the pairing.
 
-**Attainability comes before control.** If the raw-description arm cannot clear
-the bar, the bar is a specification defect and the masked arm is not read.
+**Attainability comes before control, and A35-0's gate is ONE baseline.**
+EXP-R2-213 names it in the singular -- A35-1's margin over ``shuffled_pair`` --
+and the singular is load-bearing: a raw arm that clears ``shuffled_pair`` and
+loses to a 3-mer surrogate is the pre-declared surface-statistics branch, a
+measured negative about the method, while a raw arm that cannot clear
+``shuffled_pair`` is a void instrument. A gate read off the whole decisive set
+files the first under the second, which is what happened on the production
+cohort at a ``shuffled_pair`` margin of 183x.
+
+**``REFERENCE_ONLY`` is not ``FAIL``.** One says this checkpoint is not an arm and
+the other says this arm lost, so the reference's criteria are read on its own
+numbers, its masked arm is computed, and its verdict still authorises nothing.
+
+**A concept's identifier is not its name.** ``masked_terms`` is a vocabulary of
+the surface forms the cohort removed from the descriptions, so the bridge test is
+keyed on ``sequence_description.concept_surface_forms`` -- the object the cohort
+stage built that vocabulary from -- and never on a GO id or an EC number, which
+cannot appear in it.
+
+**An amendment recorded in the register and not implemented in the instrument is
+a detectable gap.** The artefact's declaration of which amendments the code
+implements is checked against the frozen constants each of them implies.
 
 **The pre-adaptation checkpoint's protein mode must refuse a behavioural read.**
 It pays -0.0013 nats/residue to have a sequence reversed (EXP-R2-152), so there
@@ -543,12 +563,23 @@ def test_a_method_below_chance_never_satisfies_the_effect_size_bar() -> None:
 
 
 def test_a_missing_pre_registered_baseline_is_a_refusal_not_a_shorter_table() -> None:
-    rows = [row for row in _passing_rows() if row["baseline"] != "bridge_specific"]
-    with pytest.raises(ValueError, match="bridge_specific"):
+    rows = [row for row in _passing_rows() if row["baseline"] != "kmer"]
+    with pytest.raises(ValueError, match="kmer"):
         ca.admission_verdict(
             rows, excess_ratio=2.0, detection_floor=0.0, observed_excess=0.7,
             behavioural_status=_synthetic_status(), mode="text",
         )
+
+
+def test_the_amended_decisive_set_does_not_require_the_bridge_baseline() -> None:
+    """Amendment 1: bridge_specific left the decisive set and became A35-1b."""
+
+    verdict = ca.admission_verdict(
+        _passing_rows(), excess_ratio=2.0, detection_floor=0.0, observed_excess=0.7,
+        behavioural_status=_synthetic_status(), mode="text",
+    )
+    assert ca.A35_1B_BASELINE not in verdict["decisive_baselines"]
+    assert verdict["verdict"] == "PASS"
 
 
 def test_the_detection_floor_is_read_before_any_comparison() -> None:
@@ -609,6 +640,427 @@ def test_stop_35_authorises_stage_36_only_on_a_pass() -> None:
         assert "UNAUTHORISED" in record["reason"]
 
 
+# ------------------------------------------ A35-0's gate, A35-1b, the reference
+
+#: The ProLLaMA_Stage_1 protein cell's own raw-arm numbers at the decision layer
+#: on the eval split, as the campaign of 2026-08-19 measured them: a common
+#: gallery of 1,000, so chance is 0.001. ``shuffled_pair`` is cleared by 183x on
+#: the excess-over-chance scale clause (ii) is written on, and ``kmer`` is not
+#: cleared at all. The pair is the whole of the defect these tests pin: one
+#: outcome is a void instrument and the other is a measured negative about the
+#: method, and a gate read off both at once reports the second as the first.
+PRIMARY_CELL_CHANCE = 0.001
+PRIMARY_CELL_OBSERVED_EXCESS = 0.011447210491220272
+PRIMARY_CELL_BASELINE_EXCESS = {
+    "shuffled_pair": 6.24583240720158e-05,
+    "rank_matched": 0.0012249388753056236,
+    "shuffled_fit": -6.723716381418091e-06,
+    "composition": 0.005668148477439431,
+    "kmer": 0.029451211380306735,
+    "description_only": 0.0005559013114025339,
+}
+
+
+def _rows_from_excesses(
+    excesses: dict,
+    *,
+    observed_excess: float = PRIMARY_CELL_OBSERVED_EXCESS,
+    chance: float = PRIMARY_CELL_CHANCE,
+    bridge_excess: float | None = None,
+    bridge_decisive: bool = False,
+    bridge_inapplicable_reason: str | None = None,
+) -> list[dict]:
+    """One primary-statistic row per baseline, built from excesses over chance."""
+
+    accuracy = chance + observed_excess
+    rows = [
+        ca.baseline_row(
+            name, "primary_top1", accuracy, chance + excess, chance=chance,
+            excess_ratio=2.0, interval=_interval(0.001, 0.02),
+        )
+        for name, excess in excesses.items()
+    ]
+    if bridge_excess is not None:
+        rows.append(
+            ca.baseline_row(
+                ca.A35_1B_BASELINE, "primary_top1", accuracy, chance + bridge_excess,
+                chance=chance, excess_ratio=2.0, interval=_interval(0.001, 0.02),
+                decisive=bridge_decisive,
+                applicable=bridge_inapplicable_reason is None,
+                inapplicable_reason=bridge_inapplicable_reason,
+            )
+        )
+    return rows
+
+
+def _cell(rows_per_split: dict, *, method: str = "procrustes") -> dict:
+    """The part of a cell A35-0, A35-1b and the verdict actually read."""
+
+    return {
+        "splits": {
+            split: {
+                "baseline_rows": rows,
+                "ladder": {
+                    method: {
+                        STAGE.PRIMARY_DIRECTION: {
+                            "top1_excess": rows[0]["observed_excess"],
+                            "top1_accuracy": rows[0]["observed"],
+                        }
+                    }
+                },
+            }
+            for split, rows in rows_per_split.items()
+        }
+    }
+
+
+def _protein_settings(**overrides) -> argparse.Namespace:
+    """A resolved analysis argument set read as a protein cell.
+
+    ``--mode`` cannot be parsed beside ``--synthetic-check`` -- the stage refuses a
+    campaign flag there and that refusal is itself tested -- so the mode is set
+    after resolution, which is the only thing the verdict reads it for.
+    """
+
+    args = _settings(**overrides)
+    args.mode = "protein"
+    return args
+
+
+def _primary_cell_rows(**overrides) -> list[dict]:
+    return _rows_from_excesses(dict(PRIMARY_CELL_BASELINE_EXCESS), **overrides)
+
+
+def test_a35_0_gates_on_shuffled_pair_alone_and_a_surrogate_failure_is_not_a_void() -> None:
+    """The production cell: shuffled_pair cleared 183x, kmer lost, and it is not VOID.
+
+    EXP-R2-213 states A35-0 over ``shuffled_pair`` in the singular, and its branch
+    table gives the two outcomes opposite subjects. Reading the gate off the whole
+    decisive set makes a surface-statistics negative -- a statement about the
+    method, read on the masked arm -- arrive as a void instrument.
+    """
+
+    args = _settings()
+    rows = _primary_cell_rows()
+    cell = _cell({"eval": rows})
+    gate_row = next(row for row in rows if row["baseline"] == "shuffled_pair")
+    assert gate_row["observed_excess"] / gate_row["baseline_excess"] > 100.0
+    assert gate_row["passes_both_conditions"] is True
+
+    a35_0 = STAGE.attainability_verdict(cell, args, status=_synthetic_status())
+    assert a35_0["verdict"] == "ATTAINABLE"
+    assert a35_0["attainable"] is True
+    assert a35_0["gate_baseline"] == ca.A35_0_GATE_BASELINE == "shuffled_pair"
+    assert a35_0["gate"]["row"]["baseline"] == "shuffled_pair"
+    assert a35_0["gate"]["status"] == "cleared"
+
+    # The rest of the table is reported and disagrees, which is the point: the raw
+    # arm's own A35-1 verdict fails on the 3-mer surrogate and gates nothing.
+    raw_verdict = a35_0["raw_arm_verdict"]
+    assert raw_verdict["verdict"] == "FAIL"
+    assert "kmer" in raw_verdict["baselines_failing_a_condition"]
+
+    # And the outcome routes to A35-1's surface-statistics branch, not to a void.
+    masked = ca.admission_verdict(
+        rows, excess_ratio=2.0, detection_floor=0.0,
+        observed_excess=PRIMARY_CELL_OBSERVED_EXCESS,
+        behavioural_status=_synthetic_status(), mode="protein",
+    )
+    branch = STAGE.frozen_branch(masked["verdict"], {"eval": masked})
+    assert masked["verdict"] == "FAIL"
+    assert branch["branch"] == "surface_statistics"
+    assert branch["statement_about"] == "the method"
+    assert "kmer" in branch["surrogate_baselines_failing"]
+    assert STAGE.stop_35_record(masked["verdict"])["stage36_authorised"] is False
+
+
+def test_a35_0_is_void_only_when_its_own_gate_baseline_fails() -> None:
+    """A raw arm that cannot clear shuffled_pair has aligned nothing at all."""
+
+    args = _settings()
+    excesses = dict(PRIMARY_CELL_BASELINE_EXCESS)
+    excesses["shuffled_pair"] = PRIMARY_CELL_OBSERVED_EXCESS  # no margin at all
+    a35_0 = STAGE.attainability_verdict(
+        _cell({"eval": _rows_from_excesses(excesses)}), args, status=_synthetic_status()
+    )
+    assert a35_0["verdict"] == "VOID_SPECIFICATION_DEFECT"
+    assert a35_0["attainable"] is False
+    assert a35_0["gate"]["status"] == "not_cleared"
+    assert a35_0["gate"]["meets_excess_ratio"] is False
+    branch = STAGE.frozen_branch(a35_0["verdict"], {})
+    assert branch["branch"] == "a35_0_specification_defect"
+    assert branch["statement_about"] == "the instrument, not the modality"
+
+
+def test_a35_0_refuses_a_table_that_does_not_carry_its_gate_baseline() -> None:
+    """The gate may not fall back to another baseline; which one it was is the point."""
+
+    rows = [row for row in _primary_cell_rows() if row["baseline"] != "shuffled_pair"]
+    with pytest.raises(ValueError, match="shuffled_pair"):
+        ca.attainability_gate(rows)
+
+
+def test_an_unreadable_gate_is_not_a_cleared_gate() -> None:
+    """A margin that could not be bounded has not been shown, so the ladder is void."""
+
+    excesses = dict(PRIMARY_CELL_BASELINE_EXCESS)
+    rows = _rows_from_excesses(excesses)
+    for row in rows:
+        if row["baseline"] == "shuffled_pair":
+            row["interval_status"] = "below_unit_floor"
+            row["difference_interval_excludes_zero"] = None
+            row["passes_both_conditions"] = None
+    gate = ca.attainability_gate(rows)
+    assert gate["status"] == "not_evaluable"
+    assert gate["attainable"] is False
+
+
+def test_a_reference_only_cell_reads_its_own_numbers_and_authorises_nothing() -> None:
+    """REFERENCE_ONLY says this checkpoint is not an arm, not that this arm lost.
+
+    Ordering the reference branch before the criteria made A35-0 unreachable for
+    the pre-adaptation checkpoint whatever its numbers were, so its masked arm was
+    withheld and the protein-side A35-4 was read on the non-deciding raw variant.
+    """
+
+    status = ca.protein_mode_behavioural_status(Path("/models/Llama-2-7b-hf"))
+    verdict = ca.admission_verdict(
+        _passing_rows(), excess_ratio=2.0, detection_floor=0.0, observed_excess=0.7,
+        behavioural_status=status, mode="protein",
+    )
+    assert verdict["verdict"] == "REFERENCE_ONLY"
+    assert verdict["criteria_verdict"] == "PASS"
+    assert STAGE.stop_35_record(verdict["verdict"])["stage36_authorised"] is False
+
+    # ... and a reference whose own numbers do not hold reads FAIL on the criteria
+    # while the label it carries is unchanged.
+    losing = ca.admission_verdict(
+        _passing_rows(), excess_ratio=2.0, detection_floor=0.9, observed_excess=0.7,
+        behavioural_status=status, mode="protein",
+    )
+    assert losing["verdict"] == "REFERENCE_ONLY"
+    assert losing["criteria_verdict"] == "FAIL"
+
+    # A35-0 is read on the gate baseline and never on the cell verdict, so the
+    # reference's masked arm is computed and there is something to compare against
+    # on the deciding variant.
+    a35_0 = STAGE.attainability_verdict(
+        _cell({"eval": _primary_cell_rows()}), _protein_settings(), status=status
+    )
+    assert a35_0["attainable"] is True
+    assert a35_0["raw_arm_verdict"]["verdict"] == "REFERENCE_ONLY"
+    assert STAGE.frozen_branch("REFERENCE_ONLY", {})["branch"] == "pre_adaptation_reference"
+
+
+def test_a35_1b_gates_only_where_the_raw_arm_shows_the_margin_is_reachable() -> None:
+    """Amendment 1: the restriction is reported, and decisive only where it can be."""
+
+    args = _settings()
+    reachable = _cell(
+        {
+            split: _primary_cell_rows(bridge_excess=0.001)
+            for split in ("eval", "family_holdout")
+        }
+    )
+    block = STAGE.a35_1b_restriction(reachable, None, args)
+    assert block["gating"] is True
+    assert block["inapplicable_reason"] is None
+    assert block["bridge_over_full"]["raw"]["eval"]["bridge_over_full"] < 0.5
+
+    # The amendment's own case: a restriction that loses almost nothing, which the
+    # hypothesis predicts rather than forbids.
+    unreachable_excess = 0.9 * PRIMARY_CELL_OBSERVED_EXCESS
+    unreachable = _cell(
+        {
+            split: _primary_cell_rows(bridge_excess=unreachable_excess)
+            for split in ("eval", "family_holdout")
+        }
+    )
+    block = STAGE.a35_1b_restriction(unreachable, None, args)
+    assert block["gating"] is False
+    assert block["margin_reachable_on_the_raw_arm"] is False
+    assert block["inapplicable_reason"] is not None
+    ratios = block["bridge_over_full"]["raw"]
+    assert set(ratios) == {"eval", "family_holdout"}
+    assert ratios["eval"]["bridge_over_full"] == pytest.approx(0.9)
+
+    # And a non-gating A35-1b cannot change the verdict: the row is reported with
+    # its reason and decides nothing.
+    rows = _rows_from_excesses(
+        {name: 0.0001 for name in ca.A35_1_BASELINES},
+        bridge_excess=unreachable_excess,
+        bridge_decisive=True,
+        bridge_inapplicable_reason=block["inapplicable_reason"],
+    )
+    verdict = ca.admission_verdict(
+        rows, excess_ratio=2.0, detection_floor=0.0,
+        observed_excess=PRIMARY_CELL_OBSERVED_EXCESS,
+        behavioural_status=_synthetic_status(), mode="text",
+    )
+    assert verdict["verdict"] == "PASS"
+    assert ca.A35_1B_BASELINE not in verdict["decisive_applicable_baselines"]
+
+
+def test_a35_1b_gating_makes_the_bridge_baseline_decide() -> None:
+    """Where the margin IS reachable the restriction is a criterion, not a comment."""
+
+    rows = _rows_from_excesses(
+        {name: 0.0001 for name in ca.A35_1_BASELINES},
+        bridge_excess=0.9 * PRIMARY_CELL_OBSERVED_EXCESS,
+        bridge_decisive=True,
+    )
+    verdict = ca.admission_verdict(
+        rows, excess_ratio=2.0, detection_floor=0.0,
+        observed_excess=PRIMARY_CELL_OBSERVED_EXCESS,
+        behavioural_status=_synthetic_status(), mode="text",
+    )
+    assert verdict["verdict"] == "FAIL"
+    assert ca.A35_1B_BASELINE in verdict["baselines_failing_a_condition"]
+
+
+# --------------------------------------------- the bridge concept's two sides
+
+
+def _bridge_record(masked_terms: list[str]) -> dict:
+    return {"masked_terms": masked_terms}
+
+
+def test_bridge_concepts_are_keyed_on_the_surface_forms_the_cohort_masked() -> None:
+    """A GO id is not what a curated description calls the concept.
+
+    The cohort stage builds ``masked_terms`` from
+    ``sequence_description.concept_surface_forms``, so the consumer asks the same
+    object. Keyed on the identifier instead, the two vocabularies cannot meet: on
+    the production cohort none of 3,970 distinct masked terms was GO-id-shaped or
+    Pfam-accession-shaped, and the intersection was empty for all 1,174 concepts.
+    """
+
+    records = [
+        _bridge_record(["membrane", "ATP"]),
+        _bridge_record(["DNA repair"]),
+    ]
+    concepts = [
+        ("go_propagated", "GO:0016020"),
+        ("go_propagated", "GO:0006281"),
+        ("go_propagated", "GO:0005524"),
+        ("pfam", "PF00069"),
+    ]
+    surface_forms = {
+        ("go_propagated", "GO:0016020"): ("GO:0016020", "membrane", "whole membrane"),
+        ("go_propagated", "GO:0006281"): ("GO:0006281", "DNA repair"),
+        ("go_propagated", "GO:0005524"): ("GO:0005524", "ATP binding"),
+    }
+    bridge = ca.bridge_concepts(records, concepts, surface_forms=surface_forms)
+    assert bridge == [("go_propagated", "GO:0016020"), ("go_propagated", "GO:0006281")]
+
+    # The identifier-keyed reading finds nothing, because no identifier is in the
+    # vocabulary at all -- which is what made the production run report 0 of 1,174.
+    vocabulary = ca.masked_term_vocabulary(records)
+    assert vocabulary == {"membrane", "atp", "dna repair"}
+    assert not any(term.lower() in vocabulary for _, term in concepts)
+
+    # A concept the cohort declares no surface form for has no declared text side.
+    assert ("pfam", "PF00069") not in bridge
+
+
+def test_a_bridge_concept_is_matched_on_a_whole_form_and_not_a_substring() -> None:
+    """``ligase`` inside ``DNA ligase`` is a different concept's name."""
+
+    records = [_bridge_record(["DNA ligase"])]
+    forms = {("ec", "6"): ("ligase", "EC 6")}
+    assert ca.bridge_concepts(records, [("ec", "6")], surface_forms=forms) == []
+    assert ca.bridge_concepts(
+        [_bridge_record(["ligase"])], [("ec", "6")], surface_forms=forms
+    ) == [("ec", "6")]
+
+
+def test_the_declared_surface_forms_come_from_the_cohorts_own_ontology(
+    tmp_path: Path,
+) -> None:
+    """End to end over the producer's own function, including a synonym-only match.
+
+    On the production cohort ``go_metal_ion_binding`` is named in the descriptions
+    only through the ontology synonym ``metal binding``, never through its primary
+    name, so a consumer that used the declared name alone would have missed it.
+    """
+
+    obo = tmp_path / "go-basic.obo"
+    obo.write_text(
+        "format-version: 1.2\n"
+        "data-version: releases/2026-01-01\n"
+        "\n"
+        "[Term]\n"
+        "id: GO:0046872\n"
+        "name: metal ion binding\n"
+        "namespace: molecular_function\n"
+        'synonym: "metal binding" EXACT []\n',
+        encoding="utf-8",
+    )
+    forms = STAGE.declared_surface_forms(obo)
+    key = ("go_propagated", "GO:0046872")
+    assert "metal binding" in forms[key]
+    # Reached from either GO column, because a cohort concept key carries the
+    # column it was declared from.
+    assert forms[("go", "GO:0046872")] == forms[key]
+
+    records = [_bridge_record(["metal binding"])]
+    assert ca.bridge_concepts(records, [key], surface_forms=forms) == [key]
+
+
+# ------------------------------------------------- the amendment declaration
+
+
+def test_the_declared_amendments_match_the_constants_they_imply() -> None:
+    """An amendment in the register that the instrument does not implement is a gap.
+
+    EXP-R2-213 amendment 1 was recorded on 2026-08-19 and stage 35 still carried
+    the pre-amendment seven-baseline set; nothing detected it, and the campaign ran
+    under a criterion the register said had been superseded. This is that gap made
+    detectable: the artefact declares which amendments the code implements, and the
+    declaration is checked against the frozen constants each one implies.
+    """
+
+    block = STAGE.pre_registration_block(_settings())
+    assert block["record"] == ca.PRE_REGISTRATION == "EXP-R2-213"
+    assert block["amendments_implemented"] == list(ca.PRE_REGISTRATION_AMENDMENTS)
+    assert block["decisive_baselines"] == list(ca.A35_1_BASELINES)
+    assert block["a35_0_gate_baseline"] == ca.A35_0_GATE_BASELINE
+    assert block["a35_1b_baseline"] == ca.A35_1B_BASELINE
+
+    if "amendment 1" in block["amendments_implemented"]:
+        # The decisive set is SIX, named, and bridge_specific is not one of them.
+        assert set(ca.A35_1_BASELINES) == {
+            "shuffled_pair", "shuffled_fit", "rank_matched",
+            "composition", "kmer", "description_only",
+        }
+        assert ca.A35_1B_BASELINE == "bridge_specific"
+        assert ca.A35_1B_BASELINE not in ca.A35_1_BASELINES
+        # The primary statistic is description -> sequence top-1 in excess of chance.
+        assert ca.PRIMARY_STATISTIC == "top1_excess"
+        assert STAGE.PRIMARY_DIRECTION == "description_to_sequence"
+        # The mean rung cannot be the deciding one.
+        with pytest.raises(ValueError, match="mean rung cannot be the decisive one"):
+            _settings(alignment_method="mean")
+
+    unknown = [
+        name
+        for name in ca.PRE_REGISTRATION_AMENDMENTS
+        if not name.startswith("amendment ")
+    ]
+    assert not unknown, unknown
+
+
+def test_the_verdict_and_the_artefact_declare_one_amendment_set() -> None:
+    """Two declarations of what a run was produced under would eventually disagree."""
+
+    verdict = ca.admission_verdict(
+        _passing_rows(), excess_ratio=2.0, detection_floor=0.0, observed_excess=0.7,
+        behavioural_status=_synthetic_status(), mode="text",
+    )
+    block = STAGE.pre_registration_block(_settings())
+    assert verdict["amendments_implemented"] == block["amendments_implemented"]
+    assert verdict["decisive_baselines"] == block["decisive_baselines"]
+
 # ----------------------------------------------------- the L32 per-layer rule
 
 
@@ -663,11 +1115,16 @@ def test_the_instrument_recovers_a_planted_alignment_and_refuses_none(
 def test_every_pre_registered_baseline_is_evaluated_under_both_conditions(
     synthetic_check: dict,
 ) -> None:
-    """A35-1 in the artefact: seven decisive rows, each with both conditions read."""
+    """A35-1 in the artefact: six decisive rows, each with both conditions read."""
 
     rows = synthetic_check["cells"]["planted_alignment"]["splits"]["eval"]["baseline_rows"]
     decisive = {row["baseline"]: row for row in rows if row["decisive"]}
     assert set(decisive) == set(ca.A35_1_BASELINES)
+    assert len(ca.A35_1_BASELINES) == 6
+    # A35-1b is reported beside them and is not one of them until its margin has
+    # been shown reachable on the raw arm.
+    bridge = [row for row in rows if row["baseline"] == ca.A35_1B_BASELINE]
+    assert len(bridge) == 1 and bridge[0]["decisive"] is False
     for name, row in decisive.items():
         assert row["applicable"] is True, name
         assert row["difference_interval_excludes_zero"] is not None, name

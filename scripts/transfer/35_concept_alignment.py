@@ -23,6 +23,18 @@ as its symbol unit -- LLaMA-2's SentencePiece merges residue runs at about
 magnitude here is commensurable with a residue-unit arm's (limitation L23,
 Appendix B rule 26), and nothing in this stage is compared across families.
 
+**A35-0's gate is one baseline, and the artefact names it.** The raw-description
+arm is read first at every layer, and what decides whether the masked arm is read
+at all is A35-1's margin over ``shuffled_pair`` -- the baseline EXP-R2-213 names,
+in the singular. The rest of the raw arm's table is reported beside it and gates
+nothing, because the pre-registration's branch table gives the two outcomes
+opposite subjects: a raw arm that cannot clear ``shuffled_pair`` voids the ladder
+as a specification defect and is a statement about *the instrument*, while a raw
+arm that clears it and loses to a composition or 3-mer surrogate is the
+**surface-statistics** branch and is a statement about *the method*, read as a
+measured negative on the masked arm. ``frozen_branch`` writes which of those
+branches an outcome took into the artefact.
+
 **Two cells, and the second is the attainability check rule 2 asks for.**
 ``--mode protein`` is the estimand: the sequence in protein mode against the
 curated description in text mode. ``--mode text`` is the positive control: the
@@ -87,6 +99,7 @@ if str(Path(__file__).resolve().parent) not in sys.path:
 
 from src.transfer import concept_alignment as ca  # noqa: E402
 from src.transfer import joint_modes  # noqa: E402
+from src.transfer import sequence_description as sd  # noqa: E402
 from src.transfer.arms import AA20, REPO, require_input_path  # noqa: E402
 from src.transfer.io import sha256_file, write_json  # noqa: E402
 from src.transfer.replaceable import JOINT_MODES, JointReplaceable, joint_tokenisation  # noqa: E402
@@ -122,6 +135,7 @@ DEFAULT_OUT = REPO / "results/transfer/concept_alignment"
 PROVENANCE_MODULES = (
     "src/transfer/concept_alignment.py",
     "src/transfer/joint_modes.py",
+    "src/transfer/sequence_description.py",
     "src/transfer/replaceable.py",
     "src/transfer/scoring.py",
     "src/transfer/statistics.py",
@@ -134,7 +148,9 @@ PROVENANCE_MODULES = (
 #: them to be absent, and they are omitted from the synthetic artefact's
 #: ``settings`` rather than echoed as null -- 32_crosscoder.py records what an
 #: echoed null cost it.
-CAMPAIGN_ONLY_FLAGS = ("checkpoint", "rendering", "mode", "cohort", "protein_context")
+CAMPAIGN_ONLY_FLAGS = (
+    "checkpoint", "rendering", "mode", "cohort", "protein_context", "go_obo",
+)
 
 #: Decisions this stage refuses to default. Each is a number or a name that
 #: moves the answer, and a stage that supplied one silently would be reporting
@@ -232,6 +248,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="the sequence-description cohort directory (or its records.jsonl) "
         "written by 34_sequence_description_cohort.py. Never synthesised here",
+    )
+    parser.add_argument(
+        "--go-obo",
+        type=Path,
+        default=None,
+        help="the go-basic.obo the cohort was built from. Defaults to the path the "
+        "cohort's own manifest recorded, which is how 36_concept_injection.py "
+        "reaches it too; name it explicitly when the cohort has been staged onto a "
+        "host where that absolute path does not resolve. It is what turns a "
+        "concept's identifier into the surface forms the cohort masked, and without "
+        "it the bridge-specific arm of A35-1b cannot be built",
     )
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--device", default="cuda:0")
@@ -477,6 +504,65 @@ def open_modes(
     return resolved, facts, handles
 
 
+def resolve_go_obo(cohort: ca.Cohort, args: argparse.Namespace) -> Path:
+    """The ``go-basic.obo`` this cohort was built from, or a refusal naming it.
+
+    The cohort's manifest records the ontology the cohort stage actually used, and
+    ``36_concept_injection.py`` reaches it the same way, so the default is the
+    recorded path rather than this module's own idea of where an ontology lives.
+    The recorded path is absolute on the host the cohort was built on, which is not
+    always the host this stage runs on -- so ``--go-obo`` names the staged copy,
+    and a path that does not resolve is a refusal rather than a bridge arm silently
+    built from nothing.
+    """
+
+    if args.go_obo is not None:
+        return require_input_path(Path(args.go_obo).resolve(), "--go-obo")
+    recorded = cohort.manifest.get("settings", {}).get("go_obo")
+    if recorded is None:
+        raise ValueError(
+            f"{cohort.path.parent / 'cohort.json'} records no settings.go_obo, so "
+            "the ontology this cohort's surface forms were derived from is unknown. "
+            "Pass --go-obo, or rebuild the cohort with a stage that records it"
+        )
+    path = Path(str(recorded))
+    if not path.exists():
+        raise FileNotFoundError(
+            f"the cohort records its GO ontology at {path}, which does not exist "
+            "here; it is an absolute path on the host the cohort was built on. Pass "
+            "--go-obo to name the staged copy. The ontology is what turns a "
+            "concept's identifier into the surface forms the cohort masked out of "
+            "the descriptions, and A35-1b's bridge arm is not defined without it"
+        )
+    return path
+
+
+def declared_surface_forms(obo: Path) -> dict[tuple[str, str], tuple[str, ...]]:
+    """Every declared concept's surface forms, keyed as this stage keys a concept.
+
+    One object, read from the module that wrote ``masked_terms``:
+    ``sequence_description.concept_surface_forms`` is what the cohort stage derives
+    the shared mask vocabulary from, and it is what decides here whether a concept
+    is named in the description. Keying the question on the concept's *identifier*
+    instead -- a GO id, an EC number, a Pfam accession -- asks it of a vocabulary
+    that cannot answer: the masked terms are English names, and on the production
+    cohort the identifier-keyed test returned zero bridge concepts of 1,174.
+
+    A GO concept is reached from either annotation column it can be declared from,
+    because a cohort concept key is ``(namespace, term)`` and ``go_propagated`` and
+    ``go`` are two columns carrying the same identifiers.
+    """
+
+    ontology = sd.load_go_ontology(obo)
+    forms: dict[tuple[str, str], tuple[str, ...]] = {}
+    for spec in sd.CONCEPTS:
+        surface = sd.concept_surface_forms(spec, ontology=ontology)
+        namespaces = ("go", "go_propagated") if spec.kind == "go" else ("ec",)
+        for namespace in namespaces:
+            forms[(namespace, spec.identifier)] = surface
+    return forms
+
+
 def source_strings(cohort: ca.Cohort, mode: str) -> list[str]:
     """The strings the source side is represented from, for one mode."""
 
@@ -647,9 +733,21 @@ def _concept_axis(
 
 
 def evaluate_cell(
-    inputs: CellInputs, args: argparse.Namespace, *, with_intervals: bool
+    inputs: CellInputs,
+    args: argparse.Namespace,
+    *,
+    with_intervals: bool,
+    bridge_decisive: bool = False,
+    bridge_inapplicable_reason: str | None = None,
 ) -> dict[str, Any]:
-    """The ladder, every pre-registered baseline, both evaluation splits, one layer."""
+    """The ladder, every pre-registered baseline, both evaluation splits, one layer.
+
+    ``bridge_decisive`` carries A35-1b's decision (EXP-R2-213 amendment 1) into the
+    one flag :func:`src.transfer.concept_alignment.baseline_row` keeps it in, so
+    that the verdict is still computed in exactly one place. It is false on the
+    raw arm because that arm is where A35-1b's attainability is *measured*, and it
+    is the measured value on the arm the verdict is read on.
+    """
 
     fit = inputs.index("fit")
     subspace = ca.fit_subspace(
@@ -898,6 +996,8 @@ def evaluate_cell(
             arms=arms,
             arm_hits=arm_hits,
             bridge_available=bridge_projector is not None,
+            bridge_decisive=bridge_decisive,
+            bridge_inapplicable_reason=bridge_inapplicable_reason,
             source_is_sequence=args.mode != "text",
             with_intervals=with_intervals,
         )
@@ -1031,6 +1131,8 @@ def _primary_rows(
     arms: Mapping[str, Mapping[str, Any]],
     arm_hits: Mapping[str, np.ndarray],
     bridge_available: bool,
+    bridge_decisive: bool,
+    bridge_inapplicable_reason: str | None,
     source_is_sequence: bool,
     with_intervals: bool,
 ) -> list[dict[str, Any]]:
@@ -1094,17 +1196,25 @@ def _primary_rows(
         "makes A35-1(ii) well posed for it",
     )
     if bridge_available:
+        # A35-1b (amendment 1): reported always, decisive only where the raw arm has
+        # demonstrated the margin against it is reachable at these settings. The
+        # measured value is carried either way -- an inapplicable baseline that
+        # dropped its number would be indistinguishable from one that was not run.
         row(
-            "bridge_specific", float(arms["bridge_specific"]["top1_accuracy"]),
-            arm_hits["bridge_specific"],
+            ca.A35_1B_BASELINE, float(arms[ca.A35_1B_BASELINE]["top1_accuracy"]),
+            arm_hits[ca.A35_1B_BASELINE],
+            decisive=bridge_decisive,
+            applicable=bridge_inapplicable_reason is None,
+            inapplicable_reason=bridge_inapplicable_reason,
             note="the same retrieval restricted to the span of the concepts declared "
-            "on both sides",
+            "on both sides. " + ca.A35_1B_NOTE,
         )
     else:
         rows.append(
             ca.baseline_row(
-                "bridge_specific", "primary_top1", accuracy, None,
-                chance=chance, excess_ratio=ratio, applicable=False,
+                ca.A35_1B_BASELINE, "primary_top1", accuracy, None,
+                chance=chance, excess_ratio=ratio, decisive=bridge_decisive,
+                applicable=False,
                 inapplicable_reason="no declared concept is named in this cohort's "
                 "masked_terms, so no concept is defined on both sides and the bridge "
                 "coordinates are empty",
@@ -1112,8 +1222,8 @@ def _primary_rows(
         )
 
     # Reported and non-decisive: widening a frozen criterion is as much a change
-    # to it as softening one. EXP-R2-213 names seven baselines and neither of
-    # these two is among them.
+    # to it as softening one. EXP-R2-213 amendment 1 names six decisive baselines
+    # and neither of these two is among them.
     rows.append(
         ca.baseline_row(
             "chance", "primary_top1", accuracy, chance, chance=chance,
@@ -1170,6 +1280,9 @@ def cell_verdict(
     )
 
 
+ATTAINABILITY_SPLIT = "eval"
+
+
 def attainability_verdict(
     raw_cell: Mapping[str, Any],
     args: argparse.Namespace,
@@ -1183,24 +1296,273 @@ def attainability_verdict(
     failure voids the whole ladder rather than being reported beside a masked
     number -- two of D3.h's criteria were voided for skipping exactly this
     ordering, one of them unreachable at any sample size.
+
+    **The gate is one baseline and the artefact says which.** EXP-R2-213 names it
+    in the singular: A35-1's margin over ``shuffled_pair``. The rest of the raw
+    arm's table is reported here in full and decides nothing at this step, because
+    a raw arm that clears ``shuffled_pair`` and loses to a composition or 3-mer
+    surrogate is the pre-declared **surface-statistics** branch -- a statement
+    about the method, read as a measured negative on the masked arm -- while a raw
+    arm that cannot clear ``shuffled_pair`` is a statement about the instrument.
+    Gating on the whole decisive set files the first outcome under the second, and
+    ``REFERENCE_ONLY`` -- which is not a failure at all -- would make the gate
+    unreachable for the pre-adaptation reference whatever its numbers said.
     """
 
-    verdict = cell_verdict(raw_cell, args, split="eval", status=status)
-    attainable = verdict["verdict"] == "PASS"
+    gate = ca.attainability_gate(
+        raw_cell["splits"][ATTAINABILITY_SPLIT]["baseline_rows"]
+    )
+    verdict = cell_verdict(raw_cell, args, split=ATTAINABILITY_SPLIT, status=status)
+    attainable = bool(gate["attainable"])
     return {
         "verdict": "ATTAINABLE" if attainable else "VOID_SPECIFICATION_DEFECT",
         "attainable": attainable,
+        "gate_baseline": gate["gate_baseline"],
+        "split": ATTAINABILITY_SPLIT,
+        "gate": gate,
         "raw_arm_verdict": verdict,
         "reason": (
-            "the raw-description arm, with the concept name present, clears the "
-            "frozen criteria on the eval split, so the masked arm is a control on a "
-            "bar the design can reach"
+            f"the raw-description arm, with the concept name present, clears A35-1's "
+            f"two conditions over {gate['gate_baseline']} on the "
+            f"{ATTAINABILITY_SPLIT} split, so the masked arm is a control on a bar "
+            f"the design can reach. The remaining baselines are reported in "
+            f"raw_arm_verdict and gate nothing here"
             if attainable
-            else "the raw-description arm does NOT clear the frozen criteria on the "
-            "eval split. A bar the attainability arm cannot reach is a specification "
-            "defect and not a protein result, so the whole ladder is VOID and the "
-            "masked arm is not read at all"
+            else f"the raw-description arm does NOT clear A35-1's two conditions "
+            f"over {gate['gate_baseline']} on the {ATTAINABILITY_SPLIT} split "
+            f"(status {gate['status']}). A bar the attainability arm cannot reach is "
+            "a specification defect and not a protein result, so the whole ladder is "
+            "VOID and the masked arm is not read at all"
         ),
+    }
+
+
+def _bridge_row(cell: Mapping[str, Any], split: str) -> Mapping[str, Any]:
+    matches = [
+        row
+        for row in cell["splits"][split]["baseline_rows"]
+        if row["baseline"] == ca.A35_1B_BASELINE and row["axis"] == "primary_top1"
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"A35-1b is read on {ca.A35_1B_BASELINE!r} and the {split} split carries "
+            f"{len(matches)} such rows"
+        )
+    return matches[0]
+
+
+def _bridge_over_full(row: Mapping[str, Any]) -> dict[str, Any]:
+    """A35-1b's interpretable quantity, on the primary statistic, or why there is none."""
+
+    full = row["observed_excess"]
+    bridge = row["baseline_excess"]
+    ratio = None
+    reason = None
+    if bridge is None:
+        reason = "the bridge arm carries no value on this split"
+    elif full is None or full <= 0.0:
+        reason = (
+            "the unrestricted arm has no excess over chance on this split, so a "
+            "restriction's share of it is not defined"
+        )
+    else:
+        ratio = float(bridge) / float(full)
+    return {
+        "bridge_top1_excess": bridge,
+        "full_top1_excess": full,
+        "bridge_over_full": ratio,
+        "undefined_reason": reason,
+    }
+
+
+def a35_1b_restriction(
+    raw_cell: Mapping[str, Any],
+    deciding_cell: Mapping[str, Any] | None,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    """A35-1b: the concept restriction, reported, and gating only where it can.
+
+    EXP-R2-213 amendment 1 moved ``bridge_specific`` out of A35-1's decisive set
+    for two reasons, and the second is the one that fixes the criterion rather
+    than merely relaxing it: at the limit the original bar was backwards, because
+    a genuine cross-modal alignment carried by the concepts declared on both sides
+    *predicts* ``bridge ~ full``. So the reported quantity is the ratio
+    ``bridge / full`` on the primary statistic on both splits, and clause (ii)
+    becomes decisive against this baseline only where the **raw-description arm**
+    demonstrates at the run's own settings that the declared margin against it is
+    reachable -- the same attainability-before-control ordering A35-0 applies, on
+    the same arm and the same split.
+    """
+
+    attainability_row = _bridge_row(raw_cell, ATTAINABILITY_SPLIT)
+    reachable = attainability_row["meets_excess_ratio"]
+    ratio = _bridge_over_full(attainability_row)
+    if reachable is True:
+        reason = (
+            f"the raw-description arm clears {args.excess_ratio}x over "
+            f"{ca.A35_1B_BASELINE} on the {ATTAINABILITY_SPLIT} split, so the margin "
+            "is reachable at these settings and clause (ii) is decisive against it "
+            "on the arm the verdict is read on"
+        )
+    elif reachable is False:
+        reason = (
+            f"the raw-description arm does not clear {args.excess_ratio}x over "
+            f"{ca.A35_1B_BASELINE} on the {ATTAINABILITY_SPLIT} split: the achieved "
+            f"bridge/full ratio is {ratio['bridge_over_full']}, so the margin is not "
+            "reachable at these settings. Clause (ii) is non-applicable for this "
+            "baseline and A35-1b is reported rather than gating (amendment 1)"
+        )
+    else:
+        reason = (
+            f"the raw-description arm's {ca.A35_1B_BASELINE} row carries no "
+            "effect-size reading "
+            f"({attainability_row['inapplicable_reason'] or 'no baseline value'}), "
+            "so the margin cannot be shown reachable and clause (ii) is "
+            "non-applicable for this baseline"
+        )
+    gating = reachable is True
+    ratios = {"raw": {
+        split: _bridge_over_full(_bridge_row(raw_cell, split))
+        for split in ("eval", "family_holdout")
+    }}
+    if deciding_cell is not None:
+        ratios[str(ca.DECIDING_DESCRIPTION_VARIANT)] = {
+            split: _bridge_over_full(_bridge_row(deciding_cell, split))
+            for split in ("eval", "family_holdout")
+        }
+    return {
+        "criterion": "A35-1b",
+        "baseline": ca.A35_1B_BASELINE,
+        "amended_by": f"{ca.PRE_REGISTRATION} amendment 1",
+        "gating": gating,
+        "margin_reachable_on_the_raw_arm": reachable,
+        "attainability_split": ATTAINABILITY_SPLIT,
+        "attainability_row": dict(attainability_row),
+        "reason": reason,
+        "bridge_over_full": ratios,
+        "inapplicable_reason": None if gating else reason,
+        "note": ca.A35_1B_NOTE,
+    }
+
+
+def frozen_branch(
+    stage_verdict: str, verdicts: Mapping[str, Mapping[str, Any]]
+) -> dict[str, Any]:
+    """Which of EXP-R2-213's pre-declared branches this outcome is, named in the artefact.
+
+    The pre-registration's branch table gives each outcome its own row and its own
+    subject, and the two that are easiest to confuse have opposite ones: a raw arm
+    failing A35-0 is about *the instrument, not the modality*, while a composition
+    or 3-mer surrogate breaking A35-1(ii) is about *the method* and is a measured
+    negative rather than a void. Naming the branch in the artefact is what stops a
+    reader having to re-derive it from the verdict string.
+    """
+
+    failing = sorted(
+        {
+            name
+            for record in verdicts.values()
+            for name in record["baselines_failing_a_condition"]
+        }
+    )
+    eval_verdict = verdicts.get("eval", {}).get("verdict")
+    holdout_verdict = verdicts.get("family_holdout", {}).get("verdict")
+    surrogates = sorted(set(failing) & {"composition", "kmer"})
+    if stage_verdict == "VOID_SPECIFICATION_DEFECT":
+        branch, statement, reading = (
+            "a35_0_specification_defect",
+            "the instrument, not the modality",
+            "the raw-description arm did not clear A35-1's margin over "
+            f"{ca.A35_0_GATE_BASELINE}, so the ladder is void and the masked arm was "
+            "not read",
+        )
+    elif stage_verdict == "REFERENCE_ONLY":
+        branch, statement, reading = (
+            "pre_adaptation_reference",
+            "attribution",
+            "this checkpoint's protein mode is behaviourally unmeasurable, so the "
+            "run is a representational reference and admits nothing",
+        )
+    elif stage_verdict == "PASS":
+        branch, statement, reading = (
+            "authorised",
+            "existence, on this lineage at this site",
+            "every pre-registered condition holds on both splits",
+        )
+    elif stage_verdict == "UNDERPOWERED":
+        branch, statement, reading = (
+            "underpowered",
+            "the resampling unit count, not the model",
+            "a condition holds but a decisive baseline carries no publishable "
+            "interval",
+        )
+    elif eval_verdict == "PASS" and holdout_verdict != "PASS":
+        branch, statement, reading = (
+            "within_corpus_not_across_families",
+            "generalisation, not existence",
+            "A35-1 holds on the group-disjoint eval split and fails on the "
+            "family-disjoint one; stage 36 is not authorised",
+        )
+    elif surrogates:
+        branch, statement, reading = (
+            "surface_statistics",
+            "the method",
+            "a composition or 3-mer surrogate broke A35-1(ii) ("
+            + ", ".join(surrogates)
+            + "), so the alignment is reported as an alignment of amino-acid "
+            "composition rather than of concept. Where the surrogate also exceeds "
+            "the masked arm, the model adds nothing over composition",
+        )
+    else:
+        branch, statement, reading = (
+            "measured_negative",
+            "the model, at this site and on this lineage",
+            "the masked arm did not clear a decisive baseline; STOP-35 registers it "
+            "as a result rather than a failed round",
+        )
+    return {
+        "branch": branch,
+        "statement_about": statement,
+        "reading": reading,
+        "decisive_baselines_failing_a_condition": failing,
+        "surrogate_baselines_failing": surrogates,
+        "source": f"{ca.PRE_REGISTRATION}'s pre-declared branch table",
+    }
+
+
+def pre_registration_block(args: argparse.Namespace) -> dict[str, Any]:
+    """What this run was produced under, declared from the constants that decide it.
+
+    The amendment list is read from
+    :data:`src.transfer.concept_alignment.PRE_REGISTRATION_AMENDMENTS` rather than
+    written out here, so the artefact's claim about which text the code implements
+    and the code's own frozen constants have one source. An amendment recorded in
+    the register while the executing instrument does not implement it is the gap
+    that produced EXP-R2-213's first mis-filed stage-35 read, and
+    ``tests/test_concept_alignment.py`` checks this declaration against the
+    constants it implies.
+    """
+
+    return {
+        "record": ca.PRE_REGISTRATION,
+        "amendments_implemented": list(ca.PRE_REGISTRATION_AMENDMENTS),
+        "amendment_note": ca.AMENDMENT_1_NOTE,
+        "primary_statistic": ca.PRIMARY_STATISTIC,
+        "primary_statistic_note": ca.PRIMARY_STATISTIC_NOTE,
+        "primary_direction": PRIMARY_DIRECTION,
+        "decisive_baselines": list(ca.A35_1_BASELINES),
+        "a35_0_gate_baseline": ca.A35_0_GATE_BASELINE,
+        "a35_0_gate_note": ca.A35_0_GATE_NOTE,
+        "a35_1b_baseline": ca.A35_1B_BASELINE,
+        "a35_1b_note": ca.A35_1B_NOTE,
+        "conditions": (
+            "A35-1(i) the paired group-bootstrap 95% interval of the difference "
+            "excludes zero; A35-1(ii) the excess over chance is at least "
+            f"{args.excess_ratio}x the baseline's. Both required, on both splits"
+        ),
+        "detection_floor": float(args.decision_threshold),
+        "resampling_unit": "dup_group (near-duplicate group)",
+        "nonlinear_adapter_locked": True,
     }
 
 
@@ -1232,10 +1594,11 @@ def audit_gate_all_baselines(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any
     """Whether the alignment also clears the baselines outside the frozen set.
 
     The audit's own wording is "beat every applicable baseline", and EXP-R2-213
-    freezes a decisive set of seven that does not include the ambient
-    nearest-neighbour read or the nulls at their 97.5th percentile. Reported as a
-    separate, non-binding reading so the frozen verdict is neither softened nor
-    widened by it.
+    amendment 1 freezes a decisive set of six that does not include the ambient
+    nearest-neighbour read, the nulls at their 97.5th percentile, or A35-1b's
+    restriction where its margin was not shown reachable. Reported as a separate,
+    non-binding reading so the frozen verdict is neither softened nor widened by
+    it.
     """
 
     extra = [
@@ -1434,7 +1797,23 @@ def reference_comparison(
             ),
             "binding": False,
         }
-    verdicts: dict[str, Any] = {"binding": True, "arm": arm, "splits": {}}
+    # A35-4 is binding only where it is read on the arm the verdict is read on.
+    # A void ladder has no masked cell to compare, and the raw-arm reading that
+    # remains is reported rather than passed over -- but it is not the attribution
+    # decision, because the deciding variant is the masked one.
+    binding = arm == ca.DECIDING_DESCRIPTION_VARIANT
+    verdicts: dict[str, Any] = {
+        "binding": binding,
+        "arm": arm,
+        "deciding_arm": ca.DECIDING_DESCRIPTION_VARIANT,
+        "splits": {},
+    }
+    if not binding:
+        verdicts["non_binding_reason"] = (
+            f"read on the {arm!r} arm, which is not the deciding description "
+            f"variant ({ca.DECIDING_DESCRIPTION_VARIANT!r}). The attribution "
+            "question is about the arm the verdict is read on"
+        )
     for split in ("eval", "family_holdout"):
         here = cell["splits"][split]
         there = reference["cells"][key]["splits"][split]
@@ -1540,7 +1919,20 @@ def limitations_block(*, mode: str, status: Mapping[str, Any]) -> dict[str, Any]
             "protein side and named in the description, which the cohort's "
             "masked_terms records -- so that it is commensurable with the ladder "
             "under A35-1(ii). That is an interpretation of the gate's wording and is "
-            "recorded as one"
+            "recorded as one. EXP-R2-213 amendment 1 makes it A35-1b: reported as "
+            "the bridge/full ratio and decisive only where the raw arm shows the "
+            "margin against it is reachable"
+        ),
+        "bridge_concepts_are_the_cohorts_declared_concepts": (
+            "'named in the description' is decided against "
+            "sequence_description.concept_surface_forms, which is the object the "
+            "cohort stage built masked_terms from, so only concepts the cohort "
+            "DECLARES surface forms for can enter the bridge span. A concept read "
+            "off an annotation column alone -- most of this stage's declared "
+            "concepts, and every Pfam accession -- carries no declared text side "
+            "and is not in it. The count of concepts carrying declared surface "
+            "forms is reported beside the bridge count rather than left to be "
+            "inferred from the difference"
         ),
         "description_only_reading": (
             "likewise implemented as a RETRIEVAL arm rather than a concept "
@@ -1601,6 +1993,7 @@ def main() -> None:
                 key: value for key, value in settings.items()
                 if key not in CAMPAIGN_ONLY_FLAGS
             },
+            "pre_registration": pre_registration_block(args),
             "provenance": provenance,
             **run_synthetic_check(args),
             "limitations": {
@@ -1626,8 +2019,14 @@ def main() -> None:
     checkpoint = require_input_path(Path(args.checkpoint).resolve(), "--checkpoint")
     cohort = ca.load_cohort(Path(args.cohort))
     status = ca.protein_mode_behavioural_status(checkpoint)
+    # Resolved before the weights are loaded, so a missing ontology costs seconds
+    # rather than a model load: it decides which concepts are defined on both
+    # sides, which is an input to the run and not a detail of its reporting.
+    go_obo = resolve_go_obo(cohort, args)
+    surface_forms = declared_surface_forms(go_obo)
     print(f"[paths] checkpoint {checkpoint}")
     print(f"[paths] cohort     {cohort.path}")
+    print(f"[paths] go         {go_obo}")
     print(f"[paths] out        {args.out.resolve()}")
     print(f"[cohort] {cohort.counts()}")
 
@@ -1656,8 +2055,14 @@ def main() -> None:
             "only with the power consequence stated: below the eight-unit floor a "
             "concept cannot carry an interval"
         )
-    bridge = tuple(ca.bridge_concepts(cohort.records, concepts))
-    print(f"[concepts] {len(concepts)} declared, {len(bridge)} defined on both sides")
+    bridge = tuple(
+        ca.bridge_concepts(cohort.records, concepts, surface_forms=surface_forms)
+    )
+    n_with_forms = sum(1 for key in concepts if key in surface_forms)
+    print(
+        f"[concepts] {len(concepts)} declared, {n_with_forms} carrying declared "
+        f"surface forms, {len(bridge)} of those named in the cohort's masked_terms"
+    )
 
     captured: dict[str, dict[int, np.ndarray]] = {
         "source": ca.mode_representations(
@@ -1715,6 +2120,10 @@ def main() -> None:
     raw_deciding = cells[f"layer{args.decision_layer}__raw"]
     a35_0 = attainability_verdict(raw_deciding, args, status=status)
     attainable = bool(a35_0["attainable"])
+    # A35-1b's attainability is measured on the SAME arm and split as A35-0's, and
+    # it decides whether the bridge restriction gates the arm the verdict is read
+    # on or is reported beside it (EXP-R2-213 amendment 1).
+    a35_1b = a35_1b_restriction(raw_deciding, None, args)
 
     if attainable:
         for layer in args.layers:
@@ -1722,6 +2131,8 @@ def main() -> None:
                 _cell_inputs(captured, "masked", layer, columns),
                 args,
                 with_intervals=layer == args.decision_layer,
+                bridge_decisive=True,
+                bridge_inapplicable_reason=a35_1b["inapplicable_reason"],
             )
             cell.update({"layer": int(layer), "description_variant": "masked"})
             cells[f"layer{layer}__masked"] = cell
@@ -1742,6 +2153,7 @@ def main() -> None:
     deciding_key = f"layer{args.decision_layer}__{ca.DECIDING_DESCRIPTION_VARIANT}"
     deciding_cell = cells[deciding_key]
     if attainable:
+        a35_1b = a35_1b_restriction(raw_deciding, deciding_cell, args)
         verdicts = {
             split_name: cell_verdict(
                 deciding_cell, args, split=split_name, status=status
@@ -1770,6 +2182,7 @@ def main() -> None:
         reference = reference_comparison(args, cell=raw_deciding, arm="raw")
 
     stop_35 = stop_35_record(stage_verdict)
+    branch = frozen_branch(stage_verdict, verdicts)
     stopped = bool(stop_35["triggered"])
 
     permitted = (
@@ -1812,21 +2225,7 @@ def main() -> None:
         "schema_version": SCHEMA_VERSION,
         "created_utc": created,
         "kind": "concept_alignment",
-        "pre_registration": {
-            "record": "EXP-R2-213",
-            "primary_statistic": ca.PRIMARY_STATISTIC,
-            "primary_statistic_note": ca.PRIMARY_STATISTIC_NOTE,
-            "primary_direction": PRIMARY_DIRECTION,
-            "decisive_baselines": list(ca.A35_1_BASELINES),
-            "conditions": (
-                "A35-1(i) the paired group-bootstrap 95% interval of the difference "
-                "excludes zero; A35-1(ii) the excess over chance is at least "
-                f"{args.excess_ratio}x the baseline's. Both required, on both splits"
-            ),
-            "detection_floor": float(args.decision_threshold),
-            "resampling_unit": "dup_group (near-duplicate group)",
-            "nonlinear_adapter_locked": True,
-        },
+        "pre_registration": pre_registration_block(args),
         "settings": settings,
         "provenance": provenance,
         "checkpoint": {**facts, "resolved_path": str(resolved)},
@@ -1834,6 +2233,22 @@ def main() -> None:
         "cohort": cohort.facts(),
         "declared_concepts": [f"{ns}:{term}" for ns, term in concepts],
         "bridge_concepts": [f"{ns}:{term}" for ns, term in bridge],
+        "concept_declaration": {
+            "namespaces": list(namespaces),
+            "n_declared": len(concepts),
+            "n_with_declared_surface_forms": n_with_forms,
+            "n_bridge": len(bridge),
+            "go_obo": str(go_obo),
+            "note": (
+                "a concept is defined on both sides when the cohort declares surface "
+                "forms for it and one of them is in the cohort's own masked_terms. "
+                "The forms come from sequence_description.concept_surface_forms, "
+                "which is what the cohort stage built masked_terms from; the "
+                "concept's identifier is not what a curated description calls it, "
+                "and keying this test on the identifier compares two vocabularies "
+                "that cannot meet"
+            ),
+        },
         "representation": {
             "site": ca.REPRESENTATION_SITE,
             "site_note": ca.REPRESENTATION_SITE_NOTE,
@@ -1846,11 +2261,13 @@ def main() -> None:
         },
         "cells": cells,
         "a35_0_attainability": a35_0,
+        "a35_1b_concept_restriction": a35_1b,
         "a35_4_pre_adaptation_reference": reference,
         "audit_gate_all_baselines": audit_gate,
         "verdicts": verdicts,
         "stage_verdict": stage_verdict,
         "stop_35": stop_35,
+        "frozen_branch": branch,
         "deciding_cell": deciding_key,
         "causal_handoff": handoff,
         "limitations": limitations_block(mode=args.mode, status=status),
@@ -1860,11 +2277,16 @@ def main() -> None:
     destination = args.out / artefact_name(checkpoint, args.mode, args.rendering)
     write_json(destination, payload)
     print()
-    print(f"[A35-0] {a35_0['verdict']}: {a35_0['reason'][:110]}")
+    print(
+        f"[A35-0] {a35_0['verdict']} on {a35_0['gate_baseline']}: "
+        f"{a35_0['reason'][:110]}"
+    )
+    print(f"[A35-1b] gating={a35_1b['gating']}: {a35_1b['reason'][:110]}")
     for split_name, record in verdicts.items():
         print(f"[{split_name:15s}] {record['verdict']}: {record['reason'][:110]}")
     print(f"[A35-4] {reference['verdict']}")
     print(f"[stage] {stage_verdict}")
+    print(f"[branch] {branch['branch']} -- a statement about {branch['statement_about']}")
     print(f"[STOP-35] triggered={stop_35['triggered']} stage36_authorised={stop_35['stage36_authorised']}")
     print(f"wrote {destination}")
 
