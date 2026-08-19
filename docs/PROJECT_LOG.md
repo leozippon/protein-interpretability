@@ -1818,3 +1818,15 @@ Operational, expires, same rules as before: if `docs/EXPERIMENT_LOG.md` carries 
 **The modality inversion is provisional.** Protein looks like the arm closest to the adequacy bar, but text's figure comes from a penalised cell; if the λ = 0 text cell lands near the top of its projected 3,568–4,248 range the inversion disappears.
 
 **A monitor is only as good as its scope.** The standing allocation watch is resource-scoped and never terminates, and it exists because a condition-scoped single-shot watcher let two cards idle. Do not replace it with one aimed at the next planned action.
+
+## 2026-08-19 — a standing admission rule for Objective 3, and three tracks pre-registered under it (documentation only)
+
+No code and no compute. Three campaigns had reached the same wall — F10, F12 and D3.g's stage 35 — and the diagnosis is common to all three rather than particular to any: each measured on a region where evolutionary statistics and biological knowledge predict the same outcome, so neither a pass nor a loss to a simple baseline was informative about knowledge.
+
+**What is now fixed, and where to read it.** `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` **§7.0** carries the rule in full: evolutionary statistics as the operational definition of recombination; the recombination ceiling rather than a shuffled null as the thing an Objective-3 claim must clear; homology-visible items excluded at admission instead of subtracted afterwards; a contradiction set — opposite-signed predictions from statistics and biology — as a condition of admissibility; and halt-and-classify for any result inside the ceiling. It is a retro-diagnosis plus a forward rule and **retracts nothing**: F10, F12 and D3.g stand as measured, and what changes is what they are evidence about.
+
+**Pointers, so the rule is met where work is planned rather than only where it is written.** §0's forward tracks and priority list, §7's declined-direction block, §8's preamble and new items 7–9, and Appendix B **rule 41**. The three tracks admitted under it are **D3.j** (alphabet and chemistry), **D3.k** (pseudokinases) and **D3.l** (identical composition, different fold), frozen in full as **EXP-R2-214** in `docs/EXPERIMENT_LOG.md`.
+
+**Do not reopen.** Four directions were declined with the condition that would re-admit each — experimental-versus-phylogenetic coupling (needs a passing positive control; D3.d failed its own on 22 of 22), standalone no-detectable-homologue designs (composition and designedness are not separable in that cohort), role-swap/analogue-patch/intra-fragment work on the joint bridge (L31; re-admissible on residue-tokenised arms), and language as an anti-family scalpel (deferred behind the three above).
+
+**Nothing has been run.** No progress figure moved, in the audit or in `summary.md`; a pre-registration is not a measurement.

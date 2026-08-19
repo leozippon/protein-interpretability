@@ -15261,3 +15261,380 @@ Appended rather than edited into the entry above, which is committed; it sharpen
 **What follows for reading the result.** The check **must not be read as clearing that row**. If `go_atp_binding` returns a verdict near its bar, second-seed agreement is **weaker evidence for it than for any other concept**, because the agreement is over a narrower source of variation. The row is therefore flagged on **two independent grounds** — the cap could not equalise it, and its variance detector is one-sided — and the two are not the same flag counted twice.
 
 Recorded here because it is an irreducible limitation of the instrument on one row, and the Restraint Principle asks for those to be stated rather than left to be inferred from a count that happens to equal its own maximum.
+
+---
+
+## 2026-08-19 — EXP-R2-214 pre-registered: the recombination ceiling as a standing admission rule, and three contradiction-set tracks admitted under it
+
+**Nothing in this entry has been run.** No cohort has been built, no substitution performed, no pair scored. Every figure below is either a threshold, a rule for setting a threshold from a measurement that does not yet exist, or a prior measurement cited to justify one. The entry has two halves: a standing rule, which is written into the audit at **§7.0** and is not restated here, and three tracks pre-registered under it.
+
+**What the rule is not.** It retracts nothing. F10, F12 and D3.g's stage 35 stand exactly as recorded, with their artefacts, cohorts and bounds unchanged. What changes is what they are evidence *about*.
+
+### Why this entry exists: three campaigns, one wall
+
+Three independently designed measurements arrived at the same place within a fortnight, each well executed against its own pre-registration.
+
+- **F10** — on 217 ProteinGym substitution assays over 174 wild-type families, no measured protein decoder exceeds a position-independent profile lookup over the available corpus evidence.
+- **F12** — on 130 de novo designs certified to carry no detectable UniRef50 homologue, ProtGPT2 beats the fragment and composition channels and loses to a one-parameter Kyte–Doolittle hydropathy sum, MODEL − hydropathy **−0.3548 [−0.4031, −0.3051]**.
+- **D3.g stage 35** — read from `results/transfer/external_baseline/20260819021144_aad2ec7a8215/`. In `ProLLaMA_Stage_1`'s protein mode, at the deciding layer 22 on the group-disjoint eval split, the attainability arm's top-1 accuracy in excess of chance is **+0.0114** against the k=3 surrogate's **+0.0295**, a paired group-bootstrap difference of **−0.0180 [−0.0246, −0.0115]** over **3,752** groups at a common gallery size of 1,000. It clears five of its six applicable decisive baselines and fails against the fragment surrogate alone, which voids the ladder as a specification defect under A35-0. The identical ladder in the same checkpoint's **text** mode returns `PASS` with `baselines_failing_a_condition: []` on the group-disjoint eval split *and* on the family-disjoint split, at a raw-arm excess of **0.2155** and a masked-arm excess of **0.0944**. The instrument works; the protein mode is what failed.
+
+**The diagnosis, and it is the reason for a rule rather than three separate follow-ups.** All three measured in regimes where evolutionary statistics and biological knowledge predict the *same* outcome. On such an agreement set a pass is consistent with recombination and a loss to a simple baseline is the expected behaviour of the weaker of two estimators of one shared quantity, so neither outcome is informative about knowledge — at any effect size, at any interval width, with any instrument. §7.0 states the rule; its five clauses are the operational definition of recombination, the ceiling as the null, exclusion of homology-visible items at admission rather than by subtraction, the contradiction-set requirement, and halt-and-classify.
+
+### Standing conditions that apply to all three tracks
+
+**§7.0 is the admission rule and the ceiling is the null.** Clearing a shuffled or random null is a detection criterion and admits nothing. The margin is the one already in force for D3.g: the paired group-bootstrap 95% interval of the difference excludes zero over at least eight groups, **and** the model's excess over chance is at least twice the ceiling's. Where the statistic is an AUROC the same rule reads `(AUROC_model − 0.5) ≥ 2 × (AUROC_ceiling − 0.5)`.
+
+**Eight units, everywhere.** Every interval is a group bootstrap over near-duplicate groups and is refused below `MINIMUM_BOOTSTRAP_UNITS = 8` per side. A comparison below the floor is not reported with a wider interval; it is not reported.
+
+**Splits are near-duplicate-group splits.** Record-level splits are not splits on a protein corpus (L30), and the remedy is measured rather than assumed: the D3.g cohort returns **zero straddling pairs at ≥95% and ≥90% under the group split against 1,053 and 1,880 under a record-level split of the same alignment**. Each track runs one all-against-all alignment and reads the straddling-pair curve at ≥95, ≥90, ≥80, ≥70 and ≥50% for both split types off that single alignment, as C34-3 does.
+
+**Attainability before application, and reachability before a zero.** Every gate is shown reachable on a control before it decides anything (Appendix B rule 2); every zero is shown reachable before it is reported (rule 40). Each track's attainability stage runs **before any substantive read**, and its failure is recorded as a statement about the instrument, the alphabet or the cohort, never as a negative about the model.
+
+**Thresholds are swept.** Any threshold that survives into a verdict is swept, and either the ordering is invariant across the sweep or the dependence is itself the finding (rule 17).
+
+**No subset chosen by effect, and no control dropped for economy.** Cohorts, cuts and rungs are fixed by this entry. Where cost forces a reduction the reduction rule is frozen in advance per track; a control is never what is dropped (rule 37).
+
+**float32 for every difference of order 0.01–0.1 nats** (rule 15b). **Per-unit criteria are evaluated per unit and never as a mean over units** (rule 33, L32). **Resource checks before and after every GPU run** (rule 19). **Smoke output to ignored `logs/smoke/`** (rule 29).
+
+**A pass on any track licenses a candidate and nothing more.** §8's causal, retrieval-aware and independent-biological clauses remain open on every track, and none of them is discharged by clearing a ceiling.
+
+---
+
+### Track 1 — D3.j, the alphabet/chemistry intervention
+
+**The question.** Does a protein decoder treat an amino acid as a chemical entity, or as an arbitrary symbol whose meaning is exhausted by its corpus co-occurrence?
+
+#### Variant (a) — embedding substitution
+
+**The operation.** For an ordered residue pair `r → s`, replace the input embedding row of `r` with that of `s`, so the model reads every occurrence of `r` as if it were `s`, and measure the change in mean held-out NLL per residue over cohort sequences containing `r`. The output head and every other parameter are untouched, so the model must still predict `r`; the damage measures how much the downstream computation depends on `r`'s own input identity.
+
+**D3.j-A0 — arm admission, and it is a measurement rather than an assumption.** The operation is defined only where a residue has an embedding row of its own. Admission requires that **at least 99% of scored residue positions in the arm's cohort are carried by single-residue tokens**, measured per arm before any substitution. The residue-tokenised arms (`zymctrl` at vocabulary 458, `progen2-*` at 32) are expected to pass by construction; the multi-residue-BPE arms are expected to fail, and their measured coverage is the reported result for them rather than a negative. This is L31 moved to design time — on the panel's BPE protein arm a single substitution leaves mutant and wild type token-aligned on **47.0–54.5%** of instances, and the survivors are the BPE-stable subset rather than a random one.
+
+**D3.j-A1 — the text control, and it validates only the half text can validate.** The identical operation on the panel's byte-level text arm `bygpt5-medium-en`, substituting one byte's embedding for another's. Text has no chemistry, so the control establishes only that the readout can detect *substitute similarity at all*: damage under a distributionally similar substitute must be smaller than under a distributionally dissimilar one, with the paired interval excluding zero over at least eight groups. If it is not, the readout is **VOID as a specification defect** and no protein arm is read.
+
+**D3.j-A2 — the contradiction set, which is the whole of the design.** Chemically similar residues also co-occur similarly, so a raw "chemical against random" contrast is confounded by exactly the thing under test. All 190 unordered pairs are therefore scored on two similarities and only the disagreeing pairs are admitted.
+
+* *Chemical similarity* — from a declared free physicochemical descriptor set: Kyte–Doolittle hydropathy, residue volume, net charge at pH 7 and polarity, z-scored, Euclidean distance. No corpus is read.
+* *Corpus-distributional similarity* — from the staged UniRef50 k-mer background at `data/kmer_background/uniref50` (k = 3, all 8,000 3-mers observed over 17.15 G windows, digest-pinned). Each residue's context profile is its normalised distribution over (left, right) neighbour pairs in 3-mer windows; similarity is the cosine between context profiles, with symmetric KL as the declared alternative and both reported.
+
+A pair is admitted where its two similarity ranks fall in **opposite terciles** of their own distributions, giving two quadrants — chemically-similar/distributionally-dissimilar and chemically-dissimilar/distributionally-similar. The cut is swept at terciles, quartiles and quintiles.
+
+**BLOSUM62 is scored on the ceiling side and is never the chemical axis.** It is estimated from aligned families, so under §7.0 clause 1 it *is* evolutionary statistics; a design that used it as the chemistry axis would be comparing statistics against statistics and would look like a chemistry result.
+
+**D3.j-A3 — the contradiction set's own attainability, run first, on CPU, before any checkpoint is loaded.** Report the Spearman correlation between the two similarity matrices over all 190 pairs and the admitted count in each quadrant at each cut. **At least 8 pairs are required in each quadrant at the declared cut.** Falling short is a live outcome rather than a formality — the correlation between chemistry and co-occurrence is the confound this design exists to defeat, and it may leave no disagreeing pairs at adequate count. That outcome is a statement about the alphabet and the corpus, not about any model.
+
+**D3.j-A4 — the estimand.** `D(r → s)` is the substitution's held-out NLL damage, and the contrast is `Δ_chem = mean D over chemically-dissimilar/distributionally-similar pairs − mean D over chemically-similar/distributionally-dissimilar pairs`. The chemical account predicts `Δ_chem > 0`; the corpus-symbol account predicts `Δ_chem < 0`. Opposite signs on the same set is what admits it under §7.0 clause 4.
+
+**D3.j-A5 — the ceiling.** The same contrast computed on the corpus fragment model itself: the identical substitution applied to the UniRef50 3-mer conditional, scored on the same held-out sequences under the same statistic. The fragment model has no chemistry, so its `Δ_chem` is what the distributional account predicts, and the arm must clear it in the chemical direction under the standing margin. A norm-matched random-substitute control is run beside it over **at least eight distinct random substitute rows** — more directions, not more positions (rule 39) — and the effect must exceed their 95th percentile.
+
+#### Variant (b) — the in-context cipher, on the joint checkpoint
+
+**Arms.** `ProLLaMA_Stage_1` and `ProLLaMA`, the only two qualified in both modes (EXP-R2-152). `Llama-2-7b-hf` enters as a representational reference only; its protein mode is behaviourally unmeasurable at context information **+0.0843** nats/token, so a behavioural readout there would measure nothing.
+
+**The construction.** A held-out sequence is enciphered under a permutation of the 20-letter alphabet, and three conditions are scored on the *same* enciphered string so the target symbols are identical: `no_key`; `true_key`, with the mapping stated in text before the sequence; and `shuffled_key`, with a mapping stated in the identical textual form but a different permutation from the one used to encipher. Two forms of the key are run and reported separately — **(i)** a plain permutation statement, which tests symbol rebinding alone, and **(ii)** a chemistry statement that names what the new letter denotes rather than which old letter it replaces, which is the variant that tests whether the *chemistry* is what is rebound. Variant (i) is variant (ii)'s attainability arm.
+
+**Estimand.** `recovery = [NLL(no_key) − NLL(true_key)] / [NLL(no_key) − NLL(plain)]`, group-bootstrapped over near-duplicate groups.
+
+**The ceiling, and why the shuffled key is a ceiling rather than a null.** `shuffled_key` holds the key's lexical presence, length and token content fixed and moves only whether the key is the *right* one. Any recovery a corpus-statistical account can manufacture from residue letters merely being present in the prompt therefore sits inside it. The fragment conditional, which reads no key at all, enters as a second ceiling row and is reported beside it.
+
+**D3.j-B0 — the attainability gate, and the failure is named in advance.** Before any protein cell, the checkpoint must demonstrate in-context symbol rebinding **on a text-only control**: the identical construction over English text under a letter-substitution cipher, where `true_key` must beat `shuffled_key` under the standing margin. **If it does not, the protein side is not read at all** and the outcome is recorded as *not measurable on this lineage*. This is a plausible outcome rather than a remote one and is written down now so it cannot later be read as a negative: ProLLaMA is a LoRA-adapted Llama-2 whose instruction stage is LoRA-only, and the protein continued-pretraining stage already spends **4.69 nats/token, 85% of the base model's text context information** (EXP-R2-152), so weak instruction following on this lineage is the expected reading and not a surprise.
+
+**D3.j-B1 — the false-positive control.** A template-matching surrogate that keys only on the literal `C…C` motif is scored through the identical pipeline. It **must fail** under the shuffled mapping, and any sequence it accepts must carry cysteine spacing inside the declared disulfide range. If the template matcher passes the gate the model is being judged on, the readout is **VOID**: the pipeline is rewarding motif presence rather than rebinding.
+
+#### Pre-declared branches, Track 1
+
+| what happens | branch taken | what it is a statement about |
+|---|---|---|
+| Fewer than 8 pairs in either quadrant at the declared cut | **STOP-J1**; counts and the two-matrix correlation are the result | the alphabet and the corpus, not any model |
+| No arm reaches 99% single-residue-token coverage | **STOP-J1**; per-arm coverage reported | the tokenisation interface (L31) |
+| Byte-level text control fails D3.j-A1 | **VOID** as a specification defect; no protein arm read | the instrument |
+| `Δ_chem` inside the fragment ceiling | **halt and classify as recombination** (§7.0 clause 5) | the model, on this alphabet and cohort |
+| `Δ_chem` clears the ceiling with the chemical sign | candidate: residues are read as chemical entities at the input; §8's remaining clauses stay open | the model, at this site |
+| `Δ_chem` clears the ceiling with the distributional sign | registered as a positive result for the corpus-symbol account | the model |
+| The sign moves across the tercile/quartile/quintile sweep | the dependence is the finding and no sign is claimed | the statistic (rule 17) |
+| Text-only rebinding control fails D3.j-B0 | **not measurable on this lineage**; protein side not read | the lineage's instruction following, not its protein knowledge |
+| Recovery inside the shuffled-key ceiling | **halt and classify as recombination** | the model |
+| Recovery clears on variant (i) and not (ii) | symbol rebinding without chemistry, stated as the narrower result | the mechanism |
+| Template matcher passes D3.j-B1 | **VOID** | the instrument |
+
+**STOP-J.** Any VOID or STOP-J1 row closes the track at that point and the outcome is registered as a measured result, not as a failed round.
+
+---
+
+### Track 2 — D3.k, pseudokinases
+
+**The question.** Does the model separate catalytically active kinases from pseudokinases beyond what sequence similarity to kinases predicts?
+
+**Why this is a contradiction set, and it is the design's central feature rather than a convenience.** Pseudokinases carry the protein-kinase fold and score on the Pfam kinase HMM while being experimentally catalytically dead, through degradation of the VAIK, HRD and DFG catalytic machinery. The **HMM baseline therefore fails by construction**: it assigns both classes to the same family, which is precisely what makes the set able to separate two hypotheses that agree everywhere a family assignment decides the answer.
+
+**The two labels are separated by source, and that separation is the spine of the design.** The *statistics* side is annotation-derived — the Pfam assignment and bit score, the InterPro entry name, the Swiss-Prot protein name — every one of them a product of family assignment. The *biology* side is experimental catalytic status, taken from a named published experimental compilation pinned by digest under `external_resources/` before the cohort is built. **Swiss-Prot's own caution notes are on the statistics side by definition** and may be reported as a cross-check, never used as ground truth. **A model that sides with the annotation is recombination and is recorded as such.**
+
+**Cohort.** Proteins carrying the kinase domain by Pfam, from `data/interpro/protein2ipr` and `pfam_residue.tsv`, restricted to a declared taxon set. Motif state — the VAIK lysine, the HRD aspartate, the DFG aspartate — is read per protein from the HMMER 3.4 alignment to the Pfam model (`external_resources/ec_metrics/pfam/Pfam-A.hmm.gz`, digest-verified, prepared the way `homology.prepare_diamond` prepares DIAMOND), so the degree of catalytic-machinery degradation is a recorded covariate rather than an assumption. Split as in the standing conditions.
+
+**Estimand.** AUROC of a declared model readout separating experimentally active from experimentally dead. **The readout is frozen now as the arm's mean NLL per residue over the kinase-domain span alone**, the span taken from the HMMER alignment and not the whole protein. A probe-derived readout is not admitted: it would make the object the Jacobian or the accuracy of the probe, which is §7's first standing rejection.
+
+**Ceiling.** The best AUROC on the same cohort under the same readout achievable by (a) the Pfam kinase HMM bit score and its per-motif posterior, (b) composition and 3-mer frequency over the same span, and (c) maximum DIAMOND identity to the nearest experimentally characterised **active** kinase on the cohort's training side. The model must clear the maximum of the three under the standing AUROC margin.
+
+**D3.k-A0 — the attainability check, and it runs before any model is read.** Measure the HMM baseline's own AUROC on the cohort with its group bootstrap. The design predicts it fails, and that prediction is **tested rather than assumed**, because motif degradation can itself depress a bit score. Admission requires the HMM baseline's 95% interval to **cover 0.5** on the admitted cohort. If it does not, this cohort is not a contradiction set, the track stops, and the finding is about the label rather than about any model. If a subset on which the interval covers 0.5 exists at eight or more groups per class, that subset becomes the cohort and the restriction is reported with its counts.
+
+**D3.k-A1 — the readout's own positive control.** The same readout must separate kinase domains from a declared length-matched non-kinase domain family with its interval excluding 0.5. A readout that cannot do the easy case cannot return an interpretable null on the hard one (rule 40).
+
+**D3.k-A2 — identity balance, measured and reported.** The maximum identity of each member to the staged UniRef50 and to the cohort's own active class is measured. If the two classes differ, the difference is declared and baseline (c) becomes the binding row of the ceiling rather than an optional one.
+
+#### Pre-declared branches, Track 2
+
+| what happens | branch taken | what it is a statement about |
+|---|---|---|
+| The HMM baseline separates the classes | **STOP-K**; not a contradiction set; counts and the baseline AUROC are the result | the annotation, not the model |
+| Fewer than 8 groups per class after admission | **STOP-K**; counts reported | the cohort |
+| The readout fails its trivial positive control | **VOID** as a specification defect | the readout |
+| Model AUROC inside the ceiling | **halt and classify as recombination** | the model |
+| Model clears the ceiling toward the **experimental** label | candidate biological knowledge; §8's causal and independent-validation clauses remain open | the model |
+| Model clears the ceiling toward the **annotation** label | **recombination**, stated explicitly and not as a partial pass | the model |
+| Classes differ in corpus identity and the identity baseline binds | the result is reported against the identity-matched ceiling and against no weaker one | the cohort's leakage |
+
+**STOP-K.**
+
+---
+
+### Track 3 — D3.l, identical composition, different fold
+
+**The question.** Does a completion follow the **sequence-space** neighbour or the **structure-space** neighbour? This is the direct control on the surrogate that closed D3.g's stage 35.
+
+**Pair construction, two families, kept separate throughout.**
+
+* **Circular permutants.** The permutant of a natural domain at a declared cut point carries the identical residue multiset and identical k-mer content except at the two junctions — a match exact by construction and still verified per pair. Natural documented permutant pairs where they exist, constructed permutants otherwise; which of the two a pair is is a recorded field and the families are never pooled without being reported separately.
+* **CATH-disjoint natural pairs matched on composition.** Two natural sequences from different CATH superfamilies (`data/interpro/cath_superfamily.tsv`) whose composition vectors are within the declared tolerance and whose pairwise identity is below the declared boundary. Structure comes from foldseek over the staged AlphaFold models (`data/alphafold`) and from CATH assignment, both recorded.
+
+**Estimand.** For a query prefix `x`, two candidate continuations are built: `c_seq`, the continuation of the record most similar to `x` in sequence space, and `c_str`, the continuation of the record whose structure matches `x`'s while its sequence similarity is low. The statistic is the model's preference `P = log p(c_str | x) − log p(c_seq | x)`, group-bootstrapped. A pair is admitted only where the two neighbours are **different records** and their continuations differ at a declared fraction of positions, so that statistics predicts `P < 0` and a structural account predicts `P > 0` — the opposite-sign requirement of §7.0 clause 4.
+
+**Ceiling.** The same preference computed by the UniRef50 fragment conditional at the orders `data/kmer_background/uniref50_high_order` holds (3 through 7), plus the composition channel. A fragment model prefers `c_seq` by construction, so it *is* where the recombination account sits, and the model must clear it in the structural direction under the standing margin.
+
+**Two clauses frozen against failures this programme has already paid for.**
+
+* **Residual nearest-neighbour leakage is measured and reported, never assumed absent.** For every admitted pair the maximum identity of `x`, `c_seq` and `c_str` to the staged UniRef50 is measured, and the pair-level difference between the two candidates is reported as a covariate. A pair whose structure-space candidate is also its sequence-space nearest neighbour is not admitted.
+* **The composition match is verified, never asserted from how the pair was built.** Per-pair composition distance (total variation over the 20-residue frequency vector) and 3-mer distance are computed for every pair and their realised distributions reported. **The tolerance is not a number chosen here.** It is set by a rule: tighten it until the **composition baseline's own excess over chance on the admitted set is inside its bootstrap interval of zero**, measured on that baseline alone before any model is read, with the surviving-pair count reported as a function of the tolerance at four values so the operating point is read off a curve rather than asserted (C34-6's shape). If no tolerance leaves eight groups per side with composition non-informative, the track stops and the curve is the result.
+
+**D3.l-A0 — attainability.** A known-answer fixture in which `c_str` is the true continuation and `c_seq` a constructed decoy must be recovered before any real pair is scored, and the fragment ceiling must be computable on every admitted pair — a ceiling that cannot be evaluated on a pair is not a ceiling for that pair, and the pair is dropped with its count reported rather than scored against a missing baseline.
+
+#### Pre-declared branches, Track 3
+
+| what happens | branch taken | what it is a statement about |
+|---|---|---|
+| No tolerance leaves 8 groups per side with composition non-informative | **STOP-L**; the tolerance curve is the result | the cohort |
+| Known-answer fixture not recovered | **VOID** as a specification defect | the pipeline |
+| Preference inside the fragment ceiling | **halt and classify as recombination** | the model |
+| Preference clears the ceiling toward `c_str` | candidate structural knowledge; §8's remaining clauses stay open | the model |
+| Preference clears the ceiling toward `c_seq` | **recombination**, stated explicitly | the model |
+| The two pair families disagree | reported as a disagreement between constructions and never pooled into one number | the construction |
+
+**STOP-L.**
+
+---
+
+### Directions declined here, with the condition that would re-admit each
+
+Recorded so they are not silently revisited. The rulings are carried in the audit at §7 and the reasoning is here.
+
+* **Experimental-versus-phylogenetic coupling.** The instrument already exists as D3.d and failed its own positive control on **22 of 22** proteins carrying enough corpus hits to admit a pairwise estimate, verdict `NOT_USABLE` (EXP-R2-180). Filtering to a contradiction set does not repair an instrument that cannot measure coupling on this corpus interface at all: the six pair-rich proteins carry the reading, their coupling sits between −0.012 and +0.065 and below its own column-permutation null, on referents of split-half reliability 0.39–0.85, so it is not a power failure of the referent. **Re-admissible only after a positive control passes** — a deeper alignment than a DIAMOND hit list is the named candidate and is not authorised by this entry.
+* **No-detectable-homologue designs as a standalone track.** Substantially executed as R3.4/F12, and carrying a confound that was measured rather than suspected: in that cohort designs carry a median glutamate frequency of **0.186** against the naturals' **0.086** with **73%** above the naturals' 90th percentile, and no restriction balances both sides at the cohort's own scale of 40 series. "Designed" and "composition" are not separable there, which is an agreement set one level below the retrieval certificate. **Retained as a validation step inside another track, not as a track of its own.**
+* **Role swap, analogue patch and intra-fragment intervention.** Blocked on the only qualified joint bridge by L31. On the panel's multi-residue-BPE protein arm a single substitution leaves mutant and wild type token-aligned on **47.0–54.5%** of instances against **1.000** on every residue-tokenised arm and on the text control, so roughly half of the cohort is undefined for a position-level intervention and the survivors are the BPE-stable subset rather than a random one. The first step of each of these designs is to regenerate a *declared residue segment*, which a multi-residue vocabulary makes ill-defined before any model is involved. **Re-admissible on residue-tokenised pure-protein arms.**
+* **Language as an anti-family scalpel.** Adjacent to D3.g's measured negative on the same lineage and at risk of reducing to a bag-of-words test, which is the surrogate that closed stage 35. **Deferred behind D3.j, D3.k and D3.l** rather than rejected.
+
+### Cost, and why no GPU bound is declared in this entry
+
+Each track's first stage is CPU-only and produces the measurement a bound would have to be computed from: D3.j's contradiction-set construction and per-arm token-coverage census, D3.k's cohort build and HMM-baseline AUROC, D3.l's pair construction and composition-tolerance curve. **The rule is frozen instead of a number**: a GPU bound is declared per track in a dispatch note before that track's first GPU cell, computed from its own admitted counts, and no track dispatches without one. Declaring a bound now would be an estimate over cohorts whose sizes are exactly what the attainability stages are built to measure, and this programme has already paid for thresholds set before their statistic's range was known (Appendix B rule 2's arithmetic half, L32).
+
+### What no outcome of this campaign licenses
+
+Clearing a track's ceiling establishes that the model exceeds what evolutionary statistics achieve on that contradiction set, under that readout, at that site. It does **not** establish biological knowledge: §8's causal, retrieval-aware and independent-biological clauses are separate and remain open on every track. Leakage into *pretraining* is closed by nothing here — Swiss-Prot and the annotated proteomes these cohorts are drawn from lie inside UniRef50 by construction, so every evaluation protein reachable from public data is a candidate training member whatever family or class it belongs to. And no progress figure moves on a pre-registration: nothing in this entry has been measured.
+
+
+---
+
+## 2026-08-19 — EXP-R2-214 amendment 1 (D3.k): the HMM contradiction is partial, the corpus is mostly right, and the motif reader is the biology reference rather than a ceiling
+
+**Pre-data.** No model has been read on this cohort and no arm has been loaded. Every number below comes from the cohort build's own manifest, and each item is classified by kind: a **defect in the frozen text**, a **scope narrowing**, a **design change**, a **new stratum**, a **restriction**, or a **deviation recorded rather than repaired**. The amendment is written before any model number exists, which is the only condition under which the design may be changed at all.
+
+**Artefact.** `ops/build_pseudokinase_contradiction_set.py`, 461 records, records digest `2f2891f4747ac17a7f54e8d3e657dd65dddfbf43452203ae0fd32f70579aa158`, manifest beside it. The build currently sits outside the repository tree; **it must be staged under `results/transfer/` before any stage cites it**, because a cohort quoted from a scratch path is not an auditable artefact (Appendix B rules 18 and 29).
+
+### Item 1 — DEFECT IN THE FROZEN TEXT: "the HMM baseline fails by construction" is false as written
+
+The pre-registration said the Pfam kinase HMM fails on this contrast by construction and named the check that would test it (D3.k-A0). The check has run, before any model, and it contradicts the premise rather than confirming it. Pseudokinases genuinely score lower.
+
+| contrast | AUROC | units |
+|---|---|---|
+| dead against the **whole active pool**, unmatched | **0.770** | 16 dead against 405 active |
+| dead against each one's **nearest active relative** | **0.762 [0.695, 0.879]** | 16 |
+| dead against a **bit-score-matched** active, 20-bit caliper | **0.511 [0.444, 0.578]** | 15 |
+
+Median Pfam kinase-domain bit score: dead stratum **123.85**, matched actives **127.6**, whole 405-record active pool **225.2**. The caliper's realised gaps are median **4.5** bits, maximum 15.0.
+
+**So the contradiction against raw sequence statistics is partial, and the caliper is not a convenience — it is what makes a downstream positive interpretable rather than a restatement of bit score.** D3.k-A0 stands exactly as frozen and its verdict is now known: the HMM baseline's interval covers 0.5 **only** on the caliper-matched contrast, so that contrast is the admitted cohort and the unmatched one is not. The manifest states the same thing as its own limitation L-PK-9.
+
+**What survives, and it is the half the design actually needs.** The statistics side still *identifies* these proteins as kinases even though it can also rank them: **16 of 18** dead records carry an ePK domain above the Pfam gathering threshold, the two exceptions named (PAN3 at 17.0 bits, below gathering; PEAK3, no ePK domain reported). On a full `hmmscan --cut_ga` against all of Pfam-A, **411 of 461** cohort records have a kinase model as their best family and **1** has no family above gathering; among the 18 dead the best family is `Pkinase` or `PK_Tyr_Ser-Thr` for **13**, the other five best-hitting a non-kinase family they also carry (PTK7 `Ig_3`, MLKL `MLKL_N`, ULK4 `HEAT_ULK4`, PAN3 `Pan3_CK`, PEAK3 none). **"The statistics side identifies them as kinases" survives; "the statistics side cannot rank them" does not, except under the caliper.**
+
+*One figure in the instruction that produced this amendment could not be reproduced and is not carried*: a whole-active-pool pair of "220/307". The manifest holds no such row; the verified whole-pool median is 225.2 bits over 405 records, and that is what is recorded above.
+
+### Item 2 — SCOPE NARROWING: the corpus is mostly right, and that decides which arms are admissible
+
+Of the 18 experimentally dead records, the Swiss-Prot name and FUNCTION text **already state inactivity for 9**, are **silent for 4**, and side with the wrong answer for **5** — EPHA10, KSR1, RYK, ULK4, VRK3. Only **5 of 18** carry a kinase EC number at all, against **15 of 15** for the matched actives. The wording screen's hit rate is **0.500** on the dead stratum against **0.0049** on the active pool, with its two active hits named for inspection rather than suppressed (FGR, "devoid of kinase activity"; PDPK1, "catalytically inactive").
+
+Five is below `MINIMUM_BOOTSTRAP_UNITS = 8`, so **this is a note, not a stratum**, and no verdict may be read on those five alone.
+
+**The consequence is frozen here and it is an admissibility rule, not a preference.** **D3.k is admissible on sequence-only protein arms**, where the annotation is not an input. **A joint language–protein model is not admissible on D3.k without description masking first**, in the shape C34-1 already specifies for D3.g, because its annotation channel carries the answer for exactly the records the contrast turns on.
+
+**This retires the framing the pre-registration inherited.** "The corpus is wrong and the experiments are right" is not this cohort's situation. The correct statement is **"sequence statistics and retrieval are wrong, the experiments are right"**, and the pre-registration's clause that a model siding with the annotation is recombination now bites on 5 records rather than on 18 — which is why it is a note and why the joint-arm restriction exists.
+
+### Item 3 — DESIGN CHANGE: the motif reader is the biology-side reference, not a ceiling row
+
+A motif-aware residue baseline — the number of intact catalytic columns, oriented so that fewer intact predicts dead — reads **AUROC 0.922 [0.824, 0.989]** on the 15 matched pairs.
+
+**Reading the residue at the three catalytic columns is not evolutionary statistics under §7.0 clause 1, and the reason must be recorded rather than assumed.** Clause 1's family is what can be built from co-occurrence in the training distribution alone. Knowing *which* three columns are catalytic is not available from co-occurrence; it is a knowledge-derived feature, imported from biochemistry. So the motif reader is **not** a spoiler baseline the model has to beat, and putting it on the ceiling would have made the track unpassable for a reason that has nothing to do with recombination.
+
+**The track therefore becomes a three-way read on one contrast**: the recombination ceiling at **≈0.51** under the caliper, the biology reference at **≈0.92**, and the model's own value somewhere between them. §7.0 clause 2's margin applies to the model **against the ceiling** and to nothing else; the biology reference is reported beside the result as the value a reader with catalytic knowledge attains, and is never a bar the model must clear. The two hypotheses now predict opposite ends of one axis, which is what clause 4 asks for, and it is a stronger design than the one the pre-registration froze.
+
+### Item 4 — NEW STRATUM: `active_despite_degradation` is a second, orthogonal contradiction set
+
+**n = 8, exactly at the bootstrap floor**: CASK, PKDCC, HASPIN, WNK1, WNK2, WNK3, WNK4, POMK.
+
+| record | catalytic columns | reading |
+|---|---|---|
+| POMK | 0 of 3 intact — `VALS` at β3, `HHS` at the catalytic loop, DFG column unaligned | fully degraded and experimentally active |
+| WNK1–4 | 2 of 3 — `VAWC` at β3 | the catalytic lysine sits on β2, not β3 |
+| CASK | 2 of 3 — `GFG` at the DFG column | phosphorylates neurexin-1 magnesium-independently |
+| HASPIN | 2 of 3 — DFG column unaligned; carries PF12330 and neither ePK model, 22.3 bits | divergent fold, genuinely active |
+| PKDCC | **3 of 3 intact** — `VALK` / `LLD` / `DLD` | 17.9 bits, **below** the Pfam gathering threshold |
+
+**A correction to the instruction that produced this amendment, and it matters for how the stratum is read.** POMK is fully motif-degraded; **PKDCC is not** — it reads all three catalytic columns intact and is instead a *bit-score* failure at 17.9 bits. So a motif reader is wrong on **seven** of the eight, not on all eight, and PKDCC is the one member that defeats the **HMM** channel rather than the motif channel. That makes the stratum sharper rather than weaker: it contains a counterexample for each of the two baselines the primary contrast is read against.
+
+**Frozen here.** A model that matches the biology reference on the primary contrast **but also fails this stratum** is reading motifs rather than structure, and must be reported as such. This stratum is read as a **second, orthogonal contradiction set** with its own verdict, not as a robustness check on the first — a robustness check that fails narrows a claim, while this one changes what the claim is about.
+
+### Item 5 — RESTRICTION: the readout must be no-fit, and the precision this buys is stated
+
+The 15 matched pairs clear `MINIMUM_BOOTSTRAP_UNITS = 8` **only when the whole cohort is the deciding side** (`clears_floor_unsplit: true`, `clears_floor_on_every_split_side: false`). A 50/50 group-disjoint split gives **8 fit / 7 eval**, and 7 is below the floor.
+
+**A fitted probe reported on a held-out side is therefore not powered and is refused.** D3.k's readout was already frozen as the arm's mean NLL per residue over the kinase-domain span, which fits nothing, so this changes no statistic — but it converts an incidental property into a stated refusal, and it forecloses the adaptation a later reader would otherwise reach for.
+
+**Precision, stated so a null is readable.** The realised intervals are ±0.067 at AUROC 0.511 and −0.098/+0.067 at 0.922, so only separations of roughly **AUROC ≥ 0.75** are resolvable at this n. That is adequate here precisely because the two hypotheses predict 0.51 and 0.92, and it would not be adequate for a subtler contrast. **The unit count does not improve with effort**: it is bounded by the number of human genes with published catalysis experiments, of order twenty, and orthologues add records while joining the same near-duplicate group (manifest limitation L-PK-3).
+
+### Item 6 — DEVIATION FROM THE FROZEN TEXT, recorded rather than repaired
+
+EXP-R2-214 required the experimental label to come from "a named published experimental compilation pinned by digest under `external_resources/`". **That is not what exists.** The catalytically-dead label is curated from the primary literature by the agent that wrote the build script; it is not a field of any file on disk, and this host cannot reach a citation database to verify it (manifest limitation L-PK-1). What the cohort does carry, per record, is `label_provenance` (`curated_literature`), `label_evidence` in words, `label_citation` naming the primary papers, and `label_confidence` — for example RYK at `high`, "receptor pseudokinase with a degenerate catalytic loop; no activity", Katso et al. 1999 and Sheetz et al. 2020.
+
+**This is a real weakening of the biology side and it is not repaired by anything in this amendment.** It is recorded here so that no downstream reading can treat the experimental label as externally certified. Any D3.k result is conditional on that curation, the per-record citations are the audit trail, and an independent check of the labels remains an open requirement rather than a discharged one.
+
+### Curation evidence, since the label carries the design
+
+**The catalytic columns were derived rather than looked up, and the derivation caught a systematic trap.** Columns were fixed by aligning reference kinases of known numbering and requiring agreement, which exposed that literature residue numbers are frequently **not** UniProt numbering — PKA cited on the mature chain, ERK2 on rat, Src on chicken. Each was resolved against the motif string it names in the release sequence, rather than by choosing the offset that made the check pass, which is the failure this programme would otherwise have repeated.
+
+**Two curation calls were overturned by the script's own motif reading, in both directions.** **ROR1** was demoted to `contested` with all three catalytic residues present (`VAIK` / `HKD` / `DLG`). **KSR2** reads `VAIR` at β3, exactly as KSR1 does, so its published activity claim stands against the motif evidence and it is held out of the positives rather than counted for either side. **RYK** keeps all three catalytic residues — the degradation is DFG→`DNA`, where the aspartate itself is present — and is still a pseudokinase: a true positive that any single-residue test misses, and the reason the motif reader is a reference and not an oracle.
+
+**The contested set held out of the positives, n = 8**: ERBB3, ILK, KSR2, TRIB2, ROR1, ROR2, BUB1B, PIK3R4.
+
+**Confidence flags.** The `moderate` flag is carried by **8** dead records — EPHB6, IRAK2, PAN3, EPHA10, PEAK3, ULK4, TRIB3, STRADB — with the remaining 10 dead records and all 8 counter-stratum records at `high`. *A second correction to the instruction that produced this amendment, which named five of these eight.*
+
+**The clearest candidate pseudokinase this curation did not declare is PSKH2.** It sits in the active pool with a kinase EC and reads `HRN` at the catalytic loop — the same substitution ERBB3 carries — and it is named so that a later reader does not discover it as an anomaly in the results.
+
+**The motif reader's error rate on the active side is 14 of 405, and the manifest separates it into two different things** rather than reporting one number: divergent but genuinely active kinases whose β3 column Pfam leaves unaligned (`n_unaligned > 0` — the three EIF2AK arms all read `----HRDDFG`), and candidates for pseudokinases this curation did not declare (`n_substituted > 0`, PSKH2 the clearest). Only the second kind is a label question; the first is an alignment artefact of the model, not of the protein.
+
+### Leakage, and why a homology exclusion is deliberately not applied
+
+**Grouping and split.** 439 near-duplicate groups over 461 records, 421 of them singletons, largest group 4, at shingle length 5 residues and containment threshold 0.5. **Matched pairs are merged into one split unit so a pair is never divided**, giving 424 split units. The split is `GROUP_DISJOINT` — 205 train groups / 219 eval groups, 231 / 230 records, achieved train fraction 0.5011 — under the single mask implementation that never divides a group. Boundary containment over the 230 held-out records: median 0.058, q99 0.488, **maximum 0.4905**, none at or above the 0.5 threshold.
+
+**Residual identity per held-out record**, as a curve rather than a gate: ≥0.3 **95.6%**, ≥0.4 81.2%, ≥0.5 **58.1%**, ≥0.7 34.9%, ≥0.9 **5.2%**, ≥0.95 **0.87%**, =1.0 **zero**.
+
+**Why that is not a §7.0 clause 3 waiver, and the distinction is load-bearing.** Clause 3 excludes items on which a detectable homologue would *supply the answer*. Here the answer is catalytic status, which no homologue supplies — a pseudokinase's closest relative is an active kinase and vice versa, and that is the whole reason the set is a contradiction set. The split relation is **near-duplication, not homology**, and the pseudokinase/active contrast is evaluated **within** a side and never across it, so homology between a pseudokinase and its own matched control is a property of the contrast rather than leakage. The manifest carries the same reasoning as limitation L-PK-6. Written out here because a reader who sees 58.1% of held-out records keeping a ≥0.5 relative, and no homology filter, will otherwise conclude the clause was waived.
+
+**Nothing in this amendment has been run on a model.** No progress figure moves.
+
+
+---
+
+## 2026-08-19 — EXP-R2-214 amendment 2 (D3.l): the estimand is an ordering contrast, the 2× margin does not belong to the cohort, and the unit is a triple
+
+**Pre-data.** The cohort build returned `COHORT_ADMITTED`; no model has been read on it and no arm has been loaded. Items are classified by kind as in amendment 1.
+
+**Artefact.** `ops/build_composition_matched_fold_set.py`, 199 triples, cohort digest `e4ba96f591beb5159cd19e33cf0a4cb60f52dbc916ca977f9420a7b349c4463c`, with the universe FASTA and the all-against-all hit table retained and digested beside it. As with D3.k, **the build sits outside the repository tree and must be staged under `results/transfer/` before any stage cites it.**
+
+### Item 1 — DEFECT IN THE FROZEN TEXT: "identical k-mer content, different fold" is not achievable and must not be claimed
+
+The pre-registration described pairs "matched on amino-acid composition and k-mer content". At the declared 80–400-residue band that is arithmetically unavailable: a tripeptide profile holds L−2 counts over 8,000 cells and is not a frequency estimate at all, and non-homologous proteins do not share most of their tripeptides in the first place. Measured on the admitted triples, median tripeptide cosine to the **sequence** partner is **0.0574** against **0.0285** to the **structure** partner; the share of a prefix's distinct 3-mers present in the partner is p50 **0.058** against **0.031**.
+
+**What the cohort actually delivers is an ordering contrast**, and it delivers it cleanly. Median ordering margins — how many times further the structure partner sits in each sequence space, and how many times further the sequence partner sits in fold space:
+
+| channel | median ordering margin |
+|---|---:|
+| composition | **1.83×** |
+| dipeptide | **1.36×** |
+| tripeptide | **1.82×** |
+| fold distance (the other way) | **11.61×** |
+
+An external TM-align check agrees with the descriptor's ordering on **192 of 199** triples.
+
+**The estimand is therefore restated as: does the continuation follow the partner that sequence statistics prefer, or the one that structure prefers.** This is still a contradiction set under §7.0 clause 4 — the two hypotheses point at **different partners on every admitted record**, which is what clause 4 requires — and it is explicitly **not** the stronger "statistically identical, structurally different" claim the frozen text asserted. Composition is matched below a finite-length sampling floor (below), which is a real and checkable property; k-mer content is matched **only in ordering**, and the manifest carries the same statement as its own limitation 4.
+
+### Item 2 — ATTAINABILITY CATCH: a 2× margin is unattainable on the cohort side, and inheriting it would have destroyed the cohort
+
+Sensitivity of the admitted count to the ordering-margin requirement, measured before any model:
+
+| required ordering margin | 1.0 | 1.1 | 1.25 | 1.5 | 2.0 |
+|---|---:|---:|---:|---:|---:|
+| admitted triples | **199** | 169 | 117 | 42 | **4** |
+
+**The rule that follows is frozen here: §7.0 clause 2's 2× effect-size margin belongs to the model-side effect and never to the cohort's neighbour separation.** The neighbour separation is a **reported distribution**, not a gate; the declared `ordering_margin` is 1.0, which is the requirement that the two neighbours be *ordered oppositely* at all — the definition of the contradiction set — and nothing stronger. Had the margin been copied across from D3.g, the cohort would have been 4 triples, half the bootstrap floor, and the campaign would have been unpowered for a reason that has nothing to do with either hypothesis.
+
+**This is the third attainability catch of this campaign**, after A35-1's `bridge_specific` gate and the D3.h unit's two voided criteria, and it is further evidence for Appendix B rule 2's arithmetic half: check what a threshold is attainable against **before** adopting it, and **never inherit a margin across a variant it was not measured on**. The first two were thresholds the positive control could not pass; this one is a threshold the *cohort* could not pass, which is the same defect one level further upstream.
+
+### Item 3 — DESIGN IMPROVEMENT: the unit is a triple, not a pair
+
+The unit is `(anchor, sequence partner, structure partner)`. The sequence partner is composition-matched, CATH-disjoint and different in contact map; the structure partner carries the anchor's fold and is selected as far as possible in sequence space.
+
+**A bare pair identifies only the anchor's statistics-neighbour and never what structure would have predicted instead**, so a pair-based design can only ask whether the model prefers the statistics-neighbour over a null, while the triple makes both hypotheses name a specific different record on **every** admitted triple. That is a strictly stronger instantiation of clause 4 than the frozen text described, and it is recorded as an improvement rather than a substitution.
+
+### Item 4 — CLOSED FOR A STRUCTURAL REASON: circular permutants are unavailable on these assets
+
+Census: **180,853** junction-crossing ordered pairs → **19** candidates → **0** survivors after the repeated-Pfam screen (18 of the 19 carry a repeated Pfam domain in *both* members and all 19 in at least one; the screen removes a candidate whose query or subject repeats a domain). Universe: 20,335 single-fragment models, 2,614 of them carrying a repeated Pfam domain.
+
+**The cause is the asset set, not a threshold**, so no relaxation recovers them: a natural circular permutant is a cross-lineage event, and the AlphaFold subset on disk is one proteome. The manifest does not carry taxonomy counts and says so as its own limitation 7, so the point is measured here independently: **20,550 accessions carry an F1 model on disk and 20,541 of them — 99.96% — appear in the staged human ID-mapping release**. Every surviving candidate is a repeat shift rather than a permutation, which is what the screen is for. **The circular-permutant construction should not be pursued on these assets**, and D3.l's pair families reduce to the CATH-disjoint composition-matched construction alone.
+
+**A methodological trap found on the way, recorded because it will recur.** A DIAMOND self-alignment screen returns **zero** repeat proteins: DIAMOND reports one HSP per pair and the self-hit is the diagonal, so a screen built that way is blind to exactly the thing it is looking for. The repeat screen must come from curated Pfam spans. The wrong screen produced a false-positive list of 25 before it was caught, and nothing in its output looked wrong — this is Appendix B rule 40's shape on a screen rather than on a statistic: an unreachable zero is the most persuasive artefact an instrument can produce.
+
+### Item 5 — CALIBRATION: the fold statistic had to be chosen against CATH, and the obvious one fails
+
+| descriptor | AUROC separating CATH superfamilies |
+|---|---:|
+| contact-separation spectrum | **0.702** |
+| CA-trace secondary-structure fractions | **0.781** |
+| the two jointly (`fold_descriptor`) | **0.806** |
+| dipeptide cosine — negative control | 0.528 |
+| tripeptide cosine — negative control | 0.539 |
+
+over 286,050 same-superfamily and 14,720,057 different-superfamily admissible pairs. Contacts are CA–CA within 8 Å at |i−j| ≥ 3 with both residues at pLDDT ≥ 70, binned into ten log-spaced separation bands.
+
+**The obvious descriptor was tried and discarded**: a coarse two-dimensional density of the contact map in normalised sequence coordinates separates CATH superfamilies at about **0.53**, because it is dominated by the diagonal band every protein shares. *That figure is recorded in the build module's own prose and is not a field of the manifest*, which is the shape L30's regeneration had to repair once already — a prose-only measurement is not auditable, and it is flagged here rather than promoted.
+
+**Calibration of the declared cut.** Same-superfamily fold distance p50 **0.036**, p75 0.068, p95 **0.184**; different-superfamily p50 **0.136**, p95 **0.616**. The declared `FOLD_DISTANCE_MIN = 0.15` therefore sits **between the same-superfamily 75th and 95th percentiles and just above the different-superfamily median** — not at the same-superfamily 95th percentile, which is 0.184. It is recorded at its true position because the sweep in `threshold_sensitivity` is what the verdict has to survive, not a percentile label.
+
+**No triple rests on the descriptor alone**: CATH superfamily disjointness is required independently of it, and TM-align checks per pair what the descriptor decided.
+
+### The realised cohort
+
+Pool **1,880** structures, 361 distinct CATH superfamilies, drawn from the assets on disk — 20,335 single-fragment models, 5,489 within the 60–600 length universe, 7,763 carrying exactly one CATH superfamily, 3 dropped for carrying no confident contact — against 47,173 model files over 20,550 accessions. **199 admitted triples**, **367** distinct members, **346** distinct near-duplicate groups, CATH *class* differing in 91.5% of triples. Group-disjoint split **172 train groups / 174 eval groups** (183 / 184 records), achieved fraction **0.4986**, verdict `GROUP_DISJOINT`, against a floor of 8.
+
+**Composition is matched below the finite-length sampling floor**, which is the only sense in which "matched" is meaningful at these lengths: median total variation **0.104** at a match ratio of **0.667** against the expected total variation between two independent multinomial draws of the observed lengths, with the analytic null agreeing with simulation to **0.2%** (mean simulated/analytic ratio 0.998 over 64 pairs at 400 draws each). No tolerance was widened after the realised distribution was seen.
+
+**Leakage on the 597 triple legs: 0 at ≥100%, ≥95%, ≥90%, ≥70% and ≥50%**, with DIAMOND identity exactly **0.0** at every quantile including the maximum, and maximum shingle containment **0.0065** against a 0.5 threshold. **The screen is doing real work rather than reporting an already-clean corpus**: the same anchors' unscreened maximum identity to *any* universe record reads p50 **40.1%**, p75 67.1%, p95 **90.4%**, max **100%**. Both partners are drawn only from records DIAMOND does not align to the anchor at `--evalue 1e-3` and that share no near-duplicate group with it.
+
+**External verification.** foldseek `easy-search --alignment-type 1` (TM-align), scoring by the smaller of the two length-normalised TM-scores: **0 of 199** sequence partners reach TM ≥ 0.5, so the fold *difference* is confirmed by a structural aligner and not only by the proxy; the structure-partner leg reaches TM ≥ 0.5 for **109 of 199**, and that TM-verified subset is carried per record so a downstream stage can use it without rebuilding. Verdict `VERIFIED_AGAINST_TM_ALIGN`. Median TM: anchor↔sequence partner **0.242** (max 0.46), anchor↔structure partner **0.535**. Descriptor against TM-align on the same pairs: AUROC for same-superfamily 0.881 (descriptor) against 0.934 (TM), Spearman between them 0.545.
+
+### Limitations carried verbatim in kind
+
+- **90 of 199 structure partners fall below TM 0.5.** This is a consequence of deliberately selecting that partner *away* from sequence space **and** of having excluded every DIAMOND-detectable homologue; only 44% of same-superfamily admissible pairs reach TM 0.5 at all. The selection sharpens the contrast the estimand reads and simultaneously selects the most divergent member of the superfamily, and both halves have to be reported.
+- **The structures are predictions.** Residues below pLDDT 70 contribute no contacts and whole models below the model-level floors are excluded, but a confident prediction is still a prediction.
+- **The secondary-structure channel is the repository's distance-only P-SEA approximation**; its state fractions are not DSSP content and are used only as a coordinate-derived attribute.
+- **DIAMOND cannot see what it does not align.** The residual is measured on the realised triples rather than assumed absent, but a relationship below its detection limit is outside the measurement.
+- **The whole cohort is human**, so any biological reading inherits a single-proteome scope — and the same bound is what closed the circular-permutant construction.
+
+**Nothing in this amendment has been run on a model.** No progress figure moves.
+
