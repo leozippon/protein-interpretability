@@ -1,4 +1,6 @@
-# Research Objective
+# Repository Guidelines
+
+## Research Objective
 
 Study the mechanistic differences among pure-text, pure-protein, and joint language–protein generative models; determine when interpretability methods measure these systems faithfully; and develop causally validated interpretability methods to test whether protein-generative models have learned biological knowledge and, only after those methods prove reliable, use them to discover new biological knowledge. Follow three directions in order:
 
@@ -7,32 +9,28 @@ Study the mechanistic differences among pure-text, pure-protein, and joint langu
 3. **Develop and validate methods for biological knowledge.** Propose and validate interpretability methods that determine whether protein-generative models have learned biological knowledge rather than merely reproduced corpus statistics or surface correlations. Only after a method passes causal, retrieval-aware, and independent biological validation may it be used to formulate and test hypotheses that could reveal new biological knowledge.
 
 
-# Repository Principles
+## Canonical Documents
 
 `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` is canonical for detailed findings, limitations, retractions, and the current scientific plan. `summary.md` is the user-facing overview of the research direction.
 
 
-# Repository-Specific Guidelines
+## Repository Guardrails
+
+- Treat resource checks and logging as mandatory steps, not optional cleanup.
+- Never persist pod names in repository files, manifests, or durable logs; status commands display current names and `H200_POD` stays shell-local.
+
 
 ## Environment
 
-- Bash runs on the B workstation. Activate the validated environment before using Python or GPU tools:
-
-```bash
-source ~/miniconda3/etc/profile.d/conda.sh
-conda activate ct
-```
-
+- Bash runs on the B workstation. Use the validated `ct` environment for Python and GPU tools; conda is not initialized in non-interactive shells.
 - Validated workstation runtime: Python 3.11.14, PyTorch 2.9.1+cu128, Transformers 4.57.3, nnsight 0.5.15, and wandb 0.24.0. `requirements.txt` declares the active transfer package's direct Python dependencies; CUDA runtimes remain host-provisioned.
 - LaTeX: `source ~/miniconda3/etc/profile.d/conda.sh && conda activate latex && tectonic main.tex`.
-- Before editing or running commands that write files, confirm the real path with `pwd -P` or `realpath`.
 
 
 ## Compute
 
-- **Local B workstation:** 8 NVIDIA L20 GPUs, 46068 MiB reported each. Use for validation, small cohorts, and interface checks.
-- **Remote H200 cluster:** 16 GPUs in total. A selected pod exposes only its current allocation; each H200 reports 143771 MiB in-pod. Use `scripts/transfer/run_transfer_h200.sh` for full campaigns. Make full use of H200 compute resources and reduce idle time.
-- Prioritize computations on H200 instead of L20. Reserve L20 exclusively for basic correctness verification only.
+- **Local B workstation:** 8 NVIDIA L20 GPUs, 46068 MiB reported each. Reserve it for basic correctness verification and interface checks.
+- **Remote H200 cluster:** 16 GPUs in total. A selected pod exposes only its current allocation; each H200 reports 143771 MiB in-pod. Run all substantive computation here with `scripts/transfer/run_transfer_h200.sh`, and keep the allocation busy rather than idle.
 
 
 ### H200 Access
@@ -48,7 +46,7 @@ export H200_POD=<running-pod-name>
 
 The end-to-end status probe normally takes 40–50 seconds because it crosses several SSH and Kubernetes boundaries. Give `h200_status.sh` a caller-side timeout of at least 90 seconds. A timeout before its terminal `Health=` line is inconclusive, not a failed cluster-health result.
 
-Cluster allocation is not GPU utilization: `16/16` means all GPUs are assigned to pods, not necessarily computing. Inspect `nvidia-smi` inside the selected pod. Never persist pod names in repository files, manifests, or durable logs; status commands naturally display current names, and `H200_POD` is shell-local. Do not install dependencies in a pod or read the mode-600 `~/hangzhou-remote/config.sh`. Stage code and dependencies from B; the external README is authoritative for access, transfer, and recovery.
+Cluster allocation is not GPU utilization: `16/16` means all GPUs are assigned to pods, not necessarily computing. Inspect `nvidia-smi` inside the selected pod. Do not install dependencies in a pod or read the mode-600 `~/hangzhou-remote/config.sh`. Stage code and dependencies from B; the external README is authoritative for access, transfer, and recovery.
 
 
 ## Network And Downloads
@@ -71,21 +69,13 @@ Run `hf` from the `ct` environment; downloads resume automatically.
 Record each experiment's date, configuration or command, and result in `docs/EXPERIMENT_LOG.md`. Re-read it immediately before appending because agents write concurrently. Record repository chronology in `docs/PROJECT_LOG.md`; runtime logs stay under ignored `logs/`.
 
 
-## Mutagen
-
-- Files in @.mutagenignore is ignored from local repository, but you can check and read using terminal commands.
-
-
-## Additional Operational Rules
-
-- Treat resource checks and logging as mandatory steps, not optional cleanup.
-
-
 # Global Guidelines
 
 ## Rules for Multi-Agent Cooperation
 
 *If your task prompt identifies you as a sub-agent, ignore the remaining rules in this section and do not spawn sub-agents of your own.*
+
+*Unless the task is very simple, start multi-agent collaboration.*
 
 - Your role centers on abstract design, global coordination, final acceptance, and Git management. Direct, exhaustive reading and modification are required only when necessary.
 - You should intentionally minimize your context footprint to preserve coherent end-to-end reasoning and architectural judgment; delegate first-line evidence gathering instead of performing it directly.
@@ -95,10 +85,12 @@ Record each experiment's date, configuration or command, and result in `docs/EXP
 - For audit engagements and root-cause issue localization, you should delegate to one or more of the highest-capability sub-agents available at a mid-range reasoning intensity to guard against unproductive overthinking and speculative elaboration.
 - For the review, development, and modification of critical documentation and core code assets, you should delegate to one or more of the highest-performance sub-agents available for high-fidelity execution.
 - When launching a sub-agent, choose its context deliberately. A fully fresh context window breaks path dependency and lets the task be reapproached independently, while inherited context continues coherent, aligned reasoning that builds upon prior work.
-- Before delegating to a fresh-context sub-agent, you must ensure that the sub-agent receives the current contents of **Repository Guardrails**, **Development Principles**, **Operational Guardrails**, and **Documentation** from `AGENTS.md`.
+- Before delegating to a fresh-context sub-agent, you must ensure that the sub-agent receives the current contents of `AGENTS.md`.
 - Balance work between follow-up tasks to existing sub-agents and new spawns; avoid both discarding short-lived sub-agents for fragments of one task and driving a single sub-agent to its context window limit.
 - Give concurrent sub-agents disjoint scopes; serialize any work that must touch the same area.
 - Interrupt a sub-agent only when its work is no longer needed or clearly off course, never merely to hurry it.
+- Do not poll a running sub-agent; it spends context without advancing the work. Take up independent work, or yield until the result arrives.
+- If a sub-agent's task must wait, instruct that sub-agent to Sleep; otherwise it will yield and drop out while waiting on a timer.
 - Carry settled decisions into later reviews rather than reopening them.
 - Do not conduct iterative audits unless necessary; they easily fall into endless iteration.
 
