@@ -14725,3 +14725,22 @@ The agreement to three figures is a coincidence of magnitude and is reported as 
 **A control draw at 2 rows is running**, extending the control-draw curve to a third rung. Across 4 and 8 rows that spread falls roughly fourfold in the fraction, which is what a pure sampling term should do; a third rung makes it possible to ask whether it scales as `1/sqrt(n)` rather than merely to observe that it falls. That is the sharpest available statement about what the matched control contributes, and it costs about an hour.
 
 **The criterion remains unevaluated.** It is defined on the seed-averaged fraction at 16 rows and the second anchor is still running.
+
+### EXP-R2-210: the re-read criterion does not fire; the headline stands as measured (2026-08-18)
+
+**Both 16-row anchors are in and the criterion fixed before either of them landed is now evaluated.**
+
+| site | 8-row seed-avg headline | 16-row seed-avg | excess | clause 1 (>8% rel) | clause 2 (>2x seed spread) | result |
+| --- | --- | --- | --- | --- | --- | --- |
+| L27 | 0.133048 | 0.136552 | **+2.63%** | 0.143692 required -- **no** | 0.005592 required, got 0.003504 -- **no** | does not fire |
+| L28 | 0.159741 | 0.165243 | **+3.44%** | 0.172520 required -- **no** | 0.013884 required, got 0.005502 -- **no** | does not fire |
+
+**VERDICT: the headline stands as measured.** Both clauses fail at both sites, and neither is marginal -- the observed excess is a third of the trigger at L27 and two fifths at L28. The concern recorded earlier, that L27's noise clause might be five times weaker than intended, never became live: that clause would have had to *permit* a fire, and no fire is on offer.
+
+**The headline, final.** At `d_hidden` 16,384, lambda = 0, on the `Llama-2-7b-hf` to `ProLLaMA_Stage_1` text pair: **13.30% of live latents at L27 and 15.97% at L28 show differential reliance exceeding the matched-control p95**, against 5% there by construction -- an enrichment of 2.66x and 3.19x. Doubling the positions per latent moves those figures by 2.63% and 3.44% of themselves, which is below the trigger, below the model's own prediction, and at the same scale as redrawing the control directions.
+
+**The observed excess also undershoots the model**, which predicted +4.8 to +5.1% at L27 and +4.8 to +5.6% at L28. That is the same direction as the `p95(16)` miss recorded earlier: the two-component fit over-stated how much headroom remained above 8 rows. Three independent quantities now agree that the headline sits closer to the floor than the fitted model claimed -- the threshold, the fraction, and the noise-sized 8-to-16 movement.
+
+**What this does and does not establish.** It establishes that the 8-row measurement is **complete**, not merely valid: a 92-position run finds essentially the same set. It does not touch what the statistic means, and the two reading constraints stand unchanged. This is differential **reliance**, not possession; and at lambda = 0 the readout **structurally cannot see a feature introduced or removed**, because polarised is 0.000 and every live latent decodes into both checkpoints with comparable weight, so a difference in ablation effect is a property of the two models' differing reliance on a shared feature.
+
+**A misdiagnosis of my own, recorded because the shape recurs.** When the card went idle I read the `rows16` control replicate's log, found no artefact, and concluded it had died silently. It had not: that cell runs on a different card and was healthy, with CPU time equal to elapsed. The idle card belonged to the **second anchor, which had completed**. I attributed a card to the wrong cell and then built a failure diagnosis on top of the attribution. This is the same shape as the false stall alarm earlier today -- a correct observation read against the wrong reference -- and the check that resolves it is the same one: map process to card explicitly before concluding anything about either.
