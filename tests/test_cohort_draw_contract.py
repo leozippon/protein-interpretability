@@ -419,6 +419,19 @@ class EveryCorpusDrawDeclaresItsSeed(unittest.TestCase):
                 # contract governs, so it is registered here rather than
                 # exempted on the strength of the half that does not draw.
                 "28_epistasis_coupling.py",
+                # Draws the held-out cohort the embedding substitution is scored
+                # on -- protein_cohort for a contradiction-set cell and
+                # text_cohort twice for the byte-level control, whose second draw
+                # is the distributional background and is disjoint from the first
+                # by the same seed at a skip of --records.
+                "37_alphabet_chemistry.py",
+                # Draws BOTH constructors, one per joint mode, at one seed and one
+                # per-record cap so the two modes are compared at exactly equal
+                # scored-position counts. A text control drawn under a different
+                # sampling rule from the protein arm it controls is not a control,
+                # which is why the two draws share --cohort-draw-seed rather than
+                # each carrying their own.
+                "38_mode_subspaces.py",
             },
         )
 
