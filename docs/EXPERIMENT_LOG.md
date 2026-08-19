@@ -14661,3 +14661,20 @@ The residual triples when the fourth rung is included, so `sd^2 = a/n + b` remai
 **The re-read criterion cannot be evaluated yet and is not being evaluated.** It requires the seed-averaged fraction at 16 rows, and the seed 20260815 anchor is still running. What can be said is the same-seed change, which is not the registered quantity: at seed 20260814 the fraction moves from 0.131650 to 0.133093 at L27 (**+1.10%**) and from 0.163212 to 0.164034 at L28 (**+0.50%**). Both are far below the +8% and +8.7% triggers, and also far below the +5.1% and +5.6% the model predicted. No verdict is taken until the second anchor lands.
 
 **A control-seed replicate at 16 rows is now running**, matching those already in flight at 4 and 8. At the largest rung the sampling term is smallest, so what remains when only the control directions change is closest to the systematic floor itself. Three rungs of control-draw variation is the most direct test available of the mechanism Appendix B rule 39 attributes the floor to, on this configuration rather than by assumption.
+
+### First point of the noise decomposition: neither source dominates, and the sites flip again (2026-08-18)
+
+**The 4-row control replicate is in.** Same dictionary, same rung, same everything except `--control-seed`, so the difference isolates the matched-control draw from the dictionary fit.
+
+| site | control-draw spread (p95) | control-draw spread (fraction) | dictionary spread (fraction) | ratio control/dictionary |
+| --- | --- | --- | --- | --- |
+| L27 | 2.75% | **2.82%** | 11.83% | **0.24** |
+| L28 | 7.21% | **8.36%** | 5.49% | **1.52** |
+
+**Neither noise source dominates, and which one leads flips between sites** -- dictionary variation is four times the control draw at L27 and two thirds of it at L28. That is the third measurement today whose site asymmetry reverses between rungs, and the honest reading remains that each of these is a single difference between two observations.
+
+**The number that matters for the criterion is L28's 8.36%.** Control-draw variation alone at that site is the same order as the +8.7% trigger, which would be disqualifying if the two compared cells drew different controls. **They do not**: the 8-row and 16-row cells both run `--control-seed 20260818`, so the directions are common to both and the direction-draw component largely cancels in the difference. What does not cancel is the interaction between those fixed directions and the different position samples the two rungs take, which is a strictly smaller residual than the 8.36% measured across independent draws. The exposure is real but bounded well below the trigger, and it is recorded here so that a marginal fire at L28 is read with it in view.
+
+**The criterion remains unchanged.** This is the second time today that a measurement has raised a concern about one of its inputs, and the answer is the same: the criterion was fixed before the data, the concern is recorded, and the direction of the error is toward firing rather than passing, which costs compute rather than correctness.
+
+**A third control draw is running at 4 rows**, because everything above rests on one difference. This is the hazard recorded earlier today after two-point fits produced knees of 35 and 15 positions that a third point moved to 5.27 and 3.41 rows: a two-point estimate cannot show that it is wrong. Establishing at the cheap rung whether control-draw spread is stable across draws is what licenses reading the two-point estimates at 8 and 16 rows, where a third draw would cost five and seven hours instead of two.
