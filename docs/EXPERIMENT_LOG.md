@@ -16099,3 +16099,79 @@ Measured: **568,256** forward tokens per protein cell over 190 forward calls, at
 
 **No progress figure moves.**
 
+
+---
+
+## 2026-08-19 — D3.l closure read: the corpus finds the same-fold partner without a model, and D3.l halts as recombination
+
+**§7.0's second classification, and the first settled by a measurement that needs no model at all.** Committed at `da3ece9`. The stage is the same one amendment 4 described; what is new is that the two **profile** members of clause 1's family are now built, and they dispose of the question.
+
+### The model-free measurement, which is the whole answer
+
+**A jackhmmer search of the staged corpus, seeded only by the anchor's prefix, recruits the structure partner on 56 of 199 triples (28.1%) and the sequence partner on 0 of 199 (0.0%).**
+
+No model is involved in that sentence. The anchor's prefix, handed to a homology search over a public corpus, finds the composition-mismatched same-fold partner more than a quarter of the time and the composition-matched different-fold partner **never**. **Corpus statistics prefers the same partner the structural account does** — which means the cohort's central premise, that the two accounts name different records on every admitted triple, is false against this member of the family.
+
+### The consequence, and it is the reason for closure
+
+**The profile ceiling binds and points at the structure partner.**
+
+| ceiling member | adequacy vs the 0.1 floor | ceiling P | direction |
+|---|---:|---:|---|
+| fragment k = 1…7 | 0.0000 → 0.0637 | ≈ 0 | never binds |
+| `prefix_adapted_composition` | **0.4316** | **−0.0839** | sequence partner |
+| `corpus_profile` | **0.1591** | **+0.0410** | **structure partner** |
+| `pfam_profile` | **0.4224** | **+0.1088** | **structure partner** |
+
+`pfam_profile`'s +0.1088 is diluted by the 52 triples whose prefix selects no Pfam profile and which therefore contribute **exactly zero to both candidates**; over the 147 it covers it reads **+0.1473**, and that rescaling is exact rather than estimated precisely because the other 52 contribute zero.
+
+**So §7.0 clause 4 is failed by the member that binds.** Against the fragment ladder (which never binds) and against `prefix_adapted_composition` (−0.0839) the two accounts do predict opposite signs — the cohort is a real contradiction set there, exactly as amendment 4 recorded. Against **both** profile members they **agree**. The artefact says so in its own field: `ceiling_members_favouring_the_structure_partner: ["corpus_profile", "pfam_profile"]`.
+
+**Clause 4's own text is what disposes of the one arm with a real margin.** `progen2-medium` reads 2.737× over the binding member and would be `STRUCTURE_CANDIDATE` on the margin arithmetic. It is not admitted as one, because on an agreement set **no effect size and no interval width distinguishes the hypotheses** — that is clause 4's entire content, and it applies to a large margin exactly as it applies to a small one. And since **both profile members are declared lower bounds** — Pfam annotates part of a proteome, and the corpus member searches the staged Swiss-Prot at three jackhmmer iterations rather than the arms' own UniRef50/UniRef90 mixtures — a stronger member of the same family can close even that gap. Both bounds run in the direction that **flatters the arm**.
+
+**D3.l halts and is classified as recombination under §7.0 clause 5.** It is not narrowed, not re-run, and not reported as weak or partial structural evidence.
+
+### The verdict table
+
+| cell | window | arm P | binding ceiling | ratio | verdict |
+|---|---|---:|---:|---:|---|
+| `progen2-small` | **raw (declared)** | +0.2033 | +0.1088 | **1.868×** | **INSIDE_CEILING** |
+| `progen2-small` | length-controlled | +0.2239 | +0.1115 | 2.008× | STRUCTURE_CANDIDATE |
+| `progen2-small` | raw, junction offset 6 | +0.2068 | +0.1104 | 1.873× | **INSIDE_CEILING** |
+| `progen2-medium` | raw | +0.2979 | +0.1088 | **2.737×** | STRUCTURE_CANDIDATE |
+
+**The implementer's ruling on `progen2-small` is recorded as given and is the right one: it is a coin on its edge and is quotable in neither direction.** Two pre-declared readings of the *same forward passes* disagree at the third decimal — 1.868 against 2.008 across a window choice — and the artefact carries `same_verdict_under_both_length_readings: False`. A result that flips on a declared reading of one set of numbers is not a result in either direction, and the closure does not rest on it: it rests on clause 4.
+
+### How the profile members are built, because their credibility rests on it
+
+Both members share one construction. **Profiles are selected by the anchor's prefix alone**, and each candidate is then scored under exactly that selection — so the selection cannot see the candidates. **HMMER's heuristic filters are off (`--max`)**, so a filtered-out remote homologue cannot read as zero and flatter the arm. A bit score is a **log-likelihood ratio against a composition null**, which is the same shape as the arm's own statistic, so the two are commensurable. **A prefix selecting no profile gives exactly zero for both candidates** — the reachability anchor that k = 1 provides on the fragment curve, carried into the profile members.
+
+- **`pfam_profile`** uses Pfam-A at its **own gathering threshold** (`--cut_ga`), so the inclusion cut is not a chosen number, and **Pfam contains none of this cohort's sequences — zero circularity**. Coverage: **147 of 198 distinct prefixes (74.2%)**, 122 distinct profiles selected.
+- **`corpus_profile`** removes **both candidate accessions** from the recruited alignment before building, so **no candidate is ever scored against a profile containing it**. The anchor is kept: it is not a candidate, and the arms saw it in training anyway. Built on **199 of 199** triples at a median of **269** recruited alignment rows.
+
+### Why there is no Potts member, stated as a checkable claim rather than an omission
+
+Clause 6 requires an unimplemented member to be named as an open alternative. **Here the argument is that it is not open**, and the reasoning is on record in the artefact.
+
+**Cost is not the reason, and that was measured**: one jackhmmer over the staged corpus is 5 s, so 199 plmDCA fits are reachable. The reason is the readout. This estimand asks *does the anchor's prefix have detectable remote homology to this continuation* — that is homology **detection**, and a profile HMM is that family's state of the art for it. A coupling term would be fitted **from the same jackhmmer alignment the corpus member already uses**, so it inherits that alignment's recall and can only **re-weight what the profile already found**. It is recorded as a **claim checkable against the two profile members' adequacy ratios in this artefact**, not as a gap.
+
+### Three disciplined refusals, each of which a weaker treatment would have taken
+
+**1. The authorised replacement of the multiplicative clause was not applied, and declining it was correct.** I authorised that replacement in amendment 4 on the ground that the ceiling was negative and the clause therefore inert. **At the binding member the ceiling is +0.1088, so the clause is live and does real work** — `multiplicative_clause_binds: true` on both profile members and `false` only on composition. Applying the authorised replacement would have converted `progen2-small` from INSIDE_CEILING to STRUCTURE_CANDIDATE: **relaxing the margin at the exact moment it began to bite.** The general lesson belongs in the record: **an authorisation conditional on a fact must lapse when the fact changes**, and the implementer noticing that is what kept the clause honest.
+
+**2. No narrowing to the 143 non-recruited triples.** Clause 5 forbids exactly that as a rescue. Such a subset is a **candidate pre-registration admitted before any model is read**, never a re-read of this one — and it would still have to survive `corpus_profile` reading **+0.0410 overall**, so **non-recruitment is not the same as no profile signal**.
+
+**3. Two defects were found by running the campaign rather than by inspecting it, and both aborted it.** The SSI index check tested a path `hmmpress` does not write, and re-indexing an already-indexed library is an **error rather than a no-op** — 72 s in. The Stockholm filter passed every comment line through, so removing a candidate's sequence row **orphaned its `#=GS` annotation** and `hmmbuild` rejected the alignment — 116 s in. Both are fixed, with a regression test asserting that **the surviving annotation names and the surviving sequence rows name one set**. Recorded because neither was reachable by reading the code: this is Appendix B rule 12's shape on a file format, and the cheap fix was to run the thing.
+
+### Cost, and the scheduling fact
+
+**D3.l needed no H200 allocation.** The entire profile-member build is CPU work: HMMER compiles in about two minutes, and both members over 199 triples take **183.6 s measured** at 16-way parallel. Per-cell forward cost is unchanged at **221,507** forward tokens over 150 calls, 40.7 s wall on a local card. *The ~2-minute compile and the 4.6 s per-cell GPU figure are not fields of the retained artefact and are recorded as reported; the 183.6 s and 221,507 are measured in it.*
+
+### Promotion recommendation
+
+**Recommend promoting the recruitment asymmetry as `F15`.** It is a **model-free property of the cohort and the corpus** — 56 of 199 against 0 of 199 — citable independently of any arm, reproducible from the corpus and the cohort alone, and it is the cleanest single statement of why this contradiction set was not one. Its caveat set is small and entirely about scope, not about validity: one proteome (the human AlphaFold subset), one corpus (staged Swiss-Prot) at three jackhmmer iterations, one cohort construction (structure partners share the anchor's CATH superfamily **by design**, so the asymmetry is a property of *this* construction and not a general fact about protein corpora), and a **lower bound in the direction that understates it** — a deeper corpus or more iterations can only raise 56, never lower it, and cannot raise 0 above 0 without changing what a sequence-space partner is. **Accepted and minted as `F15` (same day), framed one level more general than the recommendation.** The claim on record is not "this cohort was not a contradiction set" but ***an alignment-level homology screen does not exclude profile-level homology, measured*** — which is what the asymmetry actually supports and the form in which it will be cited. §7.0 clause 3 already **asserts** that an alignment certificate reaches whole-sequence retrieval and nothing below the alignment scale; **F15 measures that gap**, on a cohort explicitly built to be alignment-clean, and is the profile-scale counterpart of F12's fragment-scale certificate result. The caveats are carried as scope and not validity, with the understating direction made explicit: a deeper or wider search can only raise 56 and **cannot raise 0 above 0**, so the half of the asymmetry that carries the claim is the half that cannot move. The row also carries the construction rule this yields — **a fold-discordant cohort of natural sequences inherits profile-detectable homology to its own structure partner, so the profile ceiling member is measured at construction time** — which is §7.0 clause 6 instantiated on the case that motivated it.
+
+### Progress
+
+**R3.4's percentage does not move on this**, and the reason is the convention's own logic. A §7.0 classification **is** verification progress by this document's stated rule — a candidate stopped at a pre-registered gate counts — and D3.l delivered one. But R3.4's figure prices *biological knowledge validation and discovery*, and D3.l produced **no biological knowledge**: it produced a measurement about a cohort. The verification progress it represents is already priced where it belongs, in the §7.0 machinery being twice-applied, and inflating R3.4 for a track that closed without a biological result would make the number mean something it does not. **No percentage moves.**
+

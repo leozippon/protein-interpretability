@@ -1870,3 +1870,29 @@ Two registrations, no results. Both entries are in `docs/EXPERIMENT_LOG.md`; the
 **Status of the two tracks.** D3.k is read out — **RECOMBINATION on both admissible arms**, `DOES_NOT_SEPARATE_COUNTER_STRATUM` on both — with a double-caliper check pending that would close it if fewer than eight pairs survive both calipers; that closure would be a statement about the human kinome and the corpus, not about the design. D3.l is built and instrument-validated, its smoke read an instrument demonstration. **Neither needs an H200 allocation** — a scheduling fact worth having, since both were sized as if they might.
 
 **No percentage moved.**
+
+## 2026-08-19 (late) — D3.l closes as recombination: §7.0's second classification, settled without a model
+
+**The measurement that closed it needs no model at all.** A jackhmmer search of the staged corpus, seeded **only by the anchor's prefix**, recruits the **structure partner on 56 of 199 triples (28.1%)** and the **sequence partner on 0 of 199**. Corpus statistics prefers the same partner the structural account does, so the cohort's premise — that the two accounts name different records on every triple — is false against the member of clause 1's family that actually binds. Committed at `da3ece9`; full read in `docs/EXPERIMENT_LOG.md`, audit at §8 item 9 and the D3.l forward-track row.
+
+**Do not reopen, and do not quote `progen2-small`.** `pfam_profile` binds at adequacy 0.4224 with ceiling P **+0.1088** and points at the structure partner; `corpus_profile` at 0.1591 and +0.0410 does too. **Clause 4 fails at the binding member**, which is also what disposes of `progen2-medium`'s 2.737× — on an agreement set no effect size settles anything. `progen2-small` is a coin on its edge, 1.868× raw against 2.008× length-controlled **on the same forward passes**, and is quotable in neither direction. Narrowing to the 143 non-recruited triples is forbidden by clause 5 as a rescue; it would be a fresh pre-registration, and it would still have to survive `corpus_profile` at +0.0410.
+
+**One process lesson worth carrying.** I had authorised replacing the multiplicative clause on the ground that the ceiling was negative and the clause inert. At the binding member the ceiling is **+0.1088**, so the clause was live — and applying my authorisation would have flipped `progen2-small` to STRUCTURE_CANDIDATE, relaxing the margin at the moment it began to bite. The implementer declined it. **An authorisation conditional on a fact must lapse when the fact changes**, and the person holding the authorisation is not always the one who notices.
+
+**Also on record:** no Potts member is built, and under clause 6 that is *argued* rather than omitted — the readout is homology detection, a profile HMM is that family's state of the art, and a coupling fitted from the same alignment inherits its recall; the claim is checkable against the two profile members' adequacy ratios. Two campaign-aborting defects were found **by running it** (an SSI index path `hmmpress` does not write; a Stockholm filter orphaning `#=GS` annotations), both fixed with a regression test.
+
+**Status of the §7.0 tracks: D3.j alone remains open**, with D3.j-B queued behind it. **D3.l needed no H200 allocation** — the profile build is CPU work at 183.6 s measured.
+
+**No percentage moved**, and the reasoning is recorded: a §7.0 classification is verification progress by this document's convention, but R3.4's figure prices biological knowledge, and D3.l produced a measurement about a cohort rather than a biological result.
+
+## 2026-08-19 (late) — F15 minted: an alignment screen does not exclude profile-level homology, measured
+
+**The claim is one level more general than the cohort it came from, and that is deliberate.** Not "D3.l's contradiction set was not one" but ***an alignment-level homology screen does not exclude profile-level homology*** — measured on a cohort admitted by exactly such a screen. DIAMOND at `--evalue 1e-3` found **zero** alignment between anchor and either partner, 0 of 597 triple legs reaching any identity boundary from 50% up; a profile search seeded on the anchor's prefix alone then recruited the same-fold partner on **56 of 199 (28.1%)** and the composition-matched partner on **0 of 199**. **No model appears in it.**
+
+**Why it earned an F-number.** §7.0 clause 3 already *asserts* that an alignment certificate reaches whole-sequence retrieval and nothing below the alignment scale. **F15 measures the gap that clause warns about**, and it is the profile-scale counterpart of F12's fragment-scale result that "corpus-disjoint" means no retrievable homologue and never no corpus information. Together they bound what any retrieval exclusion can buy.
+
+**Caveats are scope, not validity**, and the asymmetry is what carries it: one proteome, one corpus at three jackhmmer iterations, and a construction where the structure partner shares the anchor's CATH superfamily **by design** — so 28.1% is a property of this construction, not a general rate. It is a **lower bound in the understating direction**: a deeper search can only raise 56 and **cannot raise 0 above 0**.
+
+**The reusable form, now written into §7.0 clause 6:** a fold-discordant cohort assembled from natural sequences **inherits profile-detectable homology to its own structure partner**, so **the profile member of the ceiling is measured at construction time**, not after a model is read.
+
+**Documentation for D3.l is complete.** Open tracks: **D3.j**, cells running, with D3.j-B queued behind it; and **D3.k**, whose double-caliper attainability check decides whether it can be rebuilt as a contradiction against the fragment channel or closes with the curve as its result. **No percentage moved**, by the reasoning the coordinator adopted.
