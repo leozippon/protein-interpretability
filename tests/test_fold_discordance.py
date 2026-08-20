@@ -608,3 +608,42 @@ def test_a_campaign_run_cannot_omit_the_profile_members():
         STAGE.resolve(args)
     for flag in ("--hmmer-bin", "--pfam-hmm", "--corpus-fasta", "--profile-workdir"):
         assert flag in str(error.value)
+
+
+def test_removing_a_candidate_from_an_alignment_removes_its_annotation_too(tmp_path):
+    """A sequence in Stockholm is not one line, and half-removing one is unparseable.
+
+    hmmbuild counts the ``#=GS`` names against the sequence rows and exits 7 when
+    they disagree, which is what a leading-``#`` passthrough produces. The property
+    is checked directly: after the filter, the surviving ``#=GS`` names and the
+    surviving sequence rows name the same set.
+    """
+
+    source = tmp_path / "recruited.sto"
+    source.write_text(
+        "# STOCKHOLM 1.0\n"
+        "#=GF ID PFX0-i3\n"
+        "\n"
+        "#=GS sp|P00001|A_HUMAN/1-9   DE [subseq from] keep me\n"
+        "#=GS sp|P00002|B_HUMAN/2-10  DE [subseq from] drop me\n"
+        "#=GR sp|P00002|B_HUMAN/2-10  PP 999999999\n"
+        "sp|P00001|A_HUMAN/1-9   ACDEFGHIK\n"
+        "sp|P00002|B_HUMAN/2-10  LMNPQRSTV\n"
+        "#=GC RF                 xxxxxxxxx\n"
+        "//\n",
+        encoding="utf-8",
+    )
+    assert {fd._sequence_id(name) for name in fd._stockholm_names(source)} == {"P00001", "P00002"}
+    destination = tmp_path / "filtered.sto"
+    kept, dropped = fd._filter_stockholm(source, destination, {"P00002"})
+    assert (kept, dropped) == (1, 1)
+    text = destination.read_text(encoding="utf-8")
+    assert "P00002" not in text
+    assert "#=GC RF" in text and "#=GF ID" in text
+    rows = {fd._sequence_id(name) for name in fd._stockholm_names(destination)}
+    annotated = {
+        fd._sequence_id(line.split()[1])
+        for line in text.splitlines()
+        if line.startswith("#=GS")
+    }
+    assert rows == annotated == {"P00001"}

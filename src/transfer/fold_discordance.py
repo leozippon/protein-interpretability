@@ -1903,11 +1903,14 @@ def build_pfam_profile_member(
     hits: dict[str, list[DomainHit]] = {}
     scoring_table = workdir / "candidate.domtbl"
     if wanted:
-        # hmmfetch needs its own SSI index, which hmmpress does not create. Built
-        # once beside the profile library rather than required of the operator: it is
-        # a derived index over a file this stage was handed, and a missing one would
-        # otherwise stop a campaign several minutes in.
-        if not pfam_hmm.with_suffix(pfam_hmm.suffix + ".ssi").exists():
+        # hmmfetch needs an SSI index. hmmpress writes one for the pressed binary
+        # form as ``<file>.h3m.ssi`` and ``hmmfetch --index`` writes ``<file>.ssi``
+        # for the text form, so BOTH names have to be checked -- indexing a library
+        # that is already indexed is an error rather than a no-op, and checking only
+        # one name stopped a campaign 72 s in. Built here rather than required of the
+        # operator because it is a derived index over a file this stage was handed.
+        indexes = (Path(f"{pfam_hmm}.ssi"), Path(f"{pfam_hmm}.h3m.ssi"))
+        if not any(index.exists() for index in indexes):
             _run([tool.path("hmmfetch"), "--index", pfam_hmm], log=workdir / "hmmfetch_index.log")
         names = workdir / "selected.names"
         names.write_text("\n".join(wanted) + "\n", encoding="utf-8")
@@ -1965,33 +1968,50 @@ def _sequence_id(name: str) -> str:
 
 
 def _stockholm_names(path: Path) -> list[str]:
+    """The sequence rows' names, in order, ignoring every annotation class."""
+
     names: list[str] = []
     for line in Path(path).read_text(encoding="utf-8").splitlines():
-        if not line or line.startswith("#") or line.startswith("//"):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("//"):
             continue
-        names.append(line.split()[0])
+        names.append(stripped.split()[0])
     return names
 
 
 def _filter_stockholm(source: Path, destination: Path, drop: set[str]) -> tuple[int, int]:
-    """Copy an alignment, removing the rows whose accession is in ``drop``.
+    """Copy an alignment, removing every trace of the sequences in ``drop``.
 
-    Written line-wise rather than through an alignment library because HMMER's
-    ``-A`` output is one block of full-length rows, which is the one Stockholm
-    shape a line filter handles exactly. Returns the rows kept and dropped.
+    A sequence in Stockholm is not one line. jackhmmer's ``-A`` output carries a
+    ``#=GS <name> DE ...`` description line per sequence, and removing the sequence
+    row while leaving its annotation makes the file **unparseable**: hmmbuild
+    counts the ``#=GS`` names, finds more than there are rows, and exits 7. That is
+    what this function got wrong the first time and it cost a campaign 116 s in, so
+    the per-sequence annotation classes are handled explicitly rather than swept up
+    by a leading-``#`` test. ``#=GC`` and ``#=GF`` are per-column and per-file and
+    stay. Returns the rows kept and dropped.
     """
 
+    per_sequence_annotations = ("#=GS", "#=GR")
     kept = dropped = 0
     with Path(source).open("r", encoding="utf-8") as reader, Path(destination).open(
         "w", encoding="utf-8"
     ) as writer:
         for line in reader:
             stripped = line.strip()
-            if not stripped or stripped.startswith("#") or stripped.startswith("//"):
+            if not stripped:
                 writer.write(line)
                 continue
-            name = stripped.split()[0]
-            if _sequence_id(name) in drop:
+            fields = stripped.split()
+            if fields[0] in per_sequence_annotations:
+                if len(fields) >= 2 and _sequence_id(fields[1]) in drop:
+                    continue
+                writer.write(line)
+                continue
+            if stripped.startswith("#") or stripped.startswith("//"):
+                writer.write(line)
+                continue
+            if _sequence_id(fields[0]) in drop:
                 dropped += 1
                 continue
             kept += 1
