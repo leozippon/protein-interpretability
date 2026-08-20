@@ -153,6 +153,26 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "order of their eval bearing-group count, which is a deterministic "
         "quantity of the cohort it was handed"
     ),
+    "40_catalytic_contradiction.py": (
+        "consumes the frozen pseudokinase contradiction set that "
+        "ops/build_pseudokinase_contradiction_set.py wrote and constructs nothing. Its "
+        "units are 15 caliper-matched pseudokinase/active pairs and an 8-record "
+        "counter-stratum named by that build, in that build's own near-duplicate split "
+        "units, and a cohort of its own would be a second definition of which proteins "
+        "the contrast is read on -- which is the defect L30 records. It reads the file "
+        "through src.transfer.catalytic_contradiction.load_cohort, which re-derives the "
+        "anchor indexing against each sequence and re-checks the declared gene lists "
+        "against the cohort's own fields rather than trusting the manifest, and the file "
+        "is pinned by a required --cohort-sha256 so a rebuild under the same filename is "
+        "refused. Rule 1's hazard is absent for the records -- the cohort is a census of "
+        "the human kinome's curated strata, not a sample of a corpus, so there is no "
+        "draw to seed and no skip offset to be sensitive to -- and present for the one "
+        "draw this stage does make, the site-specificity control's displacements of each "
+        "record's own anchor triple, which is seeded from --seed and the record's split "
+        "unit and reaches the artefact. It builds an arms.Cohort only to reach "
+        "input_strings, which renders windows it already holds and selects nothing, "
+        "exactly as 29_designed_referent.py does"
+    ),
     "16_fitness_recovery.py": (
         "its units are DMS variants of one wild type, not corpus sequences, so it "
         "draws through src.transfer.fitness.load_assay rather than the FASTA "
@@ -230,6 +250,20 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "guard is active rather than dormant -- it compares only fields the "
         "artefact actually recorded, and all five are recorded and were verified "
         "to refuse one at a time on 2026-08-18"
+    ),
+    "39_fold_discordance.py": (
+        "consumes the frozen composition-matched / fold-discordant triple set "
+        "EXP-R2-214 amendment 2 admitted and constructs nothing: its units are that "
+        "cohort's 199 triples, and a cohort of its own would be a second "
+        "contradiction set under one track's name. It reads the file through "
+        "src.transfer.fold_discordance.load_cohort, which refuses any file that does "
+        "not hash to the pinned digest and re-derives the build's prefix rule against "
+        "every stored anchor_prefix rather than trusting it. Rule 1's hazard is absent "
+        "for the records -- there is no sample, so there is no draw to seed and no "
+        "skip offset to be sensitive to -- and present for the one draw this stage "
+        "does make, the composition-preserving prefix permutation its null rescores "
+        "under, which is seeded by --seed and reaches the artefact. It fits nothing, "
+        "so it takes no split either"
     ),
 }
 

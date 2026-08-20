@@ -15956,3 +15956,146 @@ A new stage in this repository has to appear in **two places outside its own mod
 
 **Nothing has been measured at a readable budget. No progress figure moves.**
 
+
+---
+
+## 2026-08-19 — EXP-R2-214 amendment 4 (D3.l), and the unified finding it shares with D3.k: a contradiction set against one ceiling member is an agreement set against the rest
+
+**Read this first: nothing below is a result.** The D3.l stage is built and instrument-validated; its numbers are a smoke run at one seed on 199 triples, and the implementing agent records them as an **instrument demonstration**. Nothing here has been measured on a model at a citable budget.
+
+**And read this second, because it leads the entry rather than qualifying it.** The verdict this stage produces **cannot be read as structural knowledge**, for a reason the implementing agent identified before believing the number. §7.0 clause 1 names three families as the definition of recombination — fragment/k-mer statistics, **profile-HMM scores** and **Potts/MSA couplings** — and **neither of the last two is implemented in this stage**, while the cohort's structure partner shares the anchor's CATH superfamily **by construction**. DIAMOND finds nothing at `--evalue 1e-3`, but clause 3 already states that an alignment certificate excludes whole-sequence retrieval and essentially nothing below the alignment scale, and a remote-homology detector is a clause-1 object. **So +0.20 toward the same-fold partner is exactly what an unimplemented member of the recombination family predicts.** The agent's own formulation is the one to keep: a verdict from this stage is *"outside the fragment and composition ceiling", not "outside the clause-1 family"*.
+
+**That is an agreement set hiding inside a contradiction set** — the same disease as F10, F12 and D3.g, one level deeper, and caught before the result was believed rather than after.
+
+### The unified finding, which is the part that outlives both cohorts
+
+**Two tracks hit this independently on the same day, from opposite directions, and neither cohort was wrong about the biology.**
+
+- **D3.l** is a genuine contradiction set against **fragment and composition** statistics, and an agreement set against **profile / remote homology**.
+- **D3.k** is a genuine contradiction set against **Pfam bit score**, and an agreement set against everything else in the family. Measured on that cohort under the identical readout: the 20-bit caliper drove bit score to **0.5111** — reproducing the build's 0.511 exactly, so the caliper does what it was built to do — while leaving nearest-active 3-mer **retrieval at 0.8978** and the **k = 7 fragment conditional at 0.9733**.
+
+Both were built as a contradiction against **one** member of the recombination family and inherited an agreement set against the others. **Neutralising one member is not neutralising the family**, and a cohort that does the first while leaving the others discriminating is an agreement set wearing a contradiction set's name — its verdict uninformative no matter how large the effect or how tight the interval.
+
+**§7.0 is amended accordingly (new clause 6).** The requirement is not merely to declare coverage: a contradiction set must be a contradiction against **every implemented member**, demonstrated **per member, with numbers, at construction time** — so that this is caught in a cohort build rather than in a campaign. D3.l and D3.k are jointly the rule's evidence, and the audit records them as such.
+
+### The arithmetic consequence, which deserves its own statement
+
+**D3.k measured what happens when the clause is violated.** With the binding ceiling at AUROC 0.9733, §7.0 clause 2's `(AUROC_model − 0.5) ≥ 2 × (AUROC_ceiling − 0.5)` demands **AUROC 1.4467**; against retrieval at 0.8978 it demands **1.2956**. Both are unreachable at any effect size. Meanwhile n = 15 puts the resolvability floor at **AUROC ≈ 0.75** while the ceiling sits at **0.88–0.97**, so **the window between "resolvable" and "clears" is empty** — the design could not have returned a pass.
+
+**The remedy the stage built belongs in the rule: a `MARGIN_UNATTAINABLE` verdict**, so an "inside the ceiling" classification can never be issued on the strength of a bar no result could reach. Each ceiling row carries `margin_attainable` and `required_auroc_by_factor`, and on `progen2-small` the flag reads **false** on the fragment rungs k = 4 through 7 and on both retrieval and composition. That is Appendix B rule 2 turned on the admission rule itself, and it is the **third time today** an unattainable threshold was caught before it decided anything.
+
+**D3.l hit the same degeneracy from the opposite sign.** With a *negative* ceiling, `arm ≥ 2 × max(ceiling, 0)` reduces to `arm > 0`, and every cell carries `multiplicative_clause_binds: false` with the reason in the field. **So the multiplicative clause is now known to be inert at both signs**, and the deciding statistic in both stages is the **sign and paired interval of the arm-minus-ceiling difference** against the binding member.
+
+### What D3.l does establish: it is genuinely two-sided on the members it implements
+
+Unlike D3.j, whose ceiling sat at ≈ 0 and gave a one-sided discriminant, **every implemented ceiling member here is negative while the arm is positive** — `ceiling_members_favouring_the_structure_partner: []`. The corpus account makes a *signed opposite* prediction on the same estimand, and both landings are reachable through identical code: the self-test's composition world returns **RECOMBINATION at −0.2608 [−0.3128, −0.2107]** and its fold world **STRUCTURE_CANDIDATE at +1.1876 [+1.1700, +1.2052]**, with the context-free world exactly zero and neither null firing in any of the three.
+
+### The smoke numbers, labelled as instrument demonstration
+
+`progen2-small`, 199 triples, **188 anchor units**:
+
+| reading | value |
+|---|---|
+| raw contrast `P` | **+0.2033 [+0.1466, +0.2655]** |
+| length-controlled | **+0.2239** |
+| triples positive | **152 / 199** |
+| median per triple | **+0.1075** |
+| arm minus the binding ceiling member | **+0.2872 [+0.2261, +0.3518]** |
+
+`progen2-medium` reads **+0.2979 [+0.1965, +0.3933]** with 154/199 positive, and +0.3818 [+0.2795, +0.4780] against composition. The verdict is identical across both windows, both resampling units and all eight ceiling members.
+
+**The decisive control: a composition-preserving prefix shuffle collapses +0.2033 to +0.0015 [−0.0147, +0.0186].** The effect requires the prefix's **arrangement**, not its composition — which matters precisely because the cohort measured the prefix as compositionally closer to the *sequence* partner on 94.0% of triples. The sign-permutation null also does not fire.
+
+**Refusals by measurement, nothing computed behind either gate.** `protgpt2`: leg alignment **0.0000**, with only **33.3%** of legs carrying token-for-token identical continuation spans across the two passes and one-token-per-residue at 0.0 — so the per-position difference this estimand takes is undefined on that arm. `zymctrl`: its rendering requires an `ec_labels` conditioning tag and **the cohort defines it on 0 of 199 triples**; scoring without the tag is 1.73 nats off distribution (EXP-R2-034) and scoring with a fabricated one is worse.
+
+### The ceiling curve, and why the fragment half cannot bind — a structural result, not an empirical one
+
+Adequacy climbs monotonically and never reaches the 0.1 floor: **0.0000** at k = 1 (exactly zero by construction) → 0.0052 → **0.0090** at k = 3, the frozen rung → 0.0135 → 0.0173 → 0.0263 → **0.0637** at k = 7, where coverage is 0.8595 at 13.21 observations per k-mer.
+
+**The cause is Markov dilution and it is arithmetic, not a property of this corpus.** An order-`k` conditional carries information across `k − 1` positions, so on a continuation of about a hundred residues it contests six of them and its per-token contrast dilutes roughly tenfold. Two measurements pin it:
+
+- The **junction-only** column shows the same member undiluted at **0.4991** at k = 7 — a bar with teeth once the dilution is removed.
+- At `--junction-offset 6`, **every fragment order reads exactly 0.0000** while the composition member still reads **−0.0825**. A fragment model has nothing to say beyond its own reach; a composition model does.
+
+**So the binding member is `prefix_adapted_composition` at adequacy 0.4316**, added as a second ceiling member because a k-mer conditional demonstrably cannot capture "continue the prefix's composition". **That puts the cohort's own 94.0% prefix bias inside the ceiling rather than leaving it as a caveat**, which is the right place for it.
+
+### Two frozen-text defects found by checking, both recorded as corrections
+
+**The frozen bare-conditional estimand was defective.** On `log p(c_str | x) − log p(c_seq | x)`, a k = 1 corpus unigram already separates the two candidates, so **the pre-registration's own required "k = 1 is exactly zero" anchor does not exist on the frozen statistic** — and an indexing defect in the curve would have been undetectable. The stage reads the marginal-subtracted form `[log p(c_str|x) − log p(c_str)] − [log p(c_seq|x) − log p(c_seq)]`, which makes k = 1 exactly zero by construction and **raises if it is not**; the bare form is reported beside it as `conditional_contrast` (+0.1937, 126/199 positive). Two structural reasons, not cosmetic ones: the sequence partner is composition-matched to the anchor and the structure partner is not, so on the bare statistic each candidate's own marginal is a nuisance the size of the effect; and the subtraction removes everything not depending on the anchor's prefix, which is what amendment 2's ordering contrast asks about.
+
+**The 2× multiplicative clause is inert against a signed ceiling**, as recorded above — the same arithmetic degeneracy D3.j hit, arriving by the opposite route.
+
+### A third attainability catch, of amendment 2's shape
+
+The L30-conservative resampling unit — connected components of triples sharing any near-duplicate group — collapses 199 triples into **21 components, one of which holds 145 (72.9%)**. A 21-unit bootstrap therefore omits that component in about **36%** of draws (`(1 − 1/21)^21 ≈ 0.363`), each of which drops nearly three-quarters of the cohort. **`anchor_group` (188 units, largest 7 triples) is declared for the runs, with the component reading carried as a sensitivity**; both agree on every cell, and the component intervals are correspondingly wider ([+0.0187, +0.2333] against [+0.1466, +0.2655]). Found before any model was read.
+
+### Cost, which changes scheduling
+
+**Measured, not extrapolated:** one arm-cell is **221,507** real forward tokens over 150 forward calls, at 34.9 s and 47.2 s wall on a local card; the three model cells run total **664,521** forward tokens. **The binding cost is CPU-side staging of the 10.24 GB k = 7 vector**, which the retained artefacts record at **12.5–12.8 s** page-cached. *The 0.0035 H200-hours per three-arm pass, the sub-0.05 figure for a 27-cell sweep, and a 577–620 s cold-staging range are projections and a range I could not find in the retained artefacts; they are recorded as such.* **The measured throughput carries the scheduling conclusion on its own: this stage does not need an H200 allocation.**
+
+**No progress figure moves.**
+
+
+---
+
+## 2026-08-19 — EXP-R2-214 amendment 5 (D3.k): RECOMBINATION on both arms, and the readout that keeps it from collapsing into the motif reader
+
+**Read this first: the verdict is RECOMBINATION, and the cohort's own construction is why.** The unified finding is in amendment 4 and is not restated here: D3.k neutralised **one** member of §7.0 clause 1's family and left the others discriminating, so this cohort is a contradiction set against bit score and an agreement set against fragment statistics, retrieval and composition. The numbers below are a smoke-budget read on the built cohort; what they establish about the *design* is more durable than what they establish about the models.
+
+### The verdicts
+
+**`RECOMBINATION` on both admissible arms, and `DOES_NOT_SEPARATE_COUNTER_STRATUM` on both.**
+
+| reading | `progen2-small` | `progen2-medium` |
+|---|---|---|
+| primary AUROC | **0.9200 [0.7689, 0.9956]** | **0.8844 [0.7289, 0.9956]** |
+| biology reference (motif reader) | **0.9222 [0.8244, 0.9889]** | same cohort |
+| binding ceiling, k = 7 fragment | **0.9733** | — |
+| counter-stratum | **0.7333 [0.5159, 0.9464]** | 0.7417 |
+| motif reader on the counter-stratum | **0.7375 [0.5131, 0.9270]** | — |
+
+15 matched pairs, 15 resampling groups on the primary; 23 groups on the counter-stratum. **Ceiling adequacy crosses the 0.1 floor at k = 5** (0.1328) and reaches **0.5801** at k = 7, and `survives_every_ceiling_order` is **false** — k = 1 is the only rung the model clears, and it clears it because a unigram reads exactly 0.5000 there by construction.
+
+**The counter-stratum reading is precise and must not be rounded either way.** At 0.7333 with an interval covering chance, the model **does** fail to separate the motif-degraded-but-active stratum from the dead one — so on this reading it is a motif reading — but the interval also means **no claim is supportable at n = 8**. Both halves are the result.
+
+### The readout, which is the design's real contribution
+
+**A forced-anchor contrast in which both conditions overwrite the same positions with the same residues.** The statistic ρ is the difference in per-residue NLL between a "live" and a "dead" forcing of the three catalytic anchors, and because both conditions write the *same* positions with the *same* residues, **ρ is provably independent of what the record itself carries there** — verified rather than argued: mutating a record's anchors to three different triads returns **bit-identical ρ**, and the write invariant holds at `max_absolute_difference: 0.0` over 38 checked records at 16 positions each.
+
+**That is what stops the readout collapsing into the motif reader**, and it is why the two records that would otherwise be structural zeros are scored normally: **RYK**, which keeps all three catalytic residues and is still a pseudokinase, reads +0.0709; **PKDCC**, which also reads all three intact and fails instead on bit score at 17.9 bits, reads +0.0731.
+
+**The statistics side is exactly zero by construction, checked and not asserted.** A profile HMM emits columns independently, so ρ ≡ 0 for it; a k-order conditional gives ρ ≡ 0 beyond exclusion radius `k − 1`, and at k = 1 for any radius. The radius sweep confirms the asymmetry directly:
+
+| exclusion radius | model AUROC | fragment rungs k = 1…7 |
+|---|---|---|
+| 0 | 0.9200 [0.769, 0.996] | 0.500, 0.702, 0.733, 0.782, 0.880, 0.938, 0.973 |
+| 3 | 0.8533 [0.671, 0.991] | 0.500 ×4, then 0.836, 0.871, 0.947 |
+| **6** | **0.8222 [0.622, 0.991]** | **every rung exactly 0.500** |
+| **12** | **0.8000 [0.618, 0.956]** | **every rung exactly 0.500** |
+
+**The model's effect is not local and the fragment ceiling's is entirely local.** Retrieval and composition are whole-sequence statistics and therefore radius-independent by construction — they still bind at every radius, which is exactly the agreement-set problem amendment 4 records.
+
+**Site specificity holds:** the catalytic-anchor reading of 0.92 exceeds the 95th percentile (0.5469) of eight matched non-catalytic anchor draws. **The architecture control fires:** real-versus-shuffled AUROC 0.8067 [0.6955, 0.9300], where the shuffle holds composition fixed and destroys the architecture.
+
+### Per-record detail worth keeping
+
+The **WNKs read +0.1073, +0.1217, +0.1308 and +0.1853** — inside the active range — so **the model does not call them dead** despite `VAWC` at β3, while **CASK (−0.0457)** and **POMK (+0.0079)** sit in the dead range. That is why the counter-stratum lands at 0.73 rather than at 0.5 or at 0.95: the stratum is not read uniformly, and the eight records split.
+
+### Refusals exercised on real arms
+
+`protgpt2` is `NOT_MEASURABLE` at measured single-symbol coverage **0.006701** (113 of 16,863 alphabet characters over 38 records), with nothing behind the gate. `zymctrl` is refused **before loading** on its annotation channel: its EC conditioning tag names kinase activity for **15 of 15** matched actives against **5 of 18** dead records, so the tag carries the answer for exactly the records the contrast turns on. The joint rendering is refused with amendment 1 item 2's reason — the same argument, applied to a description channel instead of a tag.
+
+**Four planted worlds returned four correct verdicts** — `CANDIDATE_CATALYTIC_KNOWLEDGE`, `MOTIF_READING_NOT_STRUCTURE`, `RECOMBINATION`, `READOUT_DEGENERATE` — which is the check that matters, because a self-test that only verified thresholds would pass on a pipeline unable to reach three of the four.
+
+### Cost
+
+Measured: **568,256** forward tokens per protein cell over 190 forward calls, at 214.6 s and 254.8 s wall on a local card, plus 3.7 s for the refused arm and 69.0 s for the synthetic certificate. *The figure of 0.0135 H200-GPU-hours is a projection and is recorded as one; the measured wall times above are what the scheduling conclusion rests on.* **Neither D3.k nor D3.l needs an H200 allocation** — a scheduling fact worth having, since both were sized as if they might.
+
+### What is now pending rather than concluded
+
+**A double-caliper attainability check**, matching on **nearest-active fragment identity as well as bit score**, using the 16-pair `homology_matched` set the cohort build already computed. This is the direct test of amendment 4's new §7.0 clause 6 on this cohort: can the two members be neutralised simultaneously?
+
+**Frozen now: if fewer than eight pairs survive both calipers, D3.k closes there** — and that closure is **a statement about the human kinome and the corpus**, namely that catalytic status and corpus identity may not be jointly decouplable at this scale, and **not a failure of the design**. The unit ceiling is already known to be of order twenty human genes with published catalysis experiments and not to improve with effort (manifest limitation L-PK-3), so a two-caliper survival count below the floor would be an irreducible property of the biology rather than a budget problem.
+
+**No progress figure moves.**
+

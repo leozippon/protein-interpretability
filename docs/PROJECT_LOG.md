@@ -1856,3 +1856,17 @@ Two registrations, no results. Both entries are in `docs/EXPERIMENT_LOG.md`; the
 **One structural point worth keeping.** A new numbered stage must register in two places outside its own module — the cohort-draw contract and the plan's stage table — or the suite goes red. That is a deliberate coupling, not a defect: those two files are the single sources for which cohort draw a stage consumes and what it is for.
 
 **No percentage moved.** Nothing has been measured at a readable budget on either item.
+
+## 2026-08-19 (late) — §7.0 gains clause 6: a contradiction set must contradict every implemented ceiling member
+
+**Two tracks hit the same structural flaw independently on one day, from opposite directions.** **D3.l** is a contradiction against fragment and composition statistics and an **agreement set against profile / remote homology** — its structure partner shares the anchor's CATH superfamily by construction, so an unimplemented clause-1 member predicts its exact +0.20. **D3.k** is a contradiction against **bit score alone**: the 20-bit caliper drove Pfam bit score to 0.5111 while leaving nearest-active retrieval at 0.8978 and the k = 7 conditional at 0.9733 under the identical readout. Neither cohort was wrong about the biology. Both neutralised one member of the family and inherited an agreement set against the rest — F10/F12/D3.g's disease one level deeper, caught twice in a day by two agents working independently.
+
+**The rule now reads:** a ceiling is a **declared family** whose coverage is stated in the artefact; a contradiction set must contradict **every implemented member**, demonstrated **per member, with numbers, at construction time**; a verdict is phrased against the members implemented, never against the family's name; and an unimplemented member that plausibly predicts the observed effect is **named as an open alternative**. Full text: audit **§7.0 clause 6**.
+
+**A second, arithmetic half.** D3.k measured what a violated clause costs: the 2× margin demanded AUROC **1.4467** against its binding ceiling and 1.2956 against retrieval — both unreachable — while n = 15 put the resolvability floor at ≈ 0.75, leaving the window between *resolvable* and *clears* **empty**. The remedy is now in the rule as a **`MARGIN_UNATTAINABLE`** verdict, so "inside the ceiling" can never rest on a bar no result could reach. D3.l hit the same degeneracy at the opposite sign — against a negative ceiling, `arm ≥ 2 × max(ceiling, 0)` reduces to `arm > 0` — so **the multiplicative clause is inert at both signs** and the deciding statistic is the sign and paired interval of the arm-minus-ceiling difference.
+
+**D3.g's closure is unaffected** and the audit says so: there the binding member was a fragment statistic that **beat** the model, and an unimplemented member can only undermine a pass, never a loss.
+
+**Status of the two tracks.** D3.k is read out — **RECOMBINATION on both admissible arms**, `DOES_NOT_SEPARATE_COUNTER_STRATUM` on both — with a double-caliper check pending that would close it if fewer than eight pairs survive both calipers; that closure would be a statement about the human kinome and the corpus, not about the design. D3.l is built and instrument-validated, its smoke read an instrument demonstration. **Neither needs an H200 allocation** — a scheduling fact worth having, since both were sized as if they might.
+
+**No percentage moved.**
