@@ -91,13 +91,20 @@ SCHEMA_VERSION = "r2_transfer_panel_contract_v5"
 # --------------------------------------------------------------- campaign panel
 
 #: The arms a campaign may schedule: every :data:`~src.transfer.arms.PANEL`
-#: member whose checkpoint is staged on GPFS and byte-verified (EXP-R2-058).
+#: member whose checkpoint is staged on GPFS and byte-verified (EXP-R2-058),
+#: which since 2026-08-21 is all fifteen of them.
 #:
-#: This is a *staging* fact and therefore cannot be derived from ``PANEL``, so it
-#: is declared -- but :func:`_check_campaign_panel` requires every excluded panel
-#: member to carry a reason below, which makes adding an arm to ``PANEL`` without
-#: deciding its campaign status an import-time failure rather than a silent
-#: omission from every campaign.
+#: Staging cannot be derived from ``PANEL``, so this is declared -- but
+#: :func:`_check_campaign_panel` requires every excluded panel member to carry a
+#: reason in :data:`PANEL_MEMBERS_NOT_STAGED`, which makes adding an arm to
+#: ``PANEL`` without deciding its campaign status an import-time failure rather
+#: than a silent omission from every campaign.
+#:
+#: What this list is *not* is a per-stage panel. A stage that cannot read its
+#: statistic on an arm refuses that arm in :data:`STAGE_CONTRACTS`, with the
+#: reason, and every consumer resolves through :func:`stage_arms`. Withholding
+#: campaign membership to express one stage's refusal removes the arm from every
+#: other stage as well, silently and without a reason attached to any of them.
 CAMPAIGN_PANEL: tuple[str, ...] = (
     "gpt2",
     "gpt2-medium",
@@ -128,34 +135,70 @@ CAMPAIGN_PANEL: tuple[str, ...] = (
     # recorded here so that a later full-panel campaign finds the fact declared
     # instead of inferring it from an artefact.
     "bygpt5-medium-en",
+    # The other two ByGPT5 rungs, admitted 2026-08-21. Their exclusion until
+    # today was a `paa_census` refusal applied one level too high, plus a
+    # circular prerequisite, and neither survives being written out.
+    #
+    # The refusal itself is real and is unchanged: `hit@20` has a grid-dependent
+    # chance level, so on a 4x6 = 24-head and a 6x12 = 72-head grid it cannot
+    # separate a census that retrieves the causally important heads from one that
+    # returns the grid. It is declared where it applies --
+    # STAGE_CONTRACTS["paa_census"].excluded_arms still names both arms by hand,
+    # because no ArmSpec field carries a head count -- so admitting them here
+    # does not admit them there and `panel_contract.py --json` still prints the
+    # refusal against their names. What was wrong was the level. CAMPAIGN_PANEL
+    # is the set of checkpoints a campaign may schedule; every stage intersects
+    # it with its own predicate; refusing an arm from the whole campaign because
+    # one stage cannot read one statistic on it is the restatement of a stage's
+    # panel that this file exists to end.
+    #
+    # The second half of the old reason was circular. It said the two may not be
+    # scored anywhere because their cohort has never been through `cohort_power`
+    # -- and `cohort_power` is a campaign stage, so non-membership was the only
+    # thing keeping that prerequisite undischarged. It is these arms'
+    # PREREQUISITE for exactly the reason it is bygpt5-medium-en's, and
+    # membership is what discharges it.
+    #
+    # The cost of leaving them out was being paid in readings that already
+    # exist. `collision_null_census` has scored all three rungs since EXP-R2-155
+    # -- their vocabulary collision rate sits among the residue-tokenised protein
+    # arms while their modality is text, which is why that stage declares against
+    # the pattern set rather than the circuit set -- but only bygpt5-medium-en
+    # may carry a verdict, and the audit records the other two as unqualified
+    # supporting rungs (§4 bounds) and as unscored on the context-information
+    # estimand anywhere, where an absence is not a pass (§5.06(h)).
+    #
+    # Verified before admission rather than assumed, at float32 on this host's
+    # CPU: both load through `arms.load_arm`; their live block count and width
+    # match the ArmSpec exactly, at 4 x 1472 / 73,495,680 parameters and
+    # 6 x 1536 / 139,218,816; both return logits of width 384 against the
+    # 384-symbol vocabulary `budget.arm_power` reads out of `config.vocab_size`;
+    # and both carry the `budget` capability every campaign member owes. Their
+    # checkpoints are staged on the cluster and run there: EXP-R2-171 took all
+    # fifteen panel arms through `collision_null_census` in the pod.
+    #
+    # What membership widens, stated rather than discovered later: the same three
+    # stages as bygpt5-medium-en and no others. `cohort_power` (the prerequisite
+    # above), `collision_null_census` (already run, now qualifiable) and
+    # `probe_and_erasure`, which admits every arm and writes per-concept refusals
+    # into its own output. Every other stage refuses `t5_decoder` on its own
+    # module's architecture declaration.
+    "bygpt5-small-en",
+    "bygpt5-base-en",
 )
 
 #: Panel members deliberately outside :data:`CAMPAIGN_PANEL`, with the reason.
 #:
-#: These are two of the three ByGPT5 rungs. The third, ``bygpt5-medium-en``, was
-#: here until 2026-08-06 on a staging fact this file could not itself verify; the
-#: checkpoint was in fact staged and load-tested on the cluster during EXP-R2-058
-#: and it is now a campaign arm. The two that remain are excluded on a property of
-#: their head grid that no amount of staging repairs -- ``hit@k`` has a
-#: grid-dependent chance level, and on a 24-head grid the chance level of
-#: ``hit@20`` is 16.7 against a ceiling of 20 -- stated once in
-#: ``STAGE_CONTRACTS["paa_census"].excluded_arms`` and pointed at from here.
-PANEL_MEMBERS_NOT_STAGED: dict[str, str] = {
-    "bygpt5-small-en": (
-        "refused by paa_census on its 4x6 = 24-head grid; see "
-        "STAGE_CONTRACTS['paa_census'].excluded_arms. collision_null_census "
-        "admits it -- that stage's statistic is a per-head excess over the arm's "
-        "own null and carries no grid-dependent chance level -- but its cohort "
-        "has never been through cohort_power, and evidence-discipline rule 2 "
-        "forbids scoring an arm whose cohort information is unqualified. It is "
-        "therefore reachable as a direct invocation, as zymctrl is for "
-        "paa_census, and is not a campaign item"
-    ),
-    "bygpt5-base-en": (
-        "refused by paa_census on its 6x12 = 72-head grid; see "
-        "STAGE_CONTRACTS['paa_census'].excluded_arms. Otherwise as bygpt5-small-en"
-    ),
-}
+#: **Empty, and that is a state rather than an unfilled field.** Every
+#: :data:`~src.transfer.arms.PANEL` member has been a campaign arm since
+#: 2026-08-21; the two entries here until then were the narrow ByGPT5 rungs, and
+#: the admission comment above says why their reason did not hold at this level.
+#:
+#: The table stays because :func:`_check_campaign_panel` reads it: an arm added
+#: to ``PANEL`` must be admitted above or refused here by name, and an import
+#: fails if it is neither. An empty table is therefore the strongest state this
+#: declaration has -- nothing is outside the campaign -- and not a gap in it.
+PANEL_MEMBERS_NOT_STAGED: dict[str, str] = {}
 
 #: Checkpoints that are staged on GPFS and load cleanly but are NOT declared in
 #: :data:`~src.transfer.arms.PANEL`, with the measured reason. Recorded here rather
@@ -902,11 +945,13 @@ def stage_contract_record(stage: str, arms: list[str] | tuple[str, ...]) -> dict
         measures a subset of the panel and does not say so is the L18 shape.
         ``eligible_for_this_stage`` is resolved over :data:`CAMPAIGN_PANEL`, so an
         arm measured from outside that panel -- a deliberate per-arm run of a
-        checkpoint the cluster does not stage, which is how ``paa_census`` reaches
-        ZymCTRL and ``bygpt5-medium-en`` -- would otherwise read as an arm the
+        checkpoint no campaign schedules -- would otherwise read as an arm the
         stage refuses. ``measured_outside_campaign_panel`` answers that directly,
         with the stage's own verdict on the arm beside the reason it is not in the
-        campaign.
+        campaign. It is empty on every artefact while
+        :data:`PANEL_MEMBERS_NOT_STAGED` is empty, which is the current state;
+        the field is what keeps the next non-campaign arm from reading as a
+        contradiction rather than as a declared direct invocation.
     ``cohort_band``
         the protein residue band this stage draws on, beside the band
         ``01_cohort_power.py`` *qualified* the arms on, and a flag for whether
@@ -1022,7 +1067,13 @@ _VOCAB_TRUNCATION_LIMIT = 1024
 COHORT_POWER_ITEM_RULES: tuple[tuple[str, str], ...] = (
     (
         "text",
-        "text arms share one OpenWebText cohort; vocabulary > 1024 so --skip-truncation",
+        "text arms share one OpenWebText cohort. --skip-truncation because the "
+        "invocation holds vocabularies far above the 1024-piece limit "
+        "budget.truncation_curve can compute on this transformers build, and the "
+        "flag is per invocation rather than per arm. That is a cost the three "
+        "byte-level rungs pay for sharing the process: their 384-symbol "
+        "vocabularies are inside the limit and their curve is computable, and it "
+        "is declared here rather than left to be inferred from a missing field",
     ),
     (
         "protein_large_vocab",
@@ -1046,7 +1097,24 @@ COHORT_POWER_ITEM_RULES: tuple[tuple[str, str], ...] = (
         "ProGen2-medium is isolated at --dtype float32: its "
         "nll_reduction_shortest_to_longest_nats moved 0.6266 -> 0.7293 (+16%) under "
         "bfloat16 in the L20-vs-H200 cross-check and collapsed to 2.6e-7 in float32; "
-        "--dtype governs model loading so it cannot be set per arm within one process",
+        "--dtype governs model loading so it cannot be set per arm within one process. "
+        "THIS SPLIT IS WHAT MAKES THE progen2-base/progen2-medium CONTRAST UNPAIRED "
+        "(L38), and the two ways of removing it are both worse than the split. "
+        "Returning ProGen2-medium to the default dtype undoes a measured repair. "
+        "Promoting ProGen2-base to float32 would infer a precision override from a "
+        "different checkpoint, which protein_default_dtype above refuses on principle "
+        "and for which no measurement exists: the bfloat16 instability was measured on "
+        "ProGen2-medium alone, and establishing it for ProGen2-base needs a two-host "
+        "cross-check nobody has run. What the split does NOT require is the unpaired "
+        "reading. The two items draw byte-identical cohorts and byte-identical held-out "
+        "references -- Cohort.digest hashes records and never the name, and on all "
+        "eight blocks of EXP-R2-216 the two --cohort-name values carry the same digest "
+        "pair -- so the near-duplicate groups a bootstrap resamples are the same units, "
+        "whatever precision each arm's NLL was computed at. The contrast is unpaired "
+        "only because 41_context_information_bootstrap.py keys pairing on the sidecar, "
+        "one 01_cohort_power.py invocation, rather than on the cohort digest the "
+        "sidecar already carries. That is where L38 is repairable; it is not repairable "
+        "here without changing what an arm is scored at",
     ),
 )
 

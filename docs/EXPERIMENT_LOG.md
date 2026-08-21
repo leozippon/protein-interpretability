@@ -16339,3 +16339,153 @@ Note the asymmetry runs opposite to the plan's expectation: the *text* reference
 **Two arms remain unscored on this estimand anywhere:** `bygpt5-small-en` and `bygpt5-base-en`, which are declared in `PANEL` but not in `campaign_panel`. They are named as absent in every summary table, and absence is not a pass.
 
 **One operational note.** Two cells hit access-layer transients: one aborted before scheduling on an empty reply to a pod predicate and was relaunched, and one returned a garbled worker-status sentinel and succeeded on its second attempt. Both recovered against the same frozen snapshot, and the worker's provenance-keyed resume made the retry a no-op for items already verified. Neither touched a measurement. The end-to-end path was gated first by a two-arm smoke cell (gpt2 +4.5108 [+4.4401, +4.6580], progen2-small +0.8706 [+0.7213, +1.0197] at n = 64, pool 200, reference 500) carried through launch, pull, digest check and stage 41 before the panel was scaled up.
+
+## 2026-08-21 — the campaign panel admits the two narrow ByGPT5 rungs, and the ProGen2 cohort split is localised rather than removed
+
+**Contract change, CPU only. No campaign was run and no measurement was produced or superseded.** `scripts/transfer/panel_contract.py --verify` passes and `scripts/transfer/panel_contract.sh`, `external_resources/manifests/interpretability_transfer_resources.json` and the operator guide's stage table are regenerated from it.
+
+**Why the exclusion did not hold.** `bygpt5-small-en` and `bygpt5-base-en` sat in `PANEL_MEMBERS_NOT_STAGED` from 2026-08-06 with a reason that was `paa_census`'s named refusal restated one level too high — `hit@20` has a grid-dependent chance level and cannot be read on their 24-head and 72-head grids. That refusal is real, applies to that stage, and is still declared there, so admitting the arms to the campaign does not admit them to `paa_census`. The second half of the reason was circular: the arms could not be scored because their cohort had never been through `cohort_power`, which is itself a campaign stage, so non-membership was the only thing keeping the prerequisite undischarged. Meanwhile the cost was being paid in readings that already exist — `collision_null_census` has scored all three rungs since EXP-R2-155, and only `bygpt5-medium-en` may carry a verdict.
+
+**Verified before admission, on the L20 host's CPU at float32, through `arms.load_arm`.** Both checkpoints load; live block count and width match the `ArmSpec` exactly at 4 × 1472 / 73,495,680 parameters and 6 × 1536 / 139,218,816; both return logits of width 384 against the 384-symbol vocabulary `budget.arm_power` reads out of `config.vocab_size`; both carry the `budget` capability. Their checkpoints are staged on the cluster and have run there — EXP-R2-171 took all fifteen panel arms through `collision_null_census` in a pod.
+
+**What membership widens, measured off the regenerated contract rather than argued:** `cohort_power` (the prerequisite), `collision_null_census` (already run, now qualifiable) and `probe_and_erasure`, from 13 arms to 15 each. Every other stage refuses `t5_decoder` on its own module's architecture declaration and now prints that refusal against both names; `paa_census`'s eligible list is unchanged at twelve.
+
+**The ProGen2 cohort split (L38) is required and stays.** `progen2-base` and `progen2-medium` are in different `01_cohort_power.py` items only because `--dtype float32` governs model loading and cannot be set per arm within one process. Removing the split either returns ProGen2-medium to bfloat16, undoing a measured repair, or promotes ProGen2-base to float32 on an override inferred from a different checkpoint — refused on principle by the `protein_default_dtype` rule, and unsupported, since the bfloat16 instability was measured on ProGen2-medium alone. **What the split does not require is the unpaired reading, and that is the finding.** `Cohort.digest` hashes records and never the cohort name, and on all eight EXP-R2-216 blocks the two `--cohort-name` values carry the same cohort digest and the same held-out reference digest (b0 `f565fd96d429`/`6844f977d249` through b7 `7cd213e12f2f`/`07ca5346a86e`). The resampling units are therefore identical across the two items whatever precision each arm's NLL was computed at, and the contrast is unpaired only because `41_context_information_bootstrap.py` keys pairing on the sidecar — one invocation — rather than on the cohort digest the sidecar already carries. L38 is repairable there and not in the contract.
+
+**One inaccuracy corrected in passing.** The `text` cohort-power item's reason claimed vocabulary above 1024 for all its members; three byte-level rungs have 384-symbol vocabularies whose truncation curve is computable and is skipped anyway, because `--skip-truncation` is per invocation. The cost is now declared instead of being inferable from a missing field.
+
+## 2026-08-21 — a unigram null control gives the eligibility criteria a known zero, and the sign rule fails at it
+
+**CPU only, on statistics already on disk. No model was loaded and no measurement of any panel arm was produced or superseded** — the 104 real-arm cells reproduce the EXP-R2-216 campaign byte for byte.
+
+**What was built.** `information_bootstrap.unigram_null_control` constructs a synthetic arm whose per-token predictive distribution *is* the smoothed unigram `q(v) = (r_src(v) + α)/(R_src + αV)` fitted on the held-out reference of a **different** cohort block, scored against this block's own reference as baseline. Both terms of `I` are then smoothed unigram estimates of one population fitted on independent samples, so the true `I` is zero by construction while the measured `I` carries realistic estimation noise and the same vocabulary-dependent smoothing constant every real arm carries. The control is an ordinary `ArmStatistics` and joins the panel of the arm it is built from, under the same resample indices and through the same `bootstrap_arms` call — there is no second estimator. `--unigram-null-control` on `41_context_information_bootstrap.py` builds one per measurable arm per block. Two degeneracies are refused rather than reported: a control fitted on the baseline's own counts (`q_control` is `q_baseline`, so `I` is zero by algebra and the interval describes nothing) and a borrowed reference of which nothing survives the disjointness screen. Every verbatim copy of a scored record is dropped from the borrowed reference before it is fitted, which is the disjointness `01_cohort_power.py` already asserts within a block, applied to the one set it could not reach; the count is reported on every record.
+
+**Command.** `python scripts/transfer/41_context_information_bootstrap.py --sidecar <40 sidecars, b0…b7 × 5 cohorts> --cohort-json <40> --reference-json <40> --seed 20260820 --n-bootstrap 2000 --alpha-sweep 1.0 --unigram-null-control --out results/transfer/ctx_uncertainty_20260821/e3_unigram_null_control --report-name context_information_bootstrap_e3_unigram_null.json`. The exact path lists are in the artefact's `metadata.configuration`. The sweep is held at one rung because a control's `α` sweep moves only its baseline — its own model is a unigram at the headline `α` — and that baseline is the parent arm's, so the range would restate §5.06(e) rather than add to it.
+
+**104 of 104 controls measured, 8 blocks × 13 arms.** The measured departure from a true zero, per cohort:
+
+| cohort | n | mean `I` | range | max \|departure\| |
+|---|---:|---:|---|---:|
+| OpenWebText (text) | 64 | +0.0016 | [−0.0019, +0.0132] | 0.0132 |
+| Swiss-Prot, ProGen2 arms | 24 | −0.0000 | [−0.0004, +0.0002] | 0.0004 |
+| Swiss-Prot, ProtGPT2 | 8 | +0.0010 | [−0.0098, +0.0077] | 0.0098 |
+| EC-labelled (ZymCTRL) | 8 | −0.0001 | [−0.0002, −0.0000] | 0.0002 |
+
+Every mean is within its own between-block standard error of zero, so the construction lands where it was designed to land, and the largest departure anywhere is **0.0132 nats — 4.4% of the 0.30 floor**.
+
+**The floor behaves correctly at a known zero and the sign rule does not.** The 0.30 nats/token floor refuses **0 of 104** readings, which is what a screening floor must do where the true value is zero. The bootstrap sign rule — lower bound above zero — **passes 64 of 104**, against the 0.025 the interval's own tail would give. This is EXP-R2-216 §5.06(d)'s single ProtGPT2-shuffle observation turned into a rate, and it is not a tail event: the rule is decided by **vocabulary**, passing on every block of every large-BPE arm (gpt2 family 50257, llama-3.2-3b 128256, qwen2.5-0.5b 151936, protgpt2 50257) and failing on every block of every small-inventory arm (bygpt5-medium-en 384, ProGen2 32, ZymCTRL 458).
+
+**The mechanism, measured.** On all 64 false passes the interval lies **entirely above the point estimate**. The percentile interval is displaced upward by the bootstrap's own bias, mean **+0.0185 nats** on the passing readings — +0.0338 on ProtGPT2, +0.0169 llama, +0.0164 qwen, +0.0162 the GPT-2 family, against +0.0002 on ByGPT5 and +0.0000 on ProGen2 and ZymCTRL. This is the Jensen displacement `information_bootstrap` already documents: `H_baseline = −Σ c(v) log q_b(v)` is convex in `q`, so a resampled reference gives `E[H_baseline,b] > H_baseline`, and the gap grows on the same `V/R` axis the smoothing bias lives on. **At a true zero the sign rule reads that displacement rather than the measurement.** The floor is unaffected because 0.0185 nats is nowhere near 0.30. The pre-registration's reason for reporting the sign rule without adopting it — that on an arm near zero the sign would be decided by `α` and `V` rather than by the model — is now measured rather than argued, with the vocabulary ordering exactly as predicted.
+
+**What the departure is not.** It is **not** the smoothing bias E4 bounds. Both terms of this control carry the same `α` and `V`, so the inflation cancels to first order and what survives is a residual of ≤0.002 nats against analytic `log(1 + αV/R)` bounds of 0.0001 (ProGen2) to 0.2070 (ProtGPT2). The quantity that does not cancel is the interval's displacement above, which is the one that breaks a criterion.
+
+**An independence finding about the campaign's own blocks.** The eight OpenWebText blocks are pairwise disjoint at the record level: **0** cohort records appear in any other block's held-out reference, and no two references share a record. The protein blocks are not: 4–9 of each 200-record Swiss-Prot cohort and **14–32** of each EC cohort appear verbatim in another block's reference, and two references share 82–102 (Swiss-Prot) or 234–267 (EC) of their 4000 records. The copies are dropped before the control's unigram is fitted, so the zero survives; the shared reference records remain and correlate the two unigrams, which shrinks the measured departure and flatters the null on the protein side. Read the protein departures as an upper bound on nothing and a lower bound on the noise.
+
+**Verification.** One control's `I` recomputed directly from the raw sidecars by an independent route matches the stage to 5e-14 on four arms. The 104 real-arm cells are identical to `e1_e2_main` in every published statistic, which is the property that makes the control a passenger in the panel rather than a perturbation of it. Adding one control per arm means arms sharing a tokenizer produce the same control: the 104 readings are **64 distinct (block, tokenisation)** measurements, 32 of which pass the sign rule.
+
+**Artefact.** `results/transfer/ctx_uncertainty_20260821/e3_unigram_null_control/context_information_bootstrap_e3_unigram_null.json`. Nothing is promoted to `evidence/`. **No number here re-chooses the 0.30 floor**, which the pre-registration forbids; what it does is give the criterion that was already refused a measured failure rate instead of a single observation.
+
+## 2026-08-21 — the ProGen2 pairing repair recovers the contrast, and the ordering stays retracted because its sign tracks the cohort
+
+**CPU only, on statistics already on disk. No model was loaded, no cluster was reached, and no measurement of any panel arm was produced or superseded.** The re-analysis reads the eight EXP-R2-216 Swiss-Prot blocks through the repaired keying in `41_context_information_bootstrap.py`, and every `I` it prints reproduces the campaign's own value.
+
+**Command.** `python scripts/transfer/41_context_information_bootstrap.py --sidecar <16 sidecars, b0…b7 × {swissprot_default_dtype, swissprot_progen2_medium_f32}> --cohort-json <16> --reference-json <16> --arms progen2-base progen2-medium --seed 20260820 --n-bootstrap 2000 --out results/transfer/ctx_uncertainty_20260821/paired_progen2_recheck --report-name paired_verify.json`.
+
+**The repair does what L38 said it would.** Pairing now keys on the two digests a sidecar carries rather than on the invocation that wrote it, so the `--dtype float32` split stops deciding whether the pre-registration's one named contrast is paired. Eight same-block gaps, unchanged to the last digit against the unpaired run, with intervals narrowing **2.90x to 3.80x** and **none of the eight straddling zero**:
+
+| block | gap `I(base) − I(medium)` | paired 95% | unpaired 95% |
+|---|---:|---|---|
+| b0 | −0.0527 | [−0.0866, −0.0231] | [−0.1770, +0.0642] |
+| b1 | −0.1240 | [−0.1738, −0.0819] | [−0.2617, +0.0051] |
+| b2 | −0.0848 | [−0.1257, −0.0488] | [−0.2135, +0.0430] |
+| b3 | −0.1101 | [−0.1556, −0.0681] | [−0.2569, +0.0332] |
+| b4 | −0.1287 | [−0.1710, −0.0893] | [−0.2637, +0.0106] |
+| b5 | −0.0715 | [−0.1126, −0.0307] | [−0.2071, +0.0741] |
+| b6 | −0.1014 | [−0.1477, −0.0601] | [−0.2330, +0.0315] |
+| b7 | −0.0916 | [−0.1355, −0.0527] | [−0.2205, +0.0346] |
+
+Mean **−0.0956**, between-block sd **0.0259**, t-interval over the eight draws **[−0.1173, −0.0739]**. The baseline term of the paired contrast is **0.0 at a bootstrap SE of 0.0** — the two arms share cohort and reference exactly — so the gap is precisely `H_model(medium) − H_model(base)` and no smoothing constant enters it. The eight unpaired columns are read back out of `e1_e2_main`, where the sixty-four declared readings are the 8 × 8 cross-block combinations that the old keying produced; **fifty-six of those sixty-four compare different blocks**, and "46 of 64 straddle zero" is retired as a statement about these two models.
+
+**And the ordering is still not reportable, for a better reason.** The retraction was checked before it was narrowed, and the check refuses the narrowing. The claim under test was that one reading only — the 2026-07-29 instrument skip-4000 draw — puts ProGen2-base above, and that it comes from a construction already known to manufacture effects. Neither half survives the artefacts. **More than twenty paired readings of this gap exist on disk across six stages**, each with both arms on one cohort digest against one baseline value, and the sign splits by **cohort**: on plain Swiss-Prot at 64–246, held out, eleven of twelve put ProGen2-medium above; on the **EC-labelled** cohort at the same band, six of seven put ProGen2-base above, including all three seeds of the 2026-07-30 `pathway_metrics` run (+0.0185, +0.0250, +0.0049) and two of the 2026-07-29 `pathway_budget` seeds (+0.0213, +0.0012); the 2026-07-28 convergence control reads **+0.0302** on plain Swiss-Prot at 600–2000 and **+0.0341** on the EC cohort; and the lens family's plug-in draws at n = 32 read **−0.8408** and **−0.7567** on the 64–120 band against **−0.0034** on the qualifying band. The file-order-pool account of the one plain-cohort disagreement also fails on its own terms: the instrument's skip-0 sibling was drawn the same way from the head of the same file and agrees with the corpus-wide ordering at −0.0466, so the construction cannot be what sets the sign.
+
+**Records changed.** `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` §5.06(c) is rewritten — the retraction stands, its basis moves from "46 of 64 straddle zero" to the cohort dependence, and the cohort-qualified statement that *is* available is stated with its band and its single campaign attached. L38 is restated as repaired, with the dtype split recorded as required and never the cause. The pre-registration's "no reading carries a valid interval" is marked spent where it stands, with a note on how that consequence fared; the same sentence is quoted verbatim in the stage's `DECLARED_CONTRASTS` note and has not been touched there.
+
+**Artefact.** `results/transfer/ctx_uncertainty_20260821/paired_progen2_recheck/paired_verify.json`. Nothing is promoted to `evidence/`.
+
+## 2026-08-21 — EXP-R2-217: the two narrow ByGPT5 rungs are scored for cohort power, and the byte-level cell stops resting on one point
+
+**Taking `EXP-R2-217`**, the next free identifier. `bygpt5-small-en` and `bygpt5-base-en` had never been through the held-out estimator anywhere; EXP-R2-216 named their absence in every summary table and recorded that absence is not a pass. They were admitted to the campaign panel earlier today, which made the prerequisite dischargeable, and this entry discharges it. **Eight campaign cells and one smoke cell through `run_transfer_h200.sh`, then one CPU re-analysis.** Nothing here re-chooses the 0.30 nats/token floor, which the pre-registration forbids, and no number here is evidence that any arm does or does not extract information from context: a cohort-power verdict is a measurability diagnostic on this cohort and nothing else.
+
+### What was run
+
+Eight cells, one per EXP-R2-216 block, `ARMS=bygpt5-small-en,bygpt5-base-en STAGES=cohort_power`, dispatched as the contract's `text` cohort item — which already carries `--skip-truncation`, so the flag was not repeated. Each cell ran at `--n-seq 200 --cohort-pool-size 1000 --unigram-reference-size 4000 --cohort-draw-seed 20260728 --cohort-skip 7000k` for `k = 0…7`, `--unigram-estimator disjoint --record-statistics`, at the item's declared default dtype (bfloat16) and `max_len` 384: **EXP-R2-216's configuration exactly, with no deviation**. Four H200s were worked as four one-GPU lanes, two blocks each, each lane on its own frozen snapshot of one and the same code hash `281d3f8b9918…` — four snapshots rather than one because the controller writes its own log at a path keyed only on the run-id, and four controllers sharing a run-id would interleave into it and make the worker's exit sentinel undecidable. All eight cells reported `TRANSFER_WORKER_EXIT=0`; no cell hit an access-layer transient.
+
+**The comparability check that makes this worth doing.** `Cohort.digest` hashes records and never the arm list, so a narrowed invocation over the same corpus draw must reproduce the same cohort. It does, on all eight blocks: cohort digests `78cbc340a2df`, `b584d1fed322`, `1cb0091f9dcd`, `4bf93116f3db`, `ea00bfd4c168`, `0afa7103d401`, `a8d517dbe5a3`, `3342aeb07562` and held-out reference digests `16e44607de05`, `e7434a08e42c`, `bd893fc44362`, `8d2513f3f7f9`, `48db1e4ab06d`, `cc5c4de65ad9`, `d842f2b8ad8e`, `0aefa8fc2656` are byte-identical to the EXP-R2-216 text item's, block for block. The new arms are therefore scored on the very records the BPE arms were scored on, against the very reference, and the repaired digest-keyed pairing puts them in one `bootstrap_arms` call with them. **48 files ADMITTED** — six per block, per-file sha256 taken on both sides and compared.
+
+### E1/E2 — `I` on eight corpus-wide blocks (draw: `--cohort-draw-seed 20260728`, pool 1000, skip 7000k)
+
+Group-level paired bootstrap, `--seed 20260820 --n-bootstrap 2000`, everything else at the stage's defaults, over sixteen text sidecars: the eight EXP-R2-216 text items and the eight new ones.
+
+| block | `bygpt5-small-en` | `bygpt5-base-en` |
+|---|---|---|
+| b0 | +2.3395 [+2.3180, +2.3629] | +2.4225 [+2.4011, +2.4453] |
+| b1 | +2.3375 [+2.3082, +2.3707] | +2.4219 [+2.3926, +2.4555] |
+| b2 | +2.3690 [+2.3434, +2.3974] | +2.4533 [+2.4278, +2.4813] |
+| b3 | +2.3618 [+2.3382, +2.3854] | +2.4443 [+2.4200, +2.4683] |
+| b4 | +2.3317 [+2.3048, +2.3590] | +2.4186 [+2.3913, +2.4461] |
+| b5 | +2.3416 [+2.3172, +2.3654] | +2.4250 [+2.4010, +2.4491] |
+| b6 | +2.3420 [+2.3178, +2.3661] | +2.4277 [+2.4037, +2.4519] |
+| b7 | +2.3888 [+2.3322, +2.4836] | +2.4701 [+2.4146, +2.5639] |
+| **mean, sd** | **+2.3515, 0.0198** (range 0.0572) | **+2.4354, 0.0185** (range 0.0515) |
+| between-block 95% | [+2.3350, +2.3680] | [+2.4200, +2.4509] |
+
+Both arms **PASS the 0.30 floor on all sixteen readings**, no interval is refused (`n_eff` = 200.0 of 200 groups on every block; the OpenWebText draws are all-singleton), and no interval comes within two nats of the floor. The three byte rungs order `small < base < medium` and their block-selection standard deviations — 0.0198, 0.0185, 0.0190 — are the three smallest on the whole text panel, half the GPT-2 family's and a seventh of `dialogpt-small`'s.
+
+**The existing arms are not perturbed.** All 64 (arm, block) point estimates the two runs share reproduce to **zero** — `max |ΔI| = 0.0e+00` — and the interval endpoints move by at most 0.0254 nats, at most **2.6× the endpoint's own Monte-Carlo standard error**, because adding two arms changes the panel's resample stream and not its estimand. `gpt2` at b0 is +4.4369 [+4.3777, +4.5349] and `bygpt5-medium-en` +2.4572 [+2.4361, +2.4802], both identical to §5.06's E1 table.
+
+### ρ and bits per symbol, which is where the byte arms earn their place
+
+Per-token nats are not cross-arm comparable across tokenisations, and this campaign now has three byte-level rungs to show it on rather than one. Between-block means over the eight blocks:
+
+| arm | `V` | `H_baseline` nats/token | ρ = `I`/`H_baseline` | bits per symbol |
+|---|---:|---:|---:|---:|
+| bygpt5-medium-en | 384 | 3.2466 | 0.7604 ± 0.0048 | +3.5878 ± 0.0317 |
+| bygpt5-base-en | 384 | 3.2466 | 0.7502 ± 0.0048 | +3.5395 ± 0.0310 |
+| bygpt5-small-en | 384 | 3.2466 | 0.7243 ± 0.0052 | +3.4175 ± 0.0326 |
+| llama-3.2-3b | 128256 | 7.8507 | 0.6949 ± 0.0042 | +1.6677 ± 0.0078 |
+| gpt2-xl | 50257 | 7.5539 | 0.6617 ± 0.0055 | +1.6182 ± 0.0110 |
+| gpt2-large | 50257 | 7.5539 | 0.6476 ± 0.0052 | +1.5837 ± 0.0101 |
+| gpt2-medium | 50257 | 7.5539 | 0.6255 ± 0.0054 | +1.5296 ± 0.0105 |
+| qwen2.5-0.5b | 151936 | 7.7727 | 0.6215 ± 0.0048 | +1.5019 ± 0.0102 |
+| gpt2 | 50257 | 7.5539 | 0.5849 ± 0.0053 | +1.4305 ± 0.0109 |
+| dialogpt-small | 50257 | 7.5539 | −0.5476 ± 0.0175 | −1.3395 ± 0.0446 |
+
+**The two normalisations disagree with the nats-per-token ordering and with each other, and the disagreement is the finding.** In nats per token the smallest ByGPT5 rung reads +2.35 against `gpt2`'s +4.42 — a gap of two nats that is mostly the inventory, since a unigram over merged BPE pieces already encodes the character dependencies inside each piece and a 384-symbol baseline entropy of 3.25 is less than half a 50257-piece one at 7.55. On ρ the ordering **inverts**: every byte rung sits above every BPE arm, `bygpt5-small-en` at 0.724 against `llama-3.2-3b`'s 0.695. On bits per symbol the inversion is larger still, +3.42 against +1.67. Neither conversion repairs the comparison — the units are fixed and the choice of tokenizer is not — and having three byte rungs makes that concrete: the byte arms span 0.036 in ρ across a 1.9× parameter range while the byte-to-BPE step is 0.03–0.14 in ρ and more than 1.7 bits per symbol at every rung. **Read a byte-vs-BPE gap as a property of the pair of inventories until something else is shown.**
+
+### The paired byte-vs-BPE contrasts
+
+Formed inside each iteration under common resample indices, within the OpenWebText cohort, and now genuinely paired: 168 byte-vs-BPE readings, 21 pairs × 8 blocks, **every one of the 168 with an interval excluding zero** on each of the three statistics. Signs are uniform across all eight blocks in every pair. Representative means over the blocks, `bygpt5-small-en` minus the BPE arm:
+
+| contrast | Δ nats/token | Δ ρ | Δ bits/symbol |
+|---|---:|---:|---:|
+| − gpt2 | −2.0668 ± 0.0275 | +0.1394 | +1.9870 |
+| − gpt2-medium | −2.3731 ± 0.0275 | +0.0988 | +1.8879 |
+| − gpt2-large | −2.5401 ± 0.0269 | +0.0767 | +1.8338 |
+| − gpt2-xl | −2.6467 ± 0.0311 | +0.0626 | +1.7993 |
+| − qwen2.5-0.5b | −2.4791 ± 0.0254 | +0.1028 | +1.9156 |
+| − llama-3.2-3b | −3.1036 ± 0.0335 | +0.0294 | +1.7498 |
+| − dialogpt-small | +6.4882 ± 0.1331 | +1.2719 | +4.7570 |
+
+`bygpt5-base-en` sits +0.084 nats above `bygpt5-small-en` and `bygpt5-medium-en` +0.033 above `bygpt5-base-en`, both with the interval excluding zero on all eight blocks and on all three statistics — a monotone three-rung ladder, which is what the byte-level cell of the modality × tokenisation design was missing.
+
+### The two criteria, and the unmeasurable set
+
+The **0.30 floor and the sign rule agree on both new arms, on every block**: 16 of 16 readings PASS both, and the stage records `arms_where_the_sign_rule_disagrees_with_the_floor: []`, `sign_rule_alters_the_unmeasurable_set: false`, `interval_alters_the_unmeasurable_set: false`. **This is agreement where nothing is at stake and is not evidence for either criterion** — the pre-registration predicts the sign test passes on every arm reading far above zero, and today's unigram-null-control entry measured it failing 64 of 104 times at a true zero. **The unmeasurable set on this cohort is unchanged: `dialogpt-small` alone**, which fails both criteria on all eight blocks at −4.1367, sd 0.1306. Admission to the panel is not a measurement and a pass is a measurability diagnostic; nothing here says what either new arm has learned.
+
+The two sensitivities came along for free and are unremarkable on these arms. The α-sweep range is **0.00065 nats** on both, against an analytic `log(1 + αV/R)` bound of 0.00025 at `α = 1` on the b0 reference — the smallest on the text panel, as a 384-symbol inventory against 1.53M reference tokens predicts. The 30-mer leakage screen drops the same 663 of 4000 OpenWebText reference records it dropped for every text arm and moves `I` by **+0.000167 nats** on all three byte rungs, against +0.0113 on the GPT-2 family; the headline stays on the declared reference.
+
+### Operational
+
+The end-to-end path was gated first by a one-arm smoke cell — `bygpt5-small-en`, block 0, `--n-seq 64 --cohort-pool-size 200 --unigram-reference-size 500` — carried through launch, pull, digest check and stage 41 before anything was scaled: `+2.3555 [+2.3164, +2.4013]`, floor PASS, 6 of 6 files ADMITTED. Its output is on GPFS and was not retained in the repository, being disposable validation.
+
+**Artefacts.** `results/transfer/ctx_uncertainty_20260821/byte_b0…byte_b7` (cohort, report, sidecar and held-out reference per block) and the analysis at `byte_arms_paired/context_information_bootstrap_byte_arms.json`. The new blocks are written to their own results subdirectories rather than into `b0…b7`, because a narrowed text item produces the same filenames on the same cohort digest and would overwrite the thirteen-arm records. Nothing is promoted to `evidence/`.

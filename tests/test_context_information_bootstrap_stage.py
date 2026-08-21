@@ -29,6 +29,7 @@ from src.transfer.budget import (
     SparseCounts,
     write_power_records,
 )
+from src.transfer.information_bootstrap import bootstrap_arms, unpaired_contrast
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STAGE_PATH = REPO_ROOT / "scripts" / "transfer" / "41_context_information_bootstrap.py"
@@ -151,6 +152,7 @@ def write_block(
     smoothing: float = 1.0,
     write_cohort_json: bool = True,
     write_reference_json: bool = False,
+    declare_reference_digest: bool = True,
 ) -> dict[str, Path]:
     """One sidecar and its companions, named the way stage 01 names them."""
 
@@ -181,7 +183,7 @@ def write_block(
         sidecar,
         statistics,
         cohort_digest=digest,
-        reference_digest=reference.digest,
+        reference_digest=reference.digest if declare_reference_digest else None,
         smoothing=smoothing,
         seeds={"cohort_draw": 20260101},
         max_len=384,
@@ -255,6 +257,27 @@ def base_argv(paths: dict[str, Path], out: Path, **extra) -> list[str]:
     for flag, value in extra.items():
         argv += [f"--{flag.replace('_', '-')}", *[str(v) for v in value]]
     return argv
+
+
+def blocks_argv(paths: list[dict[str, Path]], out: Path, *extra: str) -> list[str]:
+    references = [entry["reference_json"] for entry in paths if "reference_json" in entry]
+    assert len(references) in (0, len(paths)), "--reference-json takes all or none"
+    return [
+        "--sidecar",
+        *[str(entry["sidecar"]) for entry in paths],
+        *(["--reference-json", *[str(path) for path in references]] if references else []),
+        "--n-bootstrap",
+        str(DRAWS),
+        "--seed",
+        "4242",
+        "--alpha-sweep",
+        "1.0",
+        "--out",
+        str(out),
+        "--report-name",
+        "report.json",
+        *extra,
+    ]
 
 
 def row_for(payload: dict, arm: str, block_id: str = "b0") -> dict:
@@ -473,6 +496,246 @@ def test_arms_on_different_cohorts_are_never_paired(tmp_path: Path) -> None:
     assert len(set(seeds)) == len(seeds)
 
 
+def one_draw_two_items(directory: Path, seed: int = 401) -> list[dict[str, Path]]:
+    """Two cohort items scoring one draw, the way a dtype-forced split produces it.
+
+    The same records and the same reference under two item names. ``Cohort.digest``
+    hashes the records and never the name, so both sidecars carry one cohort digest
+    and one reference digest between them.
+    """
+
+    cohort = synthetic_records(seed, n_families=12, per_family=2, length=120, mutations=6)
+    reference = synthetic_records(
+        seed + 1000, n_families=40, per_family=2, length=200, mutations=10
+    )
+    return [
+        write_block(directory, name, cohort, reference, arms={arm: TWO_ARMS[arm]})
+        for name, arm in (
+            ("swissprot_default_dtype", "progen2-base"),
+            ("swissprot_progen2_f32", "progen2-medium"),
+        )
+    ]
+
+
+def declared_reading(payload: dict) -> dict:
+    """The one ProGen2-base / ProGen2-medium reading, paired or not."""
+
+    entries = [
+        entry
+        for entry in payload["contrasts"]["within_cohort_paired"]
+        + payload["contrasts"]["cross_cohort_unpaired"]
+        if {entry["left"], entry["right"]} == {"progen2-base", "progen2-medium"}
+    ]
+    assert len(entries) == 1, entries
+    return entries[0]
+
+
+def test_two_items_scoring_one_draw_are_one_block_and_are_paired(tmp_path: Path) -> None:
+    """The split that puts them in two files is a fact about the producer alone.
+
+    ``--dtype float32`` is process-global, so an arm needing it is declared as its
+    own cohort item and scored by its own invocation -- against the same records
+    and the same reference as the item beside it. The digests say so, so the two
+    arms share a resample index and their contrast is formed inside the iteration.
+    """
+
+    first, second = one_draw_two_items(tmp_path / "block")
+    payload = run_stage(blocks_argv([first, second], tmp_path / "out"))
+
+    assert len(payload["blocks"]) == 1
+    block = payload["blocks"][0]
+    assert [entry["cohort_name"] for entry in block["sidecars"]] == [
+        "swissprot_default_dtype",
+        "swissprot_progen2_f32",
+    ]
+    assert sorted(block["arms_in_block"]) == ["progen2-base", "progen2-medium"]
+    assert len(block["panels"]) == 1
+
+    entry = declared_reading(payload)
+    assert entry["paired"] is True
+    assert entry["common_resample_indices"] is True
+    assert entry["block_id"] == "b0"
+    assert not payload["contrasts"]["cross_cohort_unpaired"]
+    assert not payload["contrasts"]["same_cohort_unpairable"]
+
+    # One block is not one provenance: each arm still names the file and the
+    # cohort item it came from, and both are read under one resample index.
+    base = row_for(payload, "progen2-base")
+    medium = row_for(payload, "progen2-medium")
+    assert base["sidecar"] == str(first["sidecar"])
+    assert medium["sidecar"] == str(second["sidecar"])
+    assert base["cohort_name"] == "swissprot_default_dtype"
+    assert medium["cohort_name"] == "swissprot_progen2_f32"
+    assert base["cohort_digest"] == medium["cohort_digest"]
+    assert base["panel_id"] == medium["panel_id"]
+    assert base["seed"] == medium["seed"]
+
+
+def test_the_paired_contrast_is_narrower_than_the_unpaired_one(tmp_path: Path) -> None:
+    """Two arms of one draw are positively correlated, so pairing must narrow it.
+
+    The unpaired interval carries the sum of the two variances; the paired one
+    carries the variance of their difference, which is smaller by twice the
+    covariance. These two arms share their cohort draw and their reference and
+    differ by a constant per token, so the shared terms cancel and the paired
+    difference is exact: everything the unpaired reading reports is variance the
+    estimand does not have. The comparison is against the real
+    ``unpaired_contrast`` on the same two arms rather than an algebraic
+    stand-in for it.
+    """
+
+    first, second = one_draw_two_items(tmp_path / "block", seed=411)
+    payload = run_stage(blocks_argv([first, second], tmp_path / "out"))
+    paired = declared_reading(payload)["statistics"]["information_nats_per_token"]
+
+    block = stage.load_block(
+        0,
+        [(first["sidecar"], None, None), (second["sidecar"], None, None)],
+        requested_arms=None,
+        containment=stage.NEAR_DUPLICATE_CONTAINMENT,
+        shingle=None,
+    )
+    left, right = (entry.statistics for entry in block.arms)
+    apart = [
+        bootstrap_arms([arm], seed=seed, n_bootstrap=DRAWS, contrasts=())
+        for arm, seed in ((left, 101), (right, 202))
+    ]
+    unpaired = unpaired_contrast(apart[0].arms[left.name], apart[1].arms[right.name])
+    assert unpaired["paired"] is False
+    unpaired_statistics = unpaired["statistics"]["information_nats_per_token"]
+
+    def width(entry: dict) -> float:
+        low, high = entry["interval"]
+        return high - low
+
+    assert paired["bootstrap_se"] < unpaired_statistics["bootstrap_se"]
+    assert width(paired) < width(unpaired_statistics)
+
+
+def test_one_cohort_scored_against_two_references_is_not_paired(tmp_path: Path) -> None:
+    """Identical records are not identical resampling units: the baseline is drawn too."""
+
+    cohort = synthetic_records(421, n_families=12, per_family=2, length=120, mutations=6)
+    paths = [
+        write_block(
+            tmp_path / "block",
+            name,
+            cohort,
+            synthetic_records(seed, n_families=40, per_family=2, length=200, mutations=10),
+            arms={arm: TWO_ARMS[arm]},
+        )
+        for name, arm, seed in (
+            ("swissprot_default_dtype", "progen2-base", 1421),
+            ("swissprot_progen2_f32", "progen2-medium", 1521),
+        )
+    ]
+    payload = run_stage(blocks_argv(paths, tmp_path / "out"))
+
+    assert len(payload["blocks"]) == 2
+    left, right = payload["blocks"]
+    assert left["cohort_digest"] == right["cohort_digest"]
+    assert left["reference_digest"] != right["reference_digest"]
+    assert not payload["contrasts"]["within_cohort_paired"]
+
+    entry = declared_reading(payload)
+    assert entry["paired"] is False
+    assert entry["common_resample_indices"] is False
+    assert "independence_note" in entry
+
+
+def test_a_sidecar_that_names_no_reference_is_never_merged(tmp_path: Path) -> None:
+    """An unverifiable reference is not a shared one, whatever the cohort digest says.
+
+    These two sidecars do hold the same reference records. Neither says so, and a
+    pairing that rested on that would rest on nothing, so they stay two blocks.
+    """
+
+    cohort = synthetic_records(431, n_families=12, per_family=2, length=120, mutations=6)
+    reference = synthetic_records(
+        1431, n_families=40, per_family=2, length=200, mutations=10
+    )
+    paths = [
+        write_block(
+            tmp_path / "block",
+            name,
+            cohort,
+            reference,
+            arms={arm: TWO_ARMS[arm]},
+            declare_reference_digest=False,
+        )
+        for name, arm in (
+            ("swissprot_default_dtype", "progen2-base"),
+            ("swissprot_progen2_f32", "progen2-medium"),
+        )
+    ]
+    payload = run_stage(blocks_argv(paths, tmp_path / "out"))
+
+    assert len(payload["blocks"]) == 2
+    assert payload["blocks"][0]["cohort_digest"] == payload["blocks"][1]["cohort_digest"]
+    assert all(block["reference_digest"] is None for block in payload["blocks"])
+    assert declared_reading(payload)["paired"] is False
+
+
+def test_one_arm_scored_twice_on_one_draw_is_refused(tmp_path: Path) -> None:
+    """Two readings of one arm on one draw are two measurements, not one panel arm."""
+
+    cohort = synthetic_records(441, n_families=12, per_family=2, length=120, mutations=6)
+    reference = synthetic_records(
+        1441, n_families=40, per_family=2, length=200, mutations=10
+    )
+    paths = [
+        write_block(tmp_path / "block", name, cohort, reference, arms=dict(TWO_ARMS))
+        for name in ("swissprot_default_dtype", "swissprot_progen2_f32")
+    ]
+    with pytest.raises(ValueError, match="two measurements"):
+        run_stage(blocks_argv(paths, tmp_path / "out"))
+
+
+def test_the_null_control_of_a_merged_block_keeps_its_arm_s_provenance(
+    tmp_path: Path,
+) -> None:
+    """A control is built per arm, so it carries the item that declared that arm.
+
+    Two draws, each scored by two cohort items, is the shape the panel actually
+    has. The control borrows the other draw's reference, joins its parent's
+    panel, and reports the cohort item its parent came from rather than one name
+    chosen for the whole block.
+    """
+
+    paths = [
+        entry
+        for index, seed in enumerate((461, 471))
+        for entry in one_draw_two_items(tmp_path / f"draw{index}", seed=seed)
+    ]
+    payload = run_stage(
+        blocks_argv(paths, tmp_path / "out", "--unigram-null-control")
+    )
+
+    assert len(payload["blocks"]) == 2
+    provenance = control_provenance(payload, "b0", "progen2-medium")
+    assert provenance["available"] is True
+    assert provenance["independent"] is True
+    assert provenance["cohort_name"] == "swissprot_progen2_f32"
+    assert provenance["baseline_block_id"] == "b0"
+    assert provenance["control_block_id"] == "b1"
+
+    control = row_for(payload, "progen2-medium::unigram-null", "b0")
+    parent = row_for(payload, "progen2-medium", "b0")
+    assert control["cohort_name"] == parent["cohort_name"] == "swissprot_progen2_f32"
+    assert control["panel_id"] == parent["panel_id"]
+    assert control["seed"] == parent["seed"]
+    assert payload["unigram_null_control"]["n_controls_measured"] == 4
+
+
+def test_a_merged_block_reproduces_bit_for_bit_at_a_fixed_seed(tmp_path: Path) -> None:
+    first, second = one_draw_two_items(tmp_path / "block", seed=451)
+    argv = blocks_argv([first, second], tmp_path / "out")
+
+    assert json.dumps(_without_timestamps(run_stage(argv)), sort_keys=True) == json.dumps(
+        _without_timestamps(run_stage(argv)), sort_keys=True
+    )
+
+
 def test_the_declared_progen2_contrast_is_named_and_its_sign_tracked(
     tmp_path: Path,
 ) -> None:
@@ -640,6 +903,283 @@ def test_the_leakage_sensitivity_drops_the_leaked_reference_records(
     assert entry["delta_vs_headline_nats"] is not None
     # The reference grouping is the near-duplicate one once the records exist.
     assert payload["blocks"][0]["reference_grouping"]["available"] is True
+
+
+# --------------------------------------------------------------------------- #
+# 6b. The null control, where the true information is zero
+# --------------------------------------------------------------------------- #
+
+
+def control_provenance(payload: dict, block_id: str, arm: str) -> dict:
+    matches = [
+        entry
+        for entry in payload["unigram_null_control"]["provenance"]
+        if entry["block_id"] == block_id and entry["arm"] == arm
+    ]
+    assert len(matches) == 1, (block_id, arm)
+    return matches[0]
+
+
+def test_a_single_block_cannot_build_a_null_control_and_says_so(tmp_path: Path) -> None:
+    """One block holds one reference, and one reference cannot be two samples."""
+
+    paths = standard_block(tmp_path / "block", "swissprot", seed=51)
+    payload = run_stage(blocks_argv([paths], tmp_path / "out", "--unigram-null-control"))
+
+    entry = control_provenance(payload, "b0", "progen2-base")
+    assert entry["available"] is False
+    assert entry["independent"] is False
+    assert "no other supplied block carries progen2-base" in entry["refusal_reason"]
+    assert payload["unigram_null_control"]["n_controls_measured"] == 0
+    assert not [row for row in payload["arm_results"] if row["is_unigram_null_control"]]
+
+
+def test_two_blocks_sharing_a_reference_refuse_the_null_control(tmp_path: Path) -> None:
+    """A control on the baseline's own reference is a tautology, and is refused.
+
+    The two blocks here hold different cohorts and the *same* held-out
+    reference, which is the case the control has to reject: fitted on it, the
+    control's unigram is the baseline's unigram and its ``I`` is zero by algebra
+    rather than by measurement. Nothing is emitted for it, and the reason names
+    the shared reference.
+    """
+
+    reference = synthetic_records(
+        900, n_families=40, per_family=2, length=200, mutations=10
+    )
+    paths = [
+        write_block(
+            tmp_path / directory,
+            "swissprot",
+            synthetic_records(seed, n_families=12, per_family=2, length=120, mutations=6),
+            reference,
+            arms=dict(TWO_ARMS),
+        )
+        for directory, seed in (("one", 52), ("two", 53))
+    ]
+    payload = run_stage(blocks_argv(paths, tmp_path / "out", "--unigram-null-control"))
+
+    assert (
+        payload["blocks"][0]["reference_digest"]
+        == payload["blocks"][1]["reference_digest"]
+    )
+    entry = control_provenance(payload, "b0", "progen2-base")
+    assert entry["available"] is False
+    assert "same held-out reference" in entry["refusal_reason"]
+    assert "zero identically rather than by measurement" in entry["refusal_reason"]
+    assert payload["unigram_null_control"]["n_controls_measured"] == 0
+    assert payload["unigram_null_control"]["controls_without_an_independent_source"]
+
+
+def test_cohort_copies_are_dropped_from_the_borrowed_reference(tmp_path: Path) -> None:
+    """A control fitted on the records it scores is a memoriser, not a null.
+
+    The source block's held-out reference here contains this block's whole
+    scored cohort verbatim, and its digest still differs from the baseline's, so
+    only the exact-content screen sees it. Those records are dropped before the
+    control's unigram is fitted -- the same disjointness the producing stage
+    asserts within a block -- and the count is reported rather than absorbed.
+    """
+
+    cohort = synthetic_records(81, n_families=12, per_family=2, length=120, mutations=6)
+    other = synthetic_records(82, n_families=12, per_family=2, length=120, mutations=6)
+    reference = synthetic_records(
+        83, n_families=40, per_family=2, length=200, mutations=10
+    )
+    borrowed = synthetic_records(
+        87, n_families=40, per_family=2, length=200, mutations=10
+    )
+    paths = [
+        write_block(
+            tmp_path / "one",
+            "swissprot_a",
+            cohort,
+            reference,
+            arms=dict(TWO_ARMS),
+            write_reference_json=True,
+        ),
+        write_block(
+            tmp_path / "two",
+            "swissprot_b",
+            other,
+            borrowed + cohort,
+            arms=dict(TWO_ARMS),
+            write_reference_json=True,
+        ),
+    ]
+    payload = run_stage(blocks_argv(paths, tmp_path / "out", "--unigram-null-control"))
+
+    screened = control_provenance(payload, "b0", "progen2-base")
+    assert screened["available"] is True
+    assert screened["cohort_copies_dropped_from_control_reference"] == len(cohort)
+    assert screened["control_reference_records_before_screen"] == len(borrowed) + len(
+        cohort
+    )
+    assert screened["control_reference_records"] == len(borrowed)
+    # The other direction shares no record, so nothing is dropped there.
+    clean = control_provenance(payload, "b1", "progen2-base")
+    assert clean["available"] is True
+    assert clean["cohort_copies_dropped_from_control_reference"] == 0
+    assert clean["exact_overlap_checked"] is True
+
+
+def test_a_borrowed_reference_that_is_all_cohort_is_refused(tmp_path: Path) -> None:
+    """Nothing survives the screen, so there is no independent sample to fit."""
+
+    cohort = synthetic_records(84, n_families=12, per_family=2, length=120, mutations=6)
+    reference = synthetic_records(
+        85, n_families=40, per_family=2, length=200, mutations=10
+    )
+    paths = [
+        write_block(
+            tmp_path / "one",
+            "swissprot_a",
+            cohort,
+            reference,
+            arms=dict(TWO_ARMS),
+            write_reference_json=True,
+        ),
+        write_block(
+            tmp_path / "two",
+            "swissprot_b",
+            synthetic_records(86, n_families=12, per_family=2, length=120, mutations=6),
+            cohort,
+            arms=dict(TWO_ARMS),
+            write_reference_json=True,
+        ),
+    ]
+    payload = run_stage(blocks_argv(paths, tmp_path / "out", "--unigram-null-control"))
+
+    entry = control_provenance(payload, "b0", "progen2-base")
+    assert entry["available"] is False
+    assert "disjoint sample survives" in entry["refusal_reason"]
+    assert entry["cohort_copies_dropped_from_control_reference"] == len(cohort)
+
+
+def test_the_null_control_measures_a_known_zero_inside_the_same_panel(
+    tmp_path: Path,
+) -> None:
+    """The criteria are watched at a value that is known rather than estimated.
+
+    The control joins the panel of the arm it is built from, so it is measured
+    by the same call under the same resample indices; adding it must leave every
+    real arm's statistics untouched. At a true zero the floor behaves correctly
+    by refusing, and whatever the sign rule does is counted rather than
+    described.
+    """
+
+    # The reference records are written too, so the leakage screen runs and the
+    # control travels the whole stage rather than only the part it was added to.
+    paths = [
+        standard_block(tmp_path / "one", "swissprot_a", seed=61, write_reference_json=True),
+        standard_block(tmp_path / "two", "swissprot_b", seed=62, write_reference_json=True),
+    ]
+    plain = run_stage(blocks_argv(paths, tmp_path / "plain"))
+    payload = run_stage(
+        blocks_argv(paths, tmp_path / "control", "--unigram-null-control")
+    )
+
+    entry = control_provenance(payload, "b0", "progen2-base")
+    assert entry["available"] is True
+    assert entry["independent"] is True
+    assert entry["baseline_block_id"] == "b0"
+    assert entry["control_block_id"] == "b1"
+    assert entry["baseline_reference_digest"] != entry["control_reference_digest"]
+    assert entry["true_information_nats"] == 0.0
+
+    control_row = row_for(payload, "progen2-base::unigram-null", "b0")
+    arm_row_ = row_for(payload, "progen2-base", "b0")
+    assert control_row["is_unigram_null_control"] is True
+    assert arm_row_["is_unigram_null_control"] is False
+    for field in ("panel_id", "seed", "n_bootstrap", "confidence", "resampling_unit"):
+        assert control_row[field] == arm_row_[field], field
+    assert control_row["unit_floor"] == arm_row_["unit_floor"]
+
+    # A known zero: the floor refuses it, and the departure is far below both the
+    # floor and the arm the control was built beside.
+    assert control_row["legacy_threshold_status"] == "FAIL"
+    assert abs(control_row["context_information_nats"]) < 0.05
+    assert arm_row_["context_information_nats"] > 0.4
+
+    summary = payload["unigram_null_control"]
+    reading = next(
+        r
+        for r in summary["readings"]
+        if r["block_id"] == "b0" and r["arm"] == "progen2-base"
+    )
+    assert reading["true_information_nats"] == 0.0
+    assert reading["interval_covers_zero"] is True
+    assert reading["cohort_copies_dropped_from_control_reference"] == 0
+    assert reading["baseline_control_reference_exact_overlap"] == 0
+    assert summary["independence_check"]["n_readings_that_dropped_cohort_copies"] == 0
+    assert summary["independence_check"]["max_cohort_copies_dropped"] == 0
+    assert reading["measured_information_nats"] == control_row["context_information_nats"]
+    criteria = summary["criteria_at_a_known_zero"]
+    assert criteria["n_floor_pass_readings"] == 0
+    assert criteria["floor_behaves"] is True
+    assert criteria["sign_rule_is_adopted"] is False
+    # Counted over readings and not over arm names: one arm carries one reading
+    # per block, and collapsing them reports a rate as many times too small as
+    # there are blocks.
+    assert criteria["n_readings"] == len(summary["readings"]) == 4
+    assert criteria["n_sign_pass_readings"] == sum(
+        reading["sign_status"] == "PASS" for reading in summary["readings"]
+    )
+    assert criteria["observed_sign_pass_rate"] == pytest.approx(
+        criteria["n_sign_pass_readings"] / len(summary["readings"])
+    )
+    assert criteria["expected_false_pass_rate_at_a_true_zero"] == pytest.approx(0.025)
+    # The mechanism the sign rule would read at a zero is carried on the record.
+    assert reading["bootstrap_bias_nats"] == control_row["bootstrap_bias"]
+    assert reading["interval_lies_entirely_above_the_point"] == (
+        control_row["bootstrap_ci_95"][0] > control_row["context_information_nats"]
+    )
+
+    # Joining the panel must not move the panel.
+    def statistics_of(report: dict) -> dict:
+        return {
+            (row["block_id"], row["arm"]): row["statistics"]
+            for row in report["arm_results"]
+            if not row["is_unigram_null_control"]
+        }
+
+    assert statistics_of(plain) == statistics_of(payload)
+
+    # A designed zero is not a panel verdict, so it stays out of the panel table's
+    # conclusion and is named as what it is.
+    assert "progen2-base::unigram-null" in payload["summary"]["unigram_null_control_arms"]
+    assert (
+        "progen2-base::unigram-null"
+        not in payload["summary"]["arms_where_the_sign_rule_disagrees_with_the_floor"]
+    )
+    assert plain["unigram_null_control"]["requested"] is False
+
+    # The leakage screen reaches the control and says which reference it screened.
+    leakage = next(
+        record
+        for record in payload["leakage_removed_sensitivity"]["records"]
+        if record["arm"] == "progen2-base::unigram-null" and record["block_id"] == "b0"
+    )
+    assert leakage["available"] is True
+    assert leakage["is_unigram_null_control"] is True
+    assert "not screened here" in leakage["screened_reference"]
+
+
+def test_the_null_control_reproduces_bit_for_bit_at_a_fixed_seed(
+    tmp_path: Path,
+) -> None:
+    paths = [
+        standard_block(tmp_path / "one", "swissprot_a", seed=71),
+        standard_block(tmp_path / "two", "swissprot_b", seed=72),
+    ]
+    argv = blocks_argv(paths, tmp_path / "out", "--unigram-null-control")
+    first = run_stage(argv)
+    second = run_stage(argv)
+
+    assert json.dumps(_without_timestamps(first), sort_keys=True) == json.dumps(
+        _without_timestamps(second), sort_keys=True
+    )
+    assert first["unigram_null_control"]["n_controls_measured"] == 4
 
 
 # --------------------------------------------------------------------------- #

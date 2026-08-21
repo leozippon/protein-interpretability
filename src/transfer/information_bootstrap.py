@@ -80,6 +80,15 @@ result: they measure how much of the baseline is pseudo-count rather than
 corpus, and that part carries no sampling uncertainty here even though it
 carries plenty of estimation error.
 
+**A point where the estimand is known to be zero.** Every criterion applied to
+``I`` -- a floor on it, a sign test on its interval -- is a claim about the
+estimator's behaviour near zero, and the panel supplies no arm that sits there.
+:func:`unigram_null_control` builds one: an arm whose predictive distribution
+*is* a smoothed unigram fitted on a reference from a disjoint corpus block, so
+both terms of ``I`` estimate the same population from independent samples and
+the true value is zero by construction. It is an ordinary ``ArmStatistics`` and
+goes through the same :func:`bootstrap_arms` call as the arms beside it.
+
 **The percentile interval can sit above the point estimate, and that is not a
 bug.** ``H_baseline`` is ``-sum c(v) log q_b(v)`` and ``-log`` is convex, so a
 resampled reference gives ``E[H_baseline_b] > H_baseline`` by Jensen. The gap
@@ -378,6 +387,115 @@ class ArmStatistics:
                     f"{self.name}: a {label} token id lies outside the declared "
                     f"vocabulary of {self.vocab_size}"
                 )
+
+
+# --------------------------------------------------------------------------- #
+# A control arm whose true information is zero
+# --------------------------------------------------------------------------- #
+
+
+def _dense_reference_counts(
+    reference: ReferenceStatistics, vocab_size: int, what: str
+) -> np.ndarray:
+    """A reference's token counts over the declared inventory, densely."""
+
+    ids = reference.targets.unique_token_ids
+    if ids.size and int(ids.max()) >= vocab_size:
+        raise ValueError(
+            f"a {what} reference token id lies outside the declared vocabulary of "
+            f"{vocab_size}; the two references are not counts over one inventory"
+        )
+    return np.bincount(
+        ids, weights=reference.targets.counts.astype(np.float64), minlength=vocab_size
+    )
+
+
+def unigram_null_control(
+    arm: ArmStatistics,
+    control_reference: ReferenceStatistics,
+    *,
+    name: str,
+) -> ArmStatistics:
+    """``arm``'s cohort scored by a smoothed unigram fitted on an independent sample.
+
+    The model term of ``I`` is replaced by the cross-entropy of the very same
+    scored targets under
+
+        q_control(v) = (r_control(v) + a) / (R_control + a*V),
+
+    where ``r_control`` counts a reference set the caller supplies and ``a`` and
+    ``V`` are the arm's own smoothing constant and declared vocabulary. Nothing
+    else moves: the cohort, its grouping, its symbol counts and the baseline
+    reference are the arm's. The returned object is an ordinary
+    :class:`ArmStatistics` and goes through :func:`bootstrap_arms` beside the
+    real arms of its block, under the same resample indices, so it is measured
+    by the same estimator rather than by a parallel one.
+
+    **Why the true ``I`` is zero.** Both terms of ``I = H_baseline - H_model``
+    are then the cross-entropy of one token multiset under a smoothed unigram of
+    the same population: the baseline's is fitted on this block's held-out
+    reference, the model's on the caller's. Two estimators of the same
+    distribution, fitted on independent samples of comparable size, differ only
+    by their estimation error, so ``E[I] = 0`` under exchangeability of the two
+    samples -- while the *measured* ``I`` fluctuates with realistic noise and
+    carries the same vocabulary-dependent smoothing constant every real arm
+    carries. That is a point at which an eligibility criterion can be watched
+    behaving, or misbehaving, at a known zero. An untrained model is not such a
+    point: near-uniform logits cost about ``log V`` nats and land the arm far
+    below any floor, several nats from the boundary the criteria live at.
+
+    **The control's reference must not be the baseline's.** Fitted on the same
+    counts, ``q_control`` *is* ``q_baseline``, the point estimate of ``I`` is
+    zero identically rather than by measurement, and what the interval then
+    describes is the noise of refitting the baseline against a model held fixed
+    at its full-sample value -- a quantity with no bearing on any criterion.
+    That case is refused here rather than reported, because a tautological zero
+    and a measured one are indistinguishable once written to an artefact.
+    Equality of the two count vectors is the exact condition, so it is what is
+    checked; a caller that also knows the two samples' provenance should say so
+    in its own record, since equal counts are the symptom and shared provenance
+    is the cause.
+
+    The exchangeability the zero rests on is the caller's to justify. Two
+    reference sets drawn from different regions of one corpus are independent
+    but not necessarily identically distributed, and under such a shift a
+    mismatched unigram costs more than the matched one, which biases the
+    measured ``I`` *downwards*. The direction is known and the size is not, so a
+    control reading below zero bounds the criteria conservatively and a control
+    reading above zero cannot be explained away by it.
+    """
+
+    control_counts = _dense_reference_counts(control_reference, arm.vocab_size, "control")
+    baseline_counts = _dense_reference_counts(arm.reference, arm.vocab_size, "baseline")
+    if np.array_equal(control_counts, baseline_counts):
+        raise ValueError(
+            f"{name}: the control's unigram is fitted on the same token counts as "
+            "the baseline it would be measured against, so q_control is "
+            "q_baseline and I is zero identically rather than by measurement. "
+            "Fit the control on the reference of a disjoint corpus block"
+        )
+    total = float(control_reference.token_count.sum())
+    log_q = np.log(control_counts + arm.smoothing) - math.log(
+        total + arm.smoothing * arm.vocab_size
+    )
+    targets = arm.cohort.targets
+    per_entry = -targets.counts.astype(np.float64) * log_q[targets.unique_token_ids]
+    cumulative = np.concatenate(
+        [np.zeros(1, dtype=np.float64), np.cumsum(per_entry, dtype=np.float64)]
+    )
+    return ArmStatistics(
+        name=name,
+        cohort=CohortStatistics(
+            clean_nll_sum=np.diff(cumulative[targets.record_offsets]),
+            token_count=arm.cohort.token_count,
+            n_symbols=arm.cohort.n_symbols,
+            targets=targets,
+            group_id=arm.cohort.group_id,
+        ),
+        reference=arm.reference,
+        vocab_size=arm.vocab_size,
+        smoothing=arm.smoothing,
+    )
 
 
 # --------------------------------------------------------------------------- #

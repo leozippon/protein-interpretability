@@ -20,6 +20,7 @@ import os
 import subprocess
 import sys
 import unittest
+import unittest.mock
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -298,17 +299,36 @@ class PaaCensusEligibility(unittest.TestCase):
         # a contradiction with its own `measured` list. The wrong resolution of
         # that contradiction -- "the stage refuses this arm and ran it anyway" --
         # is the damaging one, so the field names the arm and says why it is not a
-        # campaign arm. bygpt5-medium-en held this role until 2026-08-06, when its
-        # staging was verified and it became one; bygpt5-base-en still does.
-        record = pc.stage_contract_record(self.STAGE, ["bygpt5-base-en"])
-        outside = record["arm_selection"]["measured_outside_campaign_panel"]
-        self.assertEqual(list(outside), ["bygpt5-base-en"])
-        self.assertTrue(outside["bygpt5-base-en"]["not_in_campaign_panel_because"])
-        self.assertNotIn(
-            "bygpt5-base-en", record["arm_selection"]["eligible_for_this_stage"]
-        )
+        # campaign arm.
+        #
+        # Every panel member has been a campaign arm since 2026-08-21, so the
+        # situation has to be constructed: bygpt5-medium-en held this role until
+        # 2026-08-06 and the two narrower rungs until 2026-08-21. The property is
+        # about any arm outside whatever the campaign panel is, so the panel is
+        # what the test narrows -- and it narrows it by an arm this stage
+        # ACCEPTS, which is the case the field exists for. An arm the stage
+        # refuses anyway would leave `eligible_for_this_stage` false for two
+        # different reasons and could not tell them apart.
+        outsider = "gpt2-medium"
+        panel = tuple(a for a in pc.CAMPAIGN_PANEL if a != outsider)
+        with unittest.mock.patch.object(pc, "CAMPAIGN_PANEL", panel), \
+                unittest.mock.patch.object(
+                    pc, "PANEL_MEMBERS_NOT_STAGED", {outsider: "not staged for this test"}
+                ):
+            record = pc.stage_contract_record(self.STAGE, [outsider])
+            outside = record["arm_selection"]["measured_outside_campaign_panel"]
+            self.assertEqual(list(outside), [outsider])
+            self.assertTrue(outside[outsider]["eligible_for_this_stage"])
+            self.assertEqual(
+                outside[outsider]["not_in_campaign_panel_because"],
+                "not staged for this test",
+            )
+            self.assertNotIn(
+                outsider, record["arm_selection"]["eligible_for_this_stage"]
+            )
         # A campaign-panel arm leaves the field empty, so it cannot become noise
-        # every artefact carries.
+        # every artefact carries -- and with the panel unpatched, which is the
+        # current state, no run of a panel arm can populate it at all.
         campaign = pc.stage_contract_record(self.STAGE, ["gpt2-large"])
         self.assertEqual(campaign["arm_selection"]["measured_outside_campaign_panel"], {})
 
@@ -378,6 +398,43 @@ class StageDeclarationsMirrorTheirSource(unittest.TestCase):
             self.assertTrue(
                 name in pc.CAMPAIGN_PANEL or name in pc.PANEL_MEMBERS_NOT_STAGED,
                 f"{name} is in PANEL but neither staged nor given a reason",
+            )
+
+    def test_a_stages_named_refusal_is_not_also_a_campaign_exclusion(self):
+        # The two declarations answer different questions and one must not be
+        # used to express the other. `excluded_arms` refuses an arm from ONE
+        # stage; CAMPAIGN_PANEL decides whether any campaign may schedule it at
+        # all. bygpt5-small-en and bygpt5-base-en were kept out of the campaign
+        # from 2026-08-06 to 2026-08-21 by a reason that was `paa_census`'s named
+        # refusal restated -- so a refusal that belonged to one stage removed
+        # them from `cohort_power` and `collision_null_census` too, silently and
+        # with no reason attached to either.
+        named = {
+            arm
+            for contract in pc.STAGE_CONTRACTS.values()
+            for arm in contract.excluded_arms
+        }
+        overlap = sorted(named & set(pc.PANEL_MEMBERS_NOT_STAGED))
+        self.assertEqual(
+            overlap,
+            [],
+            f"{overlap} are refused by a stage AND kept out of the campaign; a "
+            "stage's refusal applies to that stage, and every other stage then "
+            "loses the arm without saying so",
+        )
+
+    def test_no_stage_may_schedule_an_arm_cohort_power_cannot_qualify(self):
+        # Evidence-discipline rule 2: an arm whose cohort context-information has
+        # not been qualified may not be scored. `cohort_power` is what qualifies
+        # it, so an arm a stage admits but `cohort_power` refuses could only ever
+        # produce a number nothing is allowed to read.
+        qualifiable = set(pc.stage_arms("cohort_power")[0])
+        for stage in pc.STAGE_ORDER:
+            eligible = set(pc.stage_arms(stage)[0])
+            self.assertEqual(
+                sorted(eligible - qualifiable),
+                [],
+                f"{stage} admits arms cohort_power refuses",
             )
 
     def test_model_variable_is_resolved_from_the_declaration_not_the_arm_name(self):
@@ -734,8 +791,10 @@ class ResourceManifestMirrorsThePanelContract(unittest.TestCase):
         # PANEL, not CAMPAIGN_PANEL: these entries answer "which variable
         # relocates this checkpoint", which is declared for every panel member,
         # and the manifest's resolution_policy refuses to carry an availability
-        # claim -- which campaign membership is. Both bygpt5 rungs outside the
-        # campaign panel are therefore listed here and only here.
+        # claim -- which campaign membership is. The two lists happen to cover
+        # the same arms since 2026-08-21, and this test must keep resolving over
+        # PANEL anyway, because the next arm admitted to PANEL is relocatable
+        # before any campaign schedules it.
         declared: dict[str, set[str]] = {}
         for entry in self.manifest["model_resources"]:
             arms = entry["arms"]

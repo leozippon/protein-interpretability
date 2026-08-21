@@ -5,7 +5,7 @@
     "source": "scripts/transfer/panel_contract.py --json",
     "schema_version": "r2_transfer_panel_contract_v5",
     "verify": "python scripts/transfer/panel_contract.py --verify",
-    "arm_count": 13,
+    "arm_count": 15,
     "stage_count": 13,
     "campaign_panel": [
       "gpt2",
@@ -20,7 +20,9 @@
       "progen2-base",
       "progen2-medium",
       "progen2-small",
-      "bygpt5-medium-en"
+      "bygpt5-medium-en",
+      "bygpt5-small-en",
+      "bygpt5-base-en"
     ],
     "stage_order": [
       "cohort_power",

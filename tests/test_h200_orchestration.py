@@ -37,6 +37,29 @@ LOCAL_POD_BASH = _STUB_DIR / "pod_bash.sh"
 LOCAL_POD_BASH.write_text('#!/usr/bin/env bash\nbash -c "$1"\n', encoding="utf-8")
 LOCAL_POD_BASH.chmod(0o755)
 
+#: The same stand-in, on a pod whose GPU 0 still carries the dispatched stage.
+#:
+#: The external-baseline poll reads two things, not one: the completion test on
+#: the output directory, and an `nvidia-smi` reading that decides what an
+#: incomplete directory means -- still running, or ran and wrote nothing.
+#: LOCAL_POD_BASH forwards both to this host, so the second one answers out of
+#: the workstation's own GPU 0, and the verdict for an unfinished run flips
+#: between UNRESOLVED and ABSENT with whatever else happens to be training on B.
+#: A poll test that leaves that input free is not testing the completion test at
+#: all; it is reporting the ambient GPU state. This stub holds it at the state
+#: the poll scenarios are about -- the stage is on the card and has not written
+#: yet -- and evaluates every other command locally, as LOCAL_POD_BASH does.
+LOCAL_POD_BASH_GPU_BUSY = _STUB_DIR / "pod_bash_gpu_busy.sh"
+LOCAL_POD_BASH_GPU_BUSY.write_text(
+    "#!/usr/bin/env bash\n"
+    'case "$1" in\n'
+    "  nvidia-smi*) printf '0, 40000\\n' ;;\n"
+    '  *) bash -c "$1" ;;\n'
+    "esac\n",
+    encoding="utf-8",
+)
+LOCAL_POD_BASH_GPU_BUSY.chmod(0o755)
+
 #: A stand-in for h200_status.sh that states the verdict a healthy probe states.
 #:
 #: The default here used to be `/bin/true`, which is precisely what the
@@ -1611,7 +1634,11 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
         """Run one dispatch to the point of its poll verdict and return it.
 
         The pull is never reached: this exercises the completion test alone,
-        which is the part that decides whether a directory is finished.
+        which is the part that decides whether a directory is finished. The
+        poll's other input -- the idle-GPU reading that separates "still
+        running" from "ran and wrote nothing" -- is pinned busy by the stub, so
+        an unfinished directory can only end at the timeout as UNRESOLVED, and
+        any PRESENT here came from the completion test.
         """
 
         root, run_id, snapshot, out_dir = self._dispatch_fixture()
@@ -1632,7 +1659,8 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
         result = subprocess.run(
             command, capture_output=True, text=True, cwd=str(REPO_ROOT),
             env={**os.environ, "H200_POD": "unused",
-                 "H200_POD_BASH": str(LOCAL_POD_BASH), "H200_POD_EXEC": str(pod_exec),
+                 "H200_POD_BASH": str(LOCAL_POD_BASH_GPU_BUSY),
+                 "H200_POD_EXEC": str(pod_exec),
                  "GPFS_PROJECT_ROOT": str(root),
                  # Not REPO_ROOT: the driver reads the stage file and computes the
                  # code hash from that, so it has to stay the real checkout.

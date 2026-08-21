@@ -37,6 +37,7 @@ from src.transfer.information_bootstrap import (
     bootstrap_arms,
     bootstrap_information,
     ratio_interval,
+    unigram_null_control,
     unpaired_contrast,
 )
 from src.transfer.statistics import MINIMUM_BOOTSTRAP_UNITS
@@ -82,6 +83,7 @@ def build_arm(
     smoothing: float = 1.0,
     group_token_scale: np.ndarray | None = None,
     delta_by_group: np.ndarray | None = None,
+    reference_seed: int | None = None,
 ) -> ArmStatistics:
     """A cohort whose context information is ``information`` nats/token by construction.
 
@@ -91,6 +93,12 @@ def build_arm(
     cross-entropy under ``p`` less ``token_count * delta_g``, so the model term
     sits ``delta`` below the corpus baseline and ``I`` recovers ``mean(delta)``
     up to the reference set's own estimation error.
+
+    ``reference_seed`` draws the reference block from its own stream while the
+    unigram ``p``, and therefore the population, stays the one ``seed`` fixed.
+    Two arms built at one ``seed`` and two ``reference_seed`` values differ in
+    nothing but which independent sample of that population their reference is,
+    which is what a null control needs and what sharing one stream cannot give.
     """
 
     rng = np.random.default_rng(seed)
@@ -119,13 +127,14 @@ def build_arm(
             n_symbols.append(total * symbols_per_token)
             group_id.append(group)
 
+    reference_rng = rng if reference_seed is None else np.random.default_rng(reference_seed)
     reference_rows: list[np.ndarray] = []
     reference_tokens: list[int] = []
     reference_groups_ids: list[int] = []
     for group in range(reference_groups):
-        composition = rng.dirichlet(p * reference_kappa)
+        composition = reference_rng.dirichlet(p * reference_kappa)
         rows_here = _multinomial_records(
-            rng,
+            reference_rng,
             composition,
             [reference_tokens_per_record] * reference_records_per_group,
         )
@@ -602,6 +611,107 @@ def test_an_unpaired_contrast_refuses_two_bootstraps_from_one_seed() -> None:
     )
     with pytest.raises(ValueError, match="one stream"):
         unpaired_contrast(left, right)
+
+
+# --------------------------------------------------------------------------- #
+# 10. The null control, where the true information is zero
+# --------------------------------------------------------------------------- #
+
+
+def test_a_control_fitted_on_the_baselines_own_reference_is_refused() -> None:
+    """The degenerate case is refused rather than reported as a measurement.
+
+    Fitted on the counts the baseline is fitted on, the control's ``q`` *is* the
+    baseline's, ``I`` is zero at the point estimate by algebra rather than by
+    evidence, and the interval around it describes only the noise of refitting
+    one term. Both readings are indistinguishable from a real zero once written
+    to an artefact, which is why this cannot be a warning.
+    """
+
+    arm = build_arm(seed=41)
+    with pytest.raises(ValueError, match="identically rather than by measurement"):
+        unigram_null_control(arm, arm.reference, name="arm::unigram-null")
+
+
+def test_a_control_on_an_independent_reference_measures_a_known_zero() -> None:
+    """Two independent references over one population put the true ``I`` at zero.
+
+    The control's model term is the cross-entropy of the cohort under a smoothed
+    unigram fitted on the *other* sample, so both terms of ``I`` estimate the
+    same population and their difference has expectation zero. The measured
+    value has to land near it, its interval has to cover it, and the operative
+    0.30 nats/token floor has to refuse it -- while the real arm built on the
+    same cohort reads its designed 0.5 nats.
+    """
+
+    arm = build_arm(seed=42, reference_seed=4201, information=0.5)
+    other = build_arm(seed=42, reference_seed=4202, information=0.5)
+    control = unigram_null_control(arm, other.reference, name="arm::unigram-null")
+
+    # The cohort is untouched: only the model term is replaced, so the two arms
+    # are averages over one token multiset and the contrast stays paired.
+    assert np.array_equal(control.cohort.token_count, arm.cohort.token_count)
+    assert np.array_equal(control.cohort.group_id, arm.cohort.group_id)
+    assert np.array_equal(control.cohort.n_symbols, arm.cohort.n_symbols)
+    assert control.reference is arm.reference
+
+    # The per-record model term is the cross-entropy under the control's unigram,
+    # computed here from the dense counts rather than the CSR layout.
+    counts = _dense_counts(other.reference.targets, arm.vocab_size)
+    q = (counts + arm.smoothing) / (counts.sum() + arm.smoothing * arm.vocab_size)
+    targets = arm.cohort.targets
+    expected = [
+        float(-(targets.counts[a:b] * np.log(q[targets.unique_token_ids[a:b]])).sum())
+        for a, b in zip(targets.record_offsets[:-1], targets.record_offsets[1:])
+    ]
+    assert control.cohort.clean_nll_sum == pytest.approx(expected)
+
+    measured = _information(
+        bootstrap_information(control, seed=9, n_bootstrap=DRAWS).record
+    )
+    real = _information(bootstrap_information(arm, seed=9, n_bootstrap=DRAWS).record)
+    low, high = measured["interval"]
+    assert low <= 0.0 <= high
+    assert abs(measured["point"]) < 0.30
+    assert real["point"] == pytest.approx(0.5, abs=0.05)
+
+    # The departure from zero is of the order the smoothing constant works at,
+    # not of the order the real effect works at.
+    bound = math.log1p(arm.smoothing * arm.vocab_size / arm.reference.token_count.sum())
+    assert abs(measured["point"]) < 10.0 * bound
+    assert abs(measured["point"]) < 0.1 * real["point"]
+
+
+def test_a_control_is_measured_by_the_same_estimator_as_the_arm_beside_it() -> None:
+    """The control joins the panel; it does not get an estimator of its own.
+
+    Adding it must leave every other arm's draws untouched -- ``bootstrap_arms``
+    draws the multiplicities before it visits any arm -- and its own record must
+    carry the same resampling unit, seed and draw count as the arm it sits with,
+    so that a reader comparing the two is comparing measurements and not methods.
+    """
+
+    arm = build_arm(name="arm", seed=43, reference_seed=4301)
+    other = build_arm(name="arm", seed=43, reference_seed=4302)
+    control = unigram_null_control(arm, other.reference, name="arm::unigram-null")
+
+    alone = bootstrap_arms([arm], seed=3, n_bootstrap=DRAWS, contrasts=())
+    together = bootstrap_arms([arm, control], seed=3, n_bootstrap=DRAWS)
+
+    assert (
+        alone.arms["arm"].record["statistics"]
+        == together.arms["arm"].record["statistics"]
+    )
+    real, null = (together.arms["arm"].record, together.arms["arm::unigram-null"].record)
+    for field in ("seed", "n_bootstrap", "confidence", "resampling_unit", "refused"):
+        assert real[field] == null[field], field
+    assert set(real["statistics"]) == set(null["statistics"])
+    assert real["diagnostics"]["n_groups"] == null["diagnostics"]["n_groups"]
+    # Sharing the cohort draw is what makes the contrast against the control a
+    # paired one rather than two intervals held up beside each other.
+    contrast = together.contrasts["arm_minus_arm::unigram-null"]
+    assert contrast["paired"] is True
+    assert contrast["statistics"]["information_nats_per_token"]["interval"][0] > 0.0
 
 
 # --------------------------------------------------------------------------- #

@@ -713,11 +713,12 @@ def test_the_bootstrap_stage_refuses_explicitly_without_the_file_and_runs_with_i
     """
 
     bootstrap = _stage("41_context_information_bootstrap.py", "_stage_41_reference")
+    # load_block takes one draw's (sidecar, cohort_json, reference_json) triples
+    # since the 2026-08-21 pairing repair, which keys a block on the cohort and
+    # reference digests rather than on the producing invocation.
     absent = bootstrap.load_block(
         0,
-        frozen_run["sidecar"],
-        None,
-        None,
+        [(frozen_run["sidecar"], None, None)],
         requested_arms=None,
         containment=bootstrap.NEAR_DUPLICATE_CONTAINMENT,
         shingle=None,
@@ -729,9 +730,7 @@ def test_the_bootstrap_stage_refuses_explicitly_without_the_file_and_runs_with_i
 
     present = bootstrap.load_block(
         0,
-        frozen_run["sidecar"],
-        None,
-        frozen_run["path"],
+        [(frozen_run["sidecar"], None, frozen_run["path"])],
         requested_arms=None,
         containment=bootstrap.NEAR_DUPLICATE_CONTAINMENT,
         shingle=None,

@@ -14,15 +14,15 @@ conda activate ct
 python scripts/transfer/panel_contract.py --verify
 ```
 
-The active campaign has 13 arms:
+The active campaign has 15 arms:
 
-`gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `qwen2.5-0.5b`, `llama-3.2-3b`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium`, `progen2-small`, `bygpt5-medium-en`.
+`gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `qwen2.5-0.5b`, `llama-3.2-3b`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium`, `progen2-small`, `bygpt5-medium-en`, `bygpt5-small-en`, `bygpt5-base-en`.
 
 The contract declares 13 stages in this order:
 
 | Order | Stage | Entry point | Scope | Contract-eligible arms |
 |---:|---|---|---|---|
-| 1 | `cohort_power` | `01_cohort_power.py` | panel-wide | all 13 |
+| 1 | `cohort_power` | `01_cohort_power.py` | panel-wide | all 15 |
 | 2 | `pathway_budget` | `02_pathway_budget.py` | per arm | `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `qwen2.5-0.5b`, `llama-3.2-3b`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium`, `progen2-small` |
 | 3 | `estimand_power` | `03_estimand_power.py` | per arm, then control-anchored recommendation | `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `qwen2.5-0.5b`, `llama-3.2-3b`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium`, `progen2-small` |
 | 4 | `circuit_primitives` | `04_circuit_primitives.py` | panel-wide | `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `qwen2.5-0.5b`, `llama-3.2-3b`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium`, `progen2-small` |
@@ -30,25 +30,25 @@ The contract declares 13 stages in this order:
 | 6 | `explanation_channel` | `06_explanation_channel.py` | armless | no arm dispatch |
 | 7 | `convergence_control` | `07_convergence_control.py` | armless | no arm dispatch |
 | 8 | `lens_family` | `08_lens_family.py` | per arm | `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium`, `progen2-small` |
-| 9 | `probe_and_erasure` | `09_probe_and_erasure.py` | per arm | all 13 |
+| 9 | `probe_and_erasure` | `09_probe_and_erasure.py` | per arm | all 15 |
 | 10 | `homology_control` | `10_homology_control.py` | panel-wide | `protgpt2`, `zymctrl`, `progen2-medium` |
 | 11 | `induction_path_patching` | `11_induction_path_patching.py` | panel-wide | `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `qwen2.5-0.5b`, `llama-3.2-3b`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium`, `progen2-small` |
 | 12 | `paa_census` | `14_paa_census.py` | per arm | `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `qwen2.5-0.5b`, `llama-3.2-3b`, `protgpt2`, `progen2-base`, `progen2-medium`, `progen2-small`, `bygpt5-medium-en` |
-| 13 | `collision_null_census` | `27_collision_null_census.py` | panel-wide | all 13 |
+| 13 | `collision_null_census` | `27_collision_null_census.py` | panel-wide | all 15 |
 
 Eligibility is not uniform. Contract refusals are deliberate and include architecture, tokenization, modality, input-format, and stage-interface limits. Inspect them with `python scripts/transfer/panel_contract.py --json`; do not route around them.
 
-`paa_census` is the one stage whose eligible arm list depends on a scheduling parameter, so that parameter is declared in the contract (`PAA_CENSUS_WIDTH`, rendered as `TRANSFER_PAA_CENSUS_WIDTH`) and passed by the worker rather than left to `ARGS_PAA_CENSUS`. The instance pool admits only cohort rows reaching exactly that width; at the entry point's own default of 512 ProtGPT2 admits none. `zymctrl` is refused permanently: no width admits both its EC-conditioned rendering and ProtGPT2's multi-residue BPE, so it cannot enter a shared-window panel. Its separately declared configuration is a direct invocation, not a campaign item.
+`paa_census` is the one stage whose eligible arm list depends on a scheduling parameter, so that parameter is declared in the contract (`PAA_CENSUS_WIDTH`, rendered as `TRANSFER_PAA_CENSUS_WIDTH`) and passed by the worker rather than left to `ARGS_PAA_CENSUS`. The instance pool admits only cohort rows reaching exactly that width; at the entry point's own default of 512 ProtGPT2 admits none. `zymctrl` is refused permanently: no width admits both its EC-conditioned rendering and ProtGPT2's multi-residue BPE, so it cannot enter a shared-window panel. Its separately declared configuration is a direct invocation, not a campaign item. `bygpt5-small-en` and `bygpt5-base-en` are refused here by name, and only here: their 24-head and 72-head grids leave `hit@20` with a chance level too close to its ceiling to read, and no arm property declares a head count. They are full campaign arms elsewhere.
 
 This table is a hand-maintained copy of a generated declaration, which is the failure class `panel_contract.py` exists to end, so it is checked rather than trusted: `tests/test_h200_orchestration.py::ReadmeStageTableMatchesTheContract` parses it and fails if any row disagrees with the contract. It had already drifted — `induction_path_patching` was listed with seven eligible arms against the contract's nine, omitting both ProGen2 arms, whose `progen` layout `src.transfer.path_patching.SUPPORTED_ARCHITECTURES` declares.
 
 ## Controller And Worker
 
-`run_transfer_h200.sh` is the controller and runs from the repository root on the B workstation. It freezes the complete transfer package and transitive local imports, hashes the snapshot, pushes it through `~/hangzhou-remote`, records a run manifest, and invokes the matching worker inside a selected pod.
+`run_transfer_h200.sh` is the controller and runs from the repository root on Compute. It freezes the complete transfer package and transitive local imports, hashes the snapshot, pushes it through `~/hangzhou-remote`, records a run manifest, and invokes the matching worker inside a selected pod.
 
 `h200_worker.sh` runs only inside the pod from that frozen snapshot. It verifies the generated panel contract, imports selected entry points before scheduling GPUs, checks resources, dispatches stages according to their declared scope, writes through temporary directories, and records per-item checksums for resume.
 
-Never invoke `h200_worker.sh` on B, push an ad hoc code tree for a real campaign, or run a campaign from a mutable working copy. A run result is attributable only to its frozen code hash and manifest.
+Never invoke `h200_worker.sh` on Compute, push an ad hoc code tree for a real campaign, or run a campaign from a mutable working copy. A run result is attributable only to its frozen code hash and manifest.
 
 ## Dependencies And Resources
 
@@ -91,7 +91,7 @@ python scripts/transfer/01_cohort_power.py \
   --out /tmp/interpretability_transfer_smoke/cohort_power
 ```
 
-Both exports are required and neither has a working default on B: text arms resolve `TRANSFER_TEXT_MODEL_BASE_DIR` and protein arms `TRANSFER_MODEL_BASE_DIR`, and the declared defaults under the repository's parent do not exist on this host. The cohort size is not free either — `truncation_curve` needs 200 surviving 128-token windows, which 20 sequences do not supply on this arm.
+Both exports are required and neither has a working default on Compute: text arms resolve `TRANSFER_TEXT_MODEL_BASE_DIR` and protein arms `TRANSFER_MODEL_BASE_DIR`, and the declared defaults under the repository's parent do not exist on this host. The cohort size is not free either — `truncation_curve` needs 200 surviving 128-token windows, which 20 sequences do not supply on this arm.
 
 Use each entry point's `--help` for its current interface. Keep validation outputs outside `results/` when they are disposable.
 
@@ -131,7 +131,7 @@ GPUS=0,1 \
 bash scripts/transfer/run_transfer_h200.sh --dry-run
 ```
 
-`ARMS` defaults to the full 13-arm campaign panel and `STAGES` defaults to the full 13-stage order. The worker intersects requested arms with each stage contract and reports refusals; no unsupported arm is silently substituted.
+`ARMS` defaults to the full 15-arm campaign panel and `STAGES` defaults to the full 13-stage order. The worker intersects requested arms with each stage contract and reports refusals; no unsupported arm is silently substituted.
 
 ## Controller Environment
 
@@ -139,7 +139,7 @@ bash scripts/transfer/run_transfer_h200.sh --dry-run
 |---|---|
 | `H200_POD` | Required shell-local pod selection |
 | `H200_ACCESS_ROOT` | External access-helper root; defaults to `~/hangzhou-remote` |
-| `ARMS` | Comma-separated requested arms; defaults to the 13-arm campaign panel |
+| `ARMS` | Comma-separated requested arms; defaults to the 15-arm campaign panel |
 | `STAGES` | Comma-separated requested stages; defaults to all 13 contract stages |
 | `GPUS` | Comma-separated pod-relative GPU indices |
 | `TEXT_ARM` | Text control for control-anchored aggregation |
@@ -195,7 +195,7 @@ Three further entry points belong to neither list. Each re-reads a measurement t
 |---|---|---|
 | `12_induction_robustness.py` | The induction census's threshold and scale statements, recomputed from artefacts already on disk; it loads no model at all | the stored census to read |
 | `13_induction_probe_bootstrap.py` | The same forward passes re-run on one GPU purely to retain the per-probe axis the stored artefacts averaged away | `--arms` and the stored census the recomputation must reproduce |
-| `41_context_information_bootstrap.py` | The sampling uncertainty of cohort power, from the per-record sufficient statistics `01_cohort_power.py` persists: a group-level paired interval for context information, paired contrasts within a cohort and unpaired ones across cohorts, the between-block spread, the smoothing sweep and the leakage-removed sensitivity. CPU only — no model, no GPU, no cluster | `--sidecar`, one per cohort draw; the `--cohort-json` whose records the near-duplicate grouping is computed from; and the `--reference-json` the leakage screen and the reference grouping need |
+| `41_context_information_bootstrap.py` | The sampling uncertainty of cohort power, from the per-record sufficient statistics `01_cohort_power.py` persists: a group-level paired interval for context information, paired contrasts within a cohort draw and unpaired ones across draws, the between-block spread, the smoothing sweep and the leakage-removed sensitivity. Which arms are paired follows the cohort and reference digests rather than the file, so the several cohort items that can score one draw — `--dtype float32` is process-global, so an arm needing it is declared and produced on its own — are read under one resample index. `--unigram-null-control` adds one synthetic arm per measurable arm whose true context information is zero by construction, which is the only point in the artefact where the criteria are watched at a known value. CPU only — no model, no GPU, no cluster | `--sidecar`, one per cohort item and grouped into draws by digest; the `--cohort-json` whose records the near-duplicate grouping is computed from; and the `--reference-json` the leakage screen and the reference grouping need |
 
 The `--arm` of stages 15 and 17 defaults to `progen3` and otherwise names a **dense** panel arm — the text control and the dense protein arm a replacement result needs before it can be attributed to protein, to mixture-of-experts, or to transcoder replacement in general. The eligible set is composed by `src.transfer.replaceable.eligible_arms` from `CAMPAIGN_PANEL`, the architectures that carry this estimand, and the arms with a measured loader band; run either stage with `--help` to see it. They are still not registered stages, so a dense-arm run is a direct invocation and not a campaign item.
 
@@ -227,7 +227,7 @@ scripts/transfer/run_external_baseline_h200.sh --pin "$PIN_COMMIT" \
 | `ABSENT` | the GPU went idle and no result appeared — a *measurement* outcome, "ran and wrote nothing". Exit 4 |
 | `ADMITTED` | pulled to B and the per-file digests taken on each side agree. **Only an ADMITTED result may be read.** Exit 5 on mismatch |
 
-**A completed run whose pull fails is not a failed run.** The tunnel drops; `Connection timed out during banner exchange` during the pull leaves the artefact intact on GPFS and absent on B. Check the pod-side log for `[done]` before re-running anything, then re-pull and verify by hand:
+**A completed run whose pull fails is not a failed run.** The tunnel drops; `Connection timed out during banner exchange` during the pull leaves the artefact intact on GPFS and absent on Compute. Check the pod-side log for `[done]` before re-running anything, then re-pull and verify by hand:
 
 ```bash
 R=<pod result dir>; L=<local result dir>
@@ -261,7 +261,7 @@ The observation channel is one small status file on GPFS, rewritten atomically o
 1. Run `python scripts/transfer/panel_contract.py --verify`.
 2. Confirm required models, datasets, tools, and environment variables.
 3. Run `nvidia-smi` and `free -h` on the execution host.
-4. Validate the changed stage on B with a small realistic cohort.
+4. Validate the changed stage on Compute with a small realistic cohort.
 5. Query H200 status and set `H200_POD` only in the current shell.
 6. Review `run_transfer_h200.sh --dry-run`, including resolved arms, stages, paths, GPUs, and extra arguments.
 7. Launch through the controller and retain its run manifest.
