@@ -7,14 +7,44 @@ arm below the threshold is reported as unmeasurable *on this cohort*: that is a
 property of the evaluation set, not evidence about the model or about any
 interpretability method, and downstream analyses must exclude the arm rather
 than report a negative result from it.
+
+Three artefacts, and the third is what makes this stage re-analysable. Beside
+the frozen cohort and the report, ``--record-statistics`` (on by default) writes
+``power_<cohort>_<digest>.records.npz``: the per-record clean-NLL sums, token
+counts, symbol counts and target-token counts the report's figures are computed
+from. Every published figure here is a function of those and of the reference
+corpus's token counts, so a bootstrap, a re-weighting or a change of estimator
+is a CPU job over that file rather than a second sweep of the panel. The report
+carries the file's name and digest under ``sufficient_statistics``; a reader
+that predates it finds ``null`` there and is otherwise unaffected.
+
+A held-out run writes a fourth, ``reference_<cohort>_<reference digest>.json``:
+the records of the block the context-free baseline was fitted on, frozen exactly
+the way the scored cohort is. The sidecar deliberately carries no sequence text,
+so without this file a re-analysis can neither group the reference by
+near-duplicate content nor decide whether a reference record shares a k-mer with
+a scored one -- the two things ``41_context_information_bootstrap.py`` needs and
+reports as explicitly unavailable when they are missing. A plug-in run fits no
+reference and writes no such file.
+
+``--token-shuffle-control-seed`` turns the run into E3's negative control: each
+record's scored target tokens are permuted within that record before the model
+sees them, which destroys sequential context and leaves the unigram baseline
+exactly unchanged. It is off unless it is asked for, and when it is asked for the
+report is written under its own filename, declares itself under a different
+``artifact`` name, and carries a ``negative_control`` block at the top and inside
+every arm's record. Read
+:class:`src.transfer.scoring.TargetTokenShuffle` before quoting a number from
+one: the control bounds what a context-free predictor achieves on shuffled
+input, which is not the same as an arm whose true context information is zero.
 """
 
 from __future__ import annotations
 
 import argparse
 import gc
-import math
 import sys
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -38,23 +68,25 @@ from src.transfer.arms import (  # noqa: E402
     Cohort,
     load_arm,
     protein_cohort,
+    target_shuffle_for,
     text_cohort,
 )
 from src.transfer.budget import (  # noqa: E402
     DEFAULT_CONTEXT_LENGTHS,
     MIN_CONTEXT_INFORMATION_NATS,
-    arm_power,
+    RecordStatistics,
+    arm_power_with_records,
     markov_baselines,
-    power_status,
     truncation_curve,
+    write_power_records,
 )
 from src.transfer.pathways import (  # noqa: E402
     UNIGRAM_ESTIMATORS,
-    disjoint_unigram_cross_entropy_nats,
     held_out_cohort,
     subsample_cohort,
 )
-from src.transfer.prediction_addressed import scored_target_counts  # noqa: E402
+from src.transfer.prediction_addressed import scored_target_records  # noqa: E402
+from src.transfer.scoring import TOKEN_SHUFFLE_CONTROL  # noqa: E402
 
 SCHEMA_VERSION = "r2_transfer_cohort_power_v1"
 DEFAULT_OUT = REPO / "results/transfer/cohort_power"
@@ -184,6 +216,62 @@ def build_cohort(args: argparse.Namespace) -> tuple[Cohort, dict[str, Any]]:
     }
 
 
+def write_reference_records(
+    out: Path, cohort: Cohort, reference: Cohort | None
+) -> Path | None:
+    """Freeze the held-out reference block, or write nothing and say so by ``None``.
+
+    The same kind of object as the frozen cohort beside it -- a record list under
+    the digest of its own contents -- for the block that decides every
+    context-information figure in the report. It exists because the
+    sufficient-statistics sidecar stores order-free token counts by design, and
+    two questions a re-analysis has to answer cannot be answered from counts:
+    whether two reference records are near-duplicates of each other, and whether
+    a reference record shares a k-mer with a scored one. Both need the sequence
+    text, so a hash-per-record form would be the same dead end the sidecar
+    already is; ``41_context_information_bootstrap.py`` reads this file through
+    ``--reference-json`` and reports both as unavailable without it.
+
+    Only a held-out run has a reference at all, so ``reference is None`` -- the
+    plug-in estimator -- writes nothing rather than an empty artefact that a
+    reader would have to interpret.
+
+    The cost is the corpus's own: about 0.6 MB for a 4000-record Swiss-Prot
+    reference and about 20 MB for a 4000-record OpenWebText one, whose documents
+    average some five thousand characters. That is the smallest representation
+    that supports the two questions.
+    """
+
+    if reference is None:
+        return None
+    destination = out / f"reference_{cohort.name}_{reference.digest[:12]}.json"
+    write_json(
+        destination,
+        {
+            "schema_version": SCHEMA_VERSION,
+            "artifact": "held_out_unigram_reference",
+            # The quantity the sidecar names ``reference_digest`` and the report
+            # names ``unigram_baseline.reference_digest``, under that name here
+            # too: a consumer holding both can check it is reading the block this
+            # run fitted its baseline on rather than another draw's.
+            "reference_digest": reference.digest,
+            "reference_name": reference.name,
+            "reference_kind": reference.kind,
+            # The scored cohort the block was held out against, which is what
+            # makes the pair a leakage screen rather than two record lists.
+            "cohort_digest": cohort.digest,
+            "min_symbols": reference.min_symbols,
+            "max_symbols": reference.max_symbols,
+            "n_records": len(reference),
+            "records": reference.records,
+            # Carries the sampling record held_out_cohort travels forward,
+            # including how many records the content deduplication removed.
+            "metadata": reference.metadata,
+        },
+    )
+    return destination
+
+
 def validate_arms(names: list[str], args: argparse.Namespace) -> None:
     """Refuse an arm/cohort combination before the corpus is read.
 
@@ -222,6 +310,78 @@ def validate_arms(names: list[str], args: argparse.Namespace) -> None:
             f"arms {conditioned} are EC-conditioned and need an EC-labelled cohort; "
             "rebuild with --with-ec"
         )
+
+
+def artifact_names(cohort_name: str, digest: str, control_seed: int | None) -> tuple[str, str]:
+    """The report's ``artifact`` name and its basename, given the run's kind.
+
+    A control run must not be able to overwrite or be mistaken for a
+    measurement, and the cohort digest cannot separate them: the shuffle happens
+    in token space, after the cohort is frozen, so the two runs share a cohort
+    byte for byte. The seed is in the basename because two control runs at
+    different seeds are two different controls.
+    """
+
+    if control_seed is None:
+        return "cohort_power_report", f"power_{cohort_name}_{digest[:12]}"
+    return (
+        "cohort_power_token_shuffle_control_report",
+        f"power_{cohort_name}_{TOKEN_SHUFFLE_CONTROL}_seed{control_seed}_{digest[:12]}",
+    )
+
+
+def negative_control_record(control_seed: int | None) -> dict[str, Any] | None:
+    """The run-level declaration a control artefact carries, or ``None``.
+
+    ``None`` on a measurement run, so the key is present in every report and a
+    reader never has to know whether the field predates the control.
+    """
+
+    if control_seed is None:
+        return None
+    return {
+        "control": TOKEN_SHUFFLE_CONTROL,
+        "seed": int(control_seed),
+        "declared_by": "src.transfer.scoring.TargetTokenShuffle",
+        "this_is_not_a_measurement": (
+            "every model-side figure in this report was computed on records whose "
+            "scored target tokens were permuted within the record. The context "
+            "information here is what the estimator returns for an arm that has no "
+            "usable sequential context; it is not a measurement of the arm on this "
+            "cohort and must never be quoted as one"
+        ),
+        "what_the_shuffle_enters": (
+            "the model's forward pass. The unigram baseline, the scored-token count "
+            "and the cohort digest are invariant under the permutation by "
+            "construction, which is what makes the contrast with a measurement run "
+            "readable. Two things are not. The per-symbol conversion moves by a few "
+            "parts in a thousand on a byte-level BPE arm, because reordering tokens "
+            "can split a multi-byte character and the decoder then emits replacement "
+            "characters, so every *_bits_per_symbol field here carries that much "
+            "noise; no nats-per-token figure does. And the residue Markov ladder is "
+            "computed from the unshuffled cohort, so at order one and above it does "
+            "not describe what this run scored"
+        ),
+    }
+
+
+def validate_negative_control(args: argparse.Namespace) -> None:
+    """Refuse the one combination a control run cannot produce honestly.
+
+    The truncation curve tokenises the cohort itself rather than going through
+    the scored pass, so the shuffle never reaches it. Under the control it would
+    therefore be measured on the unshuffled rendering and would sit in the
+    artefact as a context curve for a run whose context was destroyed -- the one
+    figure in the report a reader is most likely to read as the control's own.
+    """
+
+    if args.token_shuffle_control_seed is None or args.skip_truncation:
+        return
+    raise ValueError(
+        "--token-shuffle-control-seed and the truncation curve do not belong in one "
+        "artefact: the curve is tokenised separately from the scored pass, so it "
+        "would describe the unshuffled rendering. Pass --skip-truncation"
+    )
 
 
 def validate_truncation(args: argparse.Namespace) -> None:
@@ -303,6 +463,15 @@ def main() -> None:
     )
     parser.add_argument("--unigram-reference-size", type=int, default=4000)
     parser.add_argument(
+        "--record-statistics",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="write the per-record sufficient statistics beside the report. They "
+        "are what every uncertainty re-analysis needs -- per-record clean NLL "
+        "sums, token counts and target-token counts -- and without them a "
+        "bootstrap over this stage costs a second GPU sweep of the whole panel",
+    )
+    parser.add_argument(
         "--truncation-contexts",
         type=int,
         nargs="*",
@@ -317,6 +486,21 @@ def main() -> None:
     parser.add_argument("--truncation-batch", type=int, default=64)
     parser.add_argument("--truncation-min-windows", type=int, default=200)
     parser.add_argument("--seed", type=int, default=20260727)
+    parser.add_argument(
+        "--token-shuffle-control-seed",
+        type=int,
+        default=None,
+        help="run E3's negative control instead of a measurement: permute each "
+        "record's scored target tokens within that record, under this seed, "
+        "before the model sees them. Destroys sequential context and leaves the "
+        "unigram baseline exactly unchanged, so context information collapses to "
+        "whatever an arm with no usable context reads against that baseline -- "
+        "gpt2 on 24 OpenWebText records falls from +4.64 to -0.29 nats/token, "
+        "near the boundary the 0.30-nat floor and the sign criterion have never "
+        "been exercised at, but on the negative side and not at zero. Off unless "
+        "given; a run under it writes a differently named, self-identifying "
+        "artefact and requires --skip-truncation",
+    )
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args()
 
@@ -327,6 +511,7 @@ def main() -> None:
     # Everything that can be refused from the command line alone is refused here,
     # before the corpus is scanned and long before a checkpoint is loaded.
     validate_arms(names, args)
+    validate_negative_control(args)
     validate_truncation(args)
 
     cohort, sampling = build_cohort(args)
@@ -360,6 +545,7 @@ def main() -> None:
         "metadata": cohort.metadata,
     }
     write_json(args.out / f"cohort_{cohort.name}_{digest[:12]}.json", cohort_payload)
+    reference_records_path = write_reference_records(args.out, cohort, reference)
 
     cohort_level: dict[str, Any] = {}
     if cohort.kind == "protein" and not args.skip_markov:
@@ -393,59 +579,52 @@ def main() -> None:
         cohort_level["residue_markov_train_skip"] = markov_skip
         cohort_level["residue_markov_train_overlap_removed"] = markov_overlap
 
+    control_seed = args.token_shuffle_control_seed
     arm_reports: dict[str, Any] = {}
+    arm_records: dict[str, RecordStatistics] = {}
     for name in names:
         arm = load_arm(name, device=args.device, dtype=args.dtype)
-        report = arm_power(
-            arm,
+        reference_counts = None
+        reference_record = None
+        reference_per_record = None
+        if reference is not None:
+            # Tokenizer only, over exactly the multiset arm_power scores, so the
+            # held-out baseline costs no second forward pass.
+            reference_counts, reference_per_record = scored_target_records(
+                arm, reference.input_strings(arm), max_len=args.max_len
+            )
+            reference_record = {
+                "cohort": reference.name,
+                "digest": reference.digest,
+                **reference_overlap,
+            }
+        # The reference is counted on the *unshuffled* arm, and the shuffled arm
+        # is a second view of the same loaded checkpoint rather than a mutation of
+        # it. The reference counts would in fact be identical either way -- the
+        # permutation preserves each record's target multiset exactly, which is
+        # the property the whole control rests on -- but a held-out corpus that
+        # was described as shuffled would say something untrue about the baseline.
+        shuffle = None if control_seed is None else target_shuffle_for(arm, seed=control_seed)
+        scoring_arm = arm if shuffle is None else replace(arm, target_token_shuffle=shuffle)
+        # The baseline is chosen inside arm_power, where the scored targets are,
+        # so every field of the record -- the verdict, the per-symbol views, the
+        # per-sequence interval -- is derived from the estimator the record
+        # names. Recomputing a subset of them here is what left ZymCTRL's
+        # Miller-Madow context information beside a held-out one under two names
+        # that did not distinguish them.
+        report, records = arm_power_with_records(
+            scoring_arm,
             cohort,
             max_len=args.max_len,
             batch_size=args.batch_size,
             minimum_context_information_nats=args.threshold_nats,
+            unigram_estimator=args.unigram_estimator,
+            reference_token_counts=reference_counts,
+            reference=reference_record,
         )
-        report["unigram_estimator"] = args.unigram_estimator
-        if reference is not None:
-            # Both count vectors come from the tokenizer alone, over exactly the
-            # multiset arm_power scores, so this costs no second forward pass.
-            target_counts = scored_target_counts(
-                arm, cohort.input_strings(arm), max_len=args.max_len
-            )
-            reference_counts = scored_target_counts(
-                arm, reference.input_strings(arm), max_len=args.max_len
-            )
-            held_out_nats = disjoint_unigram_cross_entropy_nats(
-                reference_counts, target_counts
-            )
-            context = held_out_nats - report["clean_ce_nats"]
-            verdict, status = power_status(context, args.threshold_nats)
-            report["unigram_entropy_held_out_nats"] = held_out_nats
-            report["plug_in_bias_nats"] = (
-                held_out_nats - report["unigram_entropy_on_cohort_nats"]
-            )
-            report["context_information_plug_in_nats"] = report["context_information_nats"]
-            report["context_information_nats"] = context
-            # Derived views of the same quantity, recomputed so that no field in
-            # the record is still normalised against the estimator that was
-            # replaced.
-            report["context_information_bits_per_symbol"] = (
-                context / math.log(2.0) / report["symbols_per_token"]
-            )
-            report["unigram_entropy_bits_per_symbol"] = (
-                held_out_nats / math.log(2.0) / report["symbols_per_token"]
-            )
-            # Every per-sequence context-information value is baseline minus that
-            # sequence's cross-entropy, so replacing the baseline shifts the
-            # whole distribution by one constant: the mean and both interval
-            # endpoints move by the bias, the standard error does not.
-            bias = report["plug_in_bias_nats"]
-            shifted = dict(report["per_sequence_context_information_interval"])
-            shifted["mean"] = shifted["mean"] + bias
-            shifted["interval"] = [value + bias for value in shifted["interval"]]
-            report["per_sequence_context_information_interval"] = shifted
-            report["power_verdict"] = verdict
-            report["measurability"] = status
-            report["reference_digest"] = reference.digest
-            report["reference_sequences"] = len(reference)
+        if reference_per_record is not None:
+            records = replace(records, reference_counts=reference_per_record)
+        arm_records[name] = records
         if not args.skip_truncation:
             report["truncation_curve"] = truncation_curve(
                 arm,
@@ -457,23 +636,55 @@ def main() -> None:
                 seed=args.seed,
                 min_windows=args.truncation_min_windows,
             )
+        # Inside the arm's own record as well as at the top of the report: an arm
+        # record is routinely lifted out of the artefact on its own, and one that
+        # did not carry the control would read exactly like a measurement.
+        if shuffle is not None:
+            report["negative_control"] = shuffle.record()
         arm_reports[name] = report
-        baseline_nats = report.get(
-            "unigram_entropy_held_out_nats", report["unigram_entropy_on_cohort_nats"]
-        )
+        baseline_nats = report["unigram_entropy_used_for_verdict_nats"]
         print(
             f"{name:16s} unigram({args.unigram_estimator}) {baseline_nats:7.4f}  "
             f"clean_ce {report['clean_ce_nats']:7.4f}  "
             f"context_info {report['context_information_nats']:+8.4f} nats/token  "
             f"{report['power_verdict']} ({report['measurability']})"
+            + ("" if shuffle is None else f"  [{TOKEN_SHUFFLE_CONTROL} NEGATIVE CONTROL]")
         )
-        del arm
+        # Both names, because under the control ``scoring_arm`` is a second view
+        # of the same checkpoint and would otherwise hold it alive across the next
+        # ``load_arm``.
+        del arm, scoring_arm
         gc.collect()
         torch.cuda.empty_cache()
 
+    artifact, stem = artifact_names(cohort.name, digest, control_seed)
+    destination = args.out / f"{stem}.json"
+    # Written before the report, so that the report can carry the sidecar's
+    # digest: a reader learns from the report whether the sidecar exists and
+    # whether the one on disk is the one this run produced.
+    sidecar_seeds = {
+        "cohort_draw": int(args.cohort_draw_seed),
+        "truncation_curve": int(args.seed),
+    }
+    if control_seed is not None:
+        sidecar_seeds["token_shuffle_control"] = int(control_seed)
+    sufficient_statistics = None
+    if args.record_statistics:
+        sufficient_statistics = write_power_records(
+            destination.with_suffix(".records.npz"),
+            arm_records,
+            cohort_digest=digest,
+            reference_digest=None if reference is None else reference.digest,
+            smoothing=next(iter(arm_reports.values()))["unigram_baseline"]["smoothing"],
+            seeds=sidecar_seeds,
+            max_len=int(args.max_len),
+        )
+
     payload = {
         "schema_version": SCHEMA_VERSION,
-        "artifact": "cohort_power_report",
+        "artifact": artifact,
+        # ``None`` on a measurement run, a self-describing block on a control run.
+        "negative_control": negative_control_record(control_seed),
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "cohort_digest": digest,
         "cohort": {
@@ -499,6 +710,9 @@ def main() -> None:
         "seeds": {
             "truncation_curve": int(args.seed),
             "cohort_draw": int(args.cohort_draw_seed),
+            # Always present, and ``None`` on a measurement run, so this block
+            # says which kind of run produced the artefact on its own.
+            "token_shuffle_control": None if control_seed is None else int(control_seed),
         },
         "cohort_sampling": sampling,
         "stage_contract": stage_contract_record("cohort_power", names),
@@ -532,6 +746,9 @@ def main() -> None:
             "truncation_evaluated": not args.skip_truncation,
         },
         "cohort_level": cohort_level,
+        # Absent when --no-record-statistics; every reader of this artefact
+        # predates the sidecar and none of them require it.
+        "sufficient_statistics": sufficient_statistics,
         "arms": arm_reports,
         "measurable_arms": sorted(
             name for name, report in arm_reports.items() if report["power_verdict"] == "PASS"
@@ -540,9 +757,16 @@ def main() -> None:
             name for name, report in arm_reports.items() if report["power_verdict"] == "FAIL"
         ),
     }
-    destination = args.out / f"power_{cohort.name}_{digest[:12]}.json"
     write_json(destination, payload)
     print(f"wrote {destination}")
+    if sufficient_statistics is not None:
+        print(f"wrote {args.out / sufficient_statistics['path']}")
+    if reference_records_path is not None:
+        # Named rather than left to be reconstructed: the frozen cohort beside it
+        # is derived from the sidecar's name and never has to be typed, whereas
+        # this path is an argument an operator passes to
+        # 41_context_information_bootstrap.py by hand.
+        print(f"wrote {reference_records_path}  (pass to 41 as --reference-json)")
     if cohort_level.get("residue_markov_baselines"):
         ladder = cohort_level["residue_markov_baselines"]["cross_entropy_bits_per_residue"]
         print("residue Markov (bits/residue): " + "  ".join(

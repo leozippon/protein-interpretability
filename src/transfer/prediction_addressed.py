@@ -62,7 +62,7 @@ from .arms import (
     conditioning_boundary_ids,
     symbols_per_token,
 )
-from .budget import scored_tokens
+from .budget import SparseCounts, scored_tokens
 from .circuits import RepeatProbe, content_bounds, layout_token_ids, n_head
 from .pathways import (
     LAPLACE_SMOOTHING,
@@ -172,7 +172,9 @@ def _bin_index(value: float, edges: Sequence[float]) -> int:
 # ------------------------------------------------------------------- Gate 0
 
 
-def scored_target_counts(arm: Arm, strings: Sequence[str], *, max_len: int) -> np.ndarray:
+def scored_target_records(
+    arm: Arm, strings: Sequence[str], *, max_len: int
+) -> tuple[np.ndarray, SparseCounts]:
     """Next-token-target counts over exactly the multiset ``scored_tokens`` scores.
 
     Applies :func:`src.transfer.scoring.target_rule` without a forward pass, so
@@ -186,33 +188,50 @@ def scored_target_counts(arm: Arm, strings: Sequence[str], *, max_len: int) -> n
     attention mask and no batch: it walks one untruncated id list at a time. The
     *rule* and the *boundary ids* still come from the shared declarations, which
     is where the two used to be able to drift apart.
+
+    Returns the dense count vector every unigram estimator consumes and the
+    per-record counts it sums from, in one pass, because a caller that persists
+    the per-record statistics would otherwise tokenise a four-thousand-record
+    reference corpus a second time to get them. Rows are aligned with
+    ``strings``: a row with no scored target is an empty span, not a missing
+    record.
+
+    The ``budget`` capability is required for the vocabulary read below, for the
+    reason :func:`src.transfer.budget.arm_power_with_records` gives.
     """
 
     if max_len < 2:
         raise ValueError("max_len must admit at least one next-token target")
+    arm.require("budget")
     vocab = int(arm.model.config.vocab_size)
-    counts = np.zeros(vocab, dtype=np.int64)
     conditioned = target_rule(arm.spec.input_format) == "between_boundaries"
     start_id, end_id = conditioning_boundary_ids(arm)
+    records: list[np.ndarray] = []
     for text in strings:
         ids = arm.tokenizer(text, return_tensors=None)["input_ids"][:max_len]
-        if len(ids) < 2:
-            continue
-        if conditioned:
-            if ids.count(start_id) != 1 or ids.count(end_id) != 1:
-                raise ValueError(f"{arm.name}: row lacks exactly one <start>/<end> pair")
-            targets = ids[ids.index(start_id) + 1 : ids.index(end_id)]
-        else:
-            targets = ids[1:]
-        if not targets:
-            continue
+        targets: list[int] = []
+        if len(ids) >= 2:
+            if conditioned:
+                if ids.count(start_id) != 1 or ids.count(end_id) != 1:
+                    raise ValueError(f"{arm.name}: row lacks exactly one <start>/<end> pair")
+                targets = ids[ids.index(start_id) + 1 : ids.index(end_id)]
+            else:
+                targets = ids[1:]
         array = np.asarray(targets, dtype=np.int64)
-        if array.min() < 0 or array.max() >= vocab:
+        if array.size and (array.min() < 0 or array.max() >= vocab):
             raise ValueError(f"{arm.name}: token id outside the declared vocabulary")
-        counts += np.bincount(array, minlength=vocab)
+        records.append(array)
+    per_record = SparseCounts.from_records(records)
+    counts = per_record.vocabulary_totals(vocab)
     if counts.sum() < 1:
         raise RuntimeError(f"{arm.name}: reference corpus yields no scored targets")
-    return counts
+    return counts, per_record
+
+
+def scored_target_counts(arm: Arm, strings: Sequence[str], *, max_len: int) -> np.ndarray:
+    """The dense half of :func:`scored_target_records`."""
+
+    return scored_target_records(arm, strings, max_len=max_len)[0]
 
 
 def cohort_power_held_out(
@@ -232,19 +251,24 @@ def cohort_power_held_out(
     exactly the arms whose relative position a modality reading depends on.
 
     The held-out estimator carries a smaller bias of its own, upwards and on the
-    same vocabulary axis, from its additive smoothing: +0.224 nats at
-    ``V = 50257`` against +0.0001 at ``V = 32`` on a 100k-token reference. It is
-    not removed -- there is no unsmoothed held-out unigram, since one unseen
-    target token makes the estimate infinite -- so it is measured and published
-    beside the headline, together with the same baseline recomputed over a
-    sweep of the constant. ``smoothing`` is exposed for that sweep;
-    :data:`~src.transfer.pathways.LAPLACE_SMOOTHING` records why the default is
-    unchanged.
+    same vocabulary axis, from its additive smoothing. It is bounded by
+    ``log(1 + s*V/N)`` and therefore rises with vocabulary size against reference
+    size; its realised size on the corpora actually used is measured by
+    :func:`~src.transfer.pathways.smoothing_diagnostics` and published under
+    ``unigram_smoothing`` below rather than quoted from a figure a reader cannot
+    check -- see :data:`~src.transfer.pathways.LAPLACE_SMOOTHING`, which records
+    which figures were withdrawn and why the default is unchanged. The bias is
+    not removed: there is no unsmoothed held-out unigram, since one unseen target
+    token makes the estimate infinite. ``smoothing`` is exposed so that the
+    constant can be swept.
     """
 
     if threshold_nats <= 0:
         raise ValueError("the power threshold must be positive")
     assert_disjoint(cohort, reference)
+    # Required where ``config.vocab_size`` is read, as in
+    # :func:`src.transfer.budget.arm_power_with_records`.
+    arm.require("budget")
     inputs = cohort.input_strings(arm)
     scored = scored_tokens(arm, inputs, max_len=max_len, batch_size=batch_size)
     vocab = int(arm.model.config.vocab_size)
@@ -2357,6 +2381,7 @@ __all__ = [
     "partial_spearman",
     "query_source_intervention",
     "scored_target_counts",
+    "scored_target_records",
     "tokenised_rows",
     "top_set_jaccard",
     "unigram_percentiles",

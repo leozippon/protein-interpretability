@@ -57,6 +57,11 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "only to positions, over a 150-of-396,000 file-order prefix"
     ),
     "12_induction_robustness.py": "reads artefacts from disk; loads no corpus",
+    "41_context_information_bootstrap.py": (
+        "reads sufficient-statistics sidecars and cohort records from disk and "
+        "resamples them; loads no corpus and no model. Its own resampling is "
+        "seeded through --seed, which the report records"
+    ),
     "24_component_swap.py": (
         "measures its chimera through 21_joint_mode_qualification.py's own "
         "protein_mode and text_mode, which draw both windows through "

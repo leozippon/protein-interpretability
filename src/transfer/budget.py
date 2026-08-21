@@ -40,8 +40,10 @@ from __future__ import annotations
 
 import inspect
 import math
-from collections.abc import Sequence
+import os
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -57,6 +59,7 @@ from .arms import (
     symbols_per_token,
     tokenize_batch,
 )
+from .io import sha256_file
 from .scoring import sequence_target_mask, target_rule
 from .statistics import mean_interval
 
@@ -84,12 +87,11 @@ UNMEASURABLE = "unmeasurable_on_this_cohort"
 #: several times :data:`MIN_CONTEXT_INFORMATION_NATS`, so which arms pass a
 #: plug-in verdict is set mostly by vocabulary size.
 #:
-#: ``01_cohort_power.py`` recomputes the verdict from the held-out estimator
-#: whenever a reference cohort is given, so no published verdict came from the
-#: plug-in. The defect is that nothing stopped a *caller* inheriting one: the
-#: estimator was recorded in a different field from the verdict, and a reader
-#: who took ``measurability`` alone could not tell which they had. The verdict
-#: now carries its estimator in its own value when that estimator is the
+#: A campaign run asks for the held-out estimator, so no published verdict came
+#: from the plug-in. The defect is that nothing stopped a *caller* inheriting
+#: one: the estimator was recorded in a different field from the verdict, and a
+#: reader who took ``measurability`` alone could not tell which they had. The
+#: verdict now carries its estimator in its own value when that estimator is the
 #: diagnostic one, which is the only form a reader cannot separate them in.
 MEASURABLE_PLUG_IN = "measurable_against_plug_in_baseline"
 UNMEASURABLE_PLUG_IN = "unmeasurable_on_this_cohort_against_plug_in_baseline"
@@ -184,6 +186,24 @@ def scored_tokens(
     )
 
 
+def decoded_symbols(arm: Arm, target_ids: Sequence[int] | np.ndarray) -> int:
+    """Alphabet symbols the arm's tokenizer decodes ``target_ids`` into.
+
+    Declared once because two quantities count them: the cohort-level expansion
+    below, which converts a per-token cross-entropy into bits per symbol, and
+    the per-record counts :func:`record_statistics` persists beside it. A
+    per-record count that applied a different rule would not sum to the figure
+    it sits next to.
+    """
+
+    decoded = arm.tokenizer.decode([int(value) for value in target_ids])
+    return (
+        sum(1 for character in decoded if character in AA20)
+        if arm.modality == "protein"
+        else len(decoded)
+    )
+
+
 def scored_symbols_per_token(arm: Arm, scored: ScoredTokens) -> float:
     """Tokenizer expansion over exactly the tokens the cross-entropy was taken on.
 
@@ -208,18 +228,185 @@ def scored_symbols_per_token(arm: Arm, scored: ScoredTokens) -> float:
     quantity, not a correction to that one, and both are reported.
     """
 
-    decoded = arm.tokenizer.decode([int(value) for value in scored.target_ids])
-    symbols = (
-        sum(1 for character in decoded if character in AA20)
-        if arm.modality == "protein"
-        else len(decoded)
-    )
+    symbols = decoded_symbols(arm, scored.target_ids)
     if symbols < 1:
         raise RuntimeError(
             f"{arm.name}: the scored targets decode to no alphabet symbols, so a "
             "per-symbol conversion is undefined"
         )
     return symbols / len(scored)
+
+
+#: Identity of the per-record sufficient-statistics sidecar written beside a
+#: power report. A reader that finds a different version must rebuild rather
+#: than reinterpret: the fields below are the whole contract.
+POWER_RECORDS_SCHEMA_VERSION = "r2_transfer_cohort_power_records_v1"
+
+
+@dataclass(frozen=True)
+class SparseCounts:
+    """Per-record token counts over one vocabulary, in compressed-row form.
+
+    ``offsets[i]:offsets[i + 1]`` selects record ``i``'s entries of
+    ``token_ids`` and ``counts``; a record that contributed no scored target is
+    an empty span rather than an absent row, so the rows stay aligned with the
+    records that produced them. Dense storage would be ``records x vocabulary``
+    int64 -- 80 MB for 200 records of a 50257-piece arm -- for rows that hold a
+    few hundred non-zeros each.
+    """
+
+    offsets: np.ndarray
+    token_ids: np.ndarray
+    counts: np.ndarray
+
+    def __post_init__(self) -> None:
+        for name in ("offsets", "token_ids", "counts"):
+            array = getattr(self, name)
+            if array.ndim != 1 or array.dtype != np.int64:
+                raise ValueError(f"{name} must be a one-dimensional int64 array")
+        if self.offsets.size < 1 or int(self.offsets[0]) != 0:
+            raise ValueError("offsets must start at zero")
+        if np.any(np.diff(self.offsets) < 0):
+            raise ValueError("offsets must be non-decreasing")
+        if self.token_ids.shape != self.counts.shape:
+            raise ValueError("token ids and counts do not align")
+        if int(self.offsets[-1]) != int(self.token_ids.size):
+            raise ValueError("offsets do not close over the stored entries")
+        if self.counts.size and int(self.counts.min()) < 1:
+            raise ValueError("a stored count must be positive")
+
+    @classmethod
+    def from_records(cls, records: Sequence[np.ndarray]) -> SparseCounts:
+        """Compress one token-id array per record."""
+
+        lengths: list[int] = []
+        ids: list[np.ndarray] = []
+        counts: list[np.ndarray] = []
+        for record in records:
+            array = np.asarray(record, dtype=np.int64).reshape(-1)
+            unique, tally = np.unique(array, return_counts=True)
+            lengths.append(int(unique.size))
+            ids.append(unique.astype(np.int64))
+            counts.append(tally.astype(np.int64))
+        offsets = np.zeros(len(lengths) + 1, dtype=np.int64)
+        np.cumsum(lengths, out=offsets[1:], dtype=np.int64)
+        return cls(
+            offsets=offsets,
+            token_ids=(
+                np.concatenate(ids).astype(np.int64) if ids else np.zeros(0, dtype=np.int64)
+            ),
+            counts=(
+                np.concatenate(counts).astype(np.int64)
+                if counts
+                else np.zeros(0, dtype=np.int64)
+            ),
+        )
+
+    @property
+    def n_records(self) -> int:
+        return int(self.offsets.size - 1)
+
+    def record_totals(self) -> np.ndarray:
+        """Tokens counted in each record.
+
+        ``np.add.reduceat`` is not used: on an empty span it returns the element
+        at the offset rather than zero, which would silently attribute another
+        record's tokens to a record that contributed none.
+        """
+
+        cumulative = np.concatenate(
+            [np.zeros(1, dtype=np.int64), np.cumsum(self.counts, dtype=np.int64)]
+        )
+        return cumulative[self.offsets[1:]] - cumulative[self.offsets[:-1]]
+
+    def vocabulary_totals(self, vocab_size: int) -> np.ndarray:
+        """The dense count vector these records sum to."""
+
+        if vocab_size < 1:
+            raise ValueError("vocab_size must be positive")
+        if self.token_ids.size and int(self.token_ids.max()) >= vocab_size:
+            raise ValueError("a stored token id falls outside the declared vocabulary")
+        return np.bincount(self.token_ids, weights=self.counts, minlength=vocab_size).astype(
+            np.int64
+        )
+
+
+@dataclass(frozen=True)
+class RecordStatistics:
+    """Everything a re-analysis of one arm's power figure needs, per record.
+
+    The published figures depend on the cohort through exactly two things. The
+    model term is a mean of per-token clean NLL, so per-record ``clean_nll_sum``
+    and ``token_count`` reconstruct it and any resampling of it. The context-free
+    baseline is a unigram model, so it depends on the cohort only through the
+    per-record target-token counts and on the reference corpus only through the
+    same counts there. Persisting these makes every uncertainty re-analysis --
+    a sequence-clustered bootstrap above all -- a CPU job over a small array
+    file instead of a second GPU sweep. That bill has already been paid twice in
+    this programme.
+
+    ``record_index`` indexes the cohort's own records, so a record that produced
+    no scored target is absent rather than silently renumbered.
+    ``reference_counts`` is attached by the caller that built the held-out
+    corpus, because the reference is a property of the measurement's
+    configuration rather than of the forward pass.
+    """
+
+    arm: str
+    vocab_size: int
+    record_index: np.ndarray
+    clean_nll_sum: np.ndarray
+    token_count: np.ndarray
+    n_symbols: np.ndarray
+    target_counts: SparseCounts
+    reference_counts: SparseCounts | None = None
+
+    def __post_init__(self) -> None:
+        if self.vocab_size < 1:
+            raise ValueError("vocab_size must be positive")
+        shape = self.record_index.shape
+        for name, dtype in (
+            ("record_index", np.int64),
+            ("clean_nll_sum", np.float64),
+            ("token_count", np.int64),
+            ("n_symbols", np.int64),
+        ):
+            array = getattr(self, name)
+            if array.ndim != 1 or array.dtype != dtype:
+                raise ValueError(f"{name} must be a one-dimensional {dtype.__name__} array")
+            if array.shape != shape:
+                raise ValueError(f"{name} does not align with the record index")
+        if self.target_counts.n_records != int(shape[0]):
+            raise ValueError("target counts do not align with the record index")
+        if not np.array_equal(self.target_counts.record_totals(), self.token_count):
+            raise ValueError("per-record token counts disagree with the stored target counts")
+
+
+def record_statistics(arm: Arm, scored: ScoredTokens) -> RecordStatistics:
+    """Reduce a scored forward pass to its per-record sufficient statistics.
+
+    Requires the ``budget`` capability for the reason :func:`arm_power` states:
+    the vocabulary recorded here is ``config.vocab_size``, which is not the
+    alphabet on every checkpoint this repository can load.
+    """
+
+    arm.require("budget")
+    order = np.argsort(scored.sequence_index, kind="mergesort")
+    ordered_index = scored.sequence_index[order]
+    starts = np.unique(ordered_index, return_index=True)[1][1:]
+    nll_blocks = np.split(scored.nll_nats[order], starts)
+    id_blocks = np.split(scored.target_ids[order], starts)
+    return RecordStatistics(
+        arm=arm.name,
+        vocab_size=int(arm.model.config.vocab_size),
+        record_index=np.unique(ordered_index).astype(np.int64),
+        clean_nll_sum=np.array([block.sum() for block in nll_blocks], dtype=np.float64),
+        token_count=np.array([block.size for block in id_blocks], dtype=np.int64),
+        n_symbols=np.array(
+            [decoded_symbols(arm, block) for block in id_blocks], dtype=np.int64
+        ),
+        target_counts=SparseCounts.from_records(id_blocks),
+    )
 
 
 def unigram_entropy_nats(target_ids: np.ndarray, vocab_size: int) -> float:
@@ -549,25 +736,50 @@ def power_status(context_information_nats: float, threshold_nats: float) -> tupl
     return "FAIL", UNMEASURABLE
 
 
-def arm_power(
+def arm_power_with_records(
     arm: Arm,
     cohort: Cohort,
     *,
     max_len: int,
     batch_size: int,
     minimum_context_information_nats: float = MIN_CONTEXT_INFORMATION_NATS,
-    held_out_unigram_nats: float | None = None,
-) -> dict[str, Any]:
-    """The headline power figure for one arm on one frozen cohort.
+    unigram_estimator: str = "plugin",
+    reference_token_counts: np.ndarray | None = None,
+    reference: Mapping[str, Any] | None = None,
+) -> tuple[dict[str, Any], RecordStatistics]:
+    """The headline power figure for one arm, and the records behind it.
 
-    ``held_out_unigram_nats`` makes the estimator behind the verdict explicit at
-    the call. Supply it and the baseline, the context information, every
-    per-symbol view and the verdict all come from the held-out estimator, and
-    the record says so. Omit it and everything is computed against the in-cohort
-    plug-in exactly as before -- but the ``measurability`` verdict then names the
-    estimator in its own value, so it cannot be quoted as a cross-arm one, and
-    the plug-in verdict is additionally published under an estimator-qualified
-    key that no caller overwrites. See :data:`MEASURABLE_PLUG_IN`.
+    **The baseline is chosen here, where the scored targets are.** The estimator
+    is named at the call: ``"plugin"`` fits the context-free baseline on the
+    scored cohort itself, ``"disjoint"`` evaluates a unigram model fitted on a
+    held-out reference corpus, whose token-count vector and provenance the
+    caller supplies. Both go through
+    :func:`src.transfer.pathways.unigram_baseline`, so this function has no
+    estimator dispatch of its own and there is no fallback: asking for the
+    held-out estimator without a reference raises, because a silent downgrade
+    would move every context-information figure without changing anything a
+    reader can see.
+
+    This used to be split across two files. ``arm_power`` computed everything
+    against the plug-in and ``01_cohort_power.py`` recomputed *some* of it
+    afterwards from a held-out cross-entropy of its own, which left the rest of
+    the record normalised against the estimator that had been replaced. The
+    published consequence: ZymCTRL carried
+    ``context_information_miller_madow_nats`` 2.027 beside
+    ``context_information_nats`` 2.029, two "context information" figures taken
+    against different baselines with nothing in either name to say so.
+
+    **How a field says which baseline it came from.** A name carrying
+    ``plug_in``, ``on_cohort`` or ``miller_madow`` belongs to the in-cohort
+    plug-in family and is computed against the plug-in whichever estimator was
+    asked for. Every other baseline-derived field is computed against the
+    estimator named in ``unigram_estimator``, published as a number in
+    ``unigram_entropy_used_for_verdict_nats`` and with its full provenance in
+    ``unigram_baseline``. The Miller-Madow variants are named
+    ``*_plug_in_miller_madow_*`` rather than left bare because the correction
+    ``(observed - 1) / 2N`` is a bias correction *for the plug-in entropy
+    estimator*: it has no meaning applied to a held-out cross-entropy, so the
+    honest form of the field is the plug-in one, named as such.
 
     The ``budget`` capability is required here rather than only at the stages
     that call this, because the line below reads ``config.vocab_size`` as the
@@ -579,37 +791,76 @@ def arm_power(
     declaration. Both are :data:`src.transfer.arms.STAGED_ARMS` members that
     withhold the ``budget`` capability for exactly this reason, and the refusal
     belongs where the key is read (Appendix B rule 12).
+
+    The second return value is the per-record reduction of the same forward
+    pass; see :class:`RecordStatistics` for why it is worth persisting.
     """
 
+    # pathways declares the estimators and owns the held-out cross-entropy, and
+    # it imports this module's measurability floor, so the import is deferred to
+    # the call rather than duplicating either declaration.
+    from .pathways import UNIGRAM_ESTIMATORS, unigram_baseline
+
     arm.require("budget")
+    if unigram_estimator not in UNIGRAM_ESTIMATORS:
+        raise ValueError(
+            f"unknown unigram estimator {unigram_estimator!r}; known {UNIGRAM_ESTIMATORS}"
+        )
+    supplied = reference_token_counts is not None or reference is not None
+    if unigram_estimator == "disjoint" and not (
+        reference_token_counts is not None and reference is not None
+    ):
+        raise ValueError(
+            f"{arm.name}: the disjoint unigram estimator needs a held-out reference "
+            "corpus -- both its token-count vector and its provenance record -- and "
+            "there is no fallback to the plug-in. Supply one, or ask for the plug-in "
+            "estimator explicitly."
+        )
+    if unigram_estimator == "plugin" and supplied:
+        raise ValueError(
+            f"{arm.name}: a held-out reference was supplied to the plug-in estimator. "
+            "It would enter no published figure, and a record that names a reference "
+            "it did not use is worse than one that names none."
+        )
+
     inputs = cohort.input_strings(arm)
     scored = scored_tokens(arm, inputs, max_len=max_len, batch_size=batch_size)
     vocab = int(arm.model.config.vocab_size)
-    plug_in = unigram_entropy_nats(scored.target_ids, vocab)
+    target_counts = np.bincount(scored.target_ids, minlength=vocab).astype(np.int64)
+    if target_counts.size != vocab:
+        raise ValueError(
+            f"{arm.name}: scored target ids fall outside the declared vocabulary of {vocab}"
+        )
+    baseline_record = unigram_baseline(
+        arm,
+        estimator=unigram_estimator,
+        target_counts=target_counts,
+        reference_counts=reference_token_counts,
+        reference=reference,
+    )
+    held_out = unigram_estimator == "disjoint"
+    plug_in = float(baseline_record["cohort_plug_in_entropy_nats"])
+    baseline = float(baseline_record["nats"])
     baseline_mm = miller_madow_entropy_nats(scored.target_ids, vocab)
     clean_ce = float(scored.nll_nats.mean())
-    held_out = None if held_out_unigram_nats is None else float(held_out_unigram_nats)
-    if held_out is not None and not math.isfinite(held_out):
-        raise ValueError("the held-out unigram baseline must be finite")
-    baseline = plug_in if held_out is None else held_out
     context_information = baseline - clean_ce
     verdict, status = power_status(context_information, minimum_context_information_nats)
     # Always the plug-in verdict, under a name that says so. It is what
-    # ``power_verdict`` is when no held-out baseline was supplied, and it stays
-    # true when a caller replaces ``power_verdict`` afterwards, so it can never
-    # go stale the way an "estimator" label beside a recomputed verdict would.
+    # ``power_verdict`` is when the plug-in estimator was asked for, and it stays
+    # true beside a held-out verdict, so it can never go stale the way an
+    # "estimator" label beside a recomputed verdict would.
     plug_in_verdict, plug_in_status = power_status(
         plug_in - clean_ce, minimum_context_information_nats
     )
-    if held_out is None:
+    if not held_out:
         status = MEASURABLE_PLUG_IN if status == MEASURABLE else UNMEASURABLE_PLUG_IN
 
-    order = np.argsort(scored.sequence_index, kind="mergesort")
-    grouped = np.split(
-        scored.nll_nats[order],
-        np.unique(scored.sequence_index[order], return_index=True)[1][1:],
-    )
-    per_sequence_ce = [float(block.mean()) for block in grouped]
+    records = record_statistics(arm, scored)
+    # One reduction, used twice: the interval below and the sidecar are the same
+    # per-record quantities, so they cannot disagree.
+    per_sequence_ce = [
+        float(value) for value in records.clean_nll_sum / records.token_count
+    ]
     rendered_expansion = symbols_per_token(arm, inputs, max_len)
     # The per-symbol conversion divides a per-*scored-token* quantity, so it has
     # to divide by the expansion of the scored window and not of the rendered
@@ -618,7 +869,7 @@ def arm_power(
     # symbol axis is built on.
     expansion = scored_symbols_per_token(arm, scored)
 
-    return {
+    report = {
         "arm": arm.name,
         "modality": arm.modality,
         "input_format": arm.spec.input_format,
@@ -636,33 +887,35 @@ def arm_power(
             "symbol and so understates the expansion, which inflates every "
             "bits-per-symbol figure for that arm alone"
         ),
-        # The baseline here is the in-cohort plug-in estimator. It is biased
-        # downwards, and the bias grows with vocabulary against sample size: on a
-        # cohort of this size roughly +0.003 nats for a 32-symbol arm against
-        # +1.65 for a 50257-piece one. That is conservative for the measurability
-        # gate, which is what this function exists to decide -- an understated
-        # denominator can only exclude an arm, never admit one -- but it is
-        # differential across the panel and therefore not a cross-arm quantity.
-        # ``src.transfer.prediction_addressed.cohort_power_held_out`` is the
-        # held-out estimator a cross-arm number must use. Named in the record so
-        # a reader does not have to know which function produced it.
-        "unigram_estimator": (
-            "cohort_plug_in" if held_out is None else "held_out_disjoint"
+        # The estimator, its smoothing, its sweep and its reference corpus, in
+        # one block produced by the function that computed the number. Nothing
+        # downstream recomputes any of it, so nothing can go stale beside it.
+        "unigram_baseline": baseline_record,
+        "unigram_estimator": baseline_record["estimator"],
+        "baseline_naming": (
+            "a field whose name carries plug_in, on_cohort or miller_madow is "
+            "computed against the in-cohort plug-in baseline; every other "
+            "baseline-derived field is computed against unigram_estimator, whose "
+            "value is unigram_entropy_used_for_verdict_nats"
         ),
         "unigram_estimator_bias": (
-            "plug-in on the scored targets; biased downwards by an amount that "
+            "held-out unigram cross-entropy on a disjoint reference corpus; "
+            "carries an upward bias from its additive smoothing that grows with "
+            "vocabulary size against reference size, measured in "
+            "unigram_baseline.smoothing_diagnostics"
+            if held_out
+            else "plug-in on the scored targets; biased downwards by an amount that "
             "grows with vocabulary size, so context information is understated "
             "and understated unequally across the panel"
-            if held_out is None
-            else "held-out cross-entropy supplied by the caller"
         ),
-        "cross_arm_comparable": held_out is not None,
+        "cross_arm_comparable": held_out,
         "unigram_entropy_on_cohort_nats": plug_in,
         "unigram_entropy_used_for_verdict_nats": baseline,
-        "unigram_entropy_miller_madow_nats": baseline_mm,
+        "unigram_entropy_plug_in_miller_madow_nats": baseline_mm,
         "clean_ce_nats": clean_ce,
         "context_information_nats": context_information,
-        "context_information_miller_madow_nats": baseline_mm - clean_ce,
+        "context_information_plug_in_nats": plug_in - clean_ce,
+        "context_information_plug_in_miller_madow_nats": baseline_mm - clean_ce,
         "context_information_bits_per_symbol": context_information / LN2 / expansion,
         "clean_ce_bits_per_symbol": clean_ce / LN2 / expansion,
         "unigram_entropy_bits_per_symbol": baseline / LN2 / expansion,
@@ -699,8 +952,143 @@ def arm_power(
         "power_verdict": verdict,
         "measurability": status,
         # Estimator-qualified and never overwritten, so an artefact always holds
-        # one verdict whose provenance is unambiguous even after a caller
-        # recomputes ``power_verdict`` from a better baseline.
+        # one verdict whose provenance is unambiguous.
         "power_verdict_plug_in": plug_in_verdict,
         "measurability_plug_in": plug_in_status,
+    }
+    if held_out:
+        report["unigram_entropy_held_out_nats"] = baseline
+        report["plug_in_bias_nats"] = baseline - plug_in
+    return report, records
+
+
+def arm_power(
+    arm: Arm,
+    cohort: Cohort,
+    *,
+    max_len: int,
+    batch_size: int,
+    minimum_context_information_nats: float = MIN_CONTEXT_INFORMATION_NATS,
+    unigram_estimator: str = "plugin",
+    reference_token_counts: np.ndarray | None = None,
+    reference: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """The headline power figure for one arm on one frozen cohort.
+
+    The report half of :func:`arm_power_with_records`, which documents the
+    contract. Callers that persist the per-record sufficient statistics take the
+    pair; callers that only publish the report take this.
+    """
+
+    report, _ = arm_power_with_records(
+        arm,
+        cohort,
+        max_len=max_len,
+        batch_size=batch_size,
+        minimum_context_information_nats=minimum_context_information_nats,
+        unigram_estimator=unigram_estimator,
+        reference_token_counts=reference_token_counts,
+        reference=reference,
+    )
+    return report
+
+
+def write_power_records(
+    path: Path,
+    statistics: Mapping[str, RecordStatistics],
+    *,
+    cohort_digest: str,
+    reference_digest: str | None,
+    smoothing: float | None,
+    seeds: Mapping[str, int],
+    max_len: int,
+) -> dict[str, Any]:
+    """Persist per-record sufficient statistics beside a power report.
+
+    One array file for the whole stage, because one stage run is one cohort and
+    one set of seeds; per-arm arrays are prefixed ``"<arm>::"`` since the
+    vocabulary, the tokenisation and therefore every count differ by arm. The
+    returned block is the artefact's own record of the file -- schema, name and
+    digest -- and belongs in the report JSON, so that a reader learns from the
+    report whether the sidecar exists and whether it is the one that was
+    written. A companion JSON would be a second file free to drift from the
+    first.
+
+    Global entries: ``schema_version``, ``arms``, ``cohort_digest``,
+    ``reference_digest`` (empty when the run used no reference), ``smoothing``
+    (NaN when no reference, in which case no smoothing entered any figure),
+    ``max_len``, ``seed_names`` and ``seed_values``. Per arm: ``vocab_size``,
+    ``record_index``, ``clean_nll_sum``, ``token_count``, ``n_symbols``,
+    ``counts_offsets``, ``unique_token_ids``, ``counts`` and -- when a reference
+    was used -- ``reference_token_count``, ``reference_counts_offsets``,
+    ``reference_unique_token_ids``, ``reference_counts``.
+
+    No sequence text: the cohort JSON beside this file already holds every
+    record, and a second copy under a different digest is a second source.
+    """
+
+    if not statistics:
+        raise ValueError("a sufficient-statistics sidecar needs at least one arm")
+    payload: dict[str, np.ndarray] = {
+        "schema_version": np.asarray(POWER_RECORDS_SCHEMA_VERSION),
+        "arms": np.asarray(sorted(statistics), dtype=np.str_),
+        "cohort_digest": np.asarray(str(cohort_digest)),
+        "reference_digest": np.asarray("" if reference_digest is None else reference_digest),
+        "smoothing": np.asarray(math.nan if smoothing is None else float(smoothing)),
+        "max_len": np.asarray(int(max_len), dtype=np.int64),
+        "seed_names": np.asarray(sorted(seeds), dtype=np.str_),
+        "seed_values": np.asarray([int(seeds[name]) for name in sorted(seeds)], dtype=np.int64),
+    }
+    for name, record in sorted(statistics.items()):
+        if "::" in name:
+            raise ValueError(f"arm name {name!r} collides with the sidecar's key separator")
+        payload[f"{name}::vocab_size"] = np.asarray(int(record.vocab_size), dtype=np.int64)
+        payload[f"{name}::record_index"] = record.record_index
+        payload[f"{name}::clean_nll_sum"] = record.clean_nll_sum
+        payload[f"{name}::token_count"] = record.token_count
+        payload[f"{name}::n_symbols"] = record.n_symbols
+        payload[f"{name}::counts_offsets"] = record.target_counts.offsets
+        payload[f"{name}::unique_token_ids"] = record.target_counts.token_ids
+        payload[f"{name}::counts"] = record.target_counts.counts
+        if record.reference_counts is None:
+            continue
+        payload[f"{name}::reference_token_count"] = record.reference_counts.record_totals()
+        payload[f"{name}::reference_counts_offsets"] = record.reference_counts.offsets
+        payload[f"{name}::reference_unique_token_ids"] = record.reference_counts.token_ids
+        payload[f"{name}::reference_counts"] = record.reference_counts.counts
+
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(f".{destination.name}.tmp-{os.getpid()}")
+    # The three steps src.transfer.io._atomic_write performs and the reasons it
+    # states, over a payload numpy writes rather than one this process can hand
+    # over as bytes: commit the contents, rename, then commit the directory
+    # entry that names them.
+    try:
+        with temporary.open("wb") as handle:
+            np.savez_compressed(handle, **payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, destination)
+        directory = os.open(destination.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    return {
+        "schema_version": POWER_RECORDS_SCHEMA_VERSION,
+        "path": destination.name,
+        "sha256": sha256_file(destination),
+        "arms": sorted(statistics),
+        "n_scored_records": {
+            name: int(record.record_index.size) for name, record in sorted(statistics.items())
+        },
+        "n_reference_records": {
+            name: (None if record.reference_counts is None else record.reference_counts.n_records)
+            for name, record in sorted(statistics.items())
+        },
+        "declared_by": "src.transfer.budget.write_power_records",
     }

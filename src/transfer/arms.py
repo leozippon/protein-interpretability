@@ -25,6 +25,8 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 import os
 
+from .scoring import TargetTokenShuffle, target_rule
+
 
 def env_path(variable: str, default: Path) -> Path:
     """Read one input location from the environment, defaulting to the L20 host.
@@ -962,6 +964,16 @@ class Arm:
     ``attn_implementation`` is the attention kernel the checkpoint was actually
     loaded with, read back from the built model rather than from the request, so
     that a build which ignored or overrode the request is visible.
+
+    ``target_token_shuffle`` is off on every arm any loader builds and is set only
+    by a caller that has asked for the E3 negative control by name. When it is
+    set, :func:`tokenize_batch` permutes each record's scored target positions
+    before the ids leave for the model; see :class:`.scoring.TargetTokenShuffle`
+    for what that control does and does not establish. It sits on the arm rather
+    than on the cohort because the permutation is defined over *tokens*, and the
+    token grid is what this arm's tokenizer, its truncation and its padding
+    produce -- a cohort holds strings, and no string-level shuffle preserves a
+    BPE arm's target multiset.
     """
 
     spec: ArmSpec
@@ -970,6 +982,7 @@ class Arm:
     device: str
     dtype: str
     attn_implementation: str | None = None
+    target_token_shuffle: TargetTokenShuffle | None = None
 
     @property
     def name(self) -> str:
@@ -1946,10 +1959,43 @@ def text_cohort(
     return Cohort(name, "text", records, min_chars, 0, metadata)
 
 
+def target_shuffle_for(arm: Arm, *, seed: int) -> TargetTokenShuffle:
+    """The E3 token-shuffle control declaration for one arm, at one seed.
+
+    Resolves the masking rule and the boundary ids from the same two
+    declarations :func:`src.transfer.budget.scored_tokens` resolves them from, so
+    the control permutes exactly the span that arm is scored on and cannot drift
+    from it. Attach the result to an arm with
+    ``dataclasses.replace(arm, target_token_shuffle=...)`` and the ids that reach
+    the model are shuffled; leave it unattached and nothing changes.
+
+    An EC-conditioned arm gets ``between_boundaries`` with its ``<start>`` and
+    ``<end>`` ids, so its EC tag stays in context, in place, and out of the
+    permuted span.
+    """
+
+    start_id, end_id = conditioning_boundary_ids(arm)
+    return TargetTokenShuffle(
+        seed=int(seed),
+        rule=target_rule(arm.spec.input_format),
+        start_token_id=start_id,
+        end_token_id=end_id,
+    )
+
+
 def tokenize_batch(
     arm: Arm, texts: list[str], max_len: int
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Right-padded ids and a validity mask, truncated to ``max_len``."""
+    """Right-padded ids and a validity mask, truncated to ``max_len``.
+
+    This is the single door from a rendered string to the token grid a model is
+    scored on, which is why the E3 negative control is applied here: an arm
+    carrying a :class:`.scoring.TargetTokenShuffle` has each record's scored
+    target positions permuted *after* truncation and padding, so the control
+    cannot change which tokens survive ``max_len`` and cannot touch a padding
+    position. ``arm.target_token_shuffle`` is ``None`` on every arm a loader
+    builds, so this branch is dead unless a caller asked for the control by name.
+    """
     if not texts:
         raise ValueError(f"{arm.name}: cannot tokenise an empty batch")
     if max_len < 1:
@@ -1970,6 +2016,8 @@ def tokenize_batch(
     for i, row in enumerate(rows):
         ids[i, : len(row)] = torch.tensor(row, dtype=torch.long)
         mask[i, : len(row)] = 1
+    if arm.target_token_shuffle is not None:
+        ids = arm.target_token_shuffle.apply(ids, mask)
     return ids, mask
 
 

@@ -39,6 +39,12 @@ rule. The rule is now a parameter, derived from ``ArmSpec.input_format``, so the
 guard and the fake names are both gone and a second EC-conditioned arm is handled
 correctly by construction rather than refused by an allow-list.
 
+One negative control lives here too, because it is defined entirely in terms of
+those targets. :class:`TargetTokenShuffle` permutes exactly the positions
+:func:`sequence_target_mask` selects and nothing else, which leaves each record's
+target multiset -- and so any unigram baseline taken over it -- exactly
+unchanged. It is never applied unless a caller asks for it by name.
+
 Vendored from ``src/revision/dictionary_fidelity.py``, whose remaining contents
 (windowed-transcoder encode/decode, checkpoint identity, the frozen fidelity
 spec) served the retired CLT / dictionary-qualification scope.
@@ -46,9 +52,12 @@ spec) served the retired CLT / dictionary-qualification scope.
 
 from __future__ import annotations
 
+import hashlib
 import math
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -166,6 +175,156 @@ def sequence_target_mask(
         # after <start> and strictly before <end>.
         result[row, int(starts[0]) : int(ends[0]) - 1] = True
     return result & valid
+
+
+# ------------------------------------------- negative control: shuffled targets
+
+#: Name of the E3 negative control, spelled once. It travels in every artefact a
+#: control run writes and is what a reader greps for to be sure a report is not a
+#: measurement.
+TOKEN_SHUFFLE_CONTROL = "within_record_token_shuffle"
+
+
+@dataclass(frozen=True)
+class TargetTokenShuffle:
+    """A seeded within-record permutation of exactly the scored target positions.
+
+    E3 of ``docs/CONTEXT_INFORMATION_UNCERTAINTY_PREREGISTRATION.md`` asks for an
+    arm whose true context information is known to be small, because neither the
+    0.30 nats/token floor nor the sign criterion has ever been exercised near its
+    boundary: the panel jumps from -4.08 nats on ``dialogpt-small`` to +1.06 on
+    ``progen2-base`` with nothing in between. Permuting a record's target tokens
+    destroys the sequential structure a model could read while leaving that
+    record's target multiset untouched, so ``H_baseline`` -- a unigram
+    cross-entropy over exactly those targets -- is unchanged to the last bit and
+    only ``H_model`` moves.
+
+    **Which positions move.** Exactly the positions :func:`sequence_target_mask`
+    scores, and nothing else. Column ``q`` of that mask governs the prediction of
+    input token ``q + 1``, so the permuted set is ``{q + 1 : mask[q]}``: under
+    ``all_valid`` every real token except the first, and under
+    ``between_boundaries`` the span strictly between ``<start>`` and ``<end>``.
+    The first token of a plain rendering, an EC-conditioned rendering's tag,
+    ``<sep>`` and both boundary markers, and every padding position therefore
+    stay where they are. Two consequences are the whole point: the per-record
+    target multiset is invariant, and the mask recomputed after the permutation
+    selects the identical positions, because nothing it reads has moved. No token
+    crosses a boundary in either direction.
+
+    **One quantity downstream of the multiset is nonetheless not bit-invariant.**
+    A per-symbol conversion counts the *characters* the scored ids decode to, and
+    a byte-level BPE can split one multi-byte character across two tokens: reorder
+    them and those bytes no longer form that character, so the decoder emits
+    replacement characters instead. Measured on gpt2 over 24 OpenWebText records,
+    ``symbols_per_token`` moves from 4.4699 to 4.4831 -- three parts in a
+    thousand -- and every ``*_bits_per_symbol`` field moves with it. Residue-level
+    arms and ProtGPT2 are unaffected, since their pieces decode to whole ASCII
+    characters, and no nats-per-token figure is touched on any arm.
+
+    **Where it is applied.** After truncation to ``max_len`` and after padding,
+    in :func:`src.transfer.arms.tokenize_batch`. Permuting before truncation
+    would change *which* tokens survive the window and therefore the multiset,
+    which is the one thing this control may not do.
+
+    **Reproducibility.** ``seed`` is the run's declared seed; the permutation of
+    one record is drawn from it combined with a digest of that record's own
+    unpadded token ids. It therefore does not depend on the batch size, on the
+    record's position in the cohort, or on the padding width it was batched with,
+    and re-running at the same seed reproduces every permutation. Two records
+    with identical token ids receive identical permutations, which is what
+    keying by content means.
+
+    **What this control establishes, and what it does not.** It bounds what a
+    predictor with no usable sequential context achieves *on shuffled input*.
+    That is not the same thing as a model whose true context information is zero.
+    Shuffled text is off the training distribution in ways beyond the loss of
+    context, so what the model produces at a scored position is not its marginal
+    token distribution: it can be worse than a held-out unigram, which reads as a
+    negative context information of no fixed size, and it is not guaranteed to
+    land near the floor the criteria are being tested against. The control's
+    value is that the criteria and the bootstrap are then exercised at whatever
+    value it does land on, instead of four nats from any boundary; the value
+    itself must be read as a measurement of this control and not as a zero. It is
+    also silent about the smoothing bias recorded separately in the
+    pre-registration: a genuinely context-free predictor still reads a positive
+    ``I`` of order ``log(1 + alpha V / R)``.
+    """
+
+    seed: int
+    rule: str
+    start_token_id: int | None = None
+    end_token_id: int | None = None
+
+    def apply(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
+        """``input_ids`` with each record's scored target positions permuted.
+
+        The mask is recomputed from the arguments rather than taken from the
+        caller, so the permuted set is by construction the set this module
+        scores; a caller cannot hand in a different one.
+        """
+
+        mask = sequence_target_mask(
+            input_ids,
+            attention_mask,
+            rule=self.rule,
+            start_token_id=self.start_token_id,
+            end_token_id=self.end_token_id,
+        )
+        shuffled = input_ids.clone()
+        for row in range(input_ids.shape[0]):
+            positions = torch.nonzero(mask[row], as_tuple=False).flatten() + 1
+            if positions.numel() < 2:
+                continue
+            content = input_ids[row][attention_mask[row].bool()]
+            order = self._permutation(content, int(positions.numel()))
+            shuffled[row, positions] = input_ids[row, positions[order]]
+        return shuffled
+
+    def record(self) -> dict[str, object]:
+        """The block an artefact carries so a control run cannot read as a measurement.
+
+        Written into every artefact the control produces, beside the seed that
+        reproduces it.
+        """
+
+        return {
+            "control": TOKEN_SHUFFLE_CONTROL,
+            "seed": int(self.seed),
+            "target_rule": self.rule,
+            "start_token_id": self.start_token_id,
+            "end_token_id": self.end_token_id,
+            "permuted_positions": (
+                "exactly the scored next-token target positions of each record, "
+                "after truncation and padding; the first token of a plain "
+                "rendering, a conditioning prompt and its <start>/<end> markers, "
+                "and every padding position are held in place"
+            ),
+            "invariant": (
+                "the per-record target-token multiset, and therefore every "
+                "unigram baseline taken over it"
+            ),
+            "permutation_key": (
+                "seed combined with a blake2b-64 digest of the record's own "
+                "unpadded token ids, so the permutation is independent of batch "
+                "size and cohort order"
+            ),
+            "reads_as": (
+                "a bound on what a predictor with no usable sequential context "
+                "achieves on shuffled input, which is not the same as a model "
+                "whose true context information is zero: shuffled input is off "
+                "the training distribution and the measured value may sit either "
+                "side of zero"
+            ),
+        }
+
+    def _permutation(self, record_ids: torch.Tensor, count: int) -> torch.Tensor:
+        digest = hashlib.blake2b(
+            record_ids.detach().to("cpu").numpy().astype("<i8").tobytes(), digest_size=8
+        ).digest()
+        generator = np.random.default_rng([int(self.seed), int.from_bytes(digest, "big")])
+        return torch.as_tensor(
+            generator.permutation(count).astype(np.int64), device=record_ids.device
+        )
 
 
 # ------------------------------------------------------------------- scoring

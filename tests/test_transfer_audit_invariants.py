@@ -37,6 +37,7 @@ from src.transfer import (  # noqa: E402
     designed_referent,
     homology,
     induction_robustness,
+    information_bootstrap,
     path_patching,
     pathways,
     prediction_addressed,
@@ -1883,6 +1884,38 @@ def _case_flags(clusters: int) -> tuple[np.ndarray, np.ndarray]:
     return flags, sources
 
 
+def _information_arm(groups: int) -> information_bootstrap.ArmStatistics:
+    """A cohort of ``groups`` groups carrying equal token mass, so ``n_eff == groups``.
+
+    The information bootstrap applies the floor to the token-weighted effective
+    group count, which equals the group count only when the groups are equally
+    weighted. Equal weights are therefore what makes this an exercise of the
+    floor rather than of the weighting.
+    """
+
+    ids = [np.array([0, 1])] * groups
+    counts = [np.array([1, 2])] * groups
+    return information_bootstrap.ArmStatistics(
+        name="arm",
+        cohort=information_bootstrap.CohortStatistics(
+            clean_nll_sum=np.full(groups, 3.0),
+            token_count=np.full(groups, 3, dtype=np.int64),
+            n_symbols=np.full(groups, 3, dtype=np.int64),
+            targets=information_bootstrap.SparseCounts.from_records(ids, counts),
+            group_id=np.arange(groups, dtype=np.int64),
+        ),
+        reference=information_bootstrap.ReferenceStatistics(
+            token_count=np.full(8, 5, dtype=np.int64),
+            targets=information_bootstrap.SparseCounts.from_records(
+                [np.array([0, 1])] * 8, [np.array([2, 3])] * 8
+            ),
+            group_id=np.arange(8, dtype=np.int64),
+        ),
+        vocab_size=4,
+        smoothing=1.0,
+    )
+
+
 #: Every resampler in ``src.transfer`` that reaches the shared unit floor, with a
 #: call one unit below the floor and one exactly on it.  ``raises`` is required
 #: of the functions whose unit count is a configuration choice, or whose return
@@ -1892,6 +1925,25 @@ def _case_flags(clusters: int) -> tuple[np.ndarray, np.ndarray]:
 #: estimate survives.  The distinction is the one ``bootstrap_unit_floor``'s
 #: docstring draws, and it is asserted here rather than described.
 FLOOR_RESPECTING_RESAMPLERS: dict[str, dict[str, object]] = {
+    # The floor applied to the *effective* group count rather than the group
+    # count, because the groups carry scored tokens rather than one vote each.
+    # ``degenerate`` because the count is a measured property of the cohort and
+    # the record has somewhere to carry the verdict -- but, unlike the stratum
+    # resamplers, the point estimate does **not** survive the refusal: the
+    # statistics block is nulled, so a caller that reads a headline off a
+    # refused cohort fails instead of quoting an unbounded number.
+    "information_bootstrap.bootstrap_information": {
+        "refusal": "degenerate",
+        "below": lambda n: information_bootstrap.bootstrap_information(
+            _information_arm(n), seed=0, n_bootstrap=400
+        ).record["unit_floor"],
+    },
+    "information_bootstrap.bootstrap_arms": {
+        "refusal": "degenerate",
+        "below": lambda n: information_bootstrap.bootstrap_arms(
+            [_information_arm(n)], seed=0, n_bootstrap=400
+        ).record["arms"]["arm"]["unit_floor"],
+    },
     "statistics.paired_group_bootstrap": {
         "refusal": "raises",
         "below": lambda n: statistics.paired_group_bootstrap(
@@ -2999,21 +3051,22 @@ def test_a_plug_in_measurability_verdict_names_its_own_estimator():
     diagnostic" whose bias runs from +0.003 nats at 32 symbols to +1.65 at
     50257, which is several times the 0.30-nat floor the verdict is taken
     against -- so which arms pass is set mostly by vocabulary size.  No
-    published verdict came from it (``01_cohort_power.py`` recomputes from the
-    held-out estimator), and nothing stopped a caller inheriting one, because
-    the estimator was recorded in a different field from the verdict.  The
-    plug-in verdict now carries its estimator in its own value.
+    published verdict came from it, and nothing stopped a caller inheriting one,
+    because the estimator was recorded in a different field from the verdict.
+    The plug-in verdict now carries its estimator in its own value.
     """
 
     assert budget.MEASURABLE_PLUG_IN != budget.MEASURABLE
     assert budget.UNMEASURABLE_PLUG_IN != budget.UNMEASURABLE
     assert "plug_in" in budget.MEASURABLE_PLUG_IN
     signature = inspect.signature(budget.arm_power).parameters
-    # The estimator can be made explicit at the call, and the default is not a
-    # silent one.
-    assert "held_out_unigram_nats" in signature
-    assert signature["held_out_unigram_nats"].default is None
-    source = inspect.getsource(budget.arm_power)
+    # The estimator is named at the call and the default is not a silent one.
+    # ``held_out_unigram_nats`` was the previous shape of this: a baseline the
+    # caller had to compute for itself, which no caller ever supplied.
+    assert "held_out_unigram_nats" not in signature
+    assert signature["unigram_estimator"].default == "plugin"
+    assert signature["reference_token_counts"].default is None
+    source = inspect.getsource(budget.arm_power_with_records)
     assert "power_verdict_plug_in" in source
     assert "MEASURABLE_PLUG_IN if status == MEASURABLE else UNMEASURABLE_PLUG_IN" in source
 
@@ -3029,7 +3082,7 @@ def test_bits_per_symbol_divides_by_the_expansion_of_the_window_it_scored():
     cross-arm comparable one.
     """
 
-    source = inspect.getsource(budget.arm_power)
+    source = inspect.getsource(budget.arm_power_with_records)
     assert "expansion = scored_symbols_per_token(arm, scored)" in source
     assert '"symbols_per_token_rendered_string": rendered_expansion' in source
     # The scored-window expansion is derived from the scored targets themselves,

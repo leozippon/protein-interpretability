@@ -189,7 +189,13 @@ The driver is generic — `--stage <file>` accepts any `scripts/transfer/<file>`
 | `25_model_diffing_baselines.py` | Whether a simple map already accounts for two checkpoints' representational difference, the baseline that gates Crosscoder training | `--reference`, `--target`, `--rendering`, and one `--mode` per run |
 | `26_concept_lens.py` | Phase A of the concept-aligned lens: property decoding against its own nulls, with a final-layer positive control that must clear before any depth is read | `--arms` |
 
-Two further entry points belong to neither list. `12_induction_robustness.py` recomputes the induction census's threshold and scale statements from artefacts already on disk and loads no model at all, and `13_induction_probe_bootstrap.py` re-runs those forward passes on one GPU purely to retain the per-probe axis the stored artefacts averaged away. Both are direct invocations over an existing measurement, not campaign items, and both write to their own `--output-dir`.
+Three further entry points belong to neither list. Each re-reads a measurement that already exists rather than scheduling a new one, so none is a campaign item and each writes to its own output directory.
+
+| Stage | What it re-analyses | What one invocation names |
+|---|---|---|
+| `12_induction_robustness.py` | The induction census's threshold and scale statements, recomputed from artefacts already on disk; it loads no model at all | the stored census to read |
+| `13_induction_probe_bootstrap.py` | The same forward passes re-run on one GPU purely to retain the per-probe axis the stored artefacts averaged away | `--arms` and the stored census the recomputation must reproduce |
+| `41_context_information_bootstrap.py` | The sampling uncertainty of cohort power, from the per-record sufficient statistics `01_cohort_power.py` persists: a group-level paired interval for context information, paired contrasts within a cohort and unpaired ones across cohorts, the between-block spread, the smoothing sweep and the leakage-removed sensitivity. CPU only — no model, no GPU, no cluster | `--sidecar`, one per cohort draw; the `--cohort-json` whose records the near-duplicate grouping is computed from; and the `--reference-json` the leakage screen and the reference grouping need |
 
 The `--arm` of stages 15 and 17 defaults to `progen3` and otherwise names a **dense** panel arm — the text control and the dense protein arm a replacement result needs before it can be attributed to protein, to mixture-of-experts, or to transcoder replacement in general. The eligible set is composed by `src.transfer.replaceable.eligible_arms` from `CAMPAIGN_PANEL`, the architectures that carry this estimand, and the arms with a measured loader band; run either stage with `--help` to see it. They are still not registered stages, so a dense-arm run is a direct invocation and not a campaign item.
 

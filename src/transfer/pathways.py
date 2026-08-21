@@ -89,28 +89,38 @@ UNIGRAM_ESTIMATORS = ("disjoint", "plugin")
 #: **The "errs upwards, so the share is conservative" defence this constant used
 #: to carry is true for one arm and false for the panel, which is the quantity
 #: the panel exists to produce.** The smoothing puts ``s*V`` pseudo-counts into a
-#: reference of ``N`` tokens, so it raises the cross-entropy by up to
-#: ``log(1 + s*V/N)`` -- with *vocabulary size against reference size*, which is
-#: exactly the axis Appendix B rule 3 was written about. Measured on matched
-#: Dirichlet distributions with a 100k-token reference: ``s = 1`` inflates the
-#: cross-entropy by +0.224 nats at ``V = 50257`` and by +0.0001 nats at
-#: ``V = 32``. That differential lands in the *denominator* of every
+#: reference of ``N`` tokens, so for every target the reference did see it raises
+#: the cross-entropy by at most ``log(1 + s*V/N)`` -- with *vocabulary size
+#: against reference size*, which is exactly the axis Appendix B rule 3 was
+#: written about. The bound rises with ``V``: at ``s = 1`` against a 100k-token
+#: reference it is 0.407 nats at ``V = 50257`` and 0.00032 nats at ``V = 32``, so
+#: whatever the realised inflation is, it is larger for the BPE arms than for the
+#: residue-level ones by construction. It lands in the *denominator* of every
 #: ``share_of_context_information`` and in
-#: ``prediction_addressed.cohort_power_held_out``'s headline, so it inflates
-#: the residue-level arms' shares relative to the BPE arms' by construction.
-#: This is the held-out estimator carrying a smaller version of the disease it
-#: was introduced to cure.
+#: ``prediction_addressed.cohort_power_held_out``'s headline. This is the
+#: held-out estimator carrying a smaller version of the disease it was introduced
+#: to cure.
 #:
-#: The default is *not* changed, for two reasons. Every campaign artefact was
-#: produced at ``s = 1`` and moving the constant would move published numbers
-#: without adding information. And a smaller constant is not uniformly better:
-#: the total bias is a trade between the normaliser inflation, which grows with
-#: ``s``, and the penalty on target tokens the reference never saw, which grows
-#: as ``s`` shrinks. At ``V = 50257, N = 100k`` the measured total inflation is
-#: +0.224 nats at ``s = 1``, +0.176 at ``s = 0.5``, +0.194 at ``s = 0.1`` and
-#: +0.770 at ``s = 1/V``. There is no free default, so the constant is swept and
-#: reported instead of being tuned (Appendix B rule 8): see
-#: :func:`smoothing_diagnostics`.
+#: **The realised inflation is measured per artefact, not quoted here.** This
+#: comment used to carry four figures -- +0.224 nats at ``V = 50257`` and +0.0001
+#: at ``V = 32`` on a 100k-token reference, and a sweep of +0.224, +0.176, +0.194
+#: and +0.770 at ``s = 1, 0.5, 0.1, 1/V`` -- attributed to "matched Dirichlet
+#: distributions". Nothing in this repository produces them, an independent
+#: recomputation did not reproduce them, and the sweep's non-monotone shape did
+#: not reproduce either. They are withdrawn rather than replaced with a second
+#: set of numbers no reader could check: the realised inflation depends on the
+#: reference corpus and on the target multiset, and every caller has both, so
+#: :func:`smoothing_diagnostics` reports the bound, the pseudo-count mass, the
+#: unseen-target mass and the whole sweep for the corpora actually used.
+#:
+#: The default is *not* changed. Every campaign artefact was produced at ``s = 1``
+#: and moving the constant would move published numbers without adding
+#: information; and a smaller constant is not uniformly better, because the total
+#: bias trades the normaliser inflation, which grows with ``s``, against the
+#: penalty on target tokens the reference never saw, whose per-token cost
+#: ``-log(s / (N + s*V))`` grows without bound as ``s`` shrinks. There is no free
+#: default, so the constant is swept and reported instead of being tuned
+#: (Appendix B rule 8): see :func:`smoothing_diagnostics`.
 LAPLACE_SMOOTHING = 1.0
 
 #: Smoothing constants :func:`smoothing_diagnostics` scores every held-out
@@ -666,6 +676,12 @@ def measure_pathways(
     targets_by_scope = {scope.name: scope.resolve(arm.n_layer) for scope in scopes}
     for targets in targets_by_scope.values():
         bank.covers(targets)
+    # ``config.vocab_size`` is read below as the alphabet the target-token counts
+    # are taken over, and it is not the alphabet on every checkpoint this
+    # repository can load; the refusal belongs where the key is read. See
+    # :func:`src.transfer.budget.arm_power_with_records` for the two checkpoints
+    # this is about.
+    arm.require("budget")
     vocab = int(arm.model.config.vocab_size)
     counts = torch.zeros(vocab, dtype=torch.int64, device=arm.device)
     rows_by_scope: dict[str, list[dict[str, float | int]]] = {name: [] for name in names}
@@ -751,6 +767,10 @@ def cohort_target_token_counts(arm: Arm, cohort: Cohort, *, max_len: int) -> np.
 
     if max_len < 2:
         raise ValueError("max_len must admit at least one next-token target")
+    # As in :func:`measure_pathways`: the vocabulary read below is a config key,
+    # not a measured alphabet, so the capability that declares the key readable
+    # is required where it is read.
+    arm.require("budget")
     vocab = int(arm.model.config.vocab_size)
     counts = np.zeros(vocab, dtype=np.int64)
     for text in cohort.input_strings(arm):
