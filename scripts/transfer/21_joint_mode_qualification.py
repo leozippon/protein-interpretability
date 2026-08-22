@@ -108,7 +108,10 @@ from src.transfer.arms import (  # noqa: E402
     require_input_path,
     text_cohort,
 )
-from src.transfer.budget import MIN_CONTEXT_INFORMATION_NATS, power_status  # noqa: E402
+from src.transfer.budget import (  # noqa: E402
+    SCREENING_CONTEXT_INFORMATION_NATS,
+    power_status,
+)
 from src.transfer.io import sha256_file, write_json  # noqa: E402
 from src.transfer.pathways import (  # noqa: E402
     LAPLACE_SMOOTHING,
@@ -133,11 +136,65 @@ PROVENANCE_MODULES = (
 
 _DTYPES = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}
 
+#: Context information a joint checkpoint's mode must read before it is qualified
+#: for downstream use.
+#:
+#: **Declared here, and it is not one of the two criteria EXP-R2-218 calibrated.**
+#:
+#: It is not :data:`src.transfer.budget.SCREENING_CONTEXT_INFORMATION_NATS`. That
+#: floor answers "is this reading distinguishable from zero", which is the
+#: question 01_cohort_power.py asks of a panel arm. This gate answers a stronger
+#: one, because what it admits a mode to is the behavioural reads of
+#: 24_component_swap.py and src.transfer.mode_subspaces: an ablation needs
+#: context-derived signal to destroy, and a mode can be identified as non-zero and
+#: have none. ``Llama-2-7b-hf``'s protein mode reads +0.0719 to +0.0918 nats/token
+#: across six qualification artefacts -- above the 0.05 identification floor in
+#: every one -- at a reversal cost of **-0.0013 nats/residue** (EXP-R2-152,
+#: re-measured at EXP-R2-174).
+#:
+#: It is not :func:`src.transfer.budget.ratio_denominator_admissibility` either,
+#: which cannot be evaluated here: this stage scores one cohort draw per mode and
+#: publishes no bootstrap, so no mode reading carries a standard error. Fitting a
+#: magnitude to some other arm's standard error is the defect EXP-R2-218 measured.
+#:
+#: So the incumbent magnitude is retained **for this gate**, declared here rather
+#: than inherited from the retired
+#: :data:`src.transfer.budget.MIN_CONTEXT_INFORMATION_NATS`, and recorded as
+#: **underived**. :data:`src.transfer.mode_subspaces.MODE_BEHAVIOURAL_READ_FLOOR_NATS`
+#: is the same magnitude declared for the same mode and the same reason, and the
+#: two must move together: publishing ``measurable`` here for a reading that
+#: module then refuses would be one decision under two answers. Lowering it to the
+#: identification floor turns six published refusals into admissions.
+#:
+#: What retires it is deriving the behavioural-read floor against a measured
+#: ablation-signal criterion -- the reversal cost this stage already produces is
+#: the obvious axis -- at which point this gate and ``mode_subspaces`` adopt that
+#: derived value together and neither is declared locally any more.
+JOINT_MODE_QUALIFICATION_FLOOR_NATS = 0.30
+
+#: Carried into every artefact, so it says what its own threshold is and is not.
+JOINT_MODE_QUALIFICATION_FLOOR_STATUS = (
+    "UNDERIVED. Retained for this gate after EXP-R2-218 retired the shared "
+    f"{JOINT_MODE_QUALIFICATION_FLOOR_NATS}-nat measurability floor and split it "
+    "into an identification floor "
+    f"({SCREENING_CONTEXT_INFORMATION_NATS} nats) and a per-arm Fieller "
+    "precondition on a denominator's own standard error. Neither applies: the "
+    "identification floor admits Llama-2-7b-hf's protein mode at +0.0843 "
+    "nats/token, whose reversal cost is -0.0013 nats/residue, and the "
+    "precision-referenced criterion cannot be evaluated because this stage "
+    "publishes no bootstrap and no mode reading carries a standard error. It is "
+    "the same magnitude src.transfer.mode_subspaces declares for the same mode; "
+    "deriving a behavioural-read floor against a measured ablation-signal "
+    "criterion retires both together"
+)
+
 VERDICT_NOTE = (
     "a mode below --min-context-information is reported UNMEASURABLE ON THIS "
     "COHORT, not failing. It is a statement about this cohort and this evaluation "
     "interface; downstream analyses must exclude the mode rather than report a "
-    "negative result from it (01_cohort_power.py's rule)"
+    "negative result from it (01_cohort_power.py's rule). The threshold is this "
+    "stage's own underived behavioural-read floor and NOT the calibrated "
+    "identification floor; see JOINT_MODE_QUALIFICATION_FLOOR_STATUS"
 )
 
 
@@ -837,10 +894,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--min-context-information",
         type=float,
-        default=MIN_CONTEXT_INFORMATION_NATS,
-        help="the threshold below which a mode is reported unmeasurable on this "
-        "cohort. Stage 01's threshold, imported, so that a joint checkpoint is "
-        "qualified against the level the panel was qualified against",
+        default=JOINT_MODE_QUALIFICATION_FLOOR_NATS,
+        help="the floor below which a mode is reported unmeasurable on this "
+        "cohort. This stage's own declared magnitude, recorded as UNDERIVED: it "
+        "is deliberately NOT budget.SCREENING_CONTEXT_INFORMATION_NATS, which "
+        "answers identification, because what a pass here admits a mode to is a "
+        "behavioural read that needs signal an ablation can destroy",
     )
     return parser
 
@@ -887,7 +946,13 @@ def main() -> None:
         "rendering": tokenisation.facts(),
         "seeds": {"cohort_draw": int(args.cohort_draw_seed)},
         "thresholds": {
-            "minimum_context_information_nats": float(args.min_context_information)
+            "minimum_context_information_nats": float(args.min_context_information),
+            "minimum_context_information_status": (
+                JOINT_MODE_QUALIFICATION_FLOOR_STATUS
+                if args.min_context_information == JOINT_MODE_QUALIFICATION_FLOOR_NATS
+                else "declared on the command line, overriding this stage's own "
+                f"{JOINT_MODE_QUALIFICATION_FLOOR_NATS}-nat floor"
+            ),
         },
         "estimand": (
             "context information per mode: held-out unigram cross-entropy on the "

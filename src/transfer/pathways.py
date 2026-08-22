@@ -41,7 +41,7 @@ import numpy as np
 import torch
 
 from .arms import Arm, Cohort, tokenize_batch
-from .budget import MIN_CONTEXT_INFORMATION_NATS
+from .budget import ratio_denominator_admissibility
 from .scoring import (
     aggregate_variant,
     per_sequence_scores,
@@ -129,8 +129,8 @@ LAPLACE_SMOOTHING = 1.0
 #: threshold-free reading of a constant that cannot be eliminated requires.
 SMOOTHING_SWEEP: tuple[float, ...] = (1.0, 0.5, 0.1, 0.01)
 
-SCHEMA_VERSION_MEASUREMENT = "r2_transfer_pathway_measurement_v1"
-SCHEMA_VERSION_BOOTSTRAP = "r2_transfer_pathway_cluster_bootstrap_v1"
+SCHEMA_VERSION_MEASUREMENT = "r2_transfer_pathway_measurement_v2"
+SCHEMA_VERSION_BOOTSTRAP = "r2_transfer_pathway_cluster_bootstrap_v2"
 
 
 class Target(NamedTuple):
@@ -1056,9 +1056,9 @@ def pathway_metrics(
     rows: Sequence[Mapping[str, float | int]],
     *,
     unigram_entropy_nats: float,
+    context_information_se_nats: float | None = None,
     minimum_ce_delta_nats: float = P0_2B_MINIMUM_CE_DELTA_NATS,
     minimum_kl_nats: float = P0_2B_MINIMUM_KL_NATS,
-    minimum_context_information_nats: float = MIN_CONTEXT_INFORMATION_NATS,
 ) -> dict[str, Any]:
     """Footprint of one scope in nats/token, normalised and guard-checked.
 
@@ -1075,27 +1075,40 @@ def pathway_metrics(
     a matched panel will contain arms that are off-distribution on some cohort,
     and that fact is part of the result.
 
-    **The denominator is guarded on magnitude, not on sign.** It used to be
-    ``context_information > 0``, which admits a denominator of a hundredth of a
-    nat and divides a perfectly ordinary numerator by it: on a cohort whose
-    context information landed near zero the resulting share had a median of
-    3.57 and a 97.5th percentile of 85.4 -- finite, well formed, and a statement
-    about nothing. ``budget.MIN_CONTEXT_INFORMATION_NATS`` exists for exactly
-    this and was not applied here, so the same 0.30-nat floor that decides
-    whether an arm is measurable at all decided nothing about whether its share
-    was. The two flags are now separate: ``context_information_positive`` is the
-    old sign test, kept because "off distribution" and "measurable" are
-    different findings, and ``context_information_valid`` is the floor.
-    No published number moves -- across all 3864 ``pathway_metrics`` records in
-    ``results/``, none has a context information between 0 and 0.30 nats.
+    **The denominator is guarded on its own precision, not on its sign and not
+    on a magnitude.** The guard was once ``context_information > 0``, which
+    admits a denominator of a hundredth of a nat and divides a perfectly ordinary
+    numerator by it: on a cohort whose context information landed near zero the
+    resulting share had a median of 3.57 and a 97.5th percentile of 85.4 --
+    finite, well formed, and a statement about nothing. That was repaired with
+    ``budget.MIN_CONTEXT_INFORMATION_NATS``, a 0.30-nat floor which was never
+    derived and which EXP-R2-218 then measured to be up to 3.2x too lax for this
+    exact job: on 12 of the 15 panel arms a denominator at 0.30 nats still leaves
+    the share's confidence set unbounded, and on ProtGPT2 and DialoGPT nothing
+    below 0.93 and 0.97 nats respectively is admissible.
+
+    The criterion is now ``budget.ratio_denominator_admissibility``: Fieller's
+    precondition ``I_hat > 8.765 * SE(I_hat)``, evaluated against the
+    denominator's own bootstrap standard error, which
+    ``pathway_cluster_bootstrap`` computes over the same resamples and passes in.
+    It remains **strictly stronger than the sign test** -- the property the
+    magnitude guard was introduced for -- while being a different number on every
+    arm, which a constant cannot be.
+
+    ``context_information_se_nats`` is required. There is no fallback to a
+    constant when it is missing, because substituting one for an unavailable
+    standard error is the defect being repaired.
+
+    The two flags stay separate: ``context_information_positive`` is the sign
+    test, kept because "off distribution" and "admissible as a denominator" are
+    different findings, and ``context_information_valid`` is the Fieller
+    precondition.
     """
 
     if not math.isfinite(unigram_entropy_nats):
         raise ValueError("unigram entropy must be finite")
     if minimum_ce_delta_nats < 0 or minimum_kl_nats < 0:
         raise ValueError("denominator guards must be non-negative")
-    if minimum_context_information_nats <= 0:
-        raise ValueError("the context-information floor must be positive")
     aggregate = aggregate_variant(rows)
     ce_clean = aggregate["clean_ce_nats"]
     ce_ablated = aggregate["variant_ce_nats"]
@@ -1103,7 +1116,12 @@ def pathway_metrics(
     kl = aggregate["clean_to_variant_kl_nats"]
     context_information = unigram_entropy_nats - ce_clean
     context_positive = context_information > 0
-    context_valid = context_information >= minimum_context_information_nats
+    admissibility = ratio_denominator_admissibility(
+        context_information,
+        context_information_se_nats,
+        baseline_entropy_nats=unigram_entropy_nats,
+    )
+    context_valid = admissibility["admissible"]
     passes_ce = ce_delta >= minimum_ce_delta_nats
     passes_kl = kl >= minimum_kl_nats
     return {
@@ -1117,7 +1135,10 @@ def pathway_metrics(
         "context_information_nats": context_information,
         "context_information_positive": bool(context_positive),
         "context_information_valid": bool(context_valid),
-        "minimum_context_information_nats": float(minimum_context_information_nats),
+        "context_information_se_nats": float(context_information_se_nats),
+        # The whole criterion, its per-arm admissible minimum in three units, and
+        # the retired constant as a reporting column beside it.
+        "context_information_admissibility": admissibility,
         "share_of_context_information": (
             ce_delta / context_information if context_valid else None
         ),
@@ -1150,7 +1171,6 @@ def pathway_cluster_bootstrap(
     unigram_entropy_nats: float,
     minimum_ce_delta_nats: float = P0_2B_MINIMUM_CE_DELTA_NATS,
     minimum_kl_nats: float = P0_2B_MINIMUM_KL_NATS,
-    minimum_context_information_nats: float = MIN_CONTEXT_INFORMATION_NATS,
     minimum_finite_draw_fraction: float = MINIMUM_FINITE_DRAW_FRACTION,
 ) -> dict[str, Any]:
     """Sequence-cluster bootstrap of one scope's footprint.
@@ -1161,9 +1181,20 @@ def pathway_cluster_bootstrap(
     value across draws, so the interval reflects uncertainty in the ablation
     effect only.
 
+    **This function is where the denominator's standard error comes from.** The
+    Fieller precondition ``pathway_metrics`` applies needs ``SE(I_hat)``, and the
+    only estimate of it in this design is the spread of ``I`` over these very
+    resamples. It is taken in a first pass over the same index stream -- the same
+    seed, the same draws -- and then handed to every draw's ``pathway_metrics``,
+    so one arm has one standard error and the criterion is the arm's precision
+    against each draw's point estimate. It is published as
+    ``context_information_se_nats`` so that a caller who needs point metrics can
+    obtain the same number without a second estimator.
+
     **The share interval is refused when too many draws had no usable
     denominator, rather than published conditioned on the ones that did.** A
-    draw whose context information falls below the floor contributes no share
+    draw whose context information falls below the arm's admissible minimum
+    contributes no share
     and used to be silently dropped from the percentile calculation while the
     interval kept the plain name ``share_of_context_information``. The dropping
     is not neutral: a draw is discarded precisely when its clean cross-entropy
@@ -1182,12 +1213,34 @@ def pathway_cluster_bootstrap(
 
     if not rows:
         raise ValueError("bootstrap needs at least one sequence row")
-    if samples < 1:
-        raise ValueError("bootstrap sample count must be positive")
+    if samples < 2:
+        raise ValueError(
+            "bootstrap sample count must be at least two: the denominator's "
+            "standard error is the spread of the context information over these "
+            "draws, and one draw has no spread"
+        )
     if not 0.0 < minimum_finite_draw_fraction <= 1.0:
         raise ValueError("the minimum finite-draw fraction must lie in (0, 1]")
-    generator = np.random.default_rng(seed)
     n = len(rows)
+
+    # First pass: the denominator's own bootstrap distribution, over exactly the
+    # index stream the second pass will use. ``aggregate_variant`` defines the
+    # clean cross-entropy as the token-weighted ratio of these two sums, so this
+    # reproduces each draw's context information without a second estimator.
+    clean_nll = np.asarray([float(row["clean_nll_sum"]) for row in rows], dtype=np.float64)
+    token_count = np.asarray([float(row["token_count"]) for row in rows], dtype=np.float64)
+    generator = np.random.default_rng(seed)
+    denominator_draws = np.empty(samples, dtype=np.float64)
+    for draw in range(samples):
+        picked = generator.integers(0, n, size=n)
+        denominator_draws[draw] = unigram_entropy_nats - (
+            clean_nll[picked].sum() / token_count[picked].sum()
+        )
+    context_information_se = float(np.std(denominator_draws, ddof=1))
+
+    # Second pass over the same stream, restarted from the same seed, so every
+    # draw's metrics are the ones whose spread produced the standard error above.
+    generator = np.random.default_rng(seed)
     ce_delta: list[float] = []
     kl: list[float] = []
     share: list[float] = []
@@ -1199,9 +1252,9 @@ def pathway_cluster_bootstrap(
         metrics = pathway_metrics(
             [rows[int(index)] for index in indices],
             unigram_entropy_nats=unigram_entropy_nats,
+            context_information_se_nats=context_information_se,
             minimum_ce_delta_nats=minimum_ce_delta_nats,
             minimum_kl_nats=minimum_kl_nats,
-            minimum_context_information_nats=minimum_context_information_nats,
         )
         ce_delta.append(metrics["ce_delta_nats"])
         kl.append(metrics["kl_clean_to_ablated_nats"])
@@ -1213,12 +1266,30 @@ def pathway_cluster_bootstrap(
         kl_guard_passes += int(metrics["passes_kl_guard"])
     required = int(math.ceil(minimum_finite_draw_fraction * samples))
     share_publishable = len(share) >= required
+    point = pathway_metrics(
+        rows,
+        unigram_entropy_nats=unigram_entropy_nats,
+        context_information_se_nats=context_information_se,
+        minimum_ce_delta_nats=minimum_ce_delta_nats,
+        minimum_kl_nats=minimum_kl_nats,
+    )
+    admissibility = point["context_information_admissibility"]
+    minimum_admissible = admissibility["minimum_admissible_context_information"][
+        "nats_per_token"
+    ]
     return {
         "schema_version": SCHEMA_VERSION_BOOTSTRAP,
         "cluster_unit": "sequence",
         "samples": int(samples),
         "seed": int(seed),
         "clusters": n,
+        # The denominator's precision, and the criterion read off it. Published
+        # because a caller that wants the point metrics beside this interval has
+        # to pass this same standard error into ``pathway_metrics`` rather than
+        # estimate one of its own.
+        "context_information_nats": point["context_information_nats"],
+        "context_information_se_nats": context_information_se,
+        "context_information_admissibility": admissibility,
         "ce_delta_nats": _interval(ce_delta),
         "kl_clean_to_ablated_nats": _interval(kl),
         "share_of_context_information": _interval(share) if share_publishable else None,
@@ -1230,7 +1301,10 @@ def pathway_cluster_bootstrap(
             if share_publishable
             else (
                 f"only {len(share)} of {samples} draws had a context-information "
-                f"denominator at or above {minimum_context_information_nats} nats, "
+                f"denominator above this arm's Fieller bound of "
+                f"{minimum_admissible:.4f} nats ("
+                f"{admissibility['fieller_denominator_multiple']:.4f} x its own "
+                f"standard error {context_information_se:.4f}), "
                 f"below the {minimum_finite_draw_fraction:.0%} floor. A percentile "
                 "over what survives is conditioned on the denominator being large, "
                 "which selects the smallest shares, and is not the requested "

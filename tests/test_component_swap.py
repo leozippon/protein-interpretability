@@ -713,7 +713,14 @@ class TheDriverWritesOneArtefactForOneCell(unittest.TestCase):
         )
         self.assertEqual(
             payload["thresholds"]["minimum_context_information_nats"],
-            STAGE.MIN_CONTEXT_INFORMATION_NATS,
+            STAGE.JOINT_MODE_QUALIFICATION_FLOOR_NATS,
+        )
+        # The magnitude is this lineage's own declared floor and the artefact has
+        # to say so: it is deliberately not the calibrated identification floor,
+        # and a reader who cannot tell them apart cannot read the verdict.
+        self.assertIn(
+            "UNDERIVED",
+            payload["thresholds"]["minimum_context_information_status"],
         )
 
     def test_the_reference_cell_is_its_own_identity_anchor(self):

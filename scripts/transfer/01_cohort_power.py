@@ -73,8 +73,8 @@ from src.transfer.arms import (  # noqa: E402
 )
 from src.transfer.budget import (  # noqa: E402
     DEFAULT_CONTEXT_LENGTHS,
-    MIN_CONTEXT_INFORMATION_NATS,
     RecordStatistics,
+    SCREENING_CONTEXT_INFORMATION_NATS,
     arm_power_with_records,
     markov_baselines,
     truncation_curve,
@@ -425,7 +425,14 @@ def main() -> None:
     parser.add_argument("--max-len", type=int, default=384)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument(
-        "--threshold-nats", type=float, default=MIN_CONTEXT_INFORMATION_NATS
+        "--threshold-nats",
+        type=float,
+        default=SCREENING_CONTEXT_INFORMATION_NATS,
+        help="the identification floor a point estimate of I is screened against. "
+        "It decides whether the arm read above no-context on this cohort and "
+        "nothing else; whether that reading may be divided by is "
+        "budget.ratio_denominator_admissibility, which is per-arm and is not a "
+        "threshold this flag can set",
     )
     parser.add_argument("--markov-train", type=int, default=2000)
     parser.add_argument("--skip-markov", action="store_true")
@@ -735,7 +742,16 @@ def main() -> None:
             ),
         },
         "truncation_context_lengths": sorted({int(c) for c in args.truncation_contexts}),
-        "thresholds": {"minimum_context_information_nats": float(args.threshold_nats)},
+        "thresholds": {
+            "minimum_context_information_nats": float(args.threshold_nats),
+            "minimum_context_information_provenance": (
+                "src.transfer.budget.SCREENING_CONTEXT_INFORMATION_NATS: the "
+                "identification floor, calibrated at EXP-R2-218. It is not a "
+                "licence to divide by the reading -- that is "
+                "budget.ratio_denominator_admissibility, a per-arm bound on this "
+                "arm's own standard error"
+            ),
+        },
         "settings": {
             "device": args.device,
             "dtype": args.dtype,

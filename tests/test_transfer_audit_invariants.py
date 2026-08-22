@@ -18,6 +18,7 @@ import inspect
 import json
 import math
 import sys
+from collections.abc import Sequence
 from dataclasses import fields, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -1760,48 +1761,223 @@ def test_the_smoothing_constant_is_swept_and_the_sweep_travels_with_the_number()
 
 
 def _pathway_rows(clean: float, variant: float, *, n: int = 8, tokens: int = 100) -> list[dict]:
+    """``n`` identical sequences. Identical rows carry no resampling spread."""
+
+    return _spread_pathway_rows([clean] * n, variant - clean, tokens=tokens)
+
+
+def _spread_pathway_rows(
+    clean: Sequence[float], delta: float, *, tokens: int = 100
+) -> list[dict]:
+    """One row per per-sequence clean cross-entropy, ablated by a constant ``delta``."""
+
     return [
         {
             "token_count": tokens,
-            "clean_nll_sum": clean * tokens,
-            "variant_nll_sum": variant * tokens,
+            "clean_nll_sum": value * tokens,
+            "variant_nll_sum": (value + delta) * tokens,
             "kl_sum": 0.5 * tokens,
             "argmax_agreement_count": tokens // 2,
         }
-        for _ in range(n)
+        for value in clean
     ]
 
 
-def test_a_share_is_refused_on_a_denominator_too_small_to_divide_by():
-    """C5: the share was guarded on the denominator's sign, not its magnitude.
+#: The fifteen-arm panel as EXP-R2-218 measured it: the between-block mean
+#: context information and the bootstrap standard error of the same reading,
+#: from ``results/transfer/threshold_calibration_20260822/``.  These are the
+#: numbers every claim about the two criteria is checked against, so they are
+#: written once here rather than restated inside each test.
+#:
+#: The second element is each arm's ``bootstrap_se_mean`` -- a mean ACROSS
+#: blocks, never a maximum.  Reading it as "the largest standard error
+#: anywhere" once put dialogpt-small's 0.11026 into a verdict-invariance
+#: argument as a panel bound; the largest single-arm SE(I) actually on disk is
+#: 0.18631, on that same arm.  The conclusion survived, but the premise was
+#: wrong, so the distinction is written down where the numbers live.
+_CALIBRATION_PANEL: dict[str, tuple[float, float]] = {
+    "bygpt5-base-en": (+2.4354, 0.01668),
+    "bygpt5-medium-en": (+2.4687, 0.01665),
+    "bygpt5-small-en": (+2.3515, 0.01661),
+    "dialogpt-small": (-4.1367, 0.11026),
+    "gpt2": (+4.4183, 0.03909),
+    "gpt2-large": (+4.8916, 0.04008),
+    "gpt2-medium": (+4.7246, 0.03968),
+    "gpt2-xl": (+4.9982, 0.04094),
+    "llama-3.2-3b": (+5.4551, 0.04017),
+    "progen2-base": (+1.2214, 0.04914),
+    "progen2-medium": (+1.3170, 0.04690),
+    "progen2-small": (+0.9005, 0.04401),
+    "protgpt2": (+3.5239, 0.10580),
+    "qwen2.5-0.5b": (+4.8306, 0.03705),
+    "zymctrl": (+2.0221, 0.05960),
+}
 
-    ``budget.MIN_CONTEXT_INFORMATION_NATS`` is the floor below which no ratio
-    computed on an arm can be interpreted, and ``pathway_metrics`` -- which
-    produces exactly such a ratio -- tested only ``context_information > 0``.
-    A hundredth of a nat is positive.
+#: Largest departure from zero any null-family point estimate produced over the
+#: 112 true-zero readings of the same campaign.
+_LARGEST_NULL_DEPARTURE_NATS = 0.0132
+
+
+def test_the_fieller_multiple_is_the_inverted_precondition_and_not_a_round_number():
+    """EXP-R2-218: the denominator criterion is derived, so it must be exact.
+
+    ``g = (z * SE / I)^2 < g_max`` inverts to ``I > (z / sqrt(g_max)) * SE``.
+    A hand-rounded 8.77 would be a new undeclared constant of the same kind the
+    campaign retired, so the multiple is carried at full precision and tied to
+    the ``g`` limit the sibling gate publishes.
     """
 
-    # Denominator 0.01 nats: positive, and far below the floor.
-    metrics = pathway_metrics(_pathway_rows(2.0, 2.4), unigram_entropy_nats=2.01)
-    assert metrics["context_information_nats"] == pytest.approx(0.01)
+    from scipy import stats
+
+    from src.transfer.information_bootstrap import FIELLER_MAXIMUM_G
+
+    expected = float(stats.norm.ppf(0.975)) / math.sqrt(FIELLER_MAXIMUM_G)
+    assert budget.FIELLER_DENOMINATOR_MULTIPLE == expected
+    assert budget.FIELLER_DENOMINATOR_MULTIPLE == pytest.approx(8.765225, abs=5e-7)
+    # The two forms are one condition: at the boundary ``g`` is exactly its limit.
+    boundary = budget.FIELLER_DENOMINATOR_MULTIPLE * 0.02
+    assert budget.ratio_denominator_admissibility(boundary, 0.02)["fieller_g"] == (
+        pytest.approx(FIELLER_MAXIMUM_G)
+    )
+
+
+def test_the_denominator_criterion_is_strictly_stronger_than_the_sign_test():
+    """The magnitude guard existed because the sign test admitted noise.
+
+    Gating on ``I > 0`` alone once published a share with a median of 3.57 and a
+    97.5th percentile of 85.4.  Whatever replaces the retired constant has to
+    keep that closed: everything the precision criterion admits, the sign test
+    admits too, and the converse must fail somewhere.
+    """
+
+    rng = np.random.default_rng(20260822)
+    strictly_stronger_somewhere = False
+    for information, error in zip(
+        rng.normal(0.0, 0.5, size=400), rng.uniform(1e-3, 0.2, size=400)
+    ):
+        admissible = budget.ratio_denominator_admissibility(
+            float(information), float(error)
+        )["admissible"]
+        if admissible:
+            assert information > 0.0, "the criterion admitted a non-positive denominator"
+        elif information > 0.0:
+            strictly_stronger_somewhere = True
+    assert strictly_stronger_somewhere, "the criterion never refused a positive denominator"
+
+    # And on the panel itself: every arm's own bound is well above zero, so the
+    # gap between the two rules is a fact about the measurement, not a corner.
+    for arm, (_, error) in _CALIBRATION_PANEL.items():
+        bound = budget.FIELLER_DENOMINATOR_MULTIPLE * error
+        assert bound > 0.14, f"{arm}: the admissible minimum collapsed towards the sign test"
+
+
+def test_an_arm_that_clears_the_retired_floor_can_still_fail_its_own_bound():
+    """The retired 0.30 was up to 3.2x too lax for the job it was doing.
+
+    ``progen2-base`` reads its context information with a bootstrap standard
+    error of 0.04914 nats, so nothing below 0.4307 nats gives the share a bounded
+    confidence set.  A denominator of 0.35 clears the old floor by half a
+    standard error and is refused here, which is the whole substance of the
+    repair.
+    """
+
+    _, error = _CALIBRATION_PANEL["progen2-base"]
+    record = budget.ratio_denominator_admissibility(0.35, error, baseline_entropy_nats=2.8785)
+    assert record["clears_legacy_floor"] is True
+    assert record["admissible"] is False
+    assert record["fieller_g"] > record["fieller_maximum_g"]
+    bound = record["minimum_admissible_context_information"]
+    assert bound["nats_per_token"] == pytest.approx(0.4307, abs=5e-5)
+
+    # It crosses the other way too, so the two criteria are not one criterion
+    # scaled: a byte arm measures ten times more precisely, and 0.20 nats there
+    # is admissible while the retired floor would have refused it.
+    _, byte_error = _CALIBRATION_PANEL["bygpt5-small-en"]
+    byte = budget.ratio_denominator_admissibility(0.20, byte_error)
+    assert byte["clears_legacy_floor"] is False
+    assert byte["admissible"] is True
+    assert byte["minimum_admissible_context_information"]["nats_per_token"] == (
+        pytest.approx(0.1456, abs=5e-5)
+    )
+
+    # Twelve of the fifteen arms need more denominator than the retired constant
+    # supplied, which is why no constant can serve this purpose at all.
+    above = sum(
+        budget.FIELLER_DENOMINATOR_MULTIPLE * error > budget.MIN_CONTEXT_INFORMATION_NATS
+        for _, error in _CALIBRATION_PANEL.values()
+    )
+    assert above == 12
+
+
+def test_a_missing_standard_error_raises_rather_than_falling_back_to_a_constant():
+    """A constant substituted for an absent SE is the defect, not the fallback.
+
+    Every path that cannot see the denominator's own precision has to say so.
+    A zero standard error raises with the rest: a resample that produced no
+    spread has not estimated the error, and treating it as zero would put the
+    criterion back on the sign test.
+    """
+
+    with pytest.raises(ValueError, match="no fallback"):
+        budget.ratio_denominator_admissibility(1.0, None)
+    with pytest.raises(ValueError, match="finite and strictly"):
+        budget.ratio_denominator_admissibility(1.0, 0.0)
+    with pytest.raises(ValueError, match="finite and strictly"):
+        budget.ratio_denominator_admissibility(1.0, float("nan"))
+
+    rows = _spread_pathway_rows([2.0, 2.3, 1.8, 2.1], 0.4)
+    with pytest.raises(ValueError, match="no fallback"):
+        pathway_metrics(rows, unigram_entropy_nats=4.0)
+
+    # Twelve identical sequences resample to twelve identical draws, so the
+    # bootstrap cannot produce a standard error and the run stops there.
+    with pytest.raises(ValueError, match="finite and strictly"):
+        pathway_cluster_bootstrap(
+            _pathway_rows(2.0, 2.4, n=12), samples=200, seed=3, unigram_entropy_nats=4.0
+        )
+
+
+def test_a_share_is_refused_on_a_denominator_that_is_not_identified_away_from_zero():
+    """C5, re-derived: the guard is the denominator's precision, not a constant.
+
+    The original defect was ``context_information > 0``, under which a hundredth
+    of a nat is a denominator.  It was repaired with a 0.30-nat floor that had
+    never been derived; EXP-R2-218 replaced that with the Fieller precondition
+    evaluated against the reading's own standard error.  What must stay true is
+    that a positive-but-unidentified denominator publishes no share.
+    """
+
+    rows = _spread_pathway_rows([2.0, 2.3, 1.8, 2.1, 1.9, 2.2], 0.4)
+    metrics = pathway_metrics(
+        rows, unigram_entropy_nats=2.11, context_information_se_nats=0.05
+    )
+    assert metrics["context_information_nats"] == pytest.approx(0.06)
     assert metrics["context_information_positive"] is True
     assert metrics["context_information_valid"] is False
     assert metrics["share_of_context_information"] is None
     assert metrics["measurable"] is False
-    assert metrics["minimum_context_information_nats"] == pytest.approx(0.30)
 
-    # A denominator above the floor still produces the share it always did.
-    healthy = pathway_metrics(_pathway_rows(2.0, 2.4), unigram_entropy_nats=3.0)
+    admissibility = metrics["context_information_admissibility"]
+    assert admissibility["minimum_admissible_context_information"][
+        "nats_per_token"
+    ] == pytest.approx(budget.FIELLER_DENOMINATOR_MULTIPLE * 0.05)
+    # The retired floor travels as a reporting column and decides nothing.
+    assert admissibility["legacy_minimum_context_information_nats"] == pytest.approx(0.30)
+    assert admissibility["clears_legacy_floor"] is False
+
+    # A denominator above the arm's own bound still produces the share it always
+    # did, and every published threshold carries its value in all three units.
+    healthy = pathway_metrics(
+        rows, unigram_entropy_nats=3.05, context_information_se_nats=0.05
+    )
     assert healthy["context_information_valid"] is True
     assert healthy["share_of_context_information"] == pytest.approx(0.4 / 1.0)
-
-    # The floor is a parameter, so the ordering can be shown not to turn on it.
-    swept = pathway_metrics(
-        _pathway_rows(2.0, 2.4),
-        unigram_entropy_nats=2.01,
-        minimum_context_information_nats=0.001,
-    )
-    assert swept["context_information_valid"] is True
+    bound = healthy["context_information_admissibility"][
+        "minimum_admissible_context_information"
+    ]
+    assert bound["relative_to_baseline"] == pytest.approx(bound["nats_per_token"] / 3.05)
+    assert bound["bits_per_symbol"] is None
+    assert bound["bits_per_symbol_undefined_because"]
 
 
 def test_a_share_interval_conditioned_on_its_denominator_is_not_published():
@@ -1814,27 +1990,113 @@ def test_a_share_interval_conditioned_on_its_denominator_is_not_published():
     the plain name with only a count beside it.
     """
 
-    # Half the sequences have a clean CE above the baseline and half well below,
-    # so resampling straddles the floor and a large minority of draws is invalid.
-    rows = _pathway_rows(0.2, 0.6, n=6) + _pathway_rows(3.0, 3.4, n=6)
+    # Twelve sequences whose per-sequence clean cross-entropies spread by about
+    # 0.4 nats, read against a baseline that puts the point estimate within a
+    # standard error of the arm's own admissible minimum, so resampling straddles
+    # the bound and a large minority of draws is refused.
+    clean = [2.014, 2.544, 2.490, 1.796, 1.881, 1.789, 2.228, 1.978, 2.299, 1.261, 2.627, 1.961]
+    rows = _spread_pathway_rows(clean, 0.4)
     report = pathway_cluster_bootstrap(
-        rows, samples=400, seed=3, unigram_entropy_nats=2.0
+        rows, samples=400, seed=3, unigram_entropy_nats=3.0
     )
-    assert 0 < report["share_valid_samples"] < 400
+    assert 0 < report["share_valid_samples"] < report["share_required_samples"]
     assert report["share_of_context_information"] is None
     assert report["share_interval_refused_reason"] is not None
     assert "conditioned" in report["share_interval_refused_reason"]
+    assert "standard error" in report["share_interval_refused_reason"]
     # The effect-scale intervals do not depend on the denominator and survive.
     assert report["ce_delta_nats"] is not None
     assert report["kl_clean_to_ablated_nats"] is not None
 
-    # When every draw clears the floor the interval is published exactly as before.
+    # The standard error the criterion was evaluated against is published, so a
+    # caller can obtain the point metrics without estimating a second one.
+    assert report["context_information_se_nats"] > 0.0
+    point = pathway_metrics(
+        rows,
+        unigram_entropy_nats=3.0,
+        context_information_se_nats=report["context_information_se_nats"],
+    )
+    assert (
+        point["context_information_admissibility"]
+        == report["context_information_admissibility"]
+    )
+
+    # When the denominator is identified with room to spare every draw clears it
+    # and the interval is published exactly as before.
     healthy = pathway_cluster_bootstrap(
-        _pathway_rows(2.0, 2.4), samples=200, seed=3, unigram_entropy_nats=4.0
+        rows, samples=200, seed=3, unigram_entropy_nats=6.0
     )
     assert healthy["share_valid_samples"] == 200
     assert healthy["share_interval_refused_reason"] is None
-    assert healthy["share_of_context_information"]["median"] == pytest.approx(0.4 / 2.0)
+    assert healthy["share_of_context_information"]["median"] == pytest.approx(
+        0.4 / (6.0 - float(np.mean(clean))), rel=0.05
+    )
+
+
+# ------------------------------------ budget: identification is not admissibility
+
+
+def test_the_screening_floor_changes_no_verdict_on_the_measured_panel():
+    """EXP-R2-218 calibrated identification at 0.05 nats; nothing moves.
+
+    The retired 0.30 was defended by the observation that no record ever landed
+    between 0 and 0.30.  That is still true of the panel, so replacing it with a
+    floor calibrated against a known zero has to leave every arm's verdict where
+    it was -- and the calibrated floor has to sit clear of the noise band the
+    null family actually produced.
+    """
+
+    for arm, (information, _) in _CALIBRATION_PANEL.items():
+        screened = budget.power_status(information, budget.SCREENING_CONTEXT_INFORMATION_NATS)
+        legacy = budget.power_status(information, budget.MIN_CONTEXT_INFORMATION_NATS)
+        assert screened == legacy, f"{arm}: the screening floor moved a published verdict"
+        assert abs(information) > 0.9, f"{arm}: the panel is supposed to be far from the floor"
+
+    # 3.8x headroom over the largest null point departure the campaign observed.
+    assert budget.SCREENING_CONTEXT_INFORMATION_NATS > 3.5 * _LARGEST_NULL_DEPARTURE_NATS
+    # And it is a screening rule, not a licence to divide: on twelve of fifteen
+    # arms the denominator criterion demands several times as much.
+    for arm, (_, error) in _CALIBRATION_PANEL.items():
+        assert (
+            budget.FIELLER_DENOMINATOR_MULTIPLE * error
+            > budget.SCREENING_CONTEXT_INFORMATION_NATS
+        ), f"{arm}: screening would have licensed a ratio"
+
+
+def test_a_threshold_in_nats_alone_is_not_a_cross_arm_threshold():
+    """Rule from the pre-registration: publish every threshold in three units.
+
+    The retired constant is a different criterion on every arm, and the campaign
+    printed exactly what it is worth in each unit.  The conversion has one
+    implementation, so those figures have to come back out of it.
+    """
+
+    byte = budget.threshold_in_units(
+        budget.MIN_CONTEXT_INFORMATION_NATS,
+        baseline_entropy_nats=3.2466,
+        symbols_per_token=0.9927,
+    )
+    assert byte["relative_to_baseline"] == pytest.approx(0.09240, abs=5e-6)
+    assert byte["bits_per_symbol"] == pytest.approx(0.43599, abs=5e-6)
+
+    text = budget.threshold_in_units(
+        budget.MIN_CONTEXT_INFORMATION_NATS,
+        baseline_entropy_nats=7.5539,
+        symbols_per_token=4.4562,
+    )
+    assert text["relative_to_baseline"] == pytest.approx(0.03971, abs=5e-6)
+    assert text["bits_per_symbol"] == pytest.approx(0.09713, abs=5e-6)
+    # 3.1x apart in rho under nothing but a per-arm rescaling.
+    assert byte["relative_to_baseline"] / text["relative_to_baseline"] > 2.3
+
+    # A unit whose conversion was not supplied is null with its reason attached,
+    # never absent and never inferred.
+    bare = budget.threshold_in_units(budget.SCREENING_CONTEXT_INFORMATION_NATS)
+    assert bare["nats_per_token"] == pytest.approx(0.05)
+    assert bare["relative_to_baseline"] is None
+    assert bare["relative_to_baseline_undefined_because"]
+    assert bare["bits_per_symbol"] is None
+    assert bare["bits_per_symbol_undefined_because"]
 
 
 def test_the_clean_reference_is_shared_rather_than_compared():

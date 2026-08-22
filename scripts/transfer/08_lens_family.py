@@ -40,11 +40,13 @@ Such an arm is flagged and *not* scored. ProtGPT2 is known to be off-distributio
 on short EC-labelled cohorts and is expected to trigger this.
 
 The weaker guard in ``budget.power_status`` -- context information below
-``MIN_CONTEXT_INFORMATION_NATS`` -- is recorded but does not stop scoring. That
-threshold exists to protect *normalised recovery ratios*, whose denominator is
-the context information; no quantity here is such a ratio, so a small
-denominator widens no interval and invalidates nothing. Arms in that band are
-reported with their power verdict attached.
+``SCREENING_CONTEXT_INFORMATION_NATS`` -- is recorded but does not stop scoring.
+It is the identification question: did the arm read above no-context at all. The
+stricter question, whether the reading may serve as the denominator of a
+normalised recovery ratio, is ``budget.ratio_denominator_admissibility``, and no
+quantity here is such a ratio -- a small denominator widens no interval and
+invalidates nothing on this stage, which is why the screening floor is the only
+one it needs. Arms in that band are reported with their power verdict attached.
 
 One JSON per arm is written under ``results/transfer/lens_family/``.
 """
@@ -83,7 +85,7 @@ from src.transfer.arms import (  # noqa: E402
     text_cohort,
 )
 from src.transfer.budget import (  # noqa: E402
-    MIN_CONTEXT_INFORMATION_NATS,
+    SCREENING_CONTEXT_INFORMATION_NATS,
     arm_power,
 )
 from src.transfer.lenses import (  # noqa: E402
@@ -723,7 +725,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--minimum-context-information-nats",
         type=float,
-        default=MIN_CONTEXT_INFORMATION_NATS,
+        default=SCREENING_CONTEXT_INFORMATION_NATS,
+        help="the identification floor the power verdict is taken against. It is "
+        "recorded and does not stop scoring; nothing on this stage is a ratio to "
+        "the context information, so no denominator criterion applies here",
     )
     parser.add_argument(
         "--output-root",
@@ -875,8 +880,11 @@ def main() -> None:
                 "thresholds": {
                     "minimum_context_information_nats": args.minimum_context_information_nats,
                     "minimum_context_information_provenance": (
-                        "src.transfer.budget.MIN_CONTEXT_INFORMATION_NATS; recorded but not "
-                        "used to skip scoring, only the off-distribution rule skips an arm"
+                        "src.transfer.budget.SCREENING_CONTEXT_INFORMATION_NATS, the "
+                        "identification floor; recorded but not used to skip scoring, "
+                        "only the off-distribution rule skips an arm. No quantity on "
+                        "this stage divides by the context information, so "
+                        "budget.ratio_denominator_admissibility is not applied here"
                     ),
                     "lens_head_tolerance_nats": args.lens_head_tolerance_nats,
                     "tuned_improvement_tolerance_nats": TUNED_IMPROVEMENT_TOLERANCE_NATS,

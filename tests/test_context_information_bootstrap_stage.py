@@ -371,7 +371,7 @@ def test_one_dominant_near_duplicate_group_refuses_the_interval(tmp_path: Path) 
     assert row["n_effective_groups"] < 8
     assert "below the 8-unit floor" in row["refusal_reason"]
     assert row["context_information_nats"] is None
-    assert row["legacy_threshold_status"] == "REFUSED"
+    assert row["screening_status"] == "REFUSED"
     # The arm is still in the table, and the refusal reaches the contrast.
     assert row["arm"] in {entry["arm"] for entry in payload["summary"]["arms"]}
     assert "progen2-base" in payload["summary"]["arms_with_a_refused_interval"]
@@ -1097,7 +1097,7 @@ def test_the_null_control_measures_a_known_zero_inside_the_same_panel(
 
     # A known zero: the floor refuses it, and the departure is far below both the
     # floor and the arm the control was built beside.
-    assert control_row["legacy_threshold_status"] == "FAIL"
+    assert control_row["screening_status"] == "FAIL"
     assert abs(control_row["context_information_nats"]) < 0.05
     assert arm_row_["context_information_nats"] > 0.4
 

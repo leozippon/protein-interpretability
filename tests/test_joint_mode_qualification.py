@@ -777,13 +777,40 @@ class Measurability(unittest.TestCase):
         self.assertEqual(record["verdict"], UNMEASURABLE)
         self.assertNotIn("FAIL", json.dumps(record))
 
-    def test_the_threshold_defaults_to_the_one_the_panel_was_qualified_against(self):
-        from src.transfer.budget import MIN_CONTEXT_INFORMATION_NATS
+    def test_the_threshold_is_this_stages_own_declared_floor(self):
+        """Not the calibrated identification floor, and the difference decides six verdicts.
+
+        EXP-R2-218 split the retired 0.30-nat constant into an identification
+        floor of 0.05 and a per-arm Fieller precondition. Neither is this gate:
+        a pass here admits a mode to a behavioural read, and Llama-2-7b-hf's
+        protein mode reads +0.0719 to +0.0918 nats/token -- above 0.05 in every
+        one of six published qualification artefacts -- at a reversal cost of
+        -0.0013 nats/residue. The magnitude is therefore declared here and
+        recorded as underived, exactly as ``mode_subspaces`` declares it for the
+        same mode.
+        """
+
+        from src.transfer.budget import (
+            MIN_CONTEXT_INFORMATION_NATS,
+            SCREENING_CONTEXT_INFORMATION_NATS,
+        )
 
         parsed = STAGE.build_parser().parse_args(
             ["--checkpoint", "/nowhere", "--rendering", "galactica"]
         )
-        self.assertEqual(parsed.min_context_information, MIN_CONTEXT_INFORMATION_NATS)
+        self.assertEqual(
+            parsed.min_context_information, STAGE.JOINT_MODE_QUALIFICATION_FLOOR_NATS
+        )
+        self.assertNotEqual(
+            parsed.min_context_information, SCREENING_CONTEXT_INFORMATION_NATS
+        )
+        self.assertIn("UNDERIVED", STAGE.JOINT_MODE_QUALIFICATION_FLOOR_STATUS)
+        # The same number as the retired constant, and deliberately not sourced
+        # from it: tests/test_measurability_criterion_contract.py is what holds
+        # the "declared locally, never inherited" half of that.
+        self.assertEqual(
+            STAGE.JOINT_MODE_QUALIFICATION_FLOOR_NATS, MIN_CONTEXT_INFORMATION_NATS
+        )
 
 
 # ------------------------------------------------------------- unigram support

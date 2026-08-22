@@ -70,7 +70,7 @@ from src.transfer.arms import (  # noqa: E402
     text_cohort,
     tokenize_batch,
 )
-from src.transfer.budget import MIN_CONTEXT_INFORMATION_NATS, arm_power  # noqa: E402
+from src.transfer.budget import arm_power  # noqa: E402
 from src.transfer.circuits import (  # noqa: E402
     INDUCTION_THRESHOLDS,
     PROTEIN_EXACT_CRITERION,
@@ -126,6 +126,7 @@ from src.transfer.scaling import (  # noqa: E402
     DEFAULT_LADDER,
     DEFAULT_MIN_RESIDUAL_DOF,
     INTERPRETABILITY_METRICS,
+    NO_DENOMINATOR_STANDARD_ERROR,
     PRIMARY_AXIS,
     PRIMARY_INDUCTION_PROBE,
     PRIMARY_METRIC,
@@ -278,13 +279,29 @@ def measure_pathway_shares(
     bootstraps: dict[str, Any] = {}
     for scope in scopes:
         rows = run.rows_by_scope[scope.name]
-        metrics[scope.name] = pathway_metrics(rows, unigram_entropy_nats=entropy)
-        bootstraps[scope.name] = pathway_cluster_bootstrap(
+        # The bootstrap runs first because it is where the denominator's own
+        # standard error comes from, and the Fieller precondition
+        # ``pathway_metrics`` applies has no fallback without it.
+        bootstrap = pathway_cluster_bootstrap(
             rows,
             samples=args.bootstrap_samples,
             seed=args.bootstrap_seed,
             unigram_entropy_nats=entropy,
         )
+        bootstraps[scope.name] = bootstrap
+        metrics[scope.name] = pathway_metrics(
+            rows,
+            unigram_entropy_nats=entropy,
+            context_information_se_nats=bootstrap["context_information_se_nats"],
+        )
+    # ``measure_pathways`` computes the clean forward once per batch and shares it
+    # across scopes, and both bootstraps run from the same seed, so the two scopes
+    # produce one standard error for the cohort's context information rather than
+    # two. It is published at this level because it is a property of the cohort
+    # and the arm, not of an ablation scope, and because
+    # ``scaling.analysis_frame`` needs it to decide whether this rung's context
+    # information may be divided by at all.
+    context_information_se = float(bootstraps["mlp_all"]["context_information_se_nats"])
     return {
         "ablation_baseline_kind": "cohort_mean",
         "ablation_baseline_provenance": bank.provenance,
@@ -293,7 +310,14 @@ def measure_pathway_shares(
         "unigram_baseline": baseline,
         "clean_ce_nats": clean_ce,
         "context_information_nats": entropy - clean_ce,
-        "context_information_valid": bool(entropy - clean_ce > 0.0),
+        "context_information_se_nats": context_information_se,
+        # The sign test, kept under its own name: "off distribution" and
+        # "admissible as a denominator" are different findings, and the second is
+        # ``context_information_admissibility`` below.
+        "context_information_positive": bool(entropy - clean_ce > 0.0),
+        "context_information_admissibility": metrics["mlp_all"][
+            "context_information_admissibility"
+        ],
         "scopes": {
             scope.name: scope_record(scope, run.targets_by_scope[scope.name])
             for scope in scopes
@@ -648,6 +672,14 @@ def measure_member(
             if pathways is not None
             else float(budget_native["power"]["clean_ce_nats"])
         ),
+        # The only bootstrap of this denominator on this rung is the pathway
+        # stage's, so an arm without the pathway capability records no standard
+        # error at all. That is passed through as None: analysis_frame then
+        # withholds the admissibility verdict rather than substituting the
+        # retired constant for a measurement that was never made.
+        context_information_se_nats=(
+            None if pathways is None else pathways["context_information_se_nats"]
+        ),
         symbols_per_token=symbols_per_token(arm, strings, args.max_len),
         n_scored_tokens=(
             pathways["scored_tokens"]
@@ -731,9 +763,16 @@ def build_analysis(frame: list[dict[str, Any]], args: argparse.Namespace) -> dic
 
     Two fit families are produced. The deciding one uses every in-distribution
     rung, exactly as the exclusion rule declares. The sensitivity one additionally
-    drops rungs whose context information sits below ``src.transfer.budget``'s
-    measurability floor, because a share computed against a 0.18-nat denominator
-    is a ratio to noise and one such rung can dominate an interval on its own.
+    drops rungs whose context information is not admissible as the denominator of
+    a ratio, because a share computed against a 0.18-nat denominator is a ratio to
+    noise and one such rung can dominate an interval on its own. The criterion is
+    ``budget.ratio_denominator_admissibility`` -- Fieller's precondition against
+    each rung's own bootstrap standard error -- and not the retired 0.30-nat
+    constant, which EXP-R2-218 measured to be up to 3.2x too lax for exactly this
+    job. A rung that recorded no standard error is admitted to neither side and is
+    named in its own list, because the criterion cannot be evaluated for it and a
+    constant may not stand in.
+
     The sensitivity family is reported and never consulted for the verdict: it
     exists so that a reader can see whether the deciding interval is wide because
     the evidence is weak or because one denominator is small.
@@ -751,17 +790,17 @@ def build_analysis(frame: list[dict[str, Any]], args: argparse.Namespace) -> dic
         for metric in INTERPRETABILITY_METRICS
         for axis in CONVERGENCE_AXES
     }
-    floor_frame = [row for row in frame if row["measurable_denominator"]]
+    admissible_frame = [row for row in frame if row["measurable_denominator"] is True]
     sensitivity_fits = {
         f"{metric}~{axis}": fit_modality_offset(
-            floor_frame, metric_key=metric, axis_key=axis
+            admissible_frame, metric_key=metric, axis_key=axis
         )
         for metric in INTERPRETABILITY_METRICS
         for axis in CONVERGENCE_AXES
     }
     sensitivity_adjusted = {
         f"{metric}~{axis}": fit_modality_offset(
-            floor_frame, metric_key=metric, axis_key=axis, include_tokenisation=True
+            admissible_frame, metric_key=metric, axis_key=axis, include_tokenisation=True
         )
         for metric in INTERPRETABILITY_METRICS
         for axis in CONVERGENCE_AXES
@@ -827,14 +866,24 @@ def build_analysis(frame: list[dict[str, Any]], args: argparse.Namespace) -> dic
             "tokenisation_adjusted_fits": unconditioned_adjusted,
             "would_be_verdict": unconditioned_decision,
         },
-        "denominator_floor_sensitivity": {
+        "denominator_admissibility_sensitivity": {
             "deciding": False,
-            "floor_nats": float(args.denominator_floor_nats),
-            "floor_provenance": "src.transfer.budget.MIN_CONTEXT_INFORMATION_NATS",
-            "members_retained": [row["name"] for row in floor_frame],
+            "criterion": "fieller_precondition_on_the_denominator",
+            "criterion_provenance": (
+                "src.transfer.budget.ratio_denominator_admissibility: "
+                "I_hat > FIELLER_DENOMINATOR_MULTIPLE * SE(I_hat), evaluated "
+                "against each rung's own bootstrap standard error. It is a "
+                "per-arm bound and not a constant, so no floor in nats is quoted "
+                "here"
+            ),
+            "members_retained": [row["name"] for row in admissible_frame],
             "members_dropped": [
-                row["name"] for row in frame if not row["measurable_denominator"]
+                row["name"] for row in frame if row["measurable_denominator"] is False
             ],
+            "members_without_a_denominator_standard_error": [
+                row["name"] for row in frame if row["measurable_denominator"] is None
+            ],
+            "unavailable_note": NO_DENOMINATOR_STANDARD_ERROR,
             "fits": sensitivity_fits,
             "tokenisation_adjusted_fits": sensitivity_adjusted,
             "would_be_verdict": sensitivity_decision,
@@ -950,9 +999,6 @@ def parse_args() -> argparse.Namespace:
         "--equivalence-margin", type=float, default=DEFAULT_EQUIVALENCE_MARGIN
     )
     parser.add_argument("--min-residual-dof", type=int, default=DEFAULT_MIN_RESIDUAL_DOF)
-    parser.add_argument(
-        "--denominator-floor-nats", type=float, default=MIN_CONTEXT_INFORMATION_NATS
-    )
 
     args = parser.parse_args()
     if args.n_seq > args.pool_size:
@@ -1055,7 +1101,7 @@ def main() -> None:
             flush=True,
         )
 
-    frame = analysis_frame(records, denominator_floor_nats=args.denominator_floor_nats)
+    frame = analysis_frame(records)
     analysis = build_analysis(frame, args)
     payload = {
         "schema_version": SCHEMA_VERSION,
@@ -1101,14 +1147,16 @@ def main() -> None:
     }
     write_json(output_dir / "convergence_control.json", payload)
     write_json(backup_dir / "convergence_control.json", payload)
-    sensitivity = payload["denominator_floor_sensitivity"]
+    sensitivity = payload["denominator_admissibility_sensitivity"]
     print(
         f"verdict={payload['verdict']}: {payload['verdict_detail']['reason']}",
         flush=True,
     )
     print(
-        f"non-deciding sensitivity (dropping {sensitivity['members_dropped']} below "
-        f"{sensitivity['floor_nats']} nats): "
+        "non-deciding sensitivity (dropping "
+        f"{sensitivity['members_dropped']} as inadmissible denominators, "
+        f"{sensitivity['members_without_a_denominator_standard_error']} unevaluated "
+        "for want of a standard error): "
         f"{sensitivity['would_be_verdict']['verdict']} - "
         f"{sensitivity['would_be_verdict']['reason']}",
         flush=True,

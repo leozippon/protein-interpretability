@@ -29,6 +29,18 @@ This module measures that power figure *before* any scientific gate is applied
 so that a starved arm is reported as unmeasurable on the cohort rather than as
 a failed scientific hypothesis.
 
+Screening an arm in and admitting its reading as a denominator are two criteria,
+and this module declares both. They were one undeclared 0.30-nat constant until
+EXP-R2-218 calibrated each against a known-zero null family and a known-signal
+mixing family, and they turned out to have different answers by more than an
+order of magnitude. Identification is a detection question and is decided on the
+point estimate against :data:`SCREENING_CONTEXT_INFORMATION_NATS`; a bounded
+ratio needs the reading to sit :data:`FIELLER_DENOMINATOR_MULTIPLE` of its *own*
+standard errors above zero, which is 0.146 to 0.966 nats depending on the arm and
+is therefore not a constant at all. The retired figure survives as
+:data:`MIN_CONTEXT_INFORMATION_NATS`, reported beside every verdict for
+comparability and deciding nothing.
+
 Per-token quantities are tokenizer-dependent and are therefore not comparable
 across arms: ProtGPT2 uses multi-residue BPE while ZymCTRL and ProGen2-medium
 are residue-level. The held-out residue Markov ladder is the only
@@ -50,6 +62,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import transformers
+from scipy import stats
 
 from .arms import (
     AA20,
@@ -59,6 +72,7 @@ from .arms import (
     symbols_per_token,
     tokenize_batch,
 )
+from .information_bootstrap import FIELLER_MAXIMUM_G
 from .io import sha256_file
 from .scoring import sequence_target_mask, target_rule
 from .statistics import mean_interval
@@ -69,10 +83,93 @@ LN2 = math.log(2.0)
 #: the range over which a protein decoder's local statistics saturate.
 DEFAULT_CONTEXT_LENGTHS: tuple[int, ...] = (1, 2, 4, 8, 16, 32, 64, 128)
 
-#: Minimum context-derived information for an arm to be measurable on a cohort.
-#: Below this the denominator of any recovery ratio is comparable to its own
-#: sampling error, so the arm carries no usable signal.
+#: Context information an arm must read before it is screened in as carrying a
+#: context signal on a cohort at all.
+#:
+#: **This is the identification criterion and nothing else.** It answers "did
+#: this arm extract information from context, or is the reading consistent with
+#: zero?", which is a detection question judged by its error rates. It does not
+#: answer whether the reading is precise enough to divide by; that is
+#: :func:`ratio_denominator_admissibility`, and the two have different answers.
+#:
+#: Derived at EXP-R2-218 against a known-zero null family (the independent-block
+#: unigram control) and a known-signal lambda family, 1920 readings over 15 arms
+#: and 24 cohort draws. On the point rule ``I_hat >= tau`` the false-positive
+#: rate first reaches 0.05 at ``tau = 0.010`` and is exactly zero from
+#: ``tau = 0.015`` upward; the largest null point departure anywhere was 0.0132
+#: nats. 0.05 is adopted rather than 0.010 or 0.015 for three reasons: it keeps
+#: a 3.8x margin over that largest observed null departure, it reaches 80% power
+#: from a true ``I`` of about 0.05 on every arm of the panel, and it sits clear
+#: of the smoothing and Jensen noise band -- the bootstrap displaces the null
+#: interval upward by a mean of +0.0095 and a maximum of +0.0347 nats -- that
+#: makes any threshold inside 0.010-0.020 indefensible in practice.
+#:
+#: **It changes no verdict on the current panel.** Every arm reads at or above
+#: +0.90 nats (progen2-small, the lowest positive) or at or below -3.98 nats
+#: (dialogpt-small), so the 15 arms fall on the same side of 0.05 as they fell of
+#: the retired 0.30.
+#:
+#: The interval variant ``lower bound >= tau`` is deliberately *not* the rule
+#: here. It is the weaker statistic near zero: 56 of 112 null lower bounds sit
+#: above zero, and removing the Jensen displacement (L34) moves its calibrated
+#: threshold to 0.000, so its whole apparent floor is displacement rather than
+#: signal.
+SCREENING_CONTEXT_INFORMATION_NATS = 0.05
+
+#: Standard errors the denominator of a ratio must sit above before the ratio has
+#: a bounded confidence set: ``z_{0.975} / sqrt(FIELLER_MAXIMUM_G)``.
+#:
+#: :data:`src.transfer.information_bootstrap.FIELLER_MAXIMUM_G` gates every ratio
+#: with ``I`` in the denominator on Fieller's ``g = (z * SE(I) / I)^2 < 0.05``.
+#: That condition inverts exactly: ``g < g_max`` iff
+#: ``I > (z / sqrt(g_max)) * SE(I)``, which at the 95% level is
+#: ``I > 8.765225 * SE(I)``. The multiple is imported from that declaration
+#: rather than restated, so the two forms of one condition cannot drift.
+#:
+#: **This is a precision reference, not a magnitude.** Its value in nats is a
+#: different number on every arm and every block, because ``SE(I)`` depends on
+#: the cohort size, the near-duplicate grouping, the reference size and the
+#: vocabulary. Measured over the panel at EXP-R2-218 it runs from 0.1456 nats
+#: (bygpt5-small) to 0.9664 (dialogpt-small), a spread of 6.6x, with 12 of the 15
+#: arms above 0.30 -- which is why no constant can serve this purpose and why the
+#: retired floor was simultaneously far too strict for identification and up to
+#: 3.2x too lax here.
+FIELLER_DENOMINATOR_MULTIPLE = float(stats.norm.ppf(0.975)) / math.sqrt(FIELLER_MAXIMUM_G)
+
+#: **Legacy reporting column. This constant decides nothing.**
+#:
+#: It was the single "measurability floor" this programme applied from its first
+#: stage until EXP-R2-218, in two incompatible jobs at once: screening an arm in
+#: as measurable, and admitting its context information as the denominator of a
+#: share. It was never derived. Its only defence was an observed distribution --
+#: that no record in ``results/`` landed between 0 and 0.30 -- which is agreement
+#: in a region where nothing was at stake.
+#:
+#: Calibration measured both jobs and found it wrong in opposite directions. For
+#: identification it is 20-30x stricter than the false-positive rate requires
+#: (calibrated tau 0.010 at FPR 0.05, 0.015 at FPR 0). For ratio boundedness it
+#: is up to 3.2x too lax: 12 of 15 arms need more than 0.30 standard-error-widths
+#: of denominator, and a single constant sufficient for every arm would have to
+#: be at least 0.97. In the other two units it is not one criterion at all --
+#: rho 0.092 on byte arms, 0.040 on GPT-2 arms, 0.104 at residue level, 0.034 on
+#: protgpt2, a 3.1x spread.
+#:
+#: It is kept, and reported beside every verdict, so that results recorded under
+#: it stay comparable to results recorded under the criteria that replaced it.
+#: It is not deleted, because a reader of an older artefact needs to know which
+#: number produced it.
 MIN_CONTEXT_INFORMATION_NATS = 0.30
+
+#: Carried into every artefact that reports the legacy column, so the reason it
+#: is present and the reason it is inert cannot drift apart.
+LEGACY_FLOOR_NOTE = (
+    f"{MIN_CONTEXT_INFORMATION_NATS} nats/token was the single undeclared "
+    "measurability floor applied before EXP-R2-218 and is reported here for "
+    "comparability with results recorded under it. It decides nothing: "
+    "identification is decided by SCREENING_CONTEXT_INFORMATION_NATS and "
+    "denominator admissibility by ratio_denominator_admissibility, which are "
+    "different criteria with different answers"
+)
 
 MEASURABLE = "measurable"
 UNMEASURABLE = "unmeasurable_on_this_cohort"
@@ -84,8 +181,8 @@ UNMEASURABLE = "unmeasurable_on_this_cohort"
 #: declares the plug-in to be "an explicit opt-in diagnostic" whose bias "grows
 #: with vocabulary against sample size" -- roughly +0.003 nats at 32 symbols
 #: against +1.65 at 50257 pieces on a cohort of this size. That differential is
-#: several times :data:`MIN_CONTEXT_INFORMATION_NATS`, so which arms pass a
-#: plug-in verdict is set mostly by vocabulary size.
+#: more than thirty times :data:`SCREENING_CONTEXT_INFORMATION_NATS`, so which
+#: arms pass a plug-in verdict is set mostly by vocabulary size.
 #:
 #: A campaign run asks for the held-out estimator, so no published verdict came
 #: from the plug-in. The defect is that nothing stopped a *caller* inheriting
@@ -718,13 +815,149 @@ def truncation_curve(
     }
 
 
+def threshold_in_units(
+    threshold_nats: float,
+    *,
+    baseline_entropy_nats: float | None = None,
+    symbols_per_token: float | None = None,
+) -> dict[str, Any]:
+    """One threshold in the three units a threshold has to be published in.
+
+    Nats per token, ``rho = threshold / H_baseline``, and bits per symbol. A
+    threshold expressed only in nats is not a cross-arm threshold: one value in
+    nats is a different criterion on every arm, and on this panel 0.30 nats is
+    rho 0.092 at byte level, 0.040 on the GPT-2 arms, 0.104 at residue level and
+    0.034 on ProtGPT2 -- a 3.1x spread under nothing but a per-arm rescaling.
+
+    A unit whose conversion factor the caller does not have is reported as
+    ``None`` beside the reason it is missing, never inferred and never silently
+    omitted: a reader who sees the key and a null learns that the conversion was
+    unavailable here, and a reader who sees no key at all learns nothing.
+    """
+
+    if not math.isfinite(threshold_nats):
+        raise ValueError("a threshold must be finite")
+    rho: float | None = None
+    rho_missing: str | None = "no context-free baseline entropy was supplied"
+    if baseline_entropy_nats is not None:
+        if not math.isfinite(baseline_entropy_nats) or baseline_entropy_nats <= 0.0:
+            raise ValueError("the baseline entropy must be finite and positive")
+        rho = threshold_nats / baseline_entropy_nats
+        rho_missing = None
+    bits: float | None = None
+    bits_missing: str | None = "no scored symbols-per-token expansion was supplied"
+    if symbols_per_token is not None:
+        if not math.isfinite(symbols_per_token) or symbols_per_token <= 0.0:
+            raise ValueError("the symbols-per-token expansion must be finite and positive")
+        bits = threshold_nats / LN2 / symbols_per_token
+        bits_missing = None
+    return {
+        "nats_per_token": float(threshold_nats),
+        "relative_to_baseline": rho,
+        "relative_to_baseline_undefined_because": rho_missing,
+        "bits_per_symbol": bits,
+        "bits_per_symbol_undefined_because": bits_missing,
+        "baseline_entropy_nats": (
+            None if baseline_entropy_nats is None else float(baseline_entropy_nats)
+        ),
+        "symbols_per_token": (
+            None if symbols_per_token is None else float(symbols_per_token)
+        ),
+    }
+
+
+def ratio_denominator_admissibility(
+    context_information_nats: float,
+    context_information_se_nats: float | None,
+    *,
+    baseline_entropy_nats: float | None = None,
+    symbols_per_token: float | None = None,
+) -> dict[str, Any]:
+    """Whether ``I`` is identified far enough from zero to divide by.
+
+    The criterion is Fieller's precondition in its inverted form,
+    ``I_hat > FIELLER_DENOMINATOR_MULTIPLE * SE(I_hat)``, evaluated from the
+    denominator's own bootstrap standard error. It is a property of one arm on
+    one cohort, not a constant: the admissible minimum runs 0.146 to 0.966 nats
+    across the panel (EXP-R2-218).
+
+    **It is strictly stronger than the sign test it replaces**, which is the
+    whole reason a magnitude guard was introduced. Gating on ``I > 0`` alone once
+    admitted a denominator of a hundredth of a nat and published a share with a
+    median of 3.57 and a 97.5th percentile of 85.4 -- finite, well formed, and a
+    statement about nothing. Since the multiple is positive and ``SE`` must be
+    positive, anything this admits the sign test admits too, and the converse
+    fails on exactly those denominators.
+
+    **There is no fallback when the standard error is missing.** A magnitude
+    constant substituted for an unavailable ``SE`` is precisely the defect
+    EXP-R2-218 measured, so an absent, non-finite or non-positive ``SE`` raises.
+    A zero ``SE`` raises with the rest: a bootstrap that produced no spread has
+    not estimated the denominator's error, and treating it as zero would collapse
+    this criterion back onto the sign test.
+    """
+
+    if not math.isfinite(context_information_nats):
+        raise ValueError("context information must be finite")
+    if context_information_se_nats is None:
+        raise ValueError(
+            "denominator admissibility needs the bootstrap standard error of the "
+            "context information and has no fallback: the retired "
+            f"{MIN_CONTEXT_INFORMATION_NATS}-nat constant was 20-30x stricter than "
+            "identification requires and up to 3.2x too lax for this criterion, so "
+            "substituting it for a missing SE would reinstate the defect EXP-R2-218 "
+            "measured. Supply SE(I) from the same bootstrap that produced I"
+        )
+    if not math.isfinite(context_information_se_nats) or context_information_se_nats <= 0.0:
+        raise ValueError(
+            "the context-information standard error must be finite and strictly "
+            f"positive; got {context_information_se_nats!r}. A zero or non-finite SE "
+            "is not an estimate of the denominator's error, and this criterion "
+            "cannot be evaluated without one"
+        )
+    minimum = FIELLER_DENOMINATOR_MULTIPLE * float(context_information_se_nats)
+    z = FIELLER_DENOMINATOR_MULTIPLE * math.sqrt(FIELLER_MAXIMUM_G)
+    g = (
+        math.inf
+        if context_information_nats == 0.0
+        else (z * context_information_se_nats / context_information_nats) ** 2
+    )
+    return {
+        "admissible": bool(context_information_nats > minimum),
+        "criterion": "fieller_precondition_on_the_denominator",
+        "context_information_nats": float(context_information_nats),
+        "context_information_se_nats": float(context_information_se_nats),
+        "fieller_denominator_multiple": FIELLER_DENOMINATOR_MULTIPLE,
+        "fieller_g": float(g),
+        "fieller_maximum_g": float(FIELLER_MAXIMUM_G),
+        "minimum_admissible_context_information": threshold_in_units(
+            minimum,
+            baseline_entropy_nats=baseline_entropy_nats,
+            symbols_per_token=symbols_per_token,
+        ),
+        "legacy_minimum_context_information_nats": MIN_CONTEXT_INFORMATION_NATS,
+        "clears_legacy_floor": bool(
+            context_information_nats >= MIN_CONTEXT_INFORMATION_NATS
+        ),
+        "legacy_floor_note": LEGACY_FLOOR_NOTE,
+    }
+
+
 def power_status(context_information_nats: float, threshold_nats: float) -> tuple[str, str]:
     """Map a measured power figure onto a verdict and a measurability status.
 
     A FAIL here is a statement about the cohort, not about the model or the
-    interpretability method: below the threshold no downstream ratio computed on
-    this arm can be interpreted, so the arm must be excluded rather than
-    reported as a negative result.
+    interpretability method: below the threshold the arm's reading is not
+    distinguishable from no context signal at all, so the arm must be excluded
+    rather than reported as a negative result.
+
+    **This is the identification rule, and it is not a licence to divide.** It
+    compares a point estimate against a declared floor, whose calibrated value is
+    :data:`SCREENING_CONTEXT_INFORMATION_NATS`. Whether the same reading may
+    serve as the denominator of a share is a second and stricter question, asked
+    of the reading's own standard error by
+    :func:`ratio_denominator_admissibility`; on this panel an arm can pass here
+    and be refused there, which is what collapsing both into one constant hid.
     """
 
     if not math.isfinite(context_information_nats):
@@ -742,7 +975,7 @@ def arm_power_with_records(
     *,
     max_len: int,
     batch_size: int,
-    minimum_context_information_nats: float = MIN_CONTEXT_INFORMATION_NATS,
+    minimum_context_information_nats: float = SCREENING_CONTEXT_INFORMATION_NATS,
     unigram_estimator: str = "plugin",
     reference_token_counts: np.ndarray | None = None,
     reference: Mapping[str, Any] | None = None,
@@ -949,6 +1182,26 @@ def arm_power_with_records(
             "baseline_uncertainty_included": False,
         },
         "minimum_context_information_nats": float(minimum_context_information_nats),
+        # The threshold that produced the verdict, in all three units, because a
+        # figure in nats alone is a different criterion on every arm.
+        "minimum_context_information": threshold_in_units(
+            minimum_context_information_nats,
+            baseline_entropy_nats=baseline,
+            symbols_per_token=expansion,
+        ),
+        "measurability_criterion": (
+            "identification: the point estimate against a calibrated screening "
+            "floor (budget.SCREENING_CONTEXT_INFORMATION_NATS). It says the arm "
+            "reads above no-context, NOT that its reading may be divided by -- "
+            "that is budget.ratio_denominator_admissibility, evaluated against "
+            "this arm's own bootstrap standard error"
+        ),
+        # Legacy column: what the retired single floor would have said here.
+        "legacy_minimum_context_information_nats": MIN_CONTEXT_INFORMATION_NATS,
+        "clears_legacy_floor": bool(
+            context_information >= MIN_CONTEXT_INFORMATION_NATS
+        ),
+        "legacy_floor_note": LEGACY_FLOOR_NOTE,
         "power_verdict": verdict,
         "measurability": status,
         # Estimator-qualified and never overwritten, so an artefact always holds
@@ -968,7 +1221,7 @@ def arm_power(
     *,
     max_len: int,
     batch_size: int,
-    minimum_context_information_nats: float = MIN_CONTEXT_INFORMATION_NATS,
+    minimum_context_information_nats: float = SCREENING_CONTEXT_INFORMATION_NATS,
     unigram_estimator: str = "plugin",
     reference_token_counts: np.ndarray | None = None,
     reference: Mapping[str, Any] | None = None,

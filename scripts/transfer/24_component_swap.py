@@ -94,7 +94,6 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.transfer import joint_modes  # noqa: E402
 from src.transfer.arms import DEFAULT_CORPUS_DRAW_SEED, REPO  # noqa: E402
-from src.transfer.budget import MIN_CONTEXT_INFORMATION_NATS  # noqa: E402
 from src.transfer.io import sha256_file, write_json  # noqa: E402
 from src.transfer.replaceable import checkpoint_weights_digest  # noqa: E402
 
@@ -171,6 +170,11 @@ COMPONENT_GROUPS: dict[str, str] = {
 }
 
 VERDICT_NOTE = STAGE21.VERDICT_NOTE
+#: One gate, one magnitude: a chimera's mode is read against the level its host
+#: lineage was qualified against, so the floor and its UNDERIVED status are taken
+#: from 21_joint_mode_qualification.py rather than restated here.
+JOINT_MODE_QUALIFICATION_FLOOR_NATS = STAGE21.JOINT_MODE_QUALIFICATION_FLOOR_NATS
+JOINT_MODE_QUALIFICATION_FLOOR_STATUS = STAGE21.JOINT_MODE_QUALIFICATION_FLOOR_STATUS
 
 #: The protein-side reading rule, recorded in every artefact rather than left to
 #: a reader who sees a finite, plausible-looking magnitude.
@@ -724,11 +728,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--min-context-information",
         type=float,
-        default=MIN_CONTEXT_INFORMATION_NATS,
-        help="the threshold below which a mode is reported unmeasurable on this "
-        "cohort. Stage 01's threshold, imported through "
-        "21_joint_mode_qualification.py, so a chimera is read against the level the "
-        "panel and the lineage were qualified against",
+        default=JOINT_MODE_QUALIFICATION_FLOOR_NATS,
+        help="the floor below which a mode is reported unmeasurable on this "
+        "cohort. 21_joint_mode_qualification.py's own declared magnitude, "
+        "imported and recorded as UNDERIVED, so a chimera is read against the "
+        "level the lineage was qualified against. It is deliberately NOT "
+        "budget.SCREENING_CONTEXT_INFORMATION_NATS",
     )
     return parser
 
@@ -835,7 +840,14 @@ def main() -> None:
         "rendering": tokenisation.facts(),
         "seeds": {"cohort_draw": int(args.cohort_draw_seed)},
         "thresholds": {
-            "minimum_context_information_nats": float(args.min_context_information)
+            "minimum_context_information_nats": float(args.min_context_information),
+            "minimum_context_information_status": (
+                JOINT_MODE_QUALIFICATION_FLOOR_STATUS
+                if args.min_context_information == JOINT_MODE_QUALIFICATION_FLOOR_NATS
+                else "declared on the command line, overriding "
+                "21_joint_mode_qualification.py's "
+                f"{JOINT_MODE_QUALIFICATION_FLOOR_NATS}-nat floor"
+            ),
         },
         "limitations": {
             "protein_mode_reference": PROTEIN_REFERENCE_LIMITATION,

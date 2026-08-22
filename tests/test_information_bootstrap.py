@@ -36,6 +36,7 @@ from src.transfer.information_bootstrap import (
     _statistics_from_weights,
     bootstrap_arms,
     bootstrap_information,
+    mixed_unigram_arm,
     ratio_interval,
     unigram_null_control,
     unpaired_contrast,
@@ -712,6 +713,128 @@ def test_a_control_is_measured_by_the_same_estimator_as_the_arm_beside_it() -> N
     contrast = together.contrasts["arm_minus_arm::unigram-null"]
     assert contrast["paired"] is True
     assert contrast["statistics"]["information_nats_per_token"]["interval"][0] > 0.0
+
+
+# --------------------------------------------------------------------------- #
+# The family of arms whose true information is a known multiple of an arm's
+# --------------------------------------------------------------------------- #
+
+
+def test_a_zero_weight_mixture_is_exactly_the_null_control() -> None:
+    """The family's origin is the control itself, bit for bit and not merely near it.
+
+    A calibration curve whose zero point is a *different* arm from the null
+    control measures the criteria at two zeros and reports one; the reduction
+    has to be exact, so it is asserted on the per-record statistic and on the
+    published record rather than on the point estimate alone.
+    """
+
+    arm = build_arm(seed=51, reference_seed=5101, information=0.5)
+    other = build_arm(seed=51, reference_seed=5102, information=0.5)
+
+    control = unigram_null_control(arm, other.reference, name="arm::null")
+    mixed = mixed_unigram_arm(arm, other.reference, name="arm::null", model_weight=0.0)
+
+    assert np.array_equal(mixed.cohort.clean_nll_sum, control.cohort.clean_nll_sum)
+    assert np.array_equal(mixed.cohort.token_count, control.cohort.token_count)
+    assert np.array_equal(mixed.cohort.n_symbols, control.cohort.n_symbols)
+    assert np.array_equal(mixed.cohort.group_id, control.cohort.group_id)
+    assert mixed.reference is control.reference
+    assert (
+        bootstrap_information(mixed, seed=11, n_bootstrap=DRAWS).record
+        == bootstrap_information(control, seed=11, n_bootstrap=DRAWS).record
+    )
+
+
+def test_the_mixed_arms_information_is_the_weighted_mixture_of_its_two_ends() -> None:
+    """``I_mixed = (1 - w) I_control + w I_arm``, per draw and not only on average.
+
+    Both terms of ``I`` are token-weighted averages over one multiset and only
+    the model term moves, so the identity is algebra rather than approximation.
+    It is what makes the family's true value known: the control's true ``I`` is
+    zero, so the mixed arm's is ``w`` times the arm's, and a criterion can be
+    watched at a chosen distance from zero. Asserted inside the bootstrap draws
+    because that is where a decision rule reads it.
+    """
+
+    arm = build_arm(name="arm", seed=52, reference_seed=5201, information=0.5)
+    other = build_arm(name="arm", seed=52, reference_seed=5202, information=0.5)
+    weights = (0.0, 0.05, 0.2, 0.6, 1.0)
+    panel = bootstrap_arms(
+        [arm]
+        + [
+            mixed_unigram_arm(arm, other.reference, name=f"w{w}", model_weight=w)
+            for w in weights
+        ],
+        seed=5,
+        n_bootstrap=DRAWS,
+        contrasts=(),
+    )
+    real = panel.arms["arm"].draws["information_nats_per_token"]
+    control = panel.arms["w0.0"].draws["information_nats_per_token"]
+    for w in weights:
+        drawn = panel.arms[f"w{w}"].draws["information_nats_per_token"]
+        assert drawn == pytest.approx((1.0 - w) * control + w * real, abs=1e-12)
+        point = _information(panel.arms[f"w{w}"].record)["point"]
+        # The true value is w * I_arm; what is measurable is that the estimate
+        # tracks it to within the control's own departure from zero, which is
+        # the error the pooled reading of I_arm is known up to.
+        assert abs(point - w * 0.5) <= (1.0 - w) * abs(
+            _information(panel.arms["w0.0"].record)["point"]
+        ) + 0.05
+
+    # At the top of the family the mixture is the arm: same records, same
+    # statistic, and therefore the same interval under the same index.
+    assert panel.arms["w1.0"].record["statistics"] == panel.arms["arm"].record[
+        "statistics"
+    ]
+
+
+def test_a_mixed_arm_is_measured_by_the_same_estimator_and_reproduces_at_a_seed() -> None:
+    """It joins the panel; it does not get an estimator, an index or a stream of its own."""
+
+    arm = build_arm(name="arm", seed=53, reference_seed=5301, information=0.5)
+    other = build_arm(name="arm", seed=53, reference_seed=5302, information=0.5)
+    mixed = mixed_unigram_arm(arm, other.reference, name="arm::w05", model_weight=0.05)
+
+    alone = bootstrap_arms([arm], seed=4, n_bootstrap=DRAWS, contrasts=())
+    together = bootstrap_arms([arm, mixed], seed=4, n_bootstrap=DRAWS)
+    assert (
+        alone.arms["arm"].record["statistics"]
+        == together.arms["arm"].record["statistics"]
+    )
+    real, synthetic = together.arms["arm"].record, together.arms["arm::w05"].record
+    for field in ("seed", "n_bootstrap", "confidence", "resampling_unit", "refused"):
+        assert real[field] == synthetic[field], field
+    assert real["diagnostics"]["n_groups"] == synthetic["diagnostics"]["n_groups"]
+
+    repeated = bootstrap_arms([arm, mixed], seed=4, n_bootstrap=DRAWS)
+    assert repeated.record == together.record
+    assert np.array_equal(
+        repeated.arms["arm::w05"].draws["information_nats_per_token"],
+        together.arms["arm::w05"].draws["information_nats_per_token"],
+    )
+
+
+def test_a_mixture_fitted_on_the_baselines_own_reference_is_refused_at_every_weight() -> None:
+    """A family tautological at one weight calibrates nothing at any other."""
+
+    arm = build_arm(seed=54)
+    for weight in (0.0, 0.1, 1.0):
+        with pytest.raises(ValueError, match="identically rather than by measurement"):
+            mixed_unigram_arm(
+                arm, arm.reference, name="arm::mixed", model_weight=weight
+            )
+
+
+def test_a_mixing_weight_outside_the_unit_interval_is_refused() -> None:
+    arm = build_arm(seed=55, reference_seed=5501)
+    other = build_arm(seed=55, reference_seed=5502)
+    for weight in (-0.01, 1.5):
+        with pytest.raises(ValueError, match="model_weight must lie"):
+            mixed_unigram_arm(
+                arm, other.reference, name="arm::mixed", model_weight=weight
+            )
 
 
 # --------------------------------------------------------------------------- #

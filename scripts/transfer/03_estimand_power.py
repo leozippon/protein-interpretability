@@ -404,17 +404,21 @@ def measure_arm(
         for spec in group:
             scope = scopes_by_id[spec.estimand_id]
             rows = run.rows_by_scope[scope.name]
-            metrics = pathway_metrics(
-                rows,
-                unigram_entropy_nats=unigram,
-                minimum_ce_delta_nats=args.minimum_ce_delta_nats,
-                minimum_kl_nats=args.minimum_kl_nats,
-            )
+            # The bootstrap runs first because it is where the denominator's own
+            # standard error comes from, and the Fieller precondition
+            # ``pathway_metrics`` applies has no fallback without it.
             bootstrap = pathway_cluster_bootstrap(
                 rows,
                 samples=args.bootstrap_samples,
                 seed=args.bootstrap_seed,
                 unigram_entropy_nats=unigram,
+                minimum_ce_delta_nats=args.minimum_ce_delta_nats,
+                minimum_kl_nats=args.minimum_kl_nats,
+            )
+            metrics = pathway_metrics(
+                rows,
+                unigram_entropy_nats=unigram,
+                context_information_se_nats=bootstrap["context_information_se_nats"],
                 minimum_ce_delta_nats=args.minimum_ce_delta_nats,
                 minimum_kl_nats=args.minimum_kl_nats,
             )

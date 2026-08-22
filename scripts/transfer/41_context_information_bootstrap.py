@@ -110,8 +110,10 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.transfer.arms import PANEL  # noqa: E402
 from src.transfer.budget import (  # noqa: E402
+    LEGACY_FLOOR_NOTE,
     MIN_CONTEXT_INFORMATION_NATS,
     POWER_RECORDS_SCHEMA_VERSION,
+    SCREENING_CONTEXT_INFORMATION_NATS,
 )
 from src.transfer.information_bootstrap import (  # noqa: E402
     DEFAULT_BOOTSTRAP_DRAWS,
@@ -187,7 +189,7 @@ CONTROL_CONSTRUCTION_NOTE = (
 )
 
 CONTROL_READING_NOTE = (
-    "At a known zero the 0.30 nats/token floor behaves correctly by REFUSING "
+    "At a known zero the screening floor behaves correctly by REFUSING "
     "the arm and the sign rule behaves correctly by FAILING; a sign PASS here is "
     "the pre-registered failure mode observed, and the measured departure from "
     "zero is the estimator's own bias plus whatever the two reference blocks "
@@ -202,9 +204,11 @@ SIGN_STATUS_NOTE = (
     "smoothing bias that grows with vocabulary size and that no bootstrap can "
     "touch, so on an arm whose true context information sits near zero the sign "
     "of the measured I would be decided by the smoothing constant and the "
-    "vocabulary rather than by the model. The operative screening gate this round "
-    "is the 0.30 nats/token floor reported with an interval; see "
-    "docs/CONTEXT_INFORMATION_UNCERTAINTY_PREREGISTRATION.md."
+    "vocabulary rather than by the model. The operative screening gate is the "
+    "point estimate against budget.SCREENING_CONTEXT_INFORMATION_NATS, reported "
+    "with an interval; see docs/CONTEXT_INFORMATION_UNCERTAINTY_PREREGISTRATION.md "
+    "and, for that floor's calibration, "
+    "docs/MEASURABILITY_THRESHOLD_CALIBRATION_PREREGISTRATION.md."
 )
 
 SCREENING_NOTE = (
@@ -1185,11 +1189,12 @@ def arm_row(
     point = None if information is None else float(information["point"])
     low, high = (None, None) if information is None else information["interval"]
     if information is None:
-        legacy, legacy_interval, sign = "REFUSED", "REFUSED", "REFUSED"
+        screening, screening_interval, sign = "REFUSED", "REFUSED", "REFUSED"
         disagreement = None
+        clears_legacy = None
     else:
-        legacy = "PASS" if point >= threshold else "FAIL"
-        legacy_interval = (
+        screening = "PASS" if point >= threshold else "FAIL"
+        screening_interval = (
             "above"
             if low >= threshold
             else "below"
@@ -1197,7 +1202,8 @@ def arm_row(
             else "straddles"
         )
         sign = "PASS" if low > 0.0 else "FAIL"
-        disagreement = legacy != sign
+        disagreement = screening != sign
+        clears_legacy = bool(point >= MIN_CONTEXT_INFORMATION_NATS)
     return {
         "block_id": block.block_id,
         "panel_id": panel_id,
@@ -1250,9 +1256,14 @@ def arm_row(
             "cohort_token_share_reference_count_at_most_5"
         ),
         "reference_n_effective_groups": diagnostics.get("reference_n_effective_groups"),
-        "legacy_threshold_nats": float(threshold),
-        "legacy_threshold_status": legacy,
-        "legacy_threshold_interval_status": legacy_interval,
+        "screening_threshold_nats": float(threshold),
+        "screening_status": screening,
+        "screening_interval_status": screening_interval,
+        # The retired constant as a reporting column, so a reading here stays
+        # comparable with the artefacts recorded under it. It decides nothing.
+        "legacy_minimum_context_information_nats": MIN_CONTEXT_INFORMATION_NATS,
+        "clears_legacy_floor": clears_legacy,
+        "legacy_floor_note": LEGACY_FLOOR_NOTE,
         "sign_status": sign,
         "sign_status_is_evidential": False,
         "sign_status_note": SIGN_STATUS_NOTE,
@@ -1968,10 +1979,8 @@ def null_control_summary(
                 "abs_departure_over_larger_bound": (
                     None if larger <= 0.0 else abs(departure) / larger
                 ),
-                "legacy_threshold_status": row["legacy_threshold_status"],
-                "legacy_threshold_interval_status": row[
-                    "legacy_threshold_interval_status"
-                ],
+                "screening_status": row["screening_status"],
+                "screening_interval_status": row["screening_interval_status"],
                 "sign_status": row["sign_status"],
                 "status_disagreement": row["status_disagreement"],
             }
@@ -1998,7 +2007,7 @@ def null_control_summary(
         # The true value is zero, so the measured value is the departure.
         entry["departures_nats"].append(reading["measured_information_nats"])
         entry["biases_nats"].append(reading["bootstrap_bias_nats"])
-        entry["n_floor_pass"] += int(reading["legacy_threshold_status"] == "PASS")
+        entry["n_floor_pass"] += int(reading["screening_status"] == "PASS")
         entry["n_sign_pass"] += int(reading["sign_status"] == "PASS")
     for entry in by_cohort.values():
         departures = entry.pop("departures_nats")
@@ -2014,7 +2023,7 @@ def null_control_summary(
 
     # Counted over readings, not over arm names: one arm carries one reading per
     # block, and collapsing them would report a rate eight times too small.
-    floor_pass = [r for r in readings if r["legacy_threshold_status"] == "PASS"]
+    floor_pass = [r for r in readings if r["screening_status"] == "PASS"]
     sign_pass = [r for r in readings if r["sign_status"] == "PASS"]
     floor_pass_arms = sorted({r["control_arm"] for r in floor_pass})
     sign_pass_arms = sorted({r["control_arm"] for r in sign_pass})
@@ -2087,8 +2096,8 @@ def null_control_summary(
             ),
             "floor_behaves": not floor_pass,
             "floor_statement": (
-                "the 0.30 nats/token floor refuses every control, which is the "
-                "correct behaviour at a true zero"
+                f"the {threshold:g} nats/token screening floor refuses every "
+                "control, which is the correct behaviour at a true zero"
                 if not floor_pass
                 else f"the floor PASSES on {len(floor_pass)} of {len(readings)} "
                 "readings whose true context information is zero by construction, "
@@ -2171,7 +2180,7 @@ def summarise(
     entries: list[dict[str, Any]] = []
     for arm in sorted(set(expected_arms) | set(by_arm)):
         measured = by_arm.get(arm, [])
-        verdicts = [row["legacy_threshold_status"] for row in measured]
+        verdicts = [row["screening_status"] for row in measured]
         passes = [v for v in verdicts if v == "PASS"]
         fails = [v for v in verdicts if v == "FAIL"]
         if not measured:
@@ -2210,10 +2219,8 @@ def summarise(
                         "cohort_digest": row["cohort_digest"],
                         "context_information_nats": row["context_information_nats"],
                         "bootstrap_ci_95": row["bootstrap_ci_95"],
-                        "legacy_threshold_status": row["legacy_threshold_status"],
-                        "legacy_threshold_interval_status": row[
-                            "legacy_threshold_interval_status"
-                        ],
+                        "screening_status": row["screening_status"],
+                        "screening_interval_status": row["screening_interval_status"],
                         "sign_status": row["sign_status"],
                         "status_disagreement": row["status_disagreement"],
                         "refused": row["refused"],
@@ -2252,7 +2259,7 @@ def summarise(
         {
             row["arm"]
             for row in measured_rows
-            if row["legacy_threshold_interval_status"] == "straddles"
+            if row["screening_interval_status"] == "straddles"
         }
     )
     disagreeing = sorted({row["arm"] for row in measured_rows if row["status_disagreement"]})
@@ -2267,10 +2274,15 @@ def summarise(
             "reported under unigram_null_control"
         ),
         "operative_gate": (
-            "point estimate of I against the 0.30 nats/token floor "
-            "(budget.MIN_CONTEXT_INFORMATION_NATS), now reported with a "
-            "group-level paired interval"
+            "identification: the point estimate of I against "
+            "budget.SCREENING_CONTEXT_INFORMATION_NATS, reported with a "
+            "group-level paired interval. It says the arm read above no-context "
+            "and NOT that its reading may be divided by; that is "
+            "budget.ratio_denominator_admissibility, which is per-arm and is "
+            "read off the bootstrap_se this stage publishes"
         ),
+        "legacy_minimum_context_information_nats": MIN_CONTEXT_INFORMATION_NATS,
+        "legacy_floor_note": LEGACY_FLOOR_NOTE,
         "arms": entries,
         "arms_with_no_record": absent,
         "absence_note": (
@@ -2283,11 +2295,12 @@ def summarise(
         "conclusion": {
             "interval_alters_the_unmeasurable_set": bool(straddling),
             "interval_statement": (
-                "no arm's interval straddles the 0.30 nats/token floor, so "
-                "reporting the floor with an interval does not move any arm across "
-                "it on these draws"
+                f"no arm's interval straddles the {threshold:g} nats/token "
+                "screening floor, so reporting the floor with an interval does not "
+                "move any arm across it on these draws"
                 if not straddling
-                else "the interval crosses the 0.30 nats/token floor for "
+                else f"the interval crosses the {threshold:g} nats/token screening "
+                "floor for "
                 + ", ".join(straddling)
                 + ", so for those arms the point comparison and the interval do not "
                 "agree about measurability and the point verdict is not supported "
@@ -2366,8 +2379,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--threshold-nats",
         type=float,
-        default=MIN_CONTEXT_INFORMATION_NATS,
-        help="the operative screening floor; reported against, never re-chosen here",
+        default=SCREENING_CONTEXT_INFORMATION_NATS,
+        help="the operative screening floor -- the identification criterion, "
+        "calibrated at EXP-R2-218 and reported against, never re-chosen here. It "
+        "is not a denominator criterion: whether a reading may be divided by is "
+        "budget.ratio_denominator_admissibility, a per-arm bound on that arm's "
+        "own standard error, which this stage publishes as bootstrap_se",
     )
     parser.add_argument(
         "--containment",
@@ -2700,7 +2717,7 @@ def main(argv: list[str] | None = None) -> None:
 
     print(
         f"{'arm':18s} {'block':6s} {'I nats/token':>13s} "
-        f"{'95% interval':>22s}  {'floor':6s} {'interval':10s} sign*"
+        f"{'95% interval':>22s}  {'screen':6s} {'interval':10s} sign*"
     )
     for row in rows:
         if row["context_information_nats"] is None:
@@ -2714,8 +2731,8 @@ def main(argv: list[str] | None = None) -> None:
             f"{row['arm']:18s} {row['block_id']:6s} "
             f"{row['context_information_nats']:+13.4f} "
             f"[{low:+9.4f}, {high:+9.4f}]  "
-            f"{row['legacy_threshold_status']:6s} "
-            f"{row['legacy_threshold_interval_status']:10s} "
+            f"{row['screening_status']:6s} "
+            f"{row['screening_interval_status']:10s} "
             f"{row['sign_status']}"
         )
     print("* sign_status is NON-EVIDENTIAL and is expected to pass on every arm")

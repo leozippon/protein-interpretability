@@ -91,11 +91,15 @@ from .arms import (
     TEXT_MODEL_BASE,
     ArmSpec,
 )
-from .budget import MIN_CONTEXT_INFORMATION_NATS
+from .budget import ratio_denominator_admissibility
 from .circuits import _CIRCUIT_ARCHITECTURES
 from .statistics import mean_interval
 
-SCHEMA_VERSION = "r2_transfer_convergence_control_v2"
+#: v3 (EXP-R2-218): the convergence row carries the denominator's own bootstrap
+#: standard error and :func:`analysis_frame` decides admissibility from it, so a
+#: v2 record -- which carries a ``denominator_floor_nats`` in its rows and no
+#: standard error anywhere -- is not readable under this schema.
+SCHEMA_VERSION = "r2_transfer_convergence_control_v3"
 
 #: Natural log of two, for the per-symbol conversions.
 LN2 = math.log(2.0)
@@ -1014,6 +1018,7 @@ def convergence_row(
     baseline: Mapping[str, Any],
     *,
     clean_ce_nats: float,
+    context_information_se_nats: float | None,
     symbols_per_token: float,
     n_scored_tokens: int,
     vocab_size: int,
@@ -1047,12 +1052,29 @@ def convergence_row(
     whose clean cross-entropy does not beat the cohort's own unigram entropy has
     learned nothing usable about that cohort, so every normalised interpretability
     figure measured on it divides by a non-positive number.
+
+    ``context_information_se_nats`` is the bootstrap standard error of that
+    denominator and is required rather than defaulted, because
+    :func:`analysis_frame` decides admissibility from it and
+    :func:`src.transfer.budget.ratio_denominator_admissibility` has no fallback
+    when it is absent. ``None`` is the one honest answer for a rung whose
+    measurement produced no such bootstrap, and it travels as ``None`` into the
+    row rather than being replaced by a constant.
     """
 
     if n_parameters < 1 or n_layer < 1 or d_model < 1:
         raise ValueError("parameter count, depth and width must be positive")
     if symbols_per_token <= 0.0:
         raise ValueError("symbols per token must be positive")
+    if context_information_se_nats is not None and (
+        not math.isfinite(context_information_se_nats)
+        or context_information_se_nats <= 0.0
+    ):
+        raise ValueError(
+            "a recorded context-information standard error must be finite and "
+            f"strictly positive; got {context_information_se_nats!r}. Pass None "
+            "where no bootstrap produced one"
+        )
     entropy = float(baseline["nats"])
     plug_in = float(baseline["cohort_plug_in_entropy_nats"])
     clean_ce = float(clean_ce_nats)
@@ -1070,6 +1092,11 @@ def convergence_row(
         "unigram_reference": baseline["reference"],
         "clean_ce_nats": clean_ce,
         "context_information_nats": context_information,
+        "context_information_se_nats": (
+            None
+            if context_information_se_nats is None
+            else float(context_information_se_nats)
+        ),
         "realized_information_fraction": context_information / entropy,
         "clean_ce_bits_per_symbol": clean_ce / LN2 / float(symbols_per_token),
         "unigram_entropy_bits_per_symbol": entropy / LN2 / float(symbols_per_token),
@@ -1408,11 +1435,23 @@ def _corpus_field(record: Mapping[str, Any], key: str, fallback: str) -> str:
     return fallback
 
 
-def analysis_frame(
-    records: Sequence[Mapping[str, Any]],
-    *,
-    denominator_floor_nats: float = MIN_CONTEXT_INFORMATION_NATS,
-) -> list[dict[str, Any]]:
+#: Why a rung carries no denominator verdict, rather than carrying a false one.
+#:
+#: The Fieller precondition is evaluated against the denominator's *own*
+#: bootstrap standard error, and a rung whose measurement produced no such
+#: bootstrap has nothing to evaluate it against. Substituting a constant is
+#: exactly the defect EXP-R2-218 measured -- the retired 0.30-nat floor is up to
+#: 3.2x too lax for this job -- so the verdict is withheld and named instead.
+NO_DENOMINATOR_STANDARD_ERROR = (
+    "no bootstrap standard error for this rung's context information was "
+    "recorded, so budget.ratio_denominator_admissibility cannot be evaluated. "
+    "There is no fallback: a magnitude constant substituted for an unavailable "
+    "SE is the defect EXP-R2-218 measured. The rung is neither admitted nor "
+    "refused as a denominator here"
+)
+
+
+def analysis_frame(records: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     """Flatten per-model records into the rows the fits and contrasts consume.
 
     A metric a model could not produce - because it was excluded as
@@ -1421,23 +1460,45 @@ def analysis_frame(
     present for every measured member and the reason it carries no y-value stays
     attached to it.
 
-    ``measurable_denominator`` is a second, weaker flag alongside
-    ``in_distribution``, set from ``src.transfer.budget``'s own declared floor.
-    The sign rule asks whether the model beat the context-free baseline at all;
-    this asks whether it beat it by enough that dividing by the margin is
-    arithmetic rather than noise. A rung can pass the first and fail the second -
-    ProtGPT2 on full-length Swiss-Prot clears the baseline by 0.18 nats and its
-    whole-MLP share is consequently above twelve - so the two are recorded
-    separately and only the sign rule gates the deciding fit.
-    """
+    ``measurable_denominator`` is a second, stricter flag alongside
+    ``in_distribution``. The sign rule asks whether the model beat the
+    context-free baseline at all; this asks whether it beat it by enough that
+    dividing by the margin is arithmetic rather than noise. A rung can pass the
+    first and fail the second - ProtGPT2 on full-length Swiss-Prot clears the
+    baseline by 0.18 nats and its whole-MLP share is consequently above twelve -
+    so the two are recorded separately and only the sign rule gates the deciding
+    fit.
 
-    if not math.isfinite(denominator_floor_nats) or denominator_floor_nats <= 0.0:
-        raise ValueError("the denominator floor must be finite and positive")
+    **The second question is a ratio's, so it is asked of precision and not of a
+    magnitude.** It used to be a comparison against ``budget``'s 0.30-nat floor,
+    which EXP-R2-218 measured to be up to 3.2x too lax for this exact job: on 12
+    of 15 panel arms a denominator at 0.30 nats still leaves a share's confidence
+    set unbounded. It is now
+    :func:`src.transfer.budget.ratio_denominator_admissibility` -- Fieller's
+    precondition ``I_hat > 8.765 * SE(I_hat)`` against this rung's own bootstrap
+    standard error, which is a different number on every arm.
+
+    A rung that recorded no such standard error gets ``None`` and
+    :data:`NO_DENOMINATOR_STANDARD_ERROR`, never a fallback to a constant. It is
+    then absent from both sides of any admissibility split rather than silently
+    counted on one of them.
+    """
 
     frame: list[dict[str, Any]] = []
     for record in records:
         convergence = record["convergence"]
         cohort = record["cohort"]
+        standard_error = convergence.get("context_information_se_nats")
+        admissibility = (
+            None
+            if standard_error is None
+            else ratio_denominator_admissibility(
+                float(convergence["context_information_nats"]),
+                float(standard_error),
+                baseline_entropy_nats=float(convergence["unigram_entropy_nats"]),
+                symbols_per_token=float(convergence["symbols_per_token"]),
+            )
+        )
         row: dict[str, Any] = {
             "name": str(record["name"]),
             "modality": str(record["modality"]),
@@ -1477,10 +1538,13 @@ def analysis_frame(
             "conditioning_leak": bool(record["input_format"] == "ec_conditioned"),
             "architecture": str(record["architecture"]),
             "capabilities": sorted(record["capabilities"]),
-            "measurable_denominator": bool(
-                float(convergence["context_information_nats"]) >= denominator_floor_nats
+            "measurable_denominator": (
+                None if admissibility is None else bool(admissibility["admissible"])
             ),
-            "denominator_floor_nats": float(denominator_floor_nats),
+            "denominator_admissibility": admissibility,
+            "denominator_admissibility_unavailable_reason": (
+                None if admissibility is not None else NO_DENOMINATOR_STANDARD_ERROR
+            ),
             "unigram_estimator": str(convergence["unigram_estimator"]),
             "unigram_plug_in_bias_nats": float(convergence["unigram_plug_in_bias_nats"]),
         }

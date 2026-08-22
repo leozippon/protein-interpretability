@@ -87,8 +87,7 @@ the same units the modes were qualified in.
 ``q`` is estimated **held out across near-duplicate groups**, never plug-in:
 Appendix B rule 3, and L12's measured plug-in bias of up to +1.02 nats on a
 protein arm against +0.009 at residue level is several times the
-:data:`src.transfer.budget.MIN_CONTEXT_INFORMATION_NATS` floor these cells were
-qualified against. The plug-in value is computed anyway and reported beside it as
+:data:`MODE_BEHAVIOURAL_READ_FLOOR_NATS` these cells were qualified against. The plug-in value is computed anyway and reported beside it as
 the measured bias at this cohort size, and the cohort's own target-count entropy
 is reported through :func:`src.transfer.budget.miller_madow_entropy_nats` as the
 bias-corrected context-free reference.
@@ -112,10 +111,10 @@ path everywhere in this programme, and a name-keyed guard would pass silently on
 the same weights under a different directory. It is keyed to the measured
 quantity: :func:`mode_measurability` takes the mode's declared context
 information -- an input from EXP-R2-152, required on the command line and never
-inferred here -- and decides it against
-:data:`src.transfer.budget.MIN_CONTEXT_INFORMATION_NATS` through
-:func:`src.transfer.budget.power_status`, which is the same rule
-``01_cohort_power.py`` uses. :func:`assert_behavioural_read` then **raises** on an
+inferred here -- and decides it against :data:`MODE_BEHAVIOURAL_READ_FLOOR_NATS`
+through :func:`src.transfer.budget.power_status`. That threshold was the shared
+measurability floor until EXP-R2-218 retired it; it is now declared by this stage
+and recorded as underived, for the reasons its own declaration gives. :func:`assert_behavioural_read` then **raises** on an
 unmeasurable mode. Occupancy is representational and is not refused there: the
 activations exist and their covariance is a real object, which is the same
 distinction ``32_crosscoder.py`` records for the pre-adaptation checkpoint's
@@ -143,9 +142,10 @@ import numpy as np
 import torch
 
 from .budget import (
-    MIN_CONTEXT_INFORMATION_NATS,
+    SCREENING_CONTEXT_INFORMATION_NATS,
     miller_madow_entropy_nats,
     power_status,
+    threshold_in_units,
     unigram_entropy_nats,
 )
 from .crosscoder import assert_per_layer_fields  # noqa: F401  (re-exported guard)
@@ -178,6 +178,53 @@ PRE_REGISTRATION_SCOPE = (
     "about any number produced under it"
 )
 
+#: Context information a mode must read before a likelihood-based read may be
+#: taken in it.
+#:
+#: **This is declared here, and it is not one of the two calibrated criteria.**
+#: Both halves of that sentence are load-bearing.
+#:
+#: It is not :data:`src.transfer.budget.SCREENING_CONTEXT_INFORMATION_NATS`.
+#: That floor answers "is this reading distinguishable from zero", and
+#: ``Llama-2-7b-hf``'s protein mode at +0.0843 nats/token clears it while
+#: licensing nothing: the behavioural quantity this gate protects is measured on
+#: that mode at a reversal cost of **-0.0013 nats/residue**. What the necessity
+#: ladder, cross-mode driveability and every clause of :data:`DECISION_RULES`
+#: need is not a detection but enough context-derived signal for an ablation to
+#: destroy, and a mode can be identified as non-zero and still have none.
+#:
+#: It is not :func:`src.transfer.budget.ratio_denominator_admissibility` either,
+#: which is the criterion that would decide it properly, **because that criterion
+#: cannot be evaluated on this input**. The mode readings are declared on the
+#: command line from EXP-R2-152 and carry no standard error; the only precision
+#: statement available for them is that a second cohort draw at EXP-R2-174 moved
+#: +0.0843 to +0.0918. Substituting some other arm's standard error, or a
+#: magnitude fitted to one, is exactly the defect EXP-R2-218 measured.
+#:
+#: So the incumbent magnitude is retained **for this gate alone**, declared here
+#: rather than inherited from the retired
+#: :data:`src.transfer.budget.MIN_CONTEXT_INFORMATION_NATS`, and recorded as
+#: **underived**. This is the one place in the package where that magnitude still
+#: decides anything, and it is kept because lowering it to the calibrated
+#: identification floor would turn a published refusal into an admission on a
+#: mode whose behavioural estimand has been measured at -0.0013 nats/residue.
+#: What retires it is re-measuring the mode readings through the group-level
+#: paired bootstrap so that each carries a standard error, at which point this
+#: gate becomes the Fieller precondition like every other denominator here.
+MODE_BEHAVIOURAL_READ_FLOOR_NATS = 0.30
+
+#: Carried into every measurability record, so the artefact says what its own
+#: threshold is and is not.
+MODE_BEHAVIOURAL_READ_FLOOR_STATUS = (
+    "UNDERIVED. Retained for this gate alone after EXP-R2-218 retired the shared "
+    f"{MODE_BEHAVIOURAL_READ_FLOOR_NATS}-nat measurability floor: the calibrated "
+    f"identification floor of {SCREENING_CONTEXT_INFORMATION_NATS} nats admits "
+    "Llama-2-7b-hf's protein mode at +0.0843 nats/token, whose reversal cost is "
+    "-0.0013 nats/residue, and the precision-referenced criterion that would "
+    "decide this correctly cannot be evaluated because the declared mode readings "
+    "carry no standard error"
+)
+
 #: The evidence the behavioural refusal is keyed to. Quoted here once so the
 #: message a run fails with and the artefact's own limitations block cannot drift.
 #: There is no limitation number for it: the catalogue ends at L32.
@@ -185,7 +232,7 @@ UNMEASURABLE_MODE_EVIDENCE = (
     "Llama-2-7b-hf's protein mode reads +0.0843 nats/token of context information "
     "and a reversal cost of -0.0013 nats/residue on this lineage (EXP-R2-152, "
     "re-measured at EXP-R2-174), against the "
-    f"{MIN_CONTEXT_INFORMATION_NATS} nats floor. This is a property of the mode on "
+    f"{MODE_BEHAVIOURAL_READ_FLOOR_NATS} nats floor. This is a property of the mode on "
     "this cohort and is NOT a catalogued limitation -- the catalogue ends at L32 "
     "and there is no L33"
 )
@@ -565,16 +612,21 @@ def mode_measurability(
     mode: str,
     context_information_nats: float,
     *,
-    threshold_nats: float = MIN_CONTEXT_INFORMATION_NATS,
+    threshold_nats: float = MODE_BEHAVIOURAL_READ_FLOOR_NATS,
 ) -> dict[str, Any]:
     """Whether a behavioural estimand may be read in one mode, from its own number.
 
     The input is the mode's measured context information from EXP-R2-152, supplied
-    on the command line and never inferred here, and the decision is
-    :func:`src.transfer.budget.power_status` -- the same rule ``01_cohort_power.py``
-    applies to a panel arm. Keyed to the measurement and not to a checkpoint name,
-    because every checkpoint in this programme is reached by path and a name-keyed
-    guard passes silently on the same weights under a different directory.
+    on the command line and never inferred here, and the comparison is
+    :func:`src.transfer.budget.power_status`, the point rule. The threshold is
+    this stage's own :data:`MODE_BEHAVIOURAL_READ_FLOOR_NATS`, whose declaration
+    records why it is neither of the two criteria EXP-R2-218 calibrated and what
+    would retire it; every record carries that status rather than leaving a reader
+    to assume the number was derived.
+
+    Keyed to the measurement and not to a checkpoint name, because every
+    checkpoint in this programme is reached by path and a name-keyed guard passes
+    silently on the same weights under a different directory.
     """
 
     if not math.isfinite(float(context_information_nats)):
@@ -584,6 +636,12 @@ def mode_measurability(
         "mode": mode,
         "context_information_nats": float(context_information_nats),
         "threshold_nats": float(threshold_nats),
+        # Nats alone is not a cross-arm threshold. Neither conversion is available
+        # here -- the command line declares a reading, not the cohort's baseline
+        # entropy or its symbol expansion -- so both are reported null with the
+        # reason attached rather than silently omitted.
+        "threshold": threshold_in_units(float(threshold_nats)),
+        "threshold_status": MODE_BEHAVIOURAL_READ_FLOOR_STATUS,
         "power_verdict": verdict,
         "measurability": status,
         "behavioural_read_admitted": verdict == "PASS",

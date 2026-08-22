@@ -88,6 +88,10 @@ estimator's behaviour near zero, and the panel supplies no arm that sits there.
 both terms of ``I`` estimate the same population from independent samples and
 the true value is zero by construction. It is an ordinary ``ArmStatistics`` and
 goes through the same :func:`bootstrap_arms` call as the arms beside it.
+:func:`mixed_unigram_arm` extends that one point to a family: mixing the
+independent unigram with the model in a known proportion gives an arm whose
+true ``I`` is that proportion of the real arm's, so a criterion stated as a
+floor on ``I`` can be watched at any distance from zero and not only at zero.
 
 **The percentile interval can sit above the point estimate, and that is not a
 bug.** ``H_baseline`` is ``-sum c(v) log q_b(v)`` and ``-log`` is convex, so a
@@ -410,6 +414,99 @@ def _dense_reference_counts(
     )
 
 
+def mixed_unigram_arm(
+    arm: ArmStatistics,
+    control_reference: ReferenceStatistics,
+    *,
+    name: str,
+    model_weight: float = 0.0,
+) -> ArmStatistics:
+    """``arm``'s cohort scored by a mixture of an independent unigram and the model.
+
+    The model term of ``I`` is replaced, per record, by
+
+        (1 - w) * nll_unigram + w * nll_model,
+
+    where ``nll_unigram = -sum_v c_record(v) log q_control(v)`` is the
+    cross-entropy of the very same scored targets under
+
+        q_control(v) = (r_control(v) + a) / (R_control + a*V)
+
+    fitted on a reference set the caller supplies, ``nll_model`` is the arm's
+    persisted value, and ``a`` and ``V`` are the arm's own smoothing constant and
+    declared vocabulary. Nothing else moves: the cohort, its grouping, its symbol
+    counts, its target counts and the baseline reference are the arm's, so the
+    result is an ordinary :class:`ArmStatistics` and goes through
+    :func:`bootstrap_arms` beside the real arms of its block, under the same
+    resample indices and through the same estimator.
+
+    ``model_weight`` is a randomised predictor's mixing weight: it scores a ``w``
+    fraction of the tokens with the model and the remainder with the independent
+    unigram. Both terms of ``I`` are token-weighted averages over one token
+    multiset and only the model term moves, so the decomposition
+
+        I_mixed = (1 - w) * I_control + w * I_arm
+
+    is exact -- at the point estimate and inside every bootstrap draw, not merely
+    in expectation. The control's true information is zero by construction (see
+    :func:`unigram_null_control`), so the mixed arm's true information is
+    ``w * I_arm``: a family of arms whose true value is known up to the estimate
+    of ``I_arm``, at any chosen distance from zero. That is what a criterion
+    stated as a floor on ``I`` has to be calibrated against, and ``w = 0``
+    recovers the null control itself.
+
+    **The control's reference must not be the baseline's**, at any weight.
+    Fitted on the same counts ``q_control`` *is* ``q_baseline``, ``I_control`` is
+    zero identically rather than by measurement, and the family's known value is
+    then an algebraic identity rather than a calibration point. Equality of the
+    two count vectors is the exact condition, so it is what is checked; the check
+    does not weaken as ``w`` grows, because a family calibrated at one weight and
+    tautological at another calibrates nothing.
+    """
+
+    if not 0.0 <= float(model_weight) <= 1.0:
+        raise ValueError(
+            f"{name}: model_weight must lie in [0, 1]; got {model_weight}. Outside "
+            "it the arm is not a mixture of two predictors and its true "
+            "information is not a known multiple of the arm's"
+        )
+    control_counts = _dense_reference_counts(control_reference, arm.vocab_size, "control")
+    baseline_counts = _dense_reference_counts(arm.reference, arm.vocab_size, "baseline")
+    if np.array_equal(control_counts, baseline_counts):
+        raise ValueError(
+            f"{name}: the control's unigram is fitted on the same token counts as "
+            "the baseline it would be measured against, so q_control is "
+            "q_baseline and I is zero identically rather than by measurement. "
+            "Fit the control on the reference of a disjoint corpus block"
+        )
+    total = float(control_reference.token_count.sum())
+    log_q = np.log(control_counts + arm.smoothing) - math.log(
+        total + arm.smoothing * arm.vocab_size
+    )
+    targets = arm.cohort.targets
+    per_entry = -targets.counts.astype(np.float64) * log_q[targets.unique_token_ids]
+    cumulative = np.concatenate(
+        [np.zeros(1, dtype=np.float64), np.cumsum(per_entry, dtype=np.float64)]
+    )
+    unigram_nll = np.diff(cumulative[targets.record_offsets])
+    weight = float(model_weight)
+    return ArmStatistics(
+        name=name,
+        cohort=CohortStatistics(
+            clean_nll_sum=(
+                (1.0 - weight) * unigram_nll + weight * arm.cohort.clean_nll_sum
+            ),
+            token_count=arm.cohort.token_count,
+            n_symbols=arm.cohort.n_symbols,
+            targets=targets,
+            group_id=arm.cohort.group_id,
+        ),
+        reference=arm.reference,
+        vocab_size=arm.vocab_size,
+        smoothing=arm.smoothing,
+    )
+
+
 def unigram_null_control(
     arm: ArmStatistics,
     control_reference: ReferenceStatistics,
@@ -463,39 +560,12 @@ def unigram_null_control(
     measured ``I`` *downwards*. The direction is known and the size is not, so a
     control reading below zero bounds the criteria conservatively and a control
     reading above zero cannot be explained away by it.
+
+    It is the ``model_weight = 0`` member of :func:`mixed_unigram_arm`, which is
+    where the arithmetic lives; the two are one construction and not two.
     """
 
-    control_counts = _dense_reference_counts(control_reference, arm.vocab_size, "control")
-    baseline_counts = _dense_reference_counts(arm.reference, arm.vocab_size, "baseline")
-    if np.array_equal(control_counts, baseline_counts):
-        raise ValueError(
-            f"{name}: the control's unigram is fitted on the same token counts as "
-            "the baseline it would be measured against, so q_control is "
-            "q_baseline and I is zero identically rather than by measurement. "
-            "Fit the control on the reference of a disjoint corpus block"
-        )
-    total = float(control_reference.token_count.sum())
-    log_q = np.log(control_counts + arm.smoothing) - math.log(
-        total + arm.smoothing * arm.vocab_size
-    )
-    targets = arm.cohort.targets
-    per_entry = -targets.counts.astype(np.float64) * log_q[targets.unique_token_ids]
-    cumulative = np.concatenate(
-        [np.zeros(1, dtype=np.float64), np.cumsum(per_entry, dtype=np.float64)]
-    )
-    return ArmStatistics(
-        name=name,
-        cohort=CohortStatistics(
-            clean_nll_sum=np.diff(cumulative[targets.record_offsets]),
-            token_count=arm.cohort.token_count,
-            n_symbols=arm.cohort.n_symbols,
-            targets=targets,
-            group_id=arm.cohort.group_id,
-        ),
-        reference=arm.reference,
-        vocab_size=arm.vocab_size,
-        smoothing=arm.smoothing,
-    )
+    return mixed_unigram_arm(arm, control_reference, name=name, model_weight=0.0)
 
 
 # --------------------------------------------------------------------------- #

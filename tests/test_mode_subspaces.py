@@ -53,7 +53,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.transfer import mode_subspaces as ms  # noqa: E402
-from src.transfer.budget import MIN_CONTEXT_INFORMATION_NATS  # noqa: E402
+from src.transfer.budget import SCREENING_CONTEXT_INFORMATION_NATS  # noqa: E402
 from src.transfer.statistics import MINIMUM_BOOTSTRAP_UNITS  # noqa: E402
 
 RULE = ms.decision_rule("residual_licensed_v1")
@@ -291,11 +291,42 @@ def test_every_qualified_prollama_cell_is_admitted(checkpoint: str, mode: str):
     ms.assert_behavioural_read(record)
 
 
-def test_the_refusal_boundary_is_the_shared_measurability_floor():
-    just_below = ms.mode_measurability("protein", MIN_CONTEXT_INFORMATION_NATS - 1e-6)
-    just_above = ms.mode_measurability("protein", MIN_CONTEXT_INFORMATION_NATS)
+def test_the_refusal_boundary_is_this_stages_own_declared_floor():
+    floor = ms.MODE_BEHAVIOURAL_READ_FLOOR_NATS
+    just_below = ms.mode_measurability("protein", floor - 1e-6)
+    just_above = ms.mode_measurability("protein", floor)
     assert just_below["behavioural_read_admitted"] is False
     assert just_above["behavioural_read_admitted"] is True
+
+
+def test_the_mode_floor_is_not_the_panels_screening_floor_and_says_so():
+    """EXP-R2-218 split the shared floor; this gate could not follow either half.
+
+    The calibrated identification floor admits ``Llama-2-7b-hf``'s protein mode
+    at +0.0843 nats/token, whose reversal cost is -0.0013 nats/residue, so
+    adopting it here would turn a published refusal into an admission.  The
+    precision-referenced criterion that would decide it properly cannot be
+    evaluated, because the declared mode readings carry no standard error.  The
+    incumbent magnitude therefore stays, and every record has to carry the fact
+    that it is underived rather than let a reader assume otherwise.
+    """
+
+    llama = MEASURED_CONTEXT_INFORMATION[("Llama-2-7b-hf", "protein")]
+    assert llama > SCREENING_CONTEXT_INFORMATION_NATS
+    assert ms.MODE_BEHAVIOURAL_READ_FLOOR_NATS > SCREENING_CONTEXT_INFORMATION_NATS
+
+    record = ms.mode_measurability("protein", llama)
+    assert record["behavioural_read_admitted"] is False
+    assert record["threshold_status"].startswith("UNDERIVED")
+    assert "0.0843" in record["threshold_status"]
+    # Nats alone is not a cross-arm threshold, and neither conversion is
+    # available from a reading declared on the command line.
+    assert record["threshold"]["nats_per_token"] == pytest.approx(
+        ms.MODE_BEHAVIOURAL_READ_FLOOR_NATS
+    )
+    assert record["threshold"]["relative_to_baseline"] is None
+    assert record["threshold"]["relative_to_baseline_undefined_because"]
+    assert record["threshold"]["bits_per_symbol"] is None
 
 
 # ---------------------------------------------- the unigram decomposition

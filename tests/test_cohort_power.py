@@ -47,6 +47,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.transfer.arms import PANEL, Arm, Cohort  # noqa: E402
+from src.transfer import budget  # noqa: E402
 from src.transfer.budget import (  # noqa: E402
     POWER_RECORDS_SCHEMA_VERSION,
     SparseCounts,
@@ -266,6 +267,32 @@ def test_each_verdict_is_taken_against_the_baseline_its_name_carries(measurement
     # the plug-in one is tagged by its key and is never overwritten.
     assert report["measurability"] in ("measurable", "unmeasurable_on_this_cohort")
     assert report["measurability_plug_in"] in ("measurable", "unmeasurable_on_this_cohort")
+
+    # The verdict is the identification one, taken against the calibrated
+    # screening floor, and it says so rather than leaving a reader to infer that
+    # a PASS also licenses dividing by the reading.
+    assert threshold == pytest.approx(budget.SCREENING_CONTEXT_INFORMATION_NATS)
+    assert "identification" in report["measurability_criterion"]
+    assert "ratio_denominator_admissibility" in report["measurability_criterion"]
+
+    # A threshold in nats alone is not a cross-arm threshold, so it is published
+    # in all three units against this arm's own baseline and expansion.
+    units = report["minimum_context_information"]
+    assert units["nats_per_token"] == pytest.approx(threshold)
+    assert units["relative_to_baseline"] == pytest.approx(
+        threshold / report["unigram_entropy_used_for_verdict_nats"]
+    )
+    assert units["bits_per_symbol"] == pytest.approx(
+        threshold / math.log(2.0) / report["symbols_per_token"]
+    )
+
+    # The retired floor is a reporting column: present for comparability with
+    # results recorded under it, and deciding nothing.
+    assert report["legacy_minimum_context_information_nats"] == pytest.approx(0.30)
+    assert report["clears_legacy_floor"] is (
+        report["context_information_nats"] >= 0.30
+    )
+    assert "decides nothing" in report["legacy_floor_note"]
 
 
 def test_the_plug_in_run_names_its_estimator_in_the_verdict_itself():
