@@ -18,11 +18,9 @@ The closed form is ``max(r_a, r_b) / d`` and it is checked against a Monte-Carlo
 draw at several shapes, because the whole interpretation of a measured overlap is
 its distance from that number.
 
-**A behavioural read on an unmeasurable mode must raise.** ``Llama-2-7b-hf``'s
-protein mode reads +0.0843 nats/token of context information against a 0.30-nat
-floor (EXP-R2-152, re-measured at EXP-R2-174), and the refusal has to be keyed to
-that number rather than to the checkpoint's name -- so the test drives it with the
-number and also checks that the same code admits the four ProLLaMA cells.
+**A mode with no signal to destroy must not reach a licensed verdict.** That is
+not tested here but in ``tests/test_mode_subspace_gate_retirement.py``, which owns
+the retirement of the 0.30-nat pre-gate and the ex-post clauses that replaced it.
 
 **The unigram decomposition must close.** ``total = unigram + residual`` is an
 identity of the logarithm taken per position, so it must hold to float precision
@@ -53,22 +51,9 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.transfer import mode_subspaces as ms  # noqa: E402
-from src.transfer.budget import SCREENING_CONTEXT_INFORMATION_NATS  # noqa: E402
 from src.transfer.statistics import MINIMUM_BOOTSTRAP_UNITS  # noqa: E402
 
 RULE = ms.decision_rule("residual_licensed_v1")
-
-#: The four ProLLaMA cells and the one refused cell, as EXP-R2-152 measured them
-#: (Llama-2's protein figure re-measured at EXP-R2-174). Written once so a test
-#: about the refusal and a test about the admission read the same evidence.
-MEASURED_CONTEXT_INFORMATION: dict[tuple[str, str], float] = {
-    ("ProLLaMA_Stage_1", "text"): 0.8336,
-    ("ProLLaMA_Stage_1", "protein"): 0.5505,
-    ("ProLLaMA", "text"): 0.7368,
-    ("ProLLaMA", "protein"): 0.5215,
-    ("Llama-2-7b-hf", "protein"): 0.0843,
-}
-
 
 def _stage():
     """The stage entry point, imported by path the way the worker's preflight does."""
@@ -247,86 +232,6 @@ def test_an_overlap_report_always_carries_a_chance_level_for_both_statistics():
     for statistic in ms.OVERLAP_STATISTICS:
         assert statistic in report
         assert set(report["chance"][statistic]) >= {"mean", "p2.5", "p97.5"}
-
-
-# ------------------------------------------------ the behavioural refusal
-
-
-def test_a_behavioural_read_on_llama_2_protein_mode_raises():
-    # Keyed to the measured number, not to the name. +0.0843 nats/token against a
-    # 0.30-nat floor (EXP-R2-152, re-measured at EXP-R2-174).
-    record = ms.mode_measurability(
-        "protein", MEASURED_CONTEXT_INFORMATION[("Llama-2-7b-hf", "protein")]
-    )
-    assert record["measurability"] != "measurable"
-    assert record["behavioural_read_admitted"] is False
-    with pytest.raises(ValueError) as raised:
-        ms.assert_behavioural_read(record)
-    message = str(raised.value)
-    assert "0.0843" in message
-    assert "EXP-R2-152" in message
-    # The catalogue ends at L32, so the message cites the evidence and says in as
-    # many words that there is no limitation number for it. Inventing an L33 would
-    # be worse than citing nothing.
-    assert "there is no L33" in message
-    assert "NOT a catalogued limitation" in message
-
-
-@pytest.mark.parametrize(
-    "checkpoint,mode",
-    [
-        ("ProLLaMA_Stage_1", "text"),
-        ("ProLLaMA_Stage_1", "protein"),
-        ("ProLLaMA", "text"),
-        ("ProLLaMA", "protein"),
-    ],
-)
-def test_every_qualified_prollama_cell_is_admitted(checkpoint: str, mode: str):
-    # The other half of the refusal: a guard that refused everything would pass the
-    # test above and measure nothing.
-    record = ms.mode_measurability(
-        mode, MEASURED_CONTEXT_INFORMATION[(checkpoint, mode)]
-    )
-    assert record["behavioural_read_admitted"] is True
-    ms.assert_behavioural_read(record)
-
-
-def test_the_refusal_boundary_is_this_stages_own_declared_floor():
-    floor = ms.MODE_BEHAVIOURAL_READ_FLOOR_NATS
-    just_below = ms.mode_measurability("protein", floor - 1e-6)
-    just_above = ms.mode_measurability("protein", floor)
-    assert just_below["behavioural_read_admitted"] is False
-    assert just_above["behavioural_read_admitted"] is True
-
-
-def test_the_mode_floor_is_not_the_panels_screening_floor_and_says_so():
-    """EXP-R2-218 split the shared floor; this gate could not follow either half.
-
-    The calibrated identification floor admits ``Llama-2-7b-hf``'s protein mode
-    at +0.0843 nats/token, whose reversal cost is -0.0013 nats/residue, so
-    adopting it here would turn a published refusal into an admission.  The
-    precision-referenced criterion that would decide it properly cannot be
-    evaluated, because the declared mode readings carry no standard error.  The
-    incumbent magnitude therefore stays, and every record has to carry the fact
-    that it is underived rather than let a reader assume otherwise.
-    """
-
-    llama = MEASURED_CONTEXT_INFORMATION[("Llama-2-7b-hf", "protein")]
-    assert llama > SCREENING_CONTEXT_INFORMATION_NATS
-    assert ms.MODE_BEHAVIOURAL_READ_FLOOR_NATS > SCREENING_CONTEXT_INFORMATION_NATS
-
-    record = ms.mode_measurability("protein", llama)
-    assert record["behavioural_read_admitted"] is False
-    assert record["threshold_status"].startswith("UNDERIVED")
-    assert "0.0843" in record["threshold_status"]
-    # Nats alone is not a cross-arm threshold, and neither conversion is
-    # available from a reading declared on the command line.
-    assert record["threshold"]["nats_per_token"] == pytest.approx(
-        ms.MODE_BEHAVIOURAL_READ_FLOOR_NATS
-    )
-    assert record["threshold"]["relative_to_baseline"] is None
-    assert record["threshold"]["relative_to_baseline_undefined_because"]
-    assert record["threshold"]["bits_per_symbol"] is None
 
 
 # ---------------------------------------------- the unigram decomposition
@@ -719,24 +624,6 @@ def test_the_stage_refuses_a_run_that_names_no_pre_registered_decision():
         stage.resolve(args)
     for flag in ("--layers", "--overlap-statistic", "--decision-rule", "--modes"):
         assert flag in str(raised.value)
-
-
-def test_the_stage_requires_a_context_information_figure_for_every_measured_mode():
-    stage = _stage()
-    parser = stage.build_parser()
-    args = parser.parse_args(
-        [
-            "--checkpoint", "/nowhere",
-            "--rendering", "prollama",
-            "--modes", "text", "protein",
-            "--layers", "16",
-            "--overlap-statistic", "mean_squared_cosine",
-            "--decision-rule", "residual_licensed_v1",
-            "--context-information", "text=0.8336",
-        ]
-    )
-    with pytest.raises(ValueError, match="protein"):
-        stage.resolve(args)
 
 
 def test_the_stage_refuses_a_campaign_flag_beside_the_synthetic_check():

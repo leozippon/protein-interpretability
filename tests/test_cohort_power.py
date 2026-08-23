@@ -268,12 +268,16 @@ def test_each_verdict_is_taken_against_the_baseline_its_name_carries(measurement
     assert report["measurability"] in ("measurable", "unmeasurable_on_this_cohort")
     assert report["measurability_plug_in"] in ("measurable", "unmeasurable_on_this_cohort")
 
-    # The verdict is the identification one, taken against the calibrated
-    # screening floor, and it says so rather than leaving a reader to infer that
-    # a PASS also licenses dividing by the reading.
+    # The verdict is the PRE-INTERVAL SCREEN and not the identification
+    # criterion, which needs a bootstrap interval this stage runs before. The
+    # report has to name what it did not evaluate, or a reader takes the screen
+    # for the criterion (EXP-R2-221).
     assert threshold == pytest.approx(budget.SCREENING_CONTEXT_INFORMATION_NATS)
-    assert "identification" in report["measurability_criterion"]
-    assert "ratio_denominator_admissibility" in report["measurability_criterion"]
+    assert "PRE-INTERVAL SCREEN" in report["measurability_criterion"]
+    assert report["identification_evaluable_here"] is False
+    assert report["identification_criterion"] == budget.IDENTIFICATION_CRITERION
+    assert "no bootstrap" in report["identification_not_evaluable_reason"]
+    assert "not the identification criterion" in report["screening_floor_note"]
 
     # A threshold in nats alone is not a cross-arm threshold, so it is published
     # in all three units against this arm's own baseline and expansion.

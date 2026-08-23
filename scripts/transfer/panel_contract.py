@@ -1058,12 +1058,6 @@ class CohortPowerItem:
     reason: str
 
 
-#: Arms whose vocabulary exceeds 1024 pieces cannot compute the truncation curve
-#: on a transformers build without ``logits_to_keep`` (the pod ships 4.52.4), and
-#: ``budget.truncation_curve`` raises rather than trimming, because trimming is
-#: numerically non-inert (up to 0.25 in a logit, 0.12 nats in one token's NLL).
-_VOCAB_TRUNCATION_LIMIT = 1024
-
 COHORT_POWER_ITEM_RULES: tuple[tuple[str, str], ...] = (
     (
         "text",

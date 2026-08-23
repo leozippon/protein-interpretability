@@ -1,11 +1,19 @@
 """The two measurability criteria, at the call sites that apply them.
 
 EXP-R2-218 split one undeclared 0.30-nat floor into two criteria with different
-answers: identification, decided on the point estimate against
-``budget.SCREENING_CONTEXT_INFORMATION_NATS``, and ratio admissibility, decided
-per arm by ``budget.ratio_denominator_admissibility`` against the denominator's
-own bootstrap standard error. ``budget.MIN_CONTEXT_INFORMATION_NATS`` survives
-as a reporting column and decides nothing.
+answers: identification and ratio admissibility. EXP-R2-221 then took the
+constant out of the first one too, because a magnitude rule and a
+precision-referenced rule order two readings oppositely and did:
+``galactica-1.3b``'s protein mode is 10.43 standard errors from zero and was
+refused by a 0.05-nat floor, while ``Llama-2-7b-hf``'s passes that floor at 8.28
+standard errors and is refused as a denominator. Identification is now
+``budget.context_identification``, which asks whether the displacement-corrected
+95% interval excludes zero; ratio admissibility is
+``budget.ratio_denominator_admissibility`` against the denominator's own
+bootstrap standard error, and is strictly stronger, so the two are nested.
+``budget.MIN_CONTEXT_INFORMATION_NATS`` decides nothing anywhere, and
+``budget.SCREENING_CONTEXT_INFORMATION_NATS`` decides nothing where an interval
+exists and survives as the pre-interval screen where none does.
 
 **Two failures motivate this file, and the suite saw neither.**
 
@@ -285,6 +293,113 @@ def test_convergence_control_measures_pathway_shares_without_raising(
 # ------------------------------------------------ a ratio site with no SE refuses
 
 
+def test_identification_reads_the_interval_and_never_the_point_estimate():
+    """The decision is a function of the corrected lower bound alone.
+
+    A criterion that still consulted the magnitude would still be able to refuse
+    a reading its own interval separates from zero, which is the defect
+    EXP-R2-221 removed. Swept across the demoted screening floor and the retired
+    0.30 in both directions, the verdict must not move.
+    """
+
+    for bound, expected in ((0.0004, "PASS"), (-0.0004, "FAIL")):
+        verdicts = {
+            budget.context_identification(information, bound)["verdict"]
+            for information in (0.001, 0.02, 0.049, 0.05, 0.2, 0.3, 0.31, 4.5)
+        }
+        assert verdicts == {expected}, bound
+
+    # Exactly zero is not "above zero": the boundary belongs to the refusal.
+    assert budget.context_identification(0.5, 0.0)["verdict"] == "FAIL"
+    assert budget.context_identification(0.5, 0.0)["measurability"] == budget.UNMEASURABLE
+
+
+def test_identification_is_nested_inside_ratio_admissibility():
+    """Anything admissible as a denominator is identified, and never the converse.
+
+    This is what stops the two criteria crossing, and it is arithmetic rather
+    than an observation: the Fieller multiple is 8.765 and a 95% interval reaches
+    about 1.96 standard errors, so one condition implies the other. The test
+    sweeps a grid rather than asserting the inequality, because the implication
+    has to hold at the call sites and not only on paper.
+    """
+
+    seen_admissible = 0
+    seen_identified_only = 0
+    for information in (0.01, 0.047678, 0.084287, 0.3, 1.0, 4.5):
+        for se in (0.001, 0.004571, 0.010179, 0.05, 0.2):
+            admissible = budget.ratio_denominator_admissibility(information, se)[
+                "admissible"
+            ]
+            # The normal-approximation stand-in for the corrected lower bound,
+            # which is what a percentile interval reaches on a symmetric draw
+            # distribution and what the panel's own readings track.
+            identified = budget.context_identification(
+                information, information - 1.959963984540054 * se
+            )["identified"]
+            assert not (admissible and not identified), (information, se)
+            seen_admissible += int(admissible)
+            seen_identified_only += int(identified and not admissible)
+    # Both sides of the nesting are exercised, so the implication is not vacuous.
+    assert seen_admissible > 0
+    assert seen_identified_only > 0
+
+
+def test_the_reading_the_floor_refused_on_margin_is_identified():
+    """EXP-R2-220's false negative, pinned so it cannot come back.
+
+    ``galactica-1.3b``'s protein mode: I = +0.047678, SE = 0.004571, corrected
+    interval reaching down to +0.038694. The screening floor refuses it by
+    0.0023 nats; the criterion identifies it, and the Fieller condition -- the
+    strictly stronger one -- admits it as a denominator.
+    """
+
+    verdict = budget.context_identification(0.047678, 0.038694)
+    assert verdict["identified"] is True
+    assert verdict["measurability"] == budget.MEASURABLE
+    assert verdict["clears_legacy_screening_floor"] is False
+    assert budget.ratio_denominator_admissibility(0.047678, 0.004571)["admissible"]
+
+    # And the reading on the other side of the crossing keeps both of its
+    # verdicts: identified, and refused as a denominator.
+    other = budget.context_identification(0.084287, 0.063641)
+    assert other["identified"] is True
+    assert other["clears_legacy_screening_floor"] is True
+    assert not budget.ratio_denominator_admissibility(0.084287, 0.010179)["admissible"]
+
+
+def test_identification_without_an_interval_refuses_rather_than_falling_back():
+    """No magnitude constant is substituted for an interval that does not exist."""
+
+    with pytest.raises(ValueError, match="no fallback"):
+        budget.context_identification(0.5, None)
+    for bound in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError, match="must be finite"):
+            budget.context_identification(0.5, bound)
+    with pytest.raises(ValueError, match="must be finite"):
+        budget.context_identification(float("nan"), 0.1)
+
+
+def test_a_stage_without_a_bootstrap_names_the_criterion_it_cannot_evaluate(
+    tiny_arm, tiny_pool, cpu_accelerator_accounting
+):
+    """``arm_power`` is upstream of every interval, so it must not claim one.
+
+    It publishes a verdict, and a verdict with no statement of criterion beside
+    it reads as an identification verdict. The report has to say which criterion
+    it did not evaluate and why.
+    """
+
+    report = budget.arm_power(
+        tiny_arm, tiny_pool, max_len=MAX_LEN, batch_size=4
+    )
+    assert report["identification_evaluable_here"] is False
+    assert report["identification_criterion"] == budget.IDENTIFICATION_CRITERION
+    assert "no bootstrap" in report["identification_not_evaluable_reason"]
+    assert "PRE-INTERVAL SCREEN" in report["measurability_criterion"]
+    assert "not the identification criterion" in report["screening_floor_note"]
+
+
 def test_a_ratio_site_with_no_standard_error_refuses_rather_than_falling_back(
     tiny_arm, tiny_pool
 ):
@@ -414,23 +529,22 @@ def test_the_convergence_frame_withholds_a_denominator_verdict_it_cannot_take():
 SCREENING_SITES = {
     "01_cohort_power.py": "--threshold-nats",
     "08_lens_family.py": "--minimum-context-information-nats",
+    "21_joint_mode_qualification.py": "--identification-floor-nats",
+    "24_component_swap.py": "--identification-floor-nats",
     "41_context_information_bootstrap.py": "--threshold-nats",
 }
 
-#: Stages that deliberately screen against a locally declared magnitude instead,
-#: with the module-level name that declares it. Each must record its own
-#: UNDERIVED status, because a number that decides a verdict and was never
-#: derived has to say so where it is used.
-LOCALLY_DECLARED_FLOORS = {
-    "scripts/transfer/21_joint_mode_qualification.py": (
-        "JOINT_MODE_QUALIFICATION_FLOOR_NATS",
-        "JOINT_MODE_QUALIFICATION_FLOOR_STATUS",
-    ),
-    "src/transfer/mode_subspaces.py": (
-        "MODE_BEHAVIOURAL_READ_FLOOR_NATS",
-        "MODE_BEHAVIOURAL_READ_FLOOR_STATUS",
-    ),
-}
+# There is no longer a stage that screens against a locally declared magnitude,
+# so there is no list of them here. Both entries this file used to carry are
+# retired for the same reason and neither can come back quietly:
+# ``src/transfer/mode_subspaces.py``'s 0.30-nat behavioural-read pre-gate, whose
+# failure mode -- an ablation with no context-derived signal to destroy -- is now
+# tested ex post inside that stage's own decision rule
+# (``tests/test_mode_subspace_gate_retirement.py``), and
+# ``scripts/transfer/21_joint_mode_qualification.py``'s gate of the same
+# magnitude, which refused nothing and only ever selected a verdict string
+# (``tests/test_joint_mode_identification_contract.py``). Both stages now appear
+# in SCREENING_SITES above.
 
 
 def _argparse_default(tree: ast.Module, option: str) -> ast.AST | None:
@@ -472,25 +586,6 @@ def test_a_screening_site_defaults_to_the_calibrated_identification_floor(
     assert default.id == "SCREENING_CONTEXT_INFORMATION_NATS", (
         f"{filename} {option} defaults to {default.id}"
     )
-
-
-@pytest.mark.parametrize("relative,names", sorted(LOCALLY_DECLARED_FLOORS.items()))
-def test_a_locally_declared_floor_declares_that_it_is_underived(relative, names):
-    """0.30 may survive only where it is declared, and only saying it is underived."""
-
-    magnitude_name, status_name = names
-    path = Path(relative)
-    module = (
-        _load_stage(path.name)
-        if path.parts[0] == "scripts"
-        else importlib.import_module("src.transfer.mode_subspaces")
-    )
-    assert getattr(module, magnitude_name) == pytest.approx(0.30)
-    status = getattr(module, status_name)
-    assert status.startswith("UNDERIVED")
-    # A status that does not say what would retire it is a label, not a
-    # declaration.
-    assert "standard error" in status
 
 
 # ------------------------------------------- the retired constant decides nothing

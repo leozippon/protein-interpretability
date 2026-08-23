@@ -22,6 +22,18 @@ are unavailable the fallback to singleton groups is written into every affected
 record as a declared limitation rather than applied quietly, because a
 record-level interval is narrowest exactly where group dependence is strongest.
 
+**The identification verdict, from the corrected interval rather than a floor.**
+The interval a percentile bootstrap gives here is displaced upward by the reference
+refit -- ``-log`` is convex, so resampling the reference lifts the drawn baselines
+above the full-reference value -- and a lower-bound rule read off it passes 64 of
+120 readings whose true information is zero. ``information_bootstrap`` now measures
+that displacement separately and publishes the interval with it removed;
+``budget.context_identification`` reads the corrected lower bound, and
+``per_arm_identification_status`` is the verdict. The
+``budget.SCREENING_CONTEXT_INFORMATION_NATS`` comparison is still reported, as
+``screening_status``, and decides nothing here (EXP-R2-221,
+``docs/DISPLACEMENT_CORRECTED_IDENTIFICATION_PREREGISTRATION.md``).
+
 **Contrasts that respect where pairing is defined.** Arms sharing one cohort draw
 are bootstrapped in one ``bootstrap_arms`` call under common resample indices, so
 their contrast is formed inside the iteration. Arms on different cohorts have no
@@ -103,6 +115,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from scipy import stats
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -114,6 +127,9 @@ from src.transfer.budget import (  # noqa: E402
     MIN_CONTEXT_INFORMATION_NATS,
     POWER_RECORDS_SCHEMA_VERSION,
     SCREENING_CONTEXT_INFORMATION_NATS,
+    SCREENING_FLOOR_NOTE,
+    context_identification,
+    ratio_denominator_admissibility,
 )
 from src.transfer.information_bootstrap import (  # noqa: E402
     DEFAULT_BOOTSTRAP_DRAWS,
@@ -135,7 +151,7 @@ from src.transfer.near_duplicates import (  # noqa: E402
 from src.transfer.pathways import SMOOTHING_SWEEP  # noqa: E402
 from src.transfer.statistics import MINIMUM_BOOTSTRAP_UNITS  # noqa: E402
 
-SCHEMA_VERSION = "r2_transfer_context_information_bootstrap_v1"
+SCHEMA_VERSION = "r2_transfer_context_information_bootstrap_v2"
 
 DEFAULT_OUT = REPO_ROOT / "results/transfer/context_information_bootstrap"
 
@@ -204,11 +220,32 @@ SIGN_STATUS_NOTE = (
     "smoothing bias that grows with vocabulary size and that no bootstrap can "
     "touch, so on an arm whose true context information sits near zero the sign "
     "of the measured I would be decided by the smoothing constant and the "
-    "vocabulary rather than by the model. The operative screening gate is the "
-    "point estimate against budget.SCREENING_CONTEXT_INFORMATION_NATS, reported "
-    "with an interval; see docs/CONTEXT_INFORMATION_UNCERTAINTY_PREREGISTRATION.md "
-    "and, for that floor's calibration, "
-    "docs/MEASURABILITY_THRESHOLD_CALIBRATION_PREREGISTRATION.md."
+    "vocabulary rather than by the model. The operative verdict is "
+    "per_arm_identification_status, from budget.context_identification, which "
+    "reads the DISPLACEMENT-CORRECTED interval; sign_status reads the "
+    "uncorrected one and is a different statistic, false-passing on 64 of 120 "
+    "readings whose true value is zero. See "
+    "docs/CONTEXT_INFORMATION_UNCERTAINTY_PREREGISTRATION.md, "
+    "docs/MEASURABILITY_THRESHOLD_CALIBRATION_PREREGISTRATION.md and "
+    "docs/DISPLACEMENT_CORRECTED_IDENTIFICATION_PREREGISTRATION.md."
+)
+
+PER_ARM_IDENTIFICATION_NOTE = (
+    "THE OPERATIVE IDENTIFICATION VERDICT, adopted at EXP-R2-221 and taken from "
+    "budget.context_identification: the displacement-corrected 95% interval for "
+    "I lies strictly above zero, which is approximately I > 1.96*SE(I) and has "
+    "no constant in it. It differs from sign_status only in that the interval it "
+    "reads has had the Jensen displacement of L34/L42 removed; sign_status reads "
+    "the uncorrected interval and is the rule EXP-R2-218 measured false-passing "
+    "on 56 of 112 readings whose true value is zero, and 64 of 120 here"
+)
+
+LEGACY_SCREENING_STATUS_NOTE = (
+    "screening_status is the PRE-INTERVAL SCREEN, retained as a reporting column "
+    "so that every verdict recorded under it stays readable. It decides nothing "
+    "here: the operative verdict is per_arm_identification_status. The two "
+    "disagree only where a magnitude rule and the reading's own precision "
+    "disagree, which is what EXP-R2-221 adopted the second over the first for"
 )
 
 SCREENING_NOTE = (
@@ -1204,6 +1241,13 @@ def arm_row(
         sign = "PASS" if low > 0.0 else "FAIL"
         disagreement = screening != sign
         clears_legacy = bool(point >= MIN_CONTEXT_INFORMATION_NATS)
+    corrected = (
+        None if information is None else information["displacement_corrected_interval"]
+    )
+    identification = (
+        None if corrected is None else context_identification(point, corrected[0])
+    )
+    per_arm = "REFUSED" if identification is None else identification["verdict"]
     return {
         "block_id": block.block_id,
         "panel_id": panel_id,
@@ -1234,6 +1278,24 @@ def arm_row(
         "bootstrap_bias": None if information is None else information["bootstrap_bias"],
         "median_bias_z0": None if information is None else information["median_bias_z0"],
         "interval_mc_se": None if information is None else information["interval_mc_se"],
+        "reference_resampling_displacement": (
+            None
+            if information is None
+            else information["reference_resampling_displacement"]
+        ),
+        "displacement_corrected_ci_95": None if corrected is None else list(corrected),
+        "cohort_only_bootstrap_se": (
+            None if information is None else information["cohort_only_bootstrap_se"]
+        ),
+        "reference_held_fixed_ci_95": (
+            None
+            if information is None
+            else list(information["reference_held_fixed_interval"])
+        ),
+        "per_arm_identification_status": per_arm,
+        "per_arm_identification_note": PER_ARM_IDENTIFICATION_NOTE,
+        # The criterion's own record, so a reading carries what decided it.
+        "context_identification": identification,
         "relative_information": None if relative is None else relative["point"],
         "relative_information_ci_95": None if relative is None else list(relative["interval"]),
         "information_bits_per_symbol": None if bits is None else bits["point"],
@@ -1258,6 +1320,9 @@ def arm_row(
         "reference_n_effective_groups": diagnostics.get("reference_n_effective_groups"),
         "screening_threshold_nats": float(threshold),
         "screening_status": screening,
+        "screening_status_is_operative": False,
+        "screening_status_note": LEGACY_SCREENING_STATUS_NOTE,
+        "screening_floor_note": SCREENING_FLOOR_NOTE,
         "screening_interval_status": screening_interval,
         # The retired constant as a reporting column, so a reading here stays
         # comparable with the artefacts recorded under it. It decides nothing.
@@ -1962,6 +2027,17 @@ def null_control_summary(
                 "measured_information_nats": departure,
                 "bootstrap_ci_95": row["bootstrap_ci_95"],
                 "bootstrap_se": row["bootstrap_se"],
+                # The same interval with the L34/L42 displacement removed, and
+                # the two objects a reader must be able to tell it from: the
+                # displacement itself, and the narrower interval that dropping
+                # the reference resampling would have given instead.
+                "displacement_corrected_ci_95": row["displacement_corrected_ci_95"],
+                "reference_resampling_displacement": row[
+                    "reference_resampling_displacement"
+                ],
+                "cohort_only_bootstrap_se": row["cohort_only_bootstrap_se"],
+                "reference_held_fixed_ci_95": row["reference_held_fixed_ci_95"],
+                "per_arm_identification_status": row["per_arm_identification_status"],
                 # The displacement of the bootstrap distribution away from the
                 # estimate on the data. It is reported and never applied, and at
                 # a known zero it is what the sign rule ends up reading: a
@@ -2144,6 +2220,803 @@ def null_control_summary(
 
 
 # --------------------------------------------------------------------------- #
+# Held-out validation of the screening floor and the identification criterion
+# --------------------------------------------------------------------------- #
+
+
+#: Candidate thresholds the recalibration searches. EXP-R2-218's own grid, so a
+#: fold's threshold and the panel-wide one are read off the same ladder.
+HELD_OUT_TAU_GRID: tuple[float, ...] = tuple(
+    round(0.005 * step, 6) for step in range(0, 301)
+)
+
+#: EXP-R2-218's declared design target for Objective A's false-positive rate.
+#: It is a convention on an error rate, not a measured quantity, and the
+#: recalibration inherits it rather than re-choosing it.
+HELD_OUT_TARGET_FALSE_POSITIVE_RATE = 0.05
+
+HELD_OUT_NOTE = (
+    "EXP-R2-218 read its threshold off the same panel it evaluated it on, which "
+    "makes it a screening result. This section cross-fits that selection: on each "
+    "fold the threshold is re-derived from the calibration units ALONE, by the "
+    "same rule and on the same grid, and is then scored on units the derivation "
+    "never saw. The shipped floor and the shipped Fieller denominator condition "
+    "are scored on the same held-out units beside it, so the comparison is "
+    "between two rules on one set of readings rather than between two sets."
+)
+
+
+def _smallest_admissible_tau(values: Sequence[float], target: float) -> float | None:
+    """Smallest grid threshold whose pass rate over ``values`` is at most ``target``.
+
+    This is Objective A's selection rule and the only place it is written down.
+    The calibration fold and the full panel must be scored by one rule or the
+    held-out comparison measures the difference between two rules instead of the
+    difference between two sets of units.
+    """
+
+    if not values:
+        return None
+    array = np.asarray(list(values), dtype=float)
+    for tau in HELD_OUT_TAU_GRID:
+        if float(np.mean(array >= tau)) <= target:
+            return float(tau)
+    return None
+
+
+def _exact_upper_bound(successes: int, trials: int, confidence: float) -> float | None:
+    """One-sided Clopper-Pearson upper limit on a binomial rate.
+
+    A held-out rate of zero is not a rate of zero: it is a rate consistent with
+    everything below this bound, and on a panel resolved to a couple of dozen
+    independent cohorts that bound is much larger than the target it is being
+    read against. Reporting the point estimate alone would be the same mistake
+    this whole exercise exists to correct, one level up.
+    """
+
+    if trials <= 0:
+        return None
+    if successes >= trials:
+        return 1.0
+    return float(stats.beta.ppf(confidence, successes + 1, trials - successes))
+
+
+def _reading_unit(reading: dict[str, Any]) -> tuple[str, Any]:
+    """The identity of the *measurement* a control reading carries.
+
+    The block's records and the arm's vocabulary, and nothing else. Two arms of
+    one block sharing a tokenisation produce one number by construction, so this
+    key is what a false-positive rate is actually resolved to.
+    """
+
+    return (reading["block_id"], reading["vocab_size"])
+
+
+def null_reading_equivalence(readings: list[dict[str, Any]]) -> dict[str, Any]:
+    """Which control readings are one measurement rather than several.
+
+    ``CONTROL_CONSTRUCTION_NOTE`` states the duplication as a property of the
+    construction; this measures it, because the unit count decides how finely a
+    held-out error rate can be resolved and an assumed unit count is exactly the
+    kind of thing that silently inflates one. A class whose members disagree is
+    refused rather than reported: the disagreement would mean a control reading
+    is not the property the whole accounting rests on, and a partition built on
+    a false premise would misassign folds as well as miscount units.
+    """
+
+    by_unit: dict[tuple[str, Any], list[dict[str, Any]]] = {}
+    for reading in readings:
+        by_unit.setdefault(_reading_unit(reading), []).append(reading)
+
+    classes: list[set[str]] = []
+    for unit, members in sorted(by_unit.items(), key=lambda item: str(item[0])):
+        distinct = {
+            (
+                float(member["measured_information_nats"]),
+                tuple(float(bound) for bound in member["bootstrap_ci_95"]),
+                float(member["bootstrap_se"]),
+            )
+            for member in members
+        }
+        if len(distinct) > 1:
+            named = ", ".join(sorted(member["arm"] for member in members))
+            raise SystemExit(
+                f"block {unit[0]} vocabulary {unit[1]}: the controls of {named} "
+                "share a block and a tokenisation but do not carry the same "
+                f"reading ({len(distinct)} distinct values). The null control is "
+                "declared to be a property of the records and the vocabulary "
+                "alone, and the held-out unit count rests on that; a disagreement "
+                "here means the declaration is wrong and the accounting below "
+                "would be wrong with it"
+            )
+        names = {member["arm"] for member in members}
+        overlapping = [existing for existing in classes if existing & names]
+        for existing in overlapping:
+            classes.remove(existing)
+            names = names | existing
+        classes.append(names)
+
+    labelled = sorted(("+".join(sorted(names)), sorted(names)) for names in classes)
+    label_of = {arm: label for label, names in labelled for arm in names}
+    return {
+        "what": (
+            "one control reading is a property of the block's records and the "
+            "arm's vocabulary; arms sharing both carry the identical number"
+        ),
+        "n_readings": len(readings),
+        "n_distinct_measurements": len(by_unit),
+        "n_cohort_draws": len({reading["block_id"] for reading in readings}),
+        "tokenisation_classes": [
+            {"label": label, "arms": names, "n_arms": len(names)}
+            for label, names in labelled
+        ],
+        "arm_to_tokenisation_class": label_of,
+    }
+
+
+def _held_out_fold(
+    calibration: list[dict[str, Any]],
+    held_out: list[dict[str, Any]],
+    held_out_real: list[dict[str, Any]],
+    *,
+    threshold: float,
+    target: float,
+) -> dict[str, Any]:
+    """One fold: derive on the calibration units, score on the held-out ones."""
+
+    tau_point = _smallest_admissible_tau(
+        [reading["measured_information_nats"] for reading in calibration], target
+    )
+    tau_interval = _smallest_admissible_tau(
+        [reading["bootstrap_ci_95"][0] for reading in calibration], target
+    )
+    tau_corrected = _smallest_admissible_tau(
+        [reading["displacement_corrected_ci_95"][0] for reading in calibration], target
+    )
+    if tau_point is None or tau_interval is None or tau_corrected is None:
+        return {
+            "refused": True,
+            "refusal_reason": (
+                "no threshold on the grid brings the calibration fold's "
+                f"false-positive rate to {target:g} or below, so this fold "
+                "derives nothing to validate"
+            ),
+        }
+
+    rules: dict[str, list[bool]] = {
+        "recalibrated_point_rule": [
+            reading["measured_information_nats"] >= tau_point for reading in held_out
+        ],
+        "recalibrated_interval_rule": [
+            reading["bootstrap_ci_95"][0] >= tau_interval for reading in held_out
+        ],
+        "shipped_point_rule": [
+            reading["measured_information_nats"] >= threshold for reading in held_out
+        ],
+        "shipped_interval_rule": [
+            reading["bootstrap_ci_95"][0] >= threshold for reading in held_out
+        ],
+        "shipped_fieller_denominator_admissibility": [
+            ratio_denominator_admissibility(
+                reading["measured_information_nats"], reading["bootstrap_se"]
+            )["admissible"]
+            for reading in held_out
+        ],
+        # The candidate of the displacement-corrected pre-registration: a
+        # per-arm rule with no constant in it at all.
+        "candidate_displacement_corrected_rule_at_zero": [
+            reading["displacement_corrected_ci_95"][0] > 0.0 for reading in held_out
+        ],
+        "recalibrated_displacement_corrected_rule": [
+            reading["displacement_corrected_ci_95"][0] >= tau_corrected
+            for reading in held_out
+        ],
+        # The declared sensitivity: dropping the reference resampling removes
+        # the displacement AND the reference's share of the width, so a lower
+        # rate here is not evidence that the displacement was the problem.
+        "sensitivity_reference_held_fixed_rule_at_zero": [
+            reading["reference_held_fixed_ci_95"][0] > 0.0 for reading in held_out
+        ],
+    }
+    units = [_reading_unit(reading) for reading in held_out]
+    n_distinct = len(set(units))
+    cohort_draws = [reading["block_id"] for reading in held_out]
+
+    disagreeing = [
+        {
+            "arm": row["arm"],
+            "block_id": row["block_id"],
+            "context_information_nats": row["context_information_nats"],
+            "verdict_under_the_recalibrated_threshold": (
+                "PASS" if row["context_information_nats"] >= tau_point else "FAIL"
+            ),
+            "verdict_under_the_shipped_floor": (
+                "PASS" if row["context_information_nats"] >= threshold else "FAIL"
+            ),
+        }
+        for row in held_out_real
+        if (row["context_information_nats"] >= tau_point)
+        != (row["context_information_nats"] >= threshold)
+    ]
+    return {
+        "refused": False,
+        "n_calibration_readings": len(calibration),
+        "n_calibration_distinct_measurements": len(
+            {_reading_unit(reading) for reading in calibration}
+        ),
+        "n_held_out_readings": len(held_out),
+        "n_held_out_distinct_measurements": n_distinct,
+        "recalibrated_tau_nats": {
+            "point_rule": tau_point,
+            "interval_rule": tau_interval,
+            "displacement_corrected_interval_rule": tau_corrected,
+        },
+        "n_held_out_cohort_draws": len(set(cohort_draws)),
+        "n_held_out_false_positives": {
+            rule: int(sum(fired)) for rule, fired in rules.items()
+        },
+        "n_held_out_distinct_false_positives": {
+            rule: len({unit for unit, hit in zip(units, fired) if hit})
+            for rule, fired in rules.items()
+        },
+        "n_held_out_cohort_draw_false_positives": {
+            rule: len({draw for draw, hit in zip(cohort_draws, fired) if hit})
+            for rule, fired in rules.items()
+        },
+        "held_out_false_positive_rate": {
+            rule: (None if not held_out else float(sum(fired) / len(held_out)))
+            for rule, fired in rules.items()
+        },
+        "max_held_out_null_departure_nats": (
+            None
+            if not held_out
+            else max(reading["measured_information_nats"] for reading in held_out)
+        ),
+        "real_arm_verdicts": {
+            "n_readings": len(held_out_real),
+            "n_changing_verdict": len(disagreeing),
+            "readings_that_change_verdict": disagreeing,
+        },
+    }
+
+
+def _held_out_scheme(
+    name: str,
+    question: str,
+    null_readings: list[dict[str, Any]],
+    real_rows: list[dict[str, Any]],
+    unit_of_reading: Any,
+    unit_of_row: Any,
+    buffer_of: Any,
+    *,
+    threshold: float,
+    confidence: float,
+    target: float,
+) -> dict[str, Any]:
+    """Every fold of one cross-fitting scheme, and the pooled rate over them."""
+
+    units = sorted({unit_of_reading(reading) for reading in null_readings})
+    if len(units) < 2:
+        return {
+            "scheme": name,
+            "question": question,
+            "refused": True,
+            "refusal_reason": (
+                f"cross-fitting needs at least two units and this scheme has "
+                f"{len(units)}; a single unit cannot be held out of its own "
+                "derivation"
+            ),
+        }
+
+    unassigned = [row for row in real_rows if unit_of_row(row) not in set(units)]
+    folds: list[dict[str, Any]] = []
+    for unit in units:
+        excluded = buffer_of(unit)
+        calibration = [
+            reading
+            for reading in null_readings
+            if unit_of_reading(reading) not in excluded
+        ]
+        held_out = [
+            reading for reading in null_readings if unit_of_reading(reading) == unit
+        ]
+        held_out_real = [row for row in real_rows if unit_of_row(row) == unit]
+        fold = _held_out_fold(
+            calibration,
+            held_out,
+            held_out_real,
+            threshold=threshold,
+            target=target,
+        )
+        folds.append(
+            {
+                "held_out_unit": unit,
+                "calibration_units_withheld_as_a_buffer": sorted(
+                    str(item) for item in excluded if item != unit
+                ),
+                **fold,
+            }
+        )
+
+    scored = [fold for fold in folds if not fold["refused"]]
+    if not scored:
+        return {
+            "scheme": name,
+            "question": question,
+            "refused": True,
+            "refusal_reason": "every fold refused; nothing was validated",
+            "folds": folds,
+        }
+
+    n_readings = sum(fold["n_held_out_readings"] for fold in scored)
+    n_distinct = sum(fold["n_held_out_distinct_measurements"] for fold in scored)
+    n_cohort_draws = sum(fold["n_held_out_cohort_draws"] for fold in scored)
+    rules = sorted(scored[0]["n_held_out_false_positives"])
+    pooled: dict[str, Any] = {}
+    for rule in rules:
+        hits = sum(fold["n_held_out_false_positives"][rule] for fold in scored)
+        distinct_hits = sum(
+            fold["n_held_out_distinct_false_positives"][rule] for fold in scored
+        )
+        cohort_draw_hits = sum(
+            fold["n_held_out_cohort_draw_false_positives"][rule] for fold in scored
+        )
+        pooled[rule] = {
+            "n_false_positives": hits,
+            "n_held_out_readings": n_readings,
+            "rate_over_readings": None if not n_readings else hits / n_readings,
+            "exact_upper_95_over_readings": _exact_upper_bound(
+                hits, n_readings, confidence
+            ),
+            "n_distinct_false_positives": distinct_hits,
+            "n_held_out_distinct_measurements": n_distinct,
+            "rate_over_distinct_measurements": (
+                None if not n_distinct else distinct_hits / n_distinct
+            ),
+            "exact_upper_95_over_distinct_measurements": _exact_upper_bound(
+                distinct_hits, n_distinct, confidence
+            ),
+            "n_cohort_draw_false_positives": cohort_draw_hits,
+            "n_held_out_cohort_draws": n_cohort_draws,
+            "rate_over_cohort_draws": (
+                None if not n_cohort_draws else cohort_draw_hits / n_cohort_draws
+            ),
+            "exact_upper_95_over_cohort_draws": _exact_upper_bound(
+                cohort_draw_hits, n_cohort_draws, confidence
+            ),
+            "meets_the_target_over_readings": (
+                None if not n_readings else bool(hits / n_readings <= target)
+            ),
+            "meets_the_target_over_distinct_measurements": (
+                None if not n_distinct else bool(distinct_hits / n_distinct <= target)
+            ),
+        }
+
+    taus = [fold["recalibrated_tau_nats"]["point_rule"] for fold in scored]
+    interval_taus = [
+        fold["recalibrated_tau_nats"]["interval_rule"] for fold in scored
+    ]
+    corrected_taus = [
+        fold["recalibrated_tau_nats"]["displacement_corrected_interval_rule"]
+        for fold in scored
+    ]
+    changed = sum(fold["real_arm_verdicts"]["n_changing_verdict"] for fold in scored)
+    return {
+        "scheme": name,
+        "question": question,
+        "refused": False,
+        "n_folds": len(scored),
+        "n_folds_refused": len(folds) - len(scored),
+        "recalibrated_tau_nats": {
+            "point_rule": {
+                "min": min(taus),
+                "max": max(taus),
+                "distinct_values": sorted(set(taus)),
+                "n_folds_below_the_shipped_floor": sum(
+                    1 for tau in taus if tau < threshold
+                ),
+            },
+            "interval_rule": {
+                "min": min(interval_taus),
+                "max": max(interval_taus),
+                "distinct_values": sorted(set(interval_taus)),
+            },
+            "displacement_corrected_interval_rule": {
+                "min": min(corrected_taus),
+                "max": max(corrected_taus),
+                "distinct_values": sorted(set(corrected_taus)),
+            },
+        },
+        "margin_from_the_largest_recalibrated_tau_to_the_shipped_floor_nats": (
+            threshold - max(taus)
+        ),
+        "pooled_held_out_false_positive_rate": pooled,
+        "real_arm_verdict_agreement": {
+            "n_held_out_readings": sum(
+                fold["real_arm_verdicts"]["n_readings"] for fold in scored
+            ),
+            # A real arm on a unit this scheme has no fold for is never scored
+            # against a fold threshold, so it is named rather than dropped: an
+            # agreement rate counted over an unstated denominator is the failure
+            # this section exists to measure.
+            "n_readings_on_no_held_out_unit": len(unassigned),
+            "readings_on_no_held_out_unit": sorted(
+                {(row["arm"], row["block_id"]) for row in unassigned}
+            ),
+            "n_changing_verdict": changed,
+            "agrees_everywhere": changed == 0,
+        },
+        "folds": folds,
+    }
+
+
+ADOPTION_CRITERION_NOTE = (
+    "docs/DISPLACEMENT_CORRECTED_IDENTIFICATION_PREREGISTRATION.md freezes three "
+    "conditions, all of which must hold before the displacement-corrected "
+    "per-arm rule may replace budget.SCREENING_CONTEXT_INFORMATION_NATS. A1: the "
+    "held-out false-positive rate of the corrected rule at zero is at most the "
+    "target over readings AND over distinct measurements, under every fold "
+    "scheme. A2: no reading is admissible as a ratio denominator while "
+    "unidentified, so the two criteria are nested rather than crossing. A3: no "
+    "reading admitted by the shipped floor is refused by the corrected rule. The "
+    "rate over cohort draws is reported and is deliberately not a condition: 24 "
+    "units cannot resolve the target, so a criterion on it would be decided by a "
+    "single reading"
+)
+
+
+def _adoption_criterion(
+    schemes: list[dict[str, Any]],
+    real_rows: list[dict[str, Any]],
+    *,
+    threshold: float,
+    target: float,
+) -> dict[str, Any]:
+    """The pre-registered conditions, evaluated and reported as a whole.
+
+    Written as one function so that the verdict cannot be assembled by a reader
+    picking whichever of the three conditions the numbers happen to satisfy. A
+    condition that cannot be evaluated -- no scored scheme, no real row carrying
+    a standard error -- makes the verdict ``INDETERMINATE`` rather than ``ADOPT``.
+    """
+
+    rule = "candidate_displacement_corrected_rule_at_zero"
+    per_scheme = [
+        {
+            "scheme": scheme["scheme"],
+            "rate_over_readings": scheme["pooled_held_out_false_positive_rate"][rule][
+                "rate_over_readings"
+            ],
+            "rate_over_distinct_measurements": scheme[
+                "pooled_held_out_false_positive_rate"
+            ][rule]["rate_over_distinct_measurements"],
+            "rate_over_cohort_draws": scheme["pooled_held_out_false_positive_rate"][
+                rule
+            ]["rate_over_cohort_draws"],
+            "exact_upper_95_over_readings": scheme[
+                "pooled_held_out_false_positive_rate"
+            ][rule]["exact_upper_95_over_readings"],
+            "exact_upper_95_over_distinct_measurements": scheme[
+                "pooled_held_out_false_positive_rate"
+            ][rule]["exact_upper_95_over_distinct_measurements"],
+            "exact_upper_95_over_cohort_draws": scheme[
+                "pooled_held_out_false_positive_rate"
+            ][rule]["exact_upper_95_over_cohort_draws"],
+            "meets_the_target_over_readings": scheme[
+                "pooled_held_out_false_positive_rate"
+            ][rule]["meets_the_target_over_readings"],
+            "meets_the_target_over_distinct_measurements": scheme[
+                "pooled_held_out_false_positive_rate"
+            ][rule]["meets_the_target_over_distinct_measurements"],
+        }
+        for scheme in schemes
+    ]
+    a1 = bool(per_scheme) and all(
+        entry["meets_the_target_over_readings"]
+        and entry["meets_the_target_over_distinct_measurements"]
+        for entry in per_scheme
+    )
+
+    scorable = [
+        row
+        for row in real_rows
+        if row["context_information_nats"] is not None
+        and row["bootstrap_se"] is not None
+        and row["per_arm_identification_status"] in ("PASS", "FAIL")
+    ]
+    admissible_but_unidentified = [
+        {
+            "arm": row["arm"],
+            "block_id": row["block_id"],
+            "context_information_nats": row["context_information_nats"],
+            "bootstrap_se": row["bootstrap_se"],
+        }
+        for row in scorable
+        if ratio_denominator_admissibility(
+            row["context_information_nats"], row["bootstrap_se"]
+        )["admissible"]
+        and row["per_arm_identification_status"] != "PASS"
+    ]
+    lost = [
+        {
+            "arm": row["arm"],
+            "block_id": row["block_id"],
+            "context_information_nats": row["context_information_nats"],
+            "displacement_corrected_ci_95": row["displacement_corrected_ci_95"],
+        }
+        for row in scorable
+        if row["context_information_nats"] >= threshold
+        and row["per_arm_identification_status"] != "PASS"
+    ]
+    a2 = bool(scorable) and not admissible_but_unidentified
+    a3 = bool(scorable) and not lost
+    evaluable = bool(per_scheme) and bool(scorable)
+    verdict = "INDETERMINATE" if not evaluable else ("ADOPT" if a1 and a2 and a3 else "DECLINE")
+    return {
+        "preregistration": (
+            "docs/DISPLACEMENT_CORRECTED_IDENTIFICATION_PREREGISTRATION.md"
+        ),
+        "note": ADOPTION_CRITERION_NOTE,
+        "candidate_rule": (
+            "the displacement-corrected 95% interval for I lies strictly above zero"
+        ),
+        "target_false_positive_rate": float(target),
+        "shipped_floor_nats": float(threshold),
+        "n_real_readings_scored": len(scorable),
+        "A1_held_out_false_positive_rate": {
+            "holds": a1,
+            "by_scheme": per_scheme,
+        },
+        "A2_nested_with_ratio_admissibility": {
+            "holds": a2,
+            "n_admissible_but_unidentified": len(admissible_but_unidentified),
+            "readings_admissible_but_unidentified": admissible_but_unidentified,
+        },
+        "A3_no_admitted_reading_is_lost": {
+            "holds": a3,
+            "n_lost": len(lost),
+            "readings_lost": lost,
+        },
+        "verdict": verdict,
+        "adopted": verdict == "ADOPT",
+    }
+
+
+def held_out_threshold_validation(
+    null_readings: list[dict[str, Any]],
+    arm_rows: list[dict[str, Any]],
+    *,
+    threshold: float,
+    confidence: float,
+    target_false_positive_rate: float = HELD_OUT_TARGET_FALSE_POSITIVE_RATE,
+) -> dict[str, Any]:
+    """Cross-fitted validation of the identification floor on units held out of its derivation.
+
+    Two schemes, because two different generalisations are at stake and the panel
+    supplies a unit for each. Holding out a **cohort draw** asks whether a
+    threshold derived on seven draws controls its error rate on an eighth, which
+    is the sampling question. Holding out a **tokenisation class** asks whether a
+    threshold derived without ever seeing a vocabulary controls its error rate on
+    that vocabulary, which is the question a single constant in nats per token
+    actually raises: the null's magnitude is set by the smoothing constant, and
+    the smoothing constant is a property of the inventory.
+
+    Holding out an *arm* is not among them, and the reason is measured rather
+    than asserted: arms sharing a block and a vocabulary carry one and the same
+    reading, so a fold that held out ``gpt2`` would leave four bit-identical
+    copies of its held-out readings in the calibration fold and would report a
+    generalisation it never tested. ``null_reading_equivalence`` reports the
+    collapse it rests on.
+
+    The cohort-draw scheme is run twice, once with the blocks coupled to the
+    held-out one by the control rotation withheld from the calibration fold as
+    well. A control borrows the *next* block's reference, so a held-out block's
+    reading is a function of a calibration block's reference; the buffered
+    variant is what says whether that coupling is carrying the result.
+    """
+
+    usable = [
+        reading
+        for reading in null_readings
+        if reading.get("measured_information_nats") is not None
+        and reading.get("bootstrap_ci_95") is not None
+        and reading.get("displacement_corrected_ci_95") is not None
+        and reading.get("bootstrap_se")
+    ]
+    real_rows = [
+        row
+        for row in arm_rows
+        if not row["is_unigram_null_control"]
+        and row["context_information_nats"] is not None
+    ]
+    if len(usable) < 2:
+        return {
+            "requested": True,
+            "refused": True,
+            "refusal_reason": (
+                f"{len(usable)} measured null control readings; a held-out "
+                "validation needs at least two units and this is not enough to "
+                "form one fold, let alone report a rate"
+            ),
+            "note": HELD_OUT_NOTE,
+        }
+
+    equivalence = null_reading_equivalence(usable)
+    class_of = equivalence["arm_to_tokenisation_class"]
+
+    borrowed_from = {
+        reading["block_id"]: reading["control_block_id"] for reading in usable
+    }
+
+    def rotation_buffer(block_id: str) -> set[str]:
+        coupled = {block_id}
+        source = borrowed_from.get(block_id)
+        if source is not None:
+            coupled.add(source)
+        coupled |= {
+            other for other, source in borrowed_from.items() if source == block_id
+        }
+        return coupled
+
+    schemes = [
+        _held_out_scheme(
+            "leave_one_cohort_draw_out",
+            "does a threshold derived on the other cohort draws control its "
+            "false-positive rate on a draw it never saw?",
+            usable,
+            real_rows,
+            lambda reading: reading["block_id"],
+            lambda row: row["block_id"],
+            lambda unit: {unit},
+            threshold=threshold,
+            confidence=confidence,
+            target=target_false_positive_rate,
+        ),
+        _held_out_scheme(
+            "leave_one_cohort_draw_out_buffered_against_the_control_rotation",
+            "the same question with the blocks coupled to the held-out draw by "
+            "the borrowed reference withheld from the derivation as well, so the "
+            "rotation cannot be what carries the answer",
+            usable,
+            real_rows,
+            lambda reading: reading["block_id"],
+            lambda row: row["block_id"],
+            rotation_buffer,
+            threshold=threshold,
+            confidence=confidence,
+            target=target_false_positive_rate,
+        ),
+        _held_out_scheme(
+            "leave_one_tokenisation_class_out",
+            "does a threshold derived without ever seeing a vocabulary control "
+            "its false-positive rate on that vocabulary?",
+            usable,
+            real_rows,
+            lambda reading: class_of[reading["arm"]],
+            lambda row: class_of.get(row["arm"], ""),
+            lambda unit: {unit},
+            threshold=threshold,
+            confidence=confidence,
+            target=target_false_positive_rate,
+        ),
+    ]
+
+    scored = [scheme for scheme in schemes if not scheme["refused"]]
+    adoption = _adoption_criterion(
+        scored, real_rows, threshold=threshold, target=target_false_positive_rate
+    )
+    shipped_holds = all(
+        scheme["pooled_held_out_false_positive_rate"]["shipped_point_rule"][
+            "n_false_positives"
+        ]
+        == 0
+        for scheme in scored
+    )
+    recalibrated_holds = all(
+        scheme["pooled_held_out_false_positive_rate"]["recalibrated_point_rule"][
+            "meets_the_target_over_readings"
+        ]
+        for scheme in scored
+    )
+    never_exceeds = all(
+        scheme["recalibrated_tau_nats"]["point_rule"]["max"] <= threshold
+        for scheme in scored
+    )
+    verdicts_agree = all(
+        scheme["real_arm_verdict_agreement"]["agrees_everywhere"] for scheme in scored
+    )
+    return {
+        "requested": True,
+        "refused": False,
+        "note": HELD_OUT_NOTE,
+        "preregistration": "docs/MEASURABILITY_THRESHOLD_CALIBRATION_PREREGISTRATION.md",
+        "shipped_floor_nats": float(threshold),
+        "target_false_positive_rate": float(target_false_positive_rate),
+        "tau_grid_step_nats": HELD_OUT_TAU_GRID[1] - HELD_OUT_TAU_GRID[0],
+        "unit_accounting": equivalence,
+        "displacement_corrected_identification": adoption,
+        "schemes": schemes,
+        "conclusion": {
+            "shipped_floor_admits_no_held_out_null": shipped_holds,
+            "recalibrated_threshold_meets_its_own_target_out_of_sample":
+                bool(recalibrated_holds),
+            "no_fold_asks_for_more_than_the_shipped_floor": bool(never_exceeds),
+            "real_arm_verdicts_are_unchanged": bool(verdicts_agree),
+            "statement": _held_out_statement(
+                scored,
+                threshold=threshold,
+                target=target_false_positive_rate,
+                shipped_holds=shipped_holds,
+                recalibrated_holds=bool(recalibrated_holds),
+                never_exceeds=bool(never_exceeds),
+                verdicts_agree=bool(verdicts_agree),
+            ),
+        },
+    }
+
+
+def _held_out_statement(
+    schemes: list[dict[str, Any]],
+    *,
+    threshold: float,
+    target: float,
+    shipped_holds: bool,
+    recalibrated_holds: bool,
+    never_exceeds: bool,
+    verdicts_agree: bool,
+) -> str:
+    """What the folds say, written from the folds and not from an expectation."""
+
+    if not schemes:
+        return "no scheme produced a scored fold, so nothing was validated"
+    worst = max(
+        scheme["pooled_held_out_false_positive_rate"]["recalibrated_point_rule"][
+            "rate_over_readings"
+        ]
+        for scheme in schemes
+    )
+    bound = max(
+        scheme["pooled_held_out_false_positive_rate"]["shipped_point_rule"][
+            "exact_upper_95_over_distinct_measurements"
+        ]
+        for scheme in schemes
+    )
+    largest_tau = max(
+        scheme["recalibrated_tau_nats"]["point_rule"]["max"] for scheme in schemes
+    )
+    parts = [
+        (
+            f"the shipped {threshold:g} nats/token floor admits no held-out null "
+            f"reading under any scheme, with a one-sided 95% upper limit of "
+            f"{bound:.4f} on its false-positive rate over distinct measurements"
+            if shipped_holds
+            else f"the shipped {threshold:g} nats/token floor admits held-out null "
+            "readings, so it does not survive this validation"
+        ),
+        (
+            "the threshold re-derived on each calibration fold reaches a pooled "
+            f"held-out rate of {worst:.4f} against its own {target:g} target"
+            + (", which it meets" if recalibrated_holds else ", which it fails")
+        ),
+        (
+            f"no fold's re-derived threshold exceeds the shipped floor (largest "
+            f"{largest_tau:g} nats)"
+            if never_exceeds
+            else "some fold asks for a threshold above the shipped floor, which is "
+            "the direction that would make the shipped floor too lax"
+        ),
+        (
+            "no real arm changes verdict between a fold's threshold and the "
+            "shipped floor"
+            if verdicts_agree
+            else "at least one real arm changes verdict between a fold's threshold "
+            "and the shipped floor"
+        ),
+    ]
+    return "; ".join(parts)
+
+
+# --------------------------------------------------------------------------- #
 # The comparison table
 # --------------------------------------------------------------------------- #
 
@@ -2274,13 +3147,17 @@ def summarise(
             "reported under unigram_null_control"
         ),
         "operative_gate": (
-            "identification: the point estimate of I against "
-            "budget.SCREENING_CONTEXT_INFORMATION_NATS, reported with a "
-            "group-level paired interval. It says the arm read above no-context "
-            "and NOT that its reading may be divided by; that is "
-            "budget.ratio_denominator_admissibility, which is per-arm and is "
-            "read off the bootstrap_se this stage publishes"
+            "identification: budget.context_identification, which asks whether "
+            "the arm's displacement-corrected 95% interval for I lies strictly "
+            "above zero. It is per-arm and has no constant in it. It says the "
+            "arm read above no-context and NOT that its reading may be divided "
+            "by; that is budget.ratio_denominator_admissibility, which is "
+            "strictly stronger and therefore nested inside it. The "
+            f"{SCREENING_CONTEXT_INFORMATION_NATS:g}-nat screening floor is "
+            "reported beside every reading as screening_status and decides "
+            "nothing here"
         ),
+        "screening_floor_note": SCREENING_FLOOR_NOTE,
         "legacy_minimum_context_information_nats": MIN_CONTEXT_INFORMATION_NATS,
         "legacy_floor_note": LEGACY_FLOOR_NOTE,
         "arms": entries,
@@ -2380,11 +3257,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--threshold-nats",
         type=float,
         default=SCREENING_CONTEXT_INFORMATION_NATS,
-        help="the operative screening floor -- the identification criterion, "
-        "calibrated at EXP-R2-218 and reported against, never re-chosen here. It "
-        "is not a denominator criterion: whether a reading may be divided by is "
-        "budget.ratio_denominator_admissibility, a per-arm bound on that arm's "
-        "own standard error, which this stage publishes as bootstrap_se",
+        help="the pre-interval screening floor, reported against every reading "
+        "as screening_status and deciding nothing here: the operative verdict is "
+        "per_arm_identification_status, from budget.context_identification. It "
+        "is not a denominator criterion either: whether a reading may be divided "
+        "by is budget.ratio_denominator_admissibility, a per-arm bound on that "
+        "arm's own standard error, which this stage publishes as bootstrap_se",
     )
     parser.add_argument(
         "--containment",
@@ -2431,6 +3309,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "least two blocks carrying the arm with different reference digests, and "
         "names the two blocks in every record",
     )
+    parser.add_argument(
+        "--held-out-threshold-validation",
+        action="store_true",
+        help="cross-fit the identification floor's calibration: on every fold "
+        "re-derive the threshold from the calibration units alone, by "
+        "EXP-R2-218's own rule, and score it -- and the shipped floor beside it "
+        "-- on units the derivation never saw. Needs --unigram-null-control, "
+        "because the units are the readings whose true information is zero",
+    )
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument(
         "--report-name", default="context_information_bootstrap.json"
@@ -2446,6 +3333,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         raise SystemExit("--alpha-sweep must name at least one positive constant")
     if args.leakage_kmer < 1:
         raise SystemExit("--leakage-kmer must be positive")
+    if args.held_out_threshold_validation and not args.unigram_null_control:
+        raise SystemExit(
+            "--held-out-threshold-validation cross-fits the calibration of the "
+            "identification floor over readings whose true context information "
+            "is zero, and those readings are the null controls; pass "
+            "--unigram-null-control as well"
+        )
     return args
 
 
@@ -2570,6 +3464,23 @@ def main(argv: list[str] | None = None) -> None:
         n_bootstrap=int(args.n_bootstrap),
         confidence=float(args.confidence),
     )
+    payload_control = (
+        null_control_summary(
+            controls,
+            rows,
+            threshold=float(args.threshold_nats),
+            confidence=float(args.confidence),
+        )
+        if args.unigram_null_control
+        else {
+            "requested": False,
+            "note": (
+                "no null control was requested; pass --unigram-null-control with "
+                "at least two blocks carrying an arm against different held-out "
+                "references to measure the criteria at a known zero"
+            ),
+        }
+    )
     payload = {
         "metadata": {
             "schema_version": SCHEMA_VERSION,
@@ -2686,20 +3597,21 @@ def main(argv: list[str] | None = None) -> None:
                 "the headline stays on the declared reference"
             ),
         },
-        "unigram_null_control": (
-            null_control_summary(
-                controls,
+        "unigram_null_control": payload_control,
+        "held_out_threshold_validation": (
+            held_out_threshold_validation(
+                payload_control["readings"],
                 rows,
                 threshold=float(args.threshold_nats),
                 confidence=float(args.confidence),
             )
-            if args.unigram_null_control
+            if args.held_out_threshold_validation
             else {
                 "requested": False,
                 "note": (
-                    "no null control was requested; pass --unigram-null-control "
-                    "with at least two blocks carrying an arm against different "
-                    "held-out references to measure the criteria at a known zero"
+                    "no held-out validation was requested; pass "
+                    "--held-out-threshold-validation with --unigram-null-control "
+                    "to cross-fit the identification floor's calibration"
                 ),
             }
         ),
@@ -2755,6 +3667,33 @@ def main(argv: list[str] | None = None) -> None:
                 f"{entry['max_departure_nats']:+.4f}], "
                 f"sign PASS {entry['n_sign_pass']}, floor PASS {entry['n_floor_pass']}"
             )
+    validation = payload["held_out_threshold_validation"]
+    if validation.get("requested") and not validation.get("refused"):
+        accounting = validation["unit_accounting"]
+        print(
+            f"held-out validation: {accounting['n_readings']} null readings are "
+            f"{accounting['n_distinct_measurements']} distinct measurements over "
+            f"{accounting['n_cohort_draws']} cohort draws and "
+            f"{len(accounting['tokenisation_classes'])} tokenisation classes"
+        )
+        for scheme in validation["schemes"]:
+            if scheme["refused"]:
+                print(f"  {scheme['scheme']}: REFUSED -- {scheme['refusal_reason']}")
+                continue
+            pooled = scheme["pooled_held_out_false_positive_rate"]
+            tau = scheme["recalibrated_tau_nats"]["point_rule"]
+            print(
+                f"  {scheme['scheme']}: {scheme['n_folds']} folds, re-derived tau "
+                f"{tau['min']:.3f}-{tau['max']:.3f} nats; held-out FPR "
+                f"recalibrated {pooled['recalibrated_point_rule']['rate_over_readings']:.4f}, "
+                f"shipped point {pooled['shipped_point_rule']['rate_over_readings']:.4f}, "
+                f"shipped interval {pooled['shipped_interval_rule']['rate_over_readings']:.4f}, "
+                f"Fieller "
+                f"{pooled['shipped_fieller_denominator_admissibility']['rate_over_readings']:.4f}; "
+                f"real arms changing verdict "
+                f"{scheme['real_arm_verdict_agreement']['n_changing_verdict']}"
+            )
+        print(f"  {validation['conclusion']['statement']}")
     absent = payload["summary"]["arms_with_no_record"]
     if absent:
         print(f"arms with no record at all (absence is not a pass): {', '.join(absent)}")

@@ -86,36 +86,50 @@ the same units the modes were qualified in.
 
 ``q`` is estimated **held out across near-duplicate groups**, never plug-in:
 Appendix B rule 3, and L12's measured plug-in bias of up to +1.02 nats on a
-protein arm against +0.009 at residue level is several times the
-:data:`MODE_BEHAVIOURAL_READ_FLOOR_NATS` these cells were qualified against. The plug-in value is computed anyway and reported beside it as
-the measured bias at this cohort size, and the cohort's own target-count entropy
-is reported through :func:`src.transfer.budget.miller_madow_entropy_nats` as the
-bias-corrected context-free reference.
+protein arm against +0.009 at residue level is larger than most of the damages
+this ladder is asked to resolve. The plug-in value is computed anyway and reported
+beside it as the measured bias at this cohort size, and the cohort's own
+target-count entropy is reported through
+:func:`src.transfer.budget.miller_madow_entropy_nats` as the bias-corrected
+context-free reference.
 
 **The headline claim is licensed only by the residual.** If the residual is small
 the finding is "the two modes differ in their unigram statistics", which is a much
 weaker statement, and :data:`DECISION_RULES` returns ``UNIGRAM_ONLY`` for it
 rather than letting a large total damage be read as distinct computation.
 
-Where a behavioural read is refused, and why not by name
-========================================================
+A mode with nothing to destroy, and how that is decided
+======================================================
 
-``Llama-2-7b-hf``'s protein mode is behaviourally unmeasurable on this lineage:
-context information **+0.0843 nats/token** and a reversal cost of **-0.0013
-nats/residue** (EXP-R2-152, re-measured at EXP-R2-174), against a measurability
-floor of 0.30. Necessity, cross-mode driveability and the decision rule are all
-statements about a likelihood, so none of them may be read there.
+Some modes carry too little context-derived signal for an ablation to destroy.
+``Llama-2-7b-hf``'s protein mode is the measured case on this lineage: context
+information **+0.0843 nats/token** and a reversal cost of **-0.0013 nats/residue**
+(EXP-R2-152, re-measured at EXP-R2-174), recorded in
+:data:`LOW_SIGNAL_MODE_EVIDENCE`.
 
-The refusal is **not** keyed to a checkpoint name. A checkpoint is reached by
-path everywhere in this programme, and a name-keyed guard would pass silently on
-the same weights under a different directory. It is keyed to the measured
-quantity: :func:`mode_measurability` takes the mode's declared context
-information -- an input from EXP-R2-152, required on the command line and never
-inferred here -- and decides it against :data:`MODE_BEHAVIOURAL_READ_FLOOR_NATS`
-through :func:`src.transfer.budget.power_status`. That threshold was the shared
-measurability floor until EXP-R2-218 retired it; it is now declared by this stage
-and recorded as underived, for the reasons its own declaration gives. :func:`assert_behavioural_read` then **raises** on an
-unmeasurable mode. Occupancy is representational and is not refused there: the
+That is a **prior expectation about a cohort and never an admission rule.** This
+module used to gate on it: a mode's context information was declared on the
+command line and compared against a locally declared 0.30-nat floor before any
+behavioural quantity was computed, and a mode below it was refused every damage
+figure, every cross-mode contrast and every verdict. The floor was underived -- it
+is the constant L41 catalogues and EXP-R2-218 retired -- the number it decided was
+measured on a different cohort from the one being ablated, and the failure it was
+guarding against is one :data:`DECISION_RULES` already tests by measurement.
+
+The rule tests it ex post, on this stage's own cohort, and per layer. A licensed
+verdict requires **in every mode of the run** that the residual non-unigram damage
+from ablating that mode's own necessary subspace be positive with a paired
+group-bootstrap 95% interval excluding zero. A mode with no context-derived signal
+cannot satisfy that clause, and the artefact records which way it failed:
+``VOID_INSTRUMENT`` where zeroing the whole block write does not damage the mode
+and there is therefore no attainable denominator, ``NO_MEASURED_DAMAGE`` where the
+ablation establishes no damage to decompose, ``UNIGRAM_ONLY`` where the damage is
+mostly the induced shift in the model's own marginal, and ``MIXED`` where the
+clauses disagree. None of the four is a necessity claim. The mode's context
+information is reported beside them by :func:`cohort_context_information`,
+measured on the cohort the damage was measured on rather than declared.
+
+Occupancy was never gated and is not gated now. It is representational: the
 activations exist and their covariance is a real object, which is the same
 distinction ``32_crosscoder.py`` records for the pre-adaptation checkpoint's
 protein mode.
@@ -134,7 +148,6 @@ There is no cross-layer summary here, not even a convenience one.
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Sequence
 
@@ -142,10 +155,7 @@ import numpy as np
 import torch
 
 from .budget import (
-    SCREENING_CONTEXT_INFORMATION_NATS,
     miller_madow_entropy_nats,
-    power_status,
-    threshold_in_units,
     unigram_entropy_nats,
 )
 from .crosscoder import assert_per_layer_fields  # noqa: F401  (re-exported guard)
@@ -178,63 +188,37 @@ PRE_REGISTRATION_SCOPE = (
     "about any number produced under it"
 )
 
-#: Context information a mode must read before a likelihood-based read may be
-#: taken in it.
+#: The measured evidence that a mode of this lineage may carry little
+#: context-derived signal, carried into the artefact's limitations block. Quoted
+#: here once so that what the artefact says and what this module's own reasoning
+#: rests on cannot drift apart.
 #:
-#: **This is declared here, and it is not one of the two calibrated criteria.**
-#: Both halves of that sentence are load-bearing.
+#: **It gates nothing.** A 0.30-nat floor keyed to this reading used to admit or
+#: refuse every behavioural cell of a mode before any of them was computed; it was
+#: declared locally, never derived, and decided a number measured on a different
+#: cohort from the one being ablated. It is retired, and what a mode's ablation
+#: can support is now decided where it was always also decided -- ex post, per
+#: layer, by the residual-damage clauses of :data:`DECISION_RULES`.
 #:
-#: It is not :data:`src.transfer.budget.SCREENING_CONTEXT_INFORMATION_NATS`.
-#: That floor answers "is this reading distinguishable from zero", and
-#: ``Llama-2-7b-hf``'s protein mode at +0.0843 nats/token clears it while
-#: licensing nothing: the behavioural quantity this gate protects is measured on
-#: that mode at a reversal cost of **-0.0013 nats/residue**. What the necessity
-#: ladder, cross-mode driveability and every clause of :data:`DECISION_RULES`
-#: need is not a detection but enough context-derived signal for an ablation to
-#: destroy, and a mode can be identified as non-zero and still have none.
-#:
-#: It is not :func:`src.transfer.budget.ratio_denominator_admissibility` either,
-#: which is the criterion that would decide it properly, **because that criterion
-#: cannot be evaluated on this input**. The mode readings are declared on the
-#: command line from EXP-R2-152 and carry no standard error; the only precision
-#: statement available for them is that a second cohort draw at EXP-R2-174 moved
-#: +0.0843 to +0.0918. Substituting some other arm's standard error, or a
-#: magnitude fitted to one, is exactly the defect EXP-R2-218 measured.
-#:
-#: So the incumbent magnitude is retained **for this gate alone**, declared here
-#: rather than inherited from the retired
-#: :data:`src.transfer.budget.MIN_CONTEXT_INFORMATION_NATS`, and recorded as
-#: **underived**. This is the one place in the package where that magnitude still
-#: decides anything, and it is kept because lowering it to the calibrated
-#: identification floor would turn a published refusal into an admission on a
-#: mode whose behavioural estimand has been measured at -0.0013 nats/residue.
-#: What retires it is re-measuring the mode readings through the group-level
-#: paired bootstrap so that each carries a standard error, at which point this
-#: gate becomes the Fieller precondition like every other denominator here.
-MODE_BEHAVIOURAL_READ_FLOOR_NATS = 0.30
-
-#: Carried into every measurability record, so the artefact says what its own
-#: threshold is and is not.
-MODE_BEHAVIOURAL_READ_FLOOR_STATUS = (
-    "UNDERIVED. Retained for this gate alone after EXP-R2-218 retired the shared "
-    f"{MODE_BEHAVIOURAL_READ_FLOOR_NATS}-nat measurability floor: the calibrated "
-    f"identification floor of {SCREENING_CONTEXT_INFORMATION_NATS} nats admits "
-    "Llama-2-7b-hf's protein mode at +0.0843 nats/token, whose reversal cost is "
-    "-0.0013 nats/residue, and the precision-referenced criterion that would "
-    "decide this correctly cannot be evaluated because the declared mode readings "
-    "carry no standard error"
-)
-
-#: The evidence the behavioural refusal is keyed to. Quoted here once so the
-#: message a run fails with and the artefact's own limitations block cannot drift.
-#: There is no limitation number for it: the catalogue ends at L32.
-UNMEASURABLE_MODE_EVIDENCE = (
+#: The catalogue this evidence was once said to fall outside of does **not** end at
+#: L32: it runs past L42, to L43. The mode's own low reading is still a measurement rather
+#: than a catalogued defect, but the floor it was refused against is catalogued, at
+#: **L41** -- ``budget.MIN_CONTEXT_INFORMATION_NATS = 0.30`` was never derived,
+#: identification needs 0.010-0.020 nats and denominator admissibility is a per-arm
+#: bound spanning 0.1456-0.9664, and the repair L41 declares is a
+#: precision-referenced criterion, a screening floor at 0.05 nats, and the constant
+#: kept only as a reporting column.
+LOW_SIGNAL_MODE_EVIDENCE = (
     "Llama-2-7b-hf's protein mode reads +0.0843 nats/token of context information "
     "and a reversal cost of -0.0013 nats/residue on this lineage (EXP-R2-152, "
-    "re-measured at EXP-R2-174), against the "
-    f"{MODE_BEHAVIOURAL_READ_FLOOR_NATS} nats floor. This is a property of the mode on "
-    "this cohort and is NOT a catalogued limitation -- the catalogue ends at L32 "
-    "and there is no L33"
+    "re-measured at EXP-R2-174), so an ablation in it may have little to destroy. "
+    "That is a property of the mode on that cohort and it decides nothing here: "
+    "whether a mode's ablation supports a necessity claim is decided per layer by "
+    "this stage's own measured residual damage under the decision rule, and a mode "
+    "with no signal reaches NO_MEASURED_DAMAGE, VOID_INSTRUMENT, UNIGRAM_ONLY or "
+    "MIXED rather than a verdict. The 0.30-nat floor this stage once refused such a "
+    "mode against is catalogued at L41 (EXP-R2-218) and is retired; the catalogue "
+    "runs past L42, to L43"
 )
 
 #: Why a design that would be blocked by L31 is not blocked here.
@@ -276,18 +260,15 @@ OCCUPANCY_NOTE = (
 #: genuinely low-dimensional one in every statistic reported here.
 OCCUPANCY_UNDERSAMPLED = "OCCUPANCY_UNDERSAMPLED"
 
-#: Written in place of every behavioural cell of a mode that cannot carry one.
-BEHAVIOURAL_READ_REFUSED = "BEHAVIOURAL_READ_REFUSED"
-
 #: Written in place of a cross-mode quantity that needs two modes when one ran.
 SINGLE_MODE_RUN = "SINGLE_MODE_NOT_A_CROSS_MODE_COMPARISON"
 
 #: Written in place of an overlap when a mode's necessary subspace is not defined
 #: at that layer -- the ladder never reached the necessity fraction, or the full
-#: block ablation was not attainable. It is deliberately NOT the behavioural
-#: refusal: one is a statement about the site and the ladder, the other about the
-#: mode's measurability, and spelling them the same way would let a reader take a
-#: short ladder for an unmeasurable checkpoint.
+#: block ablation was not attainable. It is deliberately NOT
+#: :data:`SINGLE_MODE_RUN`: one is a statement about this site and this ladder in a
+#: run that had both modes, the other about a run that named one, and spelling them
+#: the same way would let a reader take a short ladder for a missing comparison.
 NO_NECESSARY_SUBSPACE = "NO_NECESSARY_SUBSPACE_AT_THIS_LAYER"
 
 #: What ``-mean log[p(y|x)/q(y)]`` with the model's OWN marginal is, and what it is
@@ -296,16 +277,21 @@ NO_NECESSARY_SUBSPACE = "NO_NECESSARY_SUBSPACE_AT_THIS_LAYER"
 #: mean predictive distribution. The two answer different questions -- how much
 #: better the model is than the corpus's own symbol frequencies, against how much
 #: of the model's own skill is contextual -- and the second is generally the larger.
-#: They are not interchangeable and a magnitude from one must never be quoted
-#: against the other's floor.
+#: They are not interchangeable. This module holds no threshold on either any
+#: more, but ``21_joint_mode_qualification.py`` still gates a mode on the
+#: corpus-referenced one, so the prohibition stands where a threshold does: neither
+#: may be substituted for the other at that gate.
 MODEL_MARGINAL_CONTEXT_INFORMATION_NOTE = (
     "context information against the MODEL'S OWN held-out marginal, not against a "
-    "corpus unigram. EXP-R2-152's figure is the corpus unigram entropy minus the "
-    "model's cross-entropy and is the quantity the 0.30-nat measurability floor is "
-    "stated in; this one is -mean log[p(y|x)/q(y)] with q the model's mean "
-    "predictive distribution, which is what the residual half of every damage "
-    "figure here is a difference of. The two are different estimands and neither "
-    "may be quoted against the other's threshold"
+    "corpus unigram. EXP-R2-152's figure -- and the quantity "
+    "21_joint_mode_qualification.py still gates a mode on -- is the corpus unigram "
+    "entropy minus the model's cross-entropy; this one is -mean log[p(y|x)/q(y)] "
+    "with q the model's mean predictive distribution, which is what the residual "
+    "half of every damage figure here is a difference of. The two are different "
+    "estimands. Nothing in this stage takes a threshold on either, and neither may "
+    "be substituted for the other where one does. The corpus-referenced quantity is "
+    "reported beside this one by cohort_context_information, computed on this "
+    "stage's own cohort"
 )
 
 MEAN_SQUARED_COSINE = "mean_squared_cosine"
@@ -606,75 +592,6 @@ def parse_rank_ladder(argument: str) -> tuple[int, ...]:
             "differences between consecutive rungs and are meaningless out of order"
         )
     return tuple(ranks)
-
-
-def mode_measurability(
-    mode: str,
-    context_information_nats: float,
-    *,
-    threshold_nats: float = MODE_BEHAVIOURAL_READ_FLOOR_NATS,
-) -> dict[str, Any]:
-    """Whether a behavioural estimand may be read in one mode, from its own number.
-
-    The input is the mode's measured context information from EXP-R2-152, supplied
-    on the command line and never inferred here, and the comparison is
-    :func:`src.transfer.budget.power_status`, the point rule. The threshold is
-    this stage's own :data:`MODE_BEHAVIOURAL_READ_FLOOR_NATS`, whose declaration
-    records why it is neither of the two criteria EXP-R2-218 calibrated and what
-    would retire it; every record carries that status rather than leaving a reader
-    to assume the number was derived.
-
-    Keyed to the measurement and not to a checkpoint name, because every
-    checkpoint in this programme is reached by path and a name-keyed guard passes
-    silently on the same weights under a different directory.
-    """
-
-    if not math.isfinite(float(context_information_nats)):
-        raise ValueError(f"{mode}: the declared context information must be finite")
-    verdict, status = power_status(float(context_information_nats), threshold_nats)
-    return {
-        "mode": mode,
-        "context_information_nats": float(context_information_nats),
-        "threshold_nats": float(threshold_nats),
-        # Nats alone is not a cross-arm threshold. Neither conversion is available
-        # here -- the command line declares a reading, not the cohort's baseline
-        # entropy or its symbol expansion -- so both are reported null with the
-        # reason attached rather than silently omitted.
-        "threshold": threshold_in_units(float(threshold_nats)),
-        "threshold_status": MODE_BEHAVIOURAL_READ_FLOOR_STATUS,
-        "power_verdict": verdict,
-        "measurability": status,
-        "behavioural_read_admitted": verdict == "PASS",
-        "source": (
-            "declared on the command line from EXP-R2-152 (re-measured at "
-            "EXP-R2-174); this stage does not re-measure context information and "
-            "must not be read as having done so"
-        ),
-        "evidence": UNMEASURABLE_MODE_EVIDENCE,
-    }
-
-
-def assert_behavioural_read(record: Mapping[str, Any]) -> None:
-    """Refuse a likelihood-based read in a mode that cannot carry one.
-
-    Raises rather than returning a flag. Necessity, cross-mode driveability and
-    every clause of the decision rule are statements about a likelihood, and a
-    likelihood on a mode with no measurable context information has a denominator
-    comparable to its own sampling error -- which is a statement about the cohort
-    and the evaluation interface, never a negative about the model.
-    """
-
-    if not record.get("behavioural_read_admitted", False):
-        raise ValueError(
-            f"{record.get('mode')!r} declares "
-            f"{record.get('context_information_nats')} nats/token of context "
-            f"information against a floor of {record.get('threshold_nats')}, so it is "
-            f"{record.get('measurability')}. No ablation damage, no cross-mode "
-            "contrast and no verdict may be read in it. "
-            + UNMEASURABLE_MODE_EVIDENCE
-            + ". Occupancy is representational and is NOT refused here: the "
-            "activations exist and their covariance is a real object"
-        )
 
 
 # --------------------------------------------------------------- subspaces
@@ -1149,6 +1066,46 @@ def cohort_unigram_reference(target_ids: np.ndarray, vocabulary: int) -> dict[st
             "to +1.02 nats on a protein arm, and the correction grows with the "
             "vocabulary against the sample"
         ),
+    }
+
+
+COHORT_CONTEXT_INFORMATION_NOTE = (
+    "the corpus-unigram-referenced context information -- the cohort's own "
+    "target-count entropy minus the model's clean cross-entropy over the same "
+    "scored positions -- computed HERE, on the cohort whose damage figures this "
+    "artefact reports. It is the estimand EXP-R2-152 reports and it is NOT that "
+    "run's number: a different eligible set is a different cohort. It is also not "
+    "budget.arm_power's held-out `context_information_nats`, whose reference is a "
+    "disjoint smoothed unigram rather than the scored cohort's own counts; each "
+    "field here names the reference it used. Nothing in this stage gates on it"
+)
+
+
+def cohort_context_information(
+    unigram_reference: Mapping[str, Any], clean_nll_nats: float
+) -> dict[str, Any]:
+    """One mode's context information against its own cohort's unigram entropy.
+
+    Both operands are already measured on this run -- the reference by
+    :func:`cohort_unigram_reference` over the scored targets, the cross-entropy by
+    the clean pass over the same positions -- so this quantity is reported rather
+    than declared, and it moves with the cohort it describes. That is the whole
+    reason it exists: a figure hand-carried from another stage's cohort describes a
+    population this artefact never measured.
+
+    Reported at both estimators of the reference, because L12 prices the plug-in
+    one at up to +1.02 nats on a protein arm and a single figure would hide which
+    estimator produced it.
+    """
+
+    clean = float(clean_nll_nats)
+    plug_in = float(unigram_reference["plug_in_entropy_nats"])
+    corrected = float(unigram_reference["miller_madow_entropy_nats"])
+    return {
+        "context_information_plug_in_reference_nats": plug_in - clean,
+        "context_information_miller_madow_reference_nats": corrected - clean,
+        "clean_cross_entropy_nats": clean,
+        "note": COHORT_CONTEXT_INFORMATION_NOTE,
     }
 
 

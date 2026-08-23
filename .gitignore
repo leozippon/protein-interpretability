@@ -104,3 +104,6 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# Agent harness local session state
+.pi/

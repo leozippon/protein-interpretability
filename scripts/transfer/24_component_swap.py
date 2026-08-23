@@ -39,11 +39,15 @@ four independent measurements and does not compose them into an attribution.
 **The estimand is 21_joint_mode_qualification.py's, imported rather than
 restated.** Context information: the held-out unigram cross-entropy on the scored
 symbols minus the model's own clean cross-entropy on the same symbols, per mode,
-with that stage's cohort machinery, its held-out reference, its controls and its
-measurability threshold. A chimera's number is only worth anything if it sits
-directly beside the qualification figures it is read against, and Appendix B rule
-12 -- a single declaration, imported, never reimplemented -- is what puts it
-there.
+with that stage's cohort machinery, its held-out reference, its controls, its
+calibrated identification floor and its per-record sufficient-statistics sidecar.
+A chimera's number is only worth anything if it sits directly beside the
+qualification figures it is read against, and Appendix B rule 12 -- a single
+declaration, imported, never reimplemented -- is what puts it there. That
+includes what a verdict means: since the qualification stage's verdict became
+identification against the calibrated floor and its retired 0.30-nat comparison
+became an inert column, so did this one, and this artefact's schema moved to
+``r2_transfer_component_swap_v2`` to say so.
 
 **Component groups are declared, never inferred.** ``embedding`` is the input
 embedding, ``lm_head`` the output head, ``vocabulary_interface`` both together --
@@ -64,9 +68,11 @@ dtypes are compared before any write, the two tokenizers' vocabularies are
 compared by digest rather than assumed identical, and both refuse loudly.
 
 **One limitation travels with every protein-mode number here.** The base model's
-protein mode is unmeasurable -- context information +0.084 nats per token,
-reversal cost -0.001 nats per residue (EXP-R2-152) -- so on the protein side the
-base is a *pre-adaptation reference*, not a behavioural control. A protein
+protein mode is not worth a behavioural read, and the evidence for that is the
+reversal cost of -0.0013 nats per residue -- indifference to reading direction --
+and not its context information of +0.084 nats per token, which clears the
+calibrated identification floor. On the protein side the base is therefore a
+*pre-adaptation reference*, not a behavioural control. A protein
 magnitude from a cell built wholly or partly from it is not comparable with an
 adapted checkpoint's, and the artefact says so in its own field.
 
@@ -94,6 +100,10 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.transfer import joint_modes  # noqa: E402
 from src.transfer.arms import DEFAULT_CORPUS_DRAW_SEED, REPO  # noqa: E402
+from src.transfer.budget import (  # noqa: E402
+    MIN_CONTEXT_INFORMATION_NATS,
+    SCREENING_CONTEXT_INFORMATION_NATS,
+)
 from src.transfer.io import sha256_file, write_json  # noqa: E402
 from src.transfer.replaceable import checkpoint_weights_digest  # noqa: E402
 
@@ -104,7 +114,7 @@ def _load_stage(filename: str) -> Any:
     ``21_joint_mode_qualification.py`` is imported rather than copied because this
     stage's numbers are only readable if they are the *same* computation that
     stage performs: the same estimand, the same held-out reference, the same
-    cohort draw and the same measurability threshold. Appendix B rule 12 does not
+    cohort draw and the same identification floor. Appendix B rule 12 does not
     stop applying because the declaration lives in a file whose name starts with a
     digit.
     """
@@ -120,7 +130,11 @@ def _load_stage(filename: str) -> Any:
 
 STAGE21 = _load_stage("21_joint_mode_qualification.py")
 
-SCHEMA_VERSION = "r2_transfer_component_swap_v1"
+#: ``_v2`` for the reason 21_joint_mode_qualification.py bumps its own: the
+#: published verdict changed meaning, from a comparison against an underived
+#: 0.30-nat floor to the calibrated identification verdict, and every mode gained
+#: a sufficient-statistics sidecar.
+SCHEMA_VERSION = "r2_transfer_component_swap_v2"
 DEFAULT_OUT = REPO / "results/transfer/component_swap"
 
 #: Modules and stages whose content decides these numbers, hashed into the
@@ -169,25 +183,30 @@ COMPONENT_GROUPS: dict[str, str] = {
     ),
 }
 
-VERDICT_NOTE = STAGE21.VERDICT_NOTE
-#: One gate, one magnitude: a chimera's mode is read against the level its host
-#: lineage was qualified against, so the floor and its UNDERIVED status are taken
-#: from 21_joint_mode_qualification.py rather than restated here.
-JOINT_MODE_QUALIFICATION_FLOOR_NATS = STAGE21.JOINT_MODE_QUALIFICATION_FLOOR_NATS
-JOINT_MODE_QUALIFICATION_FLOOR_STATUS = STAGE21.JOINT_MODE_QUALIFICATION_FLOOR_STATUS
+IDENTIFICATION_VERDICT_NOTE = STAGE21.IDENTIFICATION_VERDICT_NOTE
+#: One criterion, one magnitude: a chimera's mode is read against the level its
+#: host lineage was qualified against, and that level is now the calibrated
+#: identification floor -- imported from its single declaration in
+#: ``src.transfer.budget`` rather than restated here or re-exported through
+#: stage 21. The retired 0.30-nat magnitude reaches this artefact only as the
+#: inert column 21_joint_mode_qualification.py publishes.
+IDENTIFICATION_FLOOR_STATUS = STAGE21.IDENTIFICATION_FLOOR_STATUS
+LEGACY_QUALIFICATION_FLOOR_NOTE = STAGE21.LEGACY_QUALIFICATION_FLOOR_NOTE
 
 #: The protein-side reading rule, recorded in every artefact rather than left to
 #: a reader who sees a finite, plausible-looking magnitude.
 PROTEIN_REFERENCE_LIMITATION = (
-    "the base model's protein mode is UNMEASURABLE on this cohort -- context "
-    "information +0.084 nats per token and a reversal cost of -0.001 nats per "
-    "residue, which is indifference to reading direction (EXP-R2-152). On the "
+    "the base model's protein mode is not worth a behavioural read, and the "
+    "evidence is its REVERSAL COST of -0.0013 nats per residue -- indifference to "
+    "reading direction (EXP-R2-152) -- and not its context information of +0.084 "
+    "nats per token, which clears the calibrated identification floor. On the "
     "protein side the base checkpoint is therefore a PRE-ADAPTATION REFERENCE and "
     "not a behavioural control: a protein-mode magnitude from a cell built wholly "
     "or partly out of it may not be read as comparable with an adapted "
     "checkpoint's, and a difference between two such cells does not identify what "
-    "a difference between two measurable modes would. The text mode carries no "
-    "such caveat: all three checkpoints of the lineage are measurable in it. "
+    "a difference between two directionally readable modes would. The text mode "
+    "carries no such caveat: all three checkpoints of the lineage are measurable "
+    "in it. "
     "Whether the caveat applies to THIS cell is decided by which checkpoints "
     "--host and --donor named: the stage records their resolved paths and weight "
     "digests and infers no lineage role from them, and this cell's own protein "
@@ -726,14 +745,14 @@ def build_parser() -> argparse.ArgumentParser:
         "(Appendix B rule 1)",
     )
     parser.add_argument(
-        "--min-context-information",
+        "--identification-floor-nats",
         type=float,
-        default=JOINT_MODE_QUALIFICATION_FLOOR_NATS,
+        default=SCREENING_CONTEXT_INFORMATION_NATS,
         help="the floor below which a mode is reported unmeasurable on this "
-        "cohort. 21_joint_mode_qualification.py's own declared magnitude, "
-        "imported and recorded as UNDERIVED, so a chimera is read against the "
-        "level the lineage was qualified against. It is deliberately NOT "
-        "budget.SCREENING_CONTEXT_INFORMATION_NATS",
+        "cohort. budget.SCREENING_CONTEXT_INFORMATION_NATS, the calibrated "
+        "identification floor 21_joint_mode_qualification.py reads its own "
+        "checkpoints against, so a chimera is read against the level the lineage "
+        "was qualified against",
     )
     return parser
 
@@ -840,14 +859,15 @@ def main() -> None:
         "rendering": tokenisation.facts(),
         "seeds": {"cohort_draw": int(args.cohort_draw_seed)},
         "thresholds": {
-            "minimum_context_information_nats": float(args.min_context_information),
-            "minimum_context_information_status": (
-                JOINT_MODE_QUALIFICATION_FLOOR_STATUS
-                if args.min_context_information == JOINT_MODE_QUALIFICATION_FLOOR_NATS
-                else "declared on the command line, overriding "
-                "21_joint_mode_qualification.py's "
-                f"{JOINT_MODE_QUALIFICATION_FLOOR_NATS}-nat floor"
+            "identification_floor_nats": float(args.identification_floor_nats),
+            "identification_floor_status": (
+                IDENTIFICATION_FLOOR_STATUS
+                if args.identification_floor_nats == SCREENING_CONTEXT_INFORMATION_NATS
+                else "declared on the command line, overriding the calibrated "
+                f"{SCREENING_CONTEXT_INFORMATION_NATS}-nat identification floor"
             ),
+            "legacy_qualification_floor_nats": MIN_CONTEXT_INFORMATION_NATS,
+            "legacy_qualification_floor_note": LEGACY_QUALIFICATION_FLOOR_NOTE,
         },
         "limitations": {
             "protein_mode_reference": PROTEIN_REFERENCE_LIMITATION,
@@ -856,20 +876,35 @@ def main() -> None:
     }
 
     modes_record: dict[str, Any] = {}
+    statistics: dict[str, Any] = {}
     if "protein" in modes:
-        modes_record["protein"] = STAGE21.protein_mode(args, host_model, tokenisation)
+        modes_record["protein"], statistics["protein"] = STAGE21.protein_mode(
+            args, host_model, tokenisation
+        )
         modes_record["protein"]["reference_limitation"] = PROTEIN_REFERENCE_LIMITATION
     if "text" in modes:
-        modes_record["text"] = STAGE21.text_mode(
+        modes_record["text"], statistics["text"] = STAGE21.text_mode(
             args,
             host_model,
             host_tokenizer,
             tokenisation,
             vocab_size=int(host_facts["vocab_size"]),
         )
+    # A chimera's readings deserve the same instrumentation as the qualification
+    # figures they are read against, and the writer is stage 21's for the reason
+    # the estimand is: one declaration, imported (Appendix B rule 12).
+    for name, mode_statistics in statistics.items():
+        modes_record[name]["sufficient_statistics"] = STAGE21.write_mode_records(
+            args.out,
+            mode_statistics,
+            seeds={"cohort_draw": int(args.cohort_draw_seed)},
+            max_tokens=int(args.max_tokens),
+        )
     payload["modes"] = modes_record
-    payload["verdicts"] = {name: record["verdict"] for name, record in modes_record.items()}
-    payload["verdict_note"] = VERDICT_NOTE
+    payload["identification_verdicts"] = {
+        name: record["identification_verdict"] for name, record in modes_record.items()
+    }
+    payload["identification_verdict_note"] = IDENTIFICATION_VERDICT_NOTE
     payload["modes_measured"] = list(modes)
 
     destination = args.out / artefact_name(host_path, donor_path, args.component_group)
@@ -878,7 +913,8 @@ def main() -> None:
     for name, record in modes_record.items():
         print(
             f"[{name}] context information {record['context_information_nats']:+.4f} "
-            f"({record['context_information_unit']})  {record['verdict']}"
+            f"({record['context_information_unit']})  "
+            f"{record['identification_verdict']}"
         )
     print(f"wrote {destination}")
 

@@ -33,6 +33,7 @@ from src.transfer.information_bootstrap import (
     SparseCounts,
     _group_multiplicities,
     _prepare_arm,
+    _reference_displacement,
     _statistics_from_weights,
     bootstrap_arms,
     bootstrap_information,
@@ -264,6 +265,129 @@ def test_a_small_reference_biases_the_draws_upward_and_the_record_says_so() -> N
     ).record["statistics"]["baseline_entropy_nats_per_token"]
     assert abs(generous["bootstrap_bias"]) < small["bootstrap_bias"]
     assert generous["interval"][0] < generous["point"] < generous["interval"][1]
+
+
+def test_the_displacement_correction_moves_the_interval_and_nothing_else() -> None:
+    """A constant shift of the draws: position moves, width and point do not.
+
+    The failure this guards against is a "correction" that also narrows the
+    interval, which would buy a lower false-positive rate at a true zero by
+    understating the uncertainty instead of by removing the displacement.
+    """
+
+    arm = build_arm(
+        seed=20,
+        vocab_size=256,
+        information=0.4,
+        reference_groups=10,
+        reference_records_per_group=1,
+        reference_tokens_per_record=200,
+    )
+    block = _information(bootstrap_information(arm, seed=3, n_bootstrap=DRAWS).record)
+
+    displacement = block["reference_resampling_displacement"]
+    assert displacement > 0.01
+    low, high = block["interval"]
+    corrected_low, corrected_high = block["displacement_corrected_interval"]
+    assert corrected_low == pytest.approx(low - displacement, rel=1e-12)
+    assert corrected_high == pytest.approx(high - displacement, rel=1e-12)
+    assert (corrected_high - corrected_low) == pytest.approx(high - low, rel=1e-12)
+
+    # On this deliberately small reference the uncorrected interval sits
+    # entirely above the point it surrounds, which is the L34 condition; the
+    # corrected one contains it.
+    assert low > block["point"]
+    assert corrected_low < block["point"] < corrected_high
+
+
+def test_the_displacement_is_the_baseline_term_and_is_never_negative() -> None:
+    """``-log`` is convex and the model term does not see the reference at all.
+
+    Both halves are conditions on any cohort, not observations about this one:
+    a negative displacement or a displaced model term would mean the second
+    evaluation is not holding the reference fixed.
+    """
+
+    for seed, reference_tokens in ((21, 200), (22, 1500), (23, 4000)):
+        arm = build_arm(
+            seed=seed,
+            vocab_size=256,
+            information=0.4,
+            reference_groups=12,
+            reference_records_per_group=2,
+            reference_tokens_per_record=reference_tokens,
+        )
+        statistics = bootstrap_information(
+            arm, seed=5, n_bootstrap=DRAWS
+        ).record["statistics"]
+        baseline = statistics["baseline_entropy_nats_per_token"][
+            "reference_resampling_displacement"
+        ]
+        information = statistics["information_nats_per_token"][
+            "reference_resampling_displacement"
+        ]
+        assert baseline > 0.0
+        assert statistics["model_entropy_nats_per_token"][
+            "reference_resampling_displacement"
+        ] == 0.0
+        assert information == pytest.approx(baseline, rel=1e-10)
+
+
+def test_a_reference_that_cannot_be_resampled_carries_no_displacement() -> None:
+    """One reference group has one resample, so the correction must be exactly nothing.
+
+    The degenerate case is where a correction estimated from the draws would
+    quietly invent a shift out of Monte-Carlo noise.
+    """
+
+    arm = build_arm(
+        seed=24,
+        information=0.4,
+        reference_groups=1,
+        reference_records_per_group=8,
+        reference_tokens_per_record=800,
+    )
+    for name, block in bootstrap_information(
+        arm, seed=6, n_bootstrap=DRAWS
+    ).record["statistics"].items():
+        assert block["reference_resampling_displacement"] == 0.0, name
+        assert block["displacement_corrected_interval"] == block["interval"], name
+        assert block["reference_held_fixed_interval"] == block["interval"], name
+        assert block["cohort_only_bootstrap_se"] == pytest.approx(
+            block["bootstrap_se"], rel=1e-12
+        ), name
+
+
+def test_holding_the_reference_fixed_is_narrower_than_correcting_it() -> None:
+    """The two must stay distinguishable in the artefact, because they differ in width.
+
+    Dropping the reference resampling removes the displacement *and* the
+    reference's share of the variance; the correction removes only the first.
+    A reader who could not tell them apart could not tell a repaired interval
+    from a shrunken one.
+    """
+
+    arm = build_arm(
+        seed=25,
+        vocab_size=256,
+        information=0.4,
+        reference_groups=10,
+        reference_records_per_group=1,
+        reference_tokens_per_record=200,
+    )
+    block = _information(bootstrap_information(arm, seed=8, n_bootstrap=DRAWS).record)
+
+    assert block["cohort_only_bootstrap_se"] < block["bootstrap_se"]
+    fixed_low, fixed_high = block["reference_held_fixed_interval"]
+    corrected_low, corrected_high = block["displacement_corrected_interval"]
+    assert (fixed_high - fixed_low) < (corrected_high - corrected_low)
+
+
+def test_the_displacement_refuses_draws_it_cannot_pair() -> None:
+    """Two draw counts cannot be differenced draw for draw, and must not be averaged."""
+
+    with pytest.raises(ValueError, match="one reference-held-fixed draw"):
+        _reference_displacement(np.zeros(10), np.zeros(9), 0.95)
 
 
 def test_sharing_the_cohort_draw_narrows_the_interval() -> None:
@@ -905,9 +1029,37 @@ def test_every_published_result_carries_its_diagnostics() -> None:
             "interval_mc_se",
             "fraction_of_draws_positive",
             "n_draws",
+            "reference_resampling_displacement",
+            "displacement_corrected_interval",
+            "cohort_only_bootstrap_se",
+            "reference_held_fixed_interval",
         }, name
         assert block["interval_mc_se"][0] > 0.0
         assert block["interval_mc_se"][1] > 0.0
         # Nothing is bias-corrected: the reported point is the estimate on the
-        # data, so the interval and the bias are independent facts.
+        # data, so the interval and the bias are independent facts, and the
+        # displacement-corrected interval is a second field beside them rather
+        # than a replacement for the first.
         assert block["bootstrap_bias"] != 0.0
+
+    # The model term is computed from the cohort alone, so resampling the
+    # reference cannot move it and its displacement is exactly zero. Every other
+    # statistic is a function of the fitted unigram and is displaced.
+    statistics = result.record["statistics"]
+    assert statistics["model_entropy_nats_per_token"][
+        "reference_resampling_displacement"
+    ] == 0.0
+    assert (
+        statistics["model_entropy_nats_per_token"]["displacement_corrected_interval"]
+        == statistics["model_entropy_nats_per_token"]["interval"]
+    )
+    for name in (
+        "baseline_entropy_nats_per_token",
+        "information_nats_per_token",
+        "relative_information",
+        "information_bits_per_symbol",
+    ):
+        assert statistics[name]["reference_resampling_displacement"] != 0.0
+        assert statistics[name]["interval"] != statistics[name][
+            "displacement_corrected_interval"
+        ]

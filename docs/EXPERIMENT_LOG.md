@@ -15908,7 +15908,7 @@ Under **identical weights**, do text continuation and protein continuation occup
 
 ### The refusals, frozen
 
-- **`Llama-2-7b-hf` enters in text mode only, and as a representational reference.** Every behavioural cell of its protein mode is written `BEHAVIOURAL_READ_REFUSED`, citing context information **+0.0843 nats/token** and reversal cost **−0.0013 nats/residue** (EXP-R2-152, re-measured on a second cohort draw at EXP-R2-174). **This is not given a limitation number: the catalogue ends at L32 and there is no L33.**
+- **`Llama-2-7b-hf` enters in text mode only, and as a representational reference.** Every behavioural cell of its protein mode is written `BEHAVIOURAL_READ_REFUSED`, citing context information **+0.0843 nats/token** and reversal cost **−0.0013 nats/residue** (EXP-R2-152, re-measured on a second cohort draw at EXP-R2-174). **Corrected 2026-08-23.** As written this bullet closed "this is not given a limitation number: the catalogue ends at L32 and there is no L33", and both halves were false when written: the catalogue already ran past L32 and now runs to L43, and the floor this refusal was taken against is itself a catalogued limitation, **L41**. The refusal is retired with that floor at the 2026-08-23 re-run, which measures rather than declares what it stood in for; the six artefacts written under this bullet carry the false claim in their limitations block and are superseded.
 - **Occupancy requires at least 10 × `d_model` positions per cell** or the rank statistics are written `OCCUPANCY_UNDERSAMPLED`. The smoke correctly refused itself at **512 positions against a floor of 40,960**.
 - **Every criterion is per layer and never a cross-layer mean** (L32, Appendix B rule 33).
 - **The resampling unit is the near-duplicate group, never the record** — L30 measured 871 of 2,048 held-out records (42.5%) keeping a ≥95%-identity relative, so a record-level unit reports an interval narrower than the evidence supports.
@@ -16566,3 +16566,245 @@ Screening, not confirmation: the thresholds are selected on the same panel they 
 ### Documentation
 
 Audit: new **§5.08**; the standing statement at §5.05(a) now records that calibrating the threshold moves the number and not what a pass means; §5.06(d)'s sign-rule status, §5.06's and §5.07's closing "nothing here re-chooses the floor" lines, and L34 carry pointers to it. **Two limitations enter the catalogue: L41** (a floor asked to do two jobs is adequate at neither, and its two errors run in opposite directions — one unsafe) and **L42** (a lower-bound rule is the *less* conservative rule near zero when the interval carries a resampling displacement). Two departures are recorded at the head of the pre-registration: the power surface replaces the pooled curve, and the adopted screening floor is 0.05 rather than the calibrated `τ_A`.
+
+## 2026-08-22 — EXP-R2-219: the screening floor cross-fitted — 0.05 holds out, the calibrated 0.010 does not
+
+**Taking `EXP-R2-219`**, the next free identifier (the log runs through EXP-R2-218). EXP-R2-218 selected its thresholds on the panel it evaluated them on and said so; this is the held-out validation of that selection. **CPU only over the sufficient statistics EXP-R2-216/217 retained; no model loaded, no GPU, no cluster, and no measurement of any panel arm produced or superseded** — the 120 real-arm cells reproduce EXP-R2-218's readings. Findings are in the audit's **§5.09**; nothing here is evidence about any model.
+
+**Command.** `python scripts/transfer/41_context_information_bootstrap.py --sidecar <48 sidecars, b0…b7 × 5 cohort items + byte_b0…byte_b7 × 1> --cohort-json <48> --reference-json <48> --seed 20260820 --n-bootstrap 2000 --alpha-sweep 1.0 --unigram-null-control --held-out-threshold-validation --out results/transfer/threshold_holdout_20260822 --report-name context_information_bootstrap_holdout.json`. The exact path lists are in the artefact's `metadata.configuration`. **16 min 21 s**, 24 blocks, 240 arm rows, **120 of 120 controls measured**, none refused. `--held-out-threshold-validation` is new on the stage and refuses to run without `--unigram-null-control`, because the units it cross-fits are the readings whose true information is zero.
+
+### The unit is the cohort draw and the tokenisation class, and it is measured rather than assumed
+
+A control's reading is a property of the block's records and the arm's vocabulary and of nothing else, so the stage now groups on that and refuses if two controls sharing both disagree. The **120 null cells are 56 distinct measurements**, over **24 cohort draws** and **seven tokenisation classes**; eleven of the fifteen arms share their control reading with at least one other arm, so the fifteen readings of one draw index collapse to seven. **Leave-one-arm-out is therefore not available** — it would leave copies of every held-out reading inside the derivation — and the schemes run are leave-one-cohort-draw-out, the same buffered against the control rotation (a control borrows the *next* block's reference, so the neighbours are withheld from the derivation too), and leave-one-tokenisation-class-out. EXP-R2-218's 112 readings and this entry's 120 differ only by `dialogpt-small`'s eight, which add no distinct measurement.
+
+### The result
+
+On each fold the threshold is re-derived from the calibration units alone, by EXP-R2-218's own rule on its own 0.005-nat grid, then scored on units the derivation never saw.
+
+| scheme | folds | re-derived τ | held-out FPR, re-derived | held-out FPR, shipped 0.05 | shipped Fieller | arms changing verdict |
+|---|---:|---|---:|---:|---:|---:|
+| leave one cohort draw out | 24 | 0.005–0.010 | **0.0667** (8/120) | 0.0000 | 0.0000 | 0 of 120 |
+| … buffered against the rotation | 24 | 0.005–0.015 | **0.0667** (8/120) | 0.0000 | 0.0000 | 0 of 120 |
+| leave one tokenisation class out | 7 | 0.010–0.015 | 0.0417 (5/120) | 0.0000 | 0.0000 | 0 of 120 |
+
+**The calibrated `τ_A` = 0.010 fails its own 0.05 target out of sample**, identically under both draw schemes, so the control rotation is not the cause. It is one fold: the eighth OpenWebText draw carries the panel's largest null departures (+0.0132 on the five GPT-2-tokeniser arms, +0.0088 on the three ByGPT5 arms), and with it removed the remaining 23 draws ask for 0.005, which then admits **8 of its 10** held-out readings — a fold rate of **0.80**. By class the GPT-2-tokeniser class is admitted at 0.125. The interval rule's calibrated 0.020 likewise reaches 0.0583 out of sample under two of three schemes.
+
+**The adopted 0.05 admits no held-out null reading anywhere** — 0 of 120 readings, 0 of 56 distinct measurements — and neither does the Fieller denominator condition nor the interval rule at 0.05. The largest re-derived τ under any scheme is **0.015 nats**, leaving a margin of **0.035**, 3.3× the largest fold threshold and 3.8× the largest null departure, and **no real arm's verdict differs** between a fold's threshold and the shipped floor on any of the 120 readings.
+
+**Zero is not proof, and the entry says so.** Over the 56 distinct measurements the one-sided 95% Clopper-Pearson limit on the shipped floor's false-positive rate is **0.0521**; over the 24 cohort draws that are the independent units it is **0.117**. The claim earned is that the adopted floor is not too lax at the resolution this panel supports — not that its error rate is zero, and not that a rate below roughly 1/56 could have been detected.
+
+### Documentation
+
+Audit: new **§5.09**; §5.08(g)'s screening declaration and **L41** now carry the held-out result. A head paragraph in `docs/MEASURABILITY_THRESHOLD_CALIBRATION_PREREGISTRATION.md` records that its screening limitation is discharged on the units that vary and names the wrong unit its own text chose. `budget.SCREENING_CONTEXT_INFORMATION_NATS` carries the cross-fit beside its derivation. Tests for the new stage option are in `tests/test_context_information_bootstrap_stage.py`, including the negative paths: a fold that leaves the extreme unit in the derivation, disagreeing controls in one class, a single-unit scheme, and a real arm placed between the two thresholds so the reported verdict agreement is capable of being false.
+
+## 2026-08-22 — EXP-R2-220: stage 21 gets an interval — galactica-1.3b's protein reading is ten standard errors from zero and is refused on margin, not on evidence
+
+**Taking `EXP-R2-220`**, the next free identifier (the log runs through EXP-R2-219). Stage 21 has only ever published bare point estimates, which is the defect the rest of the package has now closed everywhere else. The instrumented `21_joint_mode_qualification.py` persists per-record sufficient statistics into a `records/` subdirectory beside its report, so this entry re-measures the six joint checkpoints on the H200 at their published cohort-draw seed and then closes the uncertainty on CPU. **Seven cells on cuda:2 of one pod, consecutively, 22:18–23:48; GPUs 0/1/3 untouched.** `galactica-125m`, `galactica-1.3b` and `InstructProtein` were staged to GPFS first — they had existed only on Compute, which is where their published readings were taken.
+
+**Commands.** One freeze reused by every cell: `bash scripts/transfer/run_transfer_h200.sh --freeze-only` → `run_id=20260822221334_7786dce63b35`. Then, per checkpoint,
+
+```
+scripts/transfer/run_external_baseline_h200.sh --run-id 20260822221334_7786dce63b35 \
+  --snapshot-dir <packages>/20260822221334_7786dce63b35 \
+  --stage 21_joint_mode_qualification.py --label s21_<name> --gpu 2 \
+  --expect joint_mode_qualification.json \
+  -- --checkpoint <models>/<name> --rendering <prollama|galactica|instructprotein> \
+     --modes both --dtype <bfloat16|float32> --sequences 128 --unigram-sequences 400 \
+     --protein-min-len 64 --protein-max-len 246 --text-min-chars 800 \
+     --max-tokens 512 --cohort-draw-seed 20260728
+```
+
+and per mode, on CPU, `python scripts/transfer/41_context_information_bootstrap.py --sidecar <power_*.records.npz> --cohort-json <cohort_*.json> --reference-json <reference_*.json> --expected-arms protein_declared protein_reversed --seed 20260822 --n-bootstrap 2000 --out results/transfer/joint_mode_identification_20260822/<label>/<mode>`, with `--expected-arms text_declared` for the text mode. **Stage 41 took these inputs unmodified.** The reversal cost, which it cannot reach, is bootstrapped by `results/transfer/joint_mode_identification_20260822/reversal_cost_bootstrap.py` at the same seed and draw count. Measurements are under `results/transfer/external_baseline/20260822221334_7786dce63b35/` (22 MB); the re-analysis is under `results/transfer/joint_mode_identification_20260822/`.
+
+### Reproduction, which had to come first
+
+Every scored-cohort digest and every held-out-reference digest matches its published counterpart, so the seeded draw is the same draw. **The three checkpoints whose published reading was taken on this same pod in bfloat16 reproduce bit for bit** — `Llama-2-7b-hf` +0.084287166, `ProLLaMA` +0.521546982, `ProLLaMA_Stage_1` +0.550538838, all deltas exactly 0.0 (one text cell differs at 1.8e-15). The four taken on Compute's L20s in bfloat16 reproduce to **2e-4 – 5e-4 nats**: `galactica-1.3b` +0.048071 → +0.047678, `galactica-125m` −0.130632 → −0.131060, `InstructProtein` +2.049009 → +2.049224. A **float32 control on `galactica-125m` reproduces its published −0.1385213657 to 1.4e-8**, which places the residual where it belongs — bfloat16 kernels differ between L20 and H200, and nothing in the instrumentation moved. Re-aggregating each sidecar reproduces its own artefact's point estimate exactly, and the reversal costs reproduce on the same pattern. Note for readers of the older figures: the published `galactica-125m` reading of −0.138521 is the **float32** one; its bfloat16 companion reads −0.130632.
+
+### The intervals
+
+2000 draws, seed 20260822, resampling unit the near-duplicate group over the frozen cohort records. **This 128-record Swiss-Prot draw carries no near-duplicate structure at all** — 128 singleton groups, zero joining edges — so the interval is a record-level bootstrap by measurement rather than by fallback; the Kish effective count is 115.97 on residue weights and 116.25 on token weights, far above `MINIMUM_BOOTSTRAP_UNITS = 8`. The text draw gives 122.6–124.0. Nothing was refused for want of units.
+
+| cell | mode | I nats | SE | 95% interval | I/SE | Fieller |
+|---|---|---:|---:|---|---:|---|
+| Llama-2-7b-hf | protein | +0.084287 | 0.010179 | [+0.068593, +0.107851] | 8.28 | **no** |
+| Llama-2-7b-hf | text | +5.523977 | 0.036707 | [+5.486101, +5.627485] | 150.49 | yes |
+| galactica-1.3b | protein | +0.047678 | 0.004571 | **[+0.039021, +0.057614]** | **10.43** | **yes** |
+| galactica-1.3b | text | +4.643871 | 0.035644 | [+4.606299, +4.745740] | 130.29 | yes |
+| galactica-125m | protein | −0.131060 | 0.026388 | [−0.188196, −0.086902] | −4.97 | no |
+| galactica-125m | text | +4.016707 | 0.036405 | [+3.979238, +4.120229] | 110.33 | yes |
+| galactica-125m fp32 | protein | −0.138521 | 0.026782 | [−0.196546, −0.093687] | −5.17 | no |
+| galactica-125m fp32 | text | +4.016651 | 0.036413 | [+3.978957, +4.120301] | 110.31 | yes |
+| ProLLaMA | protein | +0.521547 | 0.018935 | [+0.490907, +0.565811] | 27.54 | yes |
+| ProLLaMA | text | +0.736787 | 0.091542 | [+0.584427, +0.945582] | 8.05 | **no** |
+| ProLLaMA_Stage_1 | protein | +0.550539 | 0.024106 | [+0.510575, +0.605140] | 22.84 | yes |
+| ProLLaMA_Stage_1 | text | +0.833577 | 0.059159 | [+0.754495, +0.980277] | 14.09 | yes |
+| InstructProtein | protein | +2.049224 | 0.077129 | [+1.894433, +2.196651] | 26.57 | yes |
+| InstructProtein | text | −15.999524 | 0.139373 | [−16.215336, −15.677273] | −114.80 | no |
+
+The Fieller column is `budget.ratio_denominator_admissibility`'s `I > 8.7652·SE`. It is **reported for comparability with the panel and gates nothing here: no quantity in stage 21 divides by I.**
+
+### galactica-1.3b's protein mode is identifiable, and the floor refuses it on margin
+
+**I = +0.047678, SE = 0.004571, 95% interval [+0.039021, +0.057614]. The interval excludes zero with its lower end more than eight of its own standard errors above it; the reading sits 10.43 SE from zero.** It is refused because it lies 0.0023 nats below a 0.05 point rule — 0.0019 for the published +0.048071 — calibrated (EXP-R2-218) against a null family whose largest measured departure anywhere was 0.0132 nats, and cross-fitted (EXP-R2-219) with a largest held-out fold threshold of 0.015 — both far below this interval's lower end. The reading additionally **satisfies the Fieller ratio-admissibility condition**, the panel's strictly stronger criterion, needing 0.040063 and having 0.047678. On the evidence this mode is not indistinguishable from zero. It is refused by the deliberate conservatism of the screening margin, which is exactly how the stage's own `identification_verdict_note` asks the verdict to be read, and it remains a statement about this cohort and this interface rather than about the checkpoint.
+
+**The two criteria disagree in opposite directions at the bottom of the panel.** `Llama-2-7b-hf`'s protein mode passes the 0.05 floor at +0.084287 and **fails** Fieller at I/SE = 8.28; `galactica-1.3b`'s fails the floor and **passes** at 10.43. A magnitude rule orders these two readings one way and their own standard errors order them the other, because the SE spans 2.2× between them. `ProLLaMA`'s **text** mode is a third such cell — measurable at +0.736787, inadmissible as a denominator at I/SE = 8.05.
+
+### The reversal cost, which is what the behavioural claim rests on
+
+Stage 41 refuses `protein_reversed` for a token-unit family, correctly: reversal permutes residues but not the tokenisation, so the forward reference does not apply to that condition and no context information exists for it. The cost itself does exist in both units — it is a within-arm difference over an identical residue multiset — and the companion script bootstraps it paired, under the same grouping, seed and draw count. Where stage 41 *can* form the contrast (the four residue-unit cells) the two agree to nine decimal places on both the point and the SE, which is the check that the companion is not a second estimator.
+
+| cell | reversal cost, nats/residue | SE | 95% interval |
+|---|---:|---:|---|
+| Llama-2-7b-hf | −0.001345 | 0.004655 | **[−0.010488, +0.008008]** |
+| galactica-1.3b | +0.056133 | 0.004976 | [+0.046876, +0.066336] |
+| galactica-125m | +0.089600 | 0.038762 | [+0.010339, +0.166487] |
+| galactica-125m fp32 | +0.087544 | 0.038934 | [+0.007970, +0.164408] |
+| ProLLaMA | +0.146453 | 0.012930 | [+0.122856, +0.172361] |
+| ProLLaMA_Stage_1 | +0.144157 | 0.015923 | [+0.115310, +0.177264] |
+| InstructProtein | +2.120336 | 0.079206 | [+1.963033, +2.270409] |
+
+**`Llama-2-7b-hf`'s indifference to reading direction now has an interval and it contains zero.** The −0.0013 nats/residue that `concept_alignment.PROTEIN_MODE_BEHAVIOURAL_STATUS` refuses the mode on is 0.29 SE from zero, which is the right shape for a claim of indifference rather than of a small cost; the adapted stage's +0.1442 is 9.1 SE from zero and the two intervals are disjoint by an order of magnitude. **`galactica-125m`'s +0.0896 is only 2.3 SE from zero**, with an interval reaching down to +0.010: the cell the reversal-cost note cites as reading −0.139 nats at a +0.088 cost carries a standard error about three times the ProLLaMA-lineage cells it is contrasted with. That note's conclusion is unaffected — a reversal-cost criterion would still be a different partition and not a tightening — but part of the overlap it describes is now known to be uncertainty rather than substance.
+
+### Limitations
+
+The re-analysis inherits the estimator it re-aggregates: the additive-smoothing bias of the held-out unigram is common to every draw and no bootstrap over the same reference can move it. The near-duplicate grouping degenerated to singletons on this particular draw, so nothing here says what the interval would be on a draw that carries sequence families. And these are seven cells at one cohort-draw seed: the between-draw spread visible in the published `Llama-2-7b-hf` protein readings, +0.0719 to +0.0918 across four measurements, is wider than any single cell's standard error and is not what this entry measures. One documentation defect was found and not repaired here: for a token-unit family the sidecar's `n_symbols_is` says "a scored token" while the persisted `n_symbols` array counts residues (20866 against 13609 tokens on `Llama-2-7b-hf`). The arrays are right and every figure above is unaffected, but a re-analysis reading `information_bits_per_symbol` off such a sidecar would be reading bits per residue under a label that says token.
+
+## 2026-08-23 — EXP-R2-215 re-run: D2.i regenerated without the 0.30-nat pre-gate, and Llama-2's protein mode reads UNIGRAM_ONLY rather than refused
+
+**No new identifier.** This is EXP-R2-215's pre-registered D2.i design re-run unchanged, because `MODE_BEHAVIOURAL_READ_FLOOR_NATS = 0.30` and its `mode_measurability` / `assert_behavioural_read` / `BEHAVIOURAL_READ_REFUSED` machinery have been removed from `src/transfer/mode_subspaces.py`, and stage 38's `--context-information` flag with them (L41, EXP-R2-218/219). The six artefacts under `results/transfer/external_baseline/20260819162317_2acae6d09404/` are superseded in format and in content: they carry the retired keys, a hand-typed context-information literal measured on a different cohort, and the false catalogue statement "the catalogue ends at L32 and there is no L33". They are superseded rather than deleted. **The run that produced them was never itself recorded here:** it completed on 2026-08-20, between the EXP-R2-216 entries of that date, and this paragraph is the only chronology it has.
+
+**Commands.** One snapshot for all six cells. Frozen from an immutable copy of the working tree, because the removal is uncommitted and two files inside the freeze closure were being edited concurrently; the copy's code hash was verified equal to the checkout's before the freeze.
+
+```
+bash scripts/transfer/run_transfer_h200.sh --freeze-only
+#   -> RUN_ID=20260822215407_7786dce63b35  CODE_HASH=7786dce63b35...
+
+LOCAL_OUTPUT_ROOT=<checkout> bash <code-root>/scripts/transfer/run_external_baseline_h200.sh \
+    --run-id 20260822215407_7786dce63b35 --snapshot-dir <gpfs>/packages/20260822215407_7786dce63b35 \
+    --stage 38_mode_subspaces.py --label <label> --gpu <0|1|3> \
+    -- --checkpoint ${TRANSFER_MODEL_BASE_DIR}/<ProLLaMA_Stage_1|ProLLaMA|Llama-2-7b-hf> \
+       --rendering prollama --modes text protein --layers 0,4,8,12,16,20,24,31 \
+       --rank-ladder 1,2,4,8,16,32,64,128,256,512 --overlap-statistic mean_squared_cosine \
+       --decision-rule residual_licensed_v1 --records 640 --damage-records 64 \
+       --positions-per-record 64 --batch-size 8 --max-tokens 512 --cohort-draw-seed <20260728|20260729>
+```
+
+Each cell's `stage_args` is byte-identical to its row in `scripts/transfer/campaign_d2i_gpu*.tsv`, checked against the manifest after dispatch. The regenerated `settings` differ from the superseded ones in exactly two keys: the removed `context_information`, and `device`.
+
+**Deviation from the manifest's own dispatch path, recorded because it is one.** The three campaign manifests are one file per admissible card and are *alternatives* — the queue locks one status file per campaign name and every cell of all three writes to the same label-keyed output directory, so dispatching them concurrently would either be refused by the lock or run three copies of one cell. The 2026-08-20 run took the intended path and spent **6 h 16 min serially on card 0** with three cards idle. This re-run instead dispatched the six cells as three concurrent lanes — one checkpoint per card, draw 1 then draw 2 — through `run_external_baseline_h200.sh`, which is the per-cell invocation `h200_campaign_queue.sh` itself reuses verbatim and the documented way to run several conditions of one comparison at once. One snapshot, one code hash, identical arguments; what changed is only which card each cell ran on.
+
+**Configuration and cost.** 8 layers × 2 modes × a 10-rung rank ladder, float32, cards 0, 1 and 3 (card 2 excluded for its one uncorrected volatile ECC error; all four cards were idle at 0 MiB / 0 % before launch). **498 damage passes per cell in every cell** — the Llama-2 cells previously ran 249 because their protein mode was refused before it was ablated. Per-cell `damage_s` 3900.8–3935.8 s, capture 94.5 s text and 31.6–31.9 s protein. Wall clock **2 h 21 min 56 s** (05:00:23Z → 07:22:19Z) for **≈ 6.7 GPU-h**; all six cells PRESENT and digest-verified ADMITTED, no lane failure.
+
+### The scientific result: the refusal is replaced by a measurement, and the measurement licenses nothing
+
+Llama-2-7b-hf's protein mode, refused a behavioural read at every layer by the retired floor, is now admitted and reaches the same verdicts in both draws:
+
+| layer | Llama-2 (both draws) | ProLLaMA (both draws) | ProLLaMA_Stage_1 (both draws) |
+|---|---|---|---|
+| L0 | UNIGRAM_ONLY | MIXED | MIXED |
+| L4 | UNIGRAM_ONLY | NO_MEASURED_DAMAGE | MIXED |
+| L8 | UNIGRAM_ONLY | VOID_INSTRUMENT | MIXED |
+| L12 | MIXED | MIXED | MIXED |
+| L16 | UNIGRAM_ONLY | NO_MEASURED_DAMAGE | NO_MEASURED_DAMAGE |
+| L20 | MIXED | MIXED | MIXED |
+| L24 | UNIGRAM_ONLY | MIXED | MIXED |
+| L31 | UNIGRAM_ONLY | VOID_INSTRUMENT | NO_MEASURED_DAMAGE |
+
+**No layer of any cell reads DISTINCT_SUBSPACES or SHARED_SUBSPACE.** Removing the pre-gate exposed no licensed necessity claim on the mode the floor had suppressed, and the ProLLaMA and Stage-1 cells — admitted before the removal and after it — **reproduce their previous verdicts exactly, all sixteen layer-cells, in both draws**. There is no regression signal.
+
+**The old refusal is neither vindicated as emptiness nor overturned.** Llama-2's protein mode is not `VOID_INSTRUMENT` and not `NO_MEASURED_DAMAGE`: the full-block ablation is attainable at all eight layers and the residual damage from ablating the mode's own necessary subspace has a paired group-bootstrap 95% interval excluding zero at six of eight layers in draw 1 (L0 **+0.2325 [+0.1880, +0.2803]**, L12 +0.0118 [+0.0078, +0.0160], L16 +0.0194 [+0.0137, +0.0252], L20 +0.0247 [+0.0191, +0.0306], L31 **+0.3073 [+0.2627, +0.3532]**; L8 and L24 do not exclude zero). What fails is the unigram floor: the residual *share* is 0.35, 0.10, 0.81, 0.49, 0.54, 0.14 and 0.21 at L0…L31, so at six layers the damage is mostly the induced shift in the model's own marginal and reads UNIGRAM_ONLY. At L12 and L20, where the protein share does clear 0.5, the layer reads MIXED because the **text** mode has no attainable necessary rank there (ladder exhausted). This is the outcome the decision rule exists to state, and it is a weaker claim than the pre-gate was asserting on the mode's behalf: the modes differ in their unigram statistics, which must not be reported as a claim about distinct computation.
+
+### Cohort context information, measured here instead of declared
+
+Each artefact now reports `cohort_context_information` on the cohort it actually ablates (640 records, minimum length 128), against that cohort's own target-count entropy. The retired literals were measured on a different cohort (128 records, minimum length 64).
+
+| checkpoint | mode | retired literal | draw 1 plug-in / MM | draw 2 plug-in / MM | clean CE (draw 1) |
+|---|---|---:|---|---|---:|
+| ProLLaMA_Stage_1 | text | 0.8336 | −0.0173 / **+0.1987** | −0.0951 / **+0.1108** | 6.5489 |
+| ProLLaMA_Stage_1 | protein | 0.5505 | +0.6640 / +0.6998 | +0.5930 / +0.6292 | 4.0539 |
+| ProLLaMA | text | 0.7368 | −0.2006 / **+0.0154** | −0.2375 / **−0.0316** | 6.7322 |
+| ProLLaMA | protein | 0.5215 | +0.6299 / +0.6658 | +0.6270 / +0.6632 | 4.0879 |
+| Llama-2-7b-hf | text | 5.5240 | +4.6868 / +4.9028 | +4.5627 / +4.7686 | 1.8448 |
+| Llama-2-7b-hf | protein | 0.0843 | +0.1546 / +0.1905 | +0.1417 / +0.1778 | 4.5632 |
+
+The cohort's own reference is 6.7477 nats bias-corrected for text (1771 distinct targets over 4096 positions) and 4.7537 for protein (295 distinct targets), the same for every checkpoint.
+
+**The discrepancy is decision-relevant and runs the wrong way for the retired gate.** On the cohort this stage ablates, **the text mode of both ProLLaMA-lineage checkpoints sits at or below 0.30 nats** — Stage-1 at +0.199 and +0.111, ProLLaMA at +0.015 and −0.032 — against hand-typed literals of 0.834 and 0.737 that cleared the floor comfortably. ProLLaMA's text mode barely beats the cohort's own unigram at all (clean cross-entropy 6.73 against a 6.75-nat reference), and on the plug-in reference it loses to it. Had the 0.30-nat pre-gate been applied to the numbers this stage measures rather than to numbers imported from elsewhere, it would have refused the **text** mode of both ProLLaMA checkpoints and therefore refused the entire comparison it existed to protect. Llama-2's protein reading moves the other way and roughly doubles, 0.0843 → 0.155/0.191 and 0.142/0.178, and still sits below 0.30 — so on this cohort the retired floor would still have refused that mode, and the point is that the measurement now says so rather than an assertion carried in from another cohort.
+
+### Artefact hygiene
+
+The six regenerated artefacts under `results/transfer/external_baseline/20260822215407_7786dce63b35/` contain **none** of `mode_measurability`, `modes_with_a_behavioural_read`, `declared_context_information_nats`, `BEHAVIOURAL_READ_REFUSED`, "the catalogue ends at L32" or "there is no L33", checked by grep over the raw JSON of all six.
+
+## 2026-08-23 — EXP-R2-221: the Jensen displacement is measurable, so identification stops being a constant and galactica-1.3b's protein mode is admitted on evidence
+
+**Taking `EXP-R2-221`**, the next free identifier (the log's highest introduced id is EXP-R2-220). **CPU only over the sufficient statistics EXP-R2-216/217 and EXP-R2-220 retained; no model loaded, no GPU, no cluster, and no measurement of any panel arm produced or superseded** — all 240 arm cells reproduce EXP-R2-219 to `max |ΔI| = 0.0`, `max |ΔSE| = 0.0` and `max |Δ interval endpoint| = 0.0`, and all 14 stage-21 cells reproduce EXP-R2-220 exactly. Frozen beforehand in `docs/DISPLACEMENT_CORRECTED_IDENTIFICATION_PREREGISTRATION.md`, with the adoption criterion written down before the comparison was computed. Findings are in the audit's **§5.10**; nothing here is evidence about any model.
+
+### What was at stake
+
+EXP-R2-220 produced the first pair of real readings on which the two criteria EXP-R2-218 split apart cross in opposite directions. `galactica-1.3b` protein: **I = +0.047678, SE = 0.004571, I/SE = 10.43**, admissible as a ratio denominator, refused as unidentified by the 0.05-nat floor by 0.0023 nats. `Llama-2-7b-hf` protein: **I = +0.084287, SE = 0.010179, I/SE = 8.28**, admitted by the floor and refused by Fieller. The per-arm rule that cannot cross had lost twice — calibrated τ 0.020 (EXP-R2-218), held-out FPR 0.0583 (EXP-R2-219) — to L34's Jensen displacement, which lifts a bootstrapped interval off the point estimate it surrounds.
+
+### Commands
+
+The correction, and the whole held-out validation, on the same 48 sidecars, seed and draw count EXP-R2-219 used, so its readings reproduce rather than merely agree:
+
+```
+python scripts/transfer/41_context_information_bootstrap.py --sidecar <48> --cohort-json <48> --reference-json <48> \
+  --expected-arms bygpt5-base-en bygpt5-medium-en bygpt5-small-en dialogpt-small gpt2 gpt2-large gpt2-medium gpt2-xl \
+  llama-3.2-3b progen2-base progen2-medium progen2-small protgpt2 qwen2.5-0.5b zymctrl \
+  --seed 20260820 --n-bootstrap 2000 --alpha-sweep 1.0 --unigram-null-control --held-out-threshold-validation \
+  --out results/transfer/displacement_corrected_identification_20260823 \
+  --report-name displacement_corrected_identification.json
+```
+
+**24 min 28 s**, 24 blocks, 240 arm rows, 120 of 120 controls measured, none refused. The exact path lists are in the artefact's `metadata.configuration`. The fourteen stage-21 cells were re-analysed from EXP-R2-220's `records/` sidecars at that entry's own seed, one invocation per checkpoint and mode:
+
+```
+python scripts/transfer/41_context_information_bootstrap.py --sidecar <power_*.records.npz> \
+  --cohort-json <cohort_*.json> --reference-json <reference_*.json> \
+  --expected-arms protein_declared protein_reversed --seed 20260822 --n-bootstrap 2000 \
+  --out results/transfer/displacement_corrected_identification_20260823/s21/<label>/<mode>
+```
+
+with `--expected-arms text_declared` for the text mode. Tables: `displacement_corrected_identification_tables.txt` beside the report, rendered by `render_tables.py` in the same directory.
+
+### The correction, and the instrument checks that gate it
+
+Every statistic is evaluated a second time at `(cohort draw d, full reference)` and `reference_resampling_displacement` is the mean gap to `(cohort draw d, reference draw d)`. The cohort draw is shared between the two evaluations, so it cancels exactly and what remains is the reference refit alone — which `bootstrap_bias` cannot isolate because it also carries the cohort draw's ratio-estimator bias. The correction is that constant subtracted from the draws.
+
+The pre-registered halt conditions all hold on all 240 cells: the model term's displacement is **exactly 0.0**, the information term's equals the baseline term's to **3e-15**, the displacement is **non-negative everywhere**, and every point estimate, standard error and uncorrected endpoint is unchanged. Over the 120 null readings the displacement averages **+0.009959** and reaches **+0.034762**, on the `V/R` ladder EXP-R2-218 published: +0.00004 at residue level, +0.00028 on the byte arms, +0.01622 to +0.01691 on the large-vocabulary text arms, +0.03392 on ProtGPT2's Swiss-Prot cohort.
+
+### The result
+
+The 120 null point estimates are positive on **58** — a coin flip, as a true zero must give. Their uncorrected lower bounds are above zero on **64**; corrected, on **none**.
+
+| rule | held-out false positives, readings | distinct measurements | cohort draws |
+|---|---:|---:|---:|
+| shipped 0.05 point rule | 0/120 | 0/56 | 0/24 |
+| uncorrected interval rule at 0.05 | 0/120 | 0/56 | 0/24 |
+| **displacement-corrected interval excludes zero** | **0/120** | **0/56** | **0/24** |
+| reference held fixed instead of corrected, at zero | 9/120 | 3/56 | 3/24 |
+| Fieller denominator admissibility | 0/120 | 0/56 | 0/24 |
+
+Identical under all three schemes — leave one cohort draw out (24 folds), the same buffered against the control rotation (24), leave one tokenisation class out (7). One-sided 95% Clopper-Pearson upper limits on the corrected rule: **0.0247** over readings, **0.0521** over distinct measurements, **0.1173** over cohort draws. **The threshold re-derived on each of the 55 folds is 0.000 nats on every one**, against 0.015–0.020 for the uncorrected interval rule.
+
+**The declared sensitivity failed, and that is the informative part.** Not resampling the reference at all also removes the displacement, and it admits **9 of 120** held-out null readings and **3 of 56** distinct measurements — 0.0536, above the target. It fails because it discards the reference's contribution to the width along with its displacement, and the reference carries **0.07 to 0.94** of the interval's variance, a mean of **0.50**. That is the measurement separating a repaired interval from a narrower one.
+
+**Verdict: ADOPT.** All three pre-registered conditions hold — A1 held-out rate 0.0000 over readings and over distinct measurements under every scheme; A2 no reading anywhere admissible as a denominator while unidentified; A3 no reading admitted by the floor refused by the criterion.
+
+### What moves
+
+**Nothing on the fifteen-arm panel: 0 of 120 readings change verdict.** One reading anywhere changes and it is the one the campaign was opened on — **`galactica-1.3b`'s protein mode is identified**, its corrected interval reaching down to **+0.038694**. `Llama-2-7b-hf`'s protein mode is unaffected in both directions: identified at a corrected lower bound of +0.063641, and **still refused as a ratio denominator at 8.28 standard errors**. The two criteria are now **nested**, not crossing — Fieller answers a different question, is strictly stronger, and is applied at different sites — so `ProLLaMA`'s text mode at 8.05 is the same shape and not a disagreement.
+
+**The margin is a 95%-coverage margin, not a headroom margin.** The largest corrected lower bound anywhere on the null is **−0.0000515 nats**, on `progen2-base` at b4, a reading 1.45 standard errors from zero. The rule sits near its boundary, which is what a rule operating at its nominal level does; the 0/120 says it did not cross on these units, not that it has room to spare.
+
+### What the adoption could not reach
+
+`budget.SCREENING_CONTEXT_INFORMATION_NATS = 0.05` is **not** inert after this change. Identification needs an interval, and `budget.arm_power` is the function that produces the per-record statistics an interval is later computed from, while `21_joint_mode_qualification.py` publishes one cohort draw and no bootstrap. Those sites keep the point comparison as a **pre-interval screen** and now carry `identification_criterion`, `identification_evaluable_here: false` and the reason, so a verdict taken there cannot be read as the criterion's. `budget.context_identification` raises rather than falling back when no corrected lower bound is supplied. Stage 21's field names and verdict values are unchanged so that consumers and existing artefacts still read; what is added is the statement that they are the screen's.
+
+### One defect repaired alongside it
+
+For a token-unit family stage 21's sidecar said `n_symbols_is: "a scored token"` while the persisted `n_symbols` array counted **residues** — 20866 residues against 13609 tokens on `Llama-2-7b-hf` — so `information_bits_per_symbol` computed off such a sidecar was bits per residue under a label saying token. `information_nats_per_token` was never affected and no published figure moves. The protein mode counts residues in both symbol units, so the label is now `"a scored residue"` in both, and `ModeStatistics` refuses a token label over an array that is not the token count, which is the only direction that is checkable.
+
+### Limitations
+
+The construction limitations of §5.08(g) are untouched: the null family is a deterministic re-expression of two existing draw streams, L40 makes its protein component a lower bound, and a pass under this criterion remains a statement about a cohort and an evaluation interface. One reservation is this campaign's own and was declared before the numbers existed. **The null control's true value is zero in expectation over its borrowed reference, not conditionally on it** — the bootstrap resamples the block's own reference and not the borrowed one, so the standard error omits one of the two sources that scatter the control's true value. The reference's measured 0.50 mean share of the interval variance bounds that omission, and it runs in the direction that makes the corrected rule's measured rate optimistic rather than conservative. Removing it would mean resampling the control's borrowed reference too, which is a change to the instrument and not to the criterion. Resolution is unchanged from EXP-R2-219: over 56 distinct measurements a rate below roughly 1/56 is unresolvable on this panel.

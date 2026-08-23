@@ -141,7 +141,7 @@ GPFS_LOGS_ROOT="${GPFS_LOGS_ROOT:-${GPFS_PROJECT_ROOT}/logs}"
 
 # The campaign panel, not a hand-written subset of it. This line used to read
 # ARMS="${ARMS:-gpt2-large,protgpt2,zymctrl,progen2-medium}" -- four of the
-# eleven arms TRANSFER_CAMPAIGN_PANEL declares -- so a default campaign measured a
+# arms TRANSFER_CAMPAIGN_PANEL declares -- so a default campaign measured a
 # four-arm panel through every stage while each stage's arm list was, correctly,
 # intersected with it. That is the L18 failure verbatim, and it is the failure
 # panel_contract.py was built to end: the contract removed the duplicated arm

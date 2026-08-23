@@ -726,9 +726,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--minimum-context-information-nats",
         type=float,
         default=SCREENING_CONTEXT_INFORMATION_NATS,
-        help="the identification floor the power verdict is taken against. It is "
-        "recorded and does not stop scoring; nothing on this stage is a ratio to "
-        "the context information, so no denominator criterion applies here",
+        help="the pre-interval screening floor the power verdict is taken "
+        "against -- not the identification criterion, which needs a bootstrap "
+        "interval this stage does not compute. It is recorded and does not stop "
+        "scoring; nothing on this stage is a ratio to the context information, "
+        "so no denominator criterion applies here",
     )
     parser.add_argument(
         "--output-root",
@@ -881,7 +883,10 @@ def main() -> None:
                     "minimum_context_information_nats": args.minimum_context_information_nats,
                     "minimum_context_information_provenance": (
                         "src.transfer.budget.SCREENING_CONTEXT_INFORMATION_NATS, the "
-                        "identification floor; recorded but not used to skip scoring, "
+                        "pre-interval screen and NOT the identification criterion, "
+                        "which is budget.context_identification and needs a bootstrap "
+                        "interval this stage does not compute; recorded but not used "
+                        "to skip scoring, "
                         "only the off-distribution rule skips an arm. No quantity on "
                         "this stage divides by the context information, so "
                         "budget.ratio_denominator_admissibility is not applied here"

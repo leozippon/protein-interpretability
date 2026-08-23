@@ -100,12 +100,24 @@ grows as the reference shrinks against its vocabulary -- the same axis the
 smoothing bias lives on. Measured here on a deliberately small reference (2000
 tokens over a 256-symbol vocabulary) it reaches +0.047 nats, enough to put the
 whole 95% percentile interval for ``I`` above the point estimate at
-``z0 = -2.0``. Nothing is corrected for it: this package has no BCa
-implementation, a bias estimate at these draw counts is itself noisy, and a
-silently shifted interval is indistinguishable from a measurement. What the
-result carries instead is ``bootstrap_bias`` and ``median_bias_z0`` on every
-statistic, so the condition is visible rather than inferable, and the remedy is
-a larger reference corpus rather than a different interval.
+``z0 = -2.0``. **The published interval is not corrected for it and the point
+estimate is never shifted**: this package has no BCa implementation, and a
+silently moved interval is indistinguishable from a measurement. What the result
+carries instead is ``bootstrap_bias`` and ``median_bias_z0`` on every statistic,
+so the condition is visible rather than inferable.
+
+**The displacement is also measured, separately from everything else it is
+confounded with.** Every statistic is evaluated a second time at
+``(cohort draw d, full reference)``, and the mean gap between that and
+``(cohort draw d, reference draw d)`` is ``reference_resampling_displacement``:
+the part of ``bootstrap_bias`` that reference resampling alone is responsible
+for, with the cohort draw differenced out. ``displacement_corrected_interval``
+is the percentile interval with that constant removed, and it moves the
+interval's *position* only -- the point estimate, the standard error and the
+reference's share of the width are all untouched.
+``cohort_only_bootstrap_se`` and ``reference_held_fixed_interval`` report what
+the interval would have been had the reference not been resampled at all, which
+is a different object and a narrower one, so the two cannot be confused.
 """
 
 from __future__ import annotations
@@ -120,7 +132,7 @@ from scipy import sparse, stats
 
 from .statistics import MINIMUM_BOOTSTRAP_UNITS
 
-SCHEMA_VERSION = "r2_transfer_information_bootstrap_v1"
+SCHEMA_VERSION = "r2_transfer_information_bootstrap_v2"
 
 LN2 = math.log(2.0)
 
@@ -898,6 +910,61 @@ def _summarise(draws: np.ndarray, point: float, confidence: float) -> dict[str, 
     }
 
 
+DISPLACEMENT_NOTE = (
+    "reference_resampling_displacement is the mean gap between a draw taken at "
+    "(cohort draw, reference draw) and the same draw taken at (cohort draw, full "
+    "reference). It is the Jensen displacement L34 and L42 catalogue, isolated "
+    "from the cohort resampling it is otherwise confounded with in "
+    "bootstrap_bias. displacement_corrected_interval removes it as a constant "
+    "shift, so the point estimate, the standard error and the reference's share "
+    "of the width are unchanged and only the interval's position moves. "
+    "reference_held_fixed_interval and cohort_only_bootstrap_se are the "
+    "different, narrower object that dropping the reference resampling would "
+    "give, reported so that a corrected interval and a shrunken one cannot be "
+    "confused"
+)
+
+
+def _reference_displacement(
+    draws: np.ndarray, reference_fixed: np.ndarray, confidence: float
+) -> dict[str, Any]:
+    """One statistic's Jensen displacement, and the interval with it removed.
+
+    ``reference_fixed`` holds the same cohort draws against the reference sample
+    actually observed, so differencing the two means removes the cohort
+    resampling entirely and leaves the reference refit alone. That is what makes
+    this a correction for the diagnosed mechanism rather than for
+    ``bootstrap_bias``, which also carries the ratio-estimator bias of the cohort
+    draw and would be corrected away with it.
+
+    The correction is a constant shift, so it is applied to the draws and the
+    percentile taken afterwards rather than to the endpoints: the two agree
+    exactly for a shift, and applying it to the draws is what keeps the
+    arithmetic honest if the correction ever stops being one.
+    """
+
+    if draws.shape != reference_fixed.shape:
+        raise ValueError(
+            "the displacement needs one reference-held-fixed draw per resampled "
+            f"draw; got {draws.shape} against {reference_fixed.shape}"
+        )
+    tail = (1.0 - confidence) / 2.0
+    displacement = float(draws.mean() - reference_fixed.mean())
+    corrected = draws - displacement
+    return {
+        "reference_resampling_displacement": displacement,
+        "displacement_corrected_interval": [
+            float(np.percentile(corrected, 100.0 * tail)),
+            float(np.percentile(corrected, 100.0 * (1.0 - tail))),
+        ],
+        "cohort_only_bootstrap_se": float(np.std(reference_fixed, ddof=1)),
+        "reference_held_fixed_interval": [
+            float(np.percentile(reference_fixed, 100.0 * tail)),
+            float(np.percentile(reference_fixed, 100.0 * (1.0 - tail))),
+        ],
+    }
+
+
 def effective_unit_floor(
     n_effective_groups: float,
     n_groups: int,
@@ -1070,6 +1137,11 @@ def bootstrap_arms(
     )
     identity_cohort = np.ones((1, int(cohort_labels.size)), dtype=np.int64)
     identity_reference = np.ones((1, int(reference_labels.size)), dtype=np.int64)
+    # A read-only view rather than a materialised block: it is only ever sliced
+    # and cast one chunk at a time inside _statistics_from_weights.
+    held_fixed_reference = np.broadcast_to(
+        identity_reference, (n_bootstrap, int(reference_labels.size))
+    )
 
     results: dict[str, InformationResult] = {}
     for arm, prep in zip(arms, prepared):
@@ -1086,6 +1158,7 @@ def bootstrap_arms(
             "resampling_unit": "group",
             "cohort_draw_shared_between_terms": True,
             "reference_resampled": True,
+            "displacement_note": DISPLACEMENT_NOTE,
             "unit_floor": floor,
             "diagnostics": dict(prep.diagnostics),
         }
@@ -1108,13 +1181,24 @@ def bootstrap_arms(
         draws = _statistics_from_weights(
             prep, cohort_weights, cohort_weights, reference_weights
         )
+        # The same cohort draws against the reference sample actually observed.
+        # Differencing it out of ``draws`` is what isolates the Jensen
+        # displacement from the cohort resampling.
+        reference_fixed = _statistics_from_weights(
+            prep, cohort_weights, cohort_weights, held_fixed_reference
+        )
         results[arm.name] = InformationResult(
             record={
                 **base_record,
                 "refused": False,
                 "refusal_reason": None,
                 "statistics": {
-                    name: _summarise(draws[name], float(point[name][0]), confidence)
+                    name: {
+                        **_summarise(draws[name], float(point[name][0]), confidence),
+                        **_reference_displacement(
+                            draws[name], reference_fixed[name], confidence
+                        ),
+                    }
                     for name in STATISTIC_NAMES
                 },
             },

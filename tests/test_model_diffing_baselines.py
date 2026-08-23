@@ -885,13 +885,22 @@ class TheStageRunsEndToEndOnTwoCheckpointsOfOneLineage(unittest.TestCase):
         )
         self.assertNotEqual(_numbers(verdict["quantities"]), [])
 
-    def test_the_protein_run_carries_the_unmeasurable_base_limitation_and_the_text_run_does_not(self):
+    def test_the_protein_run_carries_the_pre_adaptation_base_limitation_and_text_does_not(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             protein = _run(root, "protein", self.tokenizer, self.checkpoints, _protein_corpus())
             text = _run(root, "text", self.tokenizer, self.checkpoints, _text_corpus())
         self.assertIn("protein_mode_reference", protein["limitations"])
-        self.assertIn("UNMEASURABLE", protein["limitations"]["protein_mode_reference"])
+        # 24_component_swap.py's own words, imported. The claim rests on the
+        # REVERSAL COST -- indifference to reading direction -- and not on the
+        # context-information floor, which that mode clears.
+        self.assertIn(
+            "REVERSAL COST", protein["limitations"]["protein_mode_reference"]
+        )
+        self.assertIn(
+            "PRE-ADAPTATION REFERENCE",
+            protein["limitations"]["protein_mode_reference"],
+        )
         self.assertIn(
             "does not require a measurable behavioural estimand",
             protein["limitations"]["protein_mode_reference"],

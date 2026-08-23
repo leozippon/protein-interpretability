@@ -29,17 +29,25 @@ This module measures that power figure *before* any scientific gate is applied
 so that a starved arm is reported as unmeasurable on the cohort rather than as
 a failed scientific hypothesis.
 
-Screening an arm in and admitting its reading as a denominator are two criteria,
+Identifying an arm and admitting its reading as a denominator are two criteria,
 and this module declares both. They were one undeclared 0.30-nat constant until
 EXP-R2-218 calibrated each against a known-zero null family and a known-signal
 mixing family, and they turned out to have different answers by more than an
-order of magnitude. Identification is a detection question and is decided on the
-point estimate against :data:`SCREENING_CONTEXT_INFORMATION_NATS`; a bounded
-ratio needs the reading to sit :data:`FIELLER_DENOMINATOR_MULTIPLE` of its *own*
-standard errors above zero, which is 0.146 to 0.966 nats depending on the arm and
-is therefore not a constant at all. The retired figure survives as
-:data:`MIN_CONTEXT_INFORMATION_NATS`, reported beside every verdict for
-comparability and deciding nothing.
+order of magnitude. **Neither is a constant now.** Identification is
+:func:`context_identification` -- the arm's displacement-corrected 95% interval
+must lie strictly above zero -- and a bounded ratio needs the reading to sit
+:data:`FIELLER_DENOMINATOR_MULTIPLE` of its own standard errors above zero, which
+is 0.146 to 0.966 nats depending on the arm. Both read the arm's own precision,
+so they are nested with the ratio criterion strictly the stronger, and the pair
+of readings that a magnitude rule and a precision rule ordered oppositely
+(EXP-R2-220) cannot recur.
+
+Two constants survive as reporting columns. :data:`MIN_CONTEXT_INFORMATION_NATS`
+decides nothing anywhere. :data:`SCREENING_CONTEXT_INFORMATION_NATS` decides
+nothing where an interval exists and remains the *pre-interval screen* upstream
+of the bootstrap, where no interval does -- :func:`arm_power` among them, since
+it is the function that produces the statistics the interval is later computed
+from. A verdict taken there is a screen and says so.
 
 Per-token quantities are tokenizer-dependent and are therefore not comparable
 across arms: ProtGPT2 uses multi-residue BPE while ZymCTRL and ProGen2-medium
@@ -83,14 +91,30 @@ LN2 = math.log(2.0)
 #: the range over which a protein decoder's local statistics saturate.
 DEFAULT_CONTEXT_LENGTHS: tuple[int, ...] = (1, 2, 4, 8, 16, 32, 64, 128)
 
-#: Context information an arm must read before it is screened in as carrying a
-#: context signal on a cohort at all.
+#: Context information an arm must read before a stage that has no interval will
+#: score it at all.
 #:
-#: **This is the identification criterion and nothing else.** It answers "did
-#: this arm extract information from context, or is the reading consistent with
-#: zero?", which is a detection question judged by its error rates. It does not
-#: answer whether the reading is precise enough to divide by; that is
-#: :func:`ratio_denominator_admissibility`, and the two have different answers.
+#: **This stopped being the identification criterion at EXP-R2-221.** It is a
+#: *pre-interval screen*: a magnitude comparison that a stage upstream of any
+#: bootstrap can make, and the only thing such a stage can make. Identification
+#: itself is :func:`context_identification`, which reads the arm's own
+#: displacement-corrected interval and needs no constant at all. Where an
+#: interval exists this constant decides nothing and is reported for
+#: comparability; where none exists the verdict taken from it is a screen and the
+#: artefact says so rather than calling it identification.
+#:
+#: **What the demotion cost the constant, measured.** As an identification rule a
+#: fixed magnitude orders two readings by size while their own standard errors
+#: order them the other way, and EXP-R2-220 found the first real pair on which
+#: that happens: ``galactica-1.3b``'s protein mode reads +0.047678 at
+#: SE 0.004571 -- 10.43 standard errors from zero and admissible as a ratio
+#: denominator -- and this floor refuses it by 0.0023 nats, while
+#: ``Llama-2-7b-hf``'s protein mode passes at +0.084287 and is refused by the
+#: Fieller condition at 8.28. One of those refusals is a false negative and the
+#: other is not, and no value of a constant separates them (EXP-R2-221, §5.10).
+#:
+#: The derivation below is what it was and is retained: it is why this remains an
+#: adequate *screen* even though it is not the identification criterion.
 #:
 #: Derived at EXP-R2-218 against a known-zero null family (the independent-block
 #: unigram control) and a known-signal lambda family, 1920 readings over 15 arms
@@ -104,17 +128,61 @@ DEFAULT_CONTEXT_LENGTHS: tuple[int, ...] = (1, 2, 4, 8, 16, 32, 64, 128)
 #: interval upward by a mean of +0.0095 and a maximum of +0.0347 nats -- that
 #: makes any threshold inside 0.010-0.020 indefensible in practice.
 #:
+#: **Cross-fitted at EXP-R2-219 and it holds; the 0.010 does not.** Re-deriving
+#: the threshold on each calibration fold and scoring it on units the derivation
+#: never saw -- 24 cohort draws, and separately seven tokenisation classes, the
+#: 120 null cells being only 56 distinct measurements -- this floor admits 0 of
+#: 120 held-out null readings under every scheme and no fold asks for more than
+#: 0.015 nats. The calibrated 0.010 reaches a held-out rate of 0.0667 against its
+#: own 0.05 target, because it is set by the single noisiest cohort draw. A rate
+#: of zero is not proof: over 56 distinct measurements the one-sided 95% limit on
+#: this floor's false-positive rate is 0.052, so it is validated as not too lax at
+#: the resolution the panel supports and not as exact.
+#:
 #: **It changes no verdict on the current panel.** Every arm reads at or above
 #: +0.90 nats (progen2-small, the lowest positive) or at or below -3.98 nats
 #: (dialogpt-small), so the 15 arms fall on the same side of 0.05 as they fell of
-#: the retired 0.30.
+#: the retired 0.30, and no held-out fold's threshold moves one either.
 #:
-#: The interval variant ``lower bound >= tau`` is deliberately *not* the rule
-#: here. It is the weaker statistic near zero: 56 of 112 null lower bounds sit
-#: above zero, and removing the Jensen displacement (L34) moves its calibrated
-#: threshold to 0.000, so its whole apparent floor is displacement rather than
-#: signal.
+#: The *uncorrected* interval variant ``lower bound >= tau`` was and remains the
+#: weaker statistic near zero: 56 of 112 null lower bounds sit above zero before
+#: any signal exists. What changed at EXP-R2-221 is that the displacement those
+#: bounds were reading is now measured and removed, and the corrected variant at
+#: ``tau = 0`` admits none of them -- which is why identification moved to
+#: :func:`context_identification` and this constant did not follow it there.
 SCREENING_CONTEXT_INFORMATION_NATS = 0.05
+
+#: Carried into every artefact whose verdict came from the screen rather than
+#: from the criterion, so the two cannot be read as the same thing.
+SCREENING_FLOOR_NOTE = (
+    f"{SCREENING_CONTEXT_INFORMATION_NATS} nats/token is a PRE-INTERVAL SCREEN "
+    "and not the identification criterion. It is applied where no bootstrap "
+    "interval exists yet -- upstream of the stage that computes one -- and it "
+    "answers whether an arm reads enough on this cohort to be worth scoring. "
+    "Identification is budget.context_identification, which asks whether the "
+    "arm's own displacement-corrected 95% interval excludes zero and has no "
+    "constant in it; a verdict taken from this screen is not an identification "
+    "verdict and does not become one by being reported beside it"
+)
+
+#: The identification criterion's name, carried in every artefact that takes it.
+IDENTIFICATION_CRITERION = "displacement_corrected_interval_excludes_zero"
+
+IDENTIFICATION_NOTE = (
+    "identification is a detection question and is decided on the arm's own "
+    "precision: the displacement-corrected 95% interval for I must lie strictly "
+    "above zero, which is approximately I > 1.96*SE(I). The correction is the "
+    "one thing that makes a lower-bound rule usable here -- uncorrected, the "
+    "Jensen displacement of L34/L42 lifts 64 of 120 null intervals above zero "
+    "before any signal exists, and corrected it lifts none (EXP-R2-221, cross-"
+    "fitted over 24 cohort draws and seven tokenisation classes, 0 of 120 "
+    "held-out null readings and 0 of 56 distinct measurements under every "
+    "scheme). Zero is also the one threshold that is the same criterion in all "
+    "three units, which no positive constant in nats per token is. It says the "
+    "arm read above no-context and NOT that its reading may be divided by; that "
+    "is budget.ratio_denominator_admissibility, which is strictly stronger, so "
+    "the two are nested and cannot cross"
+)
 
 #: Standard errors the denominator of a ratio must sit above before the ratio has
 #: a bounded confidence set: ``z_{0.975} / sqrt(FIELLER_MAXIMUM_G)``.
@@ -866,6 +934,85 @@ def threshold_in_units(
     }
 
 
+def context_identification(
+    context_information_nats: float,
+    displacement_corrected_lower_bound_nats: float | None,
+) -> dict[str, Any]:
+    """Whether an arm's context information is distinguishable from zero.
+
+    **This is the identification criterion.** The reading is identified when its
+    displacement-corrected 95% interval lies strictly above zero, which is the
+    arm's own precision asking the question rather than a constant asking it.
+    It answers "did this arm extract information from context, or is the reading
+    consistent with zero?", and nothing else: whether the same reading is precise
+    enough to divide by is :func:`ratio_denominator_admissibility`, which is
+    strictly stronger and therefore nested inside this one rather than crossing
+    it.
+
+    **The correction is not optional and the bound must come from it.** An
+    uncorrected percentile lower bound reads the Jensen displacement L34 and L42
+    catalogue rather than the measurement: at a true zero it sits above zero on
+    56 of 112 readings, and the rule it supports has a false-positive rate of
+    0.500 at a threshold of 0.005 nats where the point rule has 0.080. With the
+    displacement measured and removed the same rule admits **0 of 120** held-out
+    null readings and **0 of 56** distinct measurements under all three
+    cross-fitting schemes (EXP-R2-221, §5.10). Supply
+    ``statistics["information_nats_per_token"]["displacement_corrected_interval"][0]``
+    from :mod:`src.transfer.information_bootstrap`; a raw ``interval[0]`` is the
+    rule that was measured failing.
+
+    **There is no fallback when no interval exists.** A stage upstream of the
+    bootstrap cannot answer this question, and substituting a magnitude constant
+    for the interval is the defect EXP-R2-221 removed -- so a missing or
+    non-finite bound raises. Such a stage reports
+    :data:`SCREENING_CONTEXT_INFORMATION_NATS` as the pre-interval screen it is,
+    under :data:`SCREENING_FLOOR_NOTE`, and names this function as the criterion
+    its verdict is not.
+    """
+
+    if not math.isfinite(context_information_nats):
+        raise ValueError("context information must be finite")
+    if displacement_corrected_lower_bound_nats is None:
+        raise ValueError(
+            "identification needs the lower bound of the displacement-corrected "
+            "interval for I and has no fallback: a magnitude constant "
+            "substituted for a missing interval is exactly the rule EXP-R2-221 "
+            "replaced, and it refused a reading 10.43 standard errors from zero. "
+            "A stage with no bootstrap reports the pre-interval screen under "
+            "SCREENING_FLOOR_NOTE instead of calling this"
+        )
+    bound = float(displacement_corrected_lower_bound_nats)
+    if not math.isfinite(bound):
+        raise ValueError(
+            "the displacement-corrected lower bound must be finite; got "
+            f"{displacement_corrected_lower_bound_nats!r}. A non-finite endpoint "
+            "is not an interval and this criterion cannot be evaluated against it"
+        )
+    identified = bool(bound > 0.0)
+    return {
+        "identified": identified,
+        "criterion": IDENTIFICATION_CRITERION,
+        "verdict": "PASS" if identified else "FAIL",
+        "measurability": MEASURABLE if identified else UNMEASURABLE,
+        "context_information_nats": float(context_information_nats),
+        "displacement_corrected_lower_bound_nats": bound,
+        "note": IDENTIFICATION_NOTE,
+        # The two demoted constants, reported so that a verdict here stays
+        # readable against every verdict recorded under either of them. Neither
+        # decides anything above.
+        "legacy_screening_floor_nats": SCREENING_CONTEXT_INFORMATION_NATS,
+        "clears_legacy_screening_floor": bool(
+            context_information_nats >= SCREENING_CONTEXT_INFORMATION_NATS
+        ),
+        "legacy_screening_floor_note": SCREENING_FLOOR_NOTE,
+        "legacy_minimum_context_information_nats": MIN_CONTEXT_INFORMATION_NATS,
+        "clears_legacy_floor": bool(
+            context_information_nats >= MIN_CONTEXT_INFORMATION_NATS
+        ),
+        "legacy_floor_note": LEGACY_FLOOR_NOTE,
+    }
+
+
 def ratio_denominator_admissibility(
     context_information_nats: float,
     context_information_se_nats: float | None,
@@ -951,13 +1098,14 @@ def power_status(context_information_nats: float, threshold_nats: float) -> tupl
     distinguishable from no context signal at all, so the arm must be excluded
     rather than reported as a negative result.
 
-    **This is the identification rule, and it is not a licence to divide.** It
-    compares a point estimate against a declared floor, whose calibrated value is
-    :data:`SCREENING_CONTEXT_INFORMATION_NATS`. Whether the same reading may
-    serve as the denominator of a share is a second and stricter question, asked
-    of the reading's own standard error by
-    :func:`ratio_denominator_admissibility`; on this panel an arm can pass here
-    and be refused there, which is what collapsing both into one constant hid.
+    **This is the pre-interval screen and not the identification criterion.** It
+    compares a point estimate against :data:`SCREENING_CONTEXT_INFORMATION_NATS`,
+    which is the only comparison a caller upstream of any bootstrap can make.
+    Identification is :func:`context_identification`, evaluated on the arm's own
+    displacement-corrected interval wherever one exists, and whether the reading
+    may serve as the denominator of a share is
+    :func:`ratio_denominator_admissibility`, stricter again. A caller that has an
+    interval must not take its verdict from here.
     """
 
     if not math.isfinite(context_information_nats):
@@ -1190,12 +1338,23 @@ def arm_power_with_records(
             symbols_per_token=expansion,
         ),
         "measurability_criterion": (
-            "identification: the point estimate against a calibrated screening "
-            "floor (budget.SCREENING_CONTEXT_INFORMATION_NATS). It says the arm "
-            "reads above no-context, NOT that its reading may be divided by -- "
-            "that is budget.ratio_denominator_admissibility, evaluated against "
-            "this arm's own bootstrap standard error"
+            "PRE-INTERVAL SCREEN: the point estimate against "
+            "budget.SCREENING_CONTEXT_INFORMATION_NATS. This function runs "
+            "upstream of any bootstrap -- it is what produces the per-record "
+            "statistics an interval is computed from -- so it cannot evaluate "
+            "the identification criterion and does not claim to"
         ),
+        # Named rather than left out: a report that carried a verdict and no
+        # statement about the criterion would read as an identification verdict.
+        "identification_criterion": IDENTIFICATION_CRITERION,
+        "identification_evaluable_here": False,
+        "identification_not_evaluable_reason": (
+            "budget.context_identification needs the lower bound of the "
+            "displacement-corrected bootstrap interval for I, and this stage "
+            "computes no bootstrap. Persist the per-record sufficient statistics "
+            "and take the verdict from 41_context_information_bootstrap.py"
+        ),
+        "screening_floor_note": SCREENING_FLOOR_NOTE,
         # Legacy column: what the retired single floor would have said here.
         "legacy_minimum_context_information_nats": MIN_CONTEXT_INFORMATION_NATS,
         "clears_legacy_floor": bool(

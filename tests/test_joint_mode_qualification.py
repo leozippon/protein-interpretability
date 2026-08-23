@@ -31,6 +31,7 @@ import io
 import json
 import sys
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -42,7 +43,12 @@ import torch  # noqa: E402
 
 from src.transfer import joint_modes as JM  # noqa: E402
 from src.transfer.arms import AA20, Cohort, sampling_record, selected_positions  # noqa: E402
-from src.transfer.budget import MEASURABLE, UNMEASURABLE  # noqa: E402
+from src.transfer.budget import (  # noqa: E402
+    MEASURABLE,
+    MIN_CONTEXT_INFORMATION_NATS,
+    SCREENING_CONTEXT_INFORMATION_NATS,
+    UNMEASURABLE,
+)
 
 
 def _load_stage(filename: str):
@@ -759,58 +765,47 @@ class HeldOutUnigramDraw(unittest.TestCase):
 
 
 class Measurability(unittest.TestCase):
-    def test_a_below_threshold_mode_is_unmeasurable_rather_than_failing(self):
-        # galactica-1.3b's protein mode, at the value EXP-R2-151 measured.
-        record = STAGE.verdict_record(0.1072, 0.30)
-        self.assertEqual(record["verdict"], UNMEASURABLE)
-        self.assertNotIn("FAIL", json.dumps(record))
-        self.assertIn("not failing", record["verdict_note"])
+    """The verdict is identification, and the retired floor rides beside it inert.
 
-    def test_a_mode_above_the_threshold_is_measurable(self):
-        record = STAGE.verdict_record(4.6147, 0.30)
-        self.assertEqual(record["verdict"], MEASURABLE)
+    ``tests/test_joint_mode_identification_contract.py`` holds the static half --
+    that the 0.30-nat magnitude is nowhere an operative default and that a ``_v1``
+    artefact cannot be read as a ``_v2`` one. These are the value tests.
+    """
+
+    def test_a_below_floor_mode_is_unmeasurable_rather_than_failing(self):
+        # galactica-1.3b's protein mode on the second draw, +0.0481 nats: the one
+        # published refusal that the calibrated floor keeps, by 0.0019 nats.
+        record = STAGE.verdict_record(0.0481, SCREENING_CONTEXT_INFORMATION_NATS)
+        self.assertEqual(record["identification_verdict"], UNMEASURABLE)
+        self.assertNotIn("FAIL", json.dumps(record))
+        self.assertIn("not failing", record["identification_verdict_note"])
+
+    def test_a_mode_above_the_floor_is_measurable(self):
+        record = STAGE.verdict_record(4.6147, SCREENING_CONTEXT_INFORMATION_NATS)
+        self.assertEqual(record["identification_verdict"], MEASURABLE)
 
     def test_a_collapsed_mode_is_still_reported_as_unmeasurable(self):
         # InstructProtein's text mode reads -12.03: worse than context-free, and
         # still a statement about this interface rather than a failed gate.
-        record = STAGE.verdict_record(-12.0259, 0.30)
-        self.assertEqual(record["verdict"], UNMEASURABLE)
+        record = STAGE.verdict_record(-12.0259, SCREENING_CONTEXT_INFORMATION_NATS)
+        self.assertEqual(record["identification_verdict"], UNMEASURABLE)
         self.assertNotIn("FAIL", json.dumps(record))
 
-    def test_the_threshold_is_this_stages_own_declared_floor(self):
-        """Not the calibrated identification floor, and the difference decides six verdicts.
+    def test_the_retired_floor_is_a_column_that_admits_and_refuses_nothing(self):
+        """Llama-2-7b-hf's protein mode: admitted on identification, 0.30 says no."""
 
-        EXP-R2-218 split the retired 0.30-nat constant into an identification
-        floor of 0.05 and a per-arm Fieller precondition. Neither is this gate:
-        a pass here admits a mode to a behavioural read, and Llama-2-7b-hf's
-        protein mode reads +0.0719 to +0.0918 nats/token -- above 0.05 in every
-        one of six published qualification artefacts -- at a reversal cost of
-        -0.0013 nats/residue. The magnitude is therefore declared here and
-        recorded as underived, exactly as ``mode_subspaces`` declares it for the
-        same mode.
-        """
-
-        from src.transfer.budget import (
-            MIN_CONTEXT_INFORMATION_NATS,
-            SCREENING_CONTEXT_INFORMATION_NATS,
-        )
-
-        parsed = STAGE.build_parser().parse_args(
-            ["--checkpoint", "/nowhere", "--rendering", "galactica"]
-        )
+        record = STAGE.verdict_record(0.084287, SCREENING_CONTEXT_INFORMATION_NATS)
+        self.assertEqual(record["identification_verdict"], MEASURABLE)
         self.assertEqual(
-            parsed.min_context_information, STAGE.JOINT_MODE_QUALIFICATION_FLOOR_NATS
+            record["legacy_qualification_floor_nats"], MIN_CONTEXT_INFORMATION_NATS
         )
-        self.assertNotEqual(
-            parsed.min_context_information, SCREENING_CONTEXT_INFORMATION_NATS
-        )
-        self.assertIn("UNDERIVED", STAGE.JOINT_MODE_QUALIFICATION_FLOOR_STATUS)
-        # The same number as the retired constant, and deliberately not sourced
-        # from it: tests/test_measurability_criterion_contract.py is what holds
-        # the "declared locally, never inherited" half of that.
-        self.assertEqual(
-            STAGE.JOINT_MODE_QUALIFICATION_FLOOR_NATS, MIN_CONTEXT_INFORMATION_NATS
-        )
+        self.assertFalse(record["clears_legacy_qualification_floor"])
+        # The two readings disagree and the artefact carries both, under names a
+        # reader cannot swap. Neither the verdict nor the floor is spelled the
+        # way a v1 artefact spelled it.
+        self.assertNotIn("verdict", record)
+        self.assertNotIn("minimum_context_information_nats", record)
+        self.assertIn("decides nothing", record["legacy_qualification_floor_note"])
 
 
 # ------------------------------------------------------------- unigram support
@@ -922,6 +917,9 @@ class TheProteinRecordAndItsControls(unittest.TestCase):
     """What reaches the artefact, for both symbol units, through the real path."""
 
     def _protein_mode(self, name: str, tokenizer) -> dict:
+        return self._protein_mode_with_records(name, tokenizer)[0]
+
+    def _protein_mode_with_records(self, name: str, tokenizer):
         tokenisation = JM.resolve(tokenizer, name)
         original = STAGE.protein_cohort
         STAGE.protein_cohort = stub_protein_draw([])
@@ -932,7 +930,7 @@ class TheProteinRecordAndItsControls(unittest.TestCase):
                         device="cpu",
                         protein_context=None,
                         max_tokens=4096,
-                        min_context_information=0.30,
+                        identification_floor_nats=SCREENING_CONTEXT_INFORMATION_NATS,
                     ),
                     ZeroLogitModel(len(tokenizer)),
                     tokenisation,
@@ -1038,6 +1036,68 @@ class TheProteinRecordAndItsControls(unittest.TestCase):
             reversed_score["n_scored_tokens"],
             record["declared_rendering"]["n_scored_tokens"],
         )
+
+    def test_the_persisted_symbol_label_names_what_the_array_actually_counts(self):
+        """Both symbol units persist residues, so both must say residue.
+
+        The defect this closes: a token-unit family carried
+        ``n_symbols_is = "a scored token"`` beside an ``n_symbols`` array holding
+        residues -- 20866 residues against 13609 tokens on ``Llama-2-7b-hf`` --
+        so bits per symbol read off that sidecar was bits per residue under a
+        label that said token.
+        """
+
+        for name, tokenizer, unit in (
+            ("prollama", prollama_stub(), JM.TOKEN_UNIT),
+            ("galactica", galactica_stub(), JM.RESIDUE_UNIT),
+        ):
+            record, statistics = self._protein_mode_with_records(name, tokenizer)
+            self.assertEqual(record["symbol_unit"], unit)
+            self.assertEqual(statistics.symbol_definition, STAGE.RESIDUE_SYMBOL)
+            for condition, held in statistics.conditions.items():
+                self.assertEqual(
+                    int(held.n_symbols.sum()),
+                    record["declared_rendering"]["n_scored_residues"]
+                    if condition == "protein_declared"
+                    else record["controls"]["reversed"]["n_scored_residues"],
+                    condition,
+                )
+            declared = statistics.conditions["protein_declared"]
+            # On the token-unit family the two arrays genuinely differ, which is
+            # what makes the label a claim rather than a restatement.
+            if unit == JM.TOKEN_UNIT:
+                self.assertNotEqual(
+                    int(declared.n_symbols.sum()), int(declared.token_count.sum())
+                )
+            else:
+                self.assertEqual(
+                    int(declared.n_symbols.sum()), int(declared.token_count.sum())
+                )
+
+    def test_a_token_label_over_a_residue_array_is_refused_rather_than_persisted(self):
+        """The label and the array cannot drift apart without the stage stopping."""
+
+        _, statistics = self._protein_mode_with_records("prollama", prollama_stub())
+        with self.assertRaises(ValueError) as raised:
+            replace(statistics, symbol_definition=STAGE.TOKEN_SYMBOL)
+        self.assertIn("n_symbols is declared to count", str(raised.exception))
+
+        # The text mode's array IS the token count, so the same label is
+        # accepted there; the guard is about agreement, not about the string.
+        text = replace(
+            statistics,
+            mode="text",
+            symbol_definition=STAGE.TOKEN_SYMBOL,
+            conditions={
+                name: replace(held, n_symbols=held.token_count)
+                for name, held in statistics.conditions.items()
+            },
+        )
+        self.assertEqual(text.symbol_definition, STAGE.TOKEN_SYMBOL)
+
+        with self.assertRaises(ValueError) as raised:
+            replace(statistics, symbol_definition="a scored thing")
+        self.assertIn("not one of the two declared symbol definitions", str(raised.exception))
 
     def test_the_rendering_facts_name_the_unit_and_the_support_they_were_read_with(self):
         facts = JM.resolve(prollama_stub(), "prollama").facts()

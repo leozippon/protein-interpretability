@@ -25,6 +25,8 @@ import pytest
 
 from src.transfer.arms import Cohort
 from src.transfer.budget import (
+    IDENTIFICATION_CRITERION,
+    SCREENING_CONTEXT_INFORMATION_NATS,
     RecordStatistics,
     SparseCounts,
     write_power_records,
@@ -335,6 +337,42 @@ def test_a_well_grouped_cohort_produces_a_group_level_interval(tmp_path: Path) -
         assert row[field] is not None, field
 
 
+def test_the_operative_verdict_is_the_criterion_and_the_floor_is_a_column(
+    tmp_path: Path,
+) -> None:
+    """The row's verdict comes from ``budget.context_identification``, not a floor.
+
+    Both halves matter. If the row took its verdict from the floor, the reading
+    the floor refuses on margin would still be refused; if the floor were dropped
+    rather than demoted, every verdict recorded under it would stop being
+    readable. So the criterion decides and the floor is reported beside it,
+    marked as deciding nothing.
+    """
+
+    paths = standard_block(tmp_path / "block", "swissprot", seed=2)
+    payload = run_stage(base_argv(paths, tmp_path / "out"))
+
+    row = row_for(payload, "progen2-base")
+    identification = row["context_identification"]
+    assert identification["criterion"] == IDENTIFICATION_CRITERION
+    assert row["per_arm_identification_status"] == identification["verdict"]
+    assert identification["identified"] is (
+        row["displacement_corrected_ci_95"][0] > 0.0
+    )
+    assert identification["displacement_corrected_lower_bound_nats"] == pytest.approx(
+        row["displacement_corrected_ci_95"][0]
+    )
+
+    # The demoted constant travels, and says it decides nothing.
+    assert row["screening_status_is_operative"] is False
+    assert "decides nothing here" in row["screening_status_note"]
+    assert identification["legacy_screening_floor_nats"] == pytest.approx(
+        SCREENING_CONTEXT_INFORMATION_NATS
+    )
+    assert identification["legacy_minimum_context_information_nats"] == pytest.approx(0.30)
+    assert "context_identification" in payload["summary"]["operative_gate"]
+
+
 def test_the_sign_status_is_marked_non_evidential(tmp_path: Path) -> None:
     """It is expected to pass on every arm, so it must never read as a gate."""
 
@@ -372,6 +410,11 @@ def test_one_dominant_near_duplicate_group_refuses_the_interval(tmp_path: Path) 
     assert "below the 8-unit floor" in row["refusal_reason"]
     assert row["context_information_nats"] is None
     assert row["screening_status"] == "REFUSED"
+    # No interval, so the criterion has nothing to read and no floor is
+    # substituted for it.
+    assert row["per_arm_identification_status"] == "REFUSED"
+    assert row["context_identification"] is None
+    assert row["displacement_corrected_ci_95"] is None
     # The arm is still in the table, and the refusal reaches the contrast.
     assert row["arm"] in {entry["arm"] for entry in payload["summary"]["arms"]}
     assert "progen2-base" in payload["summary"]["arms_with_a_refused_interval"]
@@ -1282,3 +1325,398 @@ def test_eight_blocks_earn_a_between_block_interval_that_is_still_separate(
     assert low < entry["mean_nats"] < high
     assert entry["folded_into_the_bootstrap_interval"] is False
     assert entry["blocks_disjoint"]["all_disjoint"] is True
+
+
+# --------------------------------------------------------------------------- #
+# 9. The held-out validation of the identification floor
+# --------------------------------------------------------------------------- #
+
+
+def null_reading(
+    block_id: str,
+    arm: str,
+    vocab_size: int,
+    value: float,
+    *,
+    control_block_id: str | None = None,
+    half_width: float = 0.002,
+    se: float = 0.001,
+    displacement: float = 0.0015,
+) -> dict:
+    """One control reading in the shape ``null_control_summary`` publishes.
+
+    ``displacement`` is the L34 lift of the interval off the point estimate, so
+    the corrected interval is the same interval shifted down by it and the
+    reference-held-fixed interval is a *narrower* one -- the three objects the
+    held-out validation has to keep apart.
+    """
+
+    return {
+        "arm": arm,
+        "block_id": block_id,
+        "vocab_size": vocab_size,
+        "control_block_id": control_block_id or block_id,
+        "measured_information_nats": value,
+        "bootstrap_ci_95": [value - half_width + displacement, value + half_width + displacement],
+        "displacement_corrected_ci_95": [value - half_width, value + half_width],
+        "reference_held_fixed_ci_95": [value - 0.6 * half_width, value + 0.6 * half_width],
+        "reference_resampling_displacement": displacement,
+        "cohort_only_bootstrap_se": 0.6 * se,
+        "bootstrap_se": se,
+    }
+
+
+def real_reading(
+    block_id: str,
+    arm: str,
+    value: float,
+    *,
+    se: float = 0.004,
+    half_width: float = 0.008,
+) -> dict:
+    return {
+        "arm": arm,
+        "block_id": block_id,
+        "is_unigram_null_control": False,
+        "context_information_nats": value,
+        "bootstrap_se": se,
+        "displacement_corrected_ci_95": [value - half_width, value + half_width],
+        "per_arm_identification_status": "PASS" if value - half_width > 0.0 else "FAIL",
+    }
+
+
+#: Three quiet blocks and one noisy one. The noisy block is what the panel-wide
+#: threshold is chosen against, so a fold that holds it out must choose a
+#: different threshold -- which is the whole thing a held-out validation exists
+#: to expose.
+QUIET_BLOCKS = ("b0", "b1", "b2")
+NOISY_BLOCK = "b3"
+
+
+def one_noisy_block() -> list[dict]:
+    # The standard errors are the panel's own order of magnitude, so the Fieller
+    # denominator condition is exercised where it actually sits rather than
+    # against a precision no bootstrap on 200 records produces.
+    readings = [
+        null_reading(block, arm, vocab, 0.001, control_block_id="b0", se=0.004)
+        for block in QUIET_BLOCKS
+        for arm, vocab in (("small-vocab-arm", 10), ("large-vocab-arm", 20))
+    ]
+    readings += [
+        null_reading(
+            NOISY_BLOCK, "small-vocab-arm", 10, 0.030, control_block_id="b0", se=0.012
+        ),
+        null_reading(
+            NOISY_BLOCK, "large-vocab-arm", 20, 0.032, control_block_id="b0", se=0.012
+        ),
+    ]
+    return readings
+
+
+def scheme_of(validation: dict, name: str) -> dict:
+    matches = [entry for entry in validation["schemes"] if entry["scheme"] == name]
+    assert len(matches) == 1, name
+    return matches[0]
+
+
+def fold_of(scheme: dict, unit: str) -> dict:
+    matches = [fold for fold in scheme["folds"] if fold["held_out_unit"] == unit]
+    assert len(matches) == 1, unit
+    return matches[0]
+
+
+def test_the_recalibrated_threshold_is_derived_without_the_unit_it_is_scored_on(
+    tmp_path: Path,
+) -> None:
+    """The load-bearing assertion: cross-fitting must actually withhold.
+
+    A validation that leaves the extreme unit in the derivation reports the
+    in-sample answer under a different name, and would do so silently. Here the
+    panel-wide threshold is set by one noisy block; the fold that holds that
+    block out must therefore derive a *lower* threshold and must then fail on the
+    readings it never saw.
+    """
+
+    readings = one_noisy_block()
+    panel_tau = stage._smallest_admissible_tau(
+        [reading["measured_information_nats"] for reading in readings],
+        stage.HELD_OUT_TARGET_FALSE_POSITIVE_RATE,
+    )
+    assert panel_tau == pytest.approx(0.035)
+
+    validation = stage.held_out_threshold_validation(
+        readings, [], threshold=0.05, confidence=0.95
+    )
+    scheme = scheme_of(validation, "leave_one_cohort_draw_out")
+    fold = fold_of(scheme, NOISY_BLOCK)
+    assert fold["recalibrated_tau_nats"]["point_rule"] == pytest.approx(0.005)
+    assert fold["recalibrated_tau_nats"]["point_rule"] < panel_tau
+    assert fold["held_out_false_positive_rate"]["recalibrated_point_rule"] == 1.0
+    assert fold["n_calibration_readings"] == 6
+    assert fold["n_held_out_readings"] == 2
+
+    pooled = scheme["pooled_held_out_false_positive_rate"]
+    assert pooled["recalibrated_point_rule"]["n_false_positives"] == 2
+    assert pooled["recalibrated_point_rule"]["rate_over_readings"] == pytest.approx(0.25)
+    assert pooled["recalibrated_point_rule"]["meets_the_target_over_readings"] is False
+    assert (
+        validation["conclusion"][
+            "recalibrated_threshold_meets_its_own_target_out_of_sample"
+        ]
+        is False
+    )
+
+
+def test_the_shipped_floor_is_scored_on_the_very_readings_the_fold_threshold_is(
+    tmp_path: Path,
+) -> None:
+    """One set of held-out readings, two rules -- never two sets, one rule each."""
+
+    validation = stage.held_out_threshold_validation(
+        one_noisy_block(), [], threshold=0.05, confidence=0.95
+    )
+    for name in (
+        "leave_one_cohort_draw_out",
+        "leave_one_tokenisation_class_out",
+    ):
+        pooled = scheme_of(validation, name)["pooled_held_out_false_positive_rate"]
+        denominators = {entry["n_held_out_readings"] for entry in pooled.values()}
+        assert denominators == {8}, name
+        assert pooled["shipped_point_rule"]["n_false_positives"] == 0
+        assert pooled["shipped_interval_rule"]["n_false_positives"] == 0
+        assert (
+            pooled["shipped_fieller_denominator_admissibility"]["n_false_positives"]
+            == 0
+        )
+    assert validation["conclusion"]["shipped_floor_admits_no_held_out_null"] is True
+
+
+def test_a_zero_held_out_rate_is_reported_with_the_bound_it_actually_carries() -> None:
+    """No false positive is not a false-positive rate of zero.
+
+    A rate of 0 over a few dozen units is consistent with a true rate an order of
+    magnitude above the target, and reporting the point estimate alone would
+    repeat, one level up, the mistake this validation exists to correct.
+    """
+
+    validation = stage.held_out_threshold_validation(
+        one_noisy_block(), [], threshold=0.05, confidence=0.95
+    )
+    pooled = scheme_of(validation, "leave_one_cohort_draw_out")[
+        "pooled_held_out_false_positive_rate"
+    ]["shipped_point_rule"]
+    assert pooled["rate_over_readings"] == 0.0
+    assert pooled["exact_upper_95_over_readings"] > 0.0
+    # Here every reading is its own measurement, so the two bounds coincide; the
+    # distinct one is never the narrower of the pair.
+    assert pooled["exact_upper_95_over_distinct_measurements"] == pytest.approx(
+        pooled["exact_upper_95_over_readings"]
+    )
+    assert stage._exact_upper_bound(0, 8, 0.95) == pytest.approx(
+        1.0 - 0.05 ** (1.0 / 8.0)
+    )
+    assert stage._exact_upper_bound(0, 0, 0.95) is None
+
+
+def test_controls_sharing_a_block_and_a_vocabulary_are_one_measurement() -> None:
+    """The unit count is measured, not assumed, and duplicates collapse into it."""
+
+    readings = [
+        null_reading("b0", "gpt2", 50257, 0.001),
+        null_reading("b0", "gpt2-large", 50257, 0.001),
+        null_reading("b0", "llama", 128256, 0.002),
+        null_reading("b1", "gpt2", 50257, 0.003),
+        null_reading("b1", "gpt2-large", 50257, 0.003),
+        null_reading("b1", "llama", 128256, 0.004),
+    ]
+    equivalence = stage.null_reading_equivalence(readings)
+    assert equivalence["n_readings"] == 6
+    assert equivalence["n_distinct_measurements"] == 4
+    assert equivalence["n_cohort_draws"] == 2
+    labels = {entry["label"]: entry["arms"] for entry in equivalence["tokenisation_classes"]}
+    assert labels == {"gpt2+gpt2-large": ["gpt2", "gpt2-large"], "llama": ["llama"]}
+    assert equivalence["arm_to_tokenisation_class"]["gpt2"] == "gpt2+gpt2-large"
+
+    # And the collapse is why leaving one *arm* out would measure nothing: gpt2
+    # and gpt2-large are one fold unit, not two.
+    validation = stage.held_out_threshold_validation(
+        readings, [], threshold=0.05, confidence=0.95
+    )
+    scheme = scheme_of(validation, "leave_one_tokenisation_class_out")
+    assert scheme["n_folds"] == 2
+
+    # Duplicated readings must not buy resolution they do not carry: the bound
+    # read over distinct measurements is the wider of the two.
+    pooled = scheme["pooled_held_out_false_positive_rate"]["shipped_point_rule"]
+    assert pooled["n_held_out_distinct_measurements"] == 4
+    assert pooled["n_held_out_readings"] == 6
+    assert (
+        pooled["exact_upper_95_over_distinct_measurements"]
+        > pooled["exact_upper_95_over_readings"]
+    )
+
+
+def test_controls_of_one_block_and_vocabulary_that_disagree_are_refused() -> None:
+    """The premise the unit accounting rests on is checked rather than trusted."""
+
+    readings = [
+        null_reading("b0", "gpt2", 50257, 0.001),
+        null_reading("b0", "gpt2-large", 50257, 0.009),
+    ]
+    with pytest.raises(SystemExit) as raised:
+        stage.null_reading_equivalence(readings)
+    assert "do not carry the same reading" in str(raised.value)
+
+
+def test_a_scheme_with_one_unit_is_refused_rather_than_scored() -> None:
+    """A unit cannot be held out of its own derivation, and saying so is the point.
+
+    A fold built on a single unit would compare a threshold with itself and
+    report a held-out rate that is nothing of the kind.
+    """
+
+    readings = [
+        null_reading("b0", "small-vocab-arm", 10, 0.001),
+        null_reading("b0", "large-vocab-arm", 20, 0.002),
+    ]
+    validation = stage.held_out_threshold_validation(
+        readings, [], threshold=0.05, confidence=0.95
+    )
+    draws = scheme_of(validation, "leave_one_cohort_draw_out")
+    assert draws["refused"] is True
+    assert "at least two units" in draws["refusal_reason"]
+    assert "folds" not in draws
+    classes = scheme_of(validation, "leave_one_tokenisation_class_out")
+    assert classes["refused"] is False
+    assert classes["n_folds"] == 2
+
+
+def test_too_few_measured_controls_refuse_the_whole_validation() -> None:
+    validation = stage.held_out_threshold_validation(
+        [null_reading("b0", "one-arm", 10, 0.001)], [], threshold=0.05, confidence=0.95
+    )
+    assert validation["refused"] is True
+    assert "at least two units" in validation["refusal_reason"]
+    assert "schemes" not in validation
+
+
+def test_a_real_arm_between_the_two_thresholds_is_named_as_changing_verdict() -> None:
+    """The agreement statement must be capable of being false.
+
+    On the panel no arm sits between a fold's threshold and the shipped floor, so
+    the reported agreement is worth exactly as much as the check's ability to
+    detect a disagreement; this puts one there.
+    """
+
+    readings = one_noisy_block()
+    rows = [
+        real_reading(NOISY_BLOCK, "borderline-arm", 0.020),
+        real_reading(NOISY_BLOCK, "clearly-measurable-arm", 1.400),
+        real_reading("b0", "clearly-measurable-arm", 1.400),
+    ]
+    validation = stage.held_out_threshold_validation(
+        readings, rows, threshold=0.05, confidence=0.95
+    )
+    scheme = scheme_of(validation, "leave_one_cohort_draw_out")
+    fold = fold_of(scheme, NOISY_BLOCK)
+    changed = fold["real_arm_verdicts"]["readings_that_change_verdict"]
+    assert [entry["arm"] for entry in changed] == ["borderline-arm"]
+    assert changed[0]["verdict_under_the_recalibrated_threshold"] == "PASS"
+    assert changed[0]["verdict_under_the_shipped_floor"] == "FAIL"
+    assert scheme["real_arm_verdict_agreement"]["agrees_everywhere"] is False
+    assert validation["conclusion"]["real_arm_verdicts_are_unchanged"] is False
+
+    # A real arm on a unit no fold holds out is named rather than dropped.
+    classes = scheme_of(validation, "leave_one_tokenisation_class_out")
+    assert classes["real_arm_verdict_agreement"]["n_readings_on_no_held_out_unit"] == 3
+
+
+def test_the_buffered_scheme_withholds_the_block_the_control_borrowed_from() -> None:
+    """The rotation couples a held-out reading to a calibration block's reference."""
+
+    readings = [
+        null_reading(block, "one-arm", 10, 0.001, control_block_id=source)
+        for block, source in (("b0", "b1"), ("b1", "b2"), ("b2", "b3"), ("b3", "b0"))
+    ]
+    validation = stage.held_out_threshold_validation(
+        readings, [], threshold=0.05, confidence=0.95
+    )
+    plain = fold_of(scheme_of(validation, "leave_one_cohort_draw_out"), "b0")
+    assert plain["calibration_units_withheld_as_a_buffer"] == []
+    assert plain["n_calibration_readings"] == 3
+
+    buffered = fold_of(
+        scheme_of(
+            validation,
+            "leave_one_cohort_draw_out_buffered_against_the_control_rotation",
+        ),
+        "b0",
+    )
+    assert buffered["calibration_units_withheld_as_a_buffer"] == ["b1", "b3"]
+    assert buffered["n_calibration_readings"] == 1
+
+
+def test_the_validation_needs_the_null_control_and_says_so() -> None:
+    with pytest.raises(SystemExit) as raised:
+        stage.parse_args(
+            ["--sidecar", "x.records.npz", "--held-out-threshold-validation"]
+        )
+    assert "--unigram-null-control" in str(raised.value)
+
+
+def test_the_stage_carries_the_validation_end_to_end(tmp_path: Path) -> None:
+    """Through the real stage on real sidecars, not over hand-written readings.
+
+    Two blocks of two arms sharing one vocabulary: the cohort-draw scheme has the
+    two units it needs, and the tokenisation-class scheme has one and must refuse
+    rather than report a rate.
+    """
+
+    paths = [
+        standard_block(tmp_path / "one", "swissprot_a", seed=71, write_reference_json=True),
+        standard_block(tmp_path / "two", "swissprot_b", seed=72, write_reference_json=True),
+    ]
+    payload = run_stage(
+        blocks_argv(
+            paths,
+            tmp_path / "out",
+            "--unigram-null-control",
+            "--held-out-threshold-validation",
+        )
+    )
+    validation = payload["held_out_threshold_validation"]
+    assert validation["requested"] is True
+    assert validation["refused"] is False
+    assert validation["shipped_floor_nats"] == pytest.approx(
+        payload["summary"]["threshold_nats"]
+    )
+
+    accounting = validation["unit_accounting"]
+    assert accounting["n_cohort_draws"] == 2
+    assert accounting["n_distinct_measurements"] == 2
+    assert accounting["n_readings"] == 4
+
+    draws = scheme_of(validation, "leave_one_cohort_draw_out")
+    assert draws["refused"] is False
+    assert draws["n_folds"] == 2
+    pooled = draws["pooled_held_out_false_positive_rate"]
+    assert pooled["shipped_point_rule"]["n_false_positives"] == 0
+    assert pooled["shipped_point_rule"]["exact_upper_95_over_readings"] > 0.0
+    assert draws["real_arm_verdict_agreement"]["n_held_out_readings"] == 4
+
+    classes = scheme_of(validation, "leave_one_tokenisation_class_out")
+    assert classes["refused"] is True
+
+    assert validation["conclusion"]["shipped_floor_admits_no_held_out_null"] is True
+    assert "0.05 nats/token floor" in validation["conclusion"]["statement"]
+
+
+def test_the_validation_is_absent_unless_it_is_asked_for(tmp_path: Path) -> None:
+    paths = [
+        standard_block(tmp_path / "one", "swissprot_a", seed=81, write_reference_json=True),
+        standard_block(tmp_path / "two", "swissprot_b", seed=82, write_reference_json=True),
+    ]
+    payload = run_stage(
+        blocks_argv(paths, tmp_path / "out", "--unigram-null-control")
+    )
+    assert payload["held_out_threshold_validation"]["requested"] is False

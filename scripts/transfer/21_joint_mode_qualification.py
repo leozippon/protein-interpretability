@@ -12,10 +12,61 @@ all.
 cross-entropy on the scored symbols minus the model's own clean cross-entropy on
 the same symbols. It is stage 01's estimand deliberately -- a joint checkpoint's
 qualification has to be commensurable with the panel's -- and it carries stage
-01's reading with it: an arm below the threshold is **unmeasurable on that
-cohort**, not failing. That distinction is the whole verdict. It says the
-evaluation interface cannot resolve anything on this cohort, and it says nothing
-about what the checkpoint knows.
+01's reading with it: a mode below the floor is **unmeasurable on that cohort**,
+not failing. That distinction is the whole verdict. It says the evaluation
+interface cannot resolve anything on this cohort, and it says nothing about what
+the checkpoint knows.
+
+**The published verdict is a pre-interval screen, not the identification
+criterion.** The floor is
+:data:`src.transfer.budget.SCREENING_CONTEXT_INFORMATION_NATS` -- the point rule
+EXP-R2-218 calibrated against a known-zero null family at FPR <= 0.05 -- and it
+answers "does this reading justify an interval". Identification itself is
+:func:`src.transfer.budget.context_identification`, which reads the mode's
+displacement-corrected bootstrap interval; this stage computes no bootstrap, so
+it persists the per-record sufficient statistics into ``records/`` and
+``41_context_information_bootstrap.py`` takes the verdict from them. The
+difference is not hypothetical: on the EXP-R2-220 cells the screen refuses
+``galactica-1.3b``'s protein mode at +0.047678 and the criterion identifies it,
+its corrected interval reaching down only to +0.038694 (EXP-R2-221, §5.10). The 0.30 nats this
+stage used to gate on was never derived; it is now an inert column
+(``legacy_qualification_floor_nats``, ``clears_legacy_qualification_floor``)
+that admits and refuses nothing, declared once as
+:data:`src.transfer.budget.MIN_CONTEXT_INFORMATION_NATS` and no longer restated
+here. Old and new artefacts are not confusable: an artefact written before the
+change carries ``modes[*].verdict`` and ``verdicts`` decided at 0.30 under
+schema ``...qualification_v1``; one written after carries
+``modes[*].identification_verdict`` and ``identification_verdicts`` decided at
+0.05 under ``...qualification_v2``, and no key means two things across the pair.
+
+**What "this mode is not worth a behavioural read" rests on is the reversal
+cost, and it is not a threshold.** Every protein record already carries
+``controls.reversed.cost_nats_per_residue``, and that -- not a context-information
+floor -- is the substantive evidence: ``Llama-2-7b-hf`` pays **-0.0013**
+nats/residue to have a sequence reversed, which is indifference to reading
+direction, against **+0.1442** for the adapted stage.
+:data:`src.transfer.concept_alignment.PROTEIN_MODE_BEHAVIOURAL_STATUS` already
+states the refusal in exactly those terms. The cost is **reported and never
+gated**, because pairing every published protein reading with its own reversal
+cost shows the two orderings cross: the refused chimera families
+``s1Body_baseVocab`` and ``s1Body_baseHead`` read -0.061 to -0.085 nats of
+context information at reversal costs of +0.119 to +0.138, overlapping the
++0.136 to +0.167 of the admitted ProLLaMA-lineage cells -- ``s1Body_baseHead``
+on the second draw pays +0.1379 and is refused while ``s1Body_baseEmbed`` pays
++0.1358 and is admitted -- while ``galactica-125m`` reads -0.139 at +0.088. A
+reversal-cost criterion would be a **different partition**, not a tightening of
+this one, and would change admissions in both directions. Both quantities are
+published; neither is turned into a second gate.
+
+**Per-record sufficient statistics are persisted, so uncertainty is a CPU job.**
+Beside the report, each measured mode writes ``records/power_<cohort>_<digest>``
+``.records.npz`` in ``budget.write_power_records``'s format, with the frozen
+scored cohort and the frozen held-out reference beside it. It holds the
+per-record clean-NLL sums, token counts, symbol counts and sparse target counts
+of the declared **and** the reversed condition, which is everything a
+group-clustered bootstrap of this stage's own point estimates needs. This stage
+publishes point estimates with no interval, and that is the defect the sidecar
+exists to let a later analysis close without a second GPU sweep.
 
 **What one scored symbol is, is the family's declaration.** Galactica and
 InstructProtein reach a per-residue alphabet, so a protein symbol is a residue and
@@ -54,8 +105,9 @@ bias into the baseline than the effect being measured.
                   distinguishes "this cohort is hard" from "this mode is not
                   reading the sequence at all". It is a within-arm difference over
                   an identical residue multiset, which is why it survives the unit
-                  problem above and why the decision rule leans on it hardest: the
-                  cost is read **per residue** in both units. For a token-unit
+                  problem above and why the reading of a protein mode rests on it
+                  rather than on the floor: the cost is read **per residue** in
+                  both units. It is reported, never gated -- see above. For a token-unit
                   family that is also the only readable form -- reversal permutes
                   the residues but not the tokenisation, so the reversed condition
                   is a different token population and neither a per-token cost nor
@@ -89,6 +141,7 @@ import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from dataclasses import dataclass, replace
 from typing import Any, Sequence
 
 import numpy as np
@@ -109,8 +162,15 @@ from src.transfer.arms import (  # noqa: E402
     text_cohort,
 )
 from src.transfer.budget import (  # noqa: E402
+    IDENTIFICATION_CRITERION,
+    LEGACY_FLOOR_NOTE,
+    MIN_CONTEXT_INFORMATION_NATS,
     SCREENING_CONTEXT_INFORMATION_NATS,
+    SCREENING_FLOOR_NOTE,
+    RecordStatistics,
+    SparseCounts,
     power_status,
+    write_power_records,
 )
 from src.transfer.io import sha256_file, write_json  # noqa: E402
 from src.transfer.pathways import (  # noqa: E402
@@ -120,8 +180,30 @@ from src.transfer.pathways import (  # noqa: E402
     held_out_cohort,
 )
 
-SCHEMA_VERSION = "r2_transfer_joint_mode_qualification_v1"
+#: ``_v2`` because the meaning of the published verdict changed, not merely its
+#: value: ``modes[*].verdict`` decided at an underived 0.30-nat floor became
+#: ``modes[*].identification_verdict`` decided at the calibrated
+#: :data:`~src.transfer.budget.SCREENING_CONTEXT_INFORMATION_NATS`, the 0.30
+#: comparison became an inert column, and every mode gained a
+#: sufficient-statistics sidecar. A ``_v1`` artefact is not a ``_v2`` artefact
+#: with fields missing, so the version is what a reader keys on.
+SCHEMA_VERSION = "r2_transfer_joint_mode_qualification_v2"
 DEFAULT_OUT = REPO / "results/transfer/joint_mode_qualification"
+
+#: Where the per-record sufficient statistics and the frozen record lists go.
+#: A subdirectory rather than ``--out`` itself, because
+#: ``run_external_baseline_h200.sh`` reads "any .json appeared in the output
+#: directory" as completion, and a frozen cohort written before the report would
+#: be read as the run having finished.
+RECORDS_SUBDIRECTORY = "records"
+
+#: The two values ``ModeStatistics.symbol_definition`` may take, and the strings
+#: the sidecar publishes as ``n_symbols_is``. Declared once, because the label
+#: and the array it describes are checked against each other rather than kept in
+#: step by hand: the protein mode counts residues in both symbol units, so a
+#: token label on it would name a unit the numbers are not in.
+RESIDUE_SYMBOL = "a scored residue"
+TOKEN_SYMBOL = "a scored token"
 
 #: Modules whose content decides this stage's numbers, hashed into the artefact.
 #: The rendering module is first because it is the one that has been worth 2.9
@@ -136,65 +218,97 @@ PROVENANCE_MODULES = (
 
 _DTYPES = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}
 
-#: Context information a joint checkpoint's mode must read before it is qualified
-#: for downstream use.
+#: How the screening floor reads *here*, carried into every artefact.
 #:
-#: **Declared here, and it is not one of the two criteria EXP-R2-218 calibrated.**
-#:
-#: It is not :data:`src.transfer.budget.SCREENING_CONTEXT_INFORMATION_NATS`. That
-#: floor answers "is this reading distinguishable from zero", which is the
-#: question 01_cohort_power.py asks of a panel arm. This gate answers a stronger
-#: one, because what it admits a mode to is the behavioural reads of
-#: 24_component_swap.py and src.transfer.mode_subspaces: an ablation needs
-#: context-derived signal to destroy, and a mode can be identified as non-zero and
-#: have none. ``Llama-2-7b-hf``'s protein mode reads +0.0719 to +0.0918 nats/token
-#: across six qualification artefacts -- above the 0.05 identification floor in
-#: every one -- at a reversal cost of **-0.0013 nats/residue** (EXP-R2-152,
-#: re-measured at EXP-R2-174).
-#:
-#: It is not :func:`src.transfer.budget.ratio_denominator_admissibility` either,
-#: which cannot be evaluated here: this stage scores one cohort draw per mode and
-#: publishes no bootstrap, so no mode reading carries a standard error. Fitting a
-#: magnitude to some other arm's standard error is the defect EXP-R2-218 measured.
-#:
-#: So the incumbent magnitude is retained **for this gate**, declared here rather
-#: than inherited from the retired
-#: :data:`src.transfer.budget.MIN_CONTEXT_INFORMATION_NATS`, and recorded as
-#: **underived**. :data:`src.transfer.mode_subspaces.MODE_BEHAVIOURAL_READ_FLOOR_NATS`
-#: is the same magnitude declared for the same mode and the same reason, and the
-#: two must move together: publishing ``measurable`` here for a reading that
-#: module then refuses would be one decision under two answers. Lowering it to the
-#: identification floor turns six published refusals into admissions.
-#:
-#: What retires it is deriving the behavioural-read floor against a measured
-#: ablation-signal criterion -- the reversal cost this stage already produces is
-#: the obvious axis -- at which point this gate and ``mode_subspaces`` adopt that
-#: derived value together and neither is declared locally any more.
-JOINT_MODE_QUALIFICATION_FLOOR_NATS = 0.30
-
-#: Carried into every artefact, so it says what its own threshold is and is not.
-JOINT_MODE_QUALIFICATION_FLOOR_STATUS = (
-    "UNDERIVED. Retained for this gate after EXP-R2-218 retired the shared "
-    f"{JOINT_MODE_QUALIFICATION_FLOOR_NATS}-nat measurability floor and split it "
-    "into an identification floor "
-    f"({SCREENING_CONTEXT_INFORMATION_NATS} nats) and a per-arm Fieller "
-    "precondition on a denominator's own standard error. Neither applies: the "
-    "identification floor admits Llama-2-7b-hf's protein mode at +0.0843 "
-    "nats/token, whose reversal cost is -0.0013 nats/residue, and the "
-    "precision-referenced criterion cannot be evaluated because this stage "
-    "publishes no bootstrap and no mode reading carries a standard error. It is "
-    "the same magnitude src.transfer.mode_subspaces declares for the same mode; "
-    "deriving a behavioural-read floor against a measured ablation-signal "
-    "criterion retires both together"
+#: The floor itself is :data:`src.transfer.budget.SCREENING_CONTEXT_INFORMATION_NATS`
+#: and is declared there, once. This stage adopts it unchanged, and since
+#: EXP-R2-221 it is a **pre-interval screen** rather than the identification
+#: criterion: identification is
+#: :func:`src.transfer.budget.context_identification`, which reads a
+#: displacement-corrected bootstrap interval. This stage scores one cohort draw
+#: per mode and publishes no bootstrap, so neither that criterion nor
+#: :func:`src.transfer.budget.ratio_denominator_admissibility` can be evaluated
+#: here. The sidecar this stage writes is what a later CPU re-analysis needs to
+#: supply both.
+IDENTIFICATION_FLOOR_STATUS = (
+    "PRE-INTERVAL SCREEN. budget.SCREENING_CONTEXT_INFORMATION_NATS "
+    f"({SCREENING_CONTEXT_INFORMATION_NATS} nats), the point rule EXP-R2-218 "
+    "fitted against a known-zero null family at a false-positive rate of 0.05. "
+    "It says the reading justifies an interval. It is NOT the identification "
+    "criterion, which since EXP-R2-221 is budget.context_identification and "
+    "reads the displacement-corrected interval, and it is NOT a licence to "
+    "divide by the reading, which is "
+    "budget.ratio_denominator_admissibility. Both need the reading's own "
+    "bootstrap and therefore cannot be evaluated from this stage's single "
+    "cohort draw. Read them from the sufficient-statistics sidecar beside this "
+    "artefact instead"
 )
 
-VERDICT_NOTE = (
-    "a mode below --min-context-information is reported UNMEASURABLE ON THIS "
+#: What the retired 0.30-nat magnitude is reported as, and why it decides nothing.
+#:
+#: It used to be this stage's gate, declared locally and recorded as UNDERIVED on
+#: the argument that a pass here admits a mode to a behavioural read and so needs
+#: a stronger criterion than identification. The argument does not survive: the
+#: gate refused nothing -- ``main`` always scored both modes and always wrote the
+#: artefact -- so the magnitude only ever selected a verdict string, and the
+#: evidence that actually separates a readable protein mode from an unreadable
+#: one is the reversal cost (see :data:`REVERSAL_COST_EVIDENCE_NOTE`). The
+#: magnitude is :data:`src.transfer.budget.MIN_CONTEXT_INFORMATION_NATS`,
+#: imported rather than declared a second time.
+LEGACY_QUALIFICATION_FLOOR_NOTE = (
+    f"{MIN_CONTEXT_INFORMATION_NATS} nats was this stage's own gate until it was "
+    "retired: it was never derived, and it refused nothing -- both modes were "
+    "always scored and the artefact was always written, so the magnitude only "
+    "ever chose a verdict string. It is reported for comparability with the "
+    "artefacts recorded under it and decides nothing here. " + LEGACY_FLOOR_NOTE
+)
+
+#: The reversal cost, and the reason it is reported rather than gated.
+#:
+#: Verified over all 66 published mode readings in ``results/`` on 2026-08-22.
+#: Twenty were refused at the retired floor. Lowering it to the calibrated one
+#: turns **eight** of those into admissions, all in the +0.0719 to +0.0918 band:
+#: two stage-21 qualifications, four stage-24 cells -- two of them identity
+#: references measuring the unmodified base and two chimeras carrying a
+#: ``ProLLaMA_Stage_1`` embedding -- and two stage-38 re-reads of the stage-21
+#: value. **Twelve refusals stand**: eleven read negative, and ``galactica-1.3b``
+#: 's protein mode at +0.0481 sits 0.0019 nats below the 0.05 floor.
+#:
+#: ``Llama-2-7b-hf``'s protein mode itself is read four times on the unmodified
+#: checkpoint -- the two stage-21 qualifications and the two stage-24 identity
+#: references -- at +0.0719, +0.0843 (twice) and +0.0918.
+REVERSAL_COST_EVIDENCE_NOTE = (
+    "the substantive evidence that a protein mode is not worth a behavioural "
+    "read is this reversal cost and NOT the context-information floor: a decoder "
+    "carrying directional sequence structure cannot be indifferent to reading a "
+    "sequence backwards. Llama-2-7b-hf pays -0.0013 nats/residue, which is "
+    "indifference, against +0.1442 for the adapted stage (EXP-R2-152, "
+    "re-measured at EXP-R2-174); src.transfer.concept_alignment."
+    "PROTEIN_MODE_BEHAVIOURAL_STATUS refuses it in exactly those terms. It is "
+    "reported and NOT gated, because it does not reduce to a threshold: paired "
+    "with their own context information, the refused chimera families "
+    "s1Body_baseVocab and s1Body_baseHead read -0.061 to -0.085 nats at reversal "
+    "costs of +0.119 to +0.138, overlapping the +0.136 to +0.167 of the admitted "
+    "ProLLaMA-lineage cells -- s1Body_baseHead on the second draw pays +0.1379 "
+    "and is refused where s1Body_baseEmbed pays +0.1358 and is admitted -- while "
+    "galactica-125m reads -0.139 at +0.088. A reversal-cost criterion is a "
+    "DIFFERENT PARTITION of the published cells, not a tightening of this one, "
+    "and would change admissions in both directions. Both quantities are "
+    "published; neither is a second gate"
+)
+
+IDENTIFICATION_VERDICT_NOTE = (
+    "a mode below --identification-floor-nats is reported UNMEASURABLE ON THIS "
     "COHORT, not failing. It is a statement about this cohort and this evaluation "
     "interface; downstream analyses must exclude the mode rather than report a "
-    "negative result from it (01_cohort_power.py's rule). The threshold is this "
-    "stage's own underived behavioural-read floor and NOT the calibrated "
-    "identification floor; see JOINT_MODE_QUALIFICATION_FLOOR_STATUS"
+    "negative result from it (01_cohort_power.py's rule). The floor is the "
+    "PRE-INTERVAL SCREEN and not the identification criterion, which since "
+    "EXP-R2-221 is budget.context_identification and needs a bootstrap interval "
+    "this stage does not compute -- see identification_criterion_not_evaluable_"
+    "reason. And this verdict answers identification alone: it does NOT say the "
+    "mode carries context-derived signal an ablation could destroy. Read "
+    "controls.reversed.cost_nats_per_residue beside it for that, and "
+    "reversal_cost_evidence for why that quantity is reported rather than gated"
 )
 
 
@@ -384,12 +498,13 @@ def cohort_record(cohort: Cohort, *, band_unit: str) -> dict[str, Any]:
 # --------------------------------------------------------------- unigram support
 
 
-def scored_target_counts(
+def scored_target_records(
     tokenisation: joint_modes.JointTokenisation,
     records: Sequence[str],
     *,
     context: str | None,
-) -> np.ndarray:
+    variant: str = joint_modes.DECLARED,
+) -> tuple[np.ndarray, SparseCounts]:
     """Protein-target counts over exactly the multiset the model is scored on.
 
     Counted through the same rendering the model sees and over the support the
@@ -397,36 +512,82 @@ def scored_target_counts(
     the same kind of symbol whichever symbol unit the family declares. The
     verification inside ``render`` is what guarantees every counted target is one
     the support can represent, so the lookup below cannot silently drop a target.
+
+    Returns the dense count vector the unigram estimator consumes and the
+    per-record counts it sums from, in one pass -- the shape
+    :func:`src.transfer.prediction_addressed.scored_target_records` established,
+    and for its reason: a caller that persists the per-record statistics would
+    otherwise render a four-hundred-record reference corpus a second time.
+
+    **The id space is the declared support, not the vocabulary.** An index here
+    is a position in ``tokenisation.scored_target_ids``, which the artefact
+    publishes under ``rendering.scored_target_token_ids``. That is the support
+    the held-out unigram is fitted over, and a re-analysis that refitted it over
+    the whole vocabulary instead would be applying a different estimator -- worth
+    0.570 nats of smoothing bias on the staged LLaMA-2 vocabulary against 0.011
+    over the 463 residue-spelling tokens.
     """
 
     order = {value: index for index, value in enumerate(tokenisation.scored_target_ids)}
-    counts = np.zeros(len(order), dtype=np.int64)
+    blocks: list[np.ndarray] = []
     for sequence in records:
-        rendered = tokenisation.render(sequence, context=context)
-        for position in rendered.scored_positions:
-            counts[order[rendered.token_ids[position]]] += 1
+        rendered = tokenisation.render(sequence, context=context, variant=variant)
+        blocks.append(
+            np.asarray(
+                [order[rendered.token_ids[position]] for position in rendered.scored_positions],
+                dtype=np.int64,
+            )
+        )
+    per_record = SparseCounts.from_records(blocks)
+    counts = per_record.vocabulary_totals(len(order))
     if counts.sum() < 1:
         raise RuntimeError("the protein records yielded no scored targets")
-    return counts
+    return counts, per_record
+
+
+def scored_target_counts(
+    tokenisation: joint_modes.JointTokenisation,
+    records: Sequence[str],
+    *,
+    context: str | None,
+) -> np.ndarray:
+    """The dense half of :func:`scored_target_records`."""
+
+    return scored_target_records(tokenisation, records, context=context)[0]
+
+
+def text_target_records(
+    tokenizer: Any, records: Sequence[str], *, vocab_size: int, max_tokens: int
+) -> tuple[np.ndarray, SparseCounts]:
+    """Next-token-target counts over the same window the model is scored on.
+
+    Dense and per-record, for the reason :func:`scored_target_records` gives. The
+    id space here IS the checkpoint's vocabulary, because that is the support a
+    scored text target can take.
+    """
+
+    blocks: list[np.ndarray] = []
+    for document in records:
+        targets = text_token_ids(tokenizer, document, max_tokens=max_tokens)[1:]
+        array = np.asarray(targets, dtype=np.int64)
+        if array.size and (array.min() < 0 or array.max() >= vocab_size):
+            raise ValueError("a token id fell outside the checkpoint's declared vocabulary")
+        blocks.append(array)
+    per_record = SparseCounts.from_records(blocks)
+    counts = per_record.vocabulary_totals(vocab_size)
+    if counts.sum() < 1:
+        raise RuntimeError("the text records yielded no scored targets")
+    return counts, per_record
 
 
 def text_target_counts(
     tokenizer: Any, records: Sequence[str], *, vocab_size: int, max_tokens: int
 ) -> np.ndarray:
-    """Next-token-target counts over the same window the model is scored on."""
+    """The dense half of :func:`text_target_records`."""
 
-    counts = np.zeros(vocab_size, dtype=np.int64)
-    for document in records:
-        targets = text_token_ids(tokenizer, document, max_tokens=max_tokens)[1:]
-        if not targets:
-            continue
-        array = np.asarray(targets, dtype=np.int64)
-        if array.min() < 0 or array.max() >= vocab_size:
-            raise ValueError("a token id fell outside the checkpoint's declared vocabulary")
-        counts += np.bincount(array, minlength=vocab_size)
-    if counts.sum() < 1:
-        raise RuntimeError("the text records yielded no scored targets")
-    return counts
+    return text_target_records(
+        tokenizer, records, vocab_size=vocab_size, max_tokens=max_tokens
+    )[0]
 
 
 def unigram_record(
@@ -467,14 +628,98 @@ def unigram_record(
 
 
 def verdict_record(context_information: float, threshold: float) -> dict[str, Any]:
-    """The measurability reading, in the vocabulary stage 01 declares."""
+    """The pre-interval screening reading, in the vocabulary stage 01 declares.
+
+    One verdict, decided against the pre-interval screening floor, plus the
+    retired 0.30-nat comparison beside it as an inert column. The two are named
+    apart so that neither can be read as the other, and so that a ``_v1``
+    artefact -- whose ``verdict`` was decided at 0.30 -- cannot be mistaken for a
+    ``_v2`` one: ``verdict`` does not appear here at all.
+
+    **This stage does not evaluate the identification criterion and says so.**
+    Since EXP-R2-221 identification is ``budget.context_identification``, which
+    reads the mode's displacement-corrected bootstrap interval; this stage
+    publishes one cohort draw and no bootstrap, so the criterion is not
+    evaluable here. What it does instead is persist the per-record sufficient
+    statistics into ``records/`` so that ``41_context_information_bootstrap.py``
+    can take the verdict on CPU from the same numbers. The field names are kept
+    as they were because artefacts and consumers already read them; the added
+    fields are what stop the screen being read as the criterion.
+    """
 
     _, status = power_status(context_information, threshold)
     return {
-        "verdict": status,
-        "minimum_context_information_nats": float(threshold),
-        "verdict_note": VERDICT_NOTE,
+        "identification_verdict": status,
+        "identification_floor_nats": float(threshold),
+        "identification_verdict_is_the_criterion": False,
+        "identification_criterion": IDENTIFICATION_CRITERION,
+        "identification_criterion_not_evaluable_reason": (
+            "budget.context_identification needs the lower bound of the "
+            "displacement-corrected bootstrap interval for I, and this stage "
+            "publishes one cohort draw and no bootstrap. Run "
+            "41_context_information_bootstrap.py over the records/ sidecar "
+            "beside this report to take the verdict; on the EXP-R2-220 cells "
+            "the two agree everywhere except galactica-1.3b's protein mode, "
+            "which this screen refuses at +0.047678 and the criterion identifies "
+            "on a corrected interval whose lower end is +0.038694"
+        ),
+        "pre_interval_screen_criterion": (
+            "the point estimate against budget.SCREENING_CONTEXT_INFORMATION_NATS. "
+            "It says the mode reads enough on this cohort to be worth an "
+            "interval, NOT that its reading may be divided by and NOT that it "
+            "carries signal an ablation could destroy"
+        ),
+        "screening_floor_note": SCREENING_FLOOR_NOTE,
+        "identification_verdict_note": IDENTIFICATION_VERDICT_NOTE,
+        # Legacy column: what the retired floor this stage used to gate on would
+        # have said here. It admits and refuses nothing.
+        "legacy_qualification_floor_nats": MIN_CONTEXT_INFORMATION_NATS,
+        "clears_legacy_qualification_floor": bool(
+            context_information >= MIN_CONTEXT_INFORMATION_NATS
+        ),
+        "legacy_qualification_floor_note": LEGACY_QUALIFICATION_FLOOR_NOTE,
     }
+
+
+# ------------------------------------------- per-record statistics, either mode
+
+
+def record_statistics(
+    name: str,
+    *,
+    support_size: int,
+    clean_nll_sum: Sequence[float],
+    token_count: Sequence[int],
+    n_symbols: Sequence[int],
+    targets: SparseCounts,
+) -> RecordStatistics:
+    """One condition's per-record sufficient statistics, refused if a record is empty.
+
+    ``budget.RecordStatistics`` is the repository's carrier and is built directly
+    rather than through :func:`src.transfer.budget.record_statistics`, which
+    requires an ``arms.Arm``: this stage measures a checkpoint reached by path,
+    which is not one. The empty-record refusal is this stage's own. Every scored
+    record here has at least one scored position -- :func:`score_positions`
+    refuses otherwise -- so a zero token count means the two halves of the
+    estimand were built over different record lists, and a bootstrap over it
+    would divide by zero inside an iteration rather than here.
+    """
+
+    tokens = np.asarray(token_count, dtype=np.int64)
+    if tokens.size and int(tokens.min()) < 1:
+        raise ValueError(
+            f"{name}: record {int(np.argmin(tokens))} carries no scored token, so it "
+            "contributes to no term of the estimand and cannot be a resampling unit"
+        )
+    return RecordStatistics(
+        arm=name,
+        vocab_size=int(support_size),
+        record_index=np.arange(tokens.size, dtype=np.int64),
+        clean_nll_sum=np.asarray(clean_nll_sum, dtype=np.float64),
+        token_count=tokens,
+        n_symbols=np.asarray(n_symbols, dtype=np.int64),
+        target_counts=targets,
+    )
 
 
 # ----------------------------------------------------------------- protein mode
@@ -489,12 +734,31 @@ def score_protein_records(
     context: str | None,
     variant: str,
     max_tokens: int,
-) -> dict[str, Any]:
-    """One protein condition: total NLL, tokens and residues, all denominators named."""
+    condition: str | None,
+) -> tuple[dict[str, Any], RecordStatistics | None]:
+    """One protein condition: the report, and the per-record statistics behind it.
 
-    total_nll = 0.0
-    scored_tokens = 0
-    residues = 0
+    The aggregates are taken from the per-record arrays rather than accumulated
+    beside them, so that re-aggregating the sidecar reproduces the published
+    figure bit for bit instead of to within a summation order.
+
+    ``condition=None`` returns no statistics, and the naive control is the only
+    caller that passes it. That control deliberately scores merged multi-residue
+    pieces, which are not ids the declared support can represent at all: counting
+    them into this mode's id space would put targets the held-out unigram was
+    never fitted over into the very file a re-analysis refits it from. There is
+    no second id space invented for them.
+    """
+
+    nll_sums: list[float] = []
+    tokens: list[int] = []
+    residues: list[int] = []
+    blocks: list[np.ndarray] = []
+    order = (
+        {}
+        if condition is None
+        else {value: index for index, value in enumerate(tokenisation.scored_target_ids)}
+    )
     for sequence in records:
         rendered = tokenisation.render(sequence, context=context, variant=variant)
         if len(rendered.token_ids) > max_tokens:
@@ -507,21 +771,50 @@ def score_protein_records(
         nll, _ = score_positions(
             model, rendered.token_ids, rendered.scored_positions, device=device
         )
-        total_nll += float(nll.sum())
-        scored_tokens += rendered.n_scored_tokens
-        residues += rendered.n_residues
-    return {
+        nll_sums.append(float(nll.sum()))
+        tokens.append(rendered.n_scored_tokens)
+        residues.append(rendered.n_residues)
+        if condition is not None:
+            blocks.append(
+                np.asarray(
+                    [
+                        order[rendered.token_ids[position]]
+                        for position in rendered.scored_positions
+                    ],
+                    dtype=np.int64,
+                )
+            )
+    statistics = (
+        None
+        if condition is None
+        else record_statistics(
+            condition,
+            support_size=len(order),
+            clean_nll_sum=nll_sums,
+            token_count=tokens,
+            n_symbols=residues,
+            targets=SparseCounts.from_records(blocks),
+        )
+    )
+    total_nll = float(np.asarray(nll_sums, dtype=np.float64).sum())
+    scored_tokens = int(np.asarray(tokens, dtype=np.int64).sum())
+    n_residues = int(np.asarray(residues, dtype=np.int64).sum())
+    report = {
         "variant": variant,
+        # The name this condition's per-record statistics are persisted under in
+        # the sidecar, or null where none are persisted.
+        "persisted_condition": condition,
         "document_context": context,
         "n_records": len(records),
         "n_scored_tokens": scored_tokens,
-        "n_scored_residues": residues,
-        "residues_per_scored_token": residues / scored_tokens,
+        "n_scored_residues": n_residues,
+        "residues_per_scored_token": n_residues / scored_tokens,
         "clean_nll_nats_per_scored_token": total_nll / scored_tokens,
-        "clean_nll_nats_per_residue": total_nll / residues,
+        "clean_nll_nats_per_residue": total_nll / n_residues,
         "symbol_unit": tokenisation.declaration.symbol_unit,
         "verified_against_declared_symbol_unit": variant == joint_modes.DECLARED,
     }
+    return report, statistics
 
 
 def comparability_record(
@@ -569,8 +862,13 @@ def protein_mode(
     args: argparse.Namespace,
     model: Any,
     tokenisation: joint_modes.JointTokenisation,
-) -> dict[str, Any]:
-    """Context information on the declared protein symbol, with its controls beside it."""
+) -> tuple[dict[str, Any], "ModeStatistics"]:
+    """Context information on the declared protein symbol, with its controls beside it.
+
+    Returns the record and the per-record statistics behind it, the pair
+    :func:`src.transfer.budget.arm_power_with_records` established. The caller
+    persists the second half; nothing here writes a file.
+    """
 
     declaration = tokenisation.declaration
     per_residue = declaration.symbol_unit == joint_modes.RESIDUE_UNIT
@@ -581,8 +879,11 @@ def protein_mode(
 
     scored, reference, overlap = mode_cohorts(args, "protein")
     print(f"[protein] {len(scored)} scored records, {len(reference)} held-out reference records")
+    reference_counts, reference_per_record = scored_target_records(
+        tokenisation, reference.records, context=args.protein_context
+    )
     unigram = unigram_record(
-        scored_target_counts(tokenisation, reference.records, context=args.protein_context),
+        reference_counts,
         scored_target_counts(tokenisation, scored.records, context=args.protein_context),
         support=(
             "the declared residue token ids, the only ids a scored protein target "
@@ -595,7 +896,7 @@ def protein_mode(
         reference=reference,
         overlap=overlap,
     )
-    declared = score_protein_records(
+    declared, declared_statistics = score_protein_records(
         model,
         tokenisation,
         scored.records,
@@ -603,6 +904,7 @@ def protein_mode(
         context=args.protein_context,
         variant=joint_modes.DECLARED,
         max_tokens=args.max_tokens,
+        condition="protein_declared",
     )
     context_information = unigram["cross_entropy_nats"] - declared[clean_key]
     print(
@@ -612,7 +914,7 @@ def protein_mode(
     )
 
     reversed_records = [sequence[::-1] for sequence in scored.records]
-    reversed_score = score_protein_records(
+    reversed_score, reversed_statistics = score_protein_records(
         model,
         tokenisation,
         reversed_records,
@@ -620,16 +922,19 @@ def protein_mode(
         context=args.protein_context,
         variant=joint_modes.DECLARED,
         max_tokens=args.max_tokens,
+        condition="protein_reversed",
     )
     reversed_score["cost_nats_per_residue"] = (
         reversed_score["clean_nll_nats_per_residue"] - declared["clean_nll_nats_per_residue"]
     )
     reversed_score["cost_unit"] = "nats per residue"
+    reversed_score["evidence"] = REVERSAL_COST_EVIDENCE_NOTE
     reversed_score["note"] = (
-        "the same sequences read C-to-N, and the control this stage's decision rule "
-        "leans on hardest because it is a within-arm difference over an identical "
-        "residue multiset -- it needs no cross-arm unit to be readable. A decoder "
-        "carrying real directional sequence structure cannot be indifferent to it. "
+        "the same sequences read C-to-N, and the control this stage's reading of a "
+        "protein mode rests on, because it is a within-arm difference over an "
+        "identical residue multiset -- it needs no cross-arm unit to be readable. A "
+        "decoder carrying real directional sequence structure cannot be indifferent "
+        "to it. "
         + (
             "Reversal preserves the residue multiset exactly, so the held-out "
             "reference above applies to this condition unchanged and the cost is a "
@@ -645,7 +950,7 @@ def protein_mode(
     )
 
     if declaration.naive_control_available:
-        naive = score_protein_records(
+        naive, _ = score_protein_records(
             model,
             tokenisation,
             scored.records,
@@ -653,6 +958,7 @@ def protein_mode(
             context=args.protein_context,
             variant=joint_modes.NAIVE,
             max_tokens=args.max_tokens,
+            condition=None,
         )
         naive["price_nats_per_residue"] = (
             naive["clean_nll_nats_per_residue"] - declared["clean_nll_nats_per_residue"]
@@ -669,7 +975,11 @@ def protein_mode(
             "AutoTokenizer call produces. Deliberately NOT verified against the "
             "per-residue alphabet; it exists to be wrong. Read the per-residue price: "
             "the per-token one compares two different token populations, since this "
-            "condition scores merged multi-residue pieces (Appendix B rules 26, 27)"
+            "condition scores merged multi-residue pieces (Appendix B rules 26, 27). "
+            "No per-record sufficient statistics are persisted for it: those pieces "
+            "are not ids the declared support can represent, and counting them into "
+            "this mode's id space would put targets the held-out unigram was never "
+            "fitted over into the file a re-analysis refits it from"
         )
         print(
             f"  naive rendering     {naive['clean_nll_nats_per_scored_token']:.4f} nats/token "
@@ -706,10 +1016,46 @@ def protein_mode(
             f"model's clean cross-entropy on the same targets, in {unit}. One scored "
             f"symbol is {joint_modes.SYMBOL_UNIT_DEFINITIONS[declaration.symbol_unit]}"
         ),
+        "reversal_cost_nats_per_residue": float(reversed_score["cost_nats_per_residue"]),
+        "reversal_cost_evidence": REVERSAL_COST_EVIDENCE_NOTE,
         "controls": {"reversed": reversed_score, "naive_rendering": naive},
     }
-    record.update(verdict_record(context_information, args.min_context_information))
-    return record
+    record.update(verdict_record(context_information, args.identification_floor_nats))
+
+    # The held-out reference is fitted over the forward token population. It
+    # applies to the reversed condition only where reversal preserves that
+    # population exactly, which is the per-residue case; attaching it to a
+    # token-unit reversal would hand a re-analysis a baseline for a multiset the
+    # condition never scores. The absence is what a reader sees there.
+    conditions = {
+        "protein_declared": replace(declared_statistics, reference_counts=reference_per_record),
+        "protein_reversed": (
+            replace(reversed_statistics, reference_counts=reference_per_record)
+            if per_residue
+            else reversed_statistics
+        ),
+    }
+    return record, ModeStatistics(
+        mode="protein",
+        scored=scored,
+        reference=reference,
+        support=unigram["support"],
+        support_size=int(unigram["support_size"]),
+        id_space=(
+            "an index into rendering.scored_target_token_ids, which is the support "
+            "the held-out unigram is fitted over. NOT a vocabulary id"
+        ),
+        # The protein mode's persisted n_symbols array is the RESIDUE count in
+        # both units -- score_protein_records fills it from rendered.n_residues
+        # unconditionally, because the reversal control is only a within-arm
+        # difference over an identical residue multiset in that unit. Labelling
+        # a token-unit family's array "a scored token" would hand a re-analysis
+        # bits per residue under a name that says token; ModeStatistics now
+        # refuses that combination outright.
+        symbol_definition=RESIDUE_SYMBOL,
+        conditions=conditions,
+        reference_applies_to_reversed=bool(per_residue),
+    )
 
 
 # -------------------------------------------------------------------- text mode
@@ -722,15 +1068,21 @@ def text_mode(
     tokenisation: joint_modes.JointTokenisation,
     *,
     vocab_size: int,
-) -> dict[str, Any]:
-    """Context information on text tokens, with the residue-mass control beside it."""
+) -> tuple[dict[str, Any], "ModeStatistics"]:
+    """Context information on text tokens, with the residue-mass control beside it.
+
+    The record and the per-record statistics behind it, as :func:`protein_mode`
+    returns them. There is no reversed condition here: reversing a document is
+    not the within-modality control reversing a sequence is.
+    """
 
     scored, reference, overlap = mode_cohorts(args, "text")
     print(f"[text] {len(scored)} scored documents, {len(reference)} held-out reference documents")
+    reference_counts, reference_per_record = text_target_records(
+        tokenizer, reference.records, vocab_size=vocab_size, max_tokens=args.max_tokens
+    )
     unigram = unigram_record(
-        text_target_counts(
-            tokenizer, reference.records, vocab_size=vocab_size, max_tokens=args.max_tokens
-        ),
+        reference_counts,
         text_target_counts(
             tokenizer, scored.records, vocab_size=vocab_size, max_tokens=args.max_tokens
         ),
@@ -745,8 +1097,9 @@ def text_mode(
     subspace = (
         sorted(int(value) for value in tokenisation.residue_ids.values()) if disjoint else None
     )
-    total_nll = 0.0
-    scored_tokens = 0
+    nll_sums: list[float] = []
+    tokens: list[int] = []
+    blocks: list[np.ndarray] = []
     mass_total = 0.0
     dominated = 0
     for document in scored.records:
@@ -757,12 +1110,25 @@ def text_mode(
         nll, mass = score_positions(
             model, token_ids, positions, device=args.device, subspace=subspace
         )
-        total_nll += float(nll.sum())
-        scored_tokens += len(positions)
+        nll_sums.append(float(nll.sum()))
+        tokens.append(len(positions))
+        blocks.append(np.asarray(token_ids[1:], dtype=np.int64))
         if mass is not None:
             mass_total += float(mass.sum())
             dominated += int((mass > 0.5).sum())
-    clean = total_nll / scored_tokens
+    statistics = record_statistics(
+        "text_declared",
+        support_size=vocab_size,
+        clean_nll_sum=nll_sums,
+        token_count=tokens,
+        # The declared text symbol IS the token, so the symbol count and the
+        # token count are one array. Recorded rather than omitted because the
+        # sidecar's consumers read a per-symbol rate off this field.
+        n_symbols=tokens,
+        targets=SparseCounts.from_records(blocks),
+    )
+    scored_tokens = int(statistics.token_count.sum())
+    clean = float(statistics.clean_nll_sum.sum()) / scored_tokens
     context_information = unigram["cross_entropy_nats"] - clean
     print(
         f"  clean {clean:.4f} nats/token against unigram "
@@ -811,8 +1177,188 @@ def text_mode(
         ),
         "controls": {"residue_subspace_mass": control},
     }
-    record.update(verdict_record(context_information, args.min_context_information))
-    return record
+    record.update(verdict_record(context_information, args.identification_floor_nats))
+    return record, ModeStatistics(
+        mode="text",
+        scored=scored,
+        reference=reference,
+        support=unigram["support"],
+        support_size=int(vocab_size),
+        id_space="a token id of the checkpoint's own vocabulary",
+        symbol_definition=TOKEN_SYMBOL,
+        conditions={
+            "text_declared": replace(statistics, reference_counts=reference_per_record)
+        },
+        reference_applies_to_reversed=None,
+    )
+
+
+# ------------------------------------------------- per-record sufficient statistics
+
+
+
+@dataclass(frozen=True)
+class ModeStatistics:
+    """One mode's scored cohort, its held-out reference and the statistics behind both.
+
+    Assembled by :func:`protein_mode` and :func:`text_mode` and persisted by
+    :func:`write_mode_records`. One object per mode because a mode is one cohort
+    draw against one reference: the protein and text modes share neither, so
+    their statistics cannot share a sidecar either.
+
+    ``conditions`` is keyed by condition name -- ``protein_declared``,
+    ``protein_reversed``, ``text_declared`` -- because the reversed condition is
+    a second reading of the same records and not a second cohort. That is what
+    makes a paired reversal-cost re-analysis possible from the file alone.
+    """
+
+    mode: str
+    scored: Cohort
+    reference: Cohort
+    support: str
+    support_size: int
+    id_space: str
+    symbol_definition: str
+    conditions: dict[str, RecordStatistics]
+    reference_applies_to_reversed: bool | None
+
+    def __post_init__(self) -> None:
+        if not self.conditions:
+            raise ValueError(f"{self.mode}: a mode persists at least one condition")
+        if self.symbol_definition not in (RESIDUE_SYMBOL, TOKEN_SYMBOL):
+            raise ValueError(
+                f"{self.mode}: {self.symbol_definition!r} is not one of the two "
+                "declared symbol definitions, and the sidecar's n_symbols_is "
+                "field is read as one of them"
+            )
+        for name, record in self.conditions.items():
+            if record.vocab_size != self.support_size:
+                raise ValueError(
+                    f"{name}: statistics over {record.vocab_size} ids against a "
+                    f"declared support of {self.support_size}; the counts and the "
+                    "baseline would then be taken over different inventories"
+                )
+            # The label travels into the sidecar as n_symbols_is and is what a
+            # re-analysis divides by to get a per-symbol rate. It must therefore
+            # agree with what the array counts. Only the token claim is
+            # checkable: a residue array equals the token array exactly when the
+            # rendering is one token per residue, and then both names are true
+            # of it, but a token claim over an array that is not the token count
+            # is false however the rendering came out.
+            if self.symbol_definition == TOKEN_SYMBOL and not np.array_equal(
+                record.n_symbols, record.token_count
+            ):
+                raise ValueError(
+                    f"{name}: n_symbols is declared to count {TOKEN_SYMBOL!r} but "
+                    f"holds {int(record.n_symbols.sum())} against "
+                    f"{int(record.token_count.sum())} scored tokens, so a "
+                    "per-symbol rate read off this sidecar would be in a unit the "
+                    "label denies"
+                )
+            if int(record.record_index.size) != len(self.scored):
+                raise ValueError(
+                    f"{name}: {int(record.record_index.size)} scored rows against "
+                    f"{len(self.scored)} cohort records"
+                )
+
+
+def write_mode_records(
+    out: Path, statistics: ModeStatistics, *, seeds: dict[str, int], max_tokens: int
+) -> dict[str, Any]:
+    """Persist one mode's sufficient statistics, its cohort and its reference.
+
+    Three files under ``records/``, named the way ``01_cohort_power.py`` names
+    its own so that ``41_context_information_bootstrap.py`` reads them without
+    being told where to look: ``power_<cohort>_<digest>.records.npz`` beside
+    ``cohort_<cohort>_<digest>.json`` and
+    ``reference_<cohort>_<reference digest>.json``. The sidecar carries no
+    sequence text by design, and the two record lists are what a re-analysis
+    needs to group by near-duplicate content at all -- a singleton grouping is
+    narrowest exactly where the group structure matters.
+
+    Returned rather than written into the report here, so that the report can
+    carry the digest of the file that was actually produced.
+    """
+
+    directory = Path(out) / RECORDS_SUBDIRECTORY
+    directory.mkdir(parents=True, exist_ok=True)
+    scored, reference = statistics.scored, statistics.reference
+    stem = f"{scored.name}_{scored.digest[:12]}"
+    sidecar_path = directory / f"power_{stem}.records.npz"
+    block = write_power_records(
+        sidecar_path,
+        statistics.conditions,
+        cohort_digest=scored.digest,
+        reference_digest=reference.digest,
+        smoothing=float(LAPLACE_SMOOTHING),
+        seeds=seeds,
+        max_len=int(max_tokens),
+    )
+    cohort_path = directory / f"cohort_{stem}.json"
+    write_json(
+        cohort_path,
+        {
+            "schema_version": SCHEMA_VERSION,
+            "artifact": "frozen_cohort",
+            "cohort_digest": scored.digest,
+            "cohort_name": scored.name,
+            "cohort_kind": scored.kind,
+            "min_symbols": scored.min_symbols,
+            "max_symbols": scored.max_symbols,
+            "n_records": len(scored),
+            "records": scored.records,
+            "metadata": scored.metadata,
+        },
+    )
+    reference_path = directory / f"reference_{scored.name}_{reference.digest[:12]}.json"
+    write_json(
+        reference_path,
+        {
+            "schema_version": SCHEMA_VERSION,
+            "artifact": "held_out_unigram_reference",
+            "reference_digest": reference.digest,
+            "reference_name": reference.name,
+            "reference_kind": reference.kind,
+            # The scored cohort this block was held out against, which is what
+            # makes the pair a leakage screen rather than two record lists.
+            "cohort_digest": scored.digest,
+            "min_symbols": reference.min_symbols,
+            "max_symbols": reference.max_symbols,
+            "n_records": len(reference),
+            "records": reference.records,
+            # Carries the sampling record held_out_cohort travels forward,
+            # including how many records the content deduplication removed.
+            "metadata": reference.metadata,
+        },
+    )
+    return {
+        **block,
+        # Every path in this block is relative to --out, including the sidecar's:
+        # write_power_records returns its own basename, which is the whole name
+        # only for a stage that writes flat.
+        "path": f"{RECORDS_SUBDIRECTORY}/{sidecar_path.name}",
+        "directory": RECORDS_SUBDIRECTORY,
+        "cohort_records_path": f"{RECORDS_SUBDIRECTORY}/{cohort_path.name}",
+        "reference_records_path": f"{RECORDS_SUBDIRECTORY}/{reference_path.name}",
+        "id_space": statistics.id_space,
+        "support": statistics.support,
+        "support_size": statistics.support_size,
+        "n_symbols_is": statistics.symbol_definition,
+        "reference_applies_to_reversed": statistics.reference_applies_to_reversed,
+        "note": (
+            "per-record clean-NLL sums, token counts, symbol counts and sparse "
+            "target counts for every condition of this mode, in "
+            "budget.write_power_records's format -- so the entries listed under "
+            "'arms' above are this stage's CONDITION names, not panel arms: a "
+            "checkpoint reached by path is not an arm, and the writer's key is "
+            "spelled arms. Re-aggregating them reproduces "
+            "this artefact's own point estimates exactly; grouping the frozen "
+            "records beside them by near-duplicate content gives the resampling "
+            "unit a bootstrap standard error needs. A condition with no "
+            "reference_* arrays had no held-out baseline that applies to it and "
+            "none is substituted"
+        ),
+    }
 
 
 # ----------------------------------------------------------------------- driver
@@ -892,14 +1438,16 @@ def build_parser() -> argparse.ArgumentParser:
         "(Appendix B rule 1)",
     )
     parser.add_argument(
-        "--min-context-information",
+        "--identification-floor-nats",
         type=float,
-        default=JOINT_MODE_QUALIFICATION_FLOOR_NATS,
+        default=SCREENING_CONTEXT_INFORMATION_NATS,
         help="the floor below which a mode is reported unmeasurable on this "
-        "cohort. This stage's own declared magnitude, recorded as UNDERIVED: it "
-        "is deliberately NOT budget.SCREENING_CONTEXT_INFORMATION_NATS, which "
-        "answers identification, because what a pass here admits a mode to is a "
-        "behavioural read that needs signal an ablation can destroy",
+        "cohort. budget.SCREENING_CONTEXT_INFORMATION_NATS, the calibrated "
+        "identification floor, which is the only criterion this stage can apply: "
+        "it publishes no bootstrap, so no mode reading carries the standard error "
+        "budget.ratio_denominator_admissibility needs. The option is spelled "
+        "differently from the one the retired 0.30-nat gate used, so that an old "
+        "command line fails rather than reinstating that gate by inertia",
     )
     return parser
 
@@ -946,13 +1494,15 @@ def main() -> None:
         "rendering": tokenisation.facts(),
         "seeds": {"cohort_draw": int(args.cohort_draw_seed)},
         "thresholds": {
-            "minimum_context_information_nats": float(args.min_context_information),
-            "minimum_context_information_status": (
-                JOINT_MODE_QUALIFICATION_FLOOR_STATUS
-                if args.min_context_information == JOINT_MODE_QUALIFICATION_FLOOR_NATS
-                else "declared on the command line, overriding this stage's own "
-                f"{JOINT_MODE_QUALIFICATION_FLOOR_NATS}-nat floor"
+            "identification_floor_nats": float(args.identification_floor_nats),
+            "identification_floor_status": (
+                IDENTIFICATION_FLOOR_STATUS
+                if args.identification_floor_nats == SCREENING_CONTEXT_INFORMATION_NATS
+                else "declared on the command line, overriding the calibrated "
+                f"{SCREENING_CONTEXT_INFORMATION_NATS}-nat identification floor"
             ),
+            "legacy_qualification_floor_nats": MIN_CONTEXT_INFORMATION_NATS,
+            "legacy_qualification_floor_note": LEGACY_QUALIFICATION_FLOOR_NOTE,
         },
         "estimand": (
             "context information per mode: held-out unigram cross-entropy on the "
@@ -966,19 +1516,34 @@ def main() -> None:
     }
 
     modes_record: dict[str, Any] = {}
+    statistics: dict[str, ModeStatistics] = {}
     if "protein" in modes:
-        modes_record["protein"] = protein_mode(args, model, tokenisation)
+        modes_record["protein"], statistics["protein"] = protein_mode(
+            args, model, tokenisation
+        )
     if "text" in modes:
-        modes_record["text"] = text_mode(
+        modes_record["text"], statistics["text"] = text_mode(
             args,
             model,
             tokenizer,
             tokenisation,
             vocab_size=int(checkpoint_facts["vocab_size"]),
         )
+    # Written before the report, for 01_cohort_power.py's reason: the report then
+    # carries the digest of the sidecar that was actually produced, so a reader
+    # learns from the report whether the file on disk is the one this run wrote.
+    for name, mode_statistics in statistics.items():
+        modes_record[name]["sufficient_statistics"] = write_mode_records(
+            args.out,
+            mode_statistics,
+            seeds={"cohort_draw": int(args.cohort_draw_seed)},
+            max_tokens=int(args.max_tokens),
+        )
     payload["modes"] = modes_record
-    payload["verdicts"] = {name: record["verdict"] for name, record in modes_record.items()}
-    payload["verdict_note"] = VERDICT_NOTE
+    payload["identification_verdicts"] = {
+        name: record["identification_verdict"] for name, record in modes_record.items()
+    }
+    payload["identification_verdict_note"] = IDENTIFICATION_VERDICT_NOTE
     payload["modes_measured"] = list(modes)
 
     destination = args.out / "joint_mode_qualification.json"
@@ -987,15 +1552,18 @@ def main() -> None:
     for name, record in modes_record.items():
         line = (
             f"[{name}] context information {record['context_information_nats']:+.4f} "
-            f"({record['context_information_unit']})  {record['verdict']}"
+            f"({record['context_information_unit']})  "
+            f"{record['identification_verdict']}"
         )
         comparability = record.get("cross_arm_comparability")
         if comparability is not None:
             line += (
                 f"  {comparability['verdict']} at "
                 f"{comparability['measured_residues_per_scored_token']:.3f} residues/token"
+                f"  reversal {record['reversal_cost_nats_per_residue']:+.4f} nats/residue"
             )
         print(line)
+        print(f"  records {record['sufficient_statistics']['path']}")
     print(f"wrote {destination}")
 
 

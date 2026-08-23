@@ -35,7 +35,6 @@ do. The 7B path is unit-tested here and has never been executed on this host.
 
 from __future__ import annotations
 
-import argparse
 import contextlib
 import copy
 import importlib.util
@@ -62,7 +61,12 @@ from transformers import (  # noqa: E402
 
 from src.transfer import arms as A  # noqa: E402
 from src.transfer import joint_modes as JM  # noqa: E402
-from src.transfer.budget import MEASURABLE, UNMEASURABLE  # noqa: E402
+from src.transfer.budget import (  # noqa: E402
+    MEASURABLE,
+    MIN_CONTEXT_INFORMATION_NATS,
+    SCREENING_CONTEXT_INFORMATION_NATS,
+    UNMEASURABLE,
+)
 
 
 def _load_stage(filename: str):
@@ -629,6 +633,15 @@ def _run_driver(host_model, donor_model, *, host: str, donor: str, group: str) -
             return {
                 "name": written[0].name,
                 "payload": json.loads(written[0].read_text(encoding="utf-8")),
+                # Everything the run left behind, relative to --out, collected
+                # before the temporary directory goes away. The sidecars live in
+                # a subdirectory precisely so that the completion heuristic above
+                # -- one .json in --out -- keeps holding.
+                "files": sorted(
+                    str(path.relative_to(directory))
+                    for path in Path(directory).rglob("*")
+                    if path.is_file()
+                ),
             }
     finally:
         (
@@ -687,7 +700,7 @@ class TheDriverWritesOneArtefactForOneCell(unittest.TestCase):
         # Stage 21's estimand, its cohort record and its verdict convention.
         self.assertEqual(sorted(payload["modes"]), ["protein", "text"])
         for mode, record in payload["modes"].items():
-            self.assertIn(record["verdict"], (MEASURABLE, UNMEASURABLE))
+            self.assertIn(record["identification_verdict"], (MEASURABLE, UNMEASURABLE))
             self.assertIn("context_information_nats", record)
             self.assertIn("clean_nll_nats_per_scored_token", json.dumps(record))
             self.assertIn("cross_entropy_nats", record["unigram_reference"])
@@ -711,16 +724,43 @@ class TheDriverWritesOneArtefactForOneCell(unittest.TestCase):
         self.assertEqual(
             sorted(payload["provenance"]["modules"]), sorted(STAGE.PROVENANCE_MODULES)
         )
+        # One threshold, imported from its single declaration: the pre-interval
+        # screening floor, which since EXP-R2-221 is not the identification
+        # criterion and has to say so here. The retired 0.30-nat magnitude rides
+        # beside it as a column, and a v1 artefact's spelling of the threshold is
+        # gone, so the two schema versions cannot be confused.
+        thresholds = payload["thresholds"]
         self.assertEqual(
-            payload["thresholds"]["minimum_context_information_nats"],
-            STAGE.JOINT_MODE_QUALIFICATION_FLOOR_NATS,
+            thresholds["identification_floor_nats"], SCREENING_CONTEXT_INFORMATION_NATS
         )
-        # The magnitude is this lineage's own declared floor and the artefact has
-        # to say so: it is deliberately not the calibrated identification floor,
-        # and a reader who cannot tell them apart cannot read the verdict.
+        self.assertIn("PRE-INTERVAL SCREEN", thresholds["identification_floor_status"])
         self.assertIn(
-            "UNDERIVED",
-            payload["thresholds"]["minimum_context_information_status"],
+            "NOT the identification criterion",
+            thresholds["identification_floor_status"],
+        )
+        self.assertEqual(
+            thresholds["legacy_qualification_floor_nats"], MIN_CONTEXT_INFORMATION_NATS
+        )
+        self.assertIn("decides nothing", thresholds["legacy_qualification_floor_note"])
+        self.assertNotIn("minimum_context_information_nats", thresholds)
+        self.assertEqual(payload["schema_version"], "r2_transfer_component_swap_v2")
+        self.assertNotIn("verdicts", payload)
+        self.assertEqual(
+            sorted(payload["identification_verdicts"]), ["protein", "text"]
+        )
+        # The chimera's readings carry the same instrumentation as the
+        # qualification figures they are read against.
+        for mode, record in payload["modes"].items():
+            sidecar = record["sufficient_statistics"]
+            self.assertEqual(
+                sidecar["directory"], STAGE.STAGE21.RECORDS_SUBDIRECTORY, mode
+            )
+            self.assertIn(sidecar["path"], result["files"], mode)
+            self.assertIn(sidecar["cohort_records_path"], result["files"], mode)
+            self.assertIn(sidecar["reference_records_path"], result["files"], mode)
+        self.assertEqual(
+            payload["modes"]["protein"]["sufficient_statistics"]["arms"],
+            ["protein_declared", "protein_reversed"],
         )
 
     def test_the_reference_cell_is_its_own_identity_anchor(self):
@@ -820,7 +860,8 @@ class StageWiring(unittest.TestCase):
             "mode_cohorts",
             "load_tokenizer",
             "load_model",
-            "VERDICT_NOTE",
+            "write_mode_records",
+            "IDENTIFICATION_VERDICT_NOTE",
         ):
             self.assertTrue(hasattr(STAGE.STAGE21, attribute), attribute)
 
@@ -840,7 +881,7 @@ class StageWiring(unittest.TestCase):
             "max_tokens",
             "protein_context",
             "cohort_draw_seed",
-            "min_context_information",
+            "identification_floor_nats",
         ):
             self.assertEqual(mine[name], theirs[name], name)
         self.assertEqual(mine["cohort_draw_seed"], A.DEFAULT_CORPUS_DRAW_SEED)

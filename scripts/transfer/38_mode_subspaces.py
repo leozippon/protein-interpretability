@@ -67,21 +67,33 @@ Every threshold is a constant of a named rule in
 ``--decision-rule`` and never passed as a number, so what counts as a result is
 fixed before the result exists.
 
-Where a behavioural read is refused
-===================================
+What happens to a mode with nothing to destroy
+==============================================
 
-``Llama-2-7b-hf`` enters this stage in **text mode only**, as a representational
-reference. Its protein mode reads +0.0843 nats/token of context information and a
-reversal cost of -0.0013 nats/residue (EXP-R2-152, re-measured at EXP-R2-174),
-against a 0.30-nat floor, so no likelihood-based quantity may be read in it. The
-refusal is keyed to that measured number -- supplied through
-``--context-information`` and decided by
-:func:`src.transfer.budget.power_status` -- and never to a checkpoint name,
-because every checkpoint here is reached by path and a name-keyed guard would pass
-silently on the same weights under a different directory. Occupancy is *not*
-refused there: the activations exist and their covariance is a real object, which
-is the distinction ``32_crosscoder.py`` already records for the same checkpoint's
-protein mode. This is not a catalogued limitation; the catalogue ends at L32.
+It reaches a refusal verdict rather than a result, and by measurement. This stage
+used to decide that in advance: each mode's context information was declared on
+the command line and compared against a 0.30-nat floor, and a mode below it was
+refused every behavioural cell before any of them ran. That gate is retired. The
+floor was underived -- the constant catalogued at L41 and retired by EXP-R2-218 --
+and the number it decided was measured on another stage's cohort, while the
+decision rule already tests the same failure on this stage's own: a licensed
+verdict needs, in every mode, residual non-unigram damage whose paired
+group-bootstrap 95% interval excludes zero.
+
+``Llama-2-7b-hf``'s protein mode is the measured case: +0.0843 nats/token of
+context information and a reversal cost of -0.0013 nats/residue (EXP-R2-152,
+re-measured at EXP-R2-174). That is a prior expectation about the cohort, carried
+in the artefact's limitations block, and it is not an admission rule. Its layers
+are expected to read ``VOID_INSTRUMENT``, ``NO_MEASURED_DAMAGE``, ``UNIGRAM_ONLY``
+or ``MIXED``, each of which says which clause failed; none of them is a necessity
+claim. Occupancy is not refused there in any case: the activations exist and their
+covariance is a real object, which is the distinction ``32_crosscoder.py`` already
+records for the same checkpoint's protein mode.
+
+Every mode's context information is still reported, per mode and per artefact, but
+measured here rather than declared: the cohort's own target-count entropy minus
+the model's clean cross-entropy over the same scored positions, at both estimators
+of the reference.
 
 The matched cohort, and what could not be matched
 =================================================
@@ -119,7 +131,7 @@ import time
 from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator, Sequence
+from typing import Any, Sequence
 
 import numpy as np
 import torch
@@ -198,7 +210,6 @@ CAMPAIGN_ONLY_FLAGS = (
     "rendering",
     "modes",
     "layers",
-    "context_information",
 )
 
 PROVENANCE_MODULES = (
@@ -249,27 +260,6 @@ def parse_layers(argument: str) -> tuple[int, ...]:
     if len(set(layers)) != len(layers):
         raise argparse.ArgumentTypeError(f"{argument!r} names a layer twice")
     return tuple(sorted(layers))
-
-
-def parse_context_information(values: Sequence[str]) -> dict[str, float]:
-    """``["text=0.8336", "protein=0.5505"]`` into a mapping, refusing anything else."""
-
-    declared: dict[str, float] = {}
-    for entry in values:
-        if entry.count("=") != 1:
-            raise argparse.ArgumentTypeError(
-                f"{entry!r} is not MODE=NATS; each mode's measured context "
-                "information from EXP-R2-152 must be named with its mode"
-            )
-        mode, _, number = entry.partition("=")
-        if mode not in JOINT_MODES:
-            raise argparse.ArgumentTypeError(
-                f"{mode!r} is not a joint mode; declared: {list(JOINT_MODES)}"
-            )
-        if mode in declared:
-            raise argparse.ArgumentTypeError(f"{mode!r} is declared twice")
-        declared[mode] = float(number)
-    return declared
 
 
 def cohort_for(mode: str, args: argparse.Namespace) -> Any:
@@ -657,7 +647,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=list(JOINT_MODES),
         help="which modes to measure. REQUIRED and never defaulted. Naming one mode "
         "produces an occupancy reference and no cross-mode comparison, which is how "
-        "a checkpoint with only one measurable mode enters this stage",
+        "a checkpoint worth reading in one mode enters this stage",
     )
     parser.add_argument(
         "--layers",
@@ -690,17 +680,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="the frozen threshold bundle this run is decided under. REQUIRED and "
         "never defaulted; the thresholds themselves are constants of the named rule "
         "and cannot be passed on the command line",
-    )
-    parser.add_argument(
-        "--context-information",
-        nargs="+",
-        default=None,
-        help="each measured mode's context information from EXP-R2-152, as "
-        "'text=0.8336 protein=0.5505'. REQUIRED and never inferred here: it is what "
-        "decides whether a behavioural read may be taken in that mode, through "
-        "src.transfer.budget.power_status against a 0.30-nat floor. Llama-2-7b-hf's "
-        "protein mode reads 0.0843 and is refused by its own number rather than by "
-        "its name",
     )
     parser.add_argument("--tensor", default=ms.TENSOR, choices=[ms.TENSOR],
         help="the per-layer tensor everything is defined on. One choice, because "
@@ -787,25 +766,10 @@ def resolve(args: argparse.Namespace) -> None:
             + ", ".join(f"--{flag.replace('_', '-')}" for flag in missing)
             + ". Every one of them is a pre-registered decision and none is "
             "defaulted: the layer set because every verdict is per layer, the "
-            "overlap statistic and the decision rule because what counts as a result "
-            "must be fixed before the result exists, and --context-information "
-            "because it is the measured number that decides whether a behavioural "
-            "read may be taken in a mode at all"
+            "overlap statistic and the decision rule because what counts as a "
+            "result must be fixed before the result exists"
         )
     args.modes = tuple(dict.fromkeys(args.modes))
-    args.context_information = parse_context_information(args.context_information)
-    undeclared = [mode for mode in args.modes if mode not in args.context_information]
-    if undeclared:
-        raise ValueError(
-            f"--context-information declares nothing for {undeclared}; each measured "
-            "mode's EXP-R2-152 figure is required, because it is what decides "
-            "whether that mode may carry a behavioural read"
-        )
-    extra = [mode for mode in args.context_information if mode not in args.modes]
-    if extra:
-        raise ValueError(
-            f"--context-information declares {extra}, which --modes does not measure"
-        )
     if args.damage_records > args.records:
         raise ValueError(
             "--damage-records is a prefix of the occupancy cohort and cannot exceed "
@@ -855,19 +819,6 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
     for mode in args.modes:
         print(f"[paths] corpus {mode:8s} {corpus_location(joint_mode_corpus(mode))}")
     print(f"[paths] out        {Path(args.out).resolve()}")
-
-    measurability = {
-        mode: ms.mode_measurability(mode, args.context_information[mode])
-        for mode in args.modes
-    }
-    behavioural = tuple(
-        mode for mode in args.modes if measurability[mode]["behavioural_read_admitted"]
-    )
-    for mode in args.modes:
-        print(
-            f"[mode] {mode:8s} {measurability[mode]['context_information_nats']:+.4f} "
-            f"nats/token -> {measurability[mode]['measurability']}"
-        )
 
     resolved, tokenizer = STAGE21.load_tokenizer(checkpoint)
     model, facts = STAGE21.load_model(
@@ -993,8 +944,7 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
         "n_damage_batches": 0,
     }
     damage_started = time.time()
-    for mode in behavioural:
-        ms.assert_behavioural_read(measurability[mode])
+    for mode in args.modes:
         handle = handles[mode]
         batches = damage_batches[mode]
         clean = scored_pass(
@@ -1153,10 +1103,10 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
                 -np.mean(clean.conditional_nll_nats)
             ),
             "clean_context_information_note": ms.MODEL_MARGINAL_CONTEXT_INFORMATION_NOTE,
-            "declared_context_information_nats": measurability[mode][
-                "context_information_nats"
-            ],
             "cohort_unigram_reference": reference_unigram,
+            "cohort_context_information": ms.cohort_context_information(
+                reference_unigram, float(np.mean(clean.nll_nats))
+            ),
             "n_positions": int(clean.target_ids.size),
             "n_groups": int(np.unique(clean.group_ids).size),
             "necessity_per_site": per_site,
@@ -1167,16 +1117,16 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
     verdicts: list[Any] = []
     overlaps: list[Any] = []
     for index, layer in enumerate(args.layers):
-        if len(behavioural) < 2:
-            overlaps.append(ms.SINGLE_MODE_RUN if len(args.modes) < 2 else ms.BEHAVIOURAL_READ_REFUSED)
+        if len(args.modes) < 2:
+            overlaps.append(ms.SINGLE_MODE_RUN)
             verdicts.append(
                 {
                     "layer": int(layer),
-                    "verdict": ms.BEHAVIOURAL_READ_REFUSED,
+                    "verdict": ms.SINGLE_MODE_RUN,
                     "reading": (
-                        "fewer than two modes of this checkpoint carry a behavioural "
-                        "read on this cohort, so there is no cross-mode comparison to "
-                        "decide. " + ms.UNMEASURABLE_MODE_EVIDENCE
+                        "this run named one mode, so there is no cross-mode "
+                        "comparison to decide. The named mode's occupancy and its "
+                        "own necessity ladder are reported and are not a verdict"
                     ),
                 }
             )
@@ -1185,45 +1135,45 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
             mode: cells[mode]["necessity_per_site"][index]["necessary_rank"][
                 "necessary_rank"
             ]
-            for mode in behavioural
+            for mode in args.modes
         }
         if any(rank is None for rank in chosen.values()):
             overlaps.append(
                 {
                     "status": ms.NO_NECESSARY_SUBSPACE,
-                    "necessary_ranks": {mode: chosen[mode] for mode in behavioural},
+                    "necessary_ranks": {mode: chosen[mode] for mode in args.modes},
                     "reason": (
                         "at least one mode has no necessary subspace at this layer: "
                         "the ladder did not reach the necessity fraction of its own "
                         "full-block ablation, or that ablation was not attainable. "
                         "There is nothing to compute an overlap between, and this is "
-                        "a statement about the site and the ladder rather than about "
-                        "either mode's measurability"
+                        "a statement about the site and the ladder rather than "
+                        "about either mode"
                     ),
                 }
             )
             verdicts.append(
                 ms.layer_verdict(
                     layer=int(layer),
-                    modes=behavioural,
+                    modes=args.modes,
                     own={
                         mode: cells[mode]["necessity_per_site"][index]["rungs"][-1][
                             f"fit_{mode}"
                         ]
-                        for mode in behavioural
+                        for mode in args.modes
                     },
                     asymmetry={
                         mode: cells[mode]["necessity_per_site"][index]["rungs"][-1][
                             "own_minus_other_residual"
                         ]
-                        for mode in behavioural
+                        for mode in args.modes
                     },
                     overlap=None,
                     attainable={
                         mode: cells[mode]["necessity_per_site"][index][
                             "necessary_rank"
                         ]["attainable"]
-                        for mode in behavioural
+                        for mode in args.modes
                     },
                     invariants_held=True,
                     rule=rule,
@@ -1232,21 +1182,21 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
             )
             continue
         overlap = ms.subspace_overlap(
-            bases[behavioural[0]][int(layer)][:, : chosen[behavioural[0]]],
-            bases[behavioural[1]][int(layer)][:, : chosen[behavioural[1]]],
+            bases[args.modes[0]][int(layer)][:, : chosen[args.modes[0]]],
+            bases[args.modes[1]][int(layer)][:, : chosen[args.modes[1]]],
             seed=args.position_seed + 7 + int(layer),
             chance_draws=args.chance_draws,
         )
-        overlap["modes"] = list(behavioural)
-        overlap["ranks"] = {mode: int(chosen[mode]) for mode in behavioural}
+        overlap["modes"] = list(args.modes)
+        overlap["ranks"] = {mode: int(chosen[mode]) for mode in args.modes}
         overlap["eigen_gap"] = {
             mode: ms.eigen_gap(spectra[mode][int(layer)], int(chosen[mode]))
-            for mode in behavioural
+            for mode in args.modes
         }
         overlaps.append(overlap)
         own = {}
         asymmetry = {}
-        for mode in behavioural:
+        for mode in args.modes:
             rung = next(
                 entry
                 for entry in cells[mode]["necessity_per_site"][index]["rungs"]
@@ -1257,7 +1207,7 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
         verdicts.append(
             ms.layer_verdict(
                 layer=int(layer),
-                modes=behavioural,
+                modes=args.modes,
                 own=own,
                 asymmetry=asymmetry,
                 overlap=overlap,
@@ -1265,14 +1215,14 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
                     mode: cells[mode]["necessity_per_site"][index]["necessary_rank"][
                         "attainable"
                     ]
-                    for mode in behavioural
+                    for mode in args.modes
                 },
                 invariants_held=all(
                     invariants[mode]["invariants_per_site"][index][
                         "random_projection_max_logit_gap"
                     ]
                     > rule.logit_tolerance
-                    for mode in behavioural
+                    for mode in args.modes
                 ),
                 rule=rule,
                 statistic=args.overlap_statistic,
@@ -1304,8 +1254,6 @@ def run_campaign(args: argparse.Namespace) -> dict[str, Any]:
         ),
         "tensor": STAGE25.tensor_declaration(reference, args.tensor),
         "modes_measured": list(args.modes),
-        "modes_with_a_behavioural_read": list(behavioural),
-        "mode_measurability": measurability,
         "matched_cohort": {
             "records_per_mode": int(args.records),
             "damage_records_per_mode": int(args.damage_records),
@@ -1407,6 +1355,8 @@ LIMITATIONS: dict[str, Any] = {
         "second draw, and the skip-offset sensitivity Appendix B rule 1 asks for is "
         "a second run"
     ),
+    "a_mode_may_have_no_signal_to_destroy": ms.LOW_SIGNAL_MODE_EVIDENCE,
+    "context_information_is_reported_not_declared": ms.COHORT_CONTEXT_INFORMATION_NOTE,
     "single_draw": (
         "one cohort draw at one seed per mode, one checkpoint per run. Nothing here "
         "is a replicate"
@@ -1434,7 +1384,6 @@ def main() -> None:
                 "--modes",
                 "--checkpoint",
                 "--rendering",
-                "--context-information",
             ],
             "decision_rule": ms.decision_rule(args.decision_rule).record(),
             "rank_ladder": [int(rank) for rank in args.rank_ladder],
