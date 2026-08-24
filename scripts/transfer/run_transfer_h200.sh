@@ -835,7 +835,7 @@ check_snapshot_absence() {
 # pattern factored out so the remaining call sites cannot drift back.
 pod_predicate() {
   local question="$1" command="$2" reply
-  reply="$("${H200_POD_BASH}" "{ ${command} ; } >/dev/null 2>&1 && echo YES || echo NO")"
+  reply="$("${H200_POD_BASH}" "( ${command} ) >/dev/null 2>&1 && echo YES || echo NO")"
   case "${reply}" in
     YES) return 0 ;;
     NO) return 1 ;;
@@ -1295,11 +1295,7 @@ if [ "${FREEZE_ONLY}" = "1" ]; then
   log "freeze-only: snapshot verified on GPFS, no stage scheduled"
   FREEZE_HOST_STATE="${GPFS_LOGS_ROOT}/${RUN_ID}/host_state_freeze.txt"
   log "recording host resource snapshot at ${FREEZE_HOST_STATE}"
-  if ! pod_predicate "freeze-only host snapshot" "
-    mkdir -p -- $(printf '%q' "$(dirname "${FREEZE_HOST_STATE}")") &&
-    . $(printf '%q' "${SNAPSHOT_DIR}/scripts/transfer/h200_orchestration.sh") &&
-    write_host_resource_snapshot $(printf '%q' "${FREEZE_HOST_STATE}") freeze
-  "; then
+  if ! pod_predicate "freeze-only host snapshot" "mkdir -p -- $(printf '%q' "$(dirname "${FREEZE_HOST_STATE}")") && . $(printf '%q' "${SNAPSHOT_DIR}/scripts/transfer/h200_orchestration.sh") && write_host_resource_snapshot $(printf '%q' "${FREEZE_HOST_STATE}") freeze"; then
     echo "freeze-only host resource snapshot failed: ${FREEZE_HOST_STATE}" >&2
     exit 2
   fi
