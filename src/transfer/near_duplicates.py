@@ -105,6 +105,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -460,3 +461,242 @@ def screen_against_training_stream(
         "median_containment": float(np.median(best)),
         "n_with_no_shared_shingle": int((best == 0.0).sum()),
     }
+
+
+#: Sequential fill that walks one ordered stream and assigns each accepted
+#: record to the first still-open slot that has no exact or near-duplicate edge
+#: to an earlier slot. Within a slot, near-duplicates are kept: they are the
+#: bootstrap groups, not a second population.
+GROUP_DISJOINT_FILL_ALGORITHM = "sequential_fill_against_earlier_slots"
+GROUP_DISJOINT_FILL_VERSION = "d3j_c_v1"
+ELIGIBLE_CORPUS_EXHAUSTED = "ELIGIBLE_CORPUS_EXHAUSTED"
+
+
+class EligibleCorpusExhausted(RuntimeError):
+    """The ordered stream ended before every requested slot was full."""
+
+    def __init__(self, message: str, *, detail: dict[str, Any]) -> None:
+        super().__init__(message)
+        self.detail = detail
+        self.reason = ELIGIBLE_CORPUS_EXHAUSTED
+
+
+@dataclass(frozen=True)
+class GroupDisjointSlot:
+    """One filled slot of a sequential group-disjoint draw."""
+
+    name: str
+    records: tuple[str, ...]
+    source_positions: tuple[int, ...]
+    labels: tuple[Any, ...] | None
+    rejected_exact: int
+    rejected_near: int
+
+    def record(self) -> dict[str, Any]:
+        payload = {
+            "name": self.name,
+            "n_records": len(self.records),
+            "source_positions": list(self.source_positions),
+            "rejected_exact": int(self.rejected_exact),
+            "rejected_near": int(self.rejected_near),
+        }
+        if self.labels is not None:
+            payload["n_labels"] = len(self.labels)
+        return payload
+
+
+@dataclass(frozen=True)
+class GroupDisjointFill:
+    """The complete sequential fill: slots, rejections, and the algorithm identity."""
+
+    slots: tuple[GroupDisjointSlot, ...]
+    n_eligible: int
+    n_scanned: int
+    rejected_exact: int
+    rejected_near: int
+    algorithm: str
+    version: str
+    containment_threshold: float
+    shingle_length: int
+    unit: str
+
+    def record(self) -> dict[str, Any]:
+        return {
+            "algorithm": self.algorithm,
+            "algorithm_version": self.version,
+            "containment_threshold": float(self.containment_threshold),
+            "shingle_length": int(self.shingle_length),
+            "unit": self.unit,
+            "n_eligible": int(self.n_eligible),
+            "n_scanned": int(self.n_scanned),
+            "rejected_exact": int(self.rejected_exact),
+            "rejected_near": int(self.rejected_near),
+            "slots": [slot.record() for slot in self.slots],
+        }
+
+
+class _EarlierCohortIndex:
+    """Exact strings plus an inverted 5-mer index of every earlier-slot record.
+
+    A later candidate is rejected when it is byte-identical to an earlier
+    record or when any earlier record reaches shingle containment at the
+    declared threshold. Cost is the candidate's shingles times the posting-list
+    length, not the product of corpus size and accepted-record count.
+    """
+
+    def __init__(self, *, unit: str, containment: float, shingle: int | None) -> None:
+        self.unit = unit
+        self.containment = float(containment)
+        self.shingle = shingle
+        self.exact: set[str] = set()
+        self.sets: list[frozenset[str]] = []
+        self.index: dict[str, list[int]] = {}
+
+    def reject_reason(self, record: str) -> str | None:
+        if record in self.exact:
+            return "exact"
+        grams = shingles(record, unit=self.unit, length=self.shingle)
+        if not grams:
+            return None
+        counts: dict[int, int] = {}
+        for gram in grams:
+            for position in self.index.get(gram, ()):
+                counts[position] = counts.get(position, 0) + 1
+        for position, shared in counts.items():
+            smaller = min(len(grams), len(self.sets[position]))
+            if smaller and shared / smaller >= self.containment:
+                return "near"
+        return None
+
+    def add(self, record: str) -> None:
+        self.exact.add(record)
+        grams = shingles(record, unit=self.unit, length=self.shingle)
+        position = len(self.sets)
+        self.sets.append(grams)
+        for gram in grams:
+            self.index.setdefault(gram, []).append(position)
+
+
+def fill_group_disjoint_slots(
+    records: Sequence[str],
+    *,
+    slot_sizes: Sequence[int],
+    slot_names: Sequence[str],
+    source_positions: Sequence[int],
+    labels: Sequence[Any] | None = None,
+    containment: float = NEAR_DUPLICATE_CONTAINMENT,
+    shingle: int | None = None,
+    unit: str = "residues",
+    algorithm: str = GROUP_DISJOINT_FILL_ALGORITHM,
+    version: str = GROUP_DISJOINT_FILL_VERSION,
+) -> GroupDisjointFill:
+    """Fill named slots in order from one already-permuted stream.
+
+    The first slot accepts every record until it is full. Each later slot
+    rejects a record that is exactly identical to, or a 5-mer near-duplicate of,
+    any record already accepted into an earlier slot. Near-duplicates inside a
+    slot are retained. The stream is not reshuffled and no replacement seed is
+    tried: if it ends before every slot is full the call raises
+    :class:`EligibleCorpusExhausted`.
+    """
+
+    if len(slot_sizes) != len(slot_names):
+        raise ValueError("slot_sizes and slot_names must have the same length")
+    if not slot_sizes:
+        raise ValueError("at least one slot is required")
+    if any(int(size) < 1 for size in slot_sizes):
+        raise ValueError("each slot must request at least one record")
+    if len(source_positions) != len(records):
+        raise ValueError("source_positions must align with the ordered records")
+    if labels is not None and len(labels) != len(records):
+        raise ValueError("labels must align with the ordered records")
+    if not 0.0 < float(containment) <= 1.0:
+        raise ValueError("containment must lie in (0, 1]")
+
+    sizes = [int(size) for size in slot_sizes]
+    names = [str(name) for name in slot_names]
+    earlier = _EarlierCohortIndex(unit=unit, containment=containment, shingle=shingle)
+    filled: list[GroupDisjointSlot] = []
+    current_records: list[str] = []
+    current_positions: list[int] = []
+    current_labels: list[Any] = []
+    rejected_exact = 0
+    rejected_near = 0
+    slot_exact = 0
+    slot_near = 0
+    slot_index = 0
+    scanned = 0
+
+    def close_slot() -> None:
+        nonlocal slot_index, slot_exact, slot_near
+        label_tuple = tuple(current_labels) if labels is not None else None
+        filled.append(
+            GroupDisjointSlot(
+                name=names[slot_index],
+                records=tuple(current_records),
+                source_positions=tuple(current_positions),
+                labels=label_tuple,
+                rejected_exact=slot_exact,
+                rejected_near=slot_near,
+            )
+        )
+        for accepted in current_records:
+            earlier.add(accepted)
+        current_records.clear()
+        current_positions.clear()
+        current_labels.clear()
+        slot_exact = 0
+        slot_near = 0
+        slot_index += 1
+
+    for offset, record in enumerate(records):
+        if slot_index >= len(sizes):
+            break
+        scanned += 1
+        reason = earlier.reject_reason(record) if slot_index else None
+        if reason == "exact":
+            rejected_exact += 1
+            slot_exact += 1
+            continue
+        if reason == "near":
+            rejected_near += 1
+            slot_near += 1
+            continue
+        current_records.append(record)
+        current_positions.append(int(source_positions[offset]))
+        if labels is not None:
+            current_labels.append(labels[offset])
+        if len(current_records) == sizes[slot_index]:
+            close_slot()
+
+    if slot_index < len(sizes):
+        raise EligibleCorpusExhausted(
+            f"eligible corpus cannot fill slot {names[slot_index]!r}: "
+            f"need {sizes[slot_index]}, accepted {len(current_records)}, "
+            f"scanned {scanned} of {len(records)} "
+            f"({ELIGIBLE_CORPUS_EXHAUSTED})",
+            detail={
+                "reason": ELIGIBLE_CORPUS_EXHAUSTED,
+                "failed_slot": names[slot_index],
+                "needed": sizes[slot_index],
+                "accepted_in_slot": len(current_records),
+                "filled_slots": [slot.name for slot in filled],
+                "n_scanned": scanned,
+                "n_eligible": len(records),
+                "rejected_exact": rejected_exact,
+                "rejected_near": rejected_near,
+            },
+        )
+
+    return GroupDisjointFill(
+        slots=tuple(filled),
+        n_eligible=len(records),
+        n_scanned=scanned,
+        rejected_exact=rejected_exact,
+        rejected_near=rejected_near,
+        algorithm=str(algorithm),
+        version=str(version),
+        containment_threshold=float(containment),
+        shingle_length=SHINGLE_UNITS[unit] if shingle is None else int(shingle),
+        unit=unit,
+    )

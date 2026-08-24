@@ -18,7 +18,8 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator
+from collections.abc import Mapping, Sequence
+from typing import Any, Iterator
 
 import torch
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
@@ -110,11 +111,19 @@ PRETRAINING_UNDECLARED = "undeclared"
 #: is the only mode Appendix B rule 1 of the transfer audit permits for a
 #: reported number; ``file_order`` is retained because several frozen artefacts
 #: were produced with it and must remain reproducible, and because a census over
-#: a whole corpus is order-independent. The mode is written into every cohort's
+#: a whole corpus is order-independent. ``seeded_permutation_group_disjoint``
+#: walks the same seeded permutation but fills later slots only with records
+#: that have no exact or near-duplicate edge to an earlier slot; it is D3.j-C's
+#: draw and is not a skip window. The mode is written into every cohort's
 #: metadata so that no artefact can be read without knowing which one produced
 #: it -- that invisibility, not the file order itself, is what manufactured an
 #: effect three times.
-SAMPLING_MODES = ("seeded_permutation", "file_order")
+SAMPLING_MODES = (
+    "seeded_permutation",
+    "file_order",
+    "seeded_permutation_group_disjoint",
+)
+GROUP_DISJOINT_SAMPLING_MODE = "seeded_permutation_group_disjoint"
 
 #: The seed every campaign stage draws its corpus under, declared once.
 #:
@@ -1904,6 +1913,92 @@ def protein_cohort(
     if with_ec:
         metadata["ec_labels"] = labels
     return Cohort(name, "protein", records, min_len, max_len, metadata)
+
+
+def eligible_protein_population(
+    min_len: int,
+    max_len: int,
+    *,
+    with_ec: bool = False,
+) -> tuple[list[str], list[str] | None, str]:
+    """Every eligible protein record in file order, with optional EC labels.
+
+    Positions in the returned list are the source positions a group-disjoint
+    fill records. The generator is consumed once; callers that need a seeded
+    permutation apply it to these lists rather than opening the FASTA again.
+    """
+
+    records: list[str] = []
+    labels: list[str] = []
+    for sequence, label in _eligible_protein_records(min_len, max_len, with_ec=with_ec):
+        records.append(sequence)
+        if label is not None:
+            labels.append(label)
+    corpus = "ec_labelled_swissprot" if with_ec else "plain_swissprot"
+    if with_ec and len(labels) != len(records):
+        raise RuntimeError(
+            f"EC-labelled population {corpus!r} is missing labels on "
+            f"{len(records) - len(labels)} eligible records"
+        )
+    return records, (labels if with_ec else None), corpus
+
+
+def group_disjoint_sampling_record(
+    *,
+    seed: int,
+    requested: int,
+    eligible: int,
+    corpus: str,
+    algorithm: str,
+    algorithm_version: str,
+    containment_threshold: float,
+    shingle_length: int,
+    slot: str,
+    source_positions: Sequence[int],
+) -> dict[str, Any]:
+    """How a group-disjoint slot was filled, as a value that travels with it."""
+
+    if requested < 1:
+        raise ValueError("a cohort must request at least one record")
+    if int(seed) < 0:
+        raise ValueError("seed must be non-negative")
+    if GROUP_DISJOINT_SAMPLING_MODE not in SAMPLING_MODES:
+        raise AssertionError(
+            f"sampling mode {GROUP_DISJOINT_SAMPLING_MODE!r} is not in "
+            f"SAMPLING_MODES {SAMPLING_MODES}"
+        )
+    return {
+        "mode": GROUP_DISJOINT_SAMPLING_MODE,
+        "seed": int(seed),
+        "requested": int(requested),
+        "corpus": corpus,
+        "eligible_records": int(eligible),
+        "algorithm": str(algorithm),
+        "algorithm_version": str(algorithm_version),
+        "containment_threshold": float(containment_threshold),
+        "shingle_length": int(shingle_length),
+        "slot": str(slot),
+        "source_positions": [int(position) for position in source_positions],
+    }
+
+
+def protein_cohort_from_records(
+    records: Sequence[str],
+    min_len: int,
+    max_len: int,
+    *,
+    name: str,
+    sampling: Mapping[str, Any],
+    labels: Sequence[str] | None = None,
+) -> Cohort:
+    """Rebuild a protein cohort from already-chosen records and sampling."""
+
+    metadata: dict = {"sampling": dict(sampling)}
+    if labels is not None:
+        if len(labels) != len(records):
+            raise ValueError("EC labels must align with the frozen records")
+        metadata["ec_labels"] = list(labels)
+    return Cohort(name, "protein", list(records), min_len, max_len, metadata)
 
 
 def text_cohort(

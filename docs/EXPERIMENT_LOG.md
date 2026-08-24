@@ -16850,3 +16850,21 @@ The definitive snapshot is pinned to `dcafad9`, run `20260823223925_fbe024f50217
 The detached queue started at **2026-08-24T05:45:03Z** under a 86,400-second timeout. Initial durable status: slot 0, three construction cells running on cards 0, 1, and 3; eleven cells pending; `FAILURES 0`; `NO-RECORD 0`; no card-2 cell anywhere in the manifest. Immediate GPU memory remained zero while the three processes loaded checkpoints and the order-7 background, so allocation is not misreported as utilisation. The queue's pre-state record exists; its EXIT/TERM trap is responsible for the post-state record.
 
 The remaining schedule is construction and two independent text controls, confirmation 1 on the three slow arms, confirmation 2 on the same three arms, then both ProGen2-small confirmations. Every slot admits only its exact valid JSON and writes an atomic SHA-256 sidecar. A failed prerequisite leaves its dependent cell nonzero rather than selecting a replacement draw. Results are not pulled or interpreted until the queue reaches a terminal status.
+
+## 2026-08-24 — EXP-R2-223: D3.j-B closed VOID; D3.j-C pre-registered with no result
+
+**Taking `EXP-R2-223`, the next free identifier. No D3.j-C construction or model-damage result exists at registration.**
+
+### D3.j-B incident
+
+Frozen run `20260823223925_fbe024f50217`, pinned at `dcafad92be234201db172ce5d20db50e0191390b`, is closed. All four protein construction JSONs terminated `VOID` with reason `THREE_WAY_COHORTS_NOT_INDEPENDENT`. Plain Swiss-Prot arms shared 86–118 exact records pairwise and 374–398 near-duplicate groups; ZymCTRL shared 267–285 exact records and 665–690 near-duplicate groups. The seeded position windows were position-disjoint. Duplicate and near-duplicate sequence content appears at different corpus positions, so a skip offset is not an independence proof on this population.
+
+Both ByGPT5 controls succeeded. All eight confirmations failed immediately because construction was not `AXIS_CONSTRUCTED`. That is the refusal `docs/D3J_B_CONFIRMATION_PREREGISTRATION.md` named in advance: any exact or 5-mer-containment ≥ 0.5 single-linkage overlap returns `VOID` and no replacement seed or offset is tried. It is not a failed model result. D3.j-B is not rerun, salvaged, renamed, or reinterpreted.
+
+### Successor, registered before any C number
+
+**D3.j-C** keeps the declared protein population, 4,096 + 4,096 + 4,096 records, permutation seed `20260728`, fragment-damage axis at order 7, pair selection, model seeds `20260824` / `20260825` / `20260826`, and the crossed-interval verdict. The only intentional design change is a deterministic scan of that one permutation that fills construction, then confirmation 1, then confirmation 2, rejecting from a later slot any exact identity or 5-mer containment ≥ 0.5 against an earlier slot. Near-duplicates may remain inside a slot. Exhaustion of the eligible corpus is an explicit failure. Confirmation reproduces the frozen records and cannot override seed or records.
+
+The frozen plan is `docs/D3J_C_CONFIRMATION_PREREGISTRATION.md`. The H200 manifest is `scripts/transfer/campaign_d3jc_confirmation.tsv`: the same 14-cell / 5-slot healthy-card schedule, cards 0, 1 and 3, 24-hour bound, exact JSON basenames, and bounded literal path substitution. Card 2 remains excluded for the uncorrectable SRAM parity error. No pod name is recorded.
+
+**No D3.j-C result is claimed.** A local full-size construction smoke on an L20 was not launched: all eight local cards were occupied at implementation time.

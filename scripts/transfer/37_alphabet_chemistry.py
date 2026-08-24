@@ -85,6 +85,7 @@ from panel_contract import QUALIFYING_PROTEIN_BAND  # noqa: E402
 
 SCHEMA_VERSION = "r2_transfer_alphabet_chemistry_v1"
 SCHEMA_VERSION_B = "r2_transfer_alphabet_chemistry_d3j_b_v1"
+SCHEMA_VERSION_C = "r2_transfer_alphabet_chemistry_d3j_c_v1"
 DEFAULT_OUT = REPO / "results/transfer/alphabet_chemistry"
 B_ONLY_SETTINGS = (
     "protein_axis",
@@ -94,6 +95,7 @@ B_ONLY_SETTINGS = (
     "confirmation_index",
     "cohort_skip",
 )
+C_ONLY_SETTINGS = ("experiment",)
 
 PROVENANCE_MODULES = (
     "src/transfer/alphabet_chemistry.py",
@@ -209,9 +211,17 @@ def build_parser() -> argparse.ArgumentParser:
         choices=list(ac.PROTEIN_AXES),
         help="how the protein distributional axis is defined. Omit or pass "
         f"{ac.PROTEIN_AXIS_CONTEXT_PROFILE} for D3.j-A. "
-        f"{ac.PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE} selects D3.j-B, whose "
-        "admission axis is the fragment conditional's own substitution damage on "
-        "the scored cohort",
+        f"{ac.PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE} selects the fragment-damage "
+        "axis. Omit --experiment for D3.j-B; pass --experiment D3.j-C for the "
+        "group-disjoint successor. Both use the fragment conditional's own "
+        "substitution damage on the scored cohort",
+    )
+    parser.add_argument(
+        "--experiment",
+        default=None,
+        choices=(ac.EXPERIMENT_C,),
+        help="explicit successor campaign. D3.j-C selects group-disjoint cohort "
+        "construction on the fragment-damage axis. Omit for D3.j-A or D3.j-B",
     )
     parser.add_argument(
         "--fragment-axis-order", type=int, default=None,
@@ -221,9 +231,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--b-stage", default=None, choices=list(ac.B_STAGES),
-        help="D3.j-B role. construct writes the fragment-damage axis and frozen "
-        "contradiction set with no model damage. confirm evaluates an independent "
-        "cohort against that frozen artefact. Required on B; refused on A",
+        help="construct/confirm role for D3.j-B and D3.j-C. construct writes the "
+        "fragment-damage axis and frozen contradiction set with no model damage. "
+        "confirm evaluates an independent cohort against that frozen artefact. "
+        "Required on B and C; refused on A",
     )
     parser.add_argument(
         "--construction-artefact", type=Path, default=None,
@@ -339,8 +350,15 @@ def selected_protein_axis(args: argparse.Namespace) -> str:
     return args.protein_axis or ac.PROTEIN_AXIS_CONTEXT_PROFILE
 
 
+def is_variant_c(args: argparse.Namespace) -> bool:
+    return getattr(args, "experiment", None) == ac.EXPERIMENT_C
+
+
 def is_variant_b(args: argparse.Namespace) -> bool:
-    return selected_protein_axis(args) == ac.PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE
+    return (
+        selected_protein_axis(args) == ac.PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE
+        and not is_variant_c(args)
+    )
 
 
 def resolve(args: argparse.Namespace) -> None:
@@ -363,7 +381,8 @@ def resolve(args: argparse.Namespace) -> None:
         forbidden_decisions += list(CEILING_DECISIONS)
     elif args.arm is not None and PANEL[args.arm].modality == "protein":
         constructing = (
-            is_variant_b(args) and getattr(args, "b_stage", None) == ac.B_STAGE_CONSTRUCT
+            (is_variant_b(args) or is_variant_c(args))
+            and getattr(args, "b_stage", None) == ac.B_STAGE_CONSTRUCT
         )
         if constructing:
             required = [flag for flag in required if flag not in ("max_pairs", "null_draws")]
@@ -406,7 +425,8 @@ def resolve(args: argparse.Namespace) -> None:
         if modality == "protein":
             required += ["kmer_background", "high_order_background", "ceiling_orders"]
             constructing = (
-                is_variant_b(args) and getattr(args, "b_stage", None) == ac.B_STAGE_CONSTRUCT
+                (is_variant_b(args) or is_variant_c(args))
+                and getattr(args, "b_stage", None) == ac.B_STAGE_CONSTRUCT
             )
             if not constructing:
                 required += ["text_control"]
@@ -490,6 +510,10 @@ def resolve(args: argparse.Namespace) -> None:
                 "frozen construction draw and two independent confirmation draws; "
                 "a single run cannot play both roles"
             )
+        if is_variant_c(args) and args.cohort_skip is not None:
+            raise ValueError(
+                "--cohort-skip is a D3.j-B window offset and is not a D3.j-C setting"
+            )
         if args.b_stage == ac.B_STAGE_CONSTRUCT:
             if args.construction_artefact is not None or args.confirmation_index is not None:
                 raise ValueError(
@@ -524,14 +548,15 @@ def resolve(args: argparse.Namespace) -> None:
                     "confirmation cannot override --cohort-skip; skip and seed are "
                     "frozen on the construction slot"
                 )
-    elif args.fragment_axis_order is not None or any(
+    elif args.fragment_axis_order is not None or args.experiment is not None or any(
         getattr(args, flag, None) is not None
         for flag in ("b_stage", "construction_artefact", "confirmation_index", "cohort_skip")
     ):
         raise ValueError(
             "--b-stage, --construction-artefact, --confirmation-index, "
-            "--fragment-axis-order and --cohort-skip are D3.j-B decisions and "
-            "would enter a D3.j-A artefact as settings that decided nothing"
+            "--fragment-axis-order, --cohort-skip and --experiment are D3.j-B "
+            "or D3.j-C decisions and would enter a D3.j-A artefact as settings "
+            "that decided nothing"
         )
     if args.random_directions is not None and args.random_directions < ac.MINIMUM_RANDOM_DIRECTIONS:
         raise ValueError(
@@ -1046,6 +1071,25 @@ def pre_registration_block_b() -> dict[str, Any]:
     return block
 
 
+def pre_registration_block_c() -> dict[str, Any]:
+    block = pre_registration_block_b()
+    block["track"] = ac.PRE_REGISTRATION_TRACK_C
+    block["experiment"] = ac.EXPERIMENT_C
+    block["cohort_construction"] = {
+        "algorithm": ac.GROUP_DISJOINT_ALGORITHM,
+        "algorithm_version": ac.GROUP_DISJOINT_ALGORITHM_VERSION,
+        "rule": (
+            "scan one seeded corpus permutation; fill construction, then "
+            "confirmation 1, then confirmation 2; reject from a later cohort any "
+            "record with exact identity or 5-mer containment at 0.5 against an "
+            "earlier cohort; retain near-duplicates within a cohort; fail if the "
+            "eligible corpus cannot fill every slot. No replacement seed or "
+            "window is tried"
+        ),
+    }
+    return block
+
+
 def limitations_block(*, modality: str) -> dict[str, Any]:
     common = {
         "local_scoring_window": (
@@ -1366,22 +1410,37 @@ def run_synthetic_check(args: argparse.Namespace) -> dict[str, Any]:
 
 def base_payload(args: argparse.Namespace, *, kind: str) -> dict[str, Any]:
     variant_b = is_variant_b(args)
+    variant_c = is_variant_c(args)
     settings = {}
     for key, value in vars(args).items():
         if args.synthetic and key in CAMPAIGN_ONLY_FLAGS:
             continue
-        if key in B_ONLY_SETTINGS and not variant_b:
+        if key in B_ONLY_SETTINGS and not variant_b and not variant_c:
+            continue
+        if key in C_ONLY_SETTINGS and not variant_c:
             continue
         settings[key] = str(value) if isinstance(value, Path) else value
+    if variant_c:
+        schema = SCHEMA_VERSION_C
+        prereg = pre_registration_block_c()
+    elif variant_b:
+        schema = SCHEMA_VERSION_B
+        prereg = pre_registration_block_b()
+    else:
+        schema = SCHEMA_VERSION
+        prereg = pre_registration_block()
     payload = {
-        "schema_version": SCHEMA_VERSION_B if variant_b else SCHEMA_VERSION,
+        "schema_version": schema,
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "kind": kind,
-        "pre_registration": pre_registration_block_b() if variant_b else pre_registration_block(),
+        "pre_registration": prereg,
         "settings": settings,
         "provenance": provenance(),
     }
-    if variant_b:
+    if variant_c:
+        payload["experiment"] = ac.EXPERIMENT_C
+        payload["variant"] = ac.EXPERIMENT_C
+    elif variant_b:
         payload["experiment"] = ac.EXPERIMENT_B
         payload["variant"] = ac.EXPERIMENT_B
     return payload
@@ -1770,11 +1829,17 @@ def _directed_fragment_stats(
     return directed
 
 
-def _b_scoring_state(args: argparse.Namespace, spec: arms.ArmSpec) -> dict[str, Any]:
+def _b_scoring_state(
+    args: argparse.Namespace,
+    spec: arms.ArmSpec,
+    *,
+    cohort: arms.Cohort | None = None,
+) -> dict[str, Any]:
     """Tokenizer, cohort and residue runs. No arm likelihood is read."""
 
     arm = arms.load_arm(args.arm, device=args.device, dtype=ac.DTYPE)
-    cohort = build_cohort(args, spec)
+    if cohort is None:
+        cohort = build_cohort(args, spec)
     texts = cohort.input_strings(arm)
     alphabet = ac.protein_alphabet(arm)
     coverage = ac.symbol_token_coverage(
@@ -1866,18 +1931,23 @@ def _b_axis_from_state(
     }
 
 
-def _load_construction_artefact(path: Path) -> dict[str, Any]:
+def _load_construction_artefact(
+    path: Path,
+    *,
+    experiment: str = ac.EXPERIMENT_B,
+    schema_version: str = SCHEMA_VERSION_B,
+) -> dict[str, Any]:
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    if payload.get("schema_version") != SCHEMA_VERSION_B:
+    if payload.get("schema_version") != schema_version:
         raise ValueError(
-            f"{path} carries schema {payload.get('schema_version')!r}, not {SCHEMA_VERSION_B}"
+            f"{path} carries schema {payload.get('schema_version')!r}, not {schema_version}"
         )
     if payload.get("kind") != ac.KIND_AXIS_CONSTRUCTION:
         raise ValueError(
             f"{path} is a {payload.get('kind')!r} artefact, not {ac.KIND_AXIS_CONSTRUCTION}"
         )
-    if payload.get("experiment") != ac.EXPERIMENT_B:
-        raise ValueError(f"{path} is not a {ac.EXPERIMENT_B} construction artefact")
+    if payload.get("experiment") != experiment:
+        raise ValueError(f"{path} is not a {experiment} construction artefact")
     if payload.get("verdict", {}).get("verdict") != ac.AXIS_CONSTRUCTED:
         raise ValueError(
             f"{path} is not AXIS_CONSTRUCTED ({payload.get('verdict', {}).get('verdict')!r})"
@@ -2076,22 +2146,309 @@ def run_b_construct(args: argparse.Namespace) -> dict[str, Any]:
     return body
 
 
-def run_protein_cell_b(args: argparse.Namespace) -> dict[str, Any]:
-    """D3.j-B: construct the axis or confirm it on an independent cohort."""
+def _c_slot_record(
+    cohort: arms.Cohort,
+    *,
+    index: int,
+    source_positions: Sequence[int],
+) -> dict[str, Any]:
+    sampling = dict(cohort.sampling)
+    payload = {
+        "index": int(index),
+        "seed": int(sampling["seed"]),
+        "digest": cohort.digest,
+        "provenance_digest": cohort.provenance_digest,
+        "n_records": len(cohort.records),
+        "records": list(cohort.records),
+        "content_hashes": _content_hashes(cohort.records),
+        "source_positions": [int(position) for position in source_positions],
+        "sampling": sampling,
+    }
+    labels = cohort.metadata.get("ec_labels")
+    if labels is not None:
+        payload["ec_labels"] = list(labels)
+    return payload
 
+
+def _select_frozen_c_confirmation_slot(
+    args: argparse.Namespace, construction: Mapping[str, Any]
+) -> dict[str, Any]:
+    slots = construction.get("evaluation_protocol", {}).get("slots")
+    if not isinstance(slots, dict):
+        raise ValueError("construction artefact has no frozen confirmation slots")
+    key = str(int(args.confirmation_index))
+    if key not in slots:
+        raise ValueError(
+            f"confirmation index {key} is not a frozen slot; declared: {sorted(slots)}"
+        )
+    slot = slots[key]
+    if args.cohort_skip is not None:
+        raise ValueError(
+            "confirmation cannot override --cohort-skip; D3.j-C slots have no skip window"
+        )
+    if int(args.cohort_draw_seed) != int(slot["seed"]):
+        raise ValueError(
+            f"confirmation seed {args.cohort_draw_seed} does not match frozen "
+            f"slot seed {slot['seed']}"
+        )
+    if "records" not in slot or "content_hashes" not in slot:
+        raise ValueError("D3.j-C confirmation slot is missing frozen records")
+    if int(args.records) != int(slot["n_records"]):
+        raise ValueError(
+            "confirmation cannot override frozen record count: "
+            f"requested {args.records}, frozen {slot['n_records']}"
+        )
+    return slot
+
+
+def _cohort_from_c_slot(
+    args: argparse.Namespace, spec: arms.ArmSpec, slot: Mapping[str, Any]
+) -> arms.Cohort:
+    records = list(slot["records"])
+    stored_hashes = list(slot["content_hashes"])
+    if _content_hashes(records) != stored_hashes:
+        raise ValueError("frozen records do not match stored content hashes")
+    low, high = QUALIFYING_PROTEIN_BAND
+    sampling = slot.get("sampling")
+    if not isinstance(sampling, dict):
+        raise ValueError("frozen D3.j-C slot is missing its sampling record")
+    cohort = arms.protein_cohort_from_records(
+        records,
+        low,
+        high,
+        name=spec.evaluation_cohort_source,
+        sampling=sampling,
+        labels=slot.get("ec_labels"),
+    )
+    if cohort.digest != slot["digest"]:
+        raise ValueError(
+            f"confirmation cohort digest {cohort.digest} does not match "
+            f"frozen slot {slot['digest']}"
+        )
+    if cohort.provenance_digest != slot["provenance_digest"]:
+        raise ValueError(
+            "confirmation cohort provenance does not match the frozen slot"
+        )
+    return cohort
+
+
+def run_c_construct(args: argparse.Namespace) -> dict[str, Any]:
+    spec = PANEL[args.arm]
+    axis_order = int(args.fragment_axis_order)
+    ordered = ac.load_ordered_counts(
+        args.high_order_background, args.ceiling_orders, pinned=args.kmer_background
+    )
+    labels = list(AA20)
+    chemical = ac.property_distance(
+        ac.chemical_property_table(labels), source=ac.CHEMICAL_AXIS_SOURCE
+    )
+    low, high = QUALIFYING_PROTEIN_BAND
+    cohorts, fill = ac.build_group_disjoint_protein_cohorts(
+        args.records,
+        low,
+        high,
+        seed=int(args.cohort_draw_seed),
+        name=spec.evaluation_cohort_source,
+        with_ec=spec.evaluation_cohort_source == "zymctrl_ec",
+    )
+    construction_cohort, confirm1, confirm2 = cohorts
+    state = _b_scoring_state(args, spec, cohort=construction_cohort)
+    body: dict[str, Any] = {
+        "role": ac.B_STAGE_CONSTRUCT,
+        "arm": {
+            "name": spec.name, "modality": spec.modality, "architecture": spec.architecture,
+            "tokenisation": spec.tokenisation, "input_format": spec.input_format,
+            "pretraining_corpus": spec.pretraining_corpus,
+        },
+        "tokenizer_identity": state["identity"],
+        "admission": {"coverage": state["coverage"], "verdict": state["admission"]},
+        "evaluation_protocol": {
+            "n_confirmations": len(ac.B_CONFIRMATION_INDICES),
+            "confirmation_indices": list(ac.B_CONFIRMATION_INDICES),
+            "construction": ac.GROUP_DISJOINT_ALGORITHM,
+            "algorithm": fill["algorithm"],
+            "algorithm_version": fill["algorithm_version"],
+            "containment_threshold": fill["containment_threshold"],
+            "shingle_length": fill["shingle_length"],
+            "seed": fill["seed"],
+            "eligible_records": fill["n_eligible"],
+            "n_scanned": fill["n_scanned"],
+            "rejected": {
+                "exact": fill["rejected_exact"],
+                "near": fill["rejected_near"],
+                "by_slot": {
+                    slot["name"]: {
+                        "exact": slot["rejected_exact"],
+                        "near": slot["rejected_near"],
+                    }
+                    for slot in fill["slots"]
+                },
+            },
+        },
+    }
+    if not state["admission"]["admitted"]:
+        body["verdict"] = {"verdict": "NOT_MEASURABLE", "reason": state["admission"]["reason"]}
+        return body
+    if [symbol.label for symbol in state["alphabet"]] != labels:
+        raise RuntimeError("D3.j-C requires the twenty-residue alphabet in AA20 order")
+    axis = _b_axis_from_state(
+        state, fragment=ac.FragmentConditional(ordered[axis_order]),
+        chemical=chemical, labels=labels, ordered_record=ordered[axis_order].record(),
+    )
+    body["cohort"] = {
+        **state["cohort_record"],
+        "name": state["cohort"].name,
+        "digest": state["cohort"].digest,
+        "provenance_digest": state["cohort"].provenance_digest,
+        "sampling": state["cohort"].sampling,
+        "band_residues": list(QUALIFYING_PROTEIN_BAND),
+        "near_duplicate_groups": state["grouping"],
+        "records": list(state["cohort"].records),
+        "n_records": len(state["cohort"].records),
+        "source_positions": list(construction_cohort.sampling["source_positions"]),
+    }
+    body["alphabet"] = state["occupancy"]
+    body["axes"] = {
+        "labels": labels,
+        "chemical": chemical.record(),
+        "distributional": axis["axis_record"],
+        "matrices": {
+            "chemical": matrix_record(chemical.distance),
+            "distributional_fragment_damage": _matrix_record_missing(axis["distributional"]),
+            "distributional_observed": [
+                [int(flag) for flag in row] for row in axis["observed"]
+            ],
+        },
+    }
+    body["contradiction_set"] = {
+        "sweep": axis["sweep"],
+        "declared_cut": args.cut,
+        "quantiles_frozen": True,
+        "unordered_members": {
+            cut: {
+                name: [f"{labels[x]}{labels[y]}" for x, y in record["members"][name]]
+                for name in ac.QUADRANTS
+            }
+            for cut, record in axis["per_cut"].items()
+        },
+        "axis_coverage_refusals": axis["axis_record"]["coverage_refusals"],
+    }
+    if not axis["per_cut"][args.cut]["readable"]:
+        body["verdict"] = {
+            "verdict": "NO_CONTRADICTION_SET_AT_DECLARED_CUT",
+            "reason": (
+                f"the {args.cut} cut admits {axis['per_cut'][args.cut]['unordered_counts']} "
+                f"covered unordered pairs against a floor of {ac.MINIMUM_QUADRANT_PAIRS}"
+            ),
+        }
+        return body
+    admitted = ac.ordered_pair_set(axis["per_cut"][args.cut])
+    ceiling_on_admitted = [
+        float(axis["directed"][(x, y)]["nats_per_scored_token"])
+        for x, y in admitted.pairs
+        if axis["directed"][(x, y)]["measurable"]
+    ]
+    construction = ac.matching_ceiling_predicts_distributional_side(
+        admitted.codes(ac.QUADRANTS), ceiling_on_admitted
+    )
+    body["construction_check"] = construction
+    if construction["status"] != "OK":
+        body["verdict"] = {
+            "verdict": "VOID",
+            "reason": construction["reason"],
+            "detail": construction["detail"],
+        }
+        return body
+    named = {
+        "construction": list(construction_cohort.records),
+        "confirm1": list(confirm1.records),
+        "confirm2": list(confirm2.records),
+    }
+    independence = ac.pairwise_cohorts_independent(named)
+    if not independence["independent"]:
+        raise RuntimeError(
+            "D3.j-C group-disjoint fill left a cross-cohort edge; the algorithm "
+            f"is broken: {independence['failures']}"
+        )
+    slots = {
+        "1": _c_slot_record(
+            confirm1, index=1, source_positions=confirm1.sampling["source_positions"]
+        ),
+        "2": _c_slot_record(
+            confirm2, index=2, source_positions=confirm2.sampling["source_positions"]
+        ),
+    }
+    body["evaluation_protocol"]["slots"] = slots
+    body["evaluation_protocol"]["three_way_independence"] = {
+        key: independence[key]
+        for key in ("independent", "n_cohorts", "pairs_checked", "failures", "reason")
+    }
+    body["verdict"] = {
+        "verdict": ac.AXIS_CONSTRUCTED,
+        "reason": (
+            "the fragment-damage axis, contradiction set, and two group-disjoint "
+            "confirmation slots are frozen; model damage was not measured"
+        ),
+    }
+    return body
+
+
+def run_protein_cell_b(args: argparse.Namespace) -> dict[str, Any]:
+    """D3.j-B or D3.j-C: construct the axis or confirm it on an independent cohort."""
+
+    if is_variant_c(args):
+        if args.b_stage == ac.B_STAGE_CONSTRUCT:
+            return run_c_construct(args)
+        return run_c_confirm(args)
     if args.b_stage == ac.B_STAGE_CONSTRUCT:
         return run_b_construct(args)
     return run_b_confirm(args)
 
 
-def run_b_confirm(args: argparse.Namespace) -> dict[str, Any]:
+def run_c_confirm(args: argparse.Namespace) -> dict[str, Any]:
+    construction = _load_construction_artefact(
+        args.construction_artefact,
+        experiment=ac.EXPERIMENT_C,
+        schema_version=SCHEMA_VERSION_C,
+    )
+    slot = _select_frozen_c_confirmation_slot(args, construction)
+    spec = PANEL[args.arm]
+    cohort = _cohort_from_c_slot(args, spec, slot)
+    return run_b_confirm(
+        args,
+        experiment=ac.EXPERIMENT_C,
+        schema_version=SCHEMA_VERSION_C,
+        frozen_cohort=cohort,
+        frozen_slot=slot,
+    )
+
+
+def run_b_confirm(
+    args: argparse.Namespace,
+    *,
+    experiment: str = ac.EXPERIMENT_B,
+    schema_version: str = SCHEMA_VERSION_B,
+    frozen_cohort: arms.Cohort | None = None,
+    frozen_slot: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     started = time.time()
     spec = PANEL[args.arm]
-    construction = _load_construction_artefact(args.construction_artefact)
-    slot = _select_frozen_confirmation_slot(args, construction)
+    construction = _load_construction_artefact(
+        args.construction_artefact,
+        experiment=experiment,
+        schema_version=schema_version,
+    )
+    if frozen_cohort is None:
+        slot = _select_frozen_confirmation_slot(args, construction)
+        state = _b_scoring_state(args, spec)
+    else:
+        slot = frozen_slot if frozen_slot is not None else _select_frozen_c_confirmation_slot(
+            args, construction
+        )
+        state = _b_scoring_state(args, spec, cohort=frozen_cohort)
     destination = args.out / artefact_name(
         "protein_cell", args.arm, args.seed,
-        variant=f"{ac.EXPERIMENT_B}-confirm{args.confirmation_index}",
+        variant=f"{experiment}-confirm{args.confirmation_index}",
     )
     if Path(args.construction_artefact).resolve() == destination.resolve():
         raise ValueError("the construction artefact cannot also be the confirmation output")
@@ -2161,7 +2518,9 @@ def run_b_confirm(args: argparse.Namespace) -> dict[str, Any]:
         "confirmation_slot": {
             "index": int(slot["index"]),
             "seed": int(slot["seed"]),
-            "skip": int(slot["skip"]),
+            **({"skip": int(slot["skip"])} if "skip" in slot else {
+                "source_positions": list(slot.get("source_positions", [])),
+            }),
             "digest": slot["digest"],
             "provenance_digest": slot["provenance_digest"],
         },
@@ -2638,19 +2997,20 @@ def main() -> None:
     modality = PANEL[args.arm].modality
     kind = "protein_cell" if modality == "protein" else "text_control"
     variant = None
-    if modality == "protein" and is_variant_b(args):
+    if modality == "protein" and (is_variant_b(args) or is_variant_c(args)):
         body = run_protein_cell_b(args)
+        experiment = ac.EXPERIMENT_C if is_variant_c(args) else ac.EXPERIMENT_B
         if args.b_stage == ac.B_STAGE_CONSTRUCT:
             kind = ac.KIND_AXIS_CONSTRUCTION
-            variant = f"{ac.EXPERIMENT_B}-construct"
+            variant = f"{experiment}-construct"
         else:
-            variant = f"{ac.EXPERIMENT_B}-confirm{args.confirmation_index}"
+            variant = f"{experiment}-confirm{args.confirmation_index}"
     elif modality == "protein":
         body = run_protein_cell(args)
     else:
         body = run_text_control(args)
     payload = {**base_payload(args, kind=kind), **body}
-    if is_variant_b(args):
+    if is_variant_b(args) or is_variant_c(args):
         extra = {
             "src/transfer/crossed_group_interval.py": sha256_file(
                 REPO_ROOT / "src/transfer/crossed_group_interval.py"

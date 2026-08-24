@@ -177,11 +177,25 @@ import numpy as np
 import torch
 from scipy import stats
 
-from .arms import AA20, Arm
+from .arms import (
+    AA20,
+    Arm,
+    Cohort,
+    eligible_protein_population,
+    group_disjoint_sampling_record,
+    protein_cohort_from_records,
+)
 from .io import sha256_file
 from .concept_lens import PROPERTY_BASIS
 from .kmer_background import ALPHABET as KMER_ALPHABET, KmerBackground
-from .near_duplicates import near_duplicate_groups
+from .near_duplicates import (
+    GROUP_DISJOINT_FILL_ALGORITHM,
+    GROUP_DISJOINT_FILL_VERSION,
+    NEAR_DUPLICATE_CONTAINMENT,
+    RESIDUE_SHINGLE,
+    fill_group_disjoint_slots,
+    near_duplicate_groups,
+)
 from .statistics import (
     MINIMUM_BOOTSTRAP_UNITS,
     bootstrap_unit_floor,
@@ -199,6 +213,11 @@ PRE_REGISTRATION_TRACK = "D3.j variant (a), embedding substitution"
 #: default, must not write these names into an A artefact.
 PRE_REGISTRATION_TRACK_B = "D3.j-B, fragment-substitution-damage admission axis"
 EXPERIMENT_B = "D3.j-B"
+PRE_REGISTRATION_TRACK_C = "D3.j-C, group-disjoint confirmation slots"
+EXPERIMENT_C = "D3.j-C"
+GROUP_DISJOINT_ALGORITHM = GROUP_DISJOINT_FILL_ALGORITHM
+GROUP_DISJOINT_ALGORITHM_VERSION = GROUP_DISJOINT_FILL_VERSION
+C_SLOT_NAMES = ("construction", "confirm1", "confirm2")
 B_STAGE_CONSTRUCT = "construct"
 B_STAGE_CONFIRM = "confirm"
 B_STAGES = (B_STAGE_CONSTRUCT, B_STAGE_CONFIRM)
@@ -2433,6 +2452,76 @@ def cohorts_independent(
         "n_shared_near_duplicate_groups": len(shared_groups),
         "construction_grouping": grouping,
     }
+
+
+def build_group_disjoint_protein_cohorts(
+    n_per_slot: int,
+    min_len: int,
+    max_len: int,
+    *,
+    seed: int,
+    name: str,
+    with_ec: bool,
+    slot_names: Sequence[str] = C_SLOT_NAMES,
+) -> tuple[list[Cohort], dict[str, Any]]:
+    """Scan one seeded permutation and fill construction then confirmation slots.
+
+    The permutation is the same object ``protein_cohort`` uses. Later slots
+    refuse exact identity and 5-mer containment against every earlier slot.
+    Near-duplicates inside a slot stay; they are bootstrap groups. The eligible
+    corpus failing to fill every slot is a hard error, not a VOID.
+    """
+
+    population, labels, corpus = eligible_protein_population(
+        min_len, max_len, with_ec=with_ec
+    )
+    order = [int(index) for index in np.random.default_rng(int(seed)).permutation(len(population))]
+    stream = [population[index] for index in order]
+    stream_labels = None if labels is None else [labels[index] for index in order]
+    fill = fill_group_disjoint_slots(
+        stream,
+        slot_sizes=tuple(int(n_per_slot) for _ in slot_names),
+        slot_names=slot_names,
+        source_positions=order,
+        labels=stream_labels,
+        containment=NEAR_DUPLICATE_CONTAINMENT,
+        shingle=RESIDUE_SHINGLE,
+        unit="residues",
+        algorithm=GROUP_DISJOINT_ALGORITHM,
+        version=GROUP_DISJOINT_ALGORITHM_VERSION,
+    )
+    cohorts: list[Cohort] = []
+    for slot in fill.slots:
+        sampling = group_disjoint_sampling_record(
+            seed=int(seed),
+            requested=int(n_per_slot),
+            eligible=len(population),
+            corpus=corpus,
+            algorithm=fill.algorithm,
+            algorithm_version=fill.version,
+            containment_threshold=fill.containment_threshold,
+            shingle_length=fill.shingle_length,
+            slot=slot.name,
+            source_positions=slot.source_positions,
+        )
+        cohorts.append(
+            protein_cohort_from_records(
+                slot.records,
+                min_len,
+                max_len,
+                name=name,
+                sampling=sampling,
+                labels=None if slot.labels is None else list(slot.labels),
+            )
+        )
+    summary = {
+        **fill.record(),
+        "seed": int(seed),
+        "corpus": corpus,
+        "n_per_slot": int(n_per_slot),
+        "slot_names": list(slot_names),
+    }
+    return cohorts, summary
 
 
 def pairwise_cohorts_independent(
