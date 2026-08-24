@@ -16808,3 +16808,33 @@ For a token-unit family stage 21's sidecar said `n_symbols_is: "a scored token"`
 ### Limitations
 
 The construction limitations of §5.08(g) are untouched: the null family is a deterministic re-expression of two existing draw streams, L40 makes its protein component a lower bound, and a pass under this criterion remains a statement about a cohort and an evaluation interface. One reservation is this campaign's own and was declared before the numbers existed. **The null control's true value is zero in expectation over its borrowed reference, not conditionally on it** — the bootstrap resamples the block's own reference and not the borrowed one, so the standard error omits one of the two sources that scatter the control's true value. The reference's measured 0.50 mean share of the interval variance bounds that omission, and it runs in the direction that makes the corrected rule's measured rate optimistic rather than conservative. Removing it would mean resampling the control's borrowed reference too, which is a change to the instrument and not to the criterion. Resolution is unchanged from EXP-R2-219: over 56 distinct measurements a rate below roughly 1/56 is unresolvable on this panel.
+
+## 2026-08-24 — EXP-R2-222: D3.j-A reconciled; D3.j-B frozen before an independent two-confirmation campaign
+
+**Taking `EXP-R2-222`, the next free identifier. No D3.j-B model-damage result exists at registration time.** Four independent `openai-codex/gpt-5.6-sol` xhigh audits covered capability gaps, existing interpretability methods, biological-knowledge identification, and H200 readiness. The selected experiment is the smallest proposed campaign that directly repairs an identified Objective-3 defect: D3.j-A's context-profile admission axis and its fragment-damage ceiling are not the same quantity, so the result is one-sided where §7.0 required a two-sided contradiction.
+
+### Reconciliation of the existing D3.j-A campaign
+
+Run `20260819141512_05734337be45`, pinned at `ff8065b`, is complete rather than in flight. Seven local JSONs were checked against their GPFS counterparts and all seven SHA-256 digests match. Every runner and module digest recorded in the artefacts matches the named commit, and the order-1 through order-7 UniRef50 count digests match `data/kmer_background/uniref50_high_order/manifest.json`.
+
+The ByGPT5 control passed at 4,096 records. `progen2-small`, `progen2-base`, `progen2-medium`, and `zymctrl` each completed 4,096-record cells and returned the stage's `CHEMISTRY` verdict; `gpt2-large` and `protgpt2` were correctly refused at measured single-symbol coverage 0.00537 and 0.00552. The four completed protein cells cost 6,768.6, 28,583.0, 28,761.6, and 28,015.5 seconds respectively. These are completed instrument readings, not confirmatory evidence: pair admission used 3-mer context-profile cosine, the fragment ceiling did not order that axis, and the interval resampled substituted symbols but not the Swiss-Prot cohort draw. No Objective-3 progress claim moves.
+
+### Frozen successor
+
+The complete plan is `docs/D3J_B_CONFIRMATION_PREREGISTRATION.md`. D3.j-B uses order-7 fragment-conditional substitution damage as both the frozen opposing axis and the matching ceiling, with the two directions combined by their arithmetic mean. One 4,096-record construction draw freezes the axis and pair membership. At construction time the stage also freezes two further 4,096-record confirmation slots and requires all three cohorts to be pairwise exact-content- and 5-mer-near-duplicate-disjoint. Confirmations cannot choose another seed or skip and cannot recompute quantiles.
+
+The model and ceiling retain per-record numerator/count statistics. Two thousand draws jointly resample near-duplicate sequence groups and substituted-symbol groups while keeping model and ceiling paired. The final verdict reads this crossed interval; the prior symbol-only interval remains a non-deciding compatibility diagnostic. A positive campaign requires both independent confirmations to return `CHEMISTRY`; a split verdict is draw dependence and is not pooled away.
+
+Primary protein arms are ProGen2 small/base/medium and ZymCTRL. Two independent ByGPT5-medium controls gate confirmation indices 1 and 2. The intended four-card schedule is: axis construction and text-control gates, all four confirmation-1 cells in parallel, then all four confirmation-2 cells in parallel. The campaign stops on a failed control, construction refusal, digest mismatch, inadequate effective units, or a matching ceiling that is not negative on the confirmation cohort.
+
+### Implementation and operational gate
+
+Scientific implementation is in commits `b550e62`, `c7b4bbc`, and `60bebe1`. H200 exact-artifact admission, atomic digest sidecars, stage-37 resource declarations, bounded 24-hour execution, and mandatory pre/post resource snapshots are in `1001a20` and `edde060`. The code was implemented by two `xai/grok-4.6` xhigh sub-agents in disjoint worktrees and reviewed before integration. Full merged tests and a real local construction smoke are running at the time of this entry; their terminal outcomes must be appended before any H200 dispatch.
+
+The resource probe before implementation ended `Health=ok`. The selected allocation exposed four idle H200 cards; cluster-wide 16/16 allocation was not treated as availability. No pod name is recorded here or in a manifest. No H200 measurement has been launched under this identifier yet.
+
+### Pre-dispatch verification
+
+Merged validation passed **332 tests and 53 subtests** in 245.46 seconds. The focused science set passed 144 tests with 6 data-dependent skips before integration, and the H200 orchestration and stage-contract set passed 182 tests independently. Shell syntax, Python compilation, `git diff --check`, Markdown diagnostics on the new pre-registration, and blocking session diagnostics passed.
+
+The first real Compute smoke refused before model load because the host model-root variable was unset; this was an environment-path failure, not a measurement. Re-run with the validated local model root and `progen2-small`, 48 Swiss-Prot records, order-7 axis, seed 20260824, and 2,000 requested bootstrap draws returned `AXIS_CONSTRUCTED`. It measured 1.000 single-symbol coverage and all 190 unordered residue pairs, admitted 22/25 pairs at the tercile cut and 11/15 at the quartile cut, correctly refused the quintile at 6/8 against the eight-pair floor, gave matching-ceiling Delta −0.18050, and certified all three 48-record cohorts pairwise independent. This smoke validates the real checkpoint, tokenizer, data, 10 GB order-7 background, frozen-slot, and atomic-output interfaces; it is not a model-damage result and is retained only under `/tmp`.
