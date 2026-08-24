@@ -2155,6 +2155,19 @@ class CampaignQueueExactExpectTests(unittest.TestCase):
             self.assertIn("expect score.json", result.stdout)
             self.assertNotIn("*.json", result.stdout)
 
+    def test_dependent_cell_paths_use_literal_bounded_substitutions(self):
+        source = QUEUE.read_text(encoding="utf-8")
+        for variable in (
+            "TRANSFER_MODEL_BASE_DIR",
+            "TRANSFER_KMER_BACKGROUND_DIR",
+            "TRANSFER_HIGH_ORDER_BACKGROUND_DIR",
+            "TRANSFER_RESULTS_RUN_DIR",
+        ):
+            self.assertIn(f"'${{{variable}}}'", source)
+        launch = source[source.index("launch_cell()") : source.index("# ------------------------------------------------------------------ the queue")]
+        self.assertNotIn("eval ", launch)
+        self.assertIn('results_run_dir="$(dirname "${out_dir}")"', launch)
+
 
 class HostSnapshotAndTimeoutTests(unittest.TestCase):
     def test_resource_snapshot_trap_writes_post_state(self):

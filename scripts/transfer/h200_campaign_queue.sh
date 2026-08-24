@@ -142,9 +142,12 @@ set -euo pipefail
 #          injects both, and a second spelling of either is a second
 #          declaration of where the run went.
 #
-# The literal token ${TRANSFER_MODEL_BASE_DIR} in `args` is substituted in-pod
-# after h200_env.sh is sourced. That keeps the model root declared once, in
-# h200_env.sh, rather than copied into a manifest (Single-Source Principle).
+# Four literal tokens in `args` are substituted in-pod after h200_env.sh is
+# sourced: ${TRANSFER_MODEL_BASE_DIR}, ${TRANSFER_KMER_BACKGROUND_DIR},
+# ${TRANSFER_HIGH_ORDER_BACKGROUND_DIR}, and ${TRANSFER_RESULTS_RUN_DIR}. The
+# last names the current snapshot's results run directory, so a later slot can
+# consume an exact artefact from an earlier slot without hard-coding the run id.
+# This keeps resource and output roots declared once (Single-Source Principle).
 # No other expansion happens: the args field is not eval'd.
 #
 # ------------------------------------------------------------ Status file
@@ -523,7 +526,8 @@ gpu_is_busy() {
 launch_cell() {
   local i="$1"
   local snapshot="${SNAPSHOT_FOR[${C_KEY[$i]}]}"
-  local out_dir="${C_OUT[$i]}" pod_log="${C_LOG[$i]}"
+  local out_dir="${C_OUT[$i]}" pod_log="${C_LOG[$i]}" results_run_dir
+  results_run_dir="$(dirname "${out_dir}")"
   mkdir -p "${out_dir}" "$(dirname "${pod_log}")"
   (
     set -euo pipefail
@@ -539,10 +543,12 @@ launch_cell() {
       read -r -a cell_env <<< "${C_ENV[$i]}"
       export "${cell_env[@]}"
     fi
-    # The one substitution this runner performs, so the model root stays
-    # declared in h200_env.sh alone. The pattern is single-quoted, so it is a
-    # literal and the args field is never eval'd.
+    # These are literal substitutions, never eval. Resource roots stay in
+    # h200_env.sh, while the run directory is derived from this cell's output.
     local expanded="${C_ARGS[$i]//'${TRANSFER_MODEL_BASE_DIR}'/${TRANSFER_MODEL_BASE_DIR}}"
+    expanded="${expanded//'${TRANSFER_KMER_BACKGROUND_DIR}'/${TRANSFER_KMER_BACKGROUND_DIR}}"
+    expanded="${expanded//'${TRANSFER_HIGH_ORDER_BACKGROUND_DIR}'/${TRANSFER_HIGH_ORDER_BACKGROUND_DIR}}"
+    expanded="${expanded//'${TRANSFER_RESULTS_RUN_DIR}'/${results_run_dir}}"
     local -a argv=()
     read -r -a argv <<< "${expanded}"
     cd "${snapshot}"
