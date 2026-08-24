@@ -55,6 +55,7 @@ measures, with the last being the null that must not fire.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -518,6 +519,11 @@ def resolve(args: argparse.Namespace) -> None:
                     "confirm needs --confirmation-index 1 or 2, the two independent "
                     "evaluation draws named by the construction artefact"
                 )
+            if args.cohort_skip is not None:
+                raise ValueError(
+                    "confirmation cannot override --cohort-skip; skip and seed are "
+                    "frozen on the construction slot"
+                )
     elif args.fragment_axis_order is not None or any(
         getattr(args, flag, None) is not None
         for flag in ("b_stage", "construction_artefact", "confirmation_index", "cohort_skip")
@@ -922,6 +928,40 @@ def matrix_record(matrix: np.ndarray | None) -> list[list[float]] | None:
     if matrix is None:
         return None
     return [[float(value) for value in row] for row in matrix]
+
+
+def _matrix_record_missing(matrix: np.ndarray) -> list[list[float | None]]:
+    return [
+        [None if not np.isfinite(value) else float(value) for value in row]
+        for row in matrix
+    ]
+
+
+def _matrix_from_record(record: Sequence[Sequence[Any]]) -> np.ndarray:
+    return np.asarray(
+        [[np.nan if cell is None else float(cell) for cell in row] for row in record],
+        dtype=np.float64,
+    )
+
+
+def _content_hashes(records: Sequence[str]) -> list[str]:
+    return [hashlib.sha256(record.encode("utf-8")).hexdigest() for record in records]
+
+
+def _frozen_distance_and_observed(
+    construction: Mapping[str, Any],
+) -> tuple[np.ndarray, np.ndarray]:
+    matrices = construction["axes"]["matrices"]
+    distance = _matrix_from_record(matrices["distributional_fragment_damage"])
+    stored = matrices.get("distributional_observed")
+    observed = ac.observed_mask_from_frozen_axis(
+        distance,
+        n_covered_unordered=construction["axes"]["distributional"].get(
+            "n_covered_unordered_pairs"
+        ),
+        stored_observed=None if stored is None else np.asarray(stored, dtype=bool),
+    )
+    return distance, observed
 
 
 def artefact_name(kind: str, arm: str, seed: int, *, variant: str | None = None) -> str:
@@ -1845,21 +1885,59 @@ def _load_construction_artefact(path: Path) -> dict[str, Any]:
     return payload
 
 
-def _apply_confirmation_skip(args: argparse.Namespace, construction: Mapping[str, Any]) -> None:
-    sampling = construction.get("cohort", {}).get("sampling", {})
-    construction_skip = int(sampling.get("skip", 0) or 0)
-    n_records = int(construction["cohort"]["n_records"])
-    default_skip = construction_skip + n_records * int(args.confirmation_index)
-    if args.cohort_skip is None:
-        args.cohort_skip = default_skip
-    if (
-        int(args.cohort_skip) == construction_skip
-        and int(args.cohort_draw_seed) == int(sampling.get("seed", args.cohort_draw_seed))
-    ):
+def _protein_cohort_at_skip(
+    args: argparse.Namespace, spec: arms.ArmSpec, *, skip: int, seed: int
+) -> arms.Cohort:
+    low, high = QUALIFYING_PROTEIN_BAND
+    return arms.protein_cohort(
+        args.records,
+        low,
+        high,
+        name=spec.evaluation_cohort_source,
+        with_ec=spec.evaluation_cohort_source == "zymctrl_ec",
+        seed=int(seed),
+        skip=int(skip),
+    )
+
+
+def _slot_record(cohort: arms.Cohort, *, index: int, seed: int, skip: int) -> dict[str, Any]:
+    return {
+        "index": int(index),
+        "seed": int(seed),
+        "skip": int(skip),
+        "digest": cohort.digest,
+        "provenance_digest": cohort.provenance_digest,
+        "n_records": len(cohort.records),
+        "records": list(cohort.records),
+        "content_hashes": _content_hashes(cohort.records),
+        "sampling": cohort.sampling,
+    }
+
+
+def _select_frozen_confirmation_slot(
+    args: argparse.Namespace, construction: Mapping[str, Any]
+) -> dict[str, Any]:
+    slots = construction.get("evaluation_protocol", {}).get("slots")
+    if not isinstance(slots, dict):
+        raise ValueError("construction artefact has no frozen confirmation slots")
+    key = str(int(args.confirmation_index))
+    if key not in slots:
         raise ValueError(
-            "confirmation skip and draw seed match the construction draw; the same "
-            "cohort cannot serve both roles"
+            f"confirmation index {key} is not a frozen slot; declared: {sorted(slots)}"
         )
+    slot = slots[key]
+    if args.cohort_skip is not None:
+        raise ValueError(
+            "confirmation cannot override --cohort-skip; the slot is frozen"
+        )
+    if int(args.cohort_draw_seed) != int(slot["seed"]):
+        raise ValueError(
+            f"confirmation seed {args.cohort_draw_seed} does not match frozen "
+            f"slot seed {slot['seed']}"
+        )
+    args.cohort_skip = int(slot["skip"])
+    args.cohort_draw_seed = int(slot["seed"])
+    return slot
 
 
 def run_b_construct(args: argparse.Namespace) -> dict[str, Any]:
@@ -1885,9 +1963,7 @@ def run_b_construct(args: argparse.Namespace) -> dict[str, Any]:
         "evaluation_protocol": {
             "n_confirmations": len(ac.B_CONFIRMATION_INDICES),
             "confirmation_indices": list(ac.B_CONFIRMATION_INDICES),
-            "default_confirmation_skip": (
-                "construction_skip + construction_records * confirmation_index"
-            ),
+            "skip_rule": "construction_skip + construction_records * confirmation_index",
         },
     }
     if not state["admission"]["admitted"]:
@@ -1917,7 +1993,10 @@ def run_b_construct(args: argparse.Namespace) -> dict[str, Any]:
         "distributional": axis["axis_record"],
         "matrices": {
             "chemical": matrix_record(chemical.distance),
-            "distributional_fragment_damage": matrix_record(axis["distributional"]),
+            "distributional_fragment_damage": _matrix_record_missing(axis["distributional"]),
+            "distributional_observed": [
+                [int(flag) for flag in row] for row in axis["observed"]
+            ],
         },
     }
     body["contradiction_set"] = {
@@ -1959,11 +2038,39 @@ def run_b_construct(args: argparse.Namespace) -> dict[str, Any]:
             "detail": construction["detail"],
         }
         return body
+    construct_sampling = state["cohort"].sampling
+    construct_seed = int(construct_sampling["seed"])
+    construct_skip = int(construct_sampling.get("skip", 0) or 0)
+    n_records = len(state["cohort"].records)
+    slots: dict[str, Any] = {}
+    named = {"construction": list(state["cohort"].records)}
+    for index in ac.B_CONFIRMATION_INDICES:
+        slot_skip = construct_skip + n_records * int(index)
+        slot_cohort = _protein_cohort_at_skip(
+            args, spec, skip=slot_skip, seed=construct_seed
+        )
+        slots[str(index)] = _slot_record(
+            slot_cohort, index=int(index), seed=construct_seed, skip=slot_skip
+        )
+        named[f"confirm{index}"] = list(slot_cohort.records)
+    independence = ac.pairwise_cohorts_independent(named)
+    body["evaluation_protocol"]["slots"] = slots
+    body["evaluation_protocol"]["three_way_independence"] = {
+        key: independence[key]
+        for key in ("independent", "n_cohorts", "pairs_checked", "failures", "reason")
+    }
+    if not independence["independent"]:
+        body["verdict"] = {
+            "verdict": "VOID",
+            "reason": ac.THREE_WAY_COHORTS_NOT_INDEPENDENT,
+            "detail": independence["failures"],
+        }
+        return body
     body["verdict"] = {
         "verdict": ac.AXIS_CONSTRUCTED,
         "reason": (
-            "the fragment-damage axis and contradiction set are frozen on this "
-            "construction draw; model damage was not measured"
+            "the fragment-damage axis, contradiction set, and two confirmation "
+            "slots are frozen; model damage was not measured"
         ),
     }
     return body
@@ -1981,7 +2088,7 @@ def run_b_confirm(args: argparse.Namespace) -> dict[str, Any]:
     started = time.time()
     spec = PANEL[args.arm]
     construction = _load_construction_artefact(args.construction_artefact)
-    _apply_confirmation_skip(args, construction)
+    slot = _select_frozen_confirmation_slot(args, construction)
     destination = args.out / artefact_name(
         "protein_cell", args.arm, args.seed,
         variant=f"{ac.EXPERIMENT_B}-confirm{args.confirmation_index}",
@@ -2016,6 +2123,15 @@ def run_b_confirm(args: argparse.Namespace) -> dict[str, Any]:
     )
     blosum = ac.blosum62_distance(labels)
     state = _b_scoring_state(args, spec)
+    if state["cohort"].digest != slot["digest"]:
+        raise ValueError(
+            f"confirmation cohort digest {state['cohort'].digest} does not match "
+            f"frozen slot {slot['digest']}"
+        )
+    if state["cohort"].provenance_digest != slot["provenance_digest"]:
+        raise ValueError(
+            "confirmation cohort provenance does not match the frozen slot"
+        )
     if state["identity"] != construction["tokenizer_identity"]:
         raise ValueError(
             "confirmation tokenizer/rendering identity does not match construction: "
@@ -2042,6 +2158,13 @@ def run_b_confirm(args: argparse.Namespace) -> dict[str, Any]:
     body: dict[str, Any] = {
         "role": ac.B_STAGE_CONFIRM,
         "confirmation_index": int(args.confirmation_index),
+        "confirmation_slot": {
+            "index": int(slot["index"]),
+            "seed": int(slot["seed"]),
+            "skip": int(slot["skip"]),
+            "digest": slot["digest"],
+            "provenance_digest": slot["provenance_digest"],
+        },
         "construction": {
             "path": str(args.construction_artefact),
             "sha256": sha256_file(Path(args.construction_artefact)),
@@ -2082,9 +2205,7 @@ def run_b_confirm(args: argparse.Namespace) -> dict[str, Any]:
     fragment = ac.FragmentConditional(ordered[axis_order])
     directed = _directed_fragment_stats(fragment, runs_by_record, alphabet)
     frozen_axis = construction["axes"]["distributional"]
-    distributional = np.asarray(
-        construction["axes"]["matrices"]["distributional_fragment_damage"], dtype=np.float64
-    )
+    distributional, observed = _frozen_distance_and_observed(construction)
     axis_record = {
         **frozen_axis,
         "reused_from_construction": True,

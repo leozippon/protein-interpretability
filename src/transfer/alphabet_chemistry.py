@@ -206,6 +206,7 @@ B_CONFIRMATION_INDICES = (1, 2)
 KIND_AXIS_CONSTRUCTION = "axis_construction"
 AXIS_CONSTRUCTED = "AXIS_CONSTRUCTED"
 CROSSED_INTERVAL_REFUSED = "CROSSED_INTERVAL_REFUSED"
+THREE_WAY_COHORTS_NOT_INDEPENDENT = "THREE_WAY_COHORTS_NOT_INDEPENDENT"
 PROTEIN_AXIS_CONTEXT_PROFILE = "context_profile"
 PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE = "fragment_substitution_damage"
 PROTEIN_AXES = (
@@ -2434,6 +2435,66 @@ def cohorts_independent(
     }
 
 
+def pairwise_cohorts_independent(
+    named_records: Mapping[str, Sequence[str]],
+) -> dict[str, Any]:
+    """Exact-content and near-duplicate disjointness of every named pair."""
+
+    names = list(named_records)
+    if len(names) < 2:
+        raise ValueError("pairwise independence needs at least two named cohorts")
+    failures: list[dict[str, Any]] = []
+    for left_index, left in enumerate(names):
+        for right in names[left_index + 1 :]:
+            check = cohorts_independent(named_records[left], named_records[right])
+            if not check["independent"]:
+                failures.append({"left": left, "right": right, **{
+                    key: check[key] for key in (
+                        "reason", "n_shared_records", "n_shared_near_duplicate_groups"
+                    )
+                }})
+    return {
+        "independent": not failures,
+        "n_cohorts": len(names),
+        "pairs_checked": len(names) * (len(names) - 1) // 2,
+        "failures": failures,
+        "reason": None if not failures else THREE_WAY_COHORTS_NOT_INDEPENDENT,
+    }
+
+
+def observed_mask_from_frozen_axis(
+    distance: np.ndarray, *,
+    n_covered_unordered: int | None = None,
+    stored_observed: np.ndarray | None = None,
+) -> np.ndarray:
+    """Rebuild the covered-pair mask from a frozen construction matrix."""
+
+    matrix = np.asarray(distance, dtype=np.float64)
+    if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
+        raise ValueError("frozen fragment-damage matrix must be square")
+    if stored_observed is not None:
+        observed = np.asarray(stored_observed, dtype=bool)
+        if observed.shape != matrix.shape:
+            raise ValueError(
+                f"frozen observed mask has shape {observed.shape}, not {matrix.shape}"
+            )
+    else:
+        if np.isinf(matrix).any():
+            raise ValueError("frozen fragment-damage matrix contains infinities")
+        observed = np.isfinite(matrix)
+        np.fill_diagonal(observed, True)
+    if not np.array_equal(observed, observed.T):
+        raise ValueError("frozen observed mask is not symmetric")
+    rows, columns = _unordered(matrix.shape[0])
+    n_covered = int(observed[rows, columns].sum())
+    if n_covered_unordered is not None and n_covered != int(n_covered_unordered):
+        raise ValueError(
+            f"frozen observed mask covers {n_covered} unordered pairs, "
+            f"construction recorded {n_covered_unordered}"
+        )
+    return observed
+
+
 def frozen_pair_set(
     members: Mapping[str, Sequence[str]], labels: Sequence[str]
 ) -> PairSet:
@@ -2919,7 +2980,10 @@ __all__ = [
     "B_STAGES",
     "CEILING_CONSTRUCTION_VOID",
     "CROSSED_INTERVAL_REFUSED",
+    "THREE_WAY_COHORTS_NOT_INDEPENDENT",
     "EXPERIMENT_B",
+    "observed_mask_from_frozen_axis",
+    "pairwise_cohorts_independent",
     "FRAGMENT_AXIS_SYMMETRIZATION",
     "KIND_AXIS_CONSTRUCTION",
     "PRE_REGISTRATION_TRACK_B",

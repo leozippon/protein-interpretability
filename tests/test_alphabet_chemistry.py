@@ -1332,18 +1332,28 @@ def test_same_or_near_duplicate_cohorts_are_not_independent():
     assert far["independent"] is True
 
 
-def test_confirmation_skip_defaults_away_from_the_construction_draw():
-    args = _args(
-        confirmation_index=1, cohort_draw_seed=7, cohort_skip=None,
-    )
+def test_confirmation_uses_the_frozen_slot_and_rejects_overrides():
     construction = {
-        "cohort": {"n_records": 10, "sampling": {"skip": 0, "seed": 7}}
+        "evaluation_protocol": {
+            "slots": {
+                "1": {"index": 1, "seed": 7, "skip": 10, "digest": "d1", "provenance_digest": "p1"},
+                "2": {"index": 2, "seed": 7, "skip": 20, "digest": "d2", "provenance_digest": "p2"},
+            }
+        }
     }
-    STAGE._apply_confirmation_skip(args, construction)
+    args = _args(confirmation_index=1, cohort_draw_seed=7, cohort_skip=None)
+    slot = STAGE._select_frozen_confirmation_slot(args, construction)
+    assert slot["skip"] == 10
     assert args.cohort_skip == 10
-    args.cohort_skip = 0
-    with pytest.raises(ValueError, match="same cohort cannot serve both roles"):
-        STAGE._apply_confirmation_skip(args, construction)
+    args = _args(confirmation_index=1, cohort_draw_seed=7, cohort_skip=99)
+    with pytest.raises(ValueError, match="cannot override --cohort-skip"):
+        STAGE._select_frozen_confirmation_slot(args, construction)
+    args = _args(confirmation_index=1, cohort_draw_seed=8, cohort_skip=None)
+    with pytest.raises(ValueError, match="does not match frozen"):
+        STAGE._select_frozen_confirmation_slot(args, construction)
+    args = _args(confirmation_index=3, cohort_draw_seed=7, cohort_skip=None)
+    with pytest.raises(ValueError, match="not a frozen slot"):
+        STAGE._select_frozen_confirmation_slot(args, construction)
 
 
 def test_frozen_pair_membership_does_not_recompute_quantiles():
@@ -1367,3 +1377,245 @@ def test_frozen_pair_membership_does_not_recompute_quantiles():
     assert members[ac.QUADRANTS[0]] != live_tokens[ac.QUADRANTS[0]] or members[
         ac.QUADRANTS[1]
     ] != live_tokens[ac.QUADRANTS[1]]
+
+
+def test_confirm_resolve_rejects_a_skip_override():
+    args = _args(
+        arm="progen2-small", cut="tercile", max_pairs=40, null_draws=200, seed=1,
+        reachability_pairs=4, reachability_margin=0.0, random_directions=8,
+        ceiling_factor=2.0, records=8, max_tokens=64, min_symbol_occurrences=10,
+        kmer_background=Path("x"), high_order_background=Path("y"),
+        text_control=Path("z"), ceiling_orders="1,3,5", fragment_axis_order=5,
+        protein_axis=ac.PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE,
+        b_stage=ac.B_STAGE_CONFIRM, construction_artefact=Path("frozen.json"),
+        confirmation_index=1, cohort_skip=10,
+    )
+    with pytest.raises(ValueError, match="cannot override --cohort-skip"):
+        STAGE.resolve(args)
+
+
+def test_three_way_admission_and_confirm1_confirm2_overlap():
+    construct = ["ACDEFGHIKLMNPQRSTVWY" * 2]
+    confirm1 = ["LLLLLLLLLLLLLLLLLLLL" * 2]
+    confirm2 = ["WWWWWWWWWWWWWWWWWWWW" * 2]
+    ok = ac.pairwise_cohorts_independent(
+        {"construction": construct, "confirm1": confirm1, "confirm2": confirm2}
+    )
+    assert ok["independent"] is True
+    assert ok["pairs_checked"] == 3
+    overlap = ac.pairwise_cohorts_independent(
+        {
+            "construction": construct,
+            "confirm1": ["ACDEFGHIKLMNPQRSTVWYAAAA"],
+            "confirm2": ["ACDEFGHIKLMNPQRSTVWYAAAV"],
+        }
+    )
+    assert overlap["independent"] is False
+    assert overlap["reason"] == ac.THREE_WAY_COHORTS_NOT_INDEPENDENT
+    pair = {(item["left"], item["right"]) for item in overlap["failures"]}
+    assert ("confirm1", "confirm2") in pair or ("confirm2", "confirm1") in pair
+
+
+def test_frozen_observed_mask_rejects_a_malformed_matrix():
+    distance = np.full((4, 4), np.nan, dtype=np.float64)
+    np.fill_diagonal(distance, 0.0)
+    distance[0, 1] = distance[1, 0] = 0.2
+    observed = ac.observed_mask_from_frozen_axis(distance, n_covered_unordered=1)
+    assert bool(observed[0, 1]) and not bool(observed[0, 2])
+    with pytest.raises(ValueError, match="covers"):
+        ac.observed_mask_from_frozen_axis(distance, n_covered_unordered=3)
+    bad = np.ones((4, 3))
+    with pytest.raises(ValueError, match="square"):
+        ac.observed_mask_from_frozen_axis(bad)
+
+
+def test_duplicate_confirmation_index_is_the_same_frozen_slot():
+    construction = {
+        "evaluation_protocol": {
+            "slots": {
+                "1": {"index": 1, "seed": 7, "skip": 10, "digest": "same", "provenance_digest": "p"},
+                "2": {"index": 2, "seed": 7, "skip": 20, "digest": "other", "provenance_digest": "q"},
+            }
+        }
+    }
+    first = STAGE._select_frozen_confirmation_slot(
+        _args(confirmation_index=1, cohort_draw_seed=7), construction
+    )
+    second = STAGE._select_frozen_confirmation_slot(
+        _args(confirmation_index=1, cohort_draw_seed=7), construction
+    )
+    assert first["digest"] == second["digest"] == "same"
+
+
+def test_confirmation_rejects_a_rebuilt_cohort_digest_mismatch(tmp_path, monkeypatch):
+    from src.transfer.io import write_json
+
+    payload = _construction_payload()
+    payload["evaluation_protocol"] = {
+        "slots": {
+            "1": {
+                "index": 1, "seed": 7, "skip": 10,
+                "digest": "expected", "provenance_digest": "prov",
+            }
+        }
+    }
+    artefact = tmp_path / "construct.json"
+    write_json(artefact, payload)
+
+    class _Cohort:
+        digest = "other"
+        provenance_digest = "prov"
+        records = ["W" * 40]
+        name = "eval"
+        sampling = {"skip": 10, "seed": 7}
+
+    monkeypatch.setattr(STAGE, "read_text_control", lambda path: {"verdict": "PASS"})
+    monkeypatch.setattr(
+        STAGE, "_b_scoring_state",
+        lambda args, spec: {
+            "arm": object(), "cohort": _Cohort(), "texts": [],
+            "alphabet": (), "coverage": {}, "admission": {"admitted": True, "reason": ""},
+            "scoring_batch": object(), "cohort_record": {}, "occurrences": {},
+            "occupancy": {}, "groups": np.zeros(1, dtype=int), "grouping": {},
+            "runs_by_record": [], "identity": payload["tokenizer_identity"],
+        },
+    )
+    monkeypatch.setattr(ac, "load_ordered_counts", lambda *a, **k: {5: type("O", (), {"sha256": "abc"})()})
+    args = _args(
+        arm="progen2-small", cut="tercile", max_pairs=40, null_draws=200, seed=1,
+        reachability_pairs=1, reachability_margin=0.0, random_directions=8,
+        ceiling_factor=2.0, records=8, max_tokens=64, min_symbol_occurrences=10,
+        kmer_background=Path("x"), high_order_background=Path("y"),
+        text_control=Path("z"), ceiling_orders="1,3,5", fragment_axis_order=5,
+        protein_axis=ac.PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE,
+        b_stage=ac.B_STAGE_CONFIRM, construction_artefact=artefact,
+        confirmation_index=1, cohort_draw_seed=7, out=tmp_path,
+    )
+    with pytest.raises(ValueError, match="does not match frozen slot"):
+        STAGE.run_b_confirm(args)
+
+
+def test_confirmation_rebuilds_observed_and_reaches_agreement(tmp_path, monkeypatch):
+    from src.transfer.io import write_json
+
+    chemical = ac.property_distance(
+        ac.chemical_property_table(list(AA20)), source="test"
+    )
+    distance = chemical.distance.copy()
+    observed = np.ones((20, 20), dtype=bool)
+    identity = {
+        "arm": "progen2-small",
+        "architecture": "progen",
+        "tokenisation": "residue",
+        "input_format": "progen2",
+        "vocab_size": 30,
+        "tokenizer_class": "Stub",
+        "max_tokens": 64,
+    }
+    payload = _construction_payload()
+    payload["tokenizer_identity"] = identity
+    payload["axes"]["matrices"] = {
+        "distributional_fragment_damage": [
+            [None if not np.isfinite(value) else float(value) for value in row]
+            for row in distance
+        ],
+        "distributional_observed": [[int(flag) for flag in row] for row in observed],
+    }
+    payload["axes"]["distributional"]["n_covered_unordered_pairs"] = 190
+    payload["axes"]["distributional"]["corpus"] = {"sha256": "abc", "order": 5}
+    payload["evaluation_protocol"] = {
+        "slots": {
+            "1": {
+                "index": 1, "seed": 7, "skip": 10,
+                "digest": "slot-digest", "provenance_digest": "slot-prov",
+            }
+        }
+    }
+    artefact = tmp_path / "construct.json"
+    write_json(artefact, payload)
+
+    class _Cohort:
+        digest = "slot-digest"
+        provenance_digest = "slot-prov"
+        records = ["W" * 40]
+        name = "eval"
+        sampling = {"skip": 10, "seed": 7}
+
+    class _Symbol:
+        def __init__(self, label, token_id):
+            self.label = label
+            self.token_id = token_id
+
+    stub_state = {
+        "arm": object(),
+        "cohort": _Cohort(),
+        "texts": ["W" * 40],
+        "alphabet": tuple(_Symbol(label, index) for index, label in enumerate(AA20)),
+        "coverage": {},
+        "admission": {"admitted": True, "reason": ""},
+        "scoring_batch": object(),
+        "cohort_record": {"n_records": 1},
+        "occurrences": {index: 8 for index in range(20)},
+        "occupancy": {},
+        "groups": np.zeros(1, dtype=int),
+        "grouping": {},
+        "runs_by_record": [["W" * 20]],
+        "identity": identity,
+    }
+
+    class _Ordered:
+        sha256 = "abc"
+
+        def record(self):
+            return {"sha256": "abc", "order": 5}
+
+    captured = {}
+    real_agreement = ac.agreement_extremes_observed
+
+    def wrapped(chem, dist, observed_mask, *, cut, count):
+        captured["observed"] = np.asarray(observed_mask)
+        result = real_agreement(chem, dist, observed_mask, cut=cut, count=count)
+        captured["result"] = result
+        raise RuntimeError("reached-agreement")
+
+    def fake_directed(model, runs, symbols):
+        out = {}
+        for x, source in enumerate(symbols):
+            for y, target in enumerate(symbols):
+                if x == y:
+                    continue
+                key = frozenset((source.label, target.label))
+                high = key in {frozenset("AC"), frozenset("AD")}
+                out[(x, y)] = {
+                    "measurable": True,
+                    "nats_per_scored_token": 0.8 if high else 0.1,
+                    "n_scored_tokens": 2,
+                    "per_record_nll_sum": np.array([0.2]),
+                    "per_record_n_scored": np.array([2]),
+                }
+        return out
+
+    monkeypatch.setattr(STAGE, "read_text_control", lambda path: {"verdict": "PASS"})
+    monkeypatch.setattr(STAGE, "_b_scoring_state", lambda args, spec: stub_state)
+    monkeypatch.setattr(ac, "load_ordered_counts", lambda *a, **k: {5: _Ordered()})
+    monkeypatch.setattr(STAGE, "_directed_fragment_stats", fake_directed)
+    monkeypatch.setattr(ac, "FragmentConditional", lambda *a, **k: object())
+    monkeypatch.setattr(ac, "ArmAlphabetModel", lambda arm: type("M", (), {"record": lambda self: {}, "weight": None})())
+    monkeypatch.setattr(ac, "DamageScorer", lambda *a, **k: object())
+    monkeypatch.setattr(ac, "intervention_invariants", lambda *a, **k: {})
+    monkeypatch.setattr(ac, "agreement_extremes_observed", wrapped)
+
+    args = _args(
+        arm="progen2-small", cut="tercile", max_pairs=40, null_draws=200, seed=1,
+        reachability_pairs=1, reachability_margin=0.0, random_directions=8,
+        ceiling_factor=2.0, records=8, max_tokens=64, min_symbol_occurrences=10,
+        kmer_background=Path("x"), high_order_background=Path("y"),
+        text_control=Path("z"), ceiling_orders="1,3,5", fragment_axis_order=5,
+        protein_axis=ac.PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE,
+        b_stage=ac.B_STAGE_CONFIRM, construction_artefact=artefact,
+        confirmation_index=1, cohort_draw_seed=7, out=tmp_path,
+    )
+    with pytest.raises(RuntimeError, match="reached-agreement"):
+        STAGE.run_b_confirm(args)
+    assert captured["observed"].shape == (20, 20)
+    assert bool(captured["observed"].all())
