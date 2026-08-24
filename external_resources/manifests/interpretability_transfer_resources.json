@@ -157,6 +157,20 @@
       "required_by": [
         "homology_control"
       ]
+    },
+    {
+      "variable": "TRANSFER_KMER_BACKGROUND_DIR",
+      "kind": "directory",
+      "required_by": [
+        "alphabet_chemistry"
+      ]
+    },
+    {
+      "variable": "TRANSFER_HIGH_ORDER_BACKGROUND_DIR",
+      "kind": "directory",
+      "required_by": [
+        "alphabet_chemistry"
+      ]
     }
   ],
   "tool_resources": [

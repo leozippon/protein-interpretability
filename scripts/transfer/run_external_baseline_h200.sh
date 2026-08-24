@@ -37,7 +37,8 @@ set -euo pipefail
 #   gets its own results directory, because a resume key has no condition axis
 #   and two conditions in one root would overwrite each other.
 #
-#   --expect <basename> names the artefact that means "done". Completion is
+#   --expect <basename> names the artefact that means "done". It must be an
+#   exact JSON basename: no directory, glob, regex, or traversal. Completion is
 #   otherwise read as "any .json appeared in the output directory", which is
 #   right for a stage that writes into a directory it alone owns. A stage that
 #   READS an input staged into that same directory -- 20_retrieval_bound.py's
@@ -45,6 +46,10 @@ set -euo pipefail
 #   the input reads as completion and the controller pulls a partial result and
 #   admits it. The default is unchanged, so this is required only where the
 #   output directory is not empty at launch.
+#
+#   --timeout-seconds bounds the poll. The default is 86400 (24 h), enough for
+#   a 12-24 h campaign; the hard ceiling is 172800 (48 h). TIMEOUT_SECONDS is
+#   the same bound as an environment override.
 #
 #   To run several conditions of ONE comparison concurrently, freeze once at a
 #   named commit and hand every invocation the same snapshot AND the same pin:
@@ -97,6 +102,8 @@ H200_POD_EXEC="${H200_POD_EXEC:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_pod_exec.sh}
 
 CONTROLLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "${CONTROLLER_DIR}/../.." && pwd)}"
+# shellcheck source=/dev/null
+source "${CONTROLLER_DIR}/h200_orchestration.sh"
 
 # Where this driver's own local output goes: the dispatch record it writes
 # before launching, and the directory it pulls an admitted result into.
@@ -131,7 +138,7 @@ EXPECT=""
 PIN_REF=""
 PIN_COMMIT=""
 POLL_SECONDS="${POLL_SECONDS:-120}"
-TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-57600}"
+TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-${TRANSFER_DEFAULT_TIMEOUT_SECONDS}}"
 STAGE_ARGS=()
 
 # The header from `Usage:` to the end of the leading comment block, which is
@@ -150,6 +157,7 @@ while [ $# -gt 0 ]; do
     --run-id) RUN_ID="$2"; shift 2 ;;
     --snapshot-dir) SNAPSHOT_DIR="$2"; shift 2 ;;
     --expect) EXPECT="$2"; shift 2 ;;
+    --timeout-seconds) TIMEOUT_SECONDS="$2"; shift 2 ;;
     --pin) PIN_REF="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     --) shift; STAGE_ARGS=("$@"); break ;;
@@ -160,6 +168,10 @@ done
 : "${H200_POD:?H200_POD must be exported by the caller}"
 [ -n "${STAGE}" ] || { echo "--stage is required" >&2; exit 2; }
 [ -n "${LABEL}" ] || { echo "--label is required" >&2; exit 2; }
+assert_timeout_seconds "${TIMEOUT_SECONDS}" || exit 2
+if [ -n "${EXPECT}" ]; then
+  assert_expect_basename "${EXPECT}" || exit 2
+fi
 
 log() { printf '[external-baseline] %s %s\n' "$(date -Is)" "$*"; }
 
@@ -301,7 +313,11 @@ log "dispatch recorded at ${LOCAL_RECORD}"
 
 # Detach INSIDE the pod. A foreground kubectl exec dies with the tunnel and
 # takes the measurement with it; the campaign worker normally provides this and
-# an external-baseline stage has no worker.
+# an external-baseline stage has no worker. The wrapper records host state
+# before and after the stage, including on failure or interruption.
+HOST_PRE="${GPFS_PROJECT_ROOT}/logs/external_baseline/${RUN_ID}_${LABEL}.host_pre.txt"
+HOST_POST="${GPFS_PROJECT_ROOT}/logs/external_baseline/${RUN_ID}_${LABEL}.host_post.txt"
+WRAP="${GPFS_PROJECT_ROOT}/logs/external_baseline/${RUN_ID}_${LABEL}.wrap.sh"
 log "launching ${STAGE} on cuda:${GPU}"
 "${H200_POD_EXEC}" -- bash -lc "
   set -euo pipefail
@@ -309,10 +325,27 @@ log "launching ${STAGE} on cuda:${GPU}"
   source '${SNAPSHOT_DIR}/scripts/transfer/h200_env.sh'
   : \"\${TRANSFER_PROGEN3_DIR:?must be exported by h200_env.sh or the caller}\"
   : \"\${TRANSFER_PROGEN3_SRC:?must be exported by h200_env.sh or the caller}\"
-  mkdir -p '${OUT_DIR}' \"\$(dirname '${POD_LOG}')\"
+  mkdir -p '${OUT_DIR}' \"\$(dirname '${POD_LOG}')\" \"\$(dirname '${WRAP}')\"
+  cat > '${WRAP}' <<'WRAP'
+#!/usr/bin/env bash
+set -euo pipefail
+source \"\${TRANSFER_PACKAGE_ROOT}/scripts/transfer/h200_env.sh\"
+stage_name=\$(basename \"\${XFER_STAGE}\")
+source \"\${TRANSFER_PACKAGE_ROOT}/scripts/transfer/h200_orchestration.sh\"
+require_stage_resources \"\${stage_name}\"
+write_host_resource_snapshot \"\${XFER_HOST_PRE}\" pre
+_xfer_host_post() { write_host_resource_snapshot \"\${XFER_HOST_POST}\" post; }
+trap _xfer_host_post EXIT
+exec \"\${TRANSFER_PYTHON}\" \"\${XFER_STAGE}\" --device \"cuda:\${XFER_GPU}\" --out \"\${XFER_OUT}\" \"\$@\"
+WRAP
+  chmod +x '${WRAP}'
+  export XFER_STAGE='${SNAPSHOT_DIR}/scripts/transfer/${STAGE}'
+  export XFER_OUT='${OUT_DIR}'
+  export XFER_GPU='${GPU}'
+  export XFER_HOST_PRE='${HOST_PRE}'
+  export XFER_HOST_POST='${HOST_POST}'
   cd '${SNAPSHOT_DIR}'
-  setsid nohup \"\${TRANSFER_PYTHON}\" '${SNAPSHOT_DIR}/scripts/transfer/${STAGE}' \
-    --device cuda:${GPU} --out '${OUT_DIR}' ${STAGE_ARGS[*]-} \
+  setsid nohup bash '${WRAP}' ${STAGE_ARGS[*]-} \
     > '${POD_LOG}' 2>&1 < /dev/null &
   disown
   echo LAUNCHED
@@ -345,15 +378,16 @@ fi
 # What "done" looks like in the output directory. Declared once and asked twice
 # below, because the two call sites must agree: a poll that accepted a file the
 # confirming re-poll rejected would turn a finished run into an ABSENT.
-if [ -n "${EXPECT}" ]; then
-  PRESENT_PATTERN="^${EXPECT}\$"
-else
-  PRESENT_PATTERN="\\.json\$"
-fi
 present() {
-  "${H200_POD_BASH}" \
-    "ls -1 '${OUT_DIR}' 2>/dev/null | grep -q '${PRESENT_PATTERN}' && echo PRESENT" \
-    2>/dev/null | grep -q PRESENT
+  if [ -n "${EXPECT}" ]; then
+    "${H200_POD_BASH}" \
+      "test -f '${OUT_DIR}/${EXPECT}' && echo PRESENT" \
+      2>/dev/null | grep -q PRESENT
+  else
+    "${H200_POD_BASH}" \
+      "ls -1 '${OUT_DIR}' 2>/dev/null | grep -q '\\.json\$' && echo PRESENT" \
+      2>/dev/null | grep -q PRESENT
+  fi
 }
 
 # An item is absent only once the GPU it was scheduled on is observed idle.
@@ -388,6 +422,29 @@ while [ "${waited}" -lt "${TIMEOUT_SECONDS}" ]; do
 done
 log "${LABEL} ${status} after ${waited}s"
 [ "${status}" = "PRESENT" ] || exit 4
+
+if [ -n "${EXPECT}" ]; then
+  ADMIT_PATH="${OUT_DIR}/${EXPECT}"
+else
+  ADMIT_PATH="$("${H200_POD_BASH}" "ls -1 '${OUT_DIR}' 2>/dev/null | grep -m 1 '\\.json\$'" 2>/dev/null | tr -d '\r')"
+  ADMIT_PATH="${OUT_DIR}/${ADMIT_PATH}"
+fi
+ADMIT_DIGEST="$("${H200_POD_BASH}" "
+  set -euo pipefail
+  python3 -c 'import json,sys
+path=sys.argv[1]
+text=open(path,encoding=\"utf-8\").read()
+if not text.strip():
+    raise SystemExit(1)
+json.loads(text)' '${ADMIT_PATH}'
+  sha256sum '${ADMIT_PATH}'
+" 2>/dev/null | awk '{print $1}')" || ADMIT_DIGEST=""
+if [ -z "${ADMIT_DIGEST}" ]; then
+  echo "expected artefact is missing, empty, or not valid JSON: ${ADMIT_PATH}" >&2
+  exit 4
+fi
+"${H200_POD_BASH}" "printf '%s  %s\\n' '${ADMIT_DIGEST}' '$(basename "${ADMIT_PATH}")' > '${ADMIT_PATH}.sha256.tmp' && mv -f '${ADMIT_PATH}.sha256.tmp' '${ADMIT_PATH}.sha256'" >/dev/null
+log "admitted digest ${ADMIT_DIGEST} for $(basename "${ADMIT_PATH}")"
 
 # --------------------------------------------------------- pull and verify
 

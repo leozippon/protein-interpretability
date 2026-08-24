@@ -124,7 +124,7 @@ set -euo pipefail
 #
 # Tab-separated, `#` comments and blank lines ignored, one cell per line:
 #
-#   slot <TAB> key <TAB> gpu <TAB> stage <TAB> label <TAB> env <TAB> args
+#   slot <TAB> key <TAB> gpu <TAB> stage <TAB> label <TAB> env <TAB> expect <TAB> args
 #
 #   slot   integer. Cells sharing a slot run concurrently; slot N+1 starts only
 #          when every cell of slot N has exited. Ascending numeric order.
@@ -134,6 +134,9 @@ set -euo pipefail
 #   stage  file name under <snapshot>/scripts/transfer/.
 #   env    space-separated KEY=VALUE applied after h200_env.sh (so a cell can
 #          override it), or `-` for none.
+#   expect exact JSON basename that means this cell is done. Basename only:
+#          no directory, glob, regex, or traversal. Unrelated JSON in the
+#          output directory is not completion.
 #   args   the stage's arguments, whitespace separated. NO argument may contain
 #          whitespace. `--device` and `--out` must NOT appear: this runner
 #          injects both, and a second spelling of either is a second
@@ -170,24 +173,15 @@ set -euo pipefail
 #
 # ---------------------------------------------------------- Resumability
 #
-# A cell is skipped iff a `*.json` already exists in its own output directory.
-# That is the same completion test run_external_baseline_h200.sh applies by
-# default (its PRESENT_PATTERN), and it is sound for these stages because both
-# write their record LAST and write it atomically: 17_train_transcoder.py does
-# `torch.save(... .pt)` then `write_json(... .json)`, and src.transfer.io's
-# write_json is documented "Write sorted, indented JSON atomically". So a JSON
-# implies a finished `.pt` beside it, and an interrupted cell leaves a partial
-# `.pt` with no JSON and is re-run, which rewrites that `.pt` whole.
+# A cell is skipped iff its declared expect basename already exists in its own
+# output directory, is nonempty valid JSON, and has an atomic SHA-256 sidecar.
+# Unrelated JSON cannot mark completion. A missing, empty, or malformed expect
+# file is not success and is re-run.
 #
 # Its limits, stated because they are real:
-#   * A stage that STAGES AN INPUT into its own --out directory would read as
-#     complete on that input (this is why the driver has --expect). Neither
-#     stage in this campaign does; a manifest that adds one needs an expect
-#     column first.
 #   * The test cannot tell a finished cell from one still running under an
 #     ORPHANED earlier runner. The lock below catches the common case and the
 #     per-cell idle-card check catches the rest; neither is a proof.
-#   * It does not verify the record's content, only that one exists.
 #
 # ---------------------------------------------------------------- Reuse
 #
@@ -270,6 +264,10 @@ usage() {
     "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
+QUEUE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "${QUEUE_DIR}/h200_orchestration.sh"
+
 MANIFEST=""
 STATUS=""
 CAMPAIGN=""
@@ -330,16 +328,16 @@ QUEUE_LOG="${GPFS_PROJECT_ROOT}/logs/external_baseline/${CAMPAIGN}.queue.log"
 # ------------------------------------------------------------------- manifest
 
 N=0
-declare -a C_SLOT=() C_KEY=() C_GPU=() C_STAGE=() C_LABEL=() C_ENV=() C_ARGS=()
+declare -a C_SLOT=() C_KEY=() C_GPU=() C_STAGE=() C_LABEL=() C_ENV=() C_EXPECT=() C_ARGS=()
 declare -a C_OUT=() C_LOG=() C_STATE=() C_EXIT=() C_START=() C_END=() C_ART=() C_PID=()
 
 line_no=0
-while IFS=$'\t' read -r slot key gpu stage label cellenv args || [ -n "${slot:-}" ]; do
+while IFS=$'\t' read -r slot key gpu stage label cellenv expect args || [ -n "${slot:-}" ]; do
   line_no=$((line_no + 1))
   case "${slot}" in ''|'#'*) continue ;; esac
-  for field in "${key}" "${gpu}" "${stage}" "${label}" "${cellenv}" "${args}"; do
+  for field in "${key}" "${gpu}" "${stage}" "${label}" "${cellenv}" "${expect}" "${args}"; do
     [ -n "${field}" ] || {
-      echo "manifest line ${line_no}: expected 7 tab-separated fields" >&2; exit 2; }
+      echo "manifest line ${line_no}: expected 8 tab-separated fields including expect" >&2; exit 2; }
   done
   case "${slot}" in *[!0-9]*) echo "manifest line ${line_no}: slot must be an integer, got '${slot}'" >&2; exit 2 ;; esac
   case "${gpu}" in *[!0-9]*) echo "manifest line ${line_no}: gpu must be an integer, got '${gpu}'" >&2; exit 2 ;; esac
@@ -355,10 +353,13 @@ while IFS=$'\t' read -r slot key gpu stage label cellenv args || [ -n "${slot:-}
       echo "manifest line ${line_no}: --device and --out are injected by this runner and must not appear in args" >&2
       exit 2 ;;
   esac
+  assert_expect_basename "${expect}" || {
+    echo "manifest line ${line_no}: invalid expect" >&2; exit 2; }
 
   run_id="$(basename "${snapshot}")"
   C_SLOT+=("${slot}"); C_KEY+=("${key}"); C_GPU+=("${gpu}")
-  C_STAGE+=("${stage}"); C_LABEL+=("${label}"); C_ENV+=("${cellenv}"); C_ARGS+=("${args}")
+  C_STAGE+=("${stage}"); C_LABEL+=("${label}"); C_ENV+=("${cellenv}")
+  C_EXPECT+=("${expect}"); C_ARGS+=("${args}")
   C_OUT+=("${GPFS_PROJECT_ROOT}/results/external_baseline/${run_id}/${label}")
   C_LOG+=("${GPFS_PROJECT_ROOT}/logs/external_baseline/${run_id}_${label}.log")
   C_STATE+=("pending"); C_EXIT+=("-"); C_START+=("-"); C_END+=("-"); C_ART+=("-"); C_PID+=("-")
@@ -395,9 +396,10 @@ if [ "${DRY_RUN}" -eq 1 ]; then
     for ((i = 0; i < N; i++)); do
       [ "${C_SLOT[$i]}" = "${slot}" ] || continue
       printf '  cuda:%s %s\n' "${C_GPU[$i]}" "${C_LABEL[$i]}"
-      printf '    out  %s\n' "${C_OUT[$i]}"
-      printf '    log  %s\n' "${C_LOG[$i]}"
-      printf '    env  %s\n' "${C_ENV[$i]}"
+      printf '    out    %s\n' "${C_OUT[$i]}"
+      printf '    log    %s\n' "${C_LOG[$i]}"
+      printf '    expect %s\n' "${C_EXPECT[$i]}"
+      printf '    env    %s\n' "${C_ENV[$i]}"
       printf '    cmd  ${TRANSFER_PYTHON} %s/scripts/transfer/%s --device cuda:%s --out %s %s\n' \
         "${SNAPSHOT_FOR[${C_KEY[$i]}]}" "${C_STAGE[$i]}" "${C_GPU[$i]}" "${C_OUT[$i]}" "${C_ARGS[$i]}"
     done
@@ -424,10 +426,23 @@ if [ -e "${LOCK}" ]; then
   log "stale lock from pid ${other:-unknown}; taking it over"
 fi
 printf '%s\n' "$$" > "${LOCK}"
-trap 'rm -f "${LOCK}"' EXIT
+HOST_PRE="${GPFS_PROJECT_ROOT}/logs/external_baseline/${CAMPAIGN}.host_pre.txt"
+HOST_POST="${GPFS_PROJECT_ROOT}/logs/external_baseline/${CAMPAIGN}.host_post.txt"
+HOST_POST_WRITTEN=0
+write_campaign_host_post() {
+  [ "${HOST_POST_WRITTEN}" -eq 1 ] && return 0
+  HOST_POST_WRITTEN=1
+  write_host_resource_snapshot "${HOST_POST}" post || true
+}
+cleanup_campaign_queue() {
+  write_campaign_host_post
+  rm -f "${LOCK}"
+}
+trap cleanup_campaign_queue EXIT INT TERM HUP
 
 exec >> "${QUEUE_LOG}" 2>&1
 log "campaign ${CAMPAIGN}: ${N} cells, manifest ${MANIFEST}"
+write_host_resource_snapshot "${HOST_PRE}" pre
 
 # --------------------------------------------------------------- status file
 
@@ -486,13 +501,13 @@ write_status() {
 
 # ------------------------------------------------------------------- helpers
 
-# The completion test, and the artefact path when it passes. Same rule as
-# run_external_baseline_h200.sh's default PRESENT_PATTERN ("\\.json\$").
-cell_artifact() {
-  local out_dir="$1" name
-  name="$(ls -1 "${out_dir}" 2>/dev/null | grep -m 1 '\.json$' || true)"
-  [ -n "${name}" ] || return 1
-  printf '%s/%s\n' "${out_dir}" "${name}"
+# Exact expect basename, admitted only when the file is nonempty valid JSON
+# and a SHA-256 sidecar can be written. Unrelated JSON is ignored.
+cell_complete_artifact() {
+  local out_dir="$1" expect="$2" path
+  path="$(cell_expected_artifact "${out_dir}" "${expect}")" || return 1
+  admit_expected_json "${path}" >/dev/null || return 1
+  printf '%s\n' "${path}"
 }
 
 # Busy means the same thing it means in the driver's poll loop: more than
@@ -518,6 +533,7 @@ launch_cell() {
     : "${TRANSFER_PROGEN3_DIR:?must be exported by h200_env.sh or the caller}"
     : "${TRANSFER_PROGEN3_SRC:?must be exported by h200_env.sh or the caller}"
     : "${TRANSFER_PYTHON:?must be exported by h200_env.sh or the caller}"
+    require_stage_resources "${C_STAGE[$i]}"
     if [ "${C_ENV[$i]}" != "-" ]; then
       local -a cell_env=()
       read -r -a cell_env <<< "${C_ENV[$i]}"
@@ -546,7 +562,7 @@ for slot in ${SLOTS}; do
   running=()
   for ((i = 0; i < N; i++)); do
     [ "${C_SLOT[$i]}" = "${slot}" ] || continue
-    if art="$(cell_artifact "${C_OUT[$i]}")"; then
+    if art="$(cell_complete_artifact "${C_OUT[$i]}" "${C_EXPECT[$i]}")"; then
       C_STATE[$i]="skipped-complete"; C_ART[$i]="${art}"
       log "slot ${slot} ${C_LABEL[$i]}: already complete at ${art}; skipping"
       continue
@@ -580,7 +596,7 @@ for slot in ${SLOTS}; do
       if [ "${code}" -ne 0 ]; then
         C_STATE[$i]="exited-nonzero"; overall=1
         log "slot ${slot} ${C_LABEL[$i]}: EXITED ${code}; see ${C_LOG[$i]}"
-      elif art="$(cell_artifact "${C_OUT[$i]}")"; then
+      elif art="$(cell_complete_artifact "${C_OUT[$i]}" "${C_EXPECT[$i]}")"; then
         C_STATE[$i]="exited-ok"; C_ART[$i]="${art}"
         log "slot ${slot} ${C_LABEL[$i]}: exited 0, wrote ${art}"
       else

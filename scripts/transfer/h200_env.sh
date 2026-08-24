@@ -17,6 +17,8 @@ export TRANSFER_PFAM_RESIDUE_TSV="${TRANSFER_GPFS_ROOT}/data/interpro/pfam_resid
 export TRANSFER_ALPHAFOLD_DIR="${TRANSFER_GPFS_ROOT}/data/alphafold"
 export TRANSFER_PROTEINGYM_DIR="${TRANSFER_GPFS_ROOT}/data/proteingym/DMS_ProteinGym_substitutions"
 export TRANSFER_UNIREF50_FASTA="${TRANSFER_GPFS_ROOT}/data/uniref50/uniref50.fasta"
+export TRANSFER_KMER_BACKGROUND_DIR="${TRANSFER_PROJECT_ROOT}/data/kmer_background/uniref50"
+export TRANSFER_HIGH_ORDER_BACKGROUND_DIR="${TRANSFER_PROJECT_ROOT}/data/kmer_background/uniref50_high_order"
 
 # External baseline (ProGenMech / ProGen3-112M). Declared here rather than left
 # to each caller: both defaults in src/transfer/progen3.py are B-local paths, and

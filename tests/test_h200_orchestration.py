@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -2015,6 +2016,251 @@ class PinnedCodeSourceTests(unittest.TestCase):
             f"code_source\t{self.commit}", records[0].read_text(encoding="utf-8"),
             "the operator's ledger does not say which code state this cell ran",
         )
+
+
+QUEUE = TRANSFER_DIR / "h200_campaign_queue.sh"
+ORCHESTRATION = TRANSFER_DIR / "h200_orchestration.sh"
+RESOURCE_MANIFEST = (
+    REPO_ROOT / "external_resources" / "manifests" / "interpretability_transfer_resources.json"
+)
+
+
+def orchestration_script(body: str) -> str:
+    return f"""
+    set -euo pipefail
+    source {ORCHESTRATION}
+    {body}
+    """
+
+
+class CampaignQueueExactExpectTests(unittest.TestCase):
+    """Completion is the declared basename, not any JSON in the cell directory."""
+
+    def run_orch(self, body: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["bash", "-c", orchestration_script(body)],
+            capture_output=True, text=True, timeout=60,
+        )
+
+    def test_unrelated_json_does_not_mark_completion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            (out / "other.json").write_text("{{\n}}\n", encoding="utf-8")
+            result = self.run_orch(
+                f'cell_expected_artifact {out} expected.json && echo HIT || echo MISS'
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), "MISS")
+
+    def test_malformed_expected_json_is_not_success(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            (out / "expected.json").write_text("not json\n", encoding="utf-8")
+            present = self.run_orch(
+                f'cell_expected_artifact {out} expected.json >/dev/null && echo HIT'
+            )
+            self.assertEqual(present.returncode, 0, present.stderr)
+            self.assertEqual(present.stdout.strip(), "HIT")
+            admitted = self.run_orch(
+                f'admit_expected_json {out}/expected.json && echo ADMITTED || echo REFUSED'
+            )
+            self.assertEqual(admitted.returncode, 0, admitted.stderr)
+            self.assertEqual(admitted.stdout.strip(), "REFUSED")
+            self.assertFalse((out / "expected.json.sha256").exists())
+
+    def test_traversal_and_glob_expect_names_are_refused(self):
+        cases = (
+            "../score.json",
+            "dir/score.json",
+            "*.json",
+            "score.*",
+            ".hidden.json",
+            "score.json/",
+            "",
+        )
+        for name in cases:
+            with self.subTest(name=name):
+                quoted = self.run_orch(f'assert_expect_basename {name!r} && echo OK')
+                self.assertNotEqual(quoted.returncode, 0, name)
+                self.assertNotIn("OK", quoted.stdout)
+
+    def test_exact_valid_json_writes_a_sha256_sidecar(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "score.json"
+            path.write_text('{"ok": true}\n', encoding="utf-8")
+            result = self.run_orch(
+                f'digest=$(admit_expected_json {path}) && printf "%s\n" "$digest"'
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            digest = result.stdout.strip()
+            self.assertRegex(digest, r"^[0-9a-f]{64}$")
+            sidecar = path.with_name(path.name + ".sha256")
+            self.assertTrue(sidecar.is_file())
+            self.assertEqual(
+                sidecar.read_text(encoding="utf-8"),
+                f"{digest}  score.json\n",
+            )
+            expected = hashlib.sha256(path.read_bytes()).hexdigest()
+            self.assertEqual(digest, expected)
+
+    def test_a_seven_field_manifest_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            snapshot = root / "packages" / "run"
+            stage_dir = snapshot / "scripts" / "transfer"
+            stage_dir.mkdir(parents=True)
+            (stage_dir / "h200_env.sh").write_text(":\n", encoding="utf-8")
+            (stage_dir / "37_alphabet_chemistry.py").write_text("", encoding="utf-8")
+            manifest = root / "campaign.tsv"
+            manifest.write_text(
+                "1\tkey\t0\t37_alphabet_chemistry.py\tcell\t-\t--arm progen2-small\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                ["bash", str(QUEUE), "--manifest", str(manifest),
+                 "--snapshot", f"key={snapshot}", "--dry-run"],
+                capture_output=True, text=True, timeout=60,
+            )
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn("8 tab-separated fields", result.stderr)
+
+    def test_dry_run_prints_the_declared_expect_basename(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            snapshot = root / "packages" / "run"
+            stage_dir = snapshot / "scripts" / "transfer"
+            stage_dir.mkdir(parents=True)
+            (stage_dir / "h200_env.sh").write_text(":\n", encoding="utf-8")
+            (stage_dir / "37_alphabet_chemistry.py").write_text("", encoding="utf-8")
+            manifest = root / "campaign.tsv"
+            manifest.write_text(
+                "1\tkey\t0\t37_alphabet_chemistry.py\tcell\t-\t"
+                "score.json\t--arm progen2-small\n",
+                encoding="utf-8",
+            )
+            result = subprocess.run(
+                ["bash", str(QUEUE), "--manifest", str(manifest),
+                 "--snapshot", f"key={snapshot}", "--dry-run"],
+                capture_output=True, text=True, timeout=60,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("expect score.json", result.stdout)
+            self.assertNotIn("*.json", result.stdout)
+
+
+class HostSnapshotAndTimeoutTests(unittest.TestCase):
+    def test_resource_snapshot_trap_writes_post_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            post = Path(tmp) / "host_post.txt"
+            script = f"""
+            set -euo pipefail
+            source {ORCHESTRATION}
+            HOST_POST_WRITTEN=0
+            cleanup() {{
+              [ \"$HOST_POST_WRITTEN\" -eq 1 ] && return 0
+              HOST_POST_WRITTEN=1
+              write_host_resource_snapshot {post} post || true
+            }}
+            trap cleanup EXIT
+            H200_POD=secret-pod-name-should-not-appear
+            exit 7
+            """
+            result = subprocess.run(
+                ["bash", "-c", script], capture_output=True, text=True, timeout=60,
+            )
+            self.assertEqual(result.returncode, 7)
+            self.assertTrue(post.is_file(), result.stderr)
+            text = post.read_text(encoding="utf-8")
+            self.assertIn("utc=", text)
+            self.assertIn("label=post", text)
+            self.assertIn("--- nvidia-smi ---", text)
+            self.assertIn("--- free -h ---", text)
+            self.assertNotIn("secret-pod-name-should-not-appear", text)
+            self.assertNotIn("H200_POD", text)
+
+    def test_missing_k_mer_declarations_are_refused(self):
+        result = subprocess.run(
+            ["bash", "-c", orchestration_script(
+                "unset TRANSFER_KMER_BACKGROUND_DIR TRANSFER_HIGH_ORDER_BACKGROUND_DIR\n"
+                "require_stage_resources 37_alphabet_chemistry.py"
+            )],
+            capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("TRANSFER_KMER_BACKGROUND_DIR", result.stderr)
+
+    def test_missing_k_mer_paths_are_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = subprocess.run(
+                ["bash", "-c", orchestration_script(
+                    f"export TRANSFER_KMER_BACKGROUND_DIR={tmp}/absent_k\n"
+                    f"export TRANSFER_HIGH_ORDER_BACKGROUND_DIR={tmp}/absent_h\n"
+                    "require_stage_resources 37_alphabet_chemistry.py"
+                )],
+                capture_output=True, text=True, timeout=60,
+            )
+            self.assertEqual(result.returncode, 2)
+            self.assertIn("missing TRANSFER_KMER_BACKGROUND_DIR", result.stderr)
+
+    def test_timeout_bounds_refuse_unbounded_and_keep_a_24h_default(self):
+        source = ORCHESTRATION.read_text(encoding="utf-8")
+        self.assertIn('TRANSFER_DEFAULT_TIMEOUT_SECONDS="${TRANSFER_DEFAULT_TIMEOUT_SECONDS:-86400}"', source)
+        self.assertIn('TRANSFER_MAX_TIMEOUT_SECONDS="${TRANSFER_MAX_TIMEOUT_SECONDS:-172800}"', source)
+        driver = ExternalBaselineDispatchTests.DRIVER.read_text(encoding="utf-8")
+        self.assertIn("TIMEOUT_SECONDS=\"${TIMEOUT_SECONDS:-${TRANSFER_DEFAULT_TIMEOUT_SECONDS}}\"", driver)
+        self.assertIn("--timeout-seconds", driver)
+
+        ok = subprocess.run(
+            ["bash", "-c", orchestration_script("assert_timeout_seconds 86400 && echo OK")],
+            capture_output=True, text=True, timeout=60,
+        )
+        self.assertEqual(ok.returncode, 0, ok.stderr)
+        self.assertEqual(ok.stdout.strip(), "OK")
+
+        for value, needle in (
+            ("0", "at least 1s"),
+            ("172801", "exceeds"),
+            ("forever", "integer"),
+            ("", "empty"),
+        ):
+            with self.subTest(value=value):
+                quoted = value if value else "''"
+                result = subprocess.run(
+                    ["bash", "-c", orchestration_script(
+                        f"assert_timeout_seconds {quoted}"
+                    )],
+                    capture_output=True, text=True, timeout=60,
+                )
+                self.assertNotEqual(result.returncode, 0, value)
+                self.assertIn(needle, result.stderr)
+
+    def test_the_resource_manifest_declares_stage_37_backgrounds(self):
+        payload = json.loads(RESOURCE_MANIFEST.read_text(encoding="utf-8"))
+        declared = {entry["variable"]: entry for entry in payload["dataset_resources"]}
+        self.assertIn("TRANSFER_KMER_BACKGROUND_DIR", declared)
+        self.assertIn("TRANSFER_HIGH_ORDER_BACKGROUND_DIR", declared)
+        self.assertIn("alphabet_chemistry", declared["TRANSFER_KMER_BACKGROUND_DIR"]["required_by"])
+        self.assertIn(
+            "alphabet_chemistry",
+            declared["TRANSFER_HIGH_ORDER_BACKGROUND_DIR"]["required_by"],
+        )
+        env = (TRANSFER_DIR / "h200_env.sh").read_text(encoding="utf-8")
+        self.assertIn("TRANSFER_KMER_BACKGROUND_DIR", env)
+        self.assertIn("TRANSFER_HIGH_ORDER_BACKGROUND_DIR", env)
+        self.assertNotIn("H200_POD", env)
+
+    def test_external_driver_refuses_a_glob_expect(self):
+        result = subprocess.run(
+            [
+                "bash", str(ExternalBaselineDispatchTests.DRIVER),
+                "--stage", "20_retrieval_bound.py", "--label", "x", "--gpu", "0",
+                "--expect", "*.json",
+            ],
+            capture_output=True, text=True, cwd=str(REPO_ROOT),
+            env={**os.environ, "H200_POD": "unused"}, timeout=60,
+        )
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertRegex(result.stderr, r"glob|exact basename|expect")
 
 
 if __name__ == "__main__":
