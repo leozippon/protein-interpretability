@@ -901,12 +901,12 @@ def test_a_artefact_name_is_unchanged_when_variant_is_omitted():
 
 def test_b_requires_an_explicit_fragment_axis_order_among_the_ceiling_orders():
     args = _args(
-        arm="progen2-small", cut="tercile", max_pairs=40, null_draws=200, seed=1,
-        reachability_pairs=4, reachability_margin=0.0, random_directions=8,
-        ceiling_factor=2.0, records=8, max_tokens=64, min_symbol_occurrences=10,
+        arm="progen2-small", cut="tercile", seed=1,
+        records=8, max_tokens=64, min_symbol_occurrences=10,
         kmer_background=Path("x"), high_order_background=Path("y"),
-        text_control=Path("z"), ceiling_orders="1,3,5",
+        ceiling_orders="1,3,5",
         protein_axis=ac.PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE,
+        b_stage=ac.B_STAGE_CONSTRUCT,
     )
     with pytest.raises(ValueError, match="--fragment-axis-order"):
         STAGE.resolve(args)
@@ -916,12 +916,12 @@ def test_b_requires_an_explicit_fragment_axis_order_among_the_ceiling_orders():
     args.fragment_axis_order = 5
     STAGE.resolve(args)
     assert STAGE.is_variant_b(args) is True
-    payload = STAGE.base_payload(args, kind="protein_cell")
+    payload = STAGE.base_payload(args, kind=ac.KIND_AXIS_CONSTRUCTION)
     assert payload["schema_version"] == STAGE.SCHEMA_VERSION_B
     assert payload["experiment"] == ac.EXPERIMENT_B
     assert payload["settings"]["fragment_axis_order"] == 5
     assert ac.EXPERIMENT_B in STAGE.artefact_name(
-        "protein_cell", "progen2-small", 1, variant=ac.EXPERIMENT_B
+        ac.KIND_AXIS_CONSTRUCTION, "progen2-small", 1, variant=ac.EXPERIMENT_B
     )
 
 
@@ -1120,3 +1120,250 @@ def test_a_self_substitution_mean_is_still_exactly_zero_with_record_stats():
     record = scorer.damage(0, 0)
     assert record["nats_per_scored_token"] == 0.0
     assert float(record["per_record_nll_sum"].sum()) == 0.0
+
+
+def test_b_without_a_stage_is_refused():
+    args = _args(
+        arm="progen2-small", cut="tercile", seed=1,
+        records=8, max_tokens=64, min_symbol_occurrences=10,
+        kmer_background=Path("x"), high_order_background=Path("y"),
+        ceiling_orders="1,3,5", fragment_axis_order=5,
+        protein_axis=ac.PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE,
+    )
+    with pytest.raises(ValueError, match="--b-stage"):
+        STAGE.resolve(args)
+
+
+def test_construct_refuses_model_measurement_flags():
+    args = _args(
+        arm="progen2-small", cut="tercile", seed=1,
+        records=8, max_tokens=64, min_symbol_occurrences=10,
+        kmer_background=Path("x"), high_order_background=Path("y"),
+        ceiling_orders="1,3,5", fragment_axis_order=5,
+        protein_axis=ac.PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE,
+        b_stage=ac.B_STAGE_CONSTRUCT, text_control=Path("z"),
+    )
+    with pytest.raises(ValueError, match="axis-construction"):
+        STAGE.resolve(args)
+
+
+def test_confirm_requires_construction_artefact_and_index():
+    args = _args(
+        arm="progen2-small", cut="tercile", max_pairs=40, null_draws=200, seed=1,
+        reachability_pairs=4, reachability_margin=0.0, random_directions=8,
+        ceiling_factor=2.0, records=8, max_tokens=64, min_symbol_occurrences=10,
+        kmer_background=Path("x"), high_order_background=Path("y"),
+        text_control=Path("z"), ceiling_orders="1,3,5", fragment_axis_order=5,
+        protein_axis=ac.PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE,
+        b_stage=ac.B_STAGE_CONFIRM,
+    )
+    with pytest.raises(ValueError, match="--construction-artefact"):
+        STAGE.resolve(args)
+    args.construction_artefact = Path("frozen.json")
+    with pytest.raises(ValueError, match="--confirmation-index"):
+        STAGE.resolve(args)
+
+
+def test_crossed_interval_reports_arm_and_ceiling_percentiles():
+    block = _interval_payload(sequence_groups=np.arange(16))
+    assert block["delta_ci95"] is not None
+    assert block["reference_delta_ci95"] is not None
+    assert block["difference_ci95"] is not None
+    assert block["delta_ci95"][0] <= block["delta"] <= block["delta_ci95"][1]
+
+
+def test_b_verdict_follows_the_crossed_arm_interval_not_the_symbol_only_one():
+    from src.transfer.crossed_group_interval import crossed_group_interval
+
+    n_pairs, n_records = 16, 16
+    codes = np.array([1] * 8 + [-1] * 8)
+    arm_sum = np.zeros((n_pairs, n_records))
+    arm_count = np.ones((n_pairs, n_records))
+    ceiling_sum = np.zeros((n_pairs, n_records))
+    ceiling_count = np.ones((n_pairs, n_records))
+    for pair in range(n_pairs):
+        if codes[pair] > 0:
+            arm_sum[pair, :4] = 5.0
+            arm_sum[pair, 4:] = -2.0
+        ceiling_sum[pair] = 0.5
+    crossed = crossed_group_interval(
+        codes=codes,
+        symbol_groups=np.arange(n_pairs),
+        sequence_groups=np.arange(n_records),
+        arm_sum=arm_sum,
+        arm_count=arm_count,
+        ceiling_sum=ceiling_sum,
+        ceiling_count=ceiling_count,
+        seed=11,
+        n_draws=2000,
+    )
+    pair_means = arm_sum.sum(axis=1) / arm_count.sum(axis=1)
+    own = ac.delta_contrast(
+        codes=codes, damage=pair_means, groups=np.arange(n_pairs),
+        seed=11, n_bootstrap=2000,
+    )
+    assert own["difference_ci95"][1] < 0.0
+    assert own["delta"] < 0.0
+    symbol_only = ac.protein_verdict(
+        margin={"cleared": False, "clauses": {"delta_positive": False}},
+        delta_block=own,
+    )
+    assert symbol_only["verdict"] == "RECOMBINATION"
+    assert crossed["delta_ci95"][0] < 0.0 < crossed["delta_ci95"][1]
+    margin = {"cleared": False, "clauses": {"delta_positive": False}}
+    crossed_verdict = ac.protein_verdict_b(margin=margin, crossed=crossed)
+    assert crossed_verdict["verdict"] == "UNDECIDED"
+    assert crossed_verdict["verdict"] != symbol_only["verdict"]
+
+
+def test_a_refused_crossed_interval_is_void_not_inside_ceiling():
+    from src.transfer.crossed_group_interval import crossed_group_interval
+
+    refused = crossed_group_interval(
+        codes=np.array([1, 1, 1, -1, -1, -1]),
+        symbol_groups=np.array([0, 0, 1, 2, 3, 4]),
+        sequence_groups=np.arange(8),
+        arm_sum=np.ones((6, 8)),
+        arm_count=np.ones((6, 8)),
+        ceiling_sum=np.zeros((6, 8)),
+        ceiling_count=np.ones((6, 8)),
+        seed=1,
+        n_draws=2000,
+    )
+    assert refused["refused"] is True
+    fallback = ac.protein_verdict(
+        margin={"cleared": False, "clauses": {}},
+        delta_block={"delta": 0.4, "difference_ci95": None},
+    )
+    assert fallback["verdict"] == "INSIDE_CEILING"
+    verdict = ac.protein_verdict_b(
+        margin={"cleared": False, "clauses": {}}, crossed=refused
+    )
+    assert verdict["verdict"] == "VOID"
+    assert verdict["reason"] == ac.CROSSED_INTERVAL_REFUSED
+
+
+def _construction_payload(**overrides):
+    members = {
+        "tercile": {
+            ac.QUADRANTS[0]: ["AC", "AD"],
+            ac.QUADRANTS[1]: ["CW", "DY"],
+        }
+    }
+    payload = {
+        "schema_version": STAGE.SCHEMA_VERSION_B,
+        "kind": ac.KIND_AXIS_CONSTRUCTION,
+        "experiment": ac.EXPERIMENT_B,
+        "verdict": {"verdict": ac.AXIS_CONSTRUCTED},
+        "tokenizer_identity": {
+            "arm": "progen2-small",
+            "architecture": "progen",
+            "tokenisation": "residue",
+            "input_format": "progen2",
+            "vocab_size": 30,
+            "tokenizer_class": "Stub",
+            "max_tokens": 64,
+        },
+        "axes": {
+            "labels": list(AA20),
+            "distributional": {
+                "kind": ac.PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE,
+                "order": 5,
+                "symmetrization": ac.FRAGMENT_AXIS_SYMMETRIZATION,
+                "corpus": {"sha256": "abc", "order": 5},
+            },
+            "matrices": {"distributional_fragment_damage": [[0.0]]},
+        },
+        "contradiction_set": {
+            "declared_cut": "tercile",
+            "unordered_members": members,
+        },
+        "cohort": {
+            "digest": "construct",
+            "n_records": 2,
+            "sampling": {"skip": 0, "seed": 1},
+            "records": ["ACDEFGHIKLMNPQRSTVWYACDE", "ACDEFGHIKLMNPQRSTVWYAAAA"],
+        },
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_construction_artefact_schema_mismatch_is_refused(tmp_path):
+    path = tmp_path / "bad.json"
+    path.write_text('{"schema_version": "nope", "kind": "axis_construction"}')
+    with pytest.raises(ValueError, match="schema"):
+        STAGE._load_construction_artefact(path)
+
+
+def test_confirmation_refuses_an_artefact_that_is_not_constructed(tmp_path):
+    from src.transfer.io import write_json
+
+    path = tmp_path / "ok.json"
+    write_json(path, _construction_payload())
+    loaded = STAGE._load_construction_artefact(path)
+    assert loaded["axes"]["distributional"]["order"] == 5
+    broken = _construction_payload()
+    broken["verdict"] = {"verdict": "NO_CONTRADICTION_SET_AT_DECLARED_CUT"}
+    bad = tmp_path / "not_constructed.json"
+    write_json(bad, broken)
+    with pytest.raises(ValueError, match="not AXIS_CONSTRUCTED"):
+        STAGE._load_construction_artefact(bad)
+    wrong_order = _construction_payload()
+    wrong_order["axes"]["distributional"]["order"] = 3
+    assert wrong_order["axes"]["distributional"]["order"] != 5
+
+
+def test_same_or_near_duplicate_cohorts_are_not_independent():
+    records = ["ACDEFGHIKLMNPQRSTVWYACDE", "GGGGGGGGGGGGGGGGGGGGGGGG"]
+    same = ac.cohorts_independent(records, list(records))
+    assert same["independent"] is False
+    assert same["reason"] == "EXACT_CONTENT_OVERLAP"
+    near = ac.cohorts_independent(
+        ["ACDEFGHIKLMNPQRSTVWYAAAA"],
+        ["ACDEFGHIKLMNPQRSTVWYAAAV"],
+    )
+    assert near["independent"] is False
+    assert near["reason"] == "NEAR_DUPLICATE_OVERLAP"
+    far = ac.cohorts_independent(
+        ["ACDEFGHIKLMNPQRSTVWY" * 2],
+        ["WWWWWWWWWWWWWWWWWWWW" * 2],
+    )
+    assert far["independent"] is True
+
+
+def test_confirmation_skip_defaults_away_from_the_construction_draw():
+    args = _args(
+        confirmation_index=1, cohort_draw_seed=7, cohort_skip=None,
+    )
+    construction = {
+        "cohort": {"n_records": 10, "sampling": {"skip": 0, "seed": 7}}
+    }
+    STAGE._apply_confirmation_skip(args, construction)
+    assert args.cohort_skip == 10
+    args.cohort_skip = 0
+    with pytest.raises(ValueError, match="same cohort cannot serve both roles"):
+        STAGE._apply_confirmation_skip(args, construction)
+
+
+def test_frozen_pair_membership_does_not_recompute_quantiles():
+    members = {
+        ac.QUADRANTS[0]: ["AC"],
+        ac.QUADRANTS[1]: ["DW"],
+    }
+    pairs = ac.frozen_pair_set(members, list(AA20))
+    assert {"AC", "CA", "DW", "WD"} == {
+        f"{AA20[x]}{AA20[y]}" for x, y in pairs.pairs
+    }
+    live = ac.quadrants_at_cut(
+        np.abs(np.arange(20)[:, None] - np.arange(20)[None, :]).astype(np.float64),
+        np.abs(np.arange(20)[:, None] + np.arange(20)[None, :]).astype(np.float64),
+        cut="tercile",
+    )
+    live_tokens = {
+        name: [f"{AA20[x]}{AA20[y]}" for x, y in live["members"][name]]
+        for name in ac.QUADRANTS
+    }
+    assert members[ac.QUADRANTS[0]] != live_tokens[ac.QUADRANTS[0]] or members[
+        ac.QUADRANTS[1]
+    ] != live_tokens[ac.QUADRANTS[1]]

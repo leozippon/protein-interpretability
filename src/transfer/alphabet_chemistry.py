@@ -181,6 +181,7 @@ from .arms import AA20, Arm
 from .io import sha256_file
 from .concept_lens import PROPERTY_BASIS
 from .kmer_background import ALPHABET as KMER_ALPHABET, KmerBackground
+from .near_duplicates import near_duplicate_groups
 from .statistics import (
     MINIMUM_BOOTSTRAP_UNITS,
     bootstrap_unit_floor,
@@ -198,6 +199,13 @@ PRE_REGISTRATION_TRACK = "D3.j variant (a), embedding substitution"
 #: default, must not write these names into an A artefact.
 PRE_REGISTRATION_TRACK_B = "D3.j-B, fragment-substitution-damage admission axis"
 EXPERIMENT_B = "D3.j-B"
+B_STAGE_CONSTRUCT = "construct"
+B_STAGE_CONFIRM = "confirm"
+B_STAGES = (B_STAGE_CONSTRUCT, B_STAGE_CONFIRM)
+B_CONFIRMATION_INDICES = (1, 2)
+KIND_AXIS_CONSTRUCTION = "axis_construction"
+AXIS_CONSTRUCTED = "AXIS_CONSTRUCTED"
+CROSSED_INTERVAL_REFUSED = "CROSSED_INTERVAL_REFUSED"
 PROTEIN_AXIS_CONTEXT_PROFILE = "context_profile"
 PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE = "fragment_substitution_damage"
 PROTEIN_AXES = (
@@ -2319,6 +2327,133 @@ def protein_verdict(
     }
 
 
+def protein_verdict_b(
+    *, margin: Mapping[str, Any], crossed: Mapping[str, Any]
+) -> dict[str, Any]:
+    """D3.j-B verdict: the crossed arm interval decides, never the symbol-only one."""
+
+    if crossed.get("refused"):
+        return {
+            "verdict": "VOID",
+            "reason": CROSSED_INTERVAL_REFUSED,
+            "detail": crossed.get("refusal"),
+            "delta": crossed.get("delta"),
+        }
+    delta = float(crossed["delta"])
+    arm_interval = crossed.get("delta_ci95")
+    if margin["cleared"]:
+        return {
+            "verdict": "CHEMISTRY",
+            "reason": (
+                "on pairs where chemical and corpus-distributional similarity "
+                "disagree, damage is larger for the chemically dissimilar substitute, "
+                "and the effect clears the recombination ceiling under the standing "
+                "margin read from the crossed sequence-by-symbol interval"
+            ),
+            "delta": delta,
+            "delta_ci95": arm_interval,
+        }
+    if arm_interval is not None and arm_interval[1] < 0.0:
+        return {
+            "verdict": "RECOMBINATION",
+            "reason": (
+                "the crossed arm interval lies entirely below zero, so damage tracks "
+                "the fragment-damage axis rather than chemistry"
+            ),
+            "delta": delta,
+            "delta_ci95": arm_interval,
+        }
+    if delta > 0.0:
+        return {
+            "verdict": "INSIDE_CEILING",
+            "reason": (
+                "the crossed arm point is in the chemical direction but does not "
+                "clear the recombination ceiling under the standing margin"
+            ),
+            "delta": delta,
+            "delta_ci95": arm_interval,
+            "failed_clauses": [
+                name for name, held in margin["clauses"].items() if not held
+            ],
+        }
+    return {
+        "verdict": "UNDECIDED",
+        "reason": (
+            "the crossed arm interval does not separate the two accounts and the "
+            "ceiling is not cleared"
+        ),
+        "delta": delta,
+        "delta_ci95": arm_interval,
+    }
+
+
+def tokenizer_identity(arm: Arm, *, max_tokens: int) -> dict[str, Any]:
+    """What must match between a construction artefact and a confirmation arm."""
+
+    tokenizer = arm.tokenizer
+    vocab = int(getattr(getattr(arm.model, "config", None), "vocab_size", 0) or 0)
+    return {
+        "arm": arm.spec.name,
+        "architecture": arm.spec.architecture,
+        "tokenisation": arm.spec.tokenisation,
+        "input_format": arm.spec.input_format,
+        "vocab_size": vocab,
+        "tokenizer_class": type(tokenizer).__name__,
+        "max_tokens": int(max_tokens),
+    }
+
+
+def cohorts_independent(
+    construction_records: Sequence[str], evaluation_records: Sequence[str]
+) -> dict[str, Any]:
+    """Exact-content and near-duplicate disjointness of two B draws."""
+
+    construct = list(construction_records)
+    evaluation = list(evaluation_records)
+    shared = sorted(set(construct) & set(evaluation))
+    union = construct + evaluation
+    groups, grouping = near_duplicate_groups(union, unit="residues")
+    construct_groups = {int(groups[index]) for index in range(len(construct))}
+    evaluation_groups = {
+        int(groups[index]) for index in range(len(construct), len(union))
+    }
+    shared_groups = sorted(construct_groups & evaluation_groups)
+    independent = not shared and not shared_groups
+    if shared:
+        reason = "EXACT_CONTENT_OVERLAP"
+    elif shared_groups:
+        reason = "NEAR_DUPLICATE_OVERLAP"
+    else:
+        reason = None
+    return {
+        "independent": independent,
+        "reason": reason,
+        "n_shared_records": len(shared),
+        "n_shared_near_duplicate_groups": len(shared_groups),
+        "construction_grouping": grouping,
+    }
+
+
+def frozen_pair_set(
+    members: Mapping[str, Sequence[str]], labels: Sequence[str]
+) -> PairSet:
+    """Rebuild the admitted ordered pairs from a frozen construction artefact."""
+
+    index = {label: position for position, label in enumerate(labels)}
+    pairs: list[tuple[int, int]] = []
+    classes: list[str] = []
+    for name in QUADRANTS:
+        for token in members[name]:
+            if len(token) != 2 or token[0] not in index or token[1] not in index:
+                raise ValueError(f"frozen member {token!r} is not a residue pair")
+            x, y = index[token[0]], index[token[1]]
+            pairs.extend([(x, y), (y, x)])
+            classes.extend([name, name])
+    if not pairs:
+        raise ValueError("the frozen contradiction set admits no pair")
+    return PairSet(tuple(pairs), tuple(classes))
+
+
 def text_control_verdict(delta_block: Mapping[str, Any]) -> dict[str, Any]:
     """D3.j-A1: the byte-level control passes only if it detects substitute similarity."""
 
@@ -2777,10 +2912,19 @@ __all__ = [
     "association_vectors",
     "blosum62_distance",
     "CEILING_ADEQUACY_FLOOR",
+    "AXIS_CONSTRUCTED",
+    "B_CONFIRMATION_INDICES",
+    "B_STAGE_CONFIRM",
+    "B_STAGE_CONSTRUCT",
+    "B_STAGES",
     "CEILING_CONSTRUCTION_VOID",
+    "CROSSED_INTERVAL_REFUSED",
     "EXPERIMENT_B",
     "FRAGMENT_AXIS_SYMMETRIZATION",
+    "KIND_AXIS_CONSTRUCTION",
     "PRE_REGISTRATION_TRACK_B",
+    "cohorts_independent",
+    "frozen_pair_set",
     "PROTEIN_AXES",
     "PROTEIN_AXIS_CONTEXT_PROFILE",
     "PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE",
@@ -2806,6 +2950,8 @@ __all__ = [
     "property_distance",
     "protein_alphabet",
     "protein_verdict",
+    "protein_verdict_b",
+    "tokenizer_identity",
     "quadrants_at_cut",
     "quadrants_at_cut_observed",
     "random_direction_delta_null",

@@ -175,6 +175,8 @@ def crossed_group_interval(
                 f"{unique_symbols.size} symbol groups is below the "
                 f"{MINIMUM_BOOTSTRAP_UNITS}-unit floor"
             ))
+        block["delta_ci95"] = None
+        block["reference_delta_ci95"] = None
         block["difference_ci95"] = None
         block["refusal"] = "; ".join(reasons)
         return block
@@ -184,6 +186,8 @@ def crossed_group_interval(
     n_sym = int(unique_symbols.size)
     seq_index = {int(group): i for i, group in enumerate(unique_sequences)}
     record_group = np.asarray([seq_index[int(group)] for group in sequence_groups])
+    arm_draws: list[float] = []
+    ceiling_draws: list[float] = []
     differences: list[float] = []
     for _ in range(n_draws):
         seq_draw = rng.choice(n_seq, size=n_seq, replace=True)
@@ -211,6 +215,8 @@ def crossed_group_interval(
         ceil_draw = _quadrant_delta(drawn_codes, ceil_means[chosen])
         if not (np.isfinite(arm_draw) and np.isfinite(ceil_draw)):
             continue
+        arm_draws.append(float(arm_draw))
+        ceiling_draws.append(float(ceil_draw))
         differences.append(float(arm_draw - ceil_draw))
 
     if not differences:
@@ -221,6 +227,14 @@ def crossed_group_interval(
             f"only {len(differences)} of {n_draws} crossed-group draws were finite, "
             f"below the {MINIMUM_FINITE_DRAW_FRACTION:.0%} floor"
         )
+    block["delta_ci95"] = [
+        float(np.percentile(arm_draws, 2.5)),
+        float(np.percentile(arm_draws, 97.5)),
+    ]
+    block["reference_delta_ci95"] = [
+        float(np.percentile(ceiling_draws, 2.5)),
+        float(np.percentile(ceiling_draws, 97.5)),
+    ]
     block["difference_ci95"] = [
         float(np.percentile(differences, 2.5)),
         float(np.percentile(differences, 97.5)),

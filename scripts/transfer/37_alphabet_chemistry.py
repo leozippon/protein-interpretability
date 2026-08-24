@@ -85,7 +85,14 @@ from panel_contract import QUALIFYING_PROTEIN_BAND  # noqa: E402
 SCHEMA_VERSION = "r2_transfer_alphabet_chemistry_v1"
 SCHEMA_VERSION_B = "r2_transfer_alphabet_chemistry_d3j_b_v1"
 DEFAULT_OUT = REPO / "results/transfer/alphabet_chemistry"
-B_ONLY_SETTINGS = ("protein_axis", "fragment_axis_order")
+B_ONLY_SETTINGS = (
+    "protein_axis",
+    "fragment_axis_order",
+    "b_stage",
+    "construction_artefact",
+    "confirmation_index",
+    "cohort_skip",
+)
 
 PROVENANCE_MODULES = (
     "src/transfer/alphabet_chemistry.py",
@@ -212,6 +219,28 @@ def build_parser() -> argparse.ArgumentParser:
         "sets this to 7; the stage does not",
     )
     parser.add_argument(
+        "--b-stage", default=None, choices=list(ac.B_STAGES),
+        help="D3.j-B role. construct writes the fragment-damage axis and frozen "
+        "contradiction set with no model damage. confirm evaluates an independent "
+        "cohort against that frozen artefact. Required on B; refused on A",
+    )
+    parser.add_argument(
+        "--construction-artefact", type=Path, default=None,
+        help="frozen D3.j-B construction artefact. REQUIRED on confirm and refused "
+        "on construct. The same file cannot be the confirmation output",
+    )
+    parser.add_argument(
+        "--confirmation-index", type=int, default=None, choices=list(ac.B_CONFIRMATION_INDICES),
+        help="which of the two independent confirmation draws this run is. "
+        "REQUIRED on confirm; the construction artefact names both slots",
+    )
+    parser.add_argument(
+        "--cohort-skip", type=int, default=None,
+        help="offset into the seeded protein draw. D3.j-B only. Confirmation "
+        "defaults to construction_skip + construction_records * confirmation_index "
+        "so the campaign's one construct + two confirms are disjoint by construction",
+    )
+    parser.add_argument(
         "--axis-correlation-orders", default=None,
         help="odd orders at which the corpus context axis is recomputed and "
         "correlated against BLOSUM62 and against the chemical axis, comma "
@@ -316,13 +345,29 @@ def is_variant_b(args: argparse.Namespace) -> bool:
 def resolve(args: argparse.Namespace) -> None:
     """Refuse an incoherent request before a corpus is opened or a model is loaded."""
 
+    if (
+        selected_protein_axis(args) == ac.PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE
+        and not args.synthetic
+        and getattr(args, "b_stage", None) is None
+    ):
+        raise ValueError(
+            "D3.j-B needs --b-stage construct or confirm. The campaign is one "
+            "frozen construction draw and two independent confirmation draws; "
+            "a single run cannot play both roles"
+        )
     required = list(PRE_REGISTERED_DECISIONS)
     forbidden_decisions: list[str] = []
     if args.synthetic:
         required += list(CONTRADICTION_DECISIONS)
         forbidden_decisions += list(CEILING_DECISIONS)
     elif args.arm is not None and PANEL[args.arm].modality == "protein":
-        required += list(CONTRADICTION_DECISIONS) + list(CEILING_DECISIONS)
+        constructing = (
+            is_variant_b(args) and getattr(args, "b_stage", None) == ac.B_STAGE_CONSTRUCT
+        )
+        if constructing:
+            required = [flag for flag in required if flag not in ("max_pairs", "null_draws")]
+        else:
+            required += list(CONTRADICTION_DECISIONS) + list(CEILING_DECISIONS)
     elif args.arm is not None:
         forbidden_decisions += list(CONTRADICTION_DECISIONS) + list(CEILING_DECISIONS)
     missing = [flag for flag in required if getattr(args, flag) is None]
@@ -358,7 +403,12 @@ def resolve(args: argparse.Namespace) -> None:
         modality = PANEL[args.arm].modality
         required = ["records", "max_tokens", "min_symbol_occurrences"]
         if modality == "protein":
-            required += ["kmer_background", "high_order_background", "text_control", "ceiling_orders"]
+            required += ["kmer_background", "high_order_background", "ceiling_orders"]
+            constructing = (
+                is_variant_b(args) and getattr(args, "b_stage", None) == ac.B_STAGE_CONSTRUCT
+            )
+            if not constructing:
+                required += ["text_control"]
         else:
             required += ["background_records"]
         absent = [flag for flag in required if getattr(args, flag) is None]
@@ -433,10 +483,49 @@ def resolve(args: argparse.Namespace) -> None:
                 "--ceiling-orders so the matching ceiling rung is the same object "
                 "as the admission axis"
             )
-    elif args.fragment_axis_order is not None:
+        if args.b_stage is None:
+            raise ValueError(
+                "D3.j-B needs --b-stage construct or confirm. The campaign is one "
+                "frozen construction draw and two independent confirmation draws; "
+                "a single run cannot play both roles"
+            )
+        if args.b_stage == ac.B_STAGE_CONSTRUCT:
+            if args.construction_artefact is not None or args.confirmation_index is not None:
+                raise ValueError(
+                    "--construction-artefact and --confirmation-index belong to "
+                    "confirm and would make one file serve both roles"
+                )
+            unused_on_construct = [
+                flag for flag in (
+                    "text_control", "reachability_pairs", "reachability_margin",
+                    "random_directions", "ceiling_factor", "null_draws", "max_pairs",
+                )
+                if getattr(args, flag) is not None
+            ]
+            if unused_on_construct:
+                raise ValueError(
+                    ", ".join(f"--{flag.replace('_', '-')}" for flag in unused_on_construct)
+                    + " measure a model and decide nothing on an axis-construction run"
+                )
+        else:
+            if args.construction_artefact is None:
+                raise ValueError(
+                    "confirm needs --construction-artefact: the axis and pair set "
+                    "are frozen there and are not recomputed"
+                )
+            if args.confirmation_index not in ac.B_CONFIRMATION_INDICES:
+                raise ValueError(
+                    "confirm needs --confirmation-index 1 or 2, the two independent "
+                    "evaluation draws named by the construction artefact"
+                )
+    elif args.fragment_axis_order is not None or any(
+        getattr(args, flag, None) is not None
+        for flag in ("b_stage", "construction_artefact", "confirmation_index", "cohort_skip")
+    ):
         raise ValueError(
-            "--fragment-axis-order decides the D3.j-B admission axis and would "
-            "enter a D3.j-A artefact as a setting that decided nothing"
+            "--b-stage, --construction-artefact, --confirmation-index, "
+            "--fragment-axis-order and --cohort-skip are D3.j-B decisions and "
+            "would enter a D3.j-A artefact as settings that decided nothing"
         )
     if args.random_directions is not None and args.random_directions < ac.MINIMUM_RANDOM_DIRECTIONS:
         raise ValueError(
@@ -451,9 +540,11 @@ def resolve(args: argparse.Namespace) -> None:
         )
     if args.reachability_margin is not None and args.reachability_margin < 0.0:
         raise ValueError("a negative reachability margin passes an instrument that ranks backwards")
-    if (args.reachability_pairs is not None and args.reachability_pairs < 1) or args.max_pairs < 1:
-        raise ValueError("--reachability-pairs and --max-pairs must be positive")
-    if args.null_draws < 20:
+    if args.reachability_pairs is not None and args.reachability_pairs < 1:
+        raise ValueError("--reachability-pairs must be positive")
+    if args.max_pairs is not None and args.max_pairs < 1:
+        raise ValueError("--max-pairs must be positive")
+    if args.null_draws is not None and args.null_draws < 20:
         raise ValueError(
             "a null reported as a distribution needs draws to be a distribution"
         )
@@ -476,6 +567,7 @@ def build_cohort(args: argparse.Namespace, spec: arms.ArmSpec) -> arms.Cohort:
             name=spec.evaluation_cohort_source,
             with_ec=spec.evaluation_cohort_source == "zymctrl_ec",
             seed=args.cohort_draw_seed,
+            skip=int(getattr(args, "cohort_skip", None) or 0),
         )
     return arms.text_cohort(
         args.records, min_chars=TEXT_MIN_CHARACTERS, name=spec.evaluation_cohort_source,
@@ -1638,87 +1730,74 @@ def _directed_fragment_stats(
     return directed
 
 
-def run_protein_cell_b(args: argparse.Namespace) -> dict[str, Any]:
-    """D3.j-B: admission axis is fragment substitution damage on the scored cohort."""
+def _b_scoring_state(args: argparse.Namespace, spec: arms.ArmSpec) -> dict[str, Any]:
+    """Tokenizer, cohort and residue runs. No arm likelihood is read."""
 
-    started = time.time()
-    spec = PANEL[args.arm]
-    control = read_text_control(args.text_control)
-    axis_order = int(args.fragment_axis_order)
-    ordered = ac.load_ordered_counts(
-        args.high_order_background, args.ceiling_orders, pinned=args.kmer_background
-    )
-    labels = list(AA20)
-    chemical = ac.property_distance(
-        ac.chemical_property_table(labels), source=ac.CHEMICAL_AXIS_SOURCE
-    )
-    blosum = ac.blosum62_distance(labels)
-    rows, columns = np.triu_indices(len(labels), 1)
-
-    cohort = build_cohort(args, spec)
     arm = arms.load_arm(args.arm, device=args.device, dtype=ac.DTYPE)
+    cohort = build_cohort(args, spec)
     texts = cohort.input_strings(arm)
-    body: dict[str, Any] = {
-        "arm": {
-            "name": spec.name, "modality": spec.modality, "architecture": spec.architecture,
-            "tokenisation": spec.tokenisation, "input_format": spec.input_format,
-            "pretraining_corpus": spec.pretraining_corpus,
-        },
-        "text_control": control,
-        "limitations": limitations_block(modality="protein"),
-    }
-    try:
-        alphabet = ac.protein_alphabet(arm)
-    except ValueError as error:
-        body["verdict"] = {
-            "verdict": "NOT_MEASURABLE",
-            "reason": f"the alphabet is not addressable on this arm: {error}",
-        }
-        return body
-    coverage = ac.symbol_token_coverage(arm, texts, alphabet=alphabet, max_len=args.max_tokens)
+    alphabet = ac.protein_alphabet(arm)
+    coverage = ac.symbol_token_coverage(
+        arm, texts, alphabet=alphabet, max_len=args.max_tokens
+    )
     admission = ac.admit_arm(coverage, arm.name, minimum=ac.MINIMUM_SYMBOL_TOKEN_COVERAGE)
-    body["admission"] = {"coverage": coverage, "verdict": admission}
-    if not admission["admitted"]:
-        body["verdict"] = {"verdict": "NOT_MEASURABLE", "reason": admission["reason"]}
-        return body
-
-    model = ac.ArmAlphabetModel(arm)
-    body["intervention"] = model.record()
     scoring_batch, cohort_record = scoring_cohort(arm, texts, max_tokens=args.max_tokens)
-    groups, grouping = near_duplicate_groups(list(cohort.records), unit="residues")
-    body["cohort"] = {
-        **cohort_record,
-        "name": cohort.name,
-        "digest": cohort.digest,
-        "provenance_digest": cohort.provenance_digest,
-        "sampling": cohort.sampling,
-        "band_residues": list(QUALIFYING_PROTEIN_BAND),
-        "near_duplicate_groups": grouping,
-    }
     occurrences = ac.context_counts(scoring_batch, [s.token_id for s in alphabet])
-    alphabet, occupancy = admit_symbols(
-        alphabet, occurrences, minimum=args.min_symbol_occurrences, fixed=True
+    if admission["admitted"]:
+        alphabet, occupancy = admit_symbols(
+            alphabet, occurrences, minimum=args.min_symbol_occurrences, fixed=True
+        )
+    else:
+        occupancy = {"occurrences": {s.label: int(occurrences.get(s.token_id, 0)) for s in alphabet}}
+    groups, grouping = near_duplicate_groups(list(cohort.records), unit="residues")
+    runs_by_record = (
+        ac.residue_runs_by_row(scoring_batch, alphabet) if admission["admitted"] else []
     )
-    body["alphabet"] = occupancy
-    if [symbol.label for symbol in alphabet] != labels:
-        raise RuntimeError("D3.j-B requires the twenty-residue alphabet in AA20 order")
+    return {
+        "arm": arm,
+        "cohort": cohort,
+        "texts": texts,
+        "alphabet": alphabet,
+        "coverage": coverage,
+        "admission": admission,
+        "scoring_batch": scoring_batch,
+        "cohort_record": cohort_record,
+        "occurrences": occurrences,
+        "occupancy": occupancy,
+        "groups": groups,
+        "grouping": grouping,
+        "runs_by_record": runs_by_record,
+        "identity": ac.tokenizer_identity(arm, max_tokens=args.max_tokens),
+    }
 
-    runs_by_record = ac.residue_runs_by_row(scoring_batch, alphabet)
-    fragment = ac.FragmentConditional(ordered[axis_order])
-    directed = _directed_fragment_stats(fragment, runs_by_record, alphabet)
-    distributional, observed, axis_refusals = ac.fragment_damage_axis(
-        directed, size=len(alphabet)
+
+def _b_axis_from_state(
+    state: Mapping[str, Any],
+    *,
+    fragment: ac.FragmentConditional,
+    chemical: ac.PropertyAxis,
+    labels: Sequence[str],
+    ordered_record: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Fragment-damage axis and contradiction set. Still no arm likelihood."""
+
+    directed = _directed_fragment_stats(
+        fragment, state["runs_by_record"], state["alphabet"]
     )
+    distributional, observed, refusals = ac.fragment_damage_axis(
+        directed, size=len(state["alphabet"])
+    )
+    rows, columns = np.triu_indices(len(labels), 1)
     axis_record = {
         "kind": ac.PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE,
-        "order": axis_order,
+        "order": fragment.order,
         "symmetrization": ac.FRAGMENT_AXIS_SYMMETRIZATION,
-        "corpus": ordered[axis_order].record(),
-        "cohort_digest": cohort.digest,
-        "cohort_provenance_digest": cohort.provenance_digest,
-        "n_records": len(runs_by_record),
+        "corpus": dict(ordered_record),
+        "cohort_digest": state["cohort"].digest,
+        "cohort_provenance_digest": state["cohort"].provenance_digest,
+        "n_records": len(state["runs_by_record"]),
         "directional": {
-            f"{alphabet[x].label}->{alphabet[y].label}": {
+            f"{state['alphabet'][x].label}->{state['alphabet'][y].label}": {
                 "nats_per_scored_token": record.get("nats_per_scored_token"),
                 "n_scored_tokens": int(record["n_scored_tokens"]),
                 "measurable": bool(record["measurable"]),
@@ -1727,8 +1806,289 @@ def run_protein_cell_b(args: argparse.Namespace) -> dict[str, Any]:
             }
             for (x, y), record in directed.items()
         },
-        "coverage_refusals": axis_refusals,
+        "coverage_refusals": refusals,
         "n_covered_unordered_pairs": int(observed[rows, columns].sum()),
+    }
+    sweep = ac.cut_sweep_observed(chemical.distance, distributional, observed)
+    per_cut = {
+        cut: ac.quadrants_at_cut_observed(
+            chemical.distance, distributional, observed, cut=cut
+        )
+        for cut in ac.CUTS
+    }
+    return {
+        "directed": directed,
+        "distributional": distributional,
+        "observed": observed,
+        "axis_record": axis_record,
+        "sweep": sweep,
+        "per_cut": per_cut,
+    }
+
+
+def _load_construction_artefact(path: Path) -> dict[str, Any]:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if payload.get("schema_version") != SCHEMA_VERSION_B:
+        raise ValueError(
+            f"{path} carries schema {payload.get('schema_version')!r}, not {SCHEMA_VERSION_B}"
+        )
+    if payload.get("kind") != ac.KIND_AXIS_CONSTRUCTION:
+        raise ValueError(
+            f"{path} is a {payload.get('kind')!r} artefact, not {ac.KIND_AXIS_CONSTRUCTION}"
+        )
+    if payload.get("experiment") != ac.EXPERIMENT_B:
+        raise ValueError(f"{path} is not a {ac.EXPERIMENT_B} construction artefact")
+    if payload.get("verdict", {}).get("verdict") != ac.AXIS_CONSTRUCTED:
+        raise ValueError(
+            f"{path} is not AXIS_CONSTRUCTED ({payload.get('verdict', {}).get('verdict')!r})"
+        )
+    return payload
+
+
+def _apply_confirmation_skip(args: argparse.Namespace, construction: Mapping[str, Any]) -> None:
+    sampling = construction.get("cohort", {}).get("sampling", {})
+    construction_skip = int(sampling.get("skip", 0) or 0)
+    n_records = int(construction["cohort"]["n_records"])
+    default_skip = construction_skip + n_records * int(args.confirmation_index)
+    if args.cohort_skip is None:
+        args.cohort_skip = default_skip
+    if (
+        int(args.cohort_skip) == construction_skip
+        and int(args.cohort_draw_seed) == int(sampling.get("seed", args.cohort_draw_seed))
+    ):
+        raise ValueError(
+            "confirmation skip and draw seed match the construction draw; the same "
+            "cohort cannot serve both roles"
+        )
+
+
+def run_b_construct(args: argparse.Namespace) -> dict[str, Any]:
+    spec = PANEL[args.arm]
+    axis_order = int(args.fragment_axis_order)
+    ordered = ac.load_ordered_counts(
+        args.high_order_background, args.ceiling_orders, pinned=args.kmer_background
+    )
+    labels = list(AA20)
+    chemical = ac.property_distance(
+        ac.chemical_property_table(labels), source=ac.CHEMICAL_AXIS_SOURCE
+    )
+    state = _b_scoring_state(args, spec)
+    body: dict[str, Any] = {
+        "role": ac.B_STAGE_CONSTRUCT,
+        "arm": {
+            "name": spec.name, "modality": spec.modality, "architecture": spec.architecture,
+            "tokenisation": spec.tokenisation, "input_format": spec.input_format,
+            "pretraining_corpus": spec.pretraining_corpus,
+        },
+        "tokenizer_identity": state["identity"],
+        "admission": {"coverage": state["coverage"], "verdict": state["admission"]},
+        "evaluation_protocol": {
+            "n_confirmations": len(ac.B_CONFIRMATION_INDICES),
+            "confirmation_indices": list(ac.B_CONFIRMATION_INDICES),
+            "default_confirmation_skip": (
+                "construction_skip + construction_records * confirmation_index"
+            ),
+        },
+    }
+    if not state["admission"]["admitted"]:
+        body["verdict"] = {"verdict": "NOT_MEASURABLE", "reason": state["admission"]["reason"]}
+        return body
+    if [symbol.label for symbol in state["alphabet"]] != labels:
+        raise RuntimeError("D3.j-B requires the twenty-residue alphabet in AA20 order")
+    axis = _b_axis_from_state(
+        state, fragment=ac.FragmentConditional(ordered[axis_order]),
+        chemical=chemical, labels=labels, ordered_record=ordered[axis_order].record(),
+    )
+    body["cohort"] = {
+        **state["cohort_record"],
+        "name": state["cohort"].name,
+        "digest": state["cohort"].digest,
+        "provenance_digest": state["cohort"].provenance_digest,
+        "sampling": state["cohort"].sampling,
+        "band_residues": list(QUALIFYING_PROTEIN_BAND),
+        "near_duplicate_groups": state["grouping"],
+        "records": list(state["cohort"].records),
+        "n_records": len(state["cohort"].records),
+    }
+    body["alphabet"] = state["occupancy"]
+    body["axes"] = {
+        "labels": labels,
+        "chemical": chemical.record(),
+        "distributional": axis["axis_record"],
+        "matrices": {
+            "chemical": matrix_record(chemical.distance),
+            "distributional_fragment_damage": matrix_record(axis["distributional"]),
+        },
+    }
+    body["contradiction_set"] = {
+        "sweep": axis["sweep"],
+        "declared_cut": args.cut,
+        "quantiles_frozen": True,
+        "unordered_members": {
+            cut: {
+                name: [f"{labels[x]}{labels[y]}" for x, y in record["members"][name]]
+                for name in ac.QUADRANTS
+            }
+            for cut, record in axis["per_cut"].items()
+        },
+        "axis_coverage_refusals": axis["axis_record"]["coverage_refusals"],
+    }
+    if not axis["per_cut"][args.cut]["readable"]:
+        body["verdict"] = {
+            "verdict": "NO_CONTRADICTION_SET_AT_DECLARED_CUT",
+            "reason": (
+                f"the {args.cut} cut admits {axis['per_cut'][args.cut]['unordered_counts']} "
+                f"covered unordered pairs against a floor of {ac.MINIMUM_QUADRANT_PAIRS}"
+            ),
+        }
+        return body
+    admitted = ac.ordered_pair_set(axis["per_cut"][args.cut])
+    ceiling_on_admitted = [
+        float(axis["directed"][(x, y)]["nats_per_scored_token"])
+        for x, y in admitted.pairs
+        if axis["directed"][(x, y)]["measurable"]
+    ]
+    construction = ac.matching_ceiling_predicts_distributional_side(
+        admitted.codes(ac.QUADRANTS), ceiling_on_admitted
+    )
+    body["construction_check"] = construction
+    if construction["status"] != "OK":
+        body["verdict"] = {
+            "verdict": "VOID",
+            "reason": construction["reason"],
+            "detail": construction["detail"],
+        }
+        return body
+    body["verdict"] = {
+        "verdict": ac.AXIS_CONSTRUCTED,
+        "reason": (
+            "the fragment-damage axis and contradiction set are frozen on this "
+            "construction draw; model damage was not measured"
+        ),
+    }
+    return body
+
+
+def run_protein_cell_b(args: argparse.Namespace) -> dict[str, Any]:
+    """D3.j-B: construct the axis or confirm it on an independent cohort."""
+
+    if args.b_stage == ac.B_STAGE_CONSTRUCT:
+        return run_b_construct(args)
+    return run_b_confirm(args)
+
+
+def run_b_confirm(args: argparse.Namespace) -> dict[str, Any]:
+    started = time.time()
+    spec = PANEL[args.arm]
+    construction = _load_construction_artefact(args.construction_artefact)
+    _apply_confirmation_skip(args, construction)
+    destination = args.out / artefact_name(
+        "protein_cell", args.arm, args.seed,
+        variant=f"{ac.EXPERIMENT_B}-confirm{args.confirmation_index}",
+    )
+    if Path(args.construction_artefact).resolve() == destination.resolve():
+        raise ValueError("the construction artefact cannot also be the confirmation output")
+    control = read_text_control(args.text_control)
+    axis_order = int(args.fragment_axis_order)
+    ordered = ac.load_ordered_counts(
+        args.high_order_background, args.ceiling_orders, pinned=args.kmer_background
+    )
+    frozen_order = int(construction["axes"]["distributional"]["order"])
+    frozen_sha = construction["axes"]["distributional"]["corpus"]["sha256"]
+    if axis_order != frozen_order:
+        raise ValueError(
+            f"confirmation axis order {axis_order} does not match construction {frozen_order}"
+        )
+    if ordered[axis_order].sha256 != frozen_sha:
+        raise ValueError(
+            "confirmation fragment background digest does not match the construction artefact"
+        )
+    if args.cut != construction["contradiction_set"]["declared_cut"]:
+        raise ValueError(
+            f"confirmation cut {args.cut!r} does not match construction "
+            f"{construction['contradiction_set']['declared_cut']!r}"
+        )
+    labels = list(AA20)
+    if construction["axes"]["labels"] != labels:
+        raise ValueError("construction alphabet labels do not match AA20")
+    chemical = ac.property_distance(
+        ac.chemical_property_table(labels), source=ac.CHEMICAL_AXIS_SOURCE
+    )
+    blosum = ac.blosum62_distance(labels)
+    state = _b_scoring_state(args, spec)
+    if state["identity"] != construction["tokenizer_identity"]:
+        raise ValueError(
+            "confirmation tokenizer/rendering identity does not match construction: "
+            f"{state['identity']} vs {construction['tokenizer_identity']}"
+        )
+    independence = ac.cohorts_independent(
+        construction["cohort"]["records"], list(state["cohort"].records)
+    )
+    if not independence["independent"]:
+        return {
+            "role": ac.B_STAGE_CONFIRM,
+            "confirmation_index": int(args.confirmation_index),
+            "construction": {"path": str(args.construction_artefact)},
+            "independence": independence,
+            "verdict": {
+                "verdict": "VOID",
+                "reason": independence["reason"],
+                "detail": "construction and evaluation cohorts are not independent",
+            },
+        }
+    arm = state["arm"]
+    cohort = state["cohort"]
+    texts = state["texts"]
+    body: dict[str, Any] = {
+        "role": ac.B_STAGE_CONFIRM,
+        "confirmation_index": int(args.confirmation_index),
+        "construction": {
+            "path": str(args.construction_artefact),
+            "sha256": sha256_file(Path(args.construction_artefact)),
+            "cohort_digest": construction["cohort"]["digest"],
+        },
+        "independence": independence,
+        "arm": {
+            "name": spec.name, "modality": spec.modality, "architecture": spec.architecture,
+            "tokenisation": spec.tokenisation, "input_format": spec.input_format,
+            "pretraining_corpus": spec.pretraining_corpus,
+        },
+        "text_control": control,
+        "limitations": limitations_block(modality="protein"),
+    }
+    if not state["admission"]["admitted"]:
+        body["verdict"] = {"verdict": "NOT_MEASURABLE", "reason": state["admission"]["reason"]}
+        return body
+    alphabet = state["alphabet"]
+    body["admission"] = {"coverage": state["coverage"], "verdict": state["admission"]}
+    if [symbol.label for symbol in alphabet] != labels:
+        raise RuntimeError("D3.j-B requires the twenty-residue alphabet in AA20 order")
+    model = ac.ArmAlphabetModel(arm)
+    body["intervention"] = model.record()
+    scoring_batch = state["scoring_batch"]
+    groups = state["groups"]
+    runs_by_record = state["runs_by_record"]
+    occurrences = state["occurrences"]
+    body["cohort"] = {
+        **state["cohort_record"],
+        "name": cohort.name,
+        "digest": cohort.digest,
+        "provenance_digest": cohort.provenance_digest,
+        "sampling": cohort.sampling,
+        "band_residues": list(QUALIFYING_PROTEIN_BAND),
+        "near_duplicate_groups": state["grouping"],
+    }
+    body["alphabet"] = state["occupancy"]
+    fragment = ac.FragmentConditional(ordered[axis_order])
+    directed = _directed_fragment_stats(fragment, runs_by_record, alphabet)
+    frozen_axis = construction["axes"]["distributional"]
+    distributional = np.asarray(
+        construction["axes"]["matrices"]["distributional_fragment_damage"], dtype=np.float64
+    )
+    axis_record = {
+        **frozen_axis,
+        "reused_from_construction": True,
+        "evaluation_cohort_digest": cohort.digest,
     }
     body["axes"] = {
         "labels": labels,
@@ -1738,12 +2098,8 @@ def run_protein_cell_b(args: argparse.Namespace) -> dict[str, Any]:
             "name": "blosum62",
             "source": ac.BLOSUM62_SOURCE,
             "side_note": ac.BLOSUM62_SIDE_NOTE,
-            "spearman_against_fragment_axis": spearman_or_none(
-                blosum[rows, columns][observed[rows, columns]],
-                distributional[rows, columns][observed[rows, columns]],
-            ),
             "spearman_against_chemical_axis": float(
-                stats.spearmanr(blosum[rows, columns], chemical.distance[rows, columns]).statistic
+                stats.spearmanr(blosum[np.triu_indices(len(labels), 1)], chemical.distance[np.triu_indices(len(labels), 1)]).statistic
             ),
         },
         "matrices": {
@@ -1752,35 +2108,26 @@ def run_protein_cell_b(args: argparse.Namespace) -> dict[str, Any]:
             "blosum62": matrix_record(blosum),
         },
     }
-    sweep = ac.cut_sweep_observed(chemical.distance, distributional, observed)
-    per_cut = {
-        cut: ac.quadrants_at_cut_observed(chemical.distance, distributional, observed, cut=cut)
-        for cut in ac.CUTS
-    }
+    frozen_members = construction["contradiction_set"]["unordered_members"]
     body["contradiction_set"] = {
-        "sweep": sweep,
         "declared_cut": args.cut,
-        "unordered_members": {
-            cut: {
-                name: [f"{labels[x]}{labels[y]}" for x, y in record["members"][name]]
+        "quantiles_recomputed": False,
+        "unordered_members": frozen_members,
+        "source": "construction artefact; membership is immutable",
+    }
+    per_cut = {
+        cut: {
+            "members": {
+                name: [
+                    (labels.index(token[0]), labels.index(token[1]))
+                    for token in frozen_members[cut][name]
+                ]
                 for name in ac.QUADRANTS
             }
-            for cut, record in per_cut.items()
-        },
-        "axis_coverage_refusals": axis_refusals,
-    }
-    if not per_cut[args.cut]["readable"]:
-        body["verdict"] = {
-            "verdict": "NO_CONTRADICTION_SET_AT_DECLARED_CUT",
-            "reason": (
-                f"the {args.cut} cut admits {per_cut[args.cut]['unordered_counts']} "
-                f"covered unordered pairs against a floor of {ac.MINIMUM_QUADRANT_PAIRS} "
-                "per quadrant. Uncovered fragment pairs were refused rather than filled"
-            ),
         }
-        return body
-
-    admitted = ac.ordered_pair_set(per_cut[args.cut])
+        for cut in frozen_members
+    }
+    admitted = ac.frozen_pair_set(frozen_members[args.cut], labels)
     ceiling_on_admitted = []
     missing = []
     for x, y in admitted.pairs:
@@ -1932,6 +2279,14 @@ def run_protein_cell_b(args: argparse.Namespace) -> dict[str, Any]:
         indices = block.pop("_indices")
         codes = block.pop("_codes")
         groups_symbol = block.pop("_groups")
+        block["own"] = {
+            **block["own"],
+            "decides": False,
+            "status": (
+                "symbol-only compatibility diagnostic; D3.j-B verdicts read the "
+                "crossed sequence-by-symbol interval"
+            ),
+        }
         random_null = ac.random_direction_delta_null(
             codes=codes,
             per_direction=[[values[i] for i in indices] for values in per_direction],
@@ -1952,13 +2307,13 @@ def run_protein_cell_b(args: argparse.Namespace) -> dict[str, Any]:
                 n_draws=args.bootstrap_draws,
             )
             margin = ac.ceiling_margin(
-                delta_block=block["own"], ceiling_block=against,
+                delta_block=against, ceiling_block=against,
                 random_null=random_null, factor=args.ceiling_factor,
             )
             by_order[str(order)] = {
                 "against_ceiling": against,
                 "ceiling_margin": margin,
-                "verdict": ac.protein_verdict(margin=margin, delta_block=block["own"]),
+                "verdict": ac.protein_verdict_b(margin=margin, crossed=against),
                 "ceiling_adequacy_ratio": ceiling_curve[str(order)]["adequacy"]["ratio"],
                 "ceiling_adequate": ceiling_curve[str(order)]["adequacy"]["adequate"],
             }
@@ -2161,8 +2516,14 @@ def main() -> None:
 
     modality = PANEL[args.arm].modality
     kind = "protein_cell" if modality == "protein" else "text_control"
+    variant = None
     if modality == "protein" and is_variant_b(args):
         body = run_protein_cell_b(args)
+        if args.b_stage == ac.B_STAGE_CONSTRUCT:
+            kind = ac.KIND_AXIS_CONSTRUCTION
+            variant = f"{ac.EXPERIMENT_B}-construct"
+        else:
+            variant = f"{ac.EXPERIMENT_B}-confirm{args.confirmation_index}"
     elif modality == "protein":
         body = run_protein_cell(args)
     else:
@@ -2179,8 +2540,7 @@ def main() -> None:
         }
         payload["provenance"]["modules"].update(extra)
     destination = args.out / artefact_name(
-        kind, args.arm, args.seed,
-        variant=ac.EXPERIMENT_B if is_variant_b(args) else None,
+        kind, args.arm, args.seed, variant=variant,
     )
     write_json(destination, payload)
     verdict = payload["verdict"]
