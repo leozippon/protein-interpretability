@@ -346,6 +346,90 @@ def test_the_campaign_manifest_is_fourteen_cells_on_healthy_cards():
     assert "eval(" not in args
 
 
+def test_c_confirm_builds_scoring_state_once_from_the_frozen_cohort(tmp_path, monkeypatch):
+    from src.transfer.io import write_json
+
+    payload = _c_construction_payload()
+    frozen_records = list(payload["evaluation_protocol"]["slots"]["1"]["records"])
+    payload["cohort"]["records"] = frozen_records
+    artefact = tmp_path / "construct.json"
+    write_json(artefact, payload)
+
+    captured: dict = {"state_calls": []}
+    real_from_slot = STAGE._cohort_from_c_slot
+
+    def from_slot(args, spec, slot):
+        cohort = real_from_slot(args, spec, slot)
+        captured["frozen"] = cohort
+        return cohort
+
+    def spy_state(args, spec, *, cohort=None):
+        captured["state_calls"].append(cohort)
+        if cohort is captured.get("frozen"):
+            return {
+                "arm": object(),
+                "cohort": cohort,
+                "texts": list(cohort.records),
+                "alphabet": (),
+                "coverage": {},
+                "admission": {"admitted": True, "reason": ""},
+                "scoring_batch": object(),
+                "cohort_record": {},
+                "occurrences": {},
+                "occupancy": {},
+                "groups": (),
+                "grouping": {},
+                "runs_by_record": [],
+                "identity": payload["tokenizer_identity"],
+            }
+
+        class _Skip0:
+            digest = "skip-0-redraw"
+            provenance_digest = "skip-0-prov"
+            records = ["X" * 40]
+            name = "skip0"
+            sampling = {"skip": 0}
+
+        return {
+            "arm": object(),
+            "cohort": _Skip0(),
+            "texts": ["X" * 40],
+            "alphabet": (),
+            "coverage": {},
+            "admission": {"admitted": True, "reason": ""},
+            "scoring_batch": object(),
+            "cohort_record": {},
+            "occurrences": {},
+            "occupancy": {},
+            "groups": (),
+            "grouping": {},
+            "runs_by_record": [],
+            "identity": payload["tokenizer_identity"],
+        }
+
+    monkeypatch.setattr(STAGE, "_cohort_from_c_slot", from_slot)
+    monkeypatch.setattr(STAGE, "_b_scoring_state", spy_state)
+    monkeypatch.setattr(STAGE, "read_text_control", lambda path: {"verdict": "PASS"})
+    monkeypatch.setattr(
+        ac, "load_ordered_counts", lambda *a, **k: {5: type("O", (), {"sha256": "abc"})()}
+    )
+    args = _args(
+        arm="progen2-small", cut="tercile", seed=1, records=2, max_tokens=64,
+        min_symbol_occurrences=10, kmer_background=Path("x"),
+        high_order_background=Path("y"), text_control=Path("z"),
+        ceiling_orders="1,3,5", fragment_axis_order=5,
+        protein_axis=ac.PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE,
+        b_stage=ac.B_STAGE_CONFIRM, experiment=ac.EXPERIMENT_C,
+        construction_artefact=artefact, confirmation_index=1,
+        cohort_draw_seed=7, out=tmp_path, cohort_skip=None,
+    )
+    result = STAGE.run_c_confirm(args)
+    assert captured["state_calls"] == [captured["frozen"]]
+    assert result["independence"]["independent"] is False
+    assert result["independence"]["reason"] == "EXACT_CONTENT_OVERLAP"
+    assert result["verdict"]["verdict"] == "VOID"
+
+
 def test_group_disjoint_sampling_is_declared_and_is_not_a_skip_window():
     record = group_disjoint_sampling_record(
         seed=20260728, requested=4, eligible=20, corpus="plain_swissprot",

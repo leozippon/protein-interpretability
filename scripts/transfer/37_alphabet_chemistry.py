@@ -2479,7 +2479,6 @@ def run_b_confirm(
         ac.chemical_property_table(labels), source=ac.CHEMICAL_AXIS_SOURCE
     )
     blosum = ac.blosum62_distance(labels)
-    state = _b_scoring_state(args, spec)
     if state["cohort"].digest != slot["digest"]:
         raise ValueError(
             f"confirmation cohort digest {state['cohort'].digest} does not match "

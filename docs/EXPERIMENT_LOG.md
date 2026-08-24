@@ -16868,3 +16868,11 @@ Both ByGPT5 controls succeeded. All eight confirmations failed immediately becau
 The frozen plan is `docs/D3J_C_CONFIRMATION_PREREGISTRATION.md`. The H200 manifest is `scripts/transfer/campaign_d3jc_confirmation.tsv`: the same 14-cell / 5-slot healthy-card schedule, cards 0, 1 and 3, 24-hour bound, exact JSON basenames, and bounded literal path substitution. Card 2 remains excluded for the uncorrectable SRAM parity error. No pod name is recorded.
 
 **No D3.j-C result is claimed.** A local full-size construction smoke on an L20 was not launched: all eight local cards were occupied at implementation time.
+
+### Pre-dispatch validation of group-disjoint fill
+
+A real CPU full-size group-disjoint fill was run against the current local data. No GPU or H200 was used. Seed `20260728`, three slots of 4,096 records.
+
+Plain Swiss-Prot: eligible 213,034; scanned 13,973; rejected exact 381; rejected near 1,304; all three slots 4,096 and pairwise independent. ZymCTRL EC: eligible 57,096; scanned 17,037; rejected exact 1,378; rejected near 3,371; all slots 4,096 and pairwise independent.
+
+This validates cohort construction only. It is not a D3.j-C axis or model result.
