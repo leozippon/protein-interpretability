@@ -833,3 +833,290 @@ def test_the_protein_verdict_classifies_recombination_rather_than_calling_it_wea
     )
     assert inside["verdict"] == "INSIDE_CEILING"
     assert inside["failed_clauses"] == ["above_random_direction_q95"]
+
+
+# --------------------------------------------------------------- D3.j-B successor
+
+
+def _toy_ordered(order: int, counts: np.ndarray) -> ac.OrderedFragmentCounts:
+    return ac.OrderedFragmentCounts(
+        order=order,
+        counts=counts,
+        source="toy",
+        sha256="0" * 64,
+        observed=int((counts > 0).sum()),
+        possible=int(counts.size),
+        total_kmers=int(counts.sum()),
+    )
+
+
+def _kmer_index(symbols: str) -> int:
+    value = 0
+    for character in symbols:
+        value = value * 20 + AA20.index(character)
+    return value
+
+
+def _order2_conditional() -> ac.FragmentConditional:
+    """A bigram table where A/C are interchangeable and A/D are not."""
+
+    counts = np.ones(400, dtype=np.float64)
+    for left, right, weight in (
+        ("A", "A", 80.0),
+        ("A", "C", 80.0),
+        ("C", "A", 80.0),
+        ("C", "C", 80.0),
+        ("A", "D", 1.0),
+        ("D", "A", 1.0),
+        ("D", "D", 80.0),
+    ):
+        counts[_kmer_index(left + right)] = weight
+    return ac.FragmentConditional(_toy_ordered(2, counts))
+
+
+def test_a_omitted_protein_axis_is_still_variant_a():
+    args = _args(
+        arm="progen2-small", cut="tercile", max_pairs=40, null_draws=200, seed=1,
+        reachability_pairs=4, reachability_margin=0.0, random_directions=8,
+        ceiling_factor=2.0, records=8, max_tokens=64, min_symbol_occurrences=10,
+        kmer_background=Path("x"), high_order_background=Path("y"),
+        text_control=Path("z"), ceiling_orders="1,3,5",
+    )
+    STAGE.resolve(args)
+    assert STAGE.selected_protein_axis(args) == ac.PROTEIN_AXIS_CONTEXT_PROFILE
+    assert STAGE.is_variant_b(args) is False
+    payload = STAGE.base_payload(args, kind="protein_cell")
+    assert payload["schema_version"] == STAGE.SCHEMA_VERSION
+    assert "experiment" not in payload
+    assert "protein_axis" not in payload["settings"]
+    assert "fragment_axis_order" not in payload["settings"]
+    assert payload["pre_registration"]["track"] == ac.PRE_REGISTRATION_TRACK
+
+
+def test_a_artefact_name_is_unchanged_when_variant_is_omitted():
+    assert STAGE.artefact_name("protein_cell", "progen2-small", 20260819) == (
+        f"alphabet_chemistry__progen2-small__{ac.INTERVENTION}__seed20260819.json"
+    )
+
+
+def test_b_requires_an_explicit_fragment_axis_order_among_the_ceiling_orders():
+    args = _args(
+        arm="progen2-small", cut="tercile", max_pairs=40, null_draws=200, seed=1,
+        reachability_pairs=4, reachability_margin=0.0, random_directions=8,
+        ceiling_factor=2.0, records=8, max_tokens=64, min_symbol_occurrences=10,
+        kmer_background=Path("x"), high_order_background=Path("y"),
+        text_control=Path("z"), ceiling_orders="1,3,5",
+        protein_axis=ac.PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE,
+    )
+    with pytest.raises(ValueError, match="--fragment-axis-order"):
+        STAGE.resolve(args)
+    args.fragment_axis_order = 4
+    with pytest.raises(ValueError, match="must be listed in --ceiling-orders"):
+        STAGE.resolve(args)
+    args.fragment_axis_order = 5
+    STAGE.resolve(args)
+    assert STAGE.is_variant_b(args) is True
+    payload = STAGE.base_payload(args, kind="protein_cell")
+    assert payload["schema_version"] == STAGE.SCHEMA_VERSION_B
+    assert payload["experiment"] == ac.EXPERIMENT_B
+    assert payload["settings"]["fragment_axis_order"] == 5
+    assert ac.EXPERIMENT_B in STAGE.artefact_name(
+        "protein_cell", "progen2-small", 1, variant=ac.EXPERIMENT_B
+    )
+
+
+def test_a_refuses_a_fragment_axis_order_it_does_not_use():
+    args = _args(
+        arm="progen2-small", cut="tercile", max_pairs=40, null_draws=200, seed=1,
+        reachability_pairs=4, reachability_margin=0.0, random_directions=8,
+        ceiling_factor=2.0, records=8, max_tokens=64, min_symbol_occurrences=10,
+        kmer_background=Path("x"), high_order_background=Path("y"),
+        text_control=Path("z"), ceiling_orders="1,3",
+        fragment_axis_order=3,
+    )
+    with pytest.raises(ValueError, match="decided nothing"):
+        STAGE.resolve(args)
+
+
+def test_the_unordered_axis_is_the_arithmetic_mean_of_the_two_directions():
+    assert ac.symmetrize_directional_damage(2.0, 4.0) == 3.0
+
+
+def test_b_axis_uses_fragment_damage_and_not_context_cosine():
+    model = _order2_conditional()
+    records = ["ACADCDCAACAD", "CDCADACDACAD"]
+    directed = {}
+    for x, source in enumerate(AA20):
+        for y, target in enumerate(AA20):
+            if x == y:
+                continue
+            directed[(x, y)] = model.damage(records, source, target)
+    distance, observed, refusals = ac.fragment_damage_axis(directed, size=20)
+    a, c, d = AA20.index("A"), AA20.index("C"), AA20.index("D")
+    assert observed[a, c] and observed[a, d]
+    assert distance[a, c] == ac.symmetrize_directional_damage(
+        directed[(a, c)]["nats_per_scored_token"],
+        directed[(c, a)]["nats_per_scored_token"],
+    )
+    assert distance[a, c] < distance[a, d]
+    cosine = ac.cosine_distance(ac.context_profiles(np.eye(20) + 0.1))
+    assert not np.allclose(np.nan_to_num(distance), cosine)
+    assert any(item["reason"] == "insufficient fragment coverage" for item in refusals)
+
+
+def test_a_pair_without_fragment_coverage_is_refused_not_imputed():
+    model = ac.FragmentConditional(_toy_ordered(2, np.zeros(400)))
+    directed = {(0, 1): model.damage(["A" * 8], "A", "C")}
+    directed[(1, 0)] = model.damage(["C" * 8], "C", "A")
+    distance, observed, refusals = ac.fragment_damage_axis(directed, size=20)
+    assert not bool(observed[0, 1])
+    assert np.isnan(distance[0, 1])
+    assert refusals and refusals[0]["reason"] == "insufficient fragment coverage"
+
+
+def test_the_matching_ceiling_must_have_the_opposite_ordering():
+    codes = np.array([1, 1, -1, -1])
+    ok = ac.matching_ceiling_predicts_distributional_side(codes, [0.1, 0.2, 0.8, 0.9])
+    assert ok["status"] == "OK"
+    void = ac.matching_ceiling_predicts_distributional_side(codes, [0.8, 0.9, 0.1, 0.2])
+    assert void["status"] == "VOID"
+    assert void["reason"] == ac.CEILING_CONSTRUCTION_VOID
+
+
+def test_fragment_admission_cannot_see_model_damage():
+    import inspect
+
+    source = inspect.getsource(ac.fragment_damage_axis)
+    assert "nats_per_scored_token" in source
+    assert "arm" not in source.lower()
+    directed = {
+        (0, 1): {"measurable": True, "nats_per_scored_token": 0.2},
+        (1, 0): {"measurable": True, "nats_per_scored_token": 0.4},
+    }
+    first, _, _ = ac.fragment_damage_axis(directed, size=4)
+    directed[(0, 1)]["arm_damage"] = 99.0
+    second, _, _ = ac.fragment_damage_axis(directed, size=4)
+    assert first[0, 1] == pytest.approx(0.3)
+    assert second[0, 1] == pytest.approx(0.3)
+
+
+def test_a_historical_estimator_is_unchanged_on_the_old_path():
+    codes = np.array([1, 1, 1, 1, -1, -1, -1, -1, 1, -1])
+    groups = np.arange(10)
+    block = ac.delta_contrast(
+        codes=codes,
+        damage=[1.0] * 5 + [0.0] * 5,
+        groups=groups,
+        seed=SEED,
+        n_bootstrap=200,
+    )
+    assert block["resampling_unit"] == "substituted symbol"
+    assert block["difference_ci95"] is not None
+
+
+def _interval_payload(*, sequence_groups, n_pairs=16, n_records=16, seed=3):
+    from src.transfer.crossed_group_interval import crossed_group_interval
+
+    codes = np.array([1] * 8 + [-1] * 8)
+    symbol_groups = np.arange(n_pairs)
+    arm_sum = np.zeros((n_pairs, n_records))
+    arm_count = np.ones((n_pairs, n_records))
+    ceiling_sum = np.zeros((n_pairs, n_records))
+    ceiling_count = np.ones((n_pairs, n_records))
+    offset = np.arange(n_records) * 50.0
+    for pair in range(n_pairs):
+        signal = 1.0 if codes[pair] > 0 else 0.0
+        arm_sum[pair] = signal + offset
+        ceiling_sum[pair] = (1.0 - signal) + offset
+    return crossed_group_interval(
+        codes=codes,
+        symbol_groups=symbol_groups,
+        sequence_groups=np.asarray(sequence_groups),
+        arm_sum=arm_sum,
+        arm_count=arm_count,
+        ceiling_sum=ceiling_sum,
+        ceiling_count=ceiling_count,
+        seed=seed,
+        n_draws=2000,
+    )
+
+
+def test_the_crossed_interval_is_deterministic_paired_and_group_sensitive():
+    groups = np.arange(16)
+    first = _interval_payload(sequence_groups=groups)
+    second = _interval_payload(sequence_groups=groups)
+    assert first["difference_ci95"] == second["difference_ci95"]
+    assert first["refused"] is False
+    assert first["units"]["n_sequence_groups"] == 16
+    assert first["units"]["n_symbol_groups"] == 16
+    assert first["difference_ci95"][0] > 0.0
+    width = first["difference_ci95"][1] - first["difference_ci95"][0]
+    assert width < 1.0
+    collapsed = _interval_payload(sequence_groups=np.zeros(16, dtype=int))
+    assert collapsed["refused"] is True
+    assert collapsed["difference_ci95"] is None
+
+
+def test_the_crossed_interval_refuses_too_few_symbol_units():
+    from src.transfer.crossed_group_interval import crossed_group_interval
+
+    codes = np.array([1, 1, 1, -1, -1, -1])
+    refused = crossed_group_interval(
+        codes=codes,
+        symbol_groups=np.array([0, 0, 1, 2, 3, 4]),
+        sequence_groups=np.arange(8),
+        arm_sum=np.ones((6, 8)),
+        arm_count=np.ones((6, 8)),
+        ceiling_sum=np.zeros((6, 8)),
+        ceiling_count=np.ones((6, 8)),
+        seed=1,
+        n_draws=2000,
+    )
+    assert refused["refused"] is True
+    assert refused["units"]["n_symbol_groups"] == 5
+
+
+def test_duplicate_sequence_groups_are_not_treated_as_extra_units():
+    from src.transfer.crossed_group_interval import crossed_group_interval
+
+    n_pairs, n_unique = 16, 16
+    codes = np.array([1] * 8 + [-1] * 8)
+    arm_sum = np.zeros((n_pairs, n_unique))
+    ceiling_sum = np.zeros((n_pairs, n_unique))
+    for pair in range(n_pairs):
+        arm_sum[pair] = 1.0 if codes[pair] > 0 else 0.0
+        ceiling_sum[pair] = 0.0 if codes[pair] > 0 else 1.0
+    singles = crossed_group_interval(
+        codes=codes,
+        symbol_groups=np.arange(n_pairs),
+        sequence_groups=np.arange(n_unique),
+        arm_sum=arm_sum,
+        arm_count=np.ones_like(arm_sum),
+        ceiling_sum=ceiling_sum,
+        ceiling_count=np.ones_like(arm_sum),
+        seed=9,
+        n_draws=2000,
+    )
+    doubled_sum = np.concatenate([arm_sum, arm_sum], axis=1)
+    doubled_ceil = np.concatenate([ceiling_sum, ceiling_sum], axis=1)
+    doubled = crossed_group_interval(
+        codes=codes,
+        symbol_groups=np.arange(n_pairs),
+        sequence_groups=np.concatenate([np.arange(n_unique), np.arange(n_unique)]),
+        arm_sum=doubled_sum,
+        arm_count=np.ones_like(doubled_sum),
+        ceiling_sum=doubled_ceil,
+        ceiling_count=np.ones_like(doubled_sum),
+        seed=9,
+        n_draws=2000,
+    )
+    assert singles["units"]["n_sequence_groups"] == doubled["units"]["n_sequence_groups"] == 16
+    assert singles["difference_ci95"] == doubled["difference_ci95"]
+
+
+def test_a_self_substitution_mean_is_still_exactly_zero_with_record_stats():
+    world = _world()
+    scorer = ac.DamageScorer(world.model, world.cohort(), batch_size=8)
+    record = scorer.damage(0, 0)
+    assert record["nats_per_scored_token"] == 0.0
+    assert float(record["per_record_nll_sum"].sum()) == 0.0

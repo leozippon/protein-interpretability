@@ -76,12 +76,16 @@ if str(Path(__file__).resolve().parent) not in sys.path:
 from src.transfer import alphabet_chemistry as ac  # noqa: E402
 from src.transfer import arms, kmer_background, scoring  # noqa: E402
 from src.transfer.arms import AA20, DEFAULT_CORPUS_DRAW_SEED, PANEL, REPO  # noqa: E402
+from src.transfer.crossed_group_interval import crossed_group_interval  # noqa: E402
 from src.transfer.io import sha256_file, write_json  # noqa: E402
+from src.transfer.near_duplicates import near_duplicate_groups  # noqa: E402
 
 from panel_contract import QUALIFYING_PROTEIN_BAND  # noqa: E402
 
 SCHEMA_VERSION = "r2_transfer_alphabet_chemistry_v1"
+SCHEMA_VERSION_B = "r2_transfer_alphabet_chemistry_d3j_b_v1"
 DEFAULT_OUT = REPO / "results/transfer/alphabet_chemistry"
+B_ONLY_SETTINGS = ("protein_axis", "fragment_axis_order")
 
 PROVENANCE_MODULES = (
     "src/transfer/alphabet_chemistry.py",
@@ -126,12 +130,17 @@ CONTRADICTION_DECISIONS = ("reachability_pairs", "reachability_margin", "random_
 CEILING_DECISIONS = ("ceiling_factor",)
 
 
-def parse_orders(argument: str | None, *, name: str) -> tuple[int, ...]:
+def parse_orders(argument: str | tuple[int, ...] | None, *, name: str) -> tuple[int, ...]:
     """``"1,2,3"`` into ``(1, 2, 3)``, refusing an order the background lacks."""
 
     if argument is None:
         return ()
-    orders = tuple(sorted({int(piece) for piece in argument.replace(" ", "").split(",") if piece}))
+    if isinstance(argument, tuple):
+        if not argument:
+            return ()
+        orders = tuple(sorted({int(value) for value in argument}))
+    else:
+        orders = tuple(sorted({int(piece) for piece in argument.replace(" ", "").split(",") if piece}))
     if not orders:
         raise ValueError(f"{name} names no order")
     outside = [order for order in orders if order not in ac.FRAGMENT_ORDERS]
@@ -185,6 +194,22 @@ def build_parser() -> argparse.ArgumentParser:
         "no context and its Delta is exactly zero by construction, which is the "
         "curve's own reachability anchor; k = 3 is EXP-R2-214's frozen rung and is "
         "kept in the table whatever else is asked for",
+    )
+    parser.add_argument(
+        "--protein-axis",
+        default=None,
+        choices=list(ac.PROTEIN_AXES),
+        help="how the protein distributional axis is defined. Omit or pass "
+        f"{ac.PROTEIN_AXIS_CONTEXT_PROFILE} for D3.j-A. "
+        f"{ac.PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE} selects D3.j-B, whose "
+        "admission axis is the fragment conditional's own substitution damage on "
+        "the scored cohort",
+    )
+    parser.add_argument(
+        "--fragment-axis-order", type=int, default=None,
+        help="fragment-conditional order of the D3.j-B admission axis. REQUIRED on "
+        "D3.j-B and refused on D3.j-A. Must be one of --ceiling-orders. The campaign "
+        "sets this to 7; the stage does not",
     )
     parser.add_argument(
         "--axis-correlation-orders", default=None,
@@ -278,6 +303,16 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def selected_protein_axis(args: argparse.Namespace) -> str:
+    """D3.j-A is the default; omitting --protein-axis must not become a new setting."""
+
+    return args.protein_axis or ac.PROTEIN_AXIS_CONTEXT_PROFILE
+
+
+def is_variant_b(args: argparse.Namespace) -> bool:
+    return selected_protein_axis(args) == ac.PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE
+
+
 def resolve(args: argparse.Namespace) -> None:
     """Refuse an incoherent request before a corpus is opened or a model is loaded."""
 
@@ -366,6 +401,42 @@ def resolve(args: argparse.Namespace) -> None:
             f"--ceiling-orders must include k = {ac.PRE_REGISTERED_FRAGMENT_ORDER}, "
             "the rung EXP-R2-214 froze. The curve is an amendment that adds orders "
             "beside it and never one that substitutes for it"
+        )
+    protein_axis = selected_protein_axis(args)
+    is_protein_campaign = (
+        not args.synthetic and args.arm is not None and PANEL[args.arm].modality == "protein"
+    )
+    if protein_axis == ac.PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE:
+        if args.synthetic:
+            raise ValueError(
+                "--protein-axis fragment_substitution_damage names D3.j-B and is "
+                "meaningless beside --synthetic"
+            )
+        if not is_protein_campaign:
+            raise ValueError(
+                "--protein-axis fragment_substitution_damage is a protein-cell "
+                "decision of D3.j-B and decides nothing on a text or synthetic run"
+            )
+        if args.fragment_axis_order is None:
+            raise ValueError(
+                "D3.j-B needs --fragment-axis-order: the admission axis is the "
+                "fragment conditional at that order, scored on the declared cohort"
+            )
+        if args.fragment_axis_order not in ac.FRAGMENT_ORDERS:
+            raise ValueError(
+                f"--fragment-axis-order {args.fragment_axis_order} is outside the "
+                f"staged background's {list(ac.FRAGMENT_ORDERS)}"
+            )
+        if args.fragment_axis_order not in args.ceiling_orders:
+            raise ValueError(
+                f"--fragment-axis-order {args.fragment_axis_order} must be listed in "
+                "--ceiling-orders so the matching ceiling rung is the same object "
+                "as the admission axis"
+            )
+    elif args.fragment_axis_order is not None:
+        raise ValueError(
+            "--fragment-axis-order decides the D3.j-B admission axis and would "
+            "enter a D3.j-A artefact as a setting that decided nothing"
         )
     if args.random_directions is not None and args.random_directions < ac.MINIMUM_RANDOM_DIRECTIONS:
         raise ValueError(
@@ -548,6 +619,56 @@ def measure_pairs(
     }
 
 
+def measure_pairs_with_records(
+    scorer: ac.DamageScorer, pairs: ac.PairSet, symbols: Sequence[ac.Symbol]
+) -> tuple[list[float], ac.PairSet, dict[str, Any], np.ndarray, np.ndarray]:
+    """D3.j-B measurement: pair means plus per-record sufficient statistics."""
+
+    n_records = int(scorer.cohort.input_ids.shape[0])
+    damages: list[float] = []
+    kept_pairs: list[tuple[int, int]] = []
+    kept_classes: list[str] = []
+    dropped: list[dict[str, Any]] = []
+    scored: list[int] = []
+    excluded: list[int] = []
+    sums: list[np.ndarray] = []
+    counts: list[np.ndarray] = []
+    for (x, y), klass in zip(pairs.pairs, pairs.classes):
+        record = scorer.damage(symbols[x].token_id, symbols[y].token_id)
+        if not record["measurable"]:
+            dropped.append({
+                "substituted": symbols[x].label,
+                "substitute": symbols[y].label,
+                "reason": record["unmeasurable_reason"],
+            })
+            continue
+        damages.append(float(record["nats_per_scored_token"]))
+        kept_pairs.append((x, y))
+        kept_classes.append(klass)
+        scored.append(int(record["n_scored_tokens"]))
+        excluded.append(int(record["excluded_by_pair_identity"]))
+        sums.append(np.asarray(record["per_record_nll_sum"], dtype=np.float64))
+        counts.append(np.asarray(record["per_record_n_scored"], dtype=np.int64))
+    if not kept_pairs:
+        raise RuntimeError("no pair of this set is measurable on this cohort")
+    return damages, ac.PairSet(tuple(kept_pairs), tuple(kept_classes)), {
+        "n_requested": len(pairs),
+        "n_measured": len(kept_pairs),
+        "n_dropped": len(dropped),
+        "dropped": dropped,
+        "scored_tokens_per_pair": {
+            "min": int(min(scored)), "median": int(np.median(scored)), "max": int(max(scored))
+        },
+        "excluded_by_pair_identity_total": int(sum(excluded)),
+        "exclusion_rule": (
+            "targets whose own identity is the substituted or the substitute symbol "
+            "are excluded, so no position is scored on which the substitution's own "
+            "label decides the answer"
+        ),
+        "n_records": n_records,
+    }, np.stack(sums), np.stack(counts)
+
+
 def measure_random_directions(
     scorer: ac.DamageScorer,
     pairs: ac.PairSet,
@@ -711,17 +832,23 @@ def matrix_record(matrix: np.ndarray | None) -> list[list[float]] | None:
     return [[float(value) for value in row] for row in matrix]
 
 
-def artefact_name(kind: str, arm: str, seed: int) -> str:
+def artefact_name(kind: str, arm: str, seed: int, *, variant: str | None = None) -> str:
     """Basename from arm, intervention and seed -- never a fixed string.
 
     ``21_joint_mode_qualification.py`` writes every run to one fixed name, so a
     second checkpoint in one output directory overwrites the first without a
-    word. All three of this stage's campaign axes are in the name.
+    word. All three of this stage's campaign axes are in the name. D3.j-B adds
+    its variant so it cannot overwrite an A artefact.
     """
 
     def safe(value: str) -> str:
         return re.sub(r"[^A-Za-z0-9._-]+", "-", value)
 
+    if variant:
+        return (
+            f"alphabet_chemistry__{safe(variant)}__{safe(arm)}__"
+            f"{safe(ac.INTERVENTION)}__seed{int(seed)}.json"
+        )
     return f"alphabet_chemistry__{safe(arm)}__{safe(ac.INTERVENTION)}__seed{int(seed)}.json"
 
 
@@ -771,6 +898,20 @@ def pre_registration_block() -> dict[str, Any]:
             "layer or to average over"
         ),
     }
+
+
+def pre_registration_block_b() -> dict[str, Any]:
+    block = pre_registration_block()
+    block["record"] = ac.PRE_REGISTRATION
+    block["track"] = ac.PRE_REGISTRATION_TRACK_B
+    block["experiment"] = ac.EXPERIMENT_B
+    block["distributional_axis"] = (
+        "the fragment conditional's own substitution damage on the declared "
+        "scored cohort, at --fragment-axis-order, with the unordered axis the "
+        f"{ac.FRAGMENT_AXIS_SYMMETRIZATION}. Missing coverage is refused, not "
+        "smoothed. The matching ceiling is the same object"
+    )
+    return block
 
 
 def limitations_block(*, modality: str) -> dict[str, Any]:
@@ -1092,18 +1233,26 @@ def run_synthetic_check(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def base_payload(args: argparse.Namespace, *, kind: str) -> dict[str, Any]:
-    return {
-        "schema_version": SCHEMA_VERSION,
+    variant_b = is_variant_b(args)
+    settings = {}
+    for key, value in vars(args).items():
+        if args.synthetic and key in CAMPAIGN_ONLY_FLAGS:
+            continue
+        if key in B_ONLY_SETTINGS and not variant_b:
+            continue
+        settings[key] = str(value) if isinstance(value, Path) else value
+    payload = {
+        "schema_version": SCHEMA_VERSION_B if variant_b else SCHEMA_VERSION,
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "kind": kind,
-        "pre_registration": pre_registration_block(),
-        "settings": {
-            key: (str(value) if isinstance(value, Path) else value)
-            for key, value in vars(args).items()
-            if not (args.synthetic and key in CAMPAIGN_ONLY_FLAGS)
-        },
+        "pre_registration": pre_registration_block_b() if variant_b else pre_registration_block(),
+        "settings": settings,
         "provenance": provenance(),
     }
+    if variant_b:
+        payload["experiment"] = ac.EXPERIMENT_B
+        payload["variant"] = ac.EXPERIMENT_B
+    return payload
 
 
 def run_protein_cell(args: argparse.Namespace) -> dict[str, Any]:
@@ -1471,6 +1620,404 @@ def run_protein_cell(args: argparse.Namespace) -> dict[str, Any]:
     return body
 
 
+def _directed_fragment_stats(
+    model: ac.FragmentConditional,
+    runs_by_record: Sequence[Sequence[str]],
+    symbols: Sequence[ac.Symbol],
+) -> dict[tuple[int, int], dict[str, Any]]:
+    """Score every ordered pair. Admission reads this table; the arm never does."""
+
+    directed: dict[tuple[int, int], dict[str, Any]] = {}
+    for x, source in enumerate(symbols):
+        for y, target in enumerate(symbols):
+            if x == y:
+                continue
+            directed[(x, y)] = model.damage_by_sequence(
+                runs_by_record, source.label, target.label
+            )
+    return directed
+
+
+def run_protein_cell_b(args: argparse.Namespace) -> dict[str, Any]:
+    """D3.j-B: admission axis is fragment substitution damage on the scored cohort."""
+
+    started = time.time()
+    spec = PANEL[args.arm]
+    control = read_text_control(args.text_control)
+    axis_order = int(args.fragment_axis_order)
+    ordered = ac.load_ordered_counts(
+        args.high_order_background, args.ceiling_orders, pinned=args.kmer_background
+    )
+    labels = list(AA20)
+    chemical = ac.property_distance(
+        ac.chemical_property_table(labels), source=ac.CHEMICAL_AXIS_SOURCE
+    )
+    blosum = ac.blosum62_distance(labels)
+    rows, columns = np.triu_indices(len(labels), 1)
+
+    cohort = build_cohort(args, spec)
+    arm = arms.load_arm(args.arm, device=args.device, dtype=ac.DTYPE)
+    texts = cohort.input_strings(arm)
+    body: dict[str, Any] = {
+        "arm": {
+            "name": spec.name, "modality": spec.modality, "architecture": spec.architecture,
+            "tokenisation": spec.tokenisation, "input_format": spec.input_format,
+            "pretraining_corpus": spec.pretraining_corpus,
+        },
+        "text_control": control,
+        "limitations": limitations_block(modality="protein"),
+    }
+    try:
+        alphabet = ac.protein_alphabet(arm)
+    except ValueError as error:
+        body["verdict"] = {
+            "verdict": "NOT_MEASURABLE",
+            "reason": f"the alphabet is not addressable on this arm: {error}",
+        }
+        return body
+    coverage = ac.symbol_token_coverage(arm, texts, alphabet=alphabet, max_len=args.max_tokens)
+    admission = ac.admit_arm(coverage, arm.name, minimum=ac.MINIMUM_SYMBOL_TOKEN_COVERAGE)
+    body["admission"] = {"coverage": coverage, "verdict": admission}
+    if not admission["admitted"]:
+        body["verdict"] = {"verdict": "NOT_MEASURABLE", "reason": admission["reason"]}
+        return body
+
+    model = ac.ArmAlphabetModel(arm)
+    body["intervention"] = model.record()
+    scoring_batch, cohort_record = scoring_cohort(arm, texts, max_tokens=args.max_tokens)
+    groups, grouping = near_duplicate_groups(list(cohort.records), unit="residues")
+    body["cohort"] = {
+        **cohort_record,
+        "name": cohort.name,
+        "digest": cohort.digest,
+        "provenance_digest": cohort.provenance_digest,
+        "sampling": cohort.sampling,
+        "band_residues": list(QUALIFYING_PROTEIN_BAND),
+        "near_duplicate_groups": grouping,
+    }
+    occurrences = ac.context_counts(scoring_batch, [s.token_id for s in alphabet])
+    alphabet, occupancy = admit_symbols(
+        alphabet, occurrences, minimum=args.min_symbol_occurrences, fixed=True
+    )
+    body["alphabet"] = occupancy
+    if [symbol.label for symbol in alphabet] != labels:
+        raise RuntimeError("D3.j-B requires the twenty-residue alphabet in AA20 order")
+
+    runs_by_record = ac.residue_runs_by_row(scoring_batch, alphabet)
+    fragment = ac.FragmentConditional(ordered[axis_order])
+    directed = _directed_fragment_stats(fragment, runs_by_record, alphabet)
+    distributional, observed, axis_refusals = ac.fragment_damage_axis(
+        directed, size=len(alphabet)
+    )
+    axis_record = {
+        "kind": ac.PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE,
+        "order": axis_order,
+        "symmetrization": ac.FRAGMENT_AXIS_SYMMETRIZATION,
+        "corpus": ordered[axis_order].record(),
+        "cohort_digest": cohort.digest,
+        "cohort_provenance_digest": cohort.provenance_digest,
+        "n_records": len(runs_by_record),
+        "directional": {
+            f"{alphabet[x].label}->{alphabet[y].label}": {
+                "nats_per_scored_token": record.get("nats_per_scored_token"),
+                "n_scored_tokens": int(record["n_scored_tokens"]),
+                "measurable": bool(record["measurable"]),
+                "scored_fraction": record.get("scored_fraction"),
+                "unmeasurable_reason": record.get("unmeasurable_reason"),
+            }
+            for (x, y), record in directed.items()
+        },
+        "coverage_refusals": axis_refusals,
+        "n_covered_unordered_pairs": int(observed[rows, columns].sum()),
+    }
+    body["axes"] = {
+        "labels": labels,
+        "chemical": chemical.record(),
+        "distributional": axis_record,
+        "ceiling_side_second_estimator": {
+            "name": "blosum62",
+            "source": ac.BLOSUM62_SOURCE,
+            "side_note": ac.BLOSUM62_SIDE_NOTE,
+            "spearman_against_fragment_axis": spearman_or_none(
+                blosum[rows, columns][observed[rows, columns]],
+                distributional[rows, columns][observed[rows, columns]],
+            ),
+            "spearman_against_chemical_axis": float(
+                stats.spearmanr(blosum[rows, columns], chemical.distance[rows, columns]).statistic
+            ),
+        },
+        "matrices": {
+            "chemical": matrix_record(chemical.distance),
+            "distributional_fragment_damage": matrix_record(distributional),
+            "blosum62": matrix_record(blosum),
+        },
+    }
+    sweep = ac.cut_sweep_observed(chemical.distance, distributional, observed)
+    per_cut = {
+        cut: ac.quadrants_at_cut_observed(chemical.distance, distributional, observed, cut=cut)
+        for cut in ac.CUTS
+    }
+    body["contradiction_set"] = {
+        "sweep": sweep,
+        "declared_cut": args.cut,
+        "unordered_members": {
+            cut: {
+                name: [f"{labels[x]}{labels[y]}" for x, y in record["members"][name]]
+                for name in ac.QUADRANTS
+            }
+            for cut, record in per_cut.items()
+        },
+        "axis_coverage_refusals": axis_refusals,
+    }
+    if not per_cut[args.cut]["readable"]:
+        body["verdict"] = {
+            "verdict": "NO_CONTRADICTION_SET_AT_DECLARED_CUT",
+            "reason": (
+                f"the {args.cut} cut admits {per_cut[args.cut]['unordered_counts']} "
+                f"covered unordered pairs against a floor of {ac.MINIMUM_QUADRANT_PAIRS} "
+                "per quadrant. Uncovered fragment pairs were refused rather than filled"
+            ),
+        }
+        return body
+
+    admitted = ac.ordered_pair_set(per_cut[args.cut])
+    ceiling_on_admitted = []
+    missing = []
+    for x, y in admitted.pairs:
+        record = directed[(x, y)]
+        if not record["measurable"]:
+            missing.append(f"{alphabet[x].label}->{alphabet[y].label}")
+            continue
+        ceiling_on_admitted.append(float(record["nats_per_scored_token"]))
+    if missing:
+        body["verdict"] = {
+            "verdict": "VOID",
+            "reason": ac.CEILING_CONSTRUCTION_VOID,
+            "detail": f"admitted directed pairs lack fragment coverage: {missing}",
+        }
+        return body
+    construction = ac.matching_ceiling_predicts_distributional_side(
+        admitted.codes(ac.QUADRANTS), ceiling_on_admitted
+    )
+    body["construction_check"] = construction
+    if construction["status"] != "OK":
+        body["verdict"] = {
+            "verdict": "VOID",
+            "reason": construction["reason"],
+            "detail": construction["detail"],
+        }
+        return body
+
+    scorer = ac.DamageScorer(model, scoring_batch, batch_size=args.batch_size)
+    probe = max(alphabet, key=lambda symbol: occurrences[symbol.token_id])
+    body["invariants"] = ac.intervention_invariants(
+        scorer,
+        symbol_token=probe.token_id,
+        alphabet_tokens=[symbol.token_id for symbol in alphabet],
+        seed=args.seed,
+        tolerance=1e-6,
+    )
+    agreement, agreement_record = ac.agreement_extremes_observed(
+        chemical.distance, distributional, observed,
+        cut=args.cut, count=args.reachability_pairs,
+    )
+    agreement_damage, agreement_kept, agreement_measurement = measure_pairs(
+        scorer, agreement, alphabet
+    )
+    reachability = ac.reachability_verdict(
+        agreement_damage, agreement_kept.classes, margin=args.reachability_margin
+    )
+    body["reachability"] = {
+        **reachability, "selection": agreement_record, "measurement": agreement_measurement,
+        "pairs": agreement_kept.labelled(alphabet),
+    }
+    if not reachability["reachable"]:
+        body["verdict"] = {
+            "verdict": "VOID_INSTRUMENT_UNATTAINABLE",
+            "reason": reachability["consequence_if_failed"],
+        }
+        return body
+
+    measured_cut = SWEEP_ORDER[0]
+    pairs = ac.ordered_pair_set(per_cut[measured_cut])
+    pairs, budget = ac.cap_pairs(
+        pairs, strictness=strictness_ranks(pairs, per_cut),
+        maximum=args.max_pairs, seed=args.seed,
+    )
+    damages, kept, measurement, arm_sum, arm_count = measure_pairs_with_records(
+        scorer, pairs, alphabet
+    )
+    body["measurement"] = {
+        "measured_at_cut": measured_cut,
+        "budget": budget, **measurement,
+        "pairs": kept.labelled(alphabet),
+        "damage_nats_per_scored_token": [float(value) for value in damages],
+    }
+
+    ceiling_by_order: dict[int, list[float]] = {}
+    ceiling_sum_by_order: dict[int, np.ndarray] = {}
+    ceiling_count_by_order: dict[int, np.ndarray] = {}
+    ceiling_curve: dict[str, Any] = {}
+    for order in args.ceiling_orders:
+        model_k = fragment if order == axis_order else ac.FragmentConditional(ordered[order])
+        values: list[float] = []
+        fractions: list[float] = []
+        sums = []
+        counts = []
+        for x, y in kept.pairs:
+            if order == axis_order:
+                record = directed[(x, y)]
+            else:
+                record = model_k.damage_by_sequence(
+                    runs_by_record, alphabet[x].label, alphabet[y].label
+                )
+            if not record["measurable"]:
+                raise RuntimeError(
+                    f"the k = {order} ceiling has no scored k-gram for "
+                    f"{alphabet[x].label} -> {alphabet[y].label}, so the arm and the "
+                    "ceiling would be compared on different pairs"
+                )
+            values.append(float(record["nats_per_scored_token"]))
+            fractions.append(float(record.get("scored_fraction") or 0.0))
+            sums.append(np.asarray(record["per_record_nll_sum"], dtype=np.float64))
+            counts.append(np.asarray(record["per_record_n_scored"], dtype=np.int64))
+        ceiling_by_order[order] = values
+        ceiling_sum_by_order[order] = np.stack(sums)
+        ceiling_count_by_order[order] = np.stack(counts)
+        ceiling_curve[str(order)] = {
+            **ordered[order].record(),
+            "damage_nats_per_scored_token": values,
+            "mean_scored_fraction": float(np.mean(fractions)),
+            "adequacy": ac.ceiling_adequacy(damages, values, floor=ac.CEILING_ADEQUACY_FLOOR),
+            "matching_admission_rung": order == axis_order,
+            "pre_registered_rung": order == ac.PRE_REGISTERED_FRAGMENT_ORDER,
+            "spearman_against_arm_damage": spearman_or_none(damages, values),
+            "spearman_against_distributional_axis": spearman_or_none(
+                [distributional[x, y] for x, y in kept.pairs], values
+            ),
+            "spearman_against_chemical_axis": spearman_or_none(
+                [chemical.distance[x, y] for x, y in kept.pairs], values
+            ),
+        }
+    body["ceiling"] = {
+        "model": "uniref50 fragment conditional, per order",
+        "source": str(args.high_order_background),
+        "orders": list(args.ceiling_orders),
+        "matching_axis_order": axis_order,
+        "pre_registered_order": ac.PRE_REGISTERED_FRAGMENT_ORDER,
+        "n_records": len(runs_by_record),
+        "definition": (
+            "the matching rung is the same FragmentConditional, on the same scored "
+            "residue records, that defined the admission axis"
+        ),
+        "curve": ceiling_curve,
+    }
+
+    directions = ac.norm_matched_random_rows(
+        model.weight, [symbol.token_id for symbol in alphabet],
+        count=args.random_directions, seed=args.seed + 1,
+    )
+    per_direction = measure_random_directions(scorer, kept, alphabet, directions)
+
+    blocks: dict[str, Any] = {}
+    for cut in SWEEP_ORDER:
+        block = cut_block(
+            cut=cut, members=per_cut[cut]["members"], class_order=ac.QUADRANTS,
+            pairs=kept, damages=damages, args=args,
+        )
+        if block is None:
+            blocks[cut] = {"cut": cut, "readable": False,
+                           "reason": "no measured pair of one quadrant survives at this rung"}
+            continue
+        indices = block.pop("_indices")
+        codes = block.pop("_codes")
+        groups_symbol = block.pop("_groups")
+        random_null = ac.random_direction_delta_null(
+            codes=codes,
+            per_direction=[[values[i] for i in indices] for values in per_direction],
+            observed=block["own"]["delta"],
+        )
+        block["random_direction_null"] = random_null
+        by_order: dict[str, Any] = {}
+        for order in args.ceiling_orders:
+            against = crossed_group_interval(
+                codes=codes,
+                symbol_groups=groups_symbol,
+                sequence_groups=groups,
+                arm_sum=arm_sum[indices],
+                arm_count=arm_count[indices],
+                ceiling_sum=ceiling_sum_by_order[order][indices],
+                ceiling_count=ceiling_count_by_order[order][indices],
+                seed=args.seed,
+                n_draws=args.bootstrap_draws,
+            )
+            margin = ac.ceiling_margin(
+                delta_block=block["own"], ceiling_block=against,
+                random_null=random_null, factor=args.ceiling_factor,
+            )
+            by_order[str(order)] = {
+                "against_ceiling": against,
+                "ceiling_margin": margin,
+                "verdict": ac.protein_verdict(margin=margin, delta_block=block["own"]),
+                "ceiling_adequacy_ratio": ceiling_curve[str(order)]["adequacy"]["ratio"],
+                "ceiling_adequate": ceiling_curve[str(order)]["adequacy"]["adequate"],
+            }
+        matching = by_order[str(axis_order)]
+        block["by_ceiling_order"] = by_order
+        block["binding_order"] = int(axis_order)
+        block["verdict"] = {
+            **matching["verdict"],
+            "read_against_ceiling_order": int(axis_order),
+            "verdict_by_ceiling_order": {
+                order: by_order[order]["verdict"]["verdict"] for order in by_order
+            },
+        }
+        block["readable"] = True
+        blocks[cut] = block
+
+    headline = blocks[args.cut]
+    if "verdict" not in headline:
+        body["verdict"] = {
+            "verdict": "NO_CONTRADICTION_SET_AT_DECLARED_CUT",
+            "reason": headline.get("reason"),
+        }
+        body["sweep"] = {"per_cut": blocks, "declared_cut": args.cut}
+        return body
+    verdicts = {cut: block.get("verdict", {}).get("verdict") for cut, block in blocks.items()}
+    stable = len({value for value in verdicts.values() if value is not None}) == 1
+    body["sweep"] = {
+        "per_cut": blocks,
+        "declared_cut": args.cut,
+        "verdicts": verdicts,
+        "ordering_invariant_across_sweep": stable,
+    }
+    body["verdict"] = {
+        **headline["verdict"],
+        "cut": args.cut,
+        "ordering_invariant_across_sweep": stable,
+        "ceiling_adequacy_ratio": ceiling_curve[str(axis_order)]["adequacy"]["ratio"],
+        "ceiling_adequate": ceiling_curve[str(axis_order)]["adequacy"]["adequate"],
+        "ceiling_adequacy_reading": ceiling_curve[str(axis_order)]["adequacy"]["reading"],
+    }
+    body["cost"] = {**scorer.cost(), "wall_seconds": round(time.time() - started, 1)}
+    codes = kept.codes(ac.QUADRANTS)
+    embedding = ac.embedding_distance(model.weight, [symbol.token_id for symbol in alphabet])
+    body["secondary"] = {
+        "shuffled_null": ac.shuffled_difference_null(
+            damage=damages, codes=codes, groups=kept.groups,
+            seed=args.seed + 2, draws=args.null_draws,
+        ),
+        "association": ac.association(
+            damage=damages,
+            chemical=[chemical.distance[x, y] for x, y in kept.pairs],
+            distributional=[distributional[x, y] for x, y in kept.pairs],
+            embedding=[embedding[x, y] for x, y in kept.pairs],
+            groups=kept.groups, seed=args.seed + 3, n_bootstrap=args.bootstrap_draws,
+        ),
+    }
+    return body
+
+
 def run_text_control(args: argparse.Namespace) -> dict[str, Any]:
     started = time.time()
     spec = PANEL[args.arm]
@@ -1614,9 +2161,27 @@ def main() -> None:
 
     modality = PANEL[args.arm].modality
     kind = "protein_cell" if modality == "protein" else "text_control"
-    body = run_protein_cell(args) if modality == "protein" else run_text_control(args)
+    if modality == "protein" and is_variant_b(args):
+        body = run_protein_cell_b(args)
+    elif modality == "protein":
+        body = run_protein_cell(args)
+    else:
+        body = run_text_control(args)
     payload = {**base_payload(args, kind=kind), **body}
-    destination = args.out / artefact_name(kind, args.arm, args.seed)
+    if is_variant_b(args):
+        extra = {
+            "src/transfer/crossed_group_interval.py": sha256_file(
+                REPO_ROOT / "src/transfer/crossed_group_interval.py"
+            ),
+            "src/transfer/near_duplicates.py": sha256_file(
+                REPO_ROOT / "src/transfer/near_duplicates.py"
+            ),
+        }
+        payload["provenance"]["modules"].update(extra)
+    destination = args.out / artefact_name(
+        kind, args.arm, args.seed,
+        variant=ac.EXPERIMENT_B if is_variant_b(args) else None,
+    )
     write_json(destination, payload)
     verdict = payload["verdict"]
     print(f"[{args.arm}] {verdict['verdict']}")

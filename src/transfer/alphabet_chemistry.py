@@ -194,6 +194,19 @@ from .statistics import (
 PRE_REGISTRATION = "EXP-R2-214"
 PRE_REGISTRATION_TRACK = "D3.j variant (a), embedding substitution"
 
+#: D3.j-B is a separately identified successor. Selecting A, including by
+#: default, must not write these names into an A artefact.
+PRE_REGISTRATION_TRACK_B = "D3.j-B, fragment-substitution-damage admission axis"
+EXPERIMENT_B = "D3.j-B"
+PROTEIN_AXIS_CONTEXT_PROFILE = "context_profile"
+PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE = "fragment_substitution_damage"
+PROTEIN_AXES = (
+    PROTEIN_AXIS_CONTEXT_PROFILE,
+    PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE,
+)
+FRAGMENT_AXIS_SYMMETRIZATION = "arithmetic_mean_of_directional_damages"
+CEILING_CONSTRUCTION_VOID = "CEILING_DOES_NOT_PREDICT_DISTRIBUTIONAL_SIDE"
+
 #: Amendments to that entry which this module implements. Empty and *declared*:
 #: an artefact carrying no amendment field and one produced under the unamended
 #: text are indistinguishable to a reader, which ``36_concept_injection.py``
@@ -929,6 +942,246 @@ def ordered_pair_set(quadrant_record: Mapping[str, Any]) -> PairSet:
     return PairSet(tuple(pairs), tuple(classes))
 
 
+def symmetrize_directional_damage(forward: float, reverse: float) -> float:
+    """Unordered axis value: the arithmetic mean of the two directed damages."""
+
+    return 0.5 * (float(forward) + float(reverse))
+
+
+def fragment_damage_axis(
+    directional: Mapping[tuple[int, int], Mapping[str, Any]],
+    *,
+    size: int,
+) -> tuple[np.ndarray, np.ndarray, list[dict[str, Any]]]:
+    """Build the unordered fragment-damage axis, refusing any missing direction.
+
+    A pair enters only when both directed substitutions are measurable on the
+    declared scored records. Nothing is smoothed or imputed.
+    """
+
+    distance = np.full((size, size), np.nan, dtype=np.float64)
+    observed = np.zeros((size, size), dtype=bool)
+    refusals: list[dict[str, Any]] = []
+    rows, columns = _unordered(size)
+    for x, y in zip(rows.tolist(), columns.tolist()):
+        left = directional.get((int(x), int(y)))
+        right = directional.get((int(y), int(x)))
+        if left is None or right is None:
+            refusals.append({
+                "pair": (int(x), int(y)),
+                "reason": "a directed substitution was never scored",
+            })
+            continue
+        if not left.get("measurable") or not right.get("measurable"):
+            refusals.append({
+                "pair": (int(x), int(y)),
+                "forward_measurable": bool(left.get("measurable")),
+                "reverse_measurable": bool(right.get("measurable")),
+                "forward_reason": left.get("unmeasurable_reason"),
+                "reverse_reason": right.get("unmeasurable_reason"),
+                "reason": "insufficient fragment coverage",
+            })
+            continue
+        value = symmetrize_directional_damage(
+            float(left["nats_per_scored_token"]),
+            float(right["nats_per_scored_token"]),
+        )
+        distance[x, y] = distance[y, x] = value
+        observed[x, y] = observed[y, x] = True
+    np.fill_diagonal(distance, 0.0)
+    np.fill_diagonal(observed, True)
+    return distance, observed, refusals
+
+
+def _observed_unordered(
+    chemical: np.ndarray, distributional: np.ndarray, observed: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    rows, columns = _unordered(chemical.shape[0])
+    keep = observed[rows, columns]
+    return rows[keep], columns[keep], chemical[rows, columns][keep], distributional[rows, columns][keep]
+
+
+def quadrants_at_cut_observed(
+    chemical: np.ndarray,
+    distributional: np.ndarray,
+    observed: np.ndarray,
+    *,
+    cut: str,
+) -> dict[str, Any]:
+    """D3.j-B quadrants: ranks are taken only over covered unordered pairs."""
+
+    if cut not in CUTS:
+        raise ValueError(f"unknown cut {cut!r}; declared: {sorted(CUTS)}")
+    if chemical.shape != distributional.shape or chemical.ndim != 2:
+        raise ValueError("the two axes must be square matrices over one alphabet")
+    rows, columns, chem, dist = _observed_unordered(chemical, distributional, observed)
+    if chem.size == 0:
+        empty = {
+            QUADRANTS[0]: [],
+            QUADRANTS[1]: [],
+        }
+        return {
+            "cut": cut,
+            "quantile": CUTS[cut],
+            "unordered_pairs_scored": 0,
+            "unordered_counts": {name: 0 for name in QUADRANTS},
+            "minimum_required": int(MINIMUM_QUADRANT_PAIRS),
+            "readable": False,
+            "members": empty,
+            "chemical_band": {"n_values": 0},
+            "distributional_band": {"n_values": 0},
+        }
+    quantile = CUTS[cut]
+    chem_low_band, chem_high_band, chem_ties = _rank_bands(chem, quantile)
+    dist_low_band, dist_high_band, dist_ties = _rank_bands(dist, quantile)
+    similar_dissimilar = chem_low_band & dist_high_band
+    dissimilar_similar = chem_high_band & dist_low_band
+    members = {
+        QUADRANTS[0]: [
+            (int(rows[index]), int(columns[index]))
+            for index in np.flatnonzero(similar_dissimilar)
+        ],
+        QUADRANTS[1]: [
+            (int(rows[index]), int(columns[index]))
+            for index in np.flatnonzero(dissimilar_similar)
+        ],
+    }
+    counts = {name: len(pairs) for name, pairs in members.items()}
+    return {
+        "cut": cut,
+        "quantile": quantile,
+        "chemical_band_values": [
+            float(np.quantile(chem, quantile)), float(np.quantile(chem, 1.0 - quantile))
+        ],
+        "distributional_band_values": [
+            float(np.quantile(dist, quantile)), float(np.quantile(dist, 1.0 - quantile))
+        ],
+        "chemical_band": chem_ties,
+        "distributional_band": dist_ties,
+        "unordered_pairs_scored": int(chem.size),
+        "unordered_counts": counts,
+        "minimum_required": int(MINIMUM_QUADRANT_PAIRS),
+        "readable": bool(min(counts.values()) >= MINIMUM_QUADRANT_PAIRS),
+        "members": members,
+    }
+
+
+def cut_sweep_observed(
+    chemical: np.ndarray, distributional: np.ndarray, observed: np.ndarray
+) -> dict[str, Any]:
+    """The D3.j-A3 sweep, restricted to pairs the fragment axis actually covers."""
+
+    rows, columns, chem, dist = _observed_unordered(chemical, distributional, observed)
+    correlation = (
+        stats.spearmanr(chem, dist) if chem.size >= 2 and np.unique(chem).size > 1 and np.unique(dist).size > 1
+        else None
+    )
+    sweep = {
+        cut: quadrants_at_cut_observed(chemical, distributional, observed, cut=cut)
+        for cut in CUTS
+    }
+    return {
+        "axis_spearman": None if correlation is None else float(correlation.statistic),
+        "axis_spearman_p": None if correlation is None else float(correlation.pvalue),
+        "n_unordered_pairs": int(rows.size),
+        "per_cut": {
+            cut: {key: value for key, value in record.items() if key != "members"}
+            for cut, record in sweep.items()
+        },
+        "readable_cuts": [cut for cut, record in sweep.items() if record["readable"]],
+        "rule": (
+            "a pair is admitted where one similarity is below its band's lower "
+            "quantile and the other above its upper quantile, ranked only over "
+            f"pairs with both directed fragment damages measurable. At least "
+            f"{MINIMUM_QUADRANT_PAIRS} unordered pairs are required in each quadrant "
+            "at the declared cut"
+        ),
+    }
+
+
+def agreement_extremes_observed(
+    chemical: np.ndarray,
+    distributional: np.ndarray,
+    observed: np.ndarray,
+    *,
+    cut: str,
+    count: int,
+) -> tuple[PairSet, dict[str, Any]]:
+    """Reachability ends, ranked only over covered unordered pairs."""
+
+    if count < 1:
+        raise ValueError("the reachability check needs at least one pair per end")
+    if cut not in CUTS:
+        raise ValueError(f"unknown cut {cut!r}; declared: {sorted(CUTS)}")
+    quantile = CUTS[cut]
+    rows, columns, chem, dist = _observed_unordered(chemical, distributional, observed)
+    if chem.size == 0:
+        raise ValueError("no covered unordered pair remains for the agreement set")
+    chem_low_band, chem_high_band, _ = _rank_bands(chem, quantile)
+    dist_low_band, dist_high_band, _ = _rank_bands(dist, quantile)
+    chem_rank = stats.rankdata(chem)
+    dist_rank = stats.rankdata(dist)
+    both_far = np.flatnonzero(chem_high_band & dist_high_band)
+    both_near = np.flatnonzero(chem_low_band & dist_low_band)
+    if both_far.size < count or both_near.size < count:
+        raise ValueError(
+            f"the {cut} agreement set holds {both_far.size} dissimilar and "
+            f"{both_near.size} similar covered pairs, fewer than the {count} per end asked for"
+        )
+    far = sorted(both_far, key=lambda i: (-(chem_rank[i] + dist_rank[i]), i))[:count]
+    near = sorted(both_near, key=lambda i: (chem_rank[i] + dist_rank[i], i))[:count]
+    pairs = [(int(rows[i]), int(columns[i])) for i in far] + [
+        (int(rows[i]), int(columns[i])) for i in near
+    ]
+    classes = [AGREEMENT_CLASSES[0]] * len(far) + [AGREEMENT_CLASSES[1]] * len(near)
+    return PairSet(tuple(pairs), tuple(classes)), {
+        "cut": cut,
+        "pairs_per_end": int(count),
+        "n_dissimilar_available": int(both_far.size),
+        "n_similar_available": int(both_near.size),
+        "ranking": "by the sum of the two axes' ranks over covered pairs",
+    }
+
+
+def matching_ceiling_predicts_distributional_side(
+    codes: np.ndarray, ceiling_damage: Sequence[float]
+) -> dict[str, Any]:
+    """The matching ceiling must claim the distributional side of Delta.
+
+    Admission places low fragment damage in the distributionally-similar
+    quadrant, so the ceiling's own Delta is negative by construction. A
+    non-negative value is a specification defect, not a model result.
+    """
+
+    delta = _quadrant_delta(codes, np.asarray(ceiling_damage, dtype=np.float64))
+    if not np.isfinite(delta):
+        return {
+            "status": "VOID",
+            "reason": CEILING_CONSTRUCTION_VOID,
+            "detail": "the matching ceiling Delta is undefined on this pair set",
+            "ceiling_delta": None,
+        }
+    if delta >= 0.0:
+        return {
+            "status": "VOID",
+            "reason": CEILING_CONSTRUCTION_VOID,
+            "detail": (
+                "the matching fragment ceiling does not predict the distributional "
+                f"side: Delta = {delta:.6g} is not strictly negative"
+            ),
+            "ceiling_delta": float(delta),
+        }
+    return {
+        "status": "OK",
+        "reason": None,
+        "detail": (
+            "the matching ceiling Delta is negative, so the admitted pair set "
+            "has the predeclared opposite ordering"
+        ),
+        "ceiling_delta": float(delta),
+    }
+
+
 TEXT_BANDS = ("distributionally_similar", "distributionally_dissimilar")
 
 
@@ -1190,6 +1443,40 @@ def context_counts(cohort: ScoringCohort, token_ids: Sequence[int]) -> dict[int,
     return {int(token): int(((preceding == int(token)) & mask).sum()) for token in token_ids}
 
 
+def residue_runs_by_row(
+    cohort: ScoringCohort, alphabet: Sequence[Symbol]
+) -> list[list[str]]:
+    """Contiguous alphabet runs inside each original scored sequence.
+
+    A non-alphabet token ends a run, so a fragment never spans a marker or a
+    forced FASTA wrap. Each outer entry is one cohort record.
+    """
+
+    label_of = {symbol.token_id: symbol.label for symbol in alphabet}
+    by_row: list[list[str]] = []
+    ids = cohort.input_ids.cpu()
+    mask = cohort.attention_mask.cpu()
+    for row in range(ids.shape[0]):
+        runs: list[str] = []
+        current: list[str] = []
+        for position in range(ids.shape[1]):
+            if not bool(mask[row, position]):
+                break
+            label = label_of.get(int(ids[row, position]))
+            if label is None:
+                if len(current) >= 3:
+                    runs.append("".join(current))
+                current = []
+                continue
+            current.append(label)
+        if len(current) >= 3:
+            runs.append("".join(current))
+        by_row.append(runs)
+    if not any(by_row):
+        raise ValueError("the tokenised cohort yields no symbol run long enough to score")
+    return by_row
+
+
 class DamageScorer:
     """Held-out likelihood damage from one embedding-row substitution.
 
@@ -1291,21 +1578,34 @@ class DamageScorer:
             "n_sequences": int(rows.numel()),
             "measurable": scored > 0,
         }
+        n_records = int(self.cohort.input_ids.shape[0])
+        per_sum = np.zeros(n_records, dtype=np.float64)
+        per_count = np.zeros(n_records, dtype=np.int64)
         if scored == 0:
             record["nats_per_scored_token"] = None
             record["unmeasurable_reason"] = (
                 "every target following this symbol is one of the pair's own two "
                 "identities, so no position is unaffected by the substitution's label"
             )
+            record["per_record_nll_sum"] = per_sum
+            record["per_record_n_scored"] = per_count
             return record
         source = (
             self.model.weight.data[substitute].detach().clone() if values is None else values
         )
         with substituted_row(self.model.weight, substituted, source):
             dirty = self._forward(rows)
-        record["nats_per_scored_token"] = float(
-            (dirty - clean)[keep].to(torch.float64).mean()
-        )
+        delta = (dirty - clean).to(torch.float64)
+        record["nats_per_scored_token"] = float(delta[keep].mean())
+        row_ids = rows.cpu().numpy()
+        for index, sequence in enumerate(row_ids):
+            mask = keep[index]
+            count = int(mask.sum())
+            if count:
+                per_sum[int(sequence)] = float(delta[index][mask].sum())
+                per_count[int(sequence)] = count
+        record["per_record_nll_sum"] = per_sum
+        record["per_record_n_scored"] = per_count
         return record
 
 
@@ -1468,7 +1768,9 @@ class FragmentConditional:
         order = self.order
         deltas: list[np.ndarray] = []
         eligible = 0
-        for record in records:
+        per_sum = np.zeros(len(records), dtype=np.float64)
+        per_count = np.zeros(len(records), dtype=np.int64)
+        for index, record in enumerate(records):
             codes = self._encoded(record)
             if codes.size <= max(order, 1) or (codes < 0).any():
                 continue
@@ -1495,7 +1797,10 @@ class FragmentConditional:
                 continue
             clean_log = np.log(clean_count[usable] / clean_total[usable])
             dirty_log = np.log(dirty_count[usable] / dirty_total[usable])
-            deltas.append(clean_log - dirty_log)
+            delta = clean_log - dirty_log
+            deltas.append(delta)
+            per_sum[index] = float(delta.sum())
+            per_count[index] = int(delta.size)
         if not deltas:
             return {
                 "order": order,
@@ -1508,6 +1813,8 @@ class FragmentConditional:
                     "in the corpus at this order, so the conditional is undefined there "
                     "and this design does not smooth"
                 ),
+                "per_record_nll_sum": per_sum,
+                "per_record_n_scored": per_count,
             }
         pooled = np.concatenate(deltas)
         return {
@@ -1517,6 +1824,57 @@ class FragmentConditional:
             "n_eligible_positions": eligible,
             "scored_fraction": pooled.size / eligible if eligible else 0.0,
             "measurable": True,
+            "per_record_nll_sum": per_sum,
+            "per_record_n_scored": per_count,
+        }
+
+    def damage_by_sequence(
+        self,
+        runs_by_record: Sequence[Sequence[str]],
+        substituted: str,
+        substitute: str,
+    ) -> dict[str, Any]:
+        """Pool every residue run of one original sequence, then keep one row per sequence."""
+
+        n_records = len(runs_by_record)
+        per_sum = np.zeros(n_records, dtype=np.float64)
+        per_count = np.zeros(n_records, dtype=np.int64)
+        eligible = 0
+        for index, runs in enumerate(runs_by_record):
+            if not runs:
+                continue
+            record = self.damage(list(runs), substituted, substitute)
+            eligible += int(record["n_eligible_positions"])
+            if record["measurable"]:
+                per_sum[index] = float(
+                    record["nats_per_scored_token"] * record["n_scored_tokens"]
+                )
+                per_count[index] = int(record["n_scored_tokens"])
+        total = int(per_count.sum())
+        if total == 0:
+            return {
+                "order": self.order,
+                "nats_per_scored_token": None,
+                "n_scored_tokens": 0,
+                "n_eligible_positions": eligible,
+                "measurable": False,
+                "unmeasurable_reason": (
+                    "no position has both its clean and its substituted k-gram observed "
+                    "in the corpus at this order, so the conditional is undefined there "
+                    "and this design does not smooth"
+                ),
+                "per_record_nll_sum": per_sum,
+                "per_record_n_scored": per_count,
+            }
+        return {
+            "order": self.order,
+            "nats_per_scored_token": float(per_sum.sum() / total),
+            "n_scored_tokens": total,
+            "n_eligible_positions": eligible,
+            "scored_fraction": total / eligible if eligible else 0.0,
+            "measurable": True,
+            "per_record_nll_sum": per_sum,
+            "per_record_n_scored": per_count,
         }
 
 
@@ -2419,6 +2777,14 @@ __all__ = [
     "association_vectors",
     "blosum62_distance",
     "CEILING_ADEQUACY_FLOOR",
+    "CEILING_CONSTRUCTION_VOID",
+    "EXPERIMENT_B",
+    "FRAGMENT_AXIS_SYMMETRIZATION",
+    "PRE_REGISTRATION_TRACK_B",
+    "PROTEIN_AXES",
+    "PROTEIN_AXIS_CONTEXT_PROFILE",
+    "PROTEIN_AXIS_FRAGMENT_SUBSTITUTION_DAMAGE",
+    "agreement_extremes_observed",
     "cap_pairs",
     "ceiling_adequacy",
     "ceiling_margin",
@@ -2427,24 +2793,30 @@ __all__ = [
     "context_profiles",
     "cosine_distance",
     "cut_sweep",
+    "cut_sweep_observed",
     "delta_contrast",
+    "fragment_damage_axis",
     "embedding_distance",
     "intervention_invariants",
     "load_ordered_counts",
     "lowercase_letter_buckets",
+    "matching_ceiling_predicts_distributional_side",
     "norm_matched_random_rows",
     "ordered_pair_set",
     "property_distance",
     "protein_alphabet",
     "protein_verdict",
     "quadrants_at_cut",
+    "quadrants_at_cut_observed",
     "random_direction_delta_null",
     "reachability_verdict",
+    "residue_runs_by_row",
     "residue_context_counts",
     "residue_context_profiles_at_order",
     "shuffled_difference_null",
     "substituted_row",
     "symbol_token_coverage",
+    "symmetrize_directional_damage",
     "symmetric_kl_distance",
     "synthetic_world",
     "text_alphabet",
