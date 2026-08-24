@@ -16876,3 +16876,11 @@ A real CPU full-size group-disjoint fill was run against the current local data.
 Plain Swiss-Prot: eligible 213,034; scanned 13,973; rejected exact 381; rejected near 1,304; all three slots 4,096 and pairwise independent. ZymCTRL EC: eligible 57,096; scanned 17,037; rejected exact 1,378; rejected near 3,371; all slots 4,096 and pairwise independent.
 
 This validates cohort construction only. It is not a D3.j-C axis or model result.
+
+### H200 dispatch
+
+Two independent audits found one blocking confirmation-path defect and no other material issue. The common confirmation function rebuilt the D3.j-B skip-0 cohort after correctly loading a frozen D3.j-C slot, so every confirmation would have failed its digest check. Commit `885c96c` deletes that second build and adds an execution-path regression test that reaches the digest and independence gates using the frozen cohort. Focused validation after the repair passed 110 tests with 6 data-dependent skips and 7 subtests; Python compilation, shell syntax, and `git diff --check` passed.
+
+The definitive snapshot is pinned to `885c96c2fcb00a93074e333bb14e0d0dfcd50dd6`, run `20260824051144_eecf13df49c5`, code hash `eecf13df49c522f8491448dd5cf9571aab3b53695d97a02b3da2f17e53d8a3bf`. Code and invocation manifests were checksum-verified on GPFS, and the freeze-state resource record succeeded. The campaign manifest digest read by the queue is `ff7be717e301112580cc43e5de90fa7ecc2e526e08181752098e03b23513875f`.
+
+The pre-dispatch resource probe ended `Health=ok`. Cards 0, 1, and 3 were idle and reported zero volatile uncorrectable SRAM errors; card 2 remained idle but retained its one uncorrectable SRAM error and was excluded. The detached 86,400-second queue started at **2026-08-24T12:16:26Z**. Initial durable status: slot 0, three construction cells running; eleven cells pending; `FAILURES 0`; `NO-RECORD 0`. This is an execution record only; no D3.j-C construction or model result is claimed yet.
