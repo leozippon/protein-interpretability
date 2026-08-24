@@ -31,21 +31,18 @@ set -euo pipefail
 #       --stage 16_fitness_recovery.py \
 #       --label progenmech_stratified \
 #       --gpu 0 \
+#       --expect fitness_recovery.json \
 #       -- --sampling progenmech_stratified --variants 1000
 #
 #   Repeat --gpu/--label pairs by invoking once per condition; each condition
 #   gets its own results directory, because a resume key has no condition axis
 #   and two conditions in one root would overwrite each other.
 #
-#   --expect <basename> names the artefact that means "done". It must be an
-#   exact JSON basename: no directory, glob, regex, or traversal. Completion is
-#   otherwise read as "any .json appeared in the output directory", which is
-#   right for a stage that writes into a directory it alone owns. A stage that
+#   --expect <basename> is required. It names the artefact that means "done"
+#   and must be an exact JSON basename: no directory, glob, regex, or traversal.
+#   Any other JSON in the output directory is not completion. A stage that
 #   READS an input staged into that same directory -- 20_retrieval_bound.py's
-#   score stage reads wildtypes.json from --out -- must name its artefact, or
-#   the input reads as completion and the controller pulls a partial result and
-#   admits it. The default is unchanged, so this is required only where the
-#   output directory is not empty at launch.
+#   score stage reads wildtypes.json from --out -- must name its own artefact.
 #
 #   --timeout-seconds bounds the poll. The default is 86400 (24 h), enough for
 #   a 12-24 h campaign; the hard ceiling is 172800 (48 h). TIMEOUT_SECONDS is
@@ -58,7 +55,7 @@ set -euo pipefail
 #     # sets RUN_ID, SNAPSHOT_DIR, PIN_COMMIT
 #     scripts/transfer/run_external_baseline_h200.sh --pin "$PIN_COMMIT" \
 #         --run-id "$RUN_ID" --snapshot-dir "$SNAPSHOT_DIR" \
-#         --stage ... --label ... --gpu 0 -- ... &
+#         --stage ... --label ... --gpu 0 --expect <basename.json> -- ... &
 #
 #   Two reasons to freeze once, one operational and one scientific. Four
 #   controllers freezing at once collide on the shared relay's single temp
@@ -169,9 +166,8 @@ done
 [ -n "${STAGE}" ] || { echo "--stage is required" >&2; exit 2; }
 [ -n "${LABEL}" ] || { echo "--label is required" >&2; exit 2; }
 assert_timeout_seconds "${TIMEOUT_SECONDS}" || exit 2
-if [ -n "${EXPECT}" ]; then
-  assert_expect_basename "${EXPECT}" || exit 2
-fi
+[ -n "${EXPECT}" ] || { echo "--expect is required" >&2; exit 2; }
+assert_expect_basename "${EXPECT}" || exit 2
 
 log() { printf '[external-baseline] %s %s\n' "$(date -Is)" "$*"; }
 
@@ -305,7 +301,7 @@ mkdir -p "$(dirname "${LOCAL_RECORD}")"
   printf 'label\t%s\n' "${LABEL}"
   printf 'gpu\t%s\n' "${GPU}"
   printf 'out\t%s\n' "${OUT_DIR}"
-  printf 'expect\t%s\n' "${EXPECT:-any .json}"
+  printf 'expect\t%s\n' "${EXPECT}"
   printf 'stage_args\t%s\n' "${STAGE_ARGS[*]-}"
   printf 'dispatched_utc\t%s\n' "$(date -u -Is)"
 } > "${LOCAL_RECORD}"
@@ -330,13 +326,8 @@ log "launching ${STAGE} on cuda:${GPU}"
 #!/usr/bin/env bash
 set -euo pipefail
 source \"\${TRANSFER_PACKAGE_ROOT}/scripts/transfer/h200_env.sh\"
-stage_name=\$(basename \"\${XFER_STAGE}\")
 source \"\${TRANSFER_PACKAGE_ROOT}/scripts/transfer/h200_orchestration.sh\"
-require_stage_resources \"\${stage_name}\"
-write_host_resource_snapshot \"\${XFER_HOST_PRE}\" pre
-_xfer_host_post() { write_host_resource_snapshot \"\${XFER_HOST_POST}\" post; }
-trap _xfer_host_post EXIT
-exec \"\${TRANSFER_PYTHON}\" \"\${XFER_STAGE}\" --device \"cuda:\${XFER_GPU}\" --out \"\${XFER_OUT}\" \"\$@\"
+run_wrapped_external_stage \"\$@\"
 WRAP
   chmod +x '${WRAP}'
   export XFER_STAGE='${SNAPSHOT_DIR}/scripts/transfer/${STAGE}'
@@ -379,15 +370,9 @@ fi
 # below, because the two call sites must agree: a poll that accepted a file the
 # confirming re-poll rejected would turn a finished run into an ABSENT.
 present() {
-  if [ -n "${EXPECT}" ]; then
-    "${H200_POD_BASH}" \
-      "test -f '${OUT_DIR}/${EXPECT}' && echo PRESENT" \
-      2>/dev/null | grep -q PRESENT
-  else
-    "${H200_POD_BASH}" \
-      "ls -1 '${OUT_DIR}' 2>/dev/null | grep -q '\\.json\$' && echo PRESENT" \
-      2>/dev/null | grep -q PRESENT
-  fi
+  "${H200_POD_BASH}" \
+    "test -f '${OUT_DIR}/${EXPECT}' && echo PRESENT" \
+    2>/dev/null | grep -q PRESENT
 }
 
 # An item is absent only once the GPU it was scheduled on is observed idle.
@@ -423,12 +408,7 @@ done
 log "${LABEL} ${status} after ${waited}s"
 [ "${status}" = "PRESENT" ] || exit 4
 
-if [ -n "${EXPECT}" ]; then
-  ADMIT_PATH="${OUT_DIR}/${EXPECT}"
-else
-  ADMIT_PATH="$("${H200_POD_BASH}" "ls -1 '${OUT_DIR}' 2>/dev/null | grep -m 1 '\\.json\$'" 2>/dev/null | tr -d '\r')"
-  ADMIT_PATH="${OUT_DIR}/${ADMIT_PATH}"
-fi
+ADMIT_PATH="${OUT_DIR}/${EXPECT}"
 ADMIT_DIGEST="$("${H200_POD_BASH}" "
   set -euo pipefail
   python3 -c 'import json,sys

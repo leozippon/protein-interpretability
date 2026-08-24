@@ -201,7 +201,7 @@ Three further entry points belong to neither list. Each re-reads a measurement t
 
 The `--arm` of stages 15 and 17 defaults to `progen3` and otherwise names a **dense** panel arm — the text control and the dense protein arm a replacement result needs before it can be attributed to protein, to mixture-of-experts, or to transcoder replacement in general. The eligible set is composed by `src.transfer.replaceable.eligible_arms` from `CAMPAIGN_PANEL`, the architectures that carry this estimand, and the arms with a measured loader band; run either stage with `--help` to see it. They are still not registered stages, so a dense-arm run is a direct invocation and not a campaign item.
 
-Stage 20 builds and scores the training-corpus retrieval bound. Its scoring step stages `wildtypes.json` in the output directory before producing the result, so invoke the launcher with `--expect retrieval_bound.json`; otherwise the input file can be mistaken for completed output. `--expect` is an exact JSON basename: no directory, glob, or regex. A successful exact artefact is admitted only after it is nonempty valid JSON and a SHA-256 sidecar is written beside it.
+`--expect` is required on every external-baseline dispatch. It is an exact JSON basename: no directory, glob, or regex. Any other JSON in the output directory is not completion. A successful artefact is admitted only after it is nonempty valid JSON and a SHA-256 sidecar is written beside it. Stage 20 stages `wildtypes.json` in the same directory as `retrieval_bound.json`, so `--expect retrieval_bound.json` is what distinguishes the measurement from its input.
 
 `--timeout-seconds` bounds the poll. The default is 86400 (24 h). `TIMEOUT_SECONDS` is the same bound as an environment override. Values above 172800 (48 h) are refused so the wait stays bounded.
 
@@ -212,7 +212,7 @@ export H200_POD=<running-pod-name>
 eval "$(scripts/transfer/run_transfer_h200.sh --pin HEAD --freeze-only)"   # sets RUN_ID, SNAPSHOT_DIR, PIN_COMMIT
 scripts/transfer/run_external_baseline_h200.sh --pin "$PIN_COMMIT" \
     --run-id "$RUN_ID" --snapshot-dir "$SNAPSHOT_DIR" \
-    --stage 17_train_transcoder.py --label clt --gpu 0 -- --architecture clt &
+    --stage 17_train_transcoder.py --label clt --gpu 0 --expect train_transcoder.json -- --architecture clt &
 ```
 
 **A reused snapshot runs the code it was frozen with, not the code on disk.** Editing a stage after freezing and then reusing the old run-id runs the old stage: four launches once died on `error: unrecognized arguments` for a flag added after the freeze. The driver refuses this — it asks the controller for the current hash (`--print-code-hash`, local only, no network) and requires the run-id's trailing segment to match, which is `resolve_run_id`'s rule applied at the one other place a snapshot can be adopted. **Edit a stage, freeze again.**
@@ -227,7 +227,7 @@ scripts/transfer/run_external_baseline_h200.sh --pin "$PIN_COMMIT" \
 |---|---|
 | `LAUNCHED` | the launcher returned. It is not evidence the stage is running: the access layer returns 0 whatever the remote command did (L20) |
 | `DIED AT DISPATCH` | the stage's own log shows a start-up failure. Nothing was scheduled. Exit 6 |
-| `PRESENT` | a result JSON exists in the pod-side output directory |
+| `PRESENT` | the `--expect` JSON exists in the pod-side output directory |
 | `ABSENT` | the GPU went idle and no result appeared — a *measurement* outcome, "ran and wrote nothing". Exit 4 |
 | `ADMITTED` | pulled to B and the per-file digests taken on each side agree. **Only an ADMITTED result may be read.** Exit 5 on mismatch |
 

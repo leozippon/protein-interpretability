@@ -5,9 +5,11 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -1510,7 +1512,7 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
                 "--run-id", "20260101000000_deadbeefcafe",
                 "--snapshot-dir", "/gpfs/nowhere/packages/20260101000000_deadbeefcafe",
                 "--stage", "15_replacement_faithfulness.py",
-                "--label", "stale", "--gpu", "0",
+                "--label", "stale", "--gpu", "0", "--expect", "score.json",
             ],
             capture_output=True, text=True, cwd=str(REPO_ROOT),
             env={**os.environ, "H200_POD": "unused", "H200_POD_BASH": str(LOCAL_POD_BASH)},
@@ -1538,7 +1540,8 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
 
         result = subprocess.run(
             ["bash", str(self.DRIVER), "--run-id", "20260101000000_deadbeefcafe",
-             "--stage", "15_replacement_faithfulness.py", "--label", "x", "--gpu", "0"],
+             "--stage", "15_replacement_faithfulness.py", "--label", "x", "--gpu", "0",
+             "--expect", "score.json"],
             capture_output=True, text=True, cwd=str(REPO_ROOT),
             env={**os.environ, "H200_POD": "unused"}, timeout=600,
         )
@@ -1605,7 +1608,7 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
         result = subprocess.run(
             ["bash", str(self.DRIVER), "--run-id", run_id,
              "--snapshot-dir", str(snapshot), "--stage", "20_retrieval_bound.py",
-             "--label", "score", "--gpu", "0"],
+             "--label", "score", "--gpu", "0", "--expect", "score.json"],
             capture_output=True, text=True, cwd=str(REPO_ROOT),
             env={**os.environ, "H200_POD": "unused",
                  "H200_POD_BASH": str(LOCAL_POD_BASH), "H200_POD_EXEC": str(pod_exec),
@@ -1631,7 +1634,7 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
             f"a dead dispatch left a pulled result directory behind: {pulled}",
         )
 
-    def _poll_verdict(self, staged: str, expect: str | None) -> str:
+    def _poll_verdict(self, staged: str, expect: str) -> str:
         """Run one dispatch to the point of its poll verdict and return it.
 
         The pull is never reached: this exercises the completion test alone,
@@ -1654,8 +1657,7 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
             "--snapshot-dir", str(snapshot), "--stage", "20_retrieval_bound.py",
             "--label", "score", "--gpu", "0",
         ]
-        if expect is not None:
-            command += ["--expect", expect]
+        command += ["--expect", expect]
 
         result = subprocess.run(
             command, capture_output=True, text=True, cwd=str(REPO_ROOT),
@@ -1700,20 +1702,24 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
             f"the dispatch record did not land under LOCAL_OUTPUT_ROOT: {written}",
         )
 
+    def test_missing_expect_is_refused(self):
+        result = subprocess.run(
+            ["bash", str(self.DRIVER), "--stage", "20_retrieval_bound.py",
+             "--label", "score", "--gpu", "0"],
+            capture_output=True, text=True, cwd=str(REPO_ROOT),
+            env={**os.environ, "H200_POD": "unused"}, timeout=60,
+        )
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("--expect is required", result.stderr)
+
     def test_a_staged_input_does_not_read_as_a_finished_measurement(self):
         """The false success --expect exists to prevent.
 
         20_retrieval_bound.py's score stage reads wildtypes.json from the
-        directory it writes score.json into. Under the default completion test
-        -- any .json in the output directory -- the staged input satisfies the
-        poll on its first tick, so the controller pulls a directory holding no
-        measurement and reports it ADMITTED.
+        directory it writes score.json into. An any-JSON fallback would treat
+        that staged input as completion and pull a directory with no measurement.
         """
 
-        self.assertEqual(
-            self._poll_verdict(staged="wildtypes.json", expect=None), "PRESENT",
-            "the default test no longer accepts any .json; this test's premise is stale",
-        )
         self.assertEqual(
             self._poll_verdict(staged="wildtypes.json", expect="score.json"), "UNRESOLVED",
             "a staged input satisfied --expect; a partial pull would be admitted",
@@ -1849,7 +1855,8 @@ class PinnedCodeSourceTests(unittest.TestCase):
             [
                 "bash", str(self.project / "scripts" / "transfer" / "run_external_baseline_h200.sh"),
                 "--run-id", run_id, "--snapshot-dir", str(snapshot),
-                "--stage", self.STAGE, "--label", "cell", "--gpu", "0", *arguments,
+                "--stage", self.STAGE, "--label", "cell", "--gpu", "0",
+                "--expect", "score.json", *arguments,
             ],
             capture_output=True, text=True, cwd=str(self.project),
             env={**os.environ, "H200_POD": "unused",
@@ -1965,7 +1972,8 @@ class PinnedCodeSourceTests(unittest.TestCase):
             ["bash", str(self.project / "scripts" / "transfer" / "run_external_baseline_h200.sh"),
              "--pin", self.commit, "--run-id", run_id,
              "--snapshot-dir", str(self.snapshot_for(run_id)),
-             "--stage", "99_uncommitted.py", "--label", "cell", "--gpu", "0"],
+             "--stage", "99_uncommitted.py", "--label", "cell", "--gpu", "0",
+             "--expect", "score.json"],
             capture_output=True, text=True, cwd=str(self.project),
             env={**os.environ, "H200_POD": "unused",
                  "H200_POD_BASH": str(LOCAL_POD_BASH),
@@ -2261,6 +2269,88 @@ class HostSnapshotAndTimeoutTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
         self.assertRegex(result.stderr, r"glob|exact basename|expect")
+
+
+class ExternalStageWrapperLifecycleTests(unittest.TestCase):
+    """The wrapper must write pre and post snapshots without exec-replacing bash."""
+
+    def _start_wrapper(self, stage_source: str, tmp: Path) -> tuple[subprocess.Popen[str], Path, Path]:
+        pre = tmp / "host_pre.txt"
+        post = tmp / "host_post.txt"
+        out = tmp / "out"
+        out.mkdir()
+        stage = tmp / "fake_stage.py"
+        stage.write_text(stage_source, encoding="utf-8")
+        env = {
+            **os.environ,
+            "XFER_STAGE": str(stage),
+            "XFER_OUT": str(out),
+            "XFER_GPU": "0",
+            "XFER_HOST_PRE": str(pre),
+            "XFER_HOST_POST": str(post),
+            "TRANSFER_PYTHON": sys.executable,
+            "H200_POD": "secret-pod-name-should-not-appear",
+        }
+        proc = subprocess.Popen(
+            [
+                "bash", "-c",
+                f"set -euo pipefail; source {ORCHESTRATION}; run_wrapped_external_stage",
+            ],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
+        return proc, pre, post
+
+    def _assert_snapshots(self, pre: Path, post: Path) -> None:
+        self.assertTrue(pre.is_file(), f"missing pre snapshot: {pre}")
+        self.assertTrue(post.is_file(), f"missing post snapshot: {post}")
+        for path in (pre, post):
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("utc=", text)
+            self.assertIn("--- nvidia-smi ---", text)
+            self.assertIn("--- free -h ---", text)
+            self.assertNotIn("secret-pod-name-should-not-appear", text)
+            self.assertNotIn("H200_POD", text)
+
+    def test_exit_zero_writes_pre_and_post(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proc, pre, post = self._start_wrapper("import sys\nsys.exit(0)\n", Path(tmp))
+            stdout, stderr = proc.communicate(timeout=30)
+            self.assertEqual(proc.returncode, 0, stdout + stderr)
+            self._assert_snapshots(pre, post)
+
+    def test_nonzero_exit_writes_pre_and_post(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proc, pre, post = self._start_wrapper("import sys\nsys.exit(7)\n", Path(tmp))
+            stdout, stderr = proc.communicate(timeout=30)
+            self.assertEqual(proc.returncode, 7, stdout + stderr)
+            self._assert_snapshots(pre, post)
+
+    def test_term_writes_pre_and_post(self):
+        self._assert_signal_snapshots(signal.SIGTERM)
+
+    def test_int_writes_pre_and_post(self):
+        self._assert_signal_snapshots(signal.SIGINT)
+
+    def _assert_signal_snapshots(self, sig: signal.Signals) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            proc, pre, post = self._start_wrapper(
+                "import time\ntime.sleep(30)\n", Path(tmp),
+            )
+            deadline = time.time() + 10
+            while time.time() < deadline and not pre.exists():
+                if proc.poll() is not None:
+                    break
+                time.sleep(0.05)
+            self.assertTrue(pre.exists(), "pre snapshot was not written before the signal")
+            self.assertIsNone(proc.poll(), "wrapper exited before the signal was sent")
+            proc.send_signal(sig)
+            stdout, stderr = proc.communicate(timeout=30)
+            self.assertNotEqual(proc.returncode, 0, stdout + stderr)
+            self._assert_snapshots(pre, post)
 
 
 if __name__ == "__main__":
