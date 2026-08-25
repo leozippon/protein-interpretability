@@ -40,8 +40,9 @@ from src.transfer.arms import (  # noqa: E402
 def _load_stage(filename: str):
     path = REPO_ROOT / "scripts/transfer" / filename
     spec = importlib.util.spec_from_file_location(path.stem.replace("-", "_"), path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load stage module from {path}")
     module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
 
@@ -163,7 +164,9 @@ class _DummyTokenizer:
 def test_stage_is_not_a_registered_panel_stage():
     import panel_contract
 
-    assert Path(STAGE.__file__).name == "scale_interface_qualification.py"
+    stage_file = STAGE.__file__
+    assert isinstance(stage_file, str)
+    assert Path(stage_file).name == "scale_interface_qualification.py"
     assert all(
         contract.entry_point != "scale_interface_qualification.py"
         for contract in panel_contract.STAGE_CONTRACTS.values()
