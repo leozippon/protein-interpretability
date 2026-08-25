@@ -1422,11 +1422,80 @@ class Arm:
         return self._resolve_attention(layer)
 
 
+#: Keys Transformers reports when ``output_loading_info=True``. A strict load
+#: refuses any of them being non-empty, and refuses an API return that is not
+#: exactly ``(model, {these four keys...})``.
+LOADING_INFO_KEYS: tuple[str, ...] = (
+    "missing_keys",
+    "unexpected_keys",
+    "mismatched_keys",
+    "error_msgs",
+)
+
+
+def unpack_pretrained_loading_info(loaded: Any) -> tuple[Any, dict[str, Any]]:
+    """Require Transformers' ``output_loading_info=True`` return shape.
+
+    A model-only return, a tuple of the wrong length, or a non-dict second
+    element is an API-shape failure. Silent degradation would treat a partial
+    or unreported load as clean.
+    """
+
+    if not isinstance(loaded, tuple) or len(loaded) != 2:
+        kind = type(loaded).__name__
+        extra = f" of length {len(loaded)}" if isinstance(loaded, tuple) else ""
+        raise TypeError(
+            "strict load expected Transformers to return (model, loading_info); "
+            f"got {kind}{extra}"
+        )
+    model, info = loaded
+    if not isinstance(info, dict):
+        raise TypeError(
+            "strict load expected loading_info to be a dict; "
+            f"got {type(info).__name__}"
+        )
+    missing = [key for key in LOADING_INFO_KEYS if key not in info]
+    if missing:
+        raise TypeError(
+            "strict load expected loading_info keys "
+            f"{list(LOADING_INFO_KEYS)}; missing {missing}"
+        )
+    return model, info
+
+
+def require_clean_loading_info(
+    info: Mapping[str, Any], *, arm: str
+) -> dict[str, int]:
+    """Refuse any non-empty Transformers loading-info list. Return zero counts."""
+
+    counts: dict[str, int] = {}
+    nonempty: list[str] = []
+    for key in LOADING_INFO_KEYS:
+        values = info[key]
+        try:
+            count = len(values)
+        except TypeError as exc:
+            raise TypeError(
+                f"{arm}: loading_info[{key!r}] is not a sequence"
+            ) from exc
+        counts[key] = int(count)
+        if count:
+            nonempty.append(f"{key}={count}")
+    if nonempty:
+        raise ValueError(
+            f"{arm}: strict weight load refused non-empty loading_info "
+            f"({', '.join(nonempty)})"
+        )
+    return counts
+
+
 def load_arm_spec(
     spec: ArmSpec,
     device: str = "cuda:0",
     dtype: str = "bfloat16",
     attn_implementation: str | None = None,
+    *,
+    strict: bool = False,
 ) -> Arm:
     """Load a declared checkpoint and verify its declared shape and inference dtype.
 
@@ -1443,6 +1512,11 @@ def load_arm_spec(
     declares 51200 against a 31-token tokenizer and ``progen2-xlarge`` declares no
     ``vocab_size`` at all -- so the shape check reads depth and width, which every
     checkpoint here declares and which identify a rung of a scale ladder.
+
+    ``strict=False`` is the historical default and does not request loading info.
+    ``strict=True`` asks Transformers for ``output_loading_info`` and refuses any
+    missing, unexpected, mismatched, or error-reported key. A return that is not
+    exactly ``(model, loading_info)`` fails rather than being treated as clean.
     """
 
     name = spec.name
@@ -1467,19 +1541,26 @@ def load_arm_spec(
         # sdpa returns None for attention weights and cannot be intercepted;
         # anything that reads or overrides patterns must ask for eager.
         extra["attn_implementation"] = attn_implementation
-    model = AutoModelForCausalLM.from_pretrained(
-        path,
+    load_kwargs: dict[str, object] = {
         # ``torch_dtype`` rather than ``dtype``: the H200 pod runs transformers
         # 4.52.4, where ``dtype`` is not a recognised loading argument and would
         # be swallowed as a config keyword, leaving a float32 model. ``dtype``
         # is the newer spelling and 4.57.3 warns that ``torch_dtype`` is
         # deprecated, but it is the only spelling both versions honour, and the
         # observed-dtype check below is what actually enforces the outcome.
-        torch_dtype=_DTYPES[dtype],
-        trust_remote_code=True,
-        device_map={"": device},
+        "torch_dtype": _DTYPES[dtype],
+        "trust_remote_code": True,
+        "device_map": {"": device},
         **extra,
-    )
+    }
+    if strict:
+        loaded = AutoModelForCausalLM.from_pretrained(
+            path, output_loading_info=True, **load_kwargs
+        )
+        model, info = unpack_pretrained_loading_info(loaded)
+        require_clean_loading_info(info, arm=name)
+    else:
+        model = AutoModelForCausalLM.from_pretrained(path, **load_kwargs)
     model.eval()
 
     observed = sorted(
