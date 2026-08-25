@@ -38,7 +38,6 @@ from src.transfer.arms import (  # noqa: E402
     iter_corpus_records,
     load_arm,
 )
-from src.transfer.budget import arm_power  # noqa: E402
 from src.transfer.progen3 import (  # noqa: E402
     NON_RESIDUE_TOKENS,
     component_grid,
@@ -179,22 +178,17 @@ class TheProteinScaleLadder(unittest.TestCase):
         for name in eligible:
             self.assertIn(name, perturbable, name)
 
-    def test_a_staged_checkpoint_is_admitted_for_one_measurement_family_only(self):
-        # The capability is the enforcement of the paragraph above: budget is what
-        # arm_power needs, and arm_power reads config.vocab_size.
+    def test_a_staged_checkpoint_declares_a_scoring_alphabet_and_stays_off_the_panel(self):
+        # Budget is now granted because the scoring-target alphabet is declared
+        # as 32. That is not panel admission: load_arm still refuses, and the
+        # 51200-column large head is still the live interface.
         for name, spec in A.STAGED_ARMS.items():
-            self.assertEqual(sorted(spec.capabilities), ["pathway"], name)
-        arm = Arm(
-            spec=A.STAGED_ARMS["progen2-xlarge"],
-            model=None,
-            tokenizer=None,
-            device="cpu",
-            dtype="bfloat16",
-        )
-        cohort = A.Cohort(name="stub", kind="protein", records=["MKT"], min_symbols=0, max_symbols=0)
-        with self.assertRaises(ValueError) as caught:
-            arm_power(arm, cohort, max_len=8, batch_size=1)
-        self.assertIn("budget", str(caught.exception))
+            self.assertEqual(sorted(spec.capabilities), ["budget", "pathway"], name)
+            self.assertEqual(spec.scoring_target_alphabet_size, 32, name)
+            self.assertNotIn(name, PANEL, name)
+        alphabet = A.scoring_target_alphabet(A.STAGED_ARMS["progen2-xlarge"])
+        self.assertEqual(alphabet["size"], 32)
+        self.assertEqual(alphabet["source"], A.SCORING_TARGET_ALPHABET_DECLARED)
 
     def test_a_staged_non_member_cannot_be_registered_into_the_panel_at_run_time(self):
         # scaling.register_arm_spec inserts a ladder rung into PANEL so that

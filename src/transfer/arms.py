@@ -326,6 +326,15 @@ class ArmSpec:
     ``source`` remains as a read-only alias of ``evaluation_cohort_source`` so
     that frozen artefact schemas and existing runners keep working; it should not
     be used in new code.
+
+    ``scoring_target_alphabet_size`` is the support of scored next-token targets,
+    not the width of the logit matrix. ``None`` means the live ``config.vocab_size``
+    is that support, which is the panel default. A positive integer is an explicit
+    declaration and is the only way a checkpoint whose ``config.vocab_size`` is
+    missing or far larger than its reachable tokens may enter a budget measurement.
+    Tokenizer length is never consulted: guessing from it would hide the mismatch
+    this field exists to record. The model's output columns stay untouched;
+    nothing here crops logits.
     """
 
     name: str
@@ -350,6 +359,17 @@ class ArmSpec:
     architecture: str
     pretraining_corpus: str = PRETRAINING_UNDECLARED
     capabilities: frozenset[str] = CAPABILITIES
+    scoring_target_alphabet_size: int | None = None
+
+    def __post_init__(self) -> None:
+        size = self.scoring_target_alphabet_size
+        if size is None:
+            return
+        if not isinstance(size, int) or isinstance(size, bool) or size < 1:
+            raise ValueError(
+                f"{self.name}: scoring_target_alphabet_size must be a positive "
+                f"integer, got {size!r}"
+            )
 
     @property
     def source(self) -> str:
@@ -770,11 +790,13 @@ for _name, _layers, _width in (
 #: reads only the tokenizer and the block outputs, which is why they are reachable
 #: here rather than unreachable everywhere.
 #:
-#: ``capabilities`` is therefore ``{"pathway"}`` and not the panel default. It is
-#: the enforcement of the paragraph above: ``budget`` is what
-#: :func:`src.transfer.budget.arm_power` needs, and that function reads
-#: ``config.vocab_size`` directly, so withholding the capability is what turns
-#: "would produce a number over a dead alphabet" into a refusal with a reason.
+#: ``capabilities`` now include ``budget`` because the scoring-target alphabet
+#: is declared as 32 rather than read from ``config.vocab_size``. That grant does
+#: not admit either rung to :data:`PANEL`: the 51200-column large head and the
+#: xlarge config that omits ``vocab_size`` remain reasons to keep them out of
+#: every panel-wide statistic that still defaults to the config key. An opt-in
+#: scale measurement that goes through :func:`scoring_target_alphabet` can score
+#: them; a campaign stage that indexes :data:`PANEL` still cannot.
 STAGED_ARMS: dict[str, ArmSpec] = {
     # 2779.4M parameters, 32 blocks of width 2560, 32 heads (EXP-R2-068).
     "progen2-large": ArmSpec(
@@ -789,7 +811,8 @@ STAGED_ARMS: dict[str, ArmSpec] = {
         evaluation_cohort_source="swissprot",
         architecture="progen",
         pretraining_corpus="uniref90_bfd30",
-        capabilities=frozenset({"pathway"}),
+        capabilities=frozenset({"budget", "pathway"}),
+        scoring_target_alphabet_size=32,
     ),
     # 6443.6M parameters, 32 blocks of width 4096, 16 heads. Its config declares
     # ``embed_dim`` and no ``n_embd``, which :func:`load_arm_spec` already
@@ -806,7 +829,8 @@ STAGED_ARMS: dict[str, ArmSpec] = {
         evaluation_cohort_source="swissprot",
         architecture="progen",
         pretraining_corpus="uniref90_bfd30",
-        capabilities=frozenset({"pathway"}),
+        capabilities=frozenset({"budget", "pathway"}),
+        scoring_target_alphabet_size=32,
     ),
 }
 
@@ -823,6 +847,11 @@ def _check_staged_arms() -> None:
     for name, spec in STAGED_ARMS.items():
         if spec.name != name:
             raise AssertionError(f"staged arm {name!r} declares the name {spec.name!r}")
+        if spec.scoring_target_alphabet_size is None:
+            raise AssertionError(
+                f"staged arm {name!r} must declare scoring_target_alphabet_size; "
+                "config.vocab_size is not its scoring alphabet"
+            )
 
 
 _check_staged_arms()
@@ -848,21 +877,114 @@ def arm_spec(name: str) -> ArmSpec:
     )
 
 
+def scoring_target_alphabet(
+    spec: ArmSpec, config: Any | None = None
+) -> dict[str, Any]:
+    """The scoring-target alphabet size and the declaration it came from.
+
+    This is the support of next-token target ids, not the logit width. A panel
+    member with no explicit size reads ``config.vocab_size``. A staged scale
+    rung must declare the size on :class:`ArmSpec`; the live config is then
+    ignored for this quantity so progen2-large's 51200-column head cannot enter
+    a unigram support. Tokenizer length is not a fallback.
+    """
+
+    declared = spec.scoring_target_alphabet_size
+    if declared is not None:
+        size = int(declared)
+        source = SCORING_TARGET_ALPHABET_DECLARED
+    else:
+        if config is None or not hasattr(config, "vocab_size"):
+            raise ValueError(
+                f"{spec.name}: scoring-target alphabet is not declared and "
+                "config.vocab_size is absent; tokenizer length is not a substitute"
+            )
+        raw = config.vocab_size
+        if raw is None:
+            raise ValueError(
+                f"{spec.name}: config.vocab_size is None; declare "
+                "scoring_target_alphabet_size rather than guessing the tokenizer"
+            )
+        size = int(raw)
+        source = SCORING_TARGET_ALPHABET_CONFIG
+    if size < 1:
+        raise ValueError(
+            f"{spec.name}: scoring-target alphabet size must be positive, got {size}"
+        )
+    return {
+        "size": size,
+        "source": source,
+        "arm": spec.name,
+        "not_logit_width": (
+            "this is the support of scored target ids; it is not the number of "
+            "logit columns and does not authorise cropping the model output"
+        ),
+    }
+
+
+def require_scoring_target_ids(
+    target_ids: Any, alphabet: Mapping[str, Any], *, arm: str
+) -> None:
+    """Refuse target ids that fall outside the declared scoring alphabet."""
+
+    size = int(alphabet["size"])
+    if size < 1:
+        raise ValueError(f"{arm}: scoring-target alphabet size must be positive")
+    if hasattr(target_ids, "size"):
+        if int(target_ids.size) == 0:
+            return
+        lowest = int(target_ids.min())
+        highest = int(target_ids.max())
+    else:
+        values = [int(value) for value in target_ids]
+        if not values:
+            return
+        lowest = min(values)
+        highest = max(values)
+    if lowest < 0 or highest >= size:
+        raise ValueError(
+            f"{arm}: target token id outside the scoring-target alphabet of "
+            f"{size} (source {alphabet['source']}); range [{lowest}, {highest}]"
+        )
+
+
 #: The four-rung protein scale ladder: one lineage, one 31-token residue
 #: tokenizer, one UniRef90+BFD30 mixture, 151M -> 765M -> 2.78B -> 6.44B.
 #:
 #: :data:`PROTEIN_SCALE_CONTRAST` is its first two rungs and is what a *campaign*
 #: may schedule, because the upper two are :data:`STAGED_ARMS` rather than panel
 #: members. The ladder is declared separately because a measurement that needs
-#: none of the panel's campaign obligations -- one that reads the tokenizer and
-#: the block outputs and nothing derived from ``config.vocab_size`` -- can run all
-#: four, and the set of rungs it runs on is then a value rather than a list a
-#: reader has to reassemble.
+#: none of the panel's campaign obligations can run all four, and the set of
+#: rungs it runs on is then a value rather than a list a reader has to reassemble.
+#: The upper two now declare a scoring-target alphabet of 32, so a budget
+#: measurement may score them through :func:`scoring_target_alphabet` without
+#: reading ``config.vocab_size``. That is still not panel admission.
 PROTEIN_SCALE_LADDER = (
     "progen2-small",
     "progen2-medium",
     "progen2-large",
     "progen2-xlarge",
+)
+
+#: The staged rungs of :data:`PROTEIN_SCALE_LADDER`. Opt-in scale stages may
+#: name these and no other staged checkpoint.
+STAGED_SCALE_ARMS = tuple(name for name in PROTEIN_SCALE_LADDER if name in STAGED_ARMS)
+
+#: Source labels recorded beside every scoring-target alphabet.
+SCORING_TARGET_ALPHABET_CONFIG = "config.vocab_size"
+SCORING_TARGET_ALPHABET_DECLARED = "arm_spec.scoring_target_alphabet_size"
+
+#: Identification of a UniRef90+BFD30 pretraining mixture searched only through
+#: the staged UniRef50 snapshot. The bound runs in the model-favouring direction:
+#: an under-supported LOOKUP inflates MODEL - LOOKUP / weakens a retrieval
+#: exclusion. One note, reused by the retrieval-bound and designed-referent
+#: stages so the two cannot drift.
+UNIREF90_BFD30_INCOMPLETE_SEARCH = (
+    "UniRef90 and BFD30 are not fully searched. The staged snapshot is UniRef50, "
+    "whose representatives are members of both; LOOKUP and the homology certificate "
+    "therefore under-count retrievable support. That inflates MODEL - LOOKUP and "
+    "weakens a corpus-disjoint exclusion, so both bounds run in the model-favouring "
+    "direction and are not identified measurements"
 )
 
 
@@ -1013,6 +1135,12 @@ class Arm:
         if capability not in CAPABILITIES:
             raise ValueError(f"unknown capability {capability!r}; known: {sorted(CAPABILITIES)}")
         return capability in self.spec.capabilities
+
+    def scoring_target_alphabet(self) -> dict[str, Any]:
+        """The scoring-target alphabet for this loaded arm, with its source."""
+
+        config = getattr(self.model, "config", None)
+        return scoring_target_alphabet(self.spec, config)
 
     def require(self, capability: str) -> None:
         """Refuse a measurement this arm cannot enter commensurably."""

@@ -188,6 +188,20 @@ ARM_IDENTIFICATION: Mapping[str, Mapping[str, str]] = {
             "searched."
         ),
     },
+    "progen2-large": {
+        "identification": "unbounded_in_the_model_favouring_direction",
+        "note": (
+            "UniRef90 + BFD30, as progen2-medium; BFD30 is not staged and was not "
+            "fully searched. The bound runs in the model-favouring direction."
+        ),
+    },
+    "progen2-xlarge": {
+        "identification": "unbounded_in_the_model_favouring_direction",
+        "note": (
+            "UniRef90 + BFD30, as progen2-medium; BFD30 is not staged and was not "
+            "fully searched. The bound runs in the model-favouring direction."
+        ),
+    },
 }
 
 #: Arms excluded from this estimand, with the reason, so that a narrower panel is

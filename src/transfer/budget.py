@@ -77,6 +77,8 @@ from .arms import (
     Arm,
     Cohort,
     conditioning_boundary_ids,
+    require_scoring_target_ids,
+    scoring_target_alphabet,
     symbols_per_token,
     tokenize_batch,
 )
@@ -551,11 +553,14 @@ def record_statistics(arm: Arm, scored: ScoredTokens) -> RecordStatistics:
     """Reduce a scored forward pass to its per-record sufficient statistics.
 
     Requires the ``budget`` capability for the reason :func:`arm_power` states:
-    the vocabulary recorded here is ``config.vocab_size``, which is not the
-    alphabet on every checkpoint this repository can load.
+    the vocabulary recorded here is the scoring-target alphabet, resolved by
+    :func:`src.transfer.arms.scoring_target_alphabet` rather than by reading
+    ``config.vocab_size`` directly.
     """
 
     arm.require("budget")
+    alphabet = scoring_target_alphabet(arm.spec, getattr(arm.model, "config", None))
+    require_scoring_target_ids(scored.target_ids, alphabet, arm=arm.name)
     order = np.argsort(scored.sequence_index, kind="mergesort")
     ordered_index = scored.sequence_index[order]
     starts = np.unique(ordered_index, return_index=True)[1][1:]
@@ -563,7 +568,7 @@ def record_statistics(arm: Arm, scored: ScoredTokens) -> RecordStatistics:
     id_blocks = np.split(scored.target_ids[order], starts)
     return RecordStatistics(
         arm=arm.name,
-        vocab_size=int(arm.model.config.vocab_size),
+        vocab_size=int(alphabet["size"]),
         record_index=np.unique(ordered_index).astype(np.int64),
         clean_nll_sum=np.array([block.sum() for block in nll_blocks], dtype=np.float64),
         token_count=np.array([block.size for block in id_blocks], dtype=np.int64),
@@ -1163,15 +1168,12 @@ def arm_power_with_records(
     honest form of the field is the plug-in one, named as such.
 
     The ``budget`` capability is required here rather than only at the stages
-    that call this, because the line below reads ``config.vocab_size`` as the
-    alphabet an entropy is taken over -- and that key is not the alphabet on
-    every checkpoint this repository can load. ``progen2-large`` declares 51200
-    against a 31-token tokenizer, so its plug-in entropy and its Miller-Madow
-    correction would be taken over 51169 unreachable symbols; ``progen2-xlarge``
-    declares no ``vocab_size`` at all and would raise here rather than at a
-    declaration. Both are :data:`src.transfer.arms.STAGED_ARMS` members that
-    withhold the ``budget`` capability for exactly this reason, and the refusal
-    belongs where the key is read (Appendix B rule 12).
+    that call this, because the scoring-target alphabet is the support an
+    entropy is taken over. Panel members still read that support from
+    ``config.vocab_size``. Staged ProGen2 rungs declare 32 on the ArmSpec so
+    that progen2-large's 51200-column head and progen2-xlarge's missing
+    ``vocab_size`` cannot become the unigram support. The live logit width is
+    not cropped. Tokenizer length is not a fallback.
 
     The second return value is the per-record reduction of the same forward
     pass; see :class:`RecordStatistics` for why it is worth persisting.
@@ -1206,11 +1208,13 @@ def arm_power_with_records(
 
     inputs = cohort.input_strings(arm)
     scored = scored_tokens(arm, inputs, max_len=max_len, batch_size=batch_size)
-    vocab = int(arm.model.config.vocab_size)
+    alphabet = scoring_target_alphabet(arm.spec, getattr(arm.model, "config", None))
+    require_scoring_target_ids(scored.target_ids, alphabet, arm=arm.name)
+    vocab = int(alphabet["size"])
     target_counts = np.bincount(scored.target_ids, minlength=vocab).astype(np.int64)
     if target_counts.size != vocab:
         raise ValueError(
-            f"{arm.name}: scored target ids fall outside the declared vocabulary of {vocab}"
+            f"{arm.name}: scored target ids fall outside the scoring-target alphabet of {vocab}"
         )
     baseline_record = unigram_baseline(
         arm,
@@ -1256,6 +1260,8 @@ def arm_power_with_records(
         "input_format": arm.spec.input_format,
         "tokenisation": arm.spec.tokenisation,
         "vocab_size": vocab,
+        "scoring_target_alphabet_size": vocab,
+        "scoring_target_alphabet_source": alphabet["source"],
         "max_len": int(max_len),
         "n_sequences": len(inputs),
         "n_scored_tokens": len(scored),

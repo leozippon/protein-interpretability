@@ -94,9 +94,13 @@ from src.transfer import profiles as P  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
     PANEL,
     REPO,
+    STAGED_SCALE_ARMS,
+    UNIREF90_BFD30_INCOMPLETE_SEARCH,
     Cohort,
+    arm_spec,
     env_path,
     load_arm,
+    load_arm_spec,
     require_input_path,
     tokenize_batch,
 )
@@ -131,11 +135,13 @@ DEFAULT_OUT = REPO / "results/transfer/retrieval_bound"
 #: "acquired". Recorded here so that a PASS on those arms is read as an upper
 #: bound rather than as a measurement.
 #:
-#: The declared corpus comes from ``arms.PANEL`` where the arm is a panel member,
-#: so this table cannot drift from the panel's own declaration (rule 12).
+#: The declared corpus comes from ``arms.arm_spec`` so a panel member and a
+#: staged scale rung cannot drift from the shared declaration (rule 12).
+#: Default ``--arms`` stays the three keys below; large/xlarge are resolved by
+#: :func:`corpus_record` when explicitly requested.
 ARM_CORPUS: dict[str, dict[str, str]] = {
     "protgpt2": {
-        "declared": PANEL["protgpt2"].pretraining_corpus,
+        "declared": arm_spec("protgpt2").pretraining_corpus,
         "identification": "exact",
         "note": "ProtGPT2's declared pretraining corpus IS the staged UniRef50, so "
         "MODEL - LOOKUP is identified on this arm. The local snapshot is newer "
@@ -144,7 +150,7 @@ ARM_CORPUS: dict[str, dict[str, str]] = {
         "'acquired' here rather than for it",
     },
     "progen2-medium": {
-        "declared": PANEL["progen2-medium"].pretraining_corpus,
+        "declared": arm_spec("progen2-medium").pretraining_corpus,
         "identification": "lower bound on support",
         "note": "UniRef90 and BFD30 are not staged. UniRef50 representatives are "
         "members of both, so the searched corpus is a subset of the declared one: "
@@ -161,6 +167,26 @@ ARM_CORPUS: dict[str, dict[str, str]] = {
         "true corpus is certainly larger",
     },
 }
+
+
+def corpus_record(arm: str) -> dict[str, str]:
+    """Corpus identification for a default arm or an explicit staged scale rung."""
+
+    if arm in ARM_CORPUS:
+        return ARM_CORPUS[arm]
+    if arm in STAGED_SCALE_ARMS:
+        spec = arm_spec(arm)
+        return {
+            "declared": spec.pretraining_corpus,
+            "identification": "lower bound on support",
+            "note": UNIREF90_BFD30_INCOMPLETE_SEARCH,
+        }
+    raise KeyError(
+        f"unknown arm {arm!r}; arms are {sorted(set(ARM_CORPUS) | set(STAGED_SCALE_ARMS))}"
+    )
+
+
+SCOREABLE_ARMS = tuple(sorted(set(ARM_CORPUS) | set(STAGED_SCALE_ARMS)))
 
 #: Per-assay covariates the difficulty control is fitted on. Every one is a
 #: property of the assay, computable before either channel is scored, so the
@@ -646,8 +672,12 @@ def stage_score(args: argparse.Namespace) -> dict[str, Any]:
     catalogue = _read(args.out / "wildtypes.json")
     results: dict[str, Any] = {}
     for arm in args.arms:
-        if arm not in ARM_CORPUS:
-            raise KeyError(f"unknown arm {arm!r}; arms are {sorted(ARM_CORPUS)}")
+        if arm == "progen3-112m" or arm in ARM_CORPUS or arm in STAGED_SCALE_ARMS:
+            pass
+        else:
+            raise KeyError(
+                f"unknown arm {arm!r}; arms are {sorted(SCOREABLE_ARMS)}"
+            )
         print(f"[score] {arm}")
         scorer, context, loader_record = _load_scorer(arm, args)
         rows: list[dict[str, Any]] = []
@@ -689,7 +719,7 @@ def stage_score(args: argparse.Namespace) -> dict[str, Any]:
             "stage": "score",
             "arm": arm,
             "created_utc": datetime.now(timezone.utc).isoformat(),
-            "corpus": ARM_CORPUS[arm],
+            "corpus": corpus_record(arm),
             "loader": loader_record,
             "settings": {
                 "variants": args.variants,
@@ -717,7 +747,12 @@ class _ArmScorer:
         self.torch = torch
         self.name = arm_name
         self.batch_size = args.batch_size
-        self.arm = load_arm(arm_name, device=args.device, dtype=args.dtype)
+        spec = arm_spec(arm_name)
+        self.arm = (
+            load_arm(arm_name, device=args.device, dtype=args.dtype)
+            if arm_name in PANEL
+            else load_arm_spec(spec, device=args.device, dtype=args.dtype)
+        )
         config = self.arm.model.config
         self.context = int(
             getattr(config, "n_positions", None)
@@ -822,9 +857,9 @@ def _load_scorer(arm: str, args: argparse.Namespace) -> tuple[Any, int | None, d
         scorer,
         scorer.context,
         {
-            "checkpoint": str(PANEL[arm].path),
+            "checkpoint": str(arm_spec(arm).path),
             "context": scorer.context,
-            "input_format": PANEL[arm].input_format,
+            "input_format": arm_spec(arm).input_format,
         },
     )
 
@@ -1164,7 +1199,7 @@ def _arm_analysis(
     return {
         "alpha_sweep_delta_lookup": alpha_sweep,
         "alpha_sweep_sign_invariant": bool(len(signs - {0}) <= 1),
-        "corpus": ARM_CORPUS[arm],
+        "corpus": corpus_record(arm),
         "assays_scored": len(rows),
         "assays_skipped": model["skipped"],
         "clusters": int(unit_labels.size),
@@ -1275,7 +1310,12 @@ def main() -> None:
         help="ProteinGym substitution assays; the default is every assay staged, "
         "which is the population EXP-R2-134's measurement is over",
     )
-    parser.add_argument("--arms", nargs="+", default=sorted(ARM_CORPUS), choices=sorted(ARM_CORPUS))
+    parser.add_argument(
+        "--arms",
+        nargs="+",
+        default=sorted(ARM_CORPUS),
+        choices=sorted(SCOREABLE_ARMS),
+    )
     parser.add_argument("--variants", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=20260807)
     parser.add_argument("--bootstrap", type=int, default=2000)

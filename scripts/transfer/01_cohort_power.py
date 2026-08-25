@@ -64,10 +64,16 @@ from src.transfer.io import write_json  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
     DEFAULT_CORPUS_DRAW_SEED,
     PANEL,
+    PROTEIN_SCALE_LADDER,
     REPO,
+    STAGED_ARMS,
+    STAGED_SCALE_ARMS,
     Cohort,
+    arm_spec,
     load_arm,
+    load_arm_spec,
     protein_cohort,
+    scoring_target_alphabet,
     target_shuffle_for,
     text_cohort,
 )
@@ -286,12 +292,30 @@ def validate_arms(names: list[str], args: argparse.Namespace) -> None:
     literal name ``"zymctrl"``: a second EC-conditioned arm would otherwise be
     scored on an unconditioned prompt, which is separately measured at 1.73 nats
     of conditioning leak (EXP-R2-034).
+
+    Staged scale rungs are not panel members. Without
+    ``--allow-staged-scale-arms`` they are unknown arms, exactly as before.
+    With that flag only :data:`STAGED_SCALE_ARMS` may be added, and they are
+    resolved through :func:`src.transfer.arms.arm_spec` rather than through
+    :func:`panel_contract.arm_can_run`.
     """
 
-    unknown = [name for name in names if name not in PANEL]
+    allow_staged = bool(getattr(args, "allow_staged_scale_arms", False))
+    unknown = []
+    staged = []
+    panel_names = []
+    for name in names:
+        if name in PANEL:
+            panel_names.append(name)
+            continue
+        if allow_staged and name in STAGED_SCALE_ARMS:
+            staged.append(name)
+            continue
+        unknown.append(name)
     if unknown:
         raise ValueError(f"unknown arms {unknown}; panel is {sorted(PANEL)}")
-    mismatched = [name for name in names if PANEL[name].modality != args.kind]
+    specs = {name: arm_spec(name) for name in names}
+    mismatched = [name for name in names if specs[name].modality != args.kind]
     if mismatched:
         raise ValueError(
             f"arms {mismatched} do not match a {args.kind!r} cohort; "
@@ -299,17 +323,58 @@ def validate_arms(names: list[str], args: argparse.Namespace) -> None:
         )
     refused = {
         name: verdict.reason
-        for name in names
+        for name in panel_names
         if not (verdict := arm_can_run("cohort_power", name)).can_run
     }
     if refused:
         raise ValueError(f"01_cohort_power.py cannot qualify {sorted(refused)}: {refused}")
-    conditioned = [name for name in names if PANEL[name].input_format == "ec_conditioned"]
+    conditioned = [name for name in names if specs[name].input_format == "ec_conditioned"]
     if conditioned and not args.with_ec:
         raise ValueError(
             f"arms {conditioned} are EC-conditioned and need an EC-labelled cohort; "
             "rebuild with --with-ec"
         )
+
+
+def _arm_spec_record(name: str) -> dict[str, Any]:
+    spec = arm_spec(name)
+    record = {
+        "path": str(spec.path),
+        "modality": spec.modality,
+        "n_layer": spec.n_layer,
+        "d_model": spec.d_model,
+        "tokenisation": spec.tokenisation,
+        "input_format": spec.input_format,
+        "source": spec.source,
+    }
+    if name in STAGED_ARMS:
+        alphabet = scoring_target_alphabet(spec)
+        record["not_panel_admission"] = True
+        record["scoring_target_alphabet_size"] = alphabet["size"]
+        record["scoring_target_alphabet_source"] = alphabet["source"]
+    return record
+
+
+def _staged_scale_record(names: list[str], allow_staged: bool) -> dict[str, Any] | None:
+    staged = [name for name in names if name in STAGED_SCALE_ARMS]
+    if not staged:
+        return None
+    return {
+        "not_panel_admission": True,
+        "allow_staged_scale_arms": bool(allow_staged),
+        "scope": "progen2_training_lineage_medium_to_xlarge",
+        "ladder": list(PROTEIN_SCALE_LADDER),
+        "allowed_staged_arms": list(STAGED_SCALE_ARMS),
+        "measured_staged_arms": staged,
+        "scoring_target_alphabet": {
+            name: scoring_target_alphabet(arm_spec(name))
+            for name in staged
+        },
+        "reason": (
+            "these rungs remain outside PANEL and CAMPAIGN_PANEL; this artefact "
+            "is an opt-in scale qualification, not panel admission"
+        ),
+    }
 
 
 def artifact_names(cohort_name: str, digest: str, control_seed: int | None) -> tuple[str, str]:
@@ -420,6 +485,14 @@ def main() -> None:
     parser.add_argument("--min-chars", type=int, default=800, help="text cohort only")
     parser.add_argument("--with-ec", action="store_true", help="draw EC-labelled records")
     parser.add_argument("--arms", nargs="*", default=None)
+    parser.add_argument(
+        "--allow-staged-scale-arms",
+        action="store_true",
+        help="opt in to the staged ProGen2 large/xlarge rungs of "
+        "PROTEIN_SCALE_LADDER. They stay outside the panel; the artefact "
+        "declares not_panel_admission rather than asking panel_contract to "
+        "admit them",
+    )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--dtype", default="bfloat16")
     parser.add_argument("--max-len", type=int, default=384)
@@ -590,7 +663,12 @@ def main() -> None:
     arm_reports: dict[str, Any] = {}
     arm_records: dict[str, RecordStatistics] = {}
     for name in names:
-        arm = load_arm(name, device=args.device, dtype=args.dtype)
+        spec = arm_spec(name)
+        arm = (
+            load_arm(name, device=args.device, dtype=args.dtype)
+            if name in PANEL
+            else load_arm_spec(spec, device=args.device, dtype=args.dtype)
+        )
         reference_counts = None
         reference_record = None
         reference_per_record = None
@@ -702,18 +780,7 @@ def main() -> None:
             "max_symbols": cohort.max_symbols,
             "with_ec_labels": bool(cohort.metadata.get("ec_labels")),
         },
-        "arm_specs": {
-            name: {
-                "path": str(PANEL[name].path),
-                "modality": PANEL[name].modality,
-                "n_layer": PANEL[name].n_layer,
-                "d_model": PANEL[name].d_model,
-                "tokenisation": PANEL[name].tokenisation,
-                "input_format": PANEL[name].input_format,
-                "source": PANEL[name].source,
-            }
-            for name in names
-        },
+        "arm_specs": {name: _arm_spec_record(name) for name in names},
         "seeds": {
             "truncation_curve": int(args.seed),
             "cohort_draw": int(args.cohort_draw_seed),
@@ -722,7 +789,9 @@ def main() -> None:
             "token_shuffle_control": None if control_seed is None else int(control_seed),
         },
         "cohort_sampling": sampling,
-        "stage_contract": stage_contract_record("cohort_power", names),
+        "stage_contract": stage_contract_record(
+            "cohort_power", [name for name in names if name in PANEL]
+        ),
         "unigram_baseline": {
             "estimator": args.unigram_estimator,
             "reference_size_requested": int(args.unigram_reference_size),
@@ -773,6 +842,10 @@ def main() -> None:
             name for name, report in arm_reports.items() if report["power_verdict"] == "FAIL"
         ),
     }
+    staged_scale = _staged_scale_record(names, bool(args.allow_staged_scale_arms))
+    if staged_scale is not None:
+        payload["not_panel_admission"] = True
+        payload["staged_scale"] = staged_scale
     write_json(destination, payload)
     print(f"wrote {destination}")
     if sufficient_statistics is not None:

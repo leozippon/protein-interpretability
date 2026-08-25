@@ -72,8 +72,11 @@ from src.transfer import designed_referent as D  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
     PANEL,
     REPO,
+    STAGED_SCALE_ARMS,
     Cohort,
+    arm_spec,
     load_arm,
+    load_arm_spec,
     tokenize_batch,
 )
 from src.transfer.io import sha256_file, write_json  # noqa: E402
@@ -407,7 +410,12 @@ class _ArmLikelihood:
         self.torch = torch
         self.name = name
         self.batch_size = batch_size
-        self.arm = load_arm(name, device=device, dtype=dtype)
+        spec = arm_spec(name)
+        self.arm = (
+            load_arm(name, device=device, dtype=dtype)
+            if name in PANEL
+            else load_arm_spec(spec, device=device, dtype=dtype)
+        )
         config = self.arm.model.config
         self.context = int(
             getattr(config, "n_positions", None)
@@ -461,8 +469,13 @@ def stage_score(args: argparse.Namespace) -> dict[str, Any]:
     for name in args.arms:
         if name in D.EXCLUDED_ARMS:
             raise KeyError(f"{name} is excluded: {D.EXCLUDED_ARMS[name]}")
-        if name not in PANEL or PANEL[name].modality != "protein":
-            raise KeyError(f"{name} is not a protein panel arm")
+        spec = arm_spec(name)
+        if spec.modality != "protein":
+            raise KeyError(f"{name} is not a protein arm")
+        if name not in PANEL and name not in STAGED_SCALE_ARMS:
+            raise KeyError(
+                f"{name} is not a protein panel arm or a staged scale rung"
+            )
         print(f"[score] {name} over {len(referent.wildtypes)} wild types", flush=True)
         scorer = _ArmLikelihood(
             name, device=args.device, dtype=args.dtype, batch_size=args.batch_size
@@ -516,8 +529,8 @@ def stage_score(args: argparse.Namespace) -> dict[str, Any]:
             "cohort_sha256": digest,
             "identification": dict(D.ARM_IDENTIFICATION[name]),
             "settings": {
-                "checkpoint": str(PANEL[name].path),
-                "input_format": PANEL[name].input_format,
+                "checkpoint": str(spec.path),
+                "input_format": spec.input_format,
                 "context": scorer.context,
                 "device": args.device,
                 "dtype": args.dtype,

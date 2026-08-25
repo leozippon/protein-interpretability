@@ -60,6 +60,8 @@ from .arms import (
     Arm,
     Cohort,
     conditioning_boundary_ids,
+    require_scoring_target_ids,
+    scoring_target_alphabet,
     symbols_per_token,
 )
 from .budget import SparseCounts, scored_tokens
@@ -196,14 +198,16 @@ def scored_target_records(
     ``strings``: a row with no scored target is an empty span, not a missing
     record.
 
-    The ``budget`` capability is required for the vocabulary read below, for the
-    reason :func:`src.transfer.budget.arm_power_with_records` gives.
+    The ``budget`` capability is required for the scoring-target alphabet read
+    below, for the reason :func:`src.transfer.budget.arm_power_with_records`
+    gives.
     """
 
     if max_len < 2:
         raise ValueError("max_len must admit at least one next-token target")
     arm.require("budget")
-    vocab = int(arm.model.config.vocab_size)
+    alphabet = scoring_target_alphabet(arm.spec, getattr(arm.model, "config", None))
+    vocab = int(alphabet["size"])
     conditioned = target_rule(arm.spec.input_format) == "between_boundaries"
     start_id, end_id = conditioning_boundary_ids(arm)
     records: list[np.ndarray] = []
@@ -218,8 +222,7 @@ def scored_target_records(
             else:
                 targets = ids[1:]
         array = np.asarray(targets, dtype=np.int64)
-        if array.size and (array.min() < 0 or array.max() >= vocab):
-            raise ValueError(f"{arm.name}: token id outside the declared vocabulary")
+        require_scoring_target_ids(array, alphabet, arm=arm.name)
         records.append(array)
     per_record = SparseCounts.from_records(records)
     counts = per_record.vocabulary_totals(vocab)
@@ -266,12 +269,14 @@ def cohort_power_held_out(
     if threshold_nats <= 0:
         raise ValueError("the power threshold must be positive")
     assert_disjoint(cohort, reference)
-    # Required where ``config.vocab_size`` is read, as in
+    # Required where the scoring-target alphabet is read, as in
     # :func:`src.transfer.budget.arm_power_with_records`.
     arm.require("budget")
     inputs = cohort.input_strings(arm)
     scored = scored_tokens(arm, inputs, max_len=max_len, batch_size=batch_size)
-    vocab = int(arm.model.config.vocab_size)
+    alphabet = scoring_target_alphabet(arm.spec, getattr(arm.model, "config", None))
+    require_scoring_target_ids(scored.target_ids, alphabet, arm=arm.name)
+    vocab = int(alphabet["size"])
     target_counts = np.bincount(scored.target_ids, minlength=vocab).astype(np.int64)
     reference_counts = scored_target_counts(arm, reference.input_strings(arm), max_len=max_len)
     held_out = disjoint_unigram_cross_entropy_nats(
@@ -292,6 +297,8 @@ def cohort_power_held_out(
         "input_format": arm.spec.input_format,
         "tokenisation": arm.spec.tokenisation,
         "vocab_size": vocab,
+        "scoring_target_alphabet_size": vocab,
+        "scoring_target_alphabet_source": alphabet["source"],
         "cohort": cohort.name,
         "cohort_digest": cohort.digest,
         "reference_digest": reference.digest,
