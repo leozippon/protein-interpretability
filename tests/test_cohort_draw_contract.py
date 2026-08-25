@@ -270,6 +270,23 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "under, which is seeded by --seed and reaches the artefact. It fits nothing, "
         "so it takes no split either"
     ),
+    "42_scale_capability.py": (
+        "re-reads the stage-20, stage-29 and stage-41 artefacts from disk and "
+        "resamples the units those runs already fixed; it loads no corpus and no "
+        "model, and every record it reports on was drawn by the run that wrote "
+        "the artefact. The one draw it makes is the descriptive comparison's "
+        "bootstrap, which is a resampling of fixed units rather than a corpus "
+        "draw, and it is frozen before any of these readings were taken at 2,000 "
+        "resamples on seed 20260825 -- the stage refuses a run that changes "
+        "either, and both reach the artefact"
+    ),
+    "scale_interface_qualification.py": (
+        "scores one hard-coded 74-residue sequence, pinned by its own SHA-256, "
+        "under the native and a wrong direction marker. It asks whether the "
+        "loaders expose a usable direction-controlled scoring interface, so there "
+        "is no population to sample: rule 1's hazard is absent rather than "
+        "answered, and a cohort here would make the check depend on a draw"
+    ),
 }
 
 

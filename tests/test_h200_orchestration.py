@@ -1522,13 +1522,17 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
         self.assertIn("minted from different code", result.stderr)
 
     def test_the_controller_prints_a_code_hash_without_touching_the_pod(self):
-        """The reuse check has to be answerable offline, or it will be skipped."""
+        """The reuse check has to be answerable offline, or it will be skipped.
+
+        No ``H200_POD`` is set, deliberately: the flag stages and hashes the
+        snapshot locally and exits before anything reaches the pod, so a host
+        with no allocation is exactly where this check has to run.
+        """
 
         result = subprocess.run(
             ["bash", str(CONTROLLER), "--print-code-hash"],
             capture_output=True, text=True, cwd=str(REPO_ROOT),
-            env={**os.environ, "H200_POD": "unused",
-                 "H200_ACCESS_ROOT": "/nonexistent-access-root"},
+            env={**os.environ, "H200_ACCESS_ROOT": "/nonexistent-access-root"},
             timeout=600,
         )
         self.assertEqual(result.returncode, 0, result.stderr[-2000:])
@@ -1560,8 +1564,7 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
         run_id_hash = subprocess.run(
             ["bash", str(CONTROLLER), "--print-code-hash"],
             capture_output=True, text=True, cwd=str(REPO_ROOT),
-            env={**os.environ, "H200_POD": "unused",
-                 "H200_ACCESS_ROOT": "/nonexistent-access-root"},
+            env={**os.environ, "H200_ACCESS_ROOT": "/nonexistent-access-root"},
             timeout=600,
         ).stdout
         code_hash = re.search(r"^CODE_HASH=([0-9a-f]{64})$", run_id_hash, re.M).group(1)
@@ -2167,6 +2170,59 @@ class CampaignQueueExactExpectTests(unittest.TestCase):
         launch = source[source.index("launch_cell()") : source.index("# ------------------------------------------------------------------ the queue")]
         self.assertNotIn("eval ", launch)
         self.assertIn('results_run_dir="$(dirname "${out_dir}")"', launch)
+
+
+class CampaignQueueCardVisibilityTests(unittest.TestCase):
+    """A card this host does not expose is a manifest defect, not an idle card.
+
+    ``gpu_is_busy`` decides occupancy from an ``nvidia-smi`` memory figure and
+    reads a missing row as "not busy", so a cell naming a card outside the pod's
+    allocation used to be launched rather than refused, and died as
+    ``exited-nonzero`` once the stage had already started. ``launch_cell`` execs
+    the stage itself and never reaches ``h200_worker.sh``'s ``verify_gpus``,
+    which is where the same rule is applied to the worker's own ``--gpus`` list.
+    """
+
+    def dry_run(self, root: Path, *, gpu: str, visible: int) -> subprocess.CompletedProcess[str]:
+        snapshot = root / "packages" / "run"
+        stage_dir = snapshot / "scripts" / "transfer"
+        stage_dir.mkdir(parents=True)
+        (stage_dir / "h200_env.sh").write_text(":\n", encoding="utf-8")
+        (stage_dir / "37_alphabet_chemistry.py").write_text("", encoding="utf-8")
+        manifest = root / "campaign.tsv"
+        manifest.write_text(
+            f"1\tkey\t{gpu}\t37_alphabet_chemistry.py\tcell\t-\t"
+            "score.json\t--arm progen2-small\n",
+            encoding="utf-8",
+        )
+        # The card count is the test's input, so it is stubbed rather than read
+        # off whatever host the suite happens to run on.
+        stub_dir = root / "bin"
+        stub_dir.mkdir()
+        indices = "".join(f"{index}\\n" for index in range(visible))
+        stub = stub_dir / "nvidia-smi"
+        stub.write_text(f"#!/usr/bin/env bash\nprintf '{indices}'\n", encoding="utf-8")
+        stub.chmod(0o755)
+        env = dict(os.environ, PATH=f"{stub_dir}{os.pathsep}{os.environ['PATH']}")
+        return subprocess.run(
+            ["bash", str(QUEUE), "--manifest", str(manifest),
+             "--snapshot", f"key={snapshot}", "--dry-run"],
+            capture_output=True, text=True, timeout=60, env=env,
+        )
+
+    def test_a_card_outside_the_allocation_is_refused_before_anything_is_resolved(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.dry_run(Path(tmp), gpu="3", visible=3)
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("cell 'cell' names cuda:3", result.stderr)
+        self.assertIn("exposes 3 GPU(s) (0..2)", result.stderr)
+        self.assertNotIn("--- slot", result.stdout)
+
+    def test_the_same_manifest_is_admitted_where_that_card_exists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = self.dry_run(Path(tmp), gpu="3", visible=4)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("cuda:3 cell", result.stdout)
 
 
 class HostSnapshotAndTimeoutTests(unittest.TestCase):

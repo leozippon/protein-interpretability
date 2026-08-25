@@ -129,8 +129,10 @@ set -euo pipefail
 #   slot   integer. Cells sharing a slot run concurrently; slot N+1 starts only
 #          when every cell of slot N has exited. Ascending numeric order.
 #   key    which --snapshot this cell's code comes from.
-#   gpu    card index. Unique within a slot -- two cells on one card is refused
-#          at parse time, not discovered at OOM.
+#   gpu    card index. Unique within a slot, and below the number of cards the
+#          host exposes -- two cells on one card, or a card this allocation
+#          does not have, is refused at parse time rather than discovered at
+#          OOM or at the stage's own death.
 #   stage  file name under <snapshot>/scripts/transfer/.
 #   env    space-separated KEY=VALUE applied after h200_env.sh (so a cell can
 #          override it), or `-` for none.
@@ -384,6 +386,26 @@ for ((i = 0; i < N; i++)); do
       exit 2
     fi
   done
+done
+
+# A card index this host does not expose is not an idle card. A pod is given
+# only its own allocation, so nvidia-smi emits no row for an index outside it,
+# gpu_is_busy finds no memory figure to compare against BUSY_MIB and reports
+# "not busy", and the cell is launched onto a device that does not exist -- a
+# manifest defect that then surfaces as `exited-nonzero` once the stage has
+# already started. h200_worker.sh's verify_gpus refuses `gpu >= visible_count`
+# for its own --gpus list; this is that rule applied one round earlier and to
+# every cell at once, before --dry-run prints, so that a dry run carries it too.
+# A dry run on the workstation reads the workstation's cards, so it is the
+# IN-POD dry run (step 3 of "First run") that checks a manifest against the
+# allocation it will actually run on.
+command -v nvidia-smi >/dev/null 2>&1 || {
+  echo "nvidia-smi not found on PATH; cannot check this manifest's card indices" >&2; exit 2; }
+VISIBLE_GPUS="$(nvidia-smi --query-gpu=index --format=csv,noheader | wc -l)"
+for ((i = 0; i < N; i++)); do
+  [ "${C_GPU[$i]}" -lt "${VISIBLE_GPUS}" ] || {
+    echo "cell '${C_LABEL[$i]}' names cuda:${C_GPU[$i]}; this host exposes ${VISIBLE_GPUS} GPU(s) (0..$((VISIBLE_GPUS - 1)))" >&2
+    exit 2; }
 done
 
 SLOTS="$(printf '%s\n' "${C_SLOT[@]}" | sort -n -u)"
