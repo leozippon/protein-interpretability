@@ -1161,6 +1161,14 @@ class Arm:
     token grid is what this arm's tokenizer, its truncation and its padding
     produce -- a cohort holds strings, and no string-level shuffle preserves a
     BPE arm's target multiset.
+
+    ``strict_load`` is the per-key Transformers loading-info count block that a
+    ``strict=True`` load was verified clean against, and is ``None`` on every arm
+    no strict load produced. It rides on the arm because the evidence is created
+    at load time and is needed wherever a record is written: a caller that means
+    to state "this checkpoint loaded strictly and cleanly" reads the counts the
+    check actually returned, instead of asserting a fact it cannot see from an
+    already-constructed arm.
     """
 
     spec: ArmSpec
@@ -1170,6 +1178,7 @@ class Arm:
     dtype: str
     attn_implementation: str | None = None
     target_token_shuffle: TargetTokenShuffle | None = None
+    strict_load: dict[str, int] | None = None
 
     @property
     def name(self) -> str:
@@ -1517,6 +1526,9 @@ def load_arm_spec(
     ``strict=True`` asks Transformers for ``output_loading_info`` and refuses any
     missing, unexpected, mismatched, or error-reported key. A return that is not
     exactly ``(model, loading_info)`` fails rather than being treated as clean.
+    The verified counts are recorded on the returned arm as ``strict_load``, so a
+    later caller can tell a strictly loaded checkpoint from one that was not; a
+    non-strict load leaves that field ``None`` rather than a clean-looking zero.
     """
 
     name = spec.name
@@ -1553,12 +1565,13 @@ def load_arm_spec(
         "device_map": {"": device},
         **extra,
     }
+    strict_load: dict[str, int] | None = None
     if strict:
         loaded = AutoModelForCausalLM.from_pretrained(
             path, output_loading_info=True, **load_kwargs
         )
         model, info = unpack_pretrained_loading_info(loaded)
-        require_clean_loading_info(info, arm=name)
+        strict_load = require_clean_loading_info(info, arm=name)
     else:
         model = AutoModelForCausalLM.from_pretrained(path, **load_kwargs)
     model.eval()
@@ -1584,6 +1597,7 @@ def load_arm_spec(
         device=device,
         dtype=dtype,
         attn_implementation=None if resolved is None else str(resolved),
+        strict_load=strict_load,
     )
 
 

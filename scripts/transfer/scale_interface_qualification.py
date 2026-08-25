@@ -28,7 +28,6 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.transfer.arms import (  # noqa: E402
-    LOADING_INFO_KEYS,
     N_TO_C_MARKER,
     PANEL,
     REPO,
@@ -316,14 +315,21 @@ def target_ids_digest(target_ids: Sequence[int]) -> str:
     return hashlib.sha256(payload.encode("ascii")).hexdigest()
 
 
-def empty_strict_load_counts() -> dict[str, int]:
-    return {key: 0 for key in LOADING_INFO_KEYS}
-
-
 def qualify_loaded_arm(arm: Arm) -> dict[str, Any]:
-    """Run the frozen interface checks on one already-loaded arm."""
+    """Run the frozen interface checks on one already-loaded arm.
+
+    The strict-load counts are read off the arm rather than reconstructed here.
+    This function receives an already-built arm and cannot observe how it was
+    loaded, so an arm that carries no counts is refused instead of being
+    recorded as a clean strict load on no evidence.
+    """
 
     name = arm.name
+    if arm.strict_load is None:
+        raise ValueError(
+            f"{name}: this arm was not loaded strictly; refusing to record a "
+            "strict-load block for a check that was never performed"
+        )
     require_fixed_sequence(FIXED_SEQUENCE)
     alphabet = scoring_target_alphabet(arm.spec, getattr(arm.model, "config", None))
     live = output_logit_width(arm)
@@ -358,7 +364,7 @@ def qualify_loaded_arm(arm: Arm) -> dict[str, Any]:
         "verdict": "PASS",
         "shape": {"n_layer": int(arm.spec.n_layer), "d_model": int(arm.spec.d_model)},
         "dtype": arm.dtype,
-        "strict_load": empty_strict_load_counts(),
+        "strict_load": dict(arm.strict_load),
         "scoring_target_support": {
             "size": int(alphabet["size"]),
             "source": alphabet["source"],

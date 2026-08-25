@@ -116,7 +116,18 @@ def _stub_arm(name: str, width: int | None = None) -> Arm:
         native_marker=tokenizer._ids["1"],
         vocab_size=vocab_size,
     )
-    return Arm(spec=spec, model=model, tokenizer=tokenizer, device="cpu", dtype="float32")
+    # The stub stands in for a strict load, so it carries the counts
+    # require_clean_loading_info returns for a clean loading-info report rather
+    # than a hand-written zero block: what the artefact records has to be what a
+    # check produced.
+    return Arm(
+        spec=spec,
+        model=model,
+        tokenizer=tokenizer,
+        device="cpu",
+        dtype="float32",
+        strict_load=require_clean_loading_info(_empty_info(), arm=name),
+    )
 
 
 def _empty_info() -> dict[str, list]:
@@ -367,6 +378,7 @@ def test_default_load_arm_spec_does_not_request_loading_info(tmp_path, monkeypat
     assert "output_loading_info" not in captured
     assert arm.dtype == "float32"
     assert arm.spec is spec
+    assert arm.strict_load is None
 
 
 def test_strict_load_arm_spec_requests_loading_info_and_refuses_a_bare_model(
@@ -391,6 +403,7 @@ def test_strict_load_arm_spec_requests_loading_info_and_refuses_a_bare_model(
     arm = load_arm_spec(spec, device="cpu", dtype="float32", strict=True)
     assert captured["output_loading_info"] is True
     assert arm.name == "progen2-medium"
+    assert arm.strict_load == {key: 0 for key in LOADING_INFO_KEYS}
 
     monkeypatch.setattr(
         A.AutoModelForCausalLM,
@@ -507,6 +520,26 @@ def test_stubbed_ladder_writes_the_required_pass_artefact(tmp_path):
                 row["scoring_target_support"]["source"]
                 == A.SCORING_TARGET_ALPHABET_DECLARED
             )
+
+
+def test_qualify_loaded_arm_refuses_an_arm_that_did_not_load_strictly():
+    arm = _stub_arm("progen2-medium")
+    arm.strict_load = None
+    with pytest.raises(ValueError, match="not loaded strictly"):
+        STAGE.qualify_loaded_arm(arm)
+
+
+def test_an_injected_loader_cannot_smuggle_a_non_strict_arm_into_the_artefact(tmp_path):
+    def load(name, *, device, dtype):
+        arm = _stub_arm(name)
+        arm.strict_load = None
+        return arm
+
+    with pytest.raises(ValueError, match="not loaded strictly"):
+        STAGE.run_qualification(
+            device="cpu", dtype="float32", out=tmp_path, load_fn=load
+        )
+    assert not (tmp_path / STAGE.SUCCESS_ARTEFACT).exists()
 
 
 def test_qualify_loaded_arm_refuses_a_width_support_swap():
