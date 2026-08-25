@@ -16947,3 +16947,111 @@ One fixed run may report the descriptive curve and the per-endpoint transition t
 **ProGen3-1B** and **Galactica-6.7B** are second-stage candidates only if the first round shows that the interface and the metrics produce a readable scale trajectory. Each then receives a same-family descriptive review, not a first-round slot. Pre-gates, none of which is discharged here: ProGen3-1B must be staged, and its published native scoring is bidirectional, which is a different estimand from the N-to-C sum used on ProGen2; Galactica-6.7B must have joint-mode semantics qualified before any protein-side number is read. They are not approved runs.
 
 **No new model result is claimed.**
+
+## 2026-08-25 — EXP-R2-225 pre-registered: independent Direction-1 second stage on larger public checkpoints, frozen before any new score
+
+**Taking `EXP-R2-225`, the next free identifier. No new model score, interval, gate verdict, or availability claim exists at registration.** This entry freezes an independent Objective-1 second stage. It does not reopen F10 or F12, does not admit a checkpoint to the panel, and does not authorise a causal claim about parameter count or a claim of biological knowledge.
+
+### User decision, and what it supersedes
+
+After EXP-R2-224 was frozen, the user decided that Direction 1 must include new, larger public models in addition to the ProGen2 large rungs. Incomplete control of corpus, architecture, depth, width, and training is allowed, and the licensed reading remains **descriptive capability measurement** only.
+
+This identifier is an independent pre-registration. It **supersedes the unapproved status** of the Phase 2 paragraph in EXP-R2-224. It does **not** amend that paragraph or any other historical wording in EXP-R2-224. The ProGen2 medium→large→xlarge first round remains independently valid and is not a result gate for this stage: a readable first-round trajectory is not required before these checkpoints are qualified. EXP-R2-224 named ProGen3-1B and Galactica-6.7B as conditional candidates; this stage does not revive ProGen3-1B, does not wait on that condition, and uses the verified shortlist below instead.
+
+§7.0 does not gate this campaign. A measurement of what a model does is itself the result, and no knowledge claim is in play.
+
+### Waves, not a Cartesian product
+
+Run the verified shortlist in two waves. Do not build a methods × models product, and do not fill missing cells by swapping in an unlisted checkpoint.
+
+**Wave A — same-family scale trajectories.** Adjacent pairs only.
+
+- Joint: `facebook/galactica-6.7b` and `facebook/galactica-30b`, with the existing `facebook/galactica-1.3b`, forming **1.3→6.7→30B**. Adjacent pairs: 1.3B–6.7B and 6.7B–30B. `facebook/galactica-125m` is not a rung here.
+- Pure protein: `Profluent-Bio/progen3-3b`, with the existing staged ProGen3-112M, forming **112M→3B**. One adjacent pair: 112M–3B. Native scoring is the lineage's **official bidirectional** estimand. Bidirectional scores must not be ranked with, averaged with, or substituted by N-to-C scores.
+- Pure text, **base** checkpoints only: `Qwen/Qwen2.5-7B` and `Qwen/Qwen2.5-32B`, with the existing `Qwen/Qwen2.5-0.5B`, forming **0.5→7→32B**. Adjacent pairs: 0.5B–7B and 7B–32B. Instruct, chat, thinking, or other post-trained substitutes are forbidden, including `Qwen/Qwen2.5-7B-Instruct` and `Qwen/Qwen2.5-32B-Instruct`.
+
+These are the accurate checkpoint IDs. Scoring any of them on this track does not admit them to the panel. `qwen2.5-0.5b` remains a panel member on its existing estimands; the new Qwen rungs do not inherit that membership.
+
+**Wave B — new-lineage existence, single points.**
+
+- `proteinglm/proteinglm-7b-clm`: one descriptive pure-protein decoder point.
+- `lightonai/RITA_xl`: a secondary new-architecture single point. It is not evidence of a large-scale gate flip, and it is not a substitute for any failed Wave A arm or for any other failed arm.
+
+Cross-family comparisons, ProteinGLM, and RITA report existence only. They cannot receive the label `descriptive_gate_transition`.
+
+### Explicitly not run
+
+The following are excluded from this stage and must not be written as results, scores, or silent stand-ins:
+
+- ProGen3-46B: no released weights.
+- ESM3 mid and large: API-only; the open 1.4B checkpoint is masked, not a CLM main estimate.
+- xTrimoPGLM MLM and 100B-INT4: not the same estimand class as the CLM main estimate.
+- ProtLLM: no residue NLL.
+- Encoder-only models.
+- Galactica 120B and 70B-class checkpoints: the current launcher has no tensor parallelism.
+- ProGen3-1B: not on this shortlist; not a substitute for `Profluent-Bio/progen3-3b`.
+
+### Qualification, all-or-stop, every checkpoint
+
+An arm is scored only after every clause holds. Failure of any clause stops **that arm**. The seed, the queue, the threshold, and the model are not replaced, and no other arm is moved into the vacant slot.
+
+1. Strict load. Verify missing and unexpected keys, weight shapes and dtypes. A load that newly initialises a head, expert, or router — the L24 silent-random-head failure — is refused as unavailable, not scored. ProGen3-3B inherits the ProGen3-112M refuse-on-silent-random-experts rule.
+2. Native rendering as trained, scored positions identified, output semantics verified.
+3. Fixed NLL self-check, **and** at least one error rendering, randomisation, or shuffle negative control that makes NLL substantially worse. A self-check that cannot fail is not a self-check.
+4. If the checkpoint is unavailable or unverifiable, report it unavailable. Do not substitute another model.
+
+Context information is identified **only** by the EXP-R2-221 rule: the displacement-corrected near-duplicate-group bootstrap 95% lower bound is **> 0**. The retired 0.30-nat point floor is not this campaign's identification rule. An unidentified rung is unmeasurable on that cohort and is not read as failing a capability gate.
+
+Joint checkpoints qualify **each mode separately**. Protein-mode semantics include the directional reversal control. Text-mode semantics include output-probability quality: a text mode that collapses onto residue tokens, as InstructProtein did, is unqualified on text. Qwen rungs are text-only. Do not fabricate a protein task, ProteinGym row, or MegaScale row for a text checkpoint.
+
+Historical numbers (F10, F12, EXP-R2-151, EXP-R2-221, ProGen3-112M fitness, qwen2.5-0.5b context information) are not inputs to any gate here. Agreement with those artefacts, if computed, is a reproduction diagnostic and cannot retune a frozen rule.
+
+### Frozen queues — no redraw, no retuned threshold
+
+Reuse the EXP-R2-224 queues, units, and baselines. Do not resample records, recluster families, or move a floor.
+
+- Swiss-Prot context-information qualification for every protein or protein-mode arm, the same seeded permutation and band already used to qualify residue protein arms.
+- Text context-information qualification for every text or text-mode arm, the same seeded permutation and band already used to qualify `qwen2.5-0.5b` / Galactica text mode.
+- ProteinGym substitution assays: **217 assays / 174 wild-type families**, F10's units.
+- MegaScale designed referent: **130 design wild types / 40 series** against **266 natural domains / 124 `WT_cluster`s**, F12's census.
+
+ProteinGym and MegaScale are entered only by pure-protein arms and by a Galactica **protein mode that has passed qualification**. Qwen does not enter them.
+
+### Scoring strata — never mixed
+
+N-to-C, bidirectional, and masked / pseudo-likelihood are separate strata. Do not pool them, rank them together, or convert one into another to complete a ladder.
+
+- ProGen3: official bidirectional only on this track.
+- Galactica protein mode, ProteinGLM CLM, and RITA: native causal (N-to-C) unless the model's own card requires a different native scoring, in which case that native scoring is the stratum and is named as such.
+- Masked or pseudo-likelihood scores, if they appear, are a different stratum and are not this campaign's main estimate.
+
+### Capability endpoints, judged independently
+
+No composite score. Each endpoint returns its own descriptive verdict.
+
+The label `descriptive_gate_transition` is reserved for **same-family adjacent rungs** and reuses the EXP-R2-224 rule: the larger rung passes the strong baseline gate **and** the paired Δρ 95% lower bound is > 0. Cross-family rows, ProteinGLM, and RITA cannot receive that label.
+
+**DMS (ProteinGym substitutions), protein and qualified Galactica protein mode.** Report MODEL − LOOKUP and MODEL − BLOSUM62 on every scored rung. The descriptive gate on an adjacent same-family pair transitions only if both hold: the larger rung's MODEL − LOOKUP 95% lower bound is > 0, **and** the paired Δρ 95% lower bound is > 0. LOOKUP is built from the available pretraining-corpus proxy. Where the corpus is unknown or was not fully searched, LOOKUP **under-counts** and is a bound that favours the model. A gate flip on this endpoint is not knowledge evidence, not a retrieval exclusion, and not a causal scale effect.
+
+**MegaScale (designed referent and its natural control), protein and qualified Galactica protein mode.** Report hydropathy, BLOSUM62, and every 3–7-mer fragment margin. Do **not** borrow ProtGPT2's corpus-disjoint certificate. The descriptive gate on an adjacent same-family pair transitions only if all of the following hold: on the design side, MODEL − hydropathy and MODEL − BLOSUM62 both have 95% lower bound > 0; on the natural control, the same two contrasts both have 95% lower bound > 0; **and** the design-series-paired Δρ 95% lower bound is > 0. The natural-cluster-paired Δρ is reported as a control and does not enter this gate.
+
+**Qwen, and Galactica text mode.** Text continuation only. Report qualification and identified context information. Do not invent a text analogue of ProteinGym or MegaScale in order to force a `descriptive_gate_transition`. A movement in text context information is a descriptive curve, not that label.
+
+**Wave B.** If qualification passes, score ProteinGym and MegaScale as existence measurements on the frozen queues. Report the same contrasts. Do not label a transition.
+
+**Context information** is a qualification endpoint, not a capability door to be averaged with the fitness gates.
+
+### What one run may say, and what it may not
+
+One fixed run may report the descriptive curve, the per-endpoint table, and existence or unavailability. Calling a transition a robust qualitative change requires independent-data replication. This round must not claim that scale caused a transition, and must not claim biological knowledge. Depth, width, and parameter count move together; corpus and training remain confounded with the rung.
+
+### Operational sequence, and the stop
+
+1. Complete EXP-R2-224 **code and local negative-path verification** first. That is a code-readiness gate, not a result gate. This identifier is a scientific freeze, not a dispatch.
+2. For each checkpoint in the shortlist, in order: model card, licence, mirror reachability, and a minimum interface gate. Download only after that gate. Do not download a checkpoint that has already failed it.
+3. Verify adapters on the smaller new arms first: `facebook/galactica-6.7b`, `Profluent-Bio/progen3-3b`, `Qwen/Qwen2.5-7B`, then the Wave B points. Only then attempt `facebook/galactica-30b` and `Qwen/Qwen2.5-32B`.
+4. Wait until current official H200 work (EXP-R2-223 / D3.j-C, and any later official in-flight job) has released healthy GPUs. Allocation is not utilisation. No pod name is recorded.
+5. `facebook/galactica-30b` and `Qwen/Qwen2.5-32B` are single-card H200 **candidates**. Do not claim they fit or that they can be run until device memory has been measured on that checkpoint.
+6. Any loader, self-check, digest, alphabet, rendering, semantics, or qualification failure stops that arm. Do not change the seed, the queue, or the threshold to recover it, and do not fill the slot with another arm.
+
+**No new model result is claimed.**
