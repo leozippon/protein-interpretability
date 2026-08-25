@@ -2,7 +2,7 @@
 
 > **Redaction, 2026-08-18.** Historical pod names in this file were replaced with `<pod-name-redacted>` under the repository guardrail that no pod name is persisted in a repository file. Only the name was removed; no other text was altered, and every surrounding fact is unchanged. The pods named were disposable and long gone, and the currently selected pod never appeared here. The two receipts under `evidence/` were deliberately **not** redacted: their SHA-256 digests are recorded in this log as verification anchors, and altering a receipt would invalidate the thing it exists to prove.
 
-Last updated: 2026-08-09 CST
+Last updated: 2026-08-25 CST
 
 Append-only. Historical entries record the paths and framings that existed when they were written and are not normalized to the current layout.
 
@@ -1936,3 +1936,35 @@ Two registrations, no results. Both entries are in `docs/EXPERIMENT_LOG.md`; the
 **Two campaigns were re-run against the change and neither result was assumed.** Stage 21's seven checkpoints were re-scored and given bootstrap intervals for the first time (EXP-R2-220), with reproduction checked before anything was read: previously published H200 cells reproduce bit for bit and the drift on the cells first published on the local cards is a dtype difference rather than a regression. The D2.i mode-subspace campaign was re-run unchanged with the gate removed; the refused mode is now measured at every layer and licenses nothing, and the two checkpoints that were never refused reproduce every verdict. Both records are in the audit — the qualification readings under the joint-model bridge, the subspace campaign under D2.i — and the retirement itself under the catalogue entry that declared the repair.
 
 **Three things are left open rather than closed.** A per-checkpoint behavioural verdict is still hard-coded in the concept-alignment module and gates two causal stages; it rests on the reversal cost rather than on a floor and agrees with the current reading, but it is a third hand-maintained copy of a decision the artefact now publishes. Roughly two dozen historical runtime logs under the ignored log tree contain a pod name in full; nothing produced by the recent runs does, and whether ignored runtime logs fall under the guardrail's "durable logs" is a decision for the repository owner rather than something to settle by rewriting history. And the reader-facing summary still describes the older panel and conclusions; it carries another author's uncommitted rewrite and was deliberately left untouched by this pass.
+
+## 2026-08-25 — the reader summary states only the current qualification rule
+
+The `summary.md` row for basic measurability now describes the current native-rendering, grouped-bootstrap, displacement-corrected identification and precision-referenced denominator criteria without retaining superseded threshold history. It also distinguishes residue 5-mers from text five-word shingles and states that short records are scored at their actual valid length. No code, result or qualification verdict changed.
+
+## 2026-08-25 — supplementary prerequisites are separated from formal results
+
+The reader summary now places context-information qualification as the first Direction 1 experiment because it establishes the common panel and measurable entry point for the capability comparisons that follow. Native-interface checks and the near-duplicate split audit remain in a supplementary-prerequisites section after all three formal research directions. The direction-two power and sampling row also remains formal because its causal-footprint and information-ceiling results define what the interpretability methods can detect. No scientific result or execution contract changed.
+
+## 2026-08-25 — the joint-model summary states the current result directly
+
+The Galactica/InstructProtein row in `summary.md` now reports Galactica-1.3B's current protein-mode estimate and interpretation without recounting the superseded verdict. No number or scientific conclusion changed.
+
+## 2026-08-25 — the text-semantic row distinguishes cohort data from model input
+
+The ProLLaMA text-semantic row in `summary.md` now states that each Swiss-Prot record contains a sequence, recommended name and curated description, while the reported text-mode retrieval forwards the name and masked description only. Protein sequences determine near-duplicate and family splits and feed the separate protein-mode cells; `non_iea` qualifies the GO annotation policy rather than the description text. No result changed.
+
+## 2026-08-25 — the text row points to its protein counterpart
+
+The ProLLaMA text-semantic row now directs readers to Direction 3's cross-modal concept-alignment row for the protein sequence-to-description result. This separates the text positive control from the protein estimand without duplicating either result.
+
+## 2026-08-25 — retrieval capability is separated from the concept-alignment method
+
+The Direction 1 ProLLaMA retrieval row now reports both measured capabilities from EXP-R2-213: masked-description retrieval of protein names in text mode and of protein sequences in protein mode, including group-disjoint and family-disjoint top-1 values across the three-stage lineage. Direction 3 retains the distinct methodological question—whether the protein representation clears fragment-statistic ceilings and licenses causal concept intervention. This supersedes the immediately preceding pointer-only presentation; no measurement or canonical D3.g classification changed.
+
+## 2026-08-25 — ProteinGuide is registered as related work, not reproduced
+
+The Nature Biotechnology paper *Property guidance for protein sequence generative models with ProteinGuide* and its official code and data are now recorded in the related-work source manifest. ProteinGuide freezes a generator, trains an external property predictor, and uses that predictor to reweight discrete sampling transitions. Its stability, metal-binding and TadA results establish that an external predictor can guide generation; they do not establish that the frozen generator internally represents or causally uses the property, and the in-silico results do not exclude homology, retrieval or composition shortcuts. Reproduction would also require a different non-autoregressive model and dependency stack from the current panel. It is therefore cited as a boundary on external generation control and is not scheduled as a formal experiment. No model was downloaded and no GPU work was run.
+
+## 2026-08-25 — EXP-R2-224 code and local negative-path verification complete
+
+The opt-in ProGen2 medium→large→xlarge implementation is merged and pushed through `a49c314`. Large and xlarge remain staged non-members of the panel; the scoring-target support is 32 while the live output width remains uncropped. Independent audit findings were repaired before dispatch: stage 42 now consumes the operative EXP-R2-221 identification rows, refuses incomplete fixed censuses, reports one compound transition block, and enforces the pre-data bootstrap freeze of 2,000 draws at seed 20260825. The five focused modules completed **250 tests plus 3 subtests** in 18.07 seconds; the new scale-capability module has no Lens finding, and `git diff --check` is clean. A local resource probe found every L20 already using 41.4–42.7 GiB, so no real large/xlarge model forward was attempted there. No model capability score or gate verdict exists; real loading and fixed-NLL checks remain behind a healthy released GPU allocation.
