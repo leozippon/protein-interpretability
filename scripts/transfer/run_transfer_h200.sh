@@ -235,7 +235,8 @@ snapshot uses it to check that the run-id it is about to reuse was minted from
 the code now on disk -- the same rule resolve_run_id enforces for a resumed
 run-id, applied at the one other place a snapshot can be adopted.
 
-Environment overrides: H200_POD (required except for --help), H200_ACCESS_ROOT,
+Environment overrides: H200_POD (required except for --help and
+--print-code-hash), H200_ACCESS_ROOT,
 H200_STATUS_TIMEOUT_SECONDS (caller-side bound on the cluster health probe, in
 seconds; at least 90), REPO_ROOT, PROJECT_ROOT (the checkout; --pin decides
 what is frozen out of it), GPFS_PROJECT_ROOT,
@@ -1100,12 +1101,18 @@ done
 # Required, and checked here rather than at the top of the file so that --help
 # works without one. `${H200_POD:?...}` at file scope made the usage text
 # unreachable to anyone who did not already know the answer it documents.
-if [ -z "${H200_POD:-}" ]; then
+# --print-code-hash is exempt for the same reason the access-layer check below
+# is: it stages and hashes locally and exits before anything reaches the pod, so
+# requiring an allocation here would make the snapshot-reuse check unrunnable on
+# a host that has none. The export sits in the branch that has a value, so the
+# exempt path never exports an empty pod name.
+if [ -n "${H200_POD:-}" ]; then
+  export H200_POD
+elif [ "${PRINT_CODE_HASH}" != "1" ]; then
   echo "set H200_POD to a running pod name before launching (pods are disposable;" >&2
   echo "this controller does not default to one) -- see ~/hangzhou-remote/README.md" >&2
   exit 2
 fi
-export H200_POD
 
 if ! command -v python3 >/dev/null 2>&1; then
   echo "python3 not found on PATH (needed to render the run manifest)" >&2
