@@ -288,7 +288,26 @@ def test_designed_referent_default_arms_and_progen3_exclusion_are_unchanged():
 # ------------------------------------------------------------- stage 42 fixtures
 
 
-def _dms_model(arm: str, rhos: dict[str, float], digest: str = "d0") -> dict:
+def _context_skip(assay: str, *, context: int = 1024, max_tokens: int = 3424) -> dict:
+    return {
+        "assay": assay,
+        "context": context,
+        "max_tokens": max_tokens,
+        "reason": (
+            "the rendered variant exceeds this arm's context; truncating would "
+            "score a sequence that may not contain the mutated position"
+        ),
+    }
+
+
+def _dms_model(
+    arm: str,
+    rhos: dict[str, float],
+    digest: str = "d0",
+    *,
+    skipped: list[dict] | None = None,
+    dtype: str = "bfloat16",
+) -> dict:
     return {
         "arm": arm,
         "assays": [
@@ -300,7 +319,8 @@ def _dms_model(arm: str, rhos: dict[str, float], digest: str = "d0") -> dict:
             }
             for index, (name, value) in enumerate(rhos.items())
         ],
-        "skipped": [],
+        "skipped": list(skipped or []),
+        "settings": {"dtype": dtype},
     }
 
 
@@ -318,10 +338,18 @@ def _lookup(rhos: dict[str, float], *, digest: str = "d0") -> dict:
     }
 
 
-def _mega_model(arm: str, values: dict[str, float], digest: str, *, kind: str) -> dict:
+def _mega_model(
+    arm: str,
+    values: dict[str, float],
+    digest: str,
+    *,
+    kind: str,
+    dtype: str = "bfloat16",
+) -> dict:
     return {
         "arm": arm,
         "cohort_sha256": digest,
+        "settings": {"dtype": dtype},
         "wildtypes": {
             name: {
                 "kind": kind,
@@ -351,6 +379,15 @@ def _baselines(entries: dict[str, str], digest: str) -> dict:
     }
 
 
+def _design_cohort(names, digest: str) -> dict:
+    return {
+        "source": "cohort.json",
+        "cohort_sha256": digest,
+        "zero_hit_designs": sorted(names),
+        "note": "test census",
+    }
+
+
 def _stage41_report(blocks: tuple[str, ...] = ("b0",), *, status: str = "PASS") -> dict:
     rows = []
     for block_id in blocks:
@@ -361,6 +398,7 @@ def _stage41_report(blocks: tuple[str, ...] = ("b0",), *, status: str = "PASS") 
                     "arm": arm,
                     "is_unigram_null_control": False,
                     "cohort_digest": f"digest-{block_id}",
+                    "cohort_name": "swissprot_progen2_medium_f32",
                     "per_arm_identification_status": status,
                     "displacement_corrected_ci_95": [0.2, 0.8],
                 }
@@ -436,6 +474,7 @@ def test_scale_capability_refuses_a_shrunk_megascale_census():
             _baselines({name: "design" for name in names}, "one"),
             side="design",
             baseline_name="blosum62",
+            admissible=frozenset(names),
             require_fixed_census=True,
         )
 
@@ -553,17 +592,24 @@ def _small_compare_payloads():
         mega_models[name] = design_block
     kinds = {name: "design" for name in designs}
     kinds.update({name: "natural" for name in naturals})
-    return dms_models, _lookup(assays), mega_models, _baselines(kinds, digest)
+    return (
+        dms_models,
+        _lookup(assays),
+        mega_models,
+        _baselines(kinds, digest),
+        _design_cohort(designs, digest),
+    )
 
 
 def test_compare_scale_writes_the_required_claims_and_no_total():
     stage = _load_stage("42_scale_capability.py")
-    dms_models, lookup, mega_models, baselines = _small_compare_payloads()
+    dms_models, lookup, mega_models, baselines, design_cohort = _small_compare_payloads()
     payload = stage.compare_scale(
         dms_models=dms_models,
         lookup=lookup,
         megascale_models=mega_models,
         baselines=baselines,
+        design_cohort=design_cohort,
         fragment_order=None,
         qualification_report=_stage41_report(),
         resamples=200,
@@ -625,16 +671,359 @@ def test_stage41_duplicate_rung_block_is_refused():
 
 def test_fragment_order_digest_must_match():
     stage = _load_stage("42_scale_capability.py")
-    dms_models, lookup, mega_models, baselines = _small_compare_payloads()
+    dms_models, lookup, mega_models, baselines, design_cohort = _small_compare_payloads()
     with pytest.raises(ValueError, match="fragment_order"):
         stage.compare_scale(
             dms_models=dms_models,
             lookup=lookup,
             megascale_models=mega_models,
             baselines=baselines,
+            design_cohort=design_cohort,
             fragment_order={"cohort_sha256": "other", "arms": {}},
             qualification_report=_stage41_report(),
             resamples=50,
             seed=1,
             require_fixed_census=False,
         )
+
+
+# ------------------------------------------- the real stage-20 / stage-29 shapes
+
+RETRIEVAL_BOUND_DIR = REPO_ROOT / "results/transfer/retrieval_bound"
+DESIGNED_REFERENT_DIR = REPO_ROOT / "results/transfer/designed_referent"
+REAL_DMS = RETRIEVAL_BOUND_DIR / "model_progen2-medium.json"
+REAL_LOOKUP = RETRIEVAL_BOUND_DIR / "lookup.json"
+REAL_MEGA = DESIGNED_REFERENT_DIR / "model_progen2-medium.json"
+REAL_BASELINES = DESIGNED_REFERENT_DIR / "baselines.json"
+REAL_COHORT = DESIGNED_REFERENT_DIR / "cohort.json"
+REAL_FRAGMENT_ORDER = DESIGNED_REFERENT_DIR / "fragment_order.json"
+
+
+def _read_json(path: Path) -> dict:
+    import json
+
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _as_three_rungs(payload: dict) -> dict:
+    """The same real payload in each rung slot, renamed and independent."""
+
+    import copy
+
+    models = {}
+    for name in ("progen2-medium", "progen2-large", "progen2-xlarge"):
+        rung = copy.deepcopy(payload)
+        rung["arm"] = name
+        models[name] = rung
+    return models
+
+
+@pytest.mark.skipif(
+    not REAL_DMS.is_file() or not REAL_LOOKUP.is_file(),
+    reason="the staged stage-20 artefacts are absent",
+)
+def test_the_real_stage20_payload_aligns_and_names_its_own_exclusions():
+    """The positive control: what stage 20 actually wrote must align.
+
+    ``model_progen2-medium.json`` carries 201 scored assays and 16 skips, every
+    one a rendered variant longer than the 1024-position context. Every ProGen2
+    rung shares that context, so this is the shape stage 42 will be handed.
+    """
+
+    stage = _load_stage("42_scale_capability.py")
+    alignment = stage.align_dms(
+        _as_three_rungs(_read_json(REAL_DMS)), _read_json(REAL_LOOKUP)
+    )
+    assert len(alignment["declared_assays"]) == stage.DMS_DECLARED_ASSAYS
+    assert alignment["declared_clusters"] == stage.DMS_DECLARED_CLUSTERS
+    assert len(alignment["analysis_assays"]) == stage.DMS_ANALYSIS_ASSAYS
+    assert len(set(alignment["units"].values())) == stage.DMS_ANALYSIS_CLUSTERS
+    assert alignment["context_excluded_assays"] == sorted(
+        stage.DMS_CONTEXT_EXCLUDED_ASSAYS
+    )
+    assert set(alignment["analysis_assays"]).isdisjoint(
+        alignment["context_excluded_assays"]
+    )
+    assert stage.require_uniform_dtype(
+        _as_three_rungs(_read_json(REAL_DMS)), label="DMS"
+    )
+
+
+@pytest.mark.skipif(
+    not REAL_MEGA.is_file() or not REAL_BASELINES.is_file() or not REAL_COHORT.is_file(),
+    reason="the staged stage-29 artefacts are absent",
+)
+def test_the_real_stage29_design_side_is_the_130_zero_hit_designs():
+    """The design census is reachable only through the cohort that carries the flag."""
+
+    stage = _load_stage("42_scale_capability.py")
+    models = _as_three_rungs(_read_json(REAL_MEGA))
+    baselines = _read_json(REAL_BASELINES)
+    census = stage.zero_hit_design_cohort(REAL_COHORT)
+    assert len(census["zero_hit_designs"]) == stage.MEGASCALE_DESIGN_WILDTYPES
+    assert census["cohort_sha256"] == baselines["cohort_sha256"]
+    admissible = frozenset(census["zero_hit_designs"])
+    units, raw, _ = stage.align_megascale(
+        models,
+        baselines,
+        side="design",
+        baseline_name="hydropathy_change",
+        admissible=admissible,
+    )
+    assert len(raw["progen2-medium"]) == stage.MEGASCALE_DESIGN_WILDTYPES
+    assert len(set(units.values())) == stage.MEGASCALE_DESIGN_SERIES
+    natural_units, natural_raw, _ = stage.align_megascale(
+        models, baselines, side="natural", baseline_name="hydropathy_change"
+    )
+    assert len(natural_raw["progen2-medium"]) == stage.MEGASCALE_NATURAL_WILDTYPES
+    assert len(set(natural_units.values())) == stage.MEGASCALE_NATURAL_CLUSTERS
+    # The unrestricted design side is the 146 the payload scores, which is why
+    # the census cannot be read off the payload.
+    unrestricted = stage._side_keys(
+        _read_json(REAL_MEGA), side="design", spearman_of=lambda entry: entry.get("spearman")
+    )
+    assert len(unrestricted) == 146
+
+
+@pytest.mark.skipif(
+    not REAL_FRAGMENT_ORDER.is_file(),
+    reason="the staged stage-29 fragment_order artefact is absent",
+)
+def test_a_fragment_order_without_the_upper_rungs_is_reported_not_refused():
+    """3-7-mer margins are reported and never gated, so a missing rung is named."""
+
+    stage = _load_stage("42_scale_capability.py")
+    record = stage._fragment_margins(_read_json(REAL_FRAGMENT_ORDER))
+    assert record["reported_not_gated"] is True
+    assert record["rungs_present"] == ["progen2-medium"]
+    assert record["rungs_missing"] == ["progen2-large", "progen2-xlarge"]
+    assert record["incomplete_note"]
+    for key, block in record["margins"]["designs"].items():
+        assert set(block["per_rung"]) == {"progen2-medium"}, key
+
+
+def test_a_rung_specific_skip_breaks_the_pairing_and_is_refused():
+    stage = _load_stage("42_scale_capability.py")
+    assays = {f"a{i}": 0.2 for i in range(8)}
+    scored = {name: value for name, value in assays.items() if name != "a0"}
+    models = {
+        "progen2-medium": _dms_model(
+            "progen2-medium", scored, skipped=[_context_skip("a0")]
+        ),
+        "progen2-large": _dms_model(
+            "progen2-large", scored, skipped=[_context_skip("a0")]
+        ),
+        "progen2-xlarge": _dms_model("progen2-xlarge", assays),
+    }
+    with pytest.raises(ValueError, match="common support"):
+        stage.align_dms(models, _lookup(assays), require_fixed_census=False)
+
+
+def test_a_jointly_skipped_assay_is_a_cohort_definition_not_a_refusal():
+    stage = _load_stage("42_scale_capability.py")
+    assays = {f"a{i}": 0.2 for i in range(8)}
+    scored = {name: value for name, value in assays.items() if name != "a0"}
+    models = {
+        name: _dms_model(name, scored, skipped=[_context_skip("a0")])
+        for name in ("progen2-medium", "progen2-large", "progen2-xlarge")
+    }
+    alignment = stage.align_dms(models, _lookup(assays), require_fixed_census=False)
+    assert alignment["context_excluded_assays"] == ["a0"]
+    assert alignment["analysis_assays"] == sorted(scored)
+    assert "a0" not in alignment["units"]
+
+
+def test_a_skip_that_is_not_a_context_overflow_is_refused():
+    stage = _load_stage("42_scale_capability.py")
+    assays = {f"a{i}": 0.2 for i in range(8)}
+    scored = {name: value for name, value in assays.items() if name != "a0"}
+    broken = _context_skip("a0")
+    broken["reason"] = "the forward pass raised"
+    models = {
+        name: _dms_model(name, scored, skipped=[broken])
+        for name in ("progen2-medium", "progen2-large", "progen2-xlarge")
+    }
+    with pytest.raises(ValueError, match="scoring failure"):
+        stage.align_dms(models, _lookup(assays), require_fixed_census=False)
+
+
+def test_a_skip_against_another_context_is_refused():
+    stage = _load_stage("42_scale_capability.py")
+    assays = {f"a{i}": 0.2 for i in range(8)}
+    scored = {name: value for name, value in assays.items() if name != "a0"}
+    models = {
+        name: _dms_model(
+            name, scored, skipped=[_context_skip("a0", context=2048, max_tokens=3424)]
+        )
+        for name in ("progen2-medium", "progen2-large", "progen2-xlarge")
+    }
+    with pytest.raises(ValueError, match="shared 1024"):
+        stage.align_dms(models, _lookup(assays), require_fixed_census=False)
+
+
+def _full_census_lookup(stage) -> dict:
+    """A synthetic LOOKUP with the frozen 217/174 declared census.
+
+    The 16 context-excluded assays carry 11 families of their own and share five
+    with the fillers, so removing them leaves the frozen 201/163 analysis census.
+    """
+
+    excluded = list(stage.DMS_CONTEXT_EXCLUDED_ASSAYS)
+    fillers = [f"f{index:03d}" for index in range(stage.DMS_ANALYSIS_ASSAYS)]
+    clusters = {
+        name: f"c{index % stage.DMS_ANALYSIS_CLUSTERS}"
+        for index, name in enumerate(fillers)
+    }
+    for index, name in enumerate(excluded):
+        clusters[name] = f"x{index}" if index < 11 else f"c{index - 11}"
+    rows = [
+        {
+            "assay": name,
+            "cluster": clusters[name],
+            "mutant_digest": "d0",
+            "spearman": {"lookup": 0.10, "blosum62": 0.05},
+        }
+        for name in fillers + excluded
+    ]
+    return {"assays": rows}
+
+
+def test_the_frozen_context_exclusions_cannot_be_swapped_for_another_set():
+    stage = _load_stage("42_scale_capability.py")
+    lookup = _full_census_lookup(stage)
+    assert len(lookup["assays"]) == stage.DMS_DECLARED_ASSAYS
+    assert len({row["cluster"] for row in lookup["assays"]}) == stage.DMS_DECLARED_CLUSTERS
+    swapped = list(stage.DMS_CONTEXT_EXCLUDED_ASSAYS[:-1]) + ["f000"]
+    scored = {
+        row["assay"]: 0.2 for row in lookup["assays"] if row["assay"] not in swapped
+    }
+    models = {
+        name: _dms_model(
+            name, scored, skipped=[_context_skip(assay) for assay in swapped]
+        )
+        for name in ("progen2-medium", "progen2-large", "progen2-xlarge")
+    }
+    with pytest.raises(ValueError, match="frozen EXP-R2-224 set"):
+        stage.align_dms(models, lookup, require_fixed_census=True)
+
+
+def test_the_frozen_census_passes_on_the_declared_exclusions():
+    stage = _load_stage("42_scale_capability.py")
+    lookup = _full_census_lookup(stage)
+    excluded = list(stage.DMS_CONTEXT_EXCLUDED_ASSAYS)
+    scored = {
+        row["assay"]: 0.2 for row in lookup["assays"] if row["assay"] not in excluded
+    }
+    models = {
+        name: _dms_model(
+            name, scored, skipped=[_context_skip(assay) for assay in excluded]
+        )
+        for name in ("progen2-medium", "progen2-large", "progen2-xlarge")
+    }
+    alignment = stage.align_dms(models, lookup, require_fixed_census=True)
+    assert len(alignment["analysis_assays"]) == stage.DMS_ANALYSIS_ASSAYS
+    assert len(set(alignment["units"].values())) == stage.DMS_ANALYSIS_CLUSTERS
+
+
+def test_a_declared_zero_hit_design_missing_from_a_rung_is_refused():
+    stage = _load_stage("42_scale_capability.py")
+    names = [f"d{i}" for i in range(8)]
+    values = {name: 0.2 for name in names[:-1]}
+    models = {
+        name: _mega_model(name, values, "one", kind="design")
+        for name in ("progen2-medium", "progen2-large", "progen2-xlarge")
+    }
+    with pytest.raises(ValueError, match="not scored on every rung"):
+        stage.align_megascale(
+            models,
+            _baselines({name: "design" for name in names}, "one"),
+            side="design",
+            baseline_name="blosum62",
+            admissible=frozenset(names),
+            require_fixed_census=False,
+        )
+
+
+def test_a_design_census_from_another_cohort_is_refused():
+    stage = _load_stage("42_scale_capability.py")
+    dms_models, lookup, mega_models, baselines, design_cohort = _small_compare_payloads()
+    design_cohort["cohort_sha256"] = "not-the-scored-cohort"
+    with pytest.raises(ValueError, match="different cohort"):
+        stage.compare_scale(
+            dms_models=dms_models,
+            lookup=lookup,
+            megascale_models=mega_models,
+            baselines=baselines,
+            design_cohort=design_cohort,
+            fragment_order=None,
+            qualification_report=_stage41_report(),
+            resamples=50,
+            seed=1,
+            require_fixed_census=False,
+        )
+
+
+def test_a_mixed_precision_ladder_is_refused():
+    stage = _load_stage("42_scale_capability.py")
+    assays = {f"a{i}": 0.2 for i in range(8)}
+    models = {
+        "progen2-medium": _dms_model("progen2-medium", assays, dtype="float32"),
+        "progen2-large": _dms_model("progen2-large", assays, dtype="bfloat16"),
+        "progen2-xlarge": _dms_model("progen2-xlarge", assays, dtype="bfloat16"),
+    }
+    with pytest.raises(ValueError, match="mixed precision"):
+        stage.require_uniform_dtype(models, label="DMS")
+    unrecorded = {
+        name: _dms_model(name, assays) for name in ("progen2-medium", "progen2-large", "progen2-xlarge")
+    }
+    unrecorded["progen2-large"].pop("settings")
+    with pytest.raises(ValueError, match="records no scoring dtype"):
+        stage.require_uniform_dtype(unrecorded, label="DMS")
+
+
+def test_a_transition_reports_the_smaller_rung_without_gating_on_it():
+    """A gate that required the smaller rung to fail would depend on a null.
+
+    Both rungs clearing their own baseline contrast is the ordinary case for a
+    competent pair, and the transition must still be readable there. The smaller
+    rung's contrasts are reported beside the gate instead.
+    """
+
+    stage = _load_stage("42_scale_capability.py")
+    dms_models, lookup, mega_models, baselines, design_cohort = _small_compare_payloads()
+    payload = stage.compare_scale(
+        dms_models=dms_models,
+        lookup=lookup,
+        megascale_models=mega_models,
+        baselines=baselines,
+        design_cohort=design_cohort,
+        fragment_order=None,
+        qualification_report=_stage41_report(),
+        resamples=200,
+        seed=1,
+        require_fixed_census=False,
+    )
+    gates = payload["descriptive_gate_transitions"]
+    pair = "progen2-medium__progen2-large"
+    dms_gate = gates["dms"][pair]
+    mega_gate = gates["megascale"][pair]
+    assert dms_gate["verdict"] is True
+    assert mega_gate["verdict"] is True
+    assert not any("smaller" in name for name in dms_gate["conditions"])
+    assert not any("smaller" in name for name in mega_gate["conditions"])
+    assert "smaller_model_minus_lookup" in dms_gate["reported_not_gated"]
+    assert "smaller_design_model_minus_hydropathy" in mega_gate["reported_not_gated"]
+    assert "smaller_design_model_minus_blosum62" in mega_gate["reported_not_gated"]
+    assert "not a claim that the smaller rung failed" in dms_gate["transition_means"]
+    assert "not a claim that the smaller rung failed" in mega_gate["transition_means"]
+    assert payload["precision"] == {
+        "dms": "bfloat16",
+        "megascale": "bfloat16",
+        "note": stage.PRECISION_NOTE,
+    }
+    assert payload["dms"]["declared_cohort"]["n_assays"] == len(lookup["assays"])
+    assert payload["dms"]["n_assays"] == len(lookup["assays"])
+    assert payload["dms"]["context_excluded_assays"] == []
+    assert payload["megascale"]["design_census"]["n_zero_hit_designs"] == len(
+        design_cohort["zero_hit_designs"]
+    )

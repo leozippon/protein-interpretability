@@ -56,10 +56,19 @@ WRONG_MARKER = "2"
 NATIVE_REPEAT_MAX_ABS = 1e-6
 WRONG_MARKER_COST_MIN = 0.05
 REQUIRED_SCORING_SUPPORT = 32
+#: Live output width per rung, taken from the released heads rather than from a
+#: config key the lineage spells three different ways. ``progen2-large`` carries
+#: ``lm_head.weight [51200, 2560]`` and declares ``vocab_size`` 51200;
+#: ``progen2-xlarge`` carries ``lm_head.weight [32, 4096]``, declares no
+#: ``vocab_size`` at all, and builds its head from ``vocab_size_lm_head`` 32.
+#: EXP-R2-068 already recorded that xlarge "loads and runs a forward pass
+#: returning logits of width 32". Support and live width therefore coincide on
+#: medium and xlarge and differ only on large; they are still checked separately,
+#: because that they coincide is a fact about two checkpoints and not a rule.
 REQUIRED_LIVE_WIDTH = {
     "progen2-medium": 32,
     "progen2-large": 51200,
-    "progen2-xlarge": 51200,
+    "progen2-xlarge": 32,
 }
 
 LOGITS_NOT_CROPPED_NOTE = (

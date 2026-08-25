@@ -291,13 +291,30 @@ def test_wrong_marker_cost_is_strictly_above_0_05():
 def test_live_width_and_scoring_support_are_not_interchangeable():
     STAGE.require_support_and_live_width("progen2-medium", 32, 32)
     STAGE.require_support_and_live_width("progen2-large", 32, 51200)
-    STAGE.require_support_and_live_width("progen2-xlarge", 32, 51200)
+    STAGE.require_support_and_live_width("progen2-xlarge", 32, 32)
     with pytest.raises(ValueError, match="scoring-target support"):
         STAGE.require_support_and_live_width("progen2-large", 51200, 51200)
     with pytest.raises(ValueError, match="live output width"):
         STAGE.require_support_and_live_width("progen2-large", 32, 32)
     with pytest.raises(ValueError, match="live output width"):
         STAGE.require_support_and_live_width("progen2-medium", 32, 51200)
+    with pytest.raises(ValueError, match="live output width"):
+        STAGE.require_support_and_live_width("progen2-xlarge", 32, 51200)
+
+
+def test_required_live_widths_match_the_released_progen2_heads():
+    """The released heads, read off the checkpoints rather than off a config key.
+
+    ``progen2-large`` emits 51200 columns; ``progen2-xlarge`` emits 32, which is
+    what EXP-R2-068 recorded from a real forward pass. Freezing 51200 for xlarge
+    would make the qualification unpassable on the checkpoint it names.
+    """
+
+    assert STAGE.REQUIRED_LIVE_WIDTH == {
+        "progen2-medium": 32,
+        "progen2-large": 51200,
+        "progen2-xlarge": 32,
+    }
 
 
 def test_cropped_logits_are_refused_against_a_51200_live_width():
