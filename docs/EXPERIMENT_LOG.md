@@ -16962,6 +16962,20 @@ A formal `descriptive_gate_transition` exists only as the **unique compound bloc
 
 **No new model result is claimed.**
 
+## 2026-08-25 — EXP-R2-224 pre-data implementation amendment: strict fixed-sequence interface qualification before the frozen queues
+
+**Written before any medium/large/xlarge interface score under this check exists.** This is an all-or-stop prerequisite to the EXP-R2-224 queue run, not a capability endpoint. It does not alter stage 42, a fitness gate, or an evaluation record. Failure stops that rung and every later rung that would pair with it; no sequence, marker, threshold, dtype, or model is replaced.
+
+The arm order is fixed as `progen2-medium`, `progen2-large`, `progen2-xlarge`. Load each checkpoint at bfloat16 with the existing shape and observed-dtype checks and with Transformers loading diagnostics exposed: `missing_keys`, `unexpected_keys`, `mismatched_keys`, and `error_msgs` must all be empty. A missing or randomly initialised output head is unavailable, never a pass.
+
+The one fixed 74-residue probe is `MKTIIALSYIFCLVFADYKDDDDKACDEFGHIKLMNPQRSTVWYACDEFGHIKLMNPQRSTVWYGGHPEPTIDE`, SHA-256 `36ff2a577d03461a6e995ef2a492604c8d510161058f4e575b12ddda968cc954`. Native rendering is exactly marker `1` plus that sequence. The error rendering is marker `2` plus the identical, unreversed sequence. Both markers must each resolve to one token and to different ids; the two renderings must expose the same residue-target ids in the same order.
+
+Every arm must declare scoring-target support **32**. The live uncropped output widths are required to be medium **32**, large **51200**, and xlarge **51200**. NLL is computed by full-width log-softmax followed by target gather; no output is sliced to 32 columns and no 32-column renormalisation is permitted.
+
+The native fixed-sequence NLL is run twice. Target ids must match exactly, every value must be finite, and the maximum per-target absolute repeat difference must be `<= 1e-6` nats. On the same residue targets, the wrong-marker cost `mean(NLL_marker2) - mean(NLL_marker1)` must be **strictly greater than 0.05 nats per scored target**. Equality is failure. Only all three passing writes the success artefact. A pass says the frozen loader, output interface, native direction marker and negative control are usable; it is not protein capability, a scale transition, mechanism evidence, or biological knowledge.
+
+**No model was loaded and no model result is claimed at this amendment.**
+
 ## 2026-08-25 — EXP-R2-225 pre-registered: independent Direction-1 second stage on larger public checkpoints, frozen before any new score
 
 **Taking `EXP-R2-225`, the next free identifier. No new model score, interval, gate verdict, or availability claim exists at registration.** This entry freezes an independent Objective-1 second stage. It does not reopen F10 or F12, does not admit a checkpoint to the panel, and does not authorise a causal claim about parameter count or a claim of biological knowledge.
