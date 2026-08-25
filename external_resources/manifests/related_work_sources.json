@@ -141,6 +141,15 @@
       "research_topics": ["R1.2", "R2.4", "R3.3"],
       "paper": "https://proceedings.mlr.press/v162/notin22a.html",
       "repository": "https://github.com/OATML-Markslab/Tranception"
+    },
+    {
+      "id": "proteinguide",
+      "research_topics": ["R1.2", "R3.2", "R3.3"],
+      "paper": "https://doi.org/10.1038/s41587-026-03207-z",
+      "preprint": "https://arxiv.org/abs/2505.04823",
+      "repository": "https://github.com/junhaobearxiong/proteinguide",
+      "data": "https://doi.org/10.5281/zenodo.20496526",
+      "evidence_boundary": "ProteinGuide controls discrete sampling with an external property predictor. Successful guidance does not by itself show that the frozen generator internally represents or causally uses the property, exclude retrieval or surface shortcuts, or establish biological knowledge."
     }
   ],
   "evidence_boundary": "A downloaded source is related work, not a project finding. Representation readout, behavior steering, replacement fidelity, retrieval-bounded fitness, structural plausibility and wet-lab function are distinct evidence levels and must not be conflated."
