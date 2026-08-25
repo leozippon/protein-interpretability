@@ -16948,6 +16948,20 @@ One fixed run may report the descriptive curve and the per-endpoint transition t
 
 **No new model result is claimed.**
 
+## 2026-08-25 — EXP-R2-224 pre-data implementation amendment: stage-42 group bootstrap and compound-only transitions
+
+**Written before any `progen2-large` or `progen2-xlarge` score is read.** This amends how the EXP-R2-224 freeze is implemented. It does not rewrite the freeze text above, does not reopen F10 or F12, and does not retune a queue, a threshold, or a seed after seeing a number. No large or xlarge score, interval, or gate verdict exists at this amendment.
+
+Stage 42 is the first-round paired comparison. Its group bootstrap is frozen at **`resamples=2000`**, **`seed=20260825`**. Those two numbers are not revised after a result exists.
+
+A formal `descriptive_gate_transition` exists only as the **unique compound block** on an adjacent pair. Auxiliary intervals — per-rung raw Spearman, MODEL − BLOSUM62, hydropathy, a single MegaScale margin, or a natural-side Δ — are reported and are not themselves gates. Labelling any of them as a transition is a protocol breach.
+
+**DMS compound (the only DMS gate).** Both must hold: the larger rung's MODEL − LOOKUP 95% lower bound is > 0, **and** the paired Δρ 95% lower bound on **raw Spearman** is > 0. LOOKUP on this first round remains the EXP-R2-224 ProGen2 reading: the stage-20 UniRef50 profile on the frozen ProteinGym profiles, a lower-bound proxy because UniRef90 and BFD30 were not fully searched.
+
+**MegaScale compound (the only MegaScale gate).** The five conditions of the freeze stand: design MODEL − hydropathy and MODEL − BLOSUM62 both have 95% lower bound > 0; natural control MODEL − hydropathy and MODEL − BLOSUM62 both have 95% lower bound > 0; **and** the design-series-paired Δρ 95% lower bound on **raw Spearman** is > 0. The natural-cluster-paired **raw** Δ is reported only. 3–7-mer margins are reported only.
+
+**No new model result is claimed.**
+
 ## 2026-08-25 — EXP-R2-225 pre-registered: independent Direction-1 second stage on larger public checkpoints, frozen before any new score
 
 **Taking `EXP-R2-225`, the next free identifier. No new model score, interval, gate verdict, or availability claim exists at registration.** This entry freezes an independent Objective-1 second stage. It does not reopen F10 or F12, does not admit a checkpoint to the panel, and does not authorise a causal claim about parameter count or a claim of biological knowledge.
@@ -17008,11 +17022,12 @@ Historical numbers (F10, F12, EXP-R2-151, EXP-R2-221, ProGen3-112M fitness, qwen
 
 ### Frozen queues — no redraw, no retuned threshold
 
-Reuse the EXP-R2-224 queues, units, and baselines. Do not resample records, recluster families, or move a floor.
+Reuse the EXP-R2-224 ProteinGym and MegaScale queues, units, and baselines. Do not resample records, recluster families, or move a floor. Context-information draws are the **same corpus family and band**, not one exact shared draw across stage 01 and stage 21.
 
-- Swiss-Prot context-information qualification for every protein or protein-mode arm, the same seeded permutation and band already used to qualify residue protein arms.
-- Text context-information qualification for every text or text-mode arm, the same seeded permutation and band already used to qualify `qwen2.5-0.5b` / Galactica text mode.
-- ProteinGym substitution assays: **217 assays / 174 wild-type families**, F10's units.
+- Protein context information: Swiss-Prot via `protein_cohort` (`plain_swissprot`), residue band **64–246** (`01_cohort_power.py` `--res-min/--res-max`; `21_joint_mode_qualification.py` `--protein-min-len/--protein-max-len`). Residue ProGen2 was qualified on stage 01 at seed **20260727**, n=200 (EXP-R2-060 and the EXP-R2-216/221 panel re-analyses). Galactica protein mode was qualified on stage 21 at seed **20260728**, n=64 scored against a 400-record held-out unigram (EXP-R2-151, EXP-R2-220, EXP-R2-221). Those are the same family, not the same permutation window.
+- Text context information: frozen OpenWebText screening subset via `text_cohort`, character floor **800**. `qwen2.5-0.5b` was qualified on stage 01 at seed **20260727** (EXP-R2-060 / EXP-R2-216 / EXP-R2-221 panel cells). Galactica text mode was qualified on stage 21 at seed **20260728**, n=64 (EXP-R2-151 / EXP-R2-220 / EXP-R2-221). Those are the same family, not the same permutation window.
+- This campaign's draws, named rather than implied: Galactica 6.7B/30B reuse stage 21's seed **20260728** and n=64 so they are comparable to `facebook/galactica-1.3b`'s qualification. Qwen 7B/32B reuse stage 01's seed **20260727** so they are comparable to `qwen2.5-0.5b`. ProGen3, ProteinGLM, and RITA reuse EXP-R2-224's Swiss-Prot stage-01 seed **20260727**, band 64–246, for comparability with the ProGen2 first-round qualification family.
+- ProteinGym substitution assays: **217 assays / 174 wild-type families**, F10's units, the frozen stage-20 ProteinGym profiles.
 - MegaScale designed referent: **130 design wild types / 40 series** against **266 natural domains / 124 `WT_cluster`s**, F12's census.
 
 ProteinGym and MegaScale are entered only by pure-protein arms and by a Galactica **protein mode that has passed qualification**. Qwen does not enter them.
@@ -17029,11 +17044,24 @@ N-to-C, bidirectional, and masked / pseudo-likelihood are separate strata. Do no
 
 No composite score. Each endpoint returns its own descriptive verdict.
 
-The label `descriptive_gate_transition` is reserved for **same-family adjacent rungs** and reuses the EXP-R2-224 rule: the larger rung passes the strong baseline gate **and** the paired Δρ 95% lower bound is > 0. Cross-family rows, ProteinGLM, and RITA cannot receive that label.
+The label `descriptive_gate_transition` is reserved for **same-family adjacent rungs** and exists only as the unique compound block in the EXP-R2-224 pre-data amendment. Cross-family rows, ProteinGLM, and RITA cannot receive that label. Auxiliary intervals are not gates.
 
-**DMS (ProteinGym substitutions), protein and qualified Galactica protein mode.** Report MODEL − LOOKUP and MODEL − BLOSUM62 on every scored rung. The descriptive gate on an adjacent same-family pair transitions only if both hold: the larger rung's MODEL − LOOKUP 95% lower bound is > 0, **and** the paired Δρ 95% lower bound is > 0. LOOKUP is built from the available pretraining-corpus proxy. Where the corpus is unknown or was not fully searched, LOOKUP **under-counts** and is a bound that favours the model. A gate flip on this endpoint is not knowledge evidence, not a retrieval exclusion, and not a causal scale effect.
+This stage's new paired group bootstrap inherits the amendment: **`resamples=2000`**, **`seed=20260825`**. Those two numbers are not revised after a result exists.
 
-**MegaScale (designed referent and its natural control), protein and qualified Galactica protein mode.** Report hydropathy, BLOSUM62, and every 3–7-mer fragment margin. Do **not** borrow ProtGPT2's corpus-disjoint certificate. The descriptive gate on an adjacent same-family pair transitions only if all of the following hold: on the design side, MODEL − hydropathy and MODEL − BLOSUM62 both have 95% lower bound > 0; on the natural control, the same two contrasts both have 95% lower bound > 0; **and** the design-series-paired Δρ 95% lower bound is > 0. The natural-cluster-paired Δρ is reported as a control and does not enter this gate.
+**LOOKUP, executable and interpreted per family.** The channel is stage 20's staged UniRef50 profile on the frozen ProteinGym profiles — the same search, the same profiles, the same assays. That is what MODEL − LOOKUP subtracts. It is **not** automatically a pretraining-retrieval lower bound. Only an arm with evidenced identity or containment between that search corpus and the training set may be called a retrieval bound, and then the bias direction must be stated. On every other arm LOOKUP is an **external UniRef50 profile baseline**. MODEL − LOOKUP remains the frozen strong baseline inside the DMS compound, as a capability comparison against that channel. It does not exclude training-corpus retrieval, does not lower-bound it, and does not imply that the residual favours the model.
+
+Official training-corpus facts, cited rather than guessed; the staged UniRef50 snapshot is **not identified** as any of these sets, so LOOKUP stays external on this stage:
+
+- Galactica (`facebook/galactica-1.3b` card: 106B-token scientific mix, protein source deferred to the paper; Taylor et al., arXiv:2211.09085: reviewed Swiss-Prot subset, not UniRef).
+- ProGen3 (`Profluent-Bio/progen3-3b` family paper, Bhatnagar et al., bioRxiv 10.1101/2025.04.15.649055): Profluent Protein Atlas v1, which lists UniRef among IMG/M, ENA, GenBank, NCBI NR, and metagenomic sources. The in-repo 112M card is recorded as `undeclared` (`ARM_CORPUS` in `20_retrieval_bound.py`). Neither identifies the staged UniRef50 snapshot as the training set.
+- ProteinGLM-7B-CLM (card citations Chen et al., arXiv:2401.06199; Cheng et al., arXiv:2411.02142): UniRef50/S + UniRef90 + ColabFoldDB mix. The staged snapshot is not identified as that mix.
+- RITA_xl (card UniRef-100 LM loss; Hesslow et al., arXiv:2205.05789): UniRef-100, no clustering. The staged UniRef50 snapshot is not that dump.
+
+F10's historical ProGen3-112M retrieval-dominated reading is not amended and is not an input to this gate.
+
+**DMS (ProteinGym substitutions), protein and qualified Galactica protein mode.** Report MODEL − LOOKUP and MODEL − BLOSUM62 on every scored rung. The only DMS gate is the compound: the larger rung's MODEL − LOOKUP 95% lower bound is > 0, **and** the paired Δρ 95% lower bound on **raw Spearman** is > 0. A gate flip on this endpoint is not knowledge evidence, not a retrieval exclusion, and not a causal scale effect.
+
+**MegaScale (designed referent and its natural control), protein and qualified Galactica protein mode.** Report hydropathy, BLOSUM62, and every 3–7-mer fragment margin. Do **not** borrow ProtGPT2's corpus-disjoint certificate. The only MegaScale gate is the five-condition compound: on the design side, MODEL − hydropathy and MODEL − BLOSUM62 both have 95% lower bound > 0; on the natural control, the same two contrasts both have 95% lower bound > 0; **and** the design-series-paired Δρ 95% lower bound on **raw Spearman** is > 0. The natural-cluster-paired **raw** Δ is reported only.
 
 **Qwen, and Galactica text mode.** Text continuation only. Report qualification and identified context information. Do not invent a text analogue of ProteinGym or MegaScale in order to force a `descriptive_gate_transition`. A movement in text context information is a descriptive curve, not that label.
 
