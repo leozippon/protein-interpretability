@@ -451,6 +451,11 @@ def test_scale_capability_refuses_the_wrong_rung_order():
 def test_bootstrap_seed_is_the_declared_constant():
     stage = _load_stage("42_scale_capability.py")
     assert stage.DEFAULT_BOOTSTRAP_SEED == 20260825
+    stage.require_frozen_bootstrap(2000, 20260825)
+    with pytest.raises(ValueError, match="freezes stage 42"):
+        stage.require_frozen_bootstrap(1999, 20260825)
+    with pytest.raises(ValueError, match="freezes stage 42"):
+        stage.require_frozen_bootstrap(2000, 1)
 
 
 def test_compound_megascale_gate_needs_all_five_conditions():
@@ -600,6 +605,22 @@ def test_stage41_fail_is_refused():
         stage.qualify_stage41(_stage41_report(status="FAIL"))
     record = stage.qualify_stage41(_stage41_report())
     assert record["rungs"]["progen2-large"]["blocks"]["b0"]["per_arm_identification_status"] == "PASS"
+
+
+def test_stage41_pass_label_cannot_override_a_nonpositive_interval():
+    stage = _load_stage("42_scale_capability.py")
+    report = _stage41_report()
+    report["arm_results"][0]["displacement_corrected_ci_95"] = [-0.01, 0.8]
+    with pytest.raises(ValueError, match="strictly above zero"):
+        stage.qualify_stage41(report)
+
+
+def test_stage41_duplicate_rung_block_is_refused():
+    stage = _load_stage("42_scale_capability.py")
+    report = _stage41_report()
+    report["arm_results"].append(dict(report["arm_results"][0]))
+    with pytest.raises(ValueError, match="repeats a block"):
+        stage.qualify_stage41(report)
 
 
 def test_fragment_order_digest_must_match():

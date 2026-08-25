@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -84,6 +85,17 @@ def require_rung_order(names: list[str]) -> None:
         raise ValueError(
             f"the descriptive comparison is fixed as {list(SCALE_RUNGS)}; "
             f"got {got}"
+        )
+
+
+def require_frozen_bootstrap(resamples: int, seed: int) -> None:
+    """Refuse CLI changes to the pre-data EXP-R2-224 bootstrap freeze."""
+
+    if resamples != BOOTSTRAP_RESAMPLES or seed != DEFAULT_BOOTSTRAP_SEED:
+        raise ValueError(
+            "EXP-R2-224 freezes stage 42 at "
+            f"resamples={BOOTSTRAP_RESAMPLES}, seed={DEFAULT_BOOTSTRAP_SEED}; "
+            f"got resamples={resamples}, seed={seed}"
         )
 
 
@@ -412,6 +424,18 @@ def _fragment_margins(fragment_order: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _positive_finite_interval(value: Any) -> list[float] | None:
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        return None
+    try:
+        interval = [float(value[0]), float(value[1])]
+    except (TypeError, ValueError):
+        return None
+    if not all(math.isfinite(endpoint) for endpoint in interval) or interval[0] <= 0.0:
+        return None
+    return interval
+
+
 def qualify_stage41(report: dict[str, Any]) -> dict[str, Any]:
     """Qualify the three rungs from a full stage-41 report's ``arm_results``.
 
@@ -439,6 +463,9 @@ def qualify_stage41(report: dict[str, Any]) -> dict[str, Any]:
     block_sets = {
         name: frozenset(row["block_id"] for row in by_rung[name]) for name in SCALE_RUNGS
     }
+    for name in SCALE_RUNGS:
+        if len(block_sets[name]) != len(by_rung[name]):
+            raise ValueError(f"stage-41 arm_results repeats a block for {name}")
     reference_blocks = block_sets[SCALE_RUNGS[0]]
     if not reference_blocks:
         raise ValueError("stage-41 arm_results carries no blocks for the scale rungs")
@@ -459,11 +486,14 @@ def qualify_stage41(report: dict[str, Any]) -> dict[str, Any]:
         for row in by_rung[name]:
             status = row.get("per_arm_identification_status")
             statuses.append(str(status))
-            interval = row.get("displacement_corrected_ci_95")
+            interval = _positive_finite_interval(
+                row.get("displacement_corrected_ci_95")
+            )
             if status != "PASS" or interval is None:
                 raise ValueError(
                     f"{name} block {row.get('block_id')} identification is "
-                    f"{status!r}, not PASS with a displacement-corrected interval"
+                    f"{status!r}, not PASS with a finite displacement-corrected "
+                    "interval strictly above zero"
                 )
             per_block[row["block_id"]] = {
                 "per_arm_identification_status": status,
@@ -638,8 +668,8 @@ def compare_scale(
         "no_biological_knowledge_claim_note": NO_BIOLOGICAL_KNOWLEDGE_CLAIM,
         "no_cross_task_total": True,
         "bootstrap": {
-            "resamples": int(resamples),
-            "seed": int(seed),
+            "resamples": resamples,
+            "seed": seed,
             "default_seed": DEFAULT_BOOTSTRAP_SEED,
         },
         "qualification": qualification,
@@ -686,6 +716,7 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=DEFAULT_BOOTSTRAP_SEED)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     args = parser.parse_args()
+    require_frozen_bootstrap(args.bootstrap, args.seed)
 
     qualification_report = _read(args.context_information_summary)
     qualify_stage41(qualification_report)
