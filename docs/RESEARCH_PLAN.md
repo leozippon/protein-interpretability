@@ -1,6 +1,6 @@
 # Research Plan
 
-**Updated:** 2026-08-24 **Status:** active implementation guide **Authority:** `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` defines the current scientific plan as well as findings, retractions, limitations, and claim status. This document translates its admitted directions into comparisons, execution order, and stage inventory; it introduces no independent scientific claim or admission.
+**Updated:** 2026-08-25 **Status:** active implementation guide **Authority:** `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` defines the current scientific plan as well as findings, retractions, limitations, and claim status. This document translates its admitted directions into comparisons, execution order, and stage inventory; it introduces no independent scientific claim or admission.
 
 ## Research Design
 
@@ -20,7 +20,7 @@ Prefer comparisons in this order because each lower row leaves more possible exp
 |---|---|---|---|
 | Same joint checkpoint, text mode versus protein mode | Modality under shared weights and most of the architecture | Tokenizer, prompt, output space, and training exposure may still differ | **ProLLaMA Stage 1 and Stage 2 qualified in both modes** (EXP-R2-152); `15_replacement_faithfulness.py` and `17_train_transcoder.py` reach a joint checkpoint by path and mode; the per-layer dictionary pilot is complete in both modes (EXP-R2-182) and the cross-checkpoint independent-dictionary step is complete on all four cells (EXP-R2-191, completed by EXP-R2-194) |
 | Matched checkpoint lineage | When a capability or mechanism appears across training stages | A released stage usually changes a package of data and objectives, not one factor | active |
-| Within-lineage scale ladder | Whether a measured property is ordered by scale rather than by modality, corpus, or lineage | Depth, width, and parameter count move together, so scale is one axis and not three | ProGen2 small/medium/large/xlarge, reachable by `23_perturbation_sensitivity.py`; the upper two are staged non-members of the panel |
+| Within-lineage scale ladder | Whether a measured property, including a pre-declared capability gate, is ordered by scale rather than by modality, corpus, or lineage | Depth, width, and parameter count move together, so scale is one axis and not three; corpus and training are not fully controlled, so a descriptive gate flip is not a causal parameter-count effect | First-round D1.f (EXP-R2-224, no result): ProGen2 medium→large→xlarge on frozen queues; large and xlarge remain staged non-members of the panel. The four-rung perturbation ladder remains reachable by `23_perturbation_sensitivity.py` and still licenses no scale claim |
 | Shape-matched pure text and protein models | Modality while holding major architectural dimensions fixed | Training data and optimization remain different | in use |
 | Dense versus MoE within one modality | Whether routing or expert structure explains a measured failure | Model family and training data must still be controlled | in use |
 | Cross-lab or cross-architecture replication | Whether a result generalizes beyond one lineage | It is not a clean causal attribution by itself | in use |
@@ -39,7 +39,7 @@ That is the trade, and it has one direction: comparability with the existing 12�
 
 ### 1. Qualify the model and interface
 
-Strictly load the checkpoint, render each mode as trained, identify scored positions, verify output semantics, and run a fixed likelihood self-check. An unavailable or unverifiable checkpoint is reported as unavailable; it is not replaced silently.
+Strictly load the checkpoint, render each mode as trained, identify scored positions, verify output semantics, and run a fixed likelihood self-check. An unavailable or unverifiable checkpoint is reported as unavailable; it is not replaced silently. A descriptive scale campaign uses that same qualification on frozen queues and frozen gates: native rendering, an explicit scoring alphabet, and uncropped logits. Any loader, self-check, digest, alphabet, or qualification failure stops the campaign; the seed, the queue, and the model are not replaced. Context information is identified only by the displacement-corrected group-bootstrap rule adopted at EXP-R2-221. Each capability endpoint is judged independently; no composite score. A gate transition is a descriptive observation and is not a claim that parameter count caused it. Independent-data replication is required before a transition is called a robust qualitative change. The first-round freeze is EXP-R2-224; ProGen3-1B and Galactica-6.7B are not approved runs.
 
 ### 2. Establish a measurable comparison
 

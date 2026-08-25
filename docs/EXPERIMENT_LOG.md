@@ -16884,3 +16884,66 @@ Two independent audits found one blocking confirmation-path defect and no other 
 The definitive snapshot is pinned to `885c96c2fcb00a93074e333bb14e0d0dfcd50dd6`, run `20260824051144_eecf13df49c5`, code hash `eecf13df49c522f8491448dd5cf9571aab3b53695d97a02b3da2f17e53d8a3bf`. Code and invocation manifests were checksum-verified on GPFS, and the freeze-state resource record succeeded. The campaign manifest digest read by the queue is `ff7be717e301112580cc43e5de90fa7ecc2e526e08181752098e03b23513875f`.
 
 The pre-dispatch resource probe ended `Health=ok`. Cards 0, 1, and 3 were idle and reported zero volatile uncorrectable SRAM errors; card 2 remained idle but retained its one uncorrectable SRAM error and was excluded. The detached 86,400-second queue started at **2026-08-24T12:16:26Z**. Initial durable status: slot 0, three construction cells running; eleven cells pending; `FAILURES 0`; `NO-RECORD 0`. This is an execution record only; no D3.j-C construction or model result is claimed yet.
+
+## 2026-08-25 — EXP-R2-224 pre-registered: descriptive ProGen2 medium→large→xlarge capability gates, frozen before any new score
+
+**Taking `EXP-R2-224`, the next free identifier. No new model score, interval, or gate verdict exists at registration.** This entry freezes a minimal, staged, stoppable first-round Objective-1 measurement. It does not reopen F10 or F12, does not admit a checkpoint to the panel, and does not authorise a causal claim about parameter count.
+
+### Why this question is admitted, and what the old NO-GO does not cover
+
+Direction 1 still needs a larger checkpoint even when corpus and architecture cannot be fully controlled. The licensed reading is **descriptive capability measurement**: on frozen queues and frozen gates, does a pre-declared capability door flip as the rung grows? A flip is an observation about those checkpoints on those interfaces. It is not evidence that parameter count caused the flip, and it is not knowledge evidence under §7.0.
+
+A prior NO-GO on extra ProGen3 runs whose only purpose was to strengthen F12 does **not** apply here. That refusal was an Objective-3 move on an already-bounded fitness interface. This track is a new Objective-1 question. ProGen3-1B is therefore not smuggled in as an F12 replicate; it remains a phase-2 conditional candidate below, unapproved.
+
+§7.0 does not gate this campaign. A measurement of what a model does is itself the result, and no knowledge claim is in play.
+
+### First-round rungs, and what stays out
+
+First round only: **ProGen2 medium → large → xlarge** (load-checked **764.8M / 2779.4M / 6443.6M**, about 0.765B → 2.779B → 6.444B). One residue tokenizer. The UniRef90+BFD30 lineage of those three released rungs. Adjacent pairs for paired Δρ are medium–large and large–xlarge.
+
+`progen2-base` is out of the trajectory because its training mixture is unidentified relative to that lineage. `progen2-small` is a panel scale contrast on other estimands and is not a first-round rung here. **large and xlarge remain staged non-members of the panel** (`panel_contract.STAGED_BUT_NOT_ADMITTED`). Scoring them on this track does not admit them, does not give them `budget` capability, and does not authorise any `config.vocab_size`-derived statistic over a dead alphabet.
+
+This campaign scores all three rungs on the frozen queues below so that paired Δρ is within one run. Historical ProGen2-medium numbers in F10 and F12 are not inputs to any gate here. Agreement with those artefacts, if computed, is a reproduction diagnostic and cannot retune a frozen rule.
+
+### Frozen queues — no redraw, no retuned threshold
+
+Reuse the existing queues. Do not resample records, recluster families, or move a floor.
+
+- Swiss-Prot context-information qualification, the same seeded permutation and band already used to qualify residue ProGen2 arms.
+- ProteinGym substitution assays: **217 assays / 174 wild-type families**, F10's units.
+- MegaScale designed referent: **130 design wild types / 40 series** against **266 natural domains / 124 `WT_cluster`s**, F12's census.
+
+### Qualification, all-or-stop
+
+An arm is scored only after every clause holds. Failure of any clause stops the campaign for that arm and for every later rung that would pair with it. The seed, the queue, and the model are not replaced.
+
+- Native N-to-C rendering, including the lineage's control marker, matching the arm's declared format.
+- Explicit **32-target scoring alphabet** for residue likelihood. `progen2-large` emits a real **51200-logit** tensor; that tensor is not cropped, sliced, or renormalised onto 32 columns before scoring. Residue probabilities are read from the corresponding rows of the uncropped output. `progen2-xlarge` is scored on the tensor it actually emits, against the same 32-target alphabet. A `config.vocab_size` of 51200, or a missing `vocab_size` key, is not an alphabet.
+- Loader, self-check, digest, and alphabet gates fail closed.
+- Context information is identified **only** by the EXP-R2-221 rule: the displacement-corrected near-duplicate-group bootstrap 95% lower bound on the Swiss-Prot qualification cohort is **> 0**. The retired 0.30-nat point floor is not this campaign's identification rule. An unidentified rung is unmeasurable on that cohort and is not read as failing a capability gate.
+
+### Capability gates, judged per endpoint
+
+No composite score. Each endpoint returns its own descriptive verdict. Adjacent-rung Δρ is the paired family- or series-clustered difference of Spearman ρ, 95% percentile interval, same units F10 and F12 already use (174 families; 40 design series and 124 natural clusters). "Larger rung" means the upper member of that adjacent pair.
+
+**DMS (ProteinGym substitutions).** The descriptive gate on an adjacent pair transitions only if both hold: the larger rung's MODEL − LOOKUP 95% lower bound is > 0, **and** the paired Δρ 95% lower bound is > 0. MODEL − BLOSUM62 is reported on every rung and is not this gate. LOOKUP is built from the available pretraining-corpus proxy. UniRef90 and BFD30 were not fully searched, so LOOKUP **under-counts** and is a bound that favours the model. A gate flip on this endpoint is not knowledge evidence, not a retrieval exclusion, and not a causal scale effect.
+
+**MegaScale (designed referent and its natural control).** The descriptive gate on an adjacent pair transitions only if all of the following hold: on the design side, MODEL − hydropathy and MODEL − BLOSUM62 both have 95% lower bound > 0; on the natural control, the same two contrasts both have 95% lower bound > 0; **and** the paired Δρ 95% lower bound is > 0. Report every 3–7-mer fragment margin. Do **not** let an unidentified training corpus borrow ProtGPT2's corpus-disjoint certificate. Every ProGen2 row remains a bound in the model-favouring direction because BFD30 was not searched.
+
+**Context information** is a qualification endpoint, not a capability door to be averaged with the two fitness gates.
+
+### What one run may say, and what it may not
+
+One fixed run may report the descriptive curve and the per-endpoint transition table. Calling a transition a robust qualitative change requires independent-data replication. This round must not claim that scale caused a transition. Depth, width, and parameter count move together; training mixture and unsearched BFD30 remain confounded with the rung.
+
+### Operational sequence, and the stop
+
+1. Code, local negative paths, and resource checks first. This identifier is a scientific freeze, not a dispatch.
+2. Wait until the current H200 work (EXP-R2-223 / D3.j-C) releases healthy GPUs. Allocation is not utilisation. No pod name is recorded.
+3. Any loader, self-check, digest, alphabet, or qualification failure stops the campaign. Do not change the seed, the queue, or the model to recover it.
+
+### Phase 2, conditional candidates, not approved runs
+
+**ProGen3-1B** and **Galactica-6.7B** are second-stage candidates only if the first round shows that the interface and the metrics produce a readable scale trajectory. Each then receives a same-family descriptive review, not a first-round slot. Pre-gates, none of which is discharged here: ProGen3-1B must be staged, and its published native scoring is bidirectional, which is a different estimand from the N-to-C sum used on ProGen2; Galactica-6.7B must have joint-mode semantics qualified before any protein-side number is read. They are not approved runs.
+
+**No new model result is claimed.**
