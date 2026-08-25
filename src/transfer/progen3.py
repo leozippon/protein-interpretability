@@ -1,8 +1,8 @@
-"""ProGen3-112M, loaded so that it cannot come back silently random.
+"""ProGen3, loaded so that it cannot come back silently random.
 
 **Why this module exists.** The entry point everyone calls,
 ``ProGen3ForCausalLM.from_pretrained(path, moe_implementation="eager")``,
-*succeeds* on the released checkpoint. It emits a "newly initialized" warning,
+*succeeds* on the released checkpoints. It emits a "newly initialized" warning,
 returns a model whose embeddings, attention and norms are loaded correctly, and
 whose every expert and every router is freshly random -- because the released
 weights are in **megablocks packing** and carry no key the eager
@@ -12,13 +12,13 @@ reaches once the experts are actually loaded (EXP: ``progen3_eager_probe``,
 steps 08-09, one L20). A measurement taken on that object is a measurement of
 noise wearing a checkpoint's name, and no exception separates the two.
 
-:func:`load_progen3` is therefore the only supported way into this checkpoint in
-this repository. It converts the packed tensors, loads them with
+:func:`load_progen3` is therefore the only supported way into these checkpoints
+in this repository. It converts the packed tensors, loads them with
 ``strict=True``, and refuses on any missing or unexpected key.
 
 **The conversion**, verified against megablocks 0.7.0's ``LearnedRouter`` and
 ``MemoryOptimizedGroupedGLU`` and against the eager block's own forward, with
-``9216 = 8 experts x 1152``:
+``9216 = 8 experts x 1152`` on the 112M and ``30720 = 8 x 3840`` on the 3B:
 
 ===========================================  ===========================================
 released (megablocks packing)                eager ``SparseMoeBlock``
@@ -31,12 +31,25 @@ released (megablocks packing)                eager ``SparseMoeBlock``
 ===========================================  ===========================================
 
 **The mapping is load-bearing and the evidence says a wrong one is unmissable.**
-Under the mapping above: UniRef50 2.588 (the paper reports ~2.50), Swiss-Prot
-1.983, residue-shuffled Swiss-Prot 2.940, uniform over 20 residues 2.996.
-Corrupting the mapping while keeping ``strict=True`` clean: ``w1``/``v1``
+Under the mapping above, on the 112M: UniRef50 2.588 (the paper reports ~2.50),
+Swiss-Prot 1.983, residue-shuffled Swiss-Prot 2.940, uniform over 20 residues
+2.996. Corrupting the mapping while keeping ``strict=True`` clean: ``w1``/``v1``
 swapped 3.201, gate rows rolled by one expert 3.173. Both are *worse than
 shuffled protein*, so a mapping error cannot hide inside a plausible number --
 provided something looks. :func:`self_check` is the thing that looks.
+
+**Two checkpoints, one packing, two bands.** 112M and 3B ship the same
+megablocks packing under the same tensor names, so
+:func:`convert_megablocks_state_dict` serves both unchanged. What differs is the
+file layout -- the 3B arrives in two safetensors shards named by a
+``model.safetensors.index.json`` -- the placement of the attention, which the
+3B's ``fused_attention_norm`` moves under ``norm_attn_norm``, and above all the
+*number*. A correctly loaded 3B scores far below a correctly loaded 112M, so a
+single shared band would either reject the larger checkpoint or stop
+discriminating on the smaller one. :data:`SELF_CHECK_REFERENCES` therefore
+declares each checkpoint's own measured value and its own corruption controls,
+and a config matching no declared entry is refused rather than gated against
+somebody else's number.
 
 **What this module deliberately does not do.** It imports the patched
 third-party ``progen3`` package by path and nothing else from that tree; the
@@ -101,37 +114,100 @@ SELF_CHECK_SEQUENCES: tuple[str, ...] = (
     "MQALLFISYGAILGASLRWAIGLLFNPLFSSFAFGTLIANLLGCLIIGVLLGFFWQFPQISSEWRLFLITGFLGSLTTFSSFSSEVVELFFNDKWLNGFCVLMMHLFGCLAMTVLGIWIYKICSQLLS",
 )
 
-#: Mean per-token NLL of :data:`SELF_CHECK_SEQUENCES` under this module's own
-#: scoring convention (both directions, every non-pad target, bfloat16, one L20),
-#: for the correct mapping and for every corruption that survives
-#: ``strict=True``. Measured, not quoted: the panel-wide figures in the module
-#: docstring were taken on 64 Swiss-Prot records at 60-400 residues and do not
-#: transfer to this eight-record set.
-MEASURED_SELF_CHECK_NLL = {
-    "correct_mapping": 2.2867,
-    "w1_v1_swapped": 3.1793,
-    "gate_rows_rolled_by_one": 3.3055,
-    "from_pretrained_eager_random_moe": 18.4764,
-}
-
-#: The band :func:`check_nll` accepts, in nats/token.
+#: Half-width of every checkpoint's self-check band, in nats/token.
 #:
-#: Sized from two measurements rather than from taste. The **spread of the
-#: correct model** across everything an environment can plausibly change is
-#: 0.005 nats: bfloat16 and float16 at batch sizes 8, 4 and 1 give 2.2867-2.2879,
-#: and scoring N->C only instead of both directions gives 2.2912. The **distance
-#: to the nearest corruption** that ``strict=True`` cannot see is 0.89 nats
-#: (``w1``/``v1`` swapped, 3.1793). A band of +/-0.3 nats around 2.2867 is
-#: therefore ~60x the observed spread and still leaves 0.58 nats of clearance
-#: below the nearest corruption, so it cannot fail on hardware and cannot pass on
-#: a broken mapping.
+#: Sized from two measurements rather than from taste. The **spread of a
+#: correctly loaded model** across everything an environment can plausibly change
+#: is 0.005 nats: on the 112M, bfloat16 and float16 at batch sizes 8, 4 and 1 give
+#: 2.2867-2.2879, scoring N->C only instead of both directions gives 2.2912, and
+#: CPU bfloat16 gives 2.2884. The **distance to the nearest corruption** that
+#: ``strict=True`` cannot see is 0.89 nats on the 112M and larger on the 3B. A
+#: half-width of 0.3 nats is therefore ~60x the observed spread and still leaves
+#: more than half a nat of clearance below the nearest corruption on both
+#: checkpoints, so it cannot fail on hardware and cannot pass on a broken
+#: mapping. One shared half-width rather than one per checkpoint because it is a
+#: statement about measurement noise, which does not scale with the model; what
+#: does scale is the value it is centred on, and that is declared per checkpoint.
 #:
 #: The lower end is not a numerical tolerance. A value materially *below* the
 #: measured one means the scored-target convention moved -- a mask that stopped
 #: scoring the hard positions, say -- which corrupts every downstream number just
 #: as thoroughly as a wrong expert mapping and would otherwise look like an
 #: improvement.
-SELF_CHECK_NLL_BAND = (2.00, 2.60)
+SELF_CHECK_HALF_WIDTH = 0.30
+
+
+@dataclass(frozen=True)
+class SelfCheckReference:
+    """One checkpoint's measured self-check evidence and the band it licenses.
+
+    ``correct_mapping`` is that checkpoint's own mean per-token NLL of
+    :data:`SELF_CHECK_SEQUENCES` under this module's scoring convention (both
+    directions, every non-pad target, bfloat16); ``corruptions`` are what the
+    mappings that survive ``strict=True`` score on the same eight sequences.
+    Both are measured on the checkpoint they are filed under, never carried over
+    from another one: the panel-wide figures in the module docstring were taken
+    on 64 Swiss-Prot records at 60-400 residues and do not transfer to this
+    eight-record set, and the 112M's figures do not transfer to the 3B.
+
+    A reference with no corruption beside it is a band nobody has shown to
+    discriminate, so :func:`check_nll` publishes the corruptions next to the
+    verdict and the tests hold every declared checkpoint to clearing its own
+    nearest one.
+    """
+
+    name: str
+    correct_mapping: float
+    corruptions: dict[str, float]
+
+    @property
+    def band(self) -> tuple[float, float]:
+        """The interval :func:`check_nll` accepts, in nats/token."""
+
+        return (
+            self.correct_mapping - SELF_CHECK_HALF_WIDTH,
+            self.correct_mapping + SELF_CHECK_HALF_WIDTH,
+        )
+
+    @property
+    def measured(self) -> dict[str, float]:
+        """Every value measured on this checkpoint, correct mapping first."""
+
+        return {"correct_mapping": self.correct_mapping, **self.corruptions}
+
+
+#: The declared checkpoints, keyed by the architecture fingerprint
+#: ``(num_hidden_layers, hidden_size, intermediate_size)`` of the config that was
+#: actually loaded. Keyed by the config rather than by the directory name because
+#: ``TRANSFER_PROGEN3_DIR`` relocates the weights and a mirror is free to rename
+#: the directory, while the shape the state dict has to match is not free to
+#: move.
+SELF_CHECK_REFERENCES: dict[tuple[int, int, int], SelfCheckReference] = {
+    # Measured on one L20, bfloat16 (EXP: progen3_eager_probe). CPU bfloat16
+    # reproduces the correct mapping at 2.2884.
+    (10, 384, 1152): SelfCheckReference(
+        name="progen3-112m",
+        correct_mapping=2.2867,
+        corruptions={
+            "w1_v1_swapped": 3.1793,
+            "gate_rows_rolled_by_one": 3.3055,
+            "from_pretrained_eager_random_moe": 18.4764,
+        },
+    ),
+    # Measured on CPU, bfloat16: the L20s carried other work and none had the
+    # 6 GB the weights need. The environment is one the 112M's own value was
+    # reproduced in to 0.0017 nats, and the nearest corruption here stands 2.13
+    # nats above the band, so the band does not rest on the difference.
+    (24, 1280, 3840): SelfCheckReference(
+        name="progen3-3b",
+        correct_mapping=1.5045,
+        corruptions={
+            "w1_v1_swapped": 4.5841,
+            "gate_rows_rolled_by_one": 3.9304,
+            "from_pretrained_eager_random_moe": 11.7474,
+        },
+    ),
+}
 
 #: ProGen3's attention calls ``F.scaled_dot_product_attention`` inside
 #: ``sdpa_kernel(backends=[SDPBackend.FLASH_ATTENTION])``, and that backend has
@@ -196,6 +272,40 @@ def convert_megablocks_state_dict(
     return converted
 
 
+def release_shards(checkpoint: Path | str = PROGEN3_CHECKPOINT) -> list[Path]:
+    """The safetensors files a release consists of, single-file or sharded.
+
+    ProGen3-112M ships one ``model.safetensors``; ProGen3-3B ships two shards and
+    a ``model.safetensors.index.json`` naming them. Where the index exists it is
+    the authority on which files the release consists of, so a shard it names and
+    the directory does not hold is refused here, by name and as an incomplete
+    release. That is the state an interrupted download leaves behind -- the index
+    is small and arrives first, so it describes more than the directory holds --
+    and safetensors' own error for it names a file that could not be opened
+    without saying that the checkpoint is half there.
+    """
+
+    checkpoint = Path(checkpoint)
+    index = checkpoint / "model.safetensors.index.json"
+    if index.is_file():
+        weight_map = json.loads(index.read_text())["weight_map"]
+        shards = [checkpoint / name for name in sorted(set(weight_map.values()))]
+        absent = [shard.name for shard in shards if not shard.is_file()]
+        if absent:
+            raise FileNotFoundError(
+                f"{index} names {len(shards)} shards and {checkpoint} is missing "
+                f"{absent}; the release is incomplete"
+            )
+        return shards
+    single = checkpoint / "model.safetensors"
+    if single.is_file():
+        return [single]
+    raise FileNotFoundError(
+        f"{checkpoint} holds neither model.safetensors nor "
+        "model.safetensors.index.json; set TRANSFER_PROGEN3_DIR"
+    )
+
+
 def released_state_dict(
     checkpoint: Path | str = PROGEN3_CHECKPOINT,
 ) -> dict[str, torch.Tensor]:
@@ -203,12 +313,16 @@ def released_state_dict(
 
     Exposed because the audit has to compare them against the backbone embedded
     in a replacement checkpoint, and the file layout of the release is this
-    module's business rather than every caller's.
+    module's business rather than every caller's -- including whether it arrives
+    in one file or several.
     """
 
     from safetensors.torch import load_file  # noqa: PLC0415
 
-    return load_file(str(Path(checkpoint) / "model.safetensors"))
+    state: dict[str, torch.Tensor] = {}
+    for shard in release_shards(checkpoint):
+        state.update(load_file(str(shard)))
+    return state
 
 
 def strict_load(model: torch.nn.Module, state: dict[str, torch.Tensor]) -> None:
@@ -242,7 +356,7 @@ def strict_load(model: torch.nn.Module, state: dict[str, torch.Tensor]) -> None:
 
 @dataclass(frozen=True)
 class ProGen3:
-    """A loaded ProGen3-112M and the handful of handles the audit needs."""
+    """A loaded ProGen3 checkpoint and the handful of handles the audit needs."""
 
     model: Any
     config: Any
@@ -279,13 +393,17 @@ class ProGen3:
 
         The counterpart of :attr:`moe_blocks`: one declaration of where a layer's
         attention lives, so :func:`ablated` addresses ``o_proj`` through it rather
-        than by walking the module tree itself. The released config sets
-        ``fused_attention_norm`` false, so the attention sits directly on the
-        decoder layer; a checkpoint that set it true would put the attention under
-        ``norm_attn_norm`` and this property would raise ``AttributeError`` rather
-        than silently address the wrong module.
+        than by walking the module tree itself. ``fused_attention_norm`` decides
+        which of two places that is -- directly on the decoder layer, as on the
+        112M, or under ``norm_attn_norm``, as on the 3B -- and it is read from the
+        config rather than guessed from the module tree, so a layout that is
+        neither raises ``AttributeError`` rather than silently addressing the
+        wrong module. Both layouts run the same ``_sdpa_attn``, so the
+        head-to-column correspondence :func:`ablated` relies on is the same one.
         """
 
+        if self.config.fused_attention_norm:
+            return [layer.norm_attn_norm.self_attn for layer in self.model.model.layers]
         return [layer.self_attn for layer in self.model.model.layers]
 
     def batch(self, sequences: list[str], *, reverse: bool = False) -> dict[str, torch.Tensor]:
@@ -303,13 +421,13 @@ def load_progen3(
     dtype: torch.dtype = torch.bfloat16,
     source: Path | str = PROGEN3_SOURCE,
 ) -> ProGen3:
-    """Load ProGen3-112M with every expert and router actually loaded.
+    """Load a released ProGen3 checkpoint with every expert and router loaded.
 
     Every step that could fail silently is made to fail loudly instead: the
-    third-party package must be present at ``source``, the checkpoint must be
-    present, the packed shapes must match the config, and the converted state
-    dict must match the model exactly. What is left is checked numerically by
-    :func:`self_check`.
+    third-party package must be present at ``source``, the release must be
+    present and complete, the packed shapes must match the config, and the
+    converted state dict must match the model exactly. What is left is checked
+    numerically by :func:`self_check`.
     """
 
     checkpoint = Path(checkpoint)
@@ -325,23 +443,22 @@ def load_progen3(
             f"no progen3 package under {source}; set TRANSFER_PROGEN3_SRC to the "
             "src/ directory of the patched third-party copy"
         )
-    if not (checkpoint / "model.safetensors").is_file():
-        raise FileNotFoundError(
-            f"{checkpoint} holds no model.safetensors; set TRANSFER_PROGEN3_DIR"
-        )
+    # Before the third-party import and before the model is built, so that an
+    # absent or half-downloaded release is named as such rather than surfacing
+    # later as a missing config or a missing key.
+    raw = released_state_dict(checkpoint)
     if str(source) not in sys.path:
         sys.path.insert(0, str(source))
 
     from progen3.batch_preparer import ProGen3BatchPreparer  # noqa: PLC0415
     from progen3.config import ProGen3Config  # noqa: PLC0415
     from progen3.modeling import ProGen3ForCausalLM  # noqa: PLC0415
-    from safetensors.torch import load_file  # noqa: PLC0415
 
     settings = json.loads((checkpoint / "config.json").read_text())
     settings["moe_implementation"] = "eager"
     config = ProGen3Config(**settings)
     converted = convert_megablocks_state_dict(
-        load_file(str(checkpoint / "model.safetensors")),
+        raw,
         num_experts=config.num_experts,
         intermediate_size=config.intermediate_size,
     )
@@ -444,29 +561,59 @@ def mean_nll(pg: ProGen3, sequences: list[str], **kwargs: Any) -> float:
 # ------------------------------------------------------------------ self-check
 
 
-def check_nll(
-    value: float, *, band: tuple[float, float] = SELF_CHECK_NLL_BAND
-) -> dict[str, Any]:
-    """Refuse an NLL outside the declared sanity band.
+def self_check_reference(config: Any) -> SelfCheckReference:
+    """The declared self-check evidence for the checkpoint ``config`` describes.
 
-    Separated from :func:`self_check` so that the band can be tested against the
-    recorded corruption values without a checkpoint or a GPU.
+    An undeclared architecture is refused rather than gated against another
+    checkpoint's number. A band is a tripwire only where the value it brackets
+    and the corruptions it clears were measured on the checkpoint being scored;
+    borrowed, it is either a band that rejects a correct load or one no wrong
+    mapping can fall outside, and both are worse than no gate because both come
+    with a verdict.
     """
 
-    low, high = band
+    fingerprint = (
+        int(config.num_hidden_layers),
+        int(config.hidden_size),
+        int(config.intermediate_size),
+    )
+    reference = SELF_CHECK_REFERENCES.get(fingerprint)
+    if reference is None:
+        raise KeyError(
+            "no self-check reference has been measured for a ProGen3 with "
+            f"(layers, hidden, intermediate) = {fingerprint}, so its loader gate "
+            "would degenerate to 'did it load' -- which this checkpoint's eager "
+            "path passes with every expert random. Measure the correct mapping "
+            "and at least one strict-clean corruption on SELF_CHECK_SEQUENCES, "
+            "then declare them in SELF_CHECK_REFERENCES. Declared: "
+            f"{[declared.name for declared in SELF_CHECK_REFERENCES.values()]}"
+        )
+    return reference
+
+
+def check_nll(reference: SelfCheckReference, value: float) -> dict[str, Any]:
+    """Refuse an NLL outside the band this checkpoint's own measurement declares.
+
+    Separated from :func:`self_check` so that each declared band can be tested
+    against its own recorded corruption values without a checkpoint or a GPU.
+    """
+
+    low, high = reference.band
     inside = low <= value <= high
     record = {
+        "checkpoint": reference.name,
         "nll": float(value),
         "band": [float(low), float(high)],
         "n_sequences": len(SELF_CHECK_SEQUENCES),
-        "reference": dict(MEASURED_SELF_CHECK_NLL),
+        "reference": dict(reference.measured),
         "verdict": "PASS" if inside else "FAIL",
     }
     if not inside:
         raise RuntimeError(
-            f"ProGen3 self-check NLL {value:.4f} nats/token is outside the declared "
-            f"band [{low}, {high}]. Reference values on the same eight sequences: "
-            f"{MEASURED_SELF_CHECK_NLL}. Above the band the most likely cause is a "
+            f"ProGen3 self-check NLL {value:.4f} nats/token is outside the band "
+            f"[{low:.4f}, {high:.4f}] declared for {reference.name}. Values "
+            f"measured on that checkpoint over the same eight sequences: "
+            f"{reference.measured}. Above the band the most likely cause is a "
             "wrong expert or router mapping, which load_state_dict(strict=True) "
             "cannot see; below it, a change to the scored-target convention. "
             "Either way the model must not be measured until this is resolved."
@@ -475,9 +622,16 @@ def check_nll(
 
 
 def self_check(pg: ProGen3, *, batch_size: int = 8) -> dict[str, Any]:
-    """Score the frozen sequences and refuse unless the NLL is in band."""
+    """Score the frozen sequences and refuse unless the NLL is in band.
 
-    return check_nll(mean_nll(pg, list(SELF_CHECK_SEQUENCES), batch_size=batch_size))
+    The reference is resolved before the model is scored, so a checkpoint nobody
+    has measured costs a refusal rather than a forward pass and a number.
+    """
+
+    reference = self_check_reference(pg.config)
+    return check_nll(
+        reference, mean_nll(pg, list(SELF_CHECK_SEQUENCES), batch_size=batch_size)
+    )
 
 
 # ------------------------------------------------------- interventions and taps
