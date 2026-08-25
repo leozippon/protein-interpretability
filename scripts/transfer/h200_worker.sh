@@ -3,16 +3,16 @@ set -euo pipefail
 
 # Worker for the H200 transfer-measurement campaign. Runs inside an
 # H200 pod, invoked by ../run_transfer_h200.sh (the controller) via
-# ~/hangzhou-remote/ssh_tunnel/h200_pod_exec.sh against the frozen code
+# `~/hangzhou-compute/h200 exec` against the frozen code
 # snapshot this file ships inside of. Do not invoke this script directly
 # from the local L20 host -- it assumes GPFS-mounted models and data.
 #
 # NEVER DELETE OR RECREATE THE RESULTS ROOT. --results-root is a shared
 # GPFS directory that other tracks also write into; `git clean -fdx` run
-# inside  (its own git repo, /results/
-# gitignored) has already destroyed completed experiment artefacts three
-# times, and 04_circuit_primitives.py's own source comments independently
-# record the same results-root disappearing mid-run. This script only ever
+# inside a checkout that keeps its own results directory gitignored has
+# already destroyed completed experiment artefacts three times, and
+# 04_circuit_primitives.py's own source comments independently record the
+# same results-root disappearing mid-run. This script only ever
 # creates directories (mkdir -p) and moves individual files into place
 # inside them; it never removes or replaces the results root itself, and
 # the only `rm -rf` calls in this file target temp directories this
