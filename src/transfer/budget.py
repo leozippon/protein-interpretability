@@ -77,6 +77,7 @@ from .arms import (
     Arm,
     Cohort,
     conditioning_boundary_ids,
+    output_logit_width,
     require_scoring_target_ids,
     scoring_target_alphabet,
     symbols_per_token,
@@ -797,15 +798,18 @@ def truncation_curve(
     if max_len <= longest + 1:
         raise ValueError("max_len must exceed the longest requested context by at least two")
 
-    if not _supports_trimmed_logits(arm) and int(arm.model.config.vocab_size) > 1024:
+    logit_width = output_logit_width(arm)
+    if not _supports_trimmed_logits(arm) and int(logit_width["size"]) > 1024:
         raise RuntimeError(
-            f"{arm.name}: vocabulary of {arm.model.config.vocab_size} without "
-            "logits_to_keep support; the full logit tensor would dominate memory. "
+            f"{arm.name}: live logit width of {logit_width['size']} "
+            f"(source {logit_width['source']}) without logits_to_keep support; "
+            "the full logit tensor would dominate memory. "
             f"transformers {transformers.__version__} does not expose "
             "logits_to_keep on this architecture's forward; 4.57.3 does for the "
             "GPT-2 family. Relaxing the guard is not a free port: the untrimmed "
             "path is a different unembedding kernel and would not reproduce a "
-            "curve measured on the trimmed one"
+            "curve measured on the trimmed one. This width is the model interface, "
+            "not the scoring-target alphabet, and is not cropped"
         )
 
     generator = np.random.default_rng(seed)

@@ -2491,9 +2491,9 @@ def perturbable_arms(campaign_panel: Sequence[str]) -> list[str]:
     * the **staged non-members** (:data:`src.transfer.arms.STAGED_ARMS`), which
       complete ``src.transfer.arms.PROTEIN_SCALE_LADDER``. They are reachable
       here and not in :data:`~src.transfer.arms.PANEL` because a panel arm
-      carries campaign obligations -- above all the ``budget`` family, whose
-      ``arm_power`` reads ``config.vocab_size`` -- that a tolerance measurement
-      does not need and that these two checkpoints cannot meet.
+      carries campaign obligations that a tolerance measurement does not need.
+      The staged rungs declare a scoring-target alphabet for opt-in budget
+      scoring; that grant is not panel admission.
 
     Both additions still require a measured loader band, so an arm nobody has
     scored on the frozen inputs is not reachable from here either.

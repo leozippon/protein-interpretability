@@ -961,23 +961,20 @@ def register_arm_spec(member: LadderMember, probe: Mapping[str, Any]) -> ArmSpec
     A checkpoint that ``src.transfer.arms.STAGED_ARMS`` declares a **non**-member
     is refused too, and for a stronger reason than consistency. That table is the
     declaration that a checkpoint loads and runs and must still not enter a
-    panel-wide statistic; ``progen2-large`` and ``progen2-xlarge`` are in it
-    because ``budget.arm_power`` reads ``config.vocab_size``, which the first
-    declares as 51200 against a 31-token tokenizer and the second does not
-    declare at all. Registering either into ``PANEL`` here would hand this
-    control's ``arm_power`` call a plug-in entropy over a mostly dead alphabet in
-    one case and an ``AttributeError`` in the other, and would additionally give
-    the name two live declarations with different capability sets.
+    panel-wide statistic. ``progen2-large`` and ``progen2-xlarge`` remain outside
+    :data:`PANEL` even though they now declare a scoring-target alphabet of 32
+    for opt-in budget measurements: registering either here would give the name
+    two live declarations with different capability sets and would treat a
+    staged scale rung as a campaign arm.
     """
 
     if member.name in STAGED_ARMS:
         raise ValueError(
             f"{member.name} is declared in src.transfer.arms.STAGED_ARMS as a staged "
-            "NON-member of the panel, so it must not be registered into PANEL. Its "
-            f"recorded reason is that quantities derived from config.vocab_size are "
-            "not defined for it; a measurement that needs none of them reaches it "
-            "through arms.arm_spec and arms.load_arm_spec instead. Name it out of "
-            "this run with --members, or declare a ladder table without it"
+            "NON-member of the panel, so it must not be registered into PANEL. An "
+            "opt-in measurement that needs the declared scoring-target alphabet "
+            "reaches it through arms.arm_spec and arms.load_arm_spec instead. Name "
+            "it out of this run with --members, or declare a ladder table without it"
         )
     existing = PANEL.get(member.name)
     if existing is not None:

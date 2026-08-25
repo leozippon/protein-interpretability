@@ -355,6 +355,25 @@ def _arm_spec_record(name: str) -> dict[str, Any]:
     return record
 
 
+def _cohort_power_stage_contract(names: list[str]) -> dict[str, Any]:
+    """Panel contract for panel arms; a staged-only run must not impersonate one."""
+
+    panel_names = [name for name in names if name in PANEL]
+    staged = [name for name in names if name in STAGED_SCALE_ARMS]
+    if not panel_names and staged:
+        return {
+            "stage": "cohort_power",
+            "not_panel_admission": True,
+            "measured": [],
+            "measured_staged_arms": staged,
+            "note": (
+                "staged scale qualification; panel_contract was not asked to "
+                "admit these arms and this is not an empty campaign-panel run"
+            ),
+        }
+    return stage_contract_record("cohort_power", panel_names)
+
+
 def _staged_scale_record(names: list[str], allow_staged: bool) -> dict[str, Any] | None:
     staged = [name for name in names if name in STAGED_SCALE_ARMS]
     if not staged:
@@ -789,9 +808,7 @@ def main() -> None:
             "token_shuffle_control": None if control_seed is None else int(control_seed),
         },
         "cohort_sampling": sampling,
-        "stage_contract": stage_contract_record(
-            "cohort_power", [name for name in names if name in PANEL]
-        ),
+        "stage_contract": _cohort_power_stage_contract(names),
         "unigram_baseline": {
             "estimator": args.unigram_estimator,
             "reference_size_requested": int(args.unigram_reference_size),

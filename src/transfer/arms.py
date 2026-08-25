@@ -948,6 +948,62 @@ def require_scoring_target_ids(
         )
 
 
+def output_logit_width(arm: Arm) -> dict[str, Any]:
+    """Live output-column count of a loaded checkpoint.
+
+    This is the model's real interface width, not the scoring-target alphabet.
+    Truncation-curve memory guards and similar checks must use this, never 32
+    on a staged ProGen2 rung. The live head is preferred; config.vocab_size and
+    then config.vocab_size_lm_head are fallbacks. Tokenizer length is not a
+    substitute, and nothing here crops or renormalises logits.
+    """
+
+    name = arm.name
+    model = arm.model
+    head = getattr(model, "lm_head", None)
+    if head is not None:
+        out_features = getattr(head, "out_features", None)
+        if out_features is not None:
+            size = int(out_features)
+            source = "lm_head.out_features"
+        else:
+            weight = getattr(head, "weight", None)
+            shape = getattr(weight, "shape", None) if weight is not None else None
+            if shape is None or len(shape) < 1:
+                size = 0
+                source = ""
+            else:
+                size = int(shape[0])
+                source = "lm_head.weight.shape[0]"
+        if size >= 1:
+            return {"size": size, "source": source, "arm": name}
+    config = getattr(model, "config", None)
+    if config is not None:
+        if hasattr(config, "vocab_size"):
+            raw = config.vocab_size
+            if raw is not None:
+                size = int(raw)
+                if size >= 1:
+                    return {
+                        "size": size,
+                        "source": "config.vocab_size",
+                        "arm": name,
+                    }
+        lm_head = getattr(config, "vocab_size_lm_head", None)
+        if lm_head is not None:
+            size = int(lm_head)
+            if size >= 1:
+                return {
+                    "size": size,
+                    "source": "config.vocab_size_lm_head",
+                    "arm": name,
+                }
+    raise ValueError(
+        f"{name}: cannot resolve the live logit width from the output head or "
+        "config; tokenizer length is not a substitute"
+    )
+
+
 #: The four-rung protein scale ladder: one lineage, one 31-token residue
 #: tokenizer, one UniRef90+BFD30 mixture, 151M -> 765M -> 2.78B -> 6.44B.
 #:

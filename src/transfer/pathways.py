@@ -40,7 +40,7 @@ from typing import Any, NamedTuple
 import numpy as np
 import torch
 
-from .arms import Arm, Cohort, tokenize_batch
+from .arms import Arm, Cohort, require_scoring_target_ids, scoring_target_alphabet, tokenize_batch
 from .budget import ratio_denominator_admissibility
 from .scoring import (
     aggregate_variant,
@@ -676,13 +676,12 @@ def measure_pathways(
     targets_by_scope = {scope.name: scope.resolve(arm.n_layer) for scope in scopes}
     for targets in targets_by_scope.values():
         bank.covers(targets)
-    # ``config.vocab_size`` is read below as the alphabet the target-token counts
-    # are taken over, and it is not the alphabet on every checkpoint this
-    # repository can load; the refusal belongs where the key is read. See
-    # :func:`src.transfer.budget.arm_power_with_records` for the two checkpoints
-    # this is about.
+    # The scoring-target alphabet is the support the target-token counts are
+    # taken over, not the live logit width. See
+    # :func:`src.transfer.arms.scoring_target_alphabet`.
     arm.require("budget")
-    vocab = int(arm.model.config.vocab_size)
+    alphabet = scoring_target_alphabet(arm.spec, getattr(arm.model, "config", None))
+    vocab = int(alphabet["size"])
     counts = torch.zeros(vocab, dtype=torch.int64, device=arm.device)
     rows_by_scope: dict[str, list[dict[str, float | int]]] = {name: [] for name in names}
     scored_tokens = 0
@@ -695,8 +694,10 @@ def measure_pathways(
         if not torch.isfinite(clean_logits).all():
             raise FloatingPointError(f"{arm.name}: non-finite clean logits")
         targets_in_batch = batch.input_ids[:, 1:][batch.target_mask]
-        if int(targets_in_batch.max()) >= vocab:
-            raise ValueError(f"{arm.name}: target token id outside the declared vocabulary")
+        if int(targets_in_batch.numel()) > 0:
+            require_scoring_target_ids(
+                targets_in_batch.detach().cpu().numpy(), alphabet, arm=arm.name
+            )
         counts += torch.bincount(targets_in_batch, minlength=vocab)
         scored_tokens += int(targets_in_batch.numel())
         scored_sequences += len(batch.sequence_indices)
@@ -767,19 +768,18 @@ def cohort_target_token_counts(arm: Arm, cohort: Cohort, *, max_len: int) -> np.
 
     if max_len < 2:
         raise ValueError("max_len must admit at least one next-token target")
-    # As in :func:`measure_pathways`: the vocabulary read below is a config key,
-    # not a measured alphabet, so the capability that declares the key readable
-    # is required where it is read.
+    # As in :func:`measure_pathways`: the scoring-target alphabet is required
+    # where the counts are allocated.
     arm.require("budget")
-    vocab = int(arm.model.config.vocab_size)
+    alphabet = scoring_target_alphabet(arm.spec, getattr(arm.model, "config", None))
+    vocab = int(alphabet["size"])
     counts = np.zeros(vocab, dtype=np.int64)
     for text in cohort.input_strings(arm):
         ids = arm.tokenizer(text, return_tensors=None)["input_ids"][:max_len]
         if len(ids) < 2:
             continue
         targets = np.asarray(ids[1:], dtype=np.int64)
-        if targets.min() < 0 or targets.max() >= vocab:
-            raise ValueError(f"{arm.name}: token id outside the declared vocabulary")
+        require_scoring_target_ids(targets, alphabet, arm=arm.name)
         counts += np.bincount(targets, minlength=vocab)
     if counts.sum() < 1:
         raise RuntimeError(f"{arm.name}: cohort {cohort.name!r} yields no next-token targets")

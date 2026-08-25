@@ -25,11 +25,14 @@ from src.transfer.arms import (  # noqa: E402
     STAGED_ARMS,
     STAGED_SCALE_ARMS,
     Arm,
+    Cohort,
+    output_logit_width,
     require_scoring_target_ids,
     scoring_target_alphabet,
 )
 from src.transfer.budget import record_statistics  # noqa: E402
 from src.transfer.budget import ScoredTokens  # noqa: E402
+from src.transfer.pathways import cohort_target_token_counts  # noqa: E402
 
 
 def _load_stage(filename: str):
@@ -42,10 +45,12 @@ def _load_stage(filename: str):
 
 
 class _Config:
-    def __init__(self, vocab_size=None, *, missing=False):
+    def __init__(self, vocab_size=None, *, missing=False, vocab_size_lm_head=None):
         self._missing = missing
         if not missing:
             self.vocab_size = vocab_size
+        if vocab_size_lm_head is not None:
+            self.vocab_size_lm_head = vocab_size_lm_head
 
     def __getattribute__(self, name):
         if name == "vocab_size" and object.__getattribute__(self, "_missing"):
@@ -187,6 +192,66 @@ def test_cohort_power_stage_contract_does_not_claim_staged_admission():
     assert staged_spec["scoring_target_alphabet_size"] == 32
 
 
+def test_cohort_power_staged_only_contract_is_not_an_empty_panel_run():
+    stage = _load_stage("01_cohort_power.py")
+    contract = stage._cohort_power_stage_contract(["progen2-large", "progen2-xlarge"])
+    assert contract["not_panel_admission"] is True
+    assert contract["measured_staged_arms"] == ["progen2-large", "progen2-xlarge"]
+    assert "eligible_for_this_stage" not in contract.get("arm_selection", {})
+    mixed = stage._cohort_power_stage_contract(["progen2-medium", "progen2-large"])
+    assert mixed["arm_selection"]["measured"] == ["progen2-medium"]
+    default = stage._cohort_power_stage_contract(["progen2-medium"])
+    assert default["arm_selection"]["measured"] == ["progen2-medium"]
+
+
+def test_pathways_counts_use_the_declared_scoring_alphabet():
+    spec = STAGED_ARMS["progen2-large"]
+    arm = _arm(spec, vocab_size=51200)
+
+    class _Tok:
+        def __call__(self, text, return_tensors=None):
+            return {"input_ids": [1, 2, 3]}
+
+    arm.tokenizer = _Tok()
+    cohort = Cohort(
+        name="stub", kind="protein", records=["MKT", "AAA"], min_symbols=0, max_symbols=8
+    )
+    counts = cohort_target_token_counts(arm, cohort, max_len=8)
+    assert counts.shape == (32,)
+    xlarge = _arm(STAGED_ARMS["progen2-xlarge"], missing=True)
+    xlarge.tokenizer = _Tok()
+    counts = cohort_target_token_counts(xlarge, cohort, max_len=8)
+    assert counts.shape == (32,)
+
+
+def test_live_logit_width_is_not_the_scoring_alphabet():
+    spec = STAGED_ARMS["progen2-xlarge"]
+    head = SimpleNamespace(out_features=51200)
+    arm = Arm(
+        spec=spec,
+        model=SimpleNamespace(config=_Config(missing=True), lm_head=head),
+        tokenizer=_Tokenizer(),
+        device="cpu",
+        dtype="float32",
+    )
+    width = output_logit_width(arm)
+    assert width["size"] == 51200
+    assert width["source"] == "lm_head.out_features"
+    assert scoring_target_alphabet(spec)["size"] == 32
+    config_only = Arm(
+        spec=spec,
+        model=SimpleNamespace(
+            config=_Config(missing=True, vocab_size_lm_head=51200), lm_head=None
+        ),
+        tokenizer=_Tokenizer(),
+        device="cpu",
+        dtype="float32",
+    )
+    fallback = output_logit_width(config_only)
+    assert fallback["size"] == 51200
+    assert fallback["source"] == "config.vocab_size_lm_head"
+
+
 # ------------------------------------------------------------- stages 20 / 29
 
 
@@ -220,7 +285,7 @@ def test_designed_referent_default_arms_and_progen3_exclusion_are_unchanged():
     )
 
 
-# ------------------------------------------------------------- stage 42
+# ------------------------------------------------------------- stage 42 fixtures
 
 
 def _dms_model(arm: str, rhos: dict[str, float], digest: str = "d0") -> dict:
@@ -269,14 +334,38 @@ def _mega_model(arm: str, values: dict[str, float], digest: str, *, kind: str) -
     }
 
 
-def _baselines(names: list[str], digest: str) -> dict:
+def _baselines(entries: dict[str, str], digest: str) -> dict:
+    """entries maps wild-type name to kind."""
+
     return {
         "cohort_sha256": digest,
         "wildtypes": {
-            name: {"spearman": {"blosum62": 0.05, "hydropathy_change": 0.02}}
-            for name in names
+            name: {
+                "kind": kind,
+                "unit": f"u{index % 8}",
+                "n_variants": 40,
+                "spearman": {"blosum62": 0.05, "hydropathy_change": 0.02},
+            }
+            for index, (name, kind) in enumerate(entries.items())
         },
     }
+
+
+def _stage41_report(blocks: tuple[str, ...] = ("b0",), *, status: str = "PASS") -> dict:
+    rows = []
+    for block_id in blocks:
+        for arm in ("progen2-medium", "progen2-large", "progen2-xlarge"):
+            rows.append(
+                {
+                    "block_id": block_id,
+                    "arm": arm,
+                    "is_unigram_null_control": False,
+                    "cohort_digest": f"digest-{block_id}",
+                    "per_arm_identification_status": status,
+                    "displacement_corrected_ci_95": [0.2, 0.8],
+                }
+            )
+    return {"arm_results": rows, "summary": {"arms": []}}
 
 
 def test_scale_capability_refuses_a_mutant_digest_mismatch():
@@ -288,7 +377,30 @@ def test_scale_capability_refuses_a_mutant_digest_mismatch():
         "progen2-xlarge": _dms_model("progen2-xlarge", assays, "aaa"),
     }
     with pytest.raises(ValueError, match="mutant_digest"):
-        stage.align_dms(models, _lookup(assays, digest="aaa"))
+        stage.align_dms(models, _lookup(assays, digest="aaa"), require_fixed_census=False)
+
+
+def test_scale_capability_refuses_a_shared_missing_assay():
+    stage = _load_stage("42_scale_capability.py")
+    assays = {f"a{i}": 0.2 for i in range(8)}
+    shrunk = {name: value for name, value in assays.items() if name != "a0"}
+    models = {
+        name: _dms_model(name, shrunk)
+        for name in ("progen2-medium", "progen2-large", "progen2-xlarge")
+    }
+    with pytest.raises(ValueError, match="assay set disagrees"):
+        stage.align_dms(models, _lookup(assays), require_fixed_census=False)
+
+
+def test_scale_capability_refuses_a_shrunk_dms_census():
+    stage = _load_stage("42_scale_capability.py")
+    assays = {f"a{i}": 0.2 for i in range(8)}
+    models = {
+        name: _dms_model(name, assays)
+        for name in ("progen2-medium", "progen2-large", "progen2-xlarge")
+    }
+    with pytest.raises(ValueError, match="not the fixed 217"):
+        stage.align_dms(models, _lookup(assays), require_fixed_census=True)
 
 
 def test_scale_capability_refuses_a_cohort_digest_mismatch():
@@ -302,46 +414,118 @@ def test_scale_capability_refuses_a_cohort_digest_mismatch():
     }
     with pytest.raises(ValueError, match="cohort_sha256"):
         stage.align_megascale(
-            models, _baselines(names, "one"), side="design", baseline_name="blosum62"
+            models,
+            _baselines({name: "design" for name in names}, "one"),
+            side="design",
+            baseline_name="blosum62",
+            require_fixed_census=False,
         )
 
 
-def test_scale_capability_refuses_the_wrong_rung_set():
+def test_scale_capability_refuses_a_shrunk_megascale_census():
     stage = _load_stage("42_scale_capability.py")
+    names = [f"d{i}" for i in range(8)]
+    values = {name: 0.2 for name in names}
+    models = {
+        name: _mega_model(name, values, "one", kind="design")
+        for name in ("progen2-medium", "progen2-large", "progen2-xlarge")
+    }
+    with pytest.raises(ValueError, match="not the fixed 130"):
+        stage.align_megascale(
+            models,
+            _baselines({name: "design" for name in names}, "one"),
+            side="design",
+            baseline_name="blosum62",
+            require_fixed_census=True,
+        )
+
+
+def test_scale_capability_refuses_the_wrong_rung_order():
+    stage = _load_stage("42_scale_capability.py")
+    with pytest.raises(ValueError, match="fixed as"):
+        stage.require_rung_order(["progen2-large", "progen2-medium", "progen2-xlarge"])
     with pytest.raises(ValueError, match="fixed as"):
         stage.require_rung_order(["progen2-small", "progen2-medium", "progen2-large"])
 
 
-def test_descriptive_gate_transition_needs_both_conditions():
+def test_bootstrap_seed_is_the_declared_constant():
     stage = _load_stage("42_scale_capability.py")
-    beats = {"interval": [0.01, 0.10], "degenerate": False}
-    delta = {"interval": [0.02, 0.08], "degenerate": False}
-    assert stage.descriptive_gate_transition(beats, delta) is True
+    assert stage.DEFAULT_BOOTSTRAP_SEED == 20260825
+
+
+def test_compound_megascale_gate_needs_all_five_conditions():
+    stage = _load_stage("42_scale_capability.py")
+    positive = {"interval": [0.02, 0.10], "degenerate": False}
+    negative = {"interval": [-0.02, 0.08], "degenerate": False}
+    missing = {"interval": None, "degenerate": True}
+    pair = "progen2-medium__progen2-large"
+
+    def _bundle(design_delta=positive, natural_delta=negative, **overrides):
+        larger = {
+            "progen2-large": positive,
+            "progen2-medium": positive,
+            "progen2-xlarge": positive,
+        }
+        larger.update(overrides)
+        larger = dict(larger)
+        pairs = {
+            "progen2-medium__progen2-large": design_delta,
+            "progen2-large__progen2-xlarge": design_delta,
+        }
+        natural_pairs = {
+            "progen2-medium__progen2-large": natural_delta,
+            "progen2-large__progen2-xlarge": natural_delta,
+        }
+        return {
+            "designs": {
+                "model_minus_hydropathy": {"per_rung": dict(larger)},
+                "model_minus_blosum62": {"per_rung": dict(larger)},
+                "raw_spearman": {"adjacent_delta_rho": pairs},
+            },
+            "control": {
+                "model_minus_hydropathy": {"per_rung": dict(larger)},
+                "model_minus_blosum62": {"per_rung": dict(larger)},
+                "raw_spearman": {"adjacent_delta_rho": natural_pairs},
+            },
+        }
+
+    both_pairs = {
+        "progen2-medium__progen2-large": positive,
+        "progen2-large__progen2-xlarge": positive,
+    }
+    dms = {
+        "model_minus_lookup": {
+            "per_rung": {
+                "progen2-medium": positive,
+                "progen2-large": positive,
+                "progen2-xlarge": positive,
+            }
+        },
+        "raw_spearman": {"adjacent_delta_rho": both_pairs},
+    }
+    gates = stage.descriptive_gate_transitions(dms, _bundle())
+    assert gates["megascale"][pair]["verdict"] is True
+    assert "natural_raw_spearman_delta" not in gates["megascale"][pair]["conditions"]
+    assert gates["megascale"][pair]["reported_not_gated"]["natural_raw_spearman_delta"] is False
+    failed = _bundle()
+    failed["designs"]["model_minus_blosum62"]["per_rung"]["progen2-large"] = negative
+    assert stage.descriptive_gate_transitions(dms, failed)["megascale"][pair]["verdict"] is False
+    unresolved = _bundle()
+    unresolved["control"]["model_minus_hydropathy"]["per_rung"]["progen2-large"] = missing
     assert (
-        stage.descriptive_gate_transition({"interval": [-0.01, 0.10], "degenerate": False}, delta)
-        is False
-    )
-    assert (
-        stage.descriptive_gate_transition(beats, {"interval": [-0.02, 0.08], "degenerate": False})
-        is False
-    )
-    assert (
-        stage.descriptive_gate_transition({"interval": None, "degenerate": True}, delta)
+        stage.descriptive_gate_transitions(dms, unresolved)["megascale"][pair]["verdict"]
         == "unresolved"
     )
+    assert gates["dms"][pair]["blosum62_is_not_a_dms_gate"] is True
 
 
-def test_compare_scale_writes_the_required_claims_and_no_total(tmp_path):
-    stage = _load_stage("42_scale_capability.py")
+def _small_compare_payloads():
     assays = {f"a{i}": 0.20 + 0.01 * (i % 3) for i in range(16)}
     designs = {f"d{i}": 0.15 + 0.01 * (i % 3) for i in range(16)}
     naturals = {f"n{i}": 0.12 + 0.01 * (i % 3) for i in range(16)}
     digest = "abc123"
     dms_models = {
-        name: _dms_model(
-            name,
-            {key: value + offset for key, value in assays.items()},
-        )
+        name: _dms_model(name, {key: value + offset for key, value in assays.items()})
         for name, offset in (
             ("progen2-medium", 0.00),
             ("progen2-large", 0.05),
@@ -362,46 +546,74 @@ def test_compare_scale_writes_the_required_claims_and_no_total(tmp_path):
         )
         design_block["wildtypes"].update(natural_block["wildtypes"])
         mega_models[name] = design_block
-    baselines = _baselines(list(designs) + list(naturals), digest)
+    kinds = {name: "design" for name in designs}
+    kinds.update({name: "natural" for name in naturals})
+    return dms_models, _lookup(assays), mega_models, _baselines(kinds, digest)
+
+
+def test_compare_scale_writes_the_required_claims_and_no_total():
+    stage = _load_stage("42_scale_capability.py")
+    dms_models, lookup, mega_models, baselines = _small_compare_payloads()
     payload = stage.compare_scale(
         dms_models=dms_models,
-        lookup=_lookup(assays),
+        lookup=lookup,
         megascale_models=mega_models,
         baselines=baselines,
         fragment_order=None,
-        qualification=None,
+        qualification_report=_stage41_report(),
         resamples=200,
         seed=1,
+        require_fixed_census=False,
     )
     assert payload["descriptive_not_causal"] is True
     assert payload["no_biological_knowledge_claim"] is True
     assert payload["not_panel_admission"] is True
     assert payload["no_cross_task_total"] is True
     assert "total_score" not in payload
-    assert "composite" not in payload
-    assert "UniRef90" in payload["corpus_identification_bound"]
-    dms_lookup = payload["dms"]["model_minus_lookup"]
-    assert set(dms_lookup["per_rung"]) == set(stage.SCALE_RUNGS)
-    assert "progen2-medium__progen2-large" in dms_lookup["adjacent_delta_rho"]
-    gate = dms_lookup["adjacent_delta_rho"]["progen2-medium__progen2-large"][
-        "descriptive_gate_transition"
-    ]
-    assert gate in (True, False, "unresolved")
-    assert payload["megascale"]["designs"]["model_minus_hydropathy"]
-    assert payload["megascale"]["control"]["model_minus_blosum62"]
+    assert "descriptive_gate_transition" not in payload["dms"]["model_minus_lookup"][
+        "adjacent_delta_rho"
+    ]["progen2-medium__progen2-large"]
+    assert "descriptive_gate_transitions" in payload
+    assert payload["qualification"]["passed"] is True
     assert payload["fragment_order"] is None
 
 
-def test_stage41_summary_must_name_every_rung():
+def test_stage41_summary_only_is_refused():
     stage = _load_stage("42_scale_capability.py")
-    with pytest.raises(ValueError, match="stage-41"):
-        stage._qualification({"arms": [{"arm": "progen2-medium", "status": "PASS"}]})
-    record = stage._qualification(
-        {
-            "arms": [
-                {"arm": name, "status": "PASS", "present": True}
-                for name in stage.SCALE_RUNGS
-            ]
-        }
-    )
-    assert record["rungs"]["progen2-large"]["status"] == "PASS"
+    with pytest.raises(ValueError, match="summary-only"):
+        stage.qualify_stage41({"summary": {"arms": [{"arm": "progen2-medium", "status": "PASS"}]}})
+
+
+def test_stage41_missing_block_is_refused():
+    stage = _load_stage("42_scale_capability.py")
+    report = _stage41_report(("b0", "b1"))
+    report["arm_results"] = [
+        row for row in report["arm_results"] if not (row["arm"] == "progen2-large" and row["block_id"] == "b1")
+    ]
+    with pytest.raises(ValueError, match="covers blocks"):
+        stage.qualify_stage41(report)
+
+
+def test_stage41_fail_is_refused():
+    stage = _load_stage("42_scale_capability.py")
+    with pytest.raises(ValueError, match="not PASS"):
+        stage.qualify_stage41(_stage41_report(status="FAIL"))
+    record = stage.qualify_stage41(_stage41_report())
+    assert record["rungs"]["progen2-large"]["blocks"]["b0"]["per_arm_identification_status"] == "PASS"
+
+
+def test_fragment_order_digest_must_match():
+    stage = _load_stage("42_scale_capability.py")
+    dms_models, lookup, mega_models, baselines = _small_compare_payloads()
+    with pytest.raises(ValueError, match="fragment_order"):
+        stage.compare_scale(
+            dms_models=dms_models,
+            lookup=lookup,
+            megascale_models=mega_models,
+            baselines=baselines,
+            fragment_order={"cohort_sha256": "other", "arms": {}},
+            qualification_report=_stage41_report(),
+            resamples=50,
+            seed=1,
+            require_fixed_census=False,
+        )
