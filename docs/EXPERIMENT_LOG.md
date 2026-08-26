@@ -17222,3 +17222,340 @@ The first dispatch refused all three `progen2-large` cells of slot 1 with exit 1
 Both score stages read an input out of the output directory the runner injects — `wildtypes.json` for stage 20, `cohort.json` for stage 29 — so both were staged into each cell's directory before dispatch and neither is a cell's expect basename. The staged `cohort.json` hashes to `caaa233dc44146d4…`, which is the `cohort_sha256` that `baselines.json` and every existing `model_<arm>.json` declare and that stage 42 recomputes before reading the design census.
 
 At the last observation all three cards were between 94% and 99% utilisation with slot 1 running and `# FAILURES 0`. **Stage 42 has not run and must not be run until all six cells have exited-ok.**
+
+## 2026-08-26 — EXP-R2-226 pre-registered: what protein continued pretraining bought on a protein task, frozen before any new score
+
+**Taking `EXP-R2-226`, the next free identifier (the log's highest introduced id is EXP-R2-225). No new model score, interval, or gate verdict exists at registration.** This entry freezes an Objective-1 descriptive capability measurement on the ProLLaMA lineage. It does not reopen F13, F14 or F15, does not admit a checkpoint to the panel, and does not authorise a knowledge claim, a mechanism claim, or a causal claim about what the adaptation did inside the network. **§7.0 does not gate this campaign**: a measurement of what a model does is itself the result, and no knowledge claim is in play.
+
+### The symmetric half of F14
+
+F14 measured what this lineage **lost** on a text task: retrieving a protein's own concept-name-masked description, un-adapted `Llama-2-7b-hf` reads top-1 **0.2387** on the group-disjoint split against `ProLLaMA_Stage_1` at **0.0954** and `ProLLaMA` at **0.1065**, all four paired intervals excluding zero negatively. EXP-R2-152 priced the same cost as a likelihood, 4.69 nats/token, and EXP-R2-152's own correction localised it to the stage that retrains `embed_tokens` and `lm_head`.
+
+The protein side of the same three checkpoints has only ever been given a **likelihood gate** — context information moving from +0.0843 to +0.5505 to +0.5215 nats per token, with the directional-reversal cost moving from −0.0013 to +0.1442 to +0.1465 — and has never been given a **task**. So the programme can say what the adaptation cost and cannot say what it bought. This entry supplies the missing half on the two frozen protein-capability queues the repository already owns, on the same lineage, in the same paired form, at the same discipline.
+
+### Why a ranking estimand is admissible here where a per-token one is not
+
+L23 and Appendix B rules 26 and 27 bar a cross-arm quantity whose unit is the token when the arms differ in symbols per token, and this family is exactly the case they were written about: `src/transfer/joint_modes.py` declares `prollama` with `symbol_unit=TOKEN_UNIT` because the unmodified LLaMA-2 SentencePiece vocabulary merges residue runs, while every residue-level protein arm declares the residue. **Spearman ρ is invariant under any strictly increasing per-assay transformation of the score and carries no unit at all**, so it is not the quantity those rules bar. Within the lineage the point is stronger still: `tokenizer.model` hashes to SHA-256 `9e556afd44213b6bd1be2b850ebbbd98f5481437a8021afaf58ee7fb1818d347` on all three staged directories, so the token segmentation of a given rendered variant is byte-identical across the rungs and the paired difference is formed on identical scored units. The measured bulk rate on this campaign's own queue is **1.5106 residues per scored token**, and it is reported beside every magnitude the campaign publishes.
+
+### The three rungs, and the one rendering all three are scored under
+
+`Llama-2-7b-hf` → `ProLLaMA_Stage_1` → `ProLLaMA`, staged at `/Data/public/models_R2/`. Load-checked and identical on all three: `LlamaForCausalLM`, 32 layers, width 4096, vocabulary 32000, `max_position_embeddings` 4096, released `torch_dtype` float16. Adjacent pairs are **base–Stage 1** and **Stage 1–Stage 2**.
+
+**One rendering, and it is the unconditioned one.** All three checkpoints are scored under the identical bare `Seq=<...>` block. `JointRendering.render` returns that block whenever no context is supplied and consults `protein_context_template` only when one is, so the unconditioned form is a supported path and not a workaround. **Stage 2's declared instruction form `[Generate by superfamily] Superfamily=<...>` is not used, and this is a design decision taken before any score exists rather than a convenience.** Supplying a true superfamily would put the assay's own family label into the prompt, which is an L15-class conditioning leak on the very quantity being measured; fabricating one would put a false fact inside the measurement. This repository has already refused exactly that trade once, on ZymCTRL at the D3.l cohort, where scoring without the tag is 1.73 nats off distribution and scoring with a fabricated one was judged worse. The asymmetry the choice creates is declared rather than hidden: Stage 2 is measured outside the instruction format it was tuned for, so a Stage 2 reading at or below Stage 1's is **not** evidence that instruction tuning removed a capability.
+
+The existing qualification readings for this lineage were themselves taken under the bare block, so the rendering the campaign scores under is the rendering the lineage is qualified under: `21_joint_mode_qualification.py --protein-context` defaults to `None`, and EXP-R2-152's own token accounting records exactly four non-residue tokens per rendering — `▁Seq`, `=`, `<` and `>` — which is the bare block and not the instruction form.
+
+### Qualification, all-or-stop, and the gate that decides the ladder's length
+
+An arm is scored only after every clause holds. Failure of any clause stops that rung and every later rung that would pair with it. The seed, the queue, the threshold and the model are not replaced, and no other checkpoint is moved into the vacant slot.
+
+1. **Strict load** at the campaign precision, with Transformers loading diagnostics exposed: `missing_keys`, `unexpected_keys`, `mismatched_keys` and `error_msgs` must all be empty. A newly initialised head is unavailable, never a pass (L24).
+2. **Fixed-sequence NLL self-check** under the bare rendering, run twice at the campaign precision. Target ids must match exactly, every value must be finite, and the maximum per-target absolute repeat difference must be `<= 1e-6` nats.
+3. **Directional-reversal control** under the same bare rendering, on the **adapted rungs only**: reversing the residue order must cost **strictly more than 0.05 nats per scored token**. Attainability is shown rather than assumed — EXP-R2-152 measured +0.1442 on Stage 1 and +0.1465 on Stage 2, about three times the bar, so this is not a gate its own positive controls cannot pass (Appendix B rule 2).
+4. **Context information** is identified only by the EXP-R2-221 rule: the displacement-corrected near-duplicate-group bootstrap 95% lower bound is > 0. The retired 0.30-nat point floor is not this campaign's identification rule. The qualification is **reused, not redrawn**: stage 21 at corrected seed **20260728**, n=128 against a 400-record held-out unigram, band 64–246, re-analysed under the adopted rule at EXP-R2-220 and EXP-R2-221, where `Llama-2-7b-hf`'s protein mode reads a corrected lower bound of **+0.063641** and no stage-21 cell of this lineage changed verdict.
+
+**The base rung enters as a declared floor, not as a qualified protein arm.** Its measured reversal cost of **−0.0013** nats is what an unadapted text model scored on protein should look like: no directional reading of sequence at all. It is scored so that the ladder has a pre-adaptation reference, and clause 3 is deliberately not applied to it. A base-rung ρ prices what this queue yields from a checkpoint with no directional protein reading; it is not a protein capability and must never be reported as one.
+
+**The gate on Stage 2, and the fallback.** If Stage 2 fails clause 1, 2 or 3 under the unconditioned rendering, the reported ladder is **base → Stage 1 alone**, the Stage 1–Stage 2 pair is not formed, and the failure is reported with the clause that fired. That fallback is the ordering `docs/RESEARCH_PLAN.md` already prescribes for this lineage on independent evidence: the two adapted stages sit inside the cohort-draw spread of the estimand that qualified them, while base → Stage 1 is the pair that moves.
+
+### Frozen queues, and the census this lineage can actually reach
+
+Reuse the existing queues. Do not resample records, recluster families, or move a floor.
+
+**ProteinGym substitutions.** Stage 20's frozen artefacts: `results/transfer/retrieval_bound/lookup.json` at seed **20260807** with `--variants 1000` and the per-assay `mutant_digest` pinning the variant set, plus `wildtypes.json`, `profiles.json` and `profiles.npz`. The **declared cohort** is **217 assays over 174 wild-type families**, measured from those artefacts rather than asserted: 217 assay records, 187 distinct wild types, 174 clusters at 50% identity and 80% coverage.
+
+**The analysis set is fixed by the shared interface before any model is loaded, and on this lineage it equals the declared cohort.** That is measured, not assumed. Rendering all 187 wild-type sequences as `Seq=<...>` through the lineage's shared tokenizer gives a maximum of **2231 tokens** — assay family `q00109`, 3418 residues — against `max_position_embeddings` **4096**, a headroom of 1865 tokens, with a median of 154 tokens. A substitution does not change a sequence's length, and the headroom is far larger than any merge-boundary jitter a handful of substituted positions can produce, so **all 217 assays over 174 families are reachable on all three rungs**. The construction rule still runs and still refuses: a skip taken by one rung and not another removes that assay from the analysis set on every rung and is named with its reason, exactly as EXP-R2-224's census amendment requires, and a skip taken against any context other than 4096 is a refusal.
+
+**This is not EXP-R2-224's analysis set and the two do not pool.** That ladder analyses **201 assays over 163 families** because every ProGen2 rung declares `n_positions` 1024 and 16 assays overflow it; this one analyses **217 over 174**. Beyond the census, the scoring functional differs — a summed log-likelihood over merged multi-residue pieces against one over single residues — so even a common-support restriction would not make the two ladders one measurement. This campaign forms **no** cross-family ρ comparison, and no artefact may present the ProLLaMA and ProGen2 ladders in one column.
+
+**MegaScale designed referent.** Stage 29's frozen cohort, `results/transfer/designed_referent/cohort.json`, SHA-256 `caaa233dc44146d4…`, which is the `cohort_sha256` the scored payloads already declare. The design side is the **130 certified zero-hit designs over 40 series**, read through the cohort's own `zero_hit` flag and not by counting non-null design rows, which would give 146; the natural control is **266 domains over 124 `WT_cluster`s**. Both counts were reproduced from that file at registration.
+
+### LOOKUP on this lineage, and what it is not
+
+Follow EXP-R2-225's rule. The channel is stage 20's staged UniRef50 profile search on the frozen ProteinGym profiles — the same search, the same profiles, the same assays — and MODEL − LOOKUP is a capability comparison against that channel.
+
+This lineage is the one case in the programme where the training **corpus family** is declared by the model's own training scripts: EXP-R2-152's correction read `repos/prollama/scripts/run_pt.sh` and records the stage-1 continued-pretraining corpus as UniRef50 rep_ids. That is still not identity. The staged snapshot `data/uniref50/uniref50.fasta` — 60,315,044 records — **is not evidenced as that release or that clustering**, so LOOKUP remains an **external UniRef50 profile baseline** and is not called a retrieval bound. If anyone later reads it as one, the bias direction must travel with it: a differing release or subset makes LOOKUP under-count the training set, so the comparison favours the model. F15 already bounds what any alignment-level exclusion could buy in any case — a screen that finds nothing does not exclude profile-level homology.
+
+### Endpoints, judged independently, and the compound gate
+
+No composite score. Each endpoint returns its own descriptive verdict. The paired group bootstrap is frozen at **`resamples=2000`**, **`seed=20260826`**; those two numbers are not revised after a result exists. The resampling unit is the **wild-type family** on ProteinGym (174 clusters) and the **design series** or **`WT_cluster`** on MegaScale (40 and 124), matching F10's and F12's units.
+
+**DMS compound (the only DMS gate).** On an adjacent pair, both must hold: the **later** rung's MODEL − LOOKUP 95% lower bound is > 0, **and** the paired Δρ 95% lower bound on **raw Spearman** is > 0.
+
+**MegaScale compound (the only MegaScale gate).** All five must hold: on the design side, MODEL − hydropathy and MODEL − BLOSUM62 both have 95% lower bound > 0; on the natural control, the same two contrasts both have 95% lower bound > 0; and the design-series-paired Δρ 95% lower bound on **raw Spearman** is > 0.
+
+**Reported and not gated**, in a `reported_not_gated` block: MODEL − BLOSUM62 on every rung; the frozen `shuffled_label_spearman` control the queue already carries; the natural-cluster-paired raw Δ; 3–7-mer fragment margins where the artefact carries them, with the rungs it does not carry named; and — under **L44** — the **earlier** rung's own contrasts beside each gate, with the artefact stating in its own words that the later rung clears its own baseline contrast and is paired-significantly better than the earlier one, which is not a claim that the earlier one failed.
+
+**The verdict label is `adaptation_stage_transition`, deliberately not `descriptive_gate_transition`.** The arithmetic is identical to EXP-R2-224's compound, but that label is reserved for adjacent rungs of a same-family **scale** ladder. This axis is a training stage. The two must not be pooled into one table of transitions, and a row from this campaign may not be counted alongside a ProGen2 rung transition.
+
+**Precision.** bfloat16 on all three rungs at both fitness endpoints, one precision per endpoint, read from each payload's `settings.dtype`, refused if the set disagrees, and recorded in the report. The released checkpoints declare float16, so the load is a declared cast — identical on all three rungs, which is what the paired difference requires.
+
+### Ceiling — what this result may not be read as
+
+Binding, and written before any data exists.
+
+- **Not knowledge.** A transition on either endpoint is not evidence of biological knowledge, is not a retrieval exclusion, and is not admissible under §7.0, which does not gate this campaign because no knowledge claim is in play.
+- **Not mechanism.** Nothing here says where in the network the capability sits, and this campaign does not touch the mode-subspace, dictionary or crosscoder lines that do.
+- **Not causal about "continued pretraining".** The stage that separates the base from Stage 1 changes the corpus, retrains `embed_tokens` and `lm_head` outright — 262.1 M of a 582.0 M trainable budget, 45.0% of it, so it is not low-rank where it matters — and fixes a LoRA rank, a schedule and a data order at once. What this prices is what **this released adaptation, as a whole,** bought on **these queues**. It cannot attribute the gain to any one of those factors.
+- **Not a protein capability for the base rung.** The base checkpoint reads a directional-reversal cost of −0.0013; whatever ρ it returns is what the queue yields without a directional reading of sequence.
+- **Not contamination-controlled.** ProLLaMA's declared continued-pretraining corpus is UniRef50, which contains the Swiss-Prot proteins these assays are built on. This campaign does not exclude retrieval, does not bound it, and must not be read as doing either.
+- **Not a cross-family comparison.** No ρ from this ladder is placed beside a ProGen2, ProtGPT2, ProGen3 or Galactica ρ.
+- **Not a claim that the earlier rung lacks the capability** (L44), and not a robust qualitative change: one fixed run reports a curve and a per-endpoint table, and calling a transition robust requires independent-data replication.
+- **Not a statement about the instruction format.** Stage 2 is scored outside the format it was tuned in, by design.
+
+### Failure branches, declared in advance
+
+- **Stage 2 fails qualification** → report base → Stage 1 alone, name the clause, stop. Do not fall back to the instruction rendering to recover it.
+- **Stage 1 fails qualification** → the campaign stops entirely; the base rung alone is not a ladder and its solitary reading is not published as a capability measurement.
+- **A rung-specific skip appears on either queue** → the assay leaves the analysis set on every rung, both censuses are reported, and the exclusion is named. If the skip set is not explainable by the shared 4096-token interface, the endpoint stops.
+- **Either compound returns no transition** → that is the result. It is reported as measured and is not narrowed to a subcohort, re-run at another seed, or restated as a trend.
+- **The two endpoints disagree** → both are reported. There is no composite and no tie-break.
+
+### Operational sequence, and the stop
+
+1. `20_retrieval_bound.py` and `29_designed_referent.py` resolve arms from a fixed `ARM_CORPUS` / `STAGED_SCALE_ARMS` set and reach no joint checkpoint by mode. Reaching this lineage is an **interface extension and a code-readiness gate**, not a result gate. This identifier is a scientific freeze, not a dispatch.
+2. Do not disturb the in-flight EXP-R2-224 fitness campaign or any later official job. Allocation is not utilisation; inspect the pod. No pod name is recorded.
+3. Order: qualification and the three self-checks first, then ProteinGym on all qualified rungs, then MegaScale. An endpoint that is not reached is reported as **not run**, never as a null.
+4. Any loader, self-check, reversal, census or qualification failure stops that rung. Do not change the seed, the queue, the threshold or the rendering to recover it.
+
+**No model was loaded and no new model result is claimed at this registration.** The tokenizer, config, census and cohort figures quoted above are file-level facts read from staged artefacts on CPU.
+
+## 2026-08-26 — EXP-R2-227 pre-registered: does a conditioned arm generate what it is asked for? The native interface, frozen before any generation
+
+**Taking `EXP-R2-227`, the next free identifier. No generation, assignment rate, interval, or gate verdict exists at registration.** This entry freezes the first Objective-1 measurement in this programme that **samples** from a model rather than scoring one. It does not admit a checkpoint to the panel, does not authorise a knowledge claim or a novelty claim, and does not reopen the retired steering line. **§7.0 does not gate this campaign**: a measurement of what a model does is itself the result, and no knowledge claim is in play.
+
+### The gap this closes, and the gap it does not
+
+Every Direction-1 measurement on record is a **scoring** measurement — a likelihood, a context information, a rank correlation. Nothing in the programme has ever asked a generative model to generate. Two panel-adjacent checkpoints carry a **native conditioning interface** that was trained into them and has never been exercised as a capability:
+
+- **ZymCTRL's EC tag.** L15 prices it at **1.73 nats** on the cohort it was measured on (EXP-R2-034), 1.87 on D3.b's cohort and 2.4487 on the dense self-check inputs. So the tag demonstrably moves the distribution. **Nobody has asked whether it moves it in the requested direction.** A leak of that size is equally consistent with a tag that selects the right enzyme class and with a tag that shifts composition and length while selecting nothing.
+- **ProLLaMA Stage 2's superfamily instruction.** `[Generate by superfamily] Superfamily=<...>` is declared in `src/transfer/joint_modes.py` and resolved in code, and has never been run. Its own label vocabulary is staged: `external_resources/literature/repos/prollama/superfamilies.txt`, SHA-256 `5fc21a5353654efce0ef65f6d792b26fa30d51edef736c01df51665747c7d87c`, 11,268 distinct lines of which **1,885 name a single superfamily** rather than a comma-joined combination.
+
+**This is not the abandoned steering work, and the entry says so in advance so that no later reader conflates them.** §9.1 retires EC steering, the feature atlas, drug-design and venue-specific lines, and item 8 of the same section retires steering re-runs before a dense readout exists. All of that concerned **internal-feature intervention** and returned a measured 0/8 on significant positive EC classes across three separate attempts (EXP-R2-009, EXP-R2-016, the 44–47 run). Nothing here injects a feature, a direction, or a coefficient. The intervention is the **prompt the model was trained to receive**, and the estimand is behavioural. The retirement is untouched and is not reopened.
+
+The only prior generation numbers in the repository are EXP-R2-013 and EXP-R2-014 on a single class: unsteered ZymCTRL lysozyme at Pfam lysozyme-like **0.820** and CLEAN exact EC 3.2.1.17 **0.775**, n=200. Those are single-class, pre-discipline, with no near-duplicate grouping, no homology reporting and no bootstrap. **They are cited here as attainability only** — evidence that the rate is not near zero and that the question is worth asking — and they are not a baseline, not a comparison, and not a result this campaign reproduces or supersedes.
+
+### Estimand, bounded to the native interface
+
+For each **class** *c* in a frozen class cohort, and each conditioned arm, the estimand is the rate **p(c)** at which generations produced under the native request for *c* are assigned to *c* by an external oracle. It is judged against three references, each measured in the same run on the same oracle:
+
+- **(a) the within-arm negative** — the same arm, same sampling configuration, prompted with a **mismatched label** drawn under a frozen permutation of the class cohort that maps no class to itself. This is the reference that separates "the tag selects the requested class" from "the tag moves the distribution", which is the whole of what L15 leaves open.
+- **(b) the floor** — an **unconditioned** protein arm at comparable scale generating under no class request at all, scored by the same oracle. ProGen2-medium (764.8M) is the floor for ZymCTRL; ProtGPT2 (about 774M) is reported beside it as a second unconditioned floor of the same architecture family as ZymCTRL.
+- **(c) the instrument price** — **real-protein anchors**, so that a rate is read against what the oracle does on sequences whose class is known. Those anchors already exist in this repository and were re-read at registration rather than quoted from memory (EXP-R2-015, real versus length-matched random UniRef50, n=100 each): Pfam lysozyme-like hit **0.910 vs 0.000** (d 4.497), CLEAN exact EC 3.2.1.17 **0.960 vs 0.000** (d 6.928), CLEAN 3.2.1.x prefix **0.990 vs 0.050**, ESMFold mean pLDDT **79.740 vs 58.478** (d 1.786), ESMFold confident fraction **0.865 vs 0.336**, Foldseek top TM **0.971 vs 0.653** (d 1.593). Those are **one class**. This campaign re-measures the anchor **per class in its own cohort**, because an oracle calibrated on lysozyme is not thereby calibrated on a class it has never been checked on.
+
+The primary statistic is the paired per-class contrast **p(requested) − p(mismatched)**, which is dimensionless, formed within one arm on one oracle, and therefore free of the denominator hazard rule 27 names.
+
+### The oracle, and the instrument-availability gate that runs first
+
+**The primary oracle is non-neural: HMMER against Pfam-A.** `external_resources/tools/hmmer-3.4.tar.gz` and `external_resources/ec_metrics/pfam/Pfam-A.hmm.gz` (384,357,362 bytes, with its `.sha256` beside it) are staged, and the InterPro entry list and `interpro.xml.gz` are staged under `data/interpro/`, which is what maps a Pfam hit to the homologous-superfamily name ProLLaMA's own label vocabulary uses. A profile HMM is a fixed, inspectable statistical model with no learned distributed representation, so it does not route the verdict through another neural model (L9).
+
+**CLEAN is recorded as currently unavailable and is not stubbed.** The staged tarball carries no `.pth` or `.pt` weight file anywhere beneath it and the ESM-1b encoder it needs is absent, exactly as the 2026-08-19 D3.g amendment recorded. **The 0.960/0.000 anchor above is a real historical measurement and is not evidence that the instrument can run today.** The campaign therefore declares, before any generation exists: if CLEAN weights and the ESM-1b encoder are not restored, **no EC prediction is produced**, the absence is reported with the missing files named, and the EC-assignment channel is reported as unavailable rather than substituted. A stub here would be an instrument that always agrees.
+
+**Instruments are gated before generations are scored, not after.** Each oracle channel is admitted only if its per-class real-versus-random anchor separates at a pre-declared margin on that class: real-exemplar assignment rate at or above **0.70** and length-matched random-UniRef50 assignment rate at or below **0.10**, on n=100 per side per class. A class whose oracle does not clear that anchor is **removed from the cohort before any generation is scored** and is reported as an unmeasurable class, not as a failing class. This is Appendix B rule 2 applied to an oracle instead of to a gate.
+
+### The frozen class cohort, and its census
+
+**ZymCTRL — EC classes.** Drawn from the arm's own declared evaluation cohort, `data/zymctrl/ec_labeled_swissprot.fasta`, which the campaign re-censused at registration: **244,343 records over 5,594 distinct full EC numbers**, spanning all seven top-level classes (1: 31,384; 2: 89,772; 3: 45,789; 4: 25,907; 5: 16,142; 6: 26,832; 7: 8,517). Classes with at least **200** records number **349**; with at least 500, 135. The frozen cohort is **16 full EC numbers drawn under a seeded permutation (seed 20260826) of the 349 classes with ≥ 200 records**, never a prefix and never the head of the frequency table (Appendix B rule 1).
+
+**The eight EC classes of EXP-R2-003/004 are deliberately not reused.** They were selected inside the retired steering and atlas line for a different purpose, they are not a frozen queue, and inheriting them would inherit a selection this campaign cannot audit. Sixteen classes rather than the minimum eight is a deliberate choice about the bootstrap: the resampling unit is the class, so eight units is the smallest cohort on which a percentile interval is defined at all, and it is not a cohort on which one is informative.
+
+**ProLLaMA Stage 2 — superfamilies.** Drawn under the same seeded permutation from the **1,885 single-superfamily labels** of the staged `superfamilies.txt`, restricted to labels that resolve to a homologous-superfamily entry present in the staged InterPro release **and** carry at least one Pfam-A member so the oracle can assign them **and** have at least 100 Swiss-Prot exemplars for the anchor. The frozen cohort is **16 superfamilies** from that admissible set; if fewer than 16 are admissible the realised count is reported and the arm proceeds only at 8 or more.
+
+**Generations.** n = **200** per (arm × class × condition), which reproduces the sample size of the only prior generation measurement in the repository. One frozen sampling configuration for the entire campaign, identical across arms, classes and conditions, because no released `generation_config.json` on any of these checkpoints declares a sampling hyper-parameter: **top-p 0.95, temperature 1.0, no top-k, no repetition penalty, at most 400 new tokens, seed 20260826**. It is not tuned after a rate is seen. **No perplexity-based post-selection filter is applied**; the published ZymCTRL protocol's selection step scores candidates by the model's own likelihood, which would make the endpoint partly a self-selection, and if it is ever run it is reported as a separately labelled stratum and never as the main estimate.
+
+### Text positive control — the estimand shape, demonstrated without another model in the loop
+
+Appendix B rule 3's principle and this programme's standing practice both require a text positive control where a real analogue exists, and one does: a text decoder conditioned on a **language tag** and scored by **Unicode script identity**, which is a deterministic, zero-parameter oracle. Arms: `Qwen2.5-0.5B` and `Llama-3.2-3B`, both staged, both panel members on their existing estimands and neither admitted to anything new here. Classes: at least **8 scripts** with disjoint Unicode ranges. The same three references apply — mismatched-label prompt, unconditioned floor, real-text anchor — and the anchor is arithmetic rather than empirical, because script detection on text of a known script is exact by construction. **That is precisely why it is the right control for the shape**: it shows the estimand returns a strong positive with instrument error removed, so a weak protein reading cannot be blamed on the estimand.
+
+**The control has its own attainability screen and its own failure branch.** These are base checkpoints, not instruction-tuned ones, so compliance with a language request is not assumed. If neither text arm reaches a requested-minus-mismatched contrast whose 95% lower bound exceeds 0 on at least 8 classes, the text positive control is reported **unattainable on the available text arms**, the protein readings are still reported, and the missing control is carried as a stated limitation of this campaign rather than quietly dropped.
+
+### Decision rule
+
+The bootstrap unit is the **class**. Group bootstrap over classes, **`resamples=2000`**, **`seed=20260826`**; those two numbers are not revised after a result exists. Within a class, generations are grouped by near-duplicate before the class rate is formed, so a burst of near-identical samples cannot inflate a rate.
+
+**The only gate, per arm and per oracle channel, is the compound.** All three must hold:
+
+1. the class-clustered mean of **p(requested) − p(mismatched)** has 95% lower bound > 0;
+2. the class-clustered mean of **p(requested) − p(unconditioned floor)** has 95% lower bound > 0;
+3. at least **half** the classes in the cohort individually show a positive requested-minus-mismatched point estimate, so the arm's verdict is not carried by one or two classes.
+
+**What each outcome licenses.** All three hold: *this arm's native conditioning interface moves generation toward the requested class on this class cohort under this oracle* — a behavioural capability statement about that arm and nothing more. Clause 1 fails: the tag moves the distribution without selecting the requested class, which is the reading L15's 1.73 nats cannot distinguish today and which this campaign would settle for that arm. Clause 1 holds and clause 2 fails: the requested class is selected relative to a mismatched label but not above what an unconditioned arm of similar scale produces unprompted, which is a statement about the class cohort's base rates as much as about the arm. Clause 3 fails alone: the arm is class-selective on part of its label space, reported per class, and no arm-level verdict is issued.
+
+**Reported and not gated:** absolute p(requested) per class; the per-class instrument anchors; sequence length and amino-acid composition of every condition, because a conditioning tag that changes only those is the alternative the mismatched-label reference exists to expose; pLDDT and Foldseek TM if and only if ESMFold and Foldseek are available, always as covariates; and **maximum identity to the arm's own retrievable corpus, per generation**.
+
+### Ceiling — binding, and written before any generation exists
+
+- **Predicted structures, pLDDT and sequence-inferred labels cannot demonstrate functional competence or acquired protein knowledge.** That is the standing caution §9's D1.c survey already carries, and it applies to every channel this campaign can reach. A high assignment rate says the generation matches a profile, an EC predictor or a fold search — not that it works.
+- **Max-identity-to-corpus is reported as a covariate and is never claimed as novelty.** F15 is the reason and it is not negotiable: an alignment-level certificate does not exclude profile-level homology, since a profile search seeded only by an anchor's prefix recruited the same-fold partner on 56 of 199 triples where the alignment screen found nothing. A generation that no alignment matches may still be inside the family the model was trained on.
+- **This is a behavioural measurement of a prompt interface, not of a mechanism.** It says nothing about where or how the conditioning is implemented, and it does not reopen internal-feature steering (§9.1), the drug-design line, or the wet-lab line.
+- **It is not a knowledge claim** and is not admissible under §7.0.
+- **The oracle bounds the reading** (L9): a Pfam or EC channel cannot support a statement carrying more information than that channel contains, and a superfamily assignment is a homology statement by construction.
+- **A positive is about these classes on this cohort.** The classes are drawn from the arm's own labelled corpus, so the cohort is not independent of the arm's training distribution, and the campaign does not correct for that.
+- **Cross-arm rate comparisons are descriptive.** ZymCTRL and ProLLaMA are asked for different kinds of class through different oracles; their rates are not differenced.
+- **The prior lysozyme numbers are attainability, not a baseline.** EXP-R2-013/014 are not reproduced, not superseded and not compared against.
+
+### Failure branches and the stop
+
+- **An oracle channel is unavailable** → reported unavailable with the missing files named. No substitution, no stub.
+- **A class fails its instrument anchor** → removed before any generation is scored, reported as unmeasurable.
+- **Fewer than 8 classes survive the anchor on an arm** → that arm is not scored, and the shortfall is reported. Do not top the cohort up with classes drawn after seeing an anchor.
+- **An arm fails a load, self-check or rendering check** → that arm stops. Do not substitute another conditioned arm; there are only two.
+- **The text positive control is unattainable** → reported as such; the protein readings stand with the limitation attached.
+- **The compound returns no gate on either arm** → that is the result, reported as measured, not narrowed to a class subset and not re-run at another sampling configuration.
+
+### Operational sequence
+
+1. Build HMMER, verify the Pfam-A digest against its staged `.sha256`, and resolve the Pfam→InterPro→superfamily map. Determine CLEAN, ESMFold and Foldseek availability and **record it before any generation**.
+2. Run the per-class instrument anchors and freeze the surviving cohort.
+3. Run the text positive control's attainability screen.
+4. Only then generate. Generation is cheap relative to the campaign's oracles; nothing about the ordering may be relaxed to save time.
+5. Do not disturb the in-flight EXP-R2-224 campaign or any later official job. Allocation is not utilisation. No pod name is recorded.
+
+**No model was loaded, no sequence was generated, and no result is claimed at this registration.** The cohort census, the superfamily-list digest, the staged-instrument inventory and the re-read EXP-R2-015 anchors are file-level facts read on CPU.
+
+## 2026-08-26 — EXP-R2-228 pre-registered: does in-context homologue conditioning exist at all in frozen single-sequence decoders? Redesigned after a mechanism-name literature search, frozen before any score
+
+**Taking `EXP-R2-228`, the next free identifier. No score, contrast, AUROC, interval or verdict exists at registration.** This entry freezes an Objective-1 descriptive capability measurement. It does not admit a checkpoint to the panel, does not authorise a knowledge claim or a mechanism claim, and **§7.0 does not gate it**: a measurement of what a model does is itself the result.
+
+**The one sentence this campaign is for.** *Whether an in-context conditioning gain exists at all in frozen, single-sequence-pretrained decoders, measured against controls that separate evolutionary relatedness from in-context copying, with the identical estimand run on text decoders.*
+
+### The literature search, and why the naive design was discarded before it was written
+
+Appendix B rule 10 — search by mechanism name, not by domain — was applied before this design was fixed, and it changed the design rather than decorating it. Every finding below is a **contrast this campaign is defined against**, not related work appended to it. None of these papers is staged in full offline except PoET, which appears as a baseline in the staged ProteinGym repository; the others are cited from the review that produced this entry and are recorded here as the reason for the design, so that a later reader can see what the design was built to survive.
+
+**Every established positive comes from a model trained for the conditioning.** PoET (Truong Jr & Bepler, NeurIPS 2023, arXiv:2306.06156) is a retrieval-augmented autoregressive model over sets of homologues. ProtMamba (Sgarbossa, Malbranke & Bitbol, *Bioinformatics* 41(6):btaf348, 2025) publishes the monotone-with-diminishing-returns perplexity curve from 25 to 200 context sequences — **and reports no random-sequence control**, so the curve does not separate homology from context length. E1 (bioRxiv 2025.11.12.688125), Protriever (Weitzman et al., ICML 2025, arXiv:2506.08954, 0.479 ProteinGym Spearman) and ProFam (bioRxiv 2025.12.19.695431, <30% identity filter, 8192-token budget) are all trained or fine-tuned for multi-sequence context. **Not one of them answers whether a decoder that never saw a homologue set during pretraining can use one**, which is the question this panel can ask and they cannot.
+
+**The decisive paper tests a panel arm, and it names the hypothesis this design must defeat.** Kantroo, Wagner & Machta (arXiv:2504.17068, 2025) measure **ProGen2-M** — this repository's `progen2-medium`. Appending a copy of a sequence to itself collapses its likelihood; the collapse **also occurs for random, non-natural sequences**; it **persists to 50% sequence divergence**; and it fires on needles as small as **10 residues**. That is an induction/copying mechanism producing exactly the signal an in-context homology experiment is designed to detect, for reasons that have nothing to do with homology. **Copying is therefore the leading hypothesis to defeat, not one control among several**, and the whole of this design's control structure follows from that.
+
+**The closest cross-domain precedent, and what stays unclaimed.** Breslow et al. (arXiv:2511.12797, November 2025) compare DNA (Evo2) against text in-context learning on symbolic tasks and report log-linear gains in both. Different modality, different estimand, different task family. The headline is adjacent enough that this entry states in advance what it will **not** claim: nothing here is a claim about in-context learning as a general capacity, about few-shot task learning, or about a scaling law in either modality.
+
+**The text-side analogue, and the gap it also has.** In-Context Pretraining (Shi et al., arXiv:2310.10638) and Ram et al. (*TACL* 11:1316–1331, 2023) both place retrieved related documents in context and both report gains; **Ram et al. report no random-document baseline**, and the same estimand asymmetry the protein literature has is present on the text side. So the text arm of this campaign is not merely a control for the protein arm — it is a measurement the cited text literature does not report either.
+
+**And the endpoint itself is under threat from the text literature.** Bertsch et al. warn that next-token loss keeps falling as context grows while task performance plateaus. That is a direct threat to ΔNLL as an endpoint, and it is why ΔNLL is demoted below to a descriptive curve.
+
+### Arms, and the three that are excluded by name
+
+**Included, all at a 1024-position budget:** `gpt2-large` and `protgpt2` — the panel's declared `MATCHED_PAIR`, identical at 36 layers, width 1280, 20 heads and a 50,257-piece vocabulary — plus `progen2-small` and `progen2-medium` as residue-level protein arms.
+
+**Excluded, declared rather than dropped:**
+
+- **`progen2-base`.** Its staged config declares `n_positions` **2048** while `progen2-small`, `progen2-medium`, `progen2-large`, `progen2-xlarge`, `protgpt2` and `zymctrl` all declare **1024** (read from the staged `config.json` files at registration). Holding a context budget fixed across a 2048-position arm and 1024-position arms confounds the corpus contrast with the budget, and letting the budget scale with the window confounds it with the position-embedding regime. The budget is therefore fixed at **1024 positions on every arm** and this rung is out. That also means the campaign measures nothing about long-context behaviour beyond 1024 positions, on any arm.
+- **`zymctrl`.** Its declared rendering wraps content in an EC conditioning tag, so every in-context homologue would arrive carrying an enzyme-class label and the estimand would no longer be about sequence context. Scoring without the tag is 1.73 nats off distribution (L15, EXP-R2-034) and scoring with a fabricated one is worse — the same refusal D3.l already took on this arm, on 0 of 199 triples.
+- **`progen2-large` and `progen2-xlarge`.** Staged non-members; nothing in this design needs them.
+
+**ProtGPT2's confound is declared up front rather than discovered afterwards.** `src/transfer/arms.py` records that ProtGPT2 was pretrained on FASTA-formatted UniRef50 in which sequences are hard-wrapped at 60 residues **and separated by the end-of-text token**, with its BPE merges learned over exactly that byte stream — which is a multi-sequence window. ProtGPT2 therefore has prior exposure to multi-sequence contexts that the ProGen2 arms do not. A pattern in which ProtGPT2 shows a gain and the ProGen2 arms do not is **consistent with that prior exposure** and does not license a tokenisation reading, a modality reading, or a scale reading.
+
+### Measured feasibility, and the cohort change it forces
+
+**The panel's matched pair is not executable on the current text cohort, and this was measured before the design was fixed.** Over the frozen OpenWebText screening subset at the declared **800-character floor**, 99,046 documents are eligible; a seeded draw of 1,000 of them (seed 20260827) reads a median of **711 GPT-2 BPE tokens**, quartiles 409 and 1221, min 162, max 27,531. Two median documents are 1,422 tokens against a 1,024-position window, so **`gpt2-large` cannot reach k = 1 for the median document**. Meanwhile `protgpt2`, under its own declared `fasta_wrapped` rendering, spends a median of **58 tokens** on a Swiss-Prot protein in band 64–246 and **85–96 tokens** at the top of that band (n = 500, seed 20260827, bulk rate **2.776 residues per token**), so it reaches k in the high single figures to tens inside the same window. The asymmetry is a property of the cohorts, not of the models, and it would have silently made the matched pair a comparison between an arm that fits no context item at all and an arm that fits ten or more.
+
+**The fix, pre-registered rather than improvised later: replace the 800-character document floor with a context-fraction-matched passage cohort.** Text items are contiguous passages of **80–130 GPT-2 BPE tokens** carved from the same frozen OpenWebText screening subset under a seeded permutation (seed 20260826), never a prefix. What is matched across arms is **the fraction of the arm's own 1024-position window one item consumes**, not the number of items. Protein items stay in the qualification band **64–246 residues** on Swiss-Prot via `protein_cohort`, so no arm is scored on a band it was not qualified on (Appendix B rule 13). The realised **k distribution is an outcome, reported per arm**, not a fixed design constant.
+
+### The design factor, the budget, and the four controls
+
+**Identity band is the primary design factor, not a covariate.** Kantroo et al. show the mechanism persists to 50% divergence and fires on 10-residue needles, so global identity demonstrably does not screen it and cannot be relegated to an adjustment. Protein bands, from a DIAMOND all-against-all over the Swiss-Prot pool: **≥ 90 excluded outright**; **70–90**; **50–70**; **30–50**; **< 30**. Every band is populated to a pre-declared floor of 200 targets or the band is reported as unpopulated and dropped before scoring.
+
+**A local-overlap screen is added, because global identity does not screen the copying mechanism.** For every (target, context item) pair the campaign computes **longest common substring** and **shared 7-mer count**, and each pair carries them. Pairs above a pre-declared local-overlap threshold are removed from the primary analysis and reported as a separate stratum; the remaining pairs are stratified into local-overlap terciles within each identity band.
+
+**Text bands are the parallel factor and are explicitly not the same quantity.** Relatedness on the text side is a non-neural BM25 band over the passage pool — top-10, 10–100, 100–1000, and a random draw — with near-duplicates screened by shared 13-gram count and longest common substring. **A text band and a protein identity band are two different measurements and are never differenced, ranked together, or plotted on a shared axis.** Only the dimensionless endpoints below are compared across modalities.
+
+**The budget is tokens, not k.** For each target the context budget is the arm's 1024 positions minus the target's own rendered length. Within one target, the homologue condition and **every** control condition are built to the **same k and the same context token length** to within one item, so the paired contrast holds position, length and item count fixed and varies only content. k varies across targets and is reported as a distribution.
+
+**Four controls, all token-length-matched and k-matched per arm and per target:**
+
+1. **Composition-matched unrelated naturals** (protein) / **unigram-matched unrelated passages** (text). Isolates bulk composition.
+2. **Mono-residue-shuffled homologues** (protein) / **token-shuffled related passages** (text). Each context item's residues are permuted within itself, so composition is preserved **exactly** and evolutionary order is destroyed. This is the control that answers Kantroo et al. on the composition axis.
+3. **Position-only control.** A single fixed filler item, identical across every target, repeated to the same k and token length. It prices what merely having a filled context does to a target's likelihood — the quantity that a naive (k versus k = 0) comparison silently folds into the effect.
+4. **Near-duplicate screen.** The ≥ 90 identity band is excluded at construction, and the local-overlap screen above removes short-range copies that survive a global identity filter.
+
+### Endpoints, and the one that is demoted
+
+**Primary, and both dimensionless.**
+
+- **AUROC for family membership**, computed from the paired NLL contrast: over targets, the probability that a true-homologue context yields a lower target NLL than its own matched-unrelated context, ties at one half. This is a discrimination statistic with no unit and no denominator, so it is the one quantity in this campaign that is legitimately comparable across arms and across modalities — and being task-shaped rather than loss-shaped, it is the endpoint Bertsch et al.'s warning does **not** undermine.
+- **Fractional reduction**, the paired homologue-minus-matched-unrelated difference divided by that arm's own position-only-context NLL. Dimensionless, within-arm, and the denominator travels with it in every table (Appendix B rule 27).
+
+**Never (k minus k = 0).** That contrast confounds content with position and with the mere presence of a filled context, which is what control 3 exists to price. No artefact may report it as the effect.
+
+**ΔNLL in nats per scored token is a descriptive curve and nothing more.** It is reported per arm, always beside that arm's measured symbols per token, and **is never differenced across arms** — L23 and Appendix B rule 26, whose demonstrating case is exactly a per-token magnitude whose cross-arm sign reverses under a change of unit.
+
+### Decision rule, and the decisive condition
+
+The bootstrap unit is the **target's near-duplicate group** on the protein side, derived from the same DIAMOND alignment that defines the bands, and the **source document** on the text side. Group bootstrap, **`resamples=2000`**, **`seed=20260826`**; not revised after a result exists.
+
+**Per arm, the gate is a compound, and its third clause is the one the design exists for.** All three must hold:
+
+1. the paired **fractional reduction** has 95% lower bound > 0, pooled over the populated identity bands;
+2. **AUROC** has 95% lower bound > 0.5;
+3. **both of the above still hold within the bottom local-overlap tercile of the `< 30` identity band** — the stratum in which no long shared substring exists and global identity is minimal.
+
+**What each outcome licenses.** All three: *this frozen, single-sequence-pretrained decoder uses in-context sequence relatedness beyond composition and beyond local copying, on this cohort* — an existence result about that arm, and the first evidence in this literature that the gain does not require training for the conditioning. Clauses 1 and 2 hold, clause 3 fails: **the gain is in-context copying and local overlap**, which is Kantroo et al.'s mechanism, the line closes on that reading, and it is reported as such rather than narrowed to a favourable band. Clause 1 or 2 fails: no gain exists on this arm at this budget — a bounded negative about frozen decoders at k in the measured range, **not** a claim about in-context homology conditioning in general, since every established positive in the literature comes from a model trained for it. The mono-shuffled control matching the homologue condition attributes the effect to composition and closes the line the same way clause 3's failure does.
+
+**Reported and not gated:** the ΔNLL curve against k and against band; the realised k distribution per arm; identity, longest common substring and shared 7-mer count per pair; the excluded high-local-overlap stratum, scored and reported separately so the copying effect is measured rather than only excluded; and per-band counts.
+
+### Ceiling — binding, and written before any score exists
+
+- **Not a knowledge claim, not a mechanism claim.** A positive says a behaviour exists; it does not say which heads, layers or circuits produce it, and this campaign runs no intervention. It does not reopen the induction line (§9.1 item 9) and does not contribute to it.
+- **A positive is not homology understanding.** It is a statement that context relatedness lowers a target's NLL beyond four matched controls on one cohort. F15 stands over it: an alignment-level screen does not exclude profile-level homology, so even the `< 30` band is not a homology-free stratum.
+- **A negative is bounded to frozen decoders at this budget.** It is not evidence against in-context homologue conditioning, which PoET, ProtMamba, E1, Protriever and ProFam already establish for models trained for it.
+- **Cross-modality comparison is confined to the two dimensionless endpoints.** No nats-per-token magnitude, no k, and no band label crosses the modality boundary.
+- **The text and protein band definitions are different quantities** and are never presented as one axis.
+- **ProtGPT2's prior multi-sequence exposure is a confound of the arm, not of the modality**, and any ProtGPT2-versus-ProGen2 pattern carries it.
+- **No claim about scale.** `progen2-small` and `progen2-medium` are two rungs on one lineage at one budget; the campaign forms no scale gate and may not receive the `descriptive_gate_transition` label.
+- **Nothing here is a claim about in-context learning as a general capacity**, which is the reading the Breslow et al. headline would invite.
+
+### Failure branches and the stop
+
+- **A band cannot be populated to its floor** → reported as unpopulated and dropped before any score. Do not merge it into a neighbouring band after seeing a result.
+- **An arm cannot reach k ≥ 1 at the fixed budget** → that arm is reported as unreachable at this budget, which is a cohort fact, not a null about the model. Do not shorten the target to make room.
+- **The position-only control moves the target's NLL as much as the homologue condition** → the endpoint is measuring context occupancy, the campaign stops, and that is reported as the finding.
+- **The mono-shuffled control matches the homologue condition** → composition, and the line closes there.
+- **Clause 3 fails while 1 and 2 hold** → copying, and the line closes there. It is not re-run at a stricter overlap threshold chosen after the fact.
+- **A rendering, load or self-check failure on any arm** → that arm stops. Do not substitute another.
+
+### Operational sequence
+
+1. Build the passage cohort and the DIAMOND band structure, and publish both censuses — per-band target counts, realised k distributions per arm, local-overlap distributions — **before any model is loaded**. Every one of those is an interface and cohort fact and none of them may be adjusted afterwards.
+2. Verify each arm's declared rendering and its fixed-sequence self-check at the campaign precision.
+3. Score the position-only and mono-shuffled controls **first**, so the two conditions most likely to close the line are measured before the condition the campaign hopes for.
+4. Do not disturb the in-flight EXP-R2-224 campaign or any later official job. Allocation is not utilisation. No pod name is recorded.
+
+**No model was loaded and no result is claimed at this registration.** The context-window, cohort-size and token-length figures above were measured on CPU from staged configs, tokenizers and corpora; the cited literature is recorded as the reason for the design and is not evidence about any model in this panel.
+
+## 2026-08-26 — Galactica reaches the lens through `opt`: two architecture tables satisfied, four refused with measured reasons (commit `e500d14`)
+
+**A Direction-2 interface record, not a capability result.** No Galactica capability number is produced or moved here. The panel's modality coefficients rest on one arm because no checkpoint family spans both modalities at more than one rung; Galactica does, at four, so the architecture behind it was taught to the interpretability modules **exactly as far as it was verified and no further**.
+
+**Two of six architecture tables are honestly satisfied.** `Arm.blocks()` resolves `model.decoder.layers`, and the lens family resolves `model.decoder.final_layer_norm`; `scaling.LENS_ARCHITECTURES` is now **derived** from the lens table rather than duplicating it.
+
+**Four are refused, each with a measured structural reason rather than a note to revisit.**
+
+- `_ATTENTION_PATH` is nameable but unreachable: `Arm.attention` requires `_DECOMPOSABLE`, and `attention_pattern_module`'s only consumer is the PAA census, which is gated by `prediction_addressed.PAA_ARCHITECTURES`.
+- `_DECOMPOSABLE` and `_MLP_NEURON_TENSOR` are refused because an `OPTDecoderLayer` **has no feed-forward submodule**: `fc1` and `fc2` are block attributes, and the block reshapes to `(batch*token, d)` before them, so `fc2` emits `(batch*token, d_model)` where every other arm emits `(batch, token, d_model)`. The values are exact; the rank is wrong for about fifteen `Arm.mlp` hook sites.
+- `circuits._CIRCUIT_ARCHITECTURES` is refused because OPT builds its initial residual as `embed_tokens + embed_positions` **inline**, so no module output is that residual. Measured rather than argued: `embed_tokens` alone differs from block 0's input by up to **1.43**, and the sum matches at **0.0**.
+
+**Verification, on `galactica-125m` at float32 with a strict load and all counters zero.** Lens-head self-consistency at the final layer reads max KL **8.57e-08 nats** against a 1e-6 tolerance, mean **−5.1e-10**, over 30 scored positions. The depth trajectory runs 9.98 → 7.17 → 6.22 → 5.89 → 5.76 → 5.73 → 5.64 → 5.34 → 4.77 → 4.08 → 3.44 → **2.8847**, landing exactly on the model's own value. Block decomposition residual is exactly **0.0**, and the neuron tensor minimum is **−0.16997**, just inside the −0.17 GELU bound.
+
+**Configuration facts common to all four rungs, read from the staged `config.json` files:** `word_embed_proj_dim == hidden_size` (768, 2048, 4096, 7168), so there is no `project_in`/`project_out`; `do_layer_norm_before` is `True`; `activation_function` is **`gelu`**, not OPT's default ReLU; `pad_token_id` is **1**.
+
+**`galactica-6.7b` and `galactica-30b` were reverted from `STAGED_ARMS` / `STAGED_SECOND_STAGE_ARMS`,** where `88776c7` had added them, and the reason is worth recording precisely rather than as tidiness. No Direction-2 stage needs an `ArmSpec` for them — stages 15, 17, 23, 24, 25, 30, 32, 33 and 38 reach weights through `--checkpoint` / `--rendering`, and the lens and circuit stages take `--arms` out of `choices=sorted(PANEL)` and refuse a staged name anyway. The declaration was also **actively harmful**: `scaling.register_arm_spec` refuses by name every checkpoint `STAGED_ARMS` declares, which blocked the `LadderMember` route that is the only way to put an `opt` rung under the lens. The revert also restores `21_joint_mode_qualification.py`'s own rule that an unqualified joint checkpoint "must not be in `arms.py` at all".
+
+**New `arms.adopt_config_declared_pad_token`.** Galactica's `special_tokens_map.json` is `{}` on all four rungs — verified — but `pad_token_id: 1` is corroborated four ways: the config declares it; `tokenizer.json` defines `<pad>` at id 1; `convert_ids_to_tokens(1)` returns `'<pad>'`; and the loaded `embed_tokens.padding_idx` is 1. The helper **raises rather than falling back** when the id is absent or unmappable, and `rita-xl` is the case that still refuses.
+
+**No capability claim.** Satisfying an architecture table admits a checkpoint to a measurement; it says nothing about what that checkpoint can do.
+
+## 2026-08-26 — ProteinGLM-7B-CLM measured: a canonical tokenizer statement retracted, the blocker narrowed to one import, and the native rendering evidenced
+
+**A read-only investigation. No fitness score, no capability claim, and no admission of this checkpoint to anything.** It is recorded because it **retracts a false statement that stood in two canonical files**.
+
+**Retraction.** `src/transfer/arms.py` and `scripts/transfer/panel_contract.py` both recorded that this checkpoint's tokenizer "splits on whitespace, so an unspaced residue string reaches the model as one out-of-vocabulary word." **That is measurably false.** `unique_no_split_tokens` covers the whole vocabulary and updates the trie, so the trie splits the string before `_tokenize` is reached. Reproduced independently at this entry: `tk('MLFVVL')['input_ids']` returns `[17, 1, 15, 4, 4, 1, 34]`, and a 108-residue sequence returns 109 ids with **zero** `<unk>` (unk id 35) and an exact round trip. `pad_token_id` is **0**, so unlike `rita-xl` it can build batches. Commit `e500d14` replaced the false reason with the true one in both files, and both were checked at this entry to carry the correction.
+
+**The true blocker is narrow.** `modeling_proteinglm.py` line 15 reads `import torch, deepspeed`, and Transformers' AST-based `check_imports` fires on the mere presence of that name, before the module body runs. The only uses are inside `get_checkpoint_fn()` immediately below it, reachable solely from a training path guarded three times over by `gradient_checkpointing`, `self.training` and `torch.is_grad_enabled()`. The checkpoint is therefore unloadable on this host **as staged**, for a reason that has nothing to do with its tokenizer or its weights.
+
+**The native rendering is now evidenced rather than undeclared.** `<gmask><sop><eos>` followed by the residues, ids `[29, 32, 34]`, gives **1.1277 nats/residue** over residues 2..L, against **2.8974** for mono-residue-shuffled input and **16.9930** for bare residues. The reading is corroborated at the weight level: the only trained special-token embeddings are `<gmask>` 1.4439, `<sop>` 1.2600 and `<eos>` 1.6526, against about 1.057 for every other special token and for all 92 unused rows. **The terminator is `<eos>` (34), not the `<eop>` (33) the model card's `chat()` lists** — P(`<eop>`) after the final residue is 0.00000 and that embedding was never trained. The head is tied (`torch.equal` true against the input embedding), and mass on all untrained ids is 5.4e-08, so the uncropped 128-wide logits are safe to score.
+
+**Hazards, recorded as gating any future capability grant rather than as notes.** `hidden_states` are `[seq, batch, hidden]` while logits are `[batch, seq, vocab]`; every other arm in this panel is batch-first, so any lens, probe or patching code that assumes batch-first is **silently wrong** here. `output_attentions` is dead — `all_self_attentions = None` unconditionally at line 686. And `attn_implementation="eager"` is inert, because the only switch is `config.use_pytorch_sdpa`.
+
+**One line about a vendored baseline, because it prices the rendering finding.** The ProteinGym baseline at `external_resources/literature/repos/proteingym/proteingym/baselines/xtrimopglm/compute_fitness.py` tokenises bare residues with no prefix. That is the 16.9930 nats/residue row — off distribution for this checkpoint by about **15.9 nats/residue**.
+
+**None of this is a capability result.** It establishes what the interface is and why the checkpoint does not load, and nothing about what the model knows or can do.
