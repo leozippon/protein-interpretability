@@ -17192,3 +17192,33 @@ The first dispatch refused all three `progen2-large` cells of slot 1 with exit 1
 **Artefacts.** `results/transfer/external_baseline/20260825184935_83c4309de08a/scale_interface_qual_{bf16,f32}/` and `results/transfer/external_baseline/20260825191243_f4c3b12790e2/r224_s01_{large,xlarge}_b0…b7/`, pulled and digest-verified. Nothing is promoted to `evidence/`.
 
 **Still to run before any EXP-R2-224 gate can return a verdict:** stage 41 over the three rungs' twenty-four blocks, stage 20 `--stages score` and stage 29 `--stages score` on both new rungs at bfloat16, and stage 42.
+
+## 2026-08-26 — EXP-R2-224 stage 41: the three-rung context-information ladder qualifies on all eight blocks
+
+**Qualification endpoint only. This is not a capability gate and is not averaged with the two fitness gates.** CPU on the workstation over the retained sufficient statistics; no model, no GPU.
+
+**Command.** `41_context_information_bootstrap.py --sidecar <24> --cohort-json <24> --reference-json <24> --arms progen2-medium progen2-large progen2-xlarge --expected-arms progen2-medium progen2-large progen2-xlarge --seed 20260820 --n-bootstrap 2000 --out results/transfer/r224_stage41 --report-name context_information_bootstrap.json`. The twenty-four items are the eight EXP-R2-216 `swissprot_progen2_medium_f32` blocks reused unchanged, plus the sixteen written by this campaign's stage 01. The exact path lists are in the artefact's configuration block.
+
+**Every one of the twenty-four rows is `PASS`**, with a displacement-corrected 95% interval strictly above zero on every rung and every block. Per-rung range of those interval endpoints across the eight blocks:
+
+| rung | cohort item | blocks | displacement-corrected 95% interval, min lower to max upper |
+|---|---|---:|---|
+| `progen2-medium` | `swissprot_progen2_medium_f32` | 8 | +1.1712 to +1.4783 |
+| `progen2-large` | `swissprot_progen2_large_f32` | 8 | +1.1813 to +1.5173 |
+| `progen2-xlarge` | `swissprot_progen2_xlarge_f32` | 8 | +1.5291 to +1.8406 |
+
+**The ladder qualifies under stage 42's own rule.** `qualify_stage41` returns `passed: true` over blocks `b0…b7`, which is only reachable when all three rungs cover an identical block set, no rung repeats a block, every row is `PASS` with a finite interval above zero, and **the per-block cohort digest agrees across all three rungs** — the condition this campaign's expect basenames were built to force, now confirmed on the assembled report rather than on the filenames. Each rung's `cohort_name` is recorded as the reported diagnostic the amendment asks for and is not a gate.
+
+**What this does not say.** Identification means the estimand is measurable on this cohort for each rung separately. It is not a capability comparison, the between-rung separation visible in the table is not a tested contrast, and no rung ordering is claimed from it. The 0.30-nat point floor is not this campaign's rule and was not used.
+
+**Artefact.** `results/transfer/r224_stage41/context_information_bootstrap.json`. Nothing is promoted to `evidence/`.
+
+## 2026-08-26 — EXP-R2-224 fitness endpoints dispatched, in flight
+
+**Dispatched, not complete. No ProteinGym or MegaScale reading exists yet and no gate has returned a verdict.** Recorded here so the dispatch has a record independent of its outcome.
+
+`campaign_r224_fitness.tsv` at pinned commit `1211272f`, through the in-pod campaign queue: slot 1 is `20_retrieval_bound.py --stages score` and slot 2 is `29_designed_referent.py --stages score --batch-size 512`, each on `progen2-medium`, `progen2-large` and `progen2-xlarge` at **bfloat16**, one rung per card. All three rungs are re-scored rather than two, because the freeze forms the paired Δρ within one run and treats the historical F10 and F12 medium numbers as a reproduction diagnostic that cannot be a gate input, and because stage 42 resolves a precision from three payloads per endpoint. Every other setting is the stage default the medium payloads on disk already carry: stage 20 at `--variants 1000 --seed 20260807 --batch-size 16`.
+
+Both score stages read an input out of the output directory the runner injects — `wildtypes.json` for stage 20, `cohort.json` for stage 29 — so both were staged into each cell's directory before dispatch and neither is a cell's expect basename. The staged `cohort.json` hashes to `caaa233dc44146d4…`, which is the `cohort_sha256` that `baselines.json` and every existing `model_<arm>.json` declare and that stage 42 recomputes before reading the design census.
+
+At the last observation all three cards were between 94% and 99% utilisation with slot 1 running and `# FAILURES 0`. **Stage 42 has not run and must not be run until all six cells have exited-ok.**
