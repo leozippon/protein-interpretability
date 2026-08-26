@@ -1,0 +1,31 @@
+# EXP-R2-225 Wave A, joint scale trajectory: stage-21 both-mode qualification of
+# facebook/galactica-6.7b, the middle rung of 1.3 -> 6.7 -> 30B.
+#
+# One cell, and that is the whole campaign. The prereg's operational sequence
+# verifies the smaller new arms first and only then attempts galactica-30b, so the
+# 30B rung is a LATER dispatch against its own manifest rather than a second slot
+# here: a slot barrier would release it minutes after this cell finishes, and at the
+# measured ~2 MB/s staging link its 57 GB of weights are hours behind that.
+#
+# Every draw is named rather than implied, and each is the value the prereg binds
+# this rung to for comparability with facebook/galactica-1.3b's existing
+# qualification (results/transfer/external_baseline/20260822221334_7786dce63b35/
+# s21_galactica-1.3b/joint_mode_qualification.json, whose settings block carries
+# exactly these): corrected cohort draw seed 20260728, 128 scored records, a
+# 400-record held-out unigram reference, residue band 64-246, text floor 800
+# characters, a 512-token scored text window, and bfloat16. --modes both because
+# D1.d's admission rule needs both and a checkpoint measured in one is not qualified.
+# --protein-context is left at its default of none, so the protein block is the bare
+# [START_AMINO]...[END_AMINO] rendering the 1.3B rung was qualified under.
+#
+# --checkpoint is a path and not an arm name on purpose: 21_joint_mode_qualification.py
+# refuses to take an arm, because a checkpoint that has not passed this stage must not
+# be in arms.py at all. ${TRANSFER_MODEL_BASE_DIR} is substituted by the runner from
+# h200_env.sh, so no site path is written here.
+#
+# This qualification is not an admission, not a capability result, and not a licence
+# to read a protein-side number: the protein mode enters ProteinGym or MegaScale only
+# after it passes here.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	r225	0	21_joint_mode_qualification.py	r225_s21_galactica_6b	-	joint_mode_qualification.json	--checkpoint ${TRANSFER_MODEL_BASE_DIR}/galactica-6.7b --rendering galactica --modes both --dtype bfloat16 --sequences 128 --unigram-sequences 400 --protein-min-len 64 --protein-max-len 246 --text-min-chars 800 --max-tokens 512 --cohort-draw-seed 20260728

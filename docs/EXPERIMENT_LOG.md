@@ -17559,3 +17559,87 @@ The bootstrap unit is the **target's near-duplicate group** on the protein side,
 **One line about a vendored baseline, because it prices the rendering finding.** The ProteinGym baseline at `external_resources/literature/repos/proteingym/proteingym/baselines/xtrimopglm/compute_fitness.py` tokenises bare residues with no prefix. That is the 16.9930 nats/residue row — off distribution for this checkpoint by about **15.9 nats/residue**.
 
 **None of this is a capability result.** It establishes what the interface is and why the checkpoint does not load, and nothing about what the model knows or can do.
+
+## 2026-08-26 — EXP-R2-224 stage 42, the first round's only verdict: no adjacent pair transitions on either endpoint, on either gate
+
+**This is EXP-R2-224's first and only capability result.** Both fitness endpoints are now scored on all three rungs and the frozen compound gates have returned. **All four adjacent-pair gates return `verdict: false`.** No gate returned `unresolved`, no condition returned `None`, and no interval in the report is `degenerate`. An absence of transitions is the result of this round, and it is reported as measured rather than narrowed, re-seeded, or restated as a trend.
+
+### Retrieval of the six fitness records
+
+The `r224_fitness` campaign at run-id `20260825195618_843be1c95a64` closed with `# FAILURES 0`, `# NO-RECORD 0` and all six cells `exited-ok`. Its records were retrieved with `scripts/transfer/pull_records_h200.sh` after a dry run that selected twelve `*.json` files — the six `model_progen2-<rung>.json` records plus the three staged `wildtypes.json` and three staged `cohort.json` inputs the runner had placed beside them. The real pull's verdict, verbatim:
+
+```
+[pull-records] 2026-08-25T21:13:15-07:00 digests verified; results/transfer/r224_fitness ADMITTED (12 file(s))
+```
+
+The pulled `cohort.json` hashes to `caaa233dc44146d4fca40087b431e49aea97d073f864b04168e0a764ad400205`, which is the `cohort_sha256` the frozen stage-29 payloads declare and which stage 42 recomputes before reading the design census. Stage 42's two input directories were assembled under `results/transfer/r224_fitness/` from the pulled records plus the frozen `lookup.json`, `baselines.json`, `cohort.json` and `fragment_order.json`; the frozen F10 and F12 `model_progen2-medium.json` artefacts were not overwritten and are not inputs to any gate here.
+
+### Command
+
+Run on the workstation, CPU-only, out of a `git archive` of commit `9e73ae8` so the analysis is bound to committed code rather than to a working tree two agents are editing:
+
+```
+42_scale_capability.py \
+  --retrieval-bound-dir results/transfer/r224_fitness/retrieval_bound \
+  --designed-referent-dir results/transfer/r224_fitness/designed_referent \
+  --context-information-summary results/transfer/r224_stage41/context_information_bootstrap.json \
+  --bootstrap 2000 --seed 20260825 --out results/transfer/scale_capability
+```
+
+The frozen bootstrap is honoured exactly: `resamples: 2000`, `seed: 20260825`. The stage resolved one precision per endpoint from the payloads themselves — **bfloat16 on ProteinGym and bfloat16 on MegaScale** — and `qualify_stage41` returned `passed: true` over blocks `b0…b7`. The census amendment's `fragment_order.json` decision was applied rather than worked around: the artefact carries margins for `progen2-medium` only, so the block is emitted with `rungs_present: ["progen2-medium"]`, `rungs_missing: ["progen2-large", "progen2-xlarge"]` and `reported_not_gated: true`, and it stops nothing.
+
+**Censuses, both carried.** DMS declared cohort 217 assays over 174 families; **analysis set 201 assays over 163 families**, with the sixteen context-overflow exclusions exactly the frozen list. MegaScale design side **130 zero-hit designs over 40 series**, natural control **266 domains over 124 `WT_cluster`s**.
+
+### DMS (ProteinGym substitutions), 201 assays / 163 families, unit = wild-type family at 50% identity
+
+| quantity | `progen2-medium` | `progen2-large` | `progen2-xlarge` |
+|---|---|---|---|
+| raw Spearman ρ | +0.3557 [+0.3256, +0.3850] | +0.3722 [+0.3453, +0.3999] | +0.3639 [+0.3405, +0.3876] |
+| MODEL − LOOKUP | −0.0043 [−0.0298, +0.0215] | +0.0122 [−0.0126, +0.0357] | +0.0039 [−0.0148, +0.0210] |
+| MODEL − BLOSUM62 (reported, never this gate) | +0.1522 [+0.1248, +0.1787] | +0.1688 [+0.1465, +0.1916] | +0.1604 [+0.1412, +0.1789] |
+
+Paired Δρ on **raw** Spearman: medium→large **+0.016585 [+0.004773, +0.028958]**, which excludes zero; large→xlarge **−0.008328 [−0.025984, +0.008903]**, which does not.
+
+**Both DMS gates are `verdict: false`.** On medium→large the compound's two conditions split — `raw_spearman_delta: true`, `larger_model_minus_lookup: false` — and a compound needs both. On large→xlarge both conditions are `false`. The controlling fact is the middle row of the table: **no rung's MODEL − LOOKUP 95% lower bound exceeds zero**, so no rung clears the DMS gate's own baseline contrast, and the `reported_not_gated` block records the smaller rung's MODEL − LOOKUP as `false` on both pairs for the same reason.
+
+### MegaScale designed referent, design side 130 wild types / 40 series
+
+| quantity | `progen2-medium` | `progen2-large` | `progen2-xlarge` |
+|---|---|---|---|
+| raw Spearman ρ | +0.0280 [−0.0045, +0.0633] | +0.0519 [+0.0091, +0.0972] | +0.0480 [+0.0190, +0.0772] |
+| MODEL − hydropathy | −0.4106 [−0.4511, −0.3684] | −0.3866 [−0.4350, −0.3346] | −0.3905 [−0.4278, −0.3539] |
+| MODEL − BLOSUM62 | −0.1336 [−0.1756, −0.0899] | −0.1097 [−0.1640, −0.0552] | −0.1136 [−0.1555, −0.0697] |
+
+Design-series-paired Δρ on **raw** Spearman: medium→large **+0.023964 [+0.004183, +0.043543]**, which excludes zero; large→xlarge **−0.003924 [−0.028313, +0.020680]**, which does not.
+
+### MegaScale natural control, 266 domains / 124 `WT_cluster`s
+
+| quantity | `progen2-medium` | `progen2-large` | `progen2-xlarge` |
+|---|---|---|---|
+| raw Spearman ρ | +0.3085 [+0.2699, +0.3447] | +0.3100 [+0.2729, +0.3485] | +0.3155 [+0.2827, +0.3494] |
+| MODEL − hydropathy | +0.0909 [+0.0375, +0.1480] | +0.0924 [+0.0375, +0.1484] | +0.0979 [+0.0442, +0.1543] |
+| MODEL − BLOSUM62 | +0.1302 [+0.0967, +0.1623] | +0.1317 [+0.0972, +0.1638] | +0.1372 [+0.1060, +0.1681] |
+
+Natural-cluster-paired raw Δρ, reported and never gated: medium→large **+0.001523 [−0.015081, +0.017704]**, large→xlarge **+0.005479 [−0.016976, +0.028295]**.
+
+**Both MegaScale gates are `verdict: false`.** The two natural-control conditions are `true` on both pairs; all three design-side conditions fail on large→xlarge, and on medium→large the design Δρ is `true` while both design baseline contrasts are `false`. The reason is visible in the design table and is not a scale reading at all: **on the certified zero-hit designs every rung is significantly worse than both sequence baselines**, by about −0.39 to −0.41 against hydropathy and −0.11 to −0.13 against BLOSUM62, so no rung can clear a gate that requires it to beat them. That reproduces F12's finding on a third and fourth rung rather than overturning it.
+
+### Fragment margins, reported and never gated
+
+`highest_supported_order: 7`, schemes `kneser_ney` and `witten_bell`, supported orders 3–7. Margins exist for `progen2-medium` alone. On the natural control every order clears its baseline, from k=3 **+0.3369 [+0.2951, +0.3784]** down to k=7 **+0.1595 [+0.1301, +0.1884]**. On the designs the margin decays through the orders and stops excluding zero at k=6: k=3 **+0.1033 [+0.0722, +0.1324]**, k=5 **+0.0555 [+0.0275, +0.0833]**, k=6 **+0.0235 [−0.0026, +0.0499]**, k=7 **−0.0041 [−0.0280, +0.0198]**. The freeze's "report every 3–7-mer fragment margin" is **not** discharged for the two upper rungs: that needs a stage-29 `fragment_order` pass over the three rungs' new model scores, which is now possible and is not a prerequisite for any gate.
+
+### Artefact
+
+`results/transfer/scale_capability/scale_capability.json`, schema `r2_transfer_scale_capability_v2`, created `2026-08-26T04:24:39Z`. Nothing is promoted to `evidence/`.
+
+### The ceiling on what this licenses
+
+Binding, and narrower than the tables above may look.
+
+- **A `false` verdict is not a scale claim, in either direction.** The report's own `descriptive_not_causal` field says checkpoint differences on this ladder are descriptive of the named checkpoints and are not identified as a causal effect of parameter count. Depth, width and parameter count co-vary across these three rungs, and training mixture and unsearched BFD30 remain confounded with the rung. Nothing here says that scale does not help; it says these two gates did not transition on these adjacent pairs on these queues.
+- **It is not knowledge evidence.** §7.0 does not gate this campaign because no knowledge claim is in play, and none is made. Beating — or failing to beat — a sequence baseline is not evidence about biology.
+- **LOOKUP is a bound in the model-favouring direction and the DMS result must be read through that.** UniRef90 and BFD30 were not fully searched, so LOOKUP under-counts retrievable support and MODEL − LOOKUP is inflated. That the inflated contrast still fails to exclude zero on all three rungs is the stronger statement; it is still not a retrieval exclusion and still not a claim about what the model retrieved.
+- **The two auxiliary Δρ intervals that do exclude zero are not transitions.** Medium→large moves on raw Spearman on both endpoints. A `descriptive_gate_transition` exists only as the unique compound block, and labelling a bare Δρ as a transition is a protocol breach under the pre-data amendment. The pair is recorded as `verdict: false`.
+- **It is not a claim that any rung failed**, and specifically not that `progen2-xlarge` is worse than `progen2-large`. The large→xlarge Δρ intervals span zero on both endpoints; that is an absence of a resolved difference at this unit count, not a measured decline.
+- **The DMS reading covers 163 families, not ProteinGym's 174**, and must not be presented as covering the declared cohort.
+- **One fixed run.** Calling anything here a robust qualitative change, or its absence a robust null, requires independent-data replication.
