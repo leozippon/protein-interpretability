@@ -18345,3 +18345,139 @@ Snapshot `20260826143603_cffa47b0ef19`, pinned at commit `8515860`, launched 202
 **All four interface self-checks passed in the first two slots**, and each resolved exactly what this campaign's contrast depends on: the marker prefix is one token on `gpt2-large` and both ProGen2 rungs and two on `protgpt2`, the mono-shuffle unit is residues on the three protein arms and tokens on the text arm, and id-level concatenation agrees with joint tokenisation on all four — so the scored span cannot have moved with the context content on any of them. Every arm declares 1024 positions.
 
 One reproduction diagnostic worth recording: `progen2-small` returns **2.6505 nats/token** on the fixed self-check record in the pod, against **2.6505** measured on this workstation's CPU before dispatch. It is a device-agreement check on the scoring path and is an input to nothing.
+
+## 2026-08-26 — EXP-R2-228 measured: in-context homologue conditioning in frozen decoders is copying and local overlap, and it vanishes below the needle
+
+**The result. No arm passes the three-clause compound.** Two protein arms return `in_context_copying_and_local_overlap` and two arms return `no_gain_at_this_budget`. The decisive clause — that the gain survive inside the bottom local-overlap tercile of the `< 30` identity band — **fails on every arm**, and it fails on the two arms that carry a large pooled gain. That is the reading the registration froze for exactly this outcome: the line closes on Kantroo et al.'s mechanism and is not narrowed to a favourable band.
+
+### Provenance
+
+Snapshot `20260826143603_cffa47b0ef19`, pinned at commit `8515860`, all 24 cells settled with zero failures and zero no-records. Records retrieved with `scripts/transfer/pull_records_h200.sh`, whose admission line is quoted rather than paraphrased:
+
+```
+[pull-records] 2026-08-26T15:41:34-07:00 29 file(s) selected
+[pull-records] 2026-08-26T15:51:14-07:00 digests verified; results/transfer/external_baseline/20260826143603_cffa47b0ef19 ADMITTED (29 file(s))
+```
+
+**The `*.json` selection is complete for this campaign, and it was checked rather than assumed.** A full remote walk returned 53 files: the 29 records and **24 `*.json.sha256` write-time digest sidecars** the selection cannot match. `--stage analyse` reads only `plan_<arm>.json` and `scores_<arm>_<condition>.json`, so no non-JSON artefact is an input to any number below. The 24 sidecars were nevertheless bundled in one pod round trip and checked against the delivered files: **24 of 24 verify, 0 mismatches**. That is a stronger statement than the pull's own admission, which compares against digests taken from GPFS at pull time; this compares against digests the pod wrote at score time. The cohort passed to `--cohort` is byte-identical to the one pushed to the run directory and scored against in-pod.
+
+The analysis is CPU-only on the workstation, over the flattened score directory:
+
+```
+python scripts/transfer/46_context_homologue.py --stage analyse \
+  --cohort results/transfer/context_homologue/cohort.json \
+  --score-dir results/transfer/external_baseline/20260826143603_cffa47b0ef19 \
+  --out results/transfer/external_baseline/20260826143603_cffa47b0ef19
+```
+
+Cohort digest `33707cee59c523dec945f9cc6f815bf5e5a1610eeff6e40ca2f16ce3134a7532`, unchanged and re-verified by every sub-stage; group bootstrap 2,000 resamples at seed 20260826. `evidence/context_homologue_20260826/endpoints.json` is the durable extract — every endpoint, interval, clause and verdict, with the per-unit rows dropped because the full artefact is 3.3 MB and lives outside version control. **No unit was refused on any arm.**
+
+### The four verdicts, as the artefact states them
+
+| arm | outcome | pooled fractional reduction | pooled AUROC |
+| --- | --- | --- | --- |
+| `gpt2-large` (text) | `no_gain_at_this_budget` | −0.0003, [−0.0012, +0.0006] | 0.5038, [0.4692, 0.5387] |
+| `protgpt2` | `in_context_copying_and_local_overlap` | +0.0722, [+0.0604, +0.0845] | 0.7863, [0.7563, 0.8148] |
+| `progen2-small` | `in_context_copying_and_local_overlap` | +0.0426, [+0.0348, +0.0508] | 0.6525, [0.6200, 0.6851] |
+| `progen2-medium` | `no_gain_at_this_budget` | −0.0305, [−0.0400, −0.0216] | 0.3787, [0.3434, 0.4146] |
+
+Pooled is over the 800 retained units of the four bands, 710 near-duplicate groups on the protein arms and 201 source documents on the text arm.
+
+### The decisive stratum, which is where the campaign is decided
+
+The bottom local-overlap tercile of the `< 30` identity band, 67 units, **measured longest-common-substring range [3, 5] residues** — below Kantroo et al.'s 10-residue needle, which is the property the third clause depends on.
+
+| arm | fractional reduction | AUROC | ΔNLL homologue − unrelated (descriptive) | clause 3 |
+| --- | --- | --- | --- | --- |
+| `protgpt2` | +0.0020, [−0.0128, +0.0170] | 0.5970, [**0.4775**, 0.7164] | −0.0187, [−0.1091, +0.0727] | fails |
+| `progen2-small` | +0.0039, [+0.0002, +0.0084] | 0.5672, [**0.4478**, 0.6866] | −0.0089, [−0.0173, −0.0012] | fails |
+| `progen2-medium` | −0.0023, [−0.0136, +0.0097] | 0.4627, [0.3433, 0.5821] | +0.0098, [−0.0109, +0.0303] | fails |
+| `gpt2-large` | — | — | — | fails, stratum empty |
+
+`progen2-small` is the closest call in the campaign and it is instructive: its fractional-reduction lower bound clears zero at +0.00019, and its **AUROC lower bound is 0.4478 and does not clear one half**, so the clause fails on the endpoint that carries no denominator. Both endpoints are required and neither was relaxed.
+
+### Why the two positives are copying, read off the design's own strata
+
+The effect is monotone in exactly the quantity Kantroo et al. predict and collapses where copying cannot operate. On `protgpt2`, AUROC runs **0.9550 → 0.9150 → 0.9350 → 0.7700 → 0.5250** across the high-overlap 70–90 stratum, retained 70–90, 50–70, 30–50 and `< 30`; on `progen2-small`, **0.9250 → 0.8600 → 0.6700 → 0.5500 → 0.5300**. The **high-overlap stratum carries the largest effect on both arms** — fractional reduction +0.2902, [+0.2508, +0.3331] on `protgpt2` and +0.2269, [+0.1871, +0.2688] on `progen2-small` — which is the copying mechanism *measured* rather than only excluded, and it is the reason that stratum was scored instead of discarded. By the `< 30` band both arms are at chance.
+
+The high-overlap stratum is populated **only at 70–90**, as the build reported before any score existed. The three unpopulated strata, `< 30` among them at 0 eligible items, stayed dropped and were never merged into a neighbour.
+
+### The two negatives
+
+`gpt2-large` sits at chance on both endpoints in every BM25 band; its largest single reading is AUROC 0.5850, [0.5150, 0.6500] in `bm25_top10`, and its pooled interval spans one half. `progen2-medium` is not merely null but **reversed**: pooled AUROC 0.3787, [0.3434, 0.4146] and fractional reduction −0.0305, [−0.0400, −0.0216], meaning a true-homologue context leaves the target *less* likely than its own composition-matched unrelated context. The reversal is present in every retained band and absent from the high-overlap stratum (+0.0146, [−0.0252, +0.0539]). **No scale reading is available for it.** The ceiling's `no_claim_about_scale` clause is binding: `progen2-small` and `progen2-medium` are two rungs of one lineage at one budget, this campaign forms no scale gate, and the divergence between them is reported as an unexplained arm difference and nothing more.
+
+### The k that was actually reachable, as run
+
+k is an outcome of the fixed 1024-position budget, not a setting. Over retained units: `gpt2-large` 7 / 8 / 9 (min/median/max), `protgpt2` 8 / 14 / 37, `progen2-small` and `progen2-medium` 3 / 6 / 14. Median share of the window spent on context: 0.848, 0.723, 0.781, 0.781. Every arm reached k ≥ 3 on every unit and no unit approached the 48-item recording cap.
+
+### The k = 0 diagnostic, which is never the effect
+
+Reported because the registration's own failure branch needs it, and read for nothing else. `no_context` minus `position_only`: −2.8240, [−2.9804, −2.6774] on `protgpt2`; −0.3631, [−0.3773, −0.3493] on `progen2-medium`; −0.2047, [−0.2189, −0.1913] on `progen2-small`; −0.0316, [−0.0359, −0.0272] on `gpt2-large`. **Mere occupancy accounts for 121% of the whole homologue move on `protgpt2` and 93% on `progen2-medium`** — so a naive (k versus k = 0) comparison would have reported a large "effect" on the two arms whose paired contrast is respectively copying-explained and reversed. `gate()` refuses a block carrying this condition and was not asked to read one.
+
+### One structural property of the frozen gate, recorded rather than patched
+
+`DECISIVE_BAND` is `id_lt_30`, a DIAMOND identity band, so the text arm — which carries BM25 rank bands — has an **empty decisive stratum and cannot satisfy clause 3 as the gate is frozen**. It did not bind here: `gpt2-large` fails clauses 1 and 2 on their own, so its outcome is `no_gain_at_this_budget` whatever clause 3 does. It is recorded as a declared asymmetry of the compound rather than corrected now, because changing a gate after seeing the scores it governs is the failure this registration was written to prevent. Any future text-side reading of clause 3 needs the analogous stratum named **before** the run that decides it.
+
+### What this does not license
+
+A positive here would have been behavioural existence and nothing else; there is no positive to qualify. The two negatives are **bounded to frozen, single-sequence-pretrained decoders at a 1024-position budget on this cohort** and are **not** evidence against in-context homologue conditioning in general — every established positive in this literature (PoET, ProtMamba, E1, Protriever, ProFam) comes from a model **trained** for the conditioning, which is precisely why the frozen-decoder question was worth asking and why a null answers it. Nothing here is a knowledge or mechanism claim: no head, layer or circuit is implicated, and this campaign ran no intervention. F15 stands over the `< 30` band, which an alignment-level screen does not make homology-free.
+
+**Only the two dimensionless endpoints cross the modality boundary.** The per-token ΔNLL figures above are descriptive, are reported beside each arm's own position-only denominator, and are never differenced across arms (L23, Appendix B rules 26/27) — `protgpt2`'s position-only NLL is 7.5826 nats/token against `progen2-small`'s 1.7554 and `gpt2-large`'s 3.3182, and a per-token magnitude compared across those is not one estimand. A BM25 rank band and a DIAMOND identity band are two different measurements and are not ranked together or plotted on a shared axis, so the text arm's null is a null on its own bands and not a band-matched counterpart to the protein result.
+
+**`protgpt2`'s prior multi-sequence exposure is the standing confound and it points the same way as the result.** It was pretrained on FASTA-formatted UniRef50 with sequences hard-wrapped at 60 residues and separated by the end-of-text token, with its BPE merges learned over that byte stream — a multi-sequence window the ProGen2 arms never saw. It carries the largest pooled gain of the panel. That pattern is **consistent with the exposure** and licenses no tokenisation, modality or scale reading; it is a confound of the arm, not of the modality. It does not rescue the arm's clause 3 either, which fails on it as on every other.
+
+### Validation
+
+`scripts/transfer/panel_contract.py --verify` passes. Full suite under the campaign's model base directories: **1 failed, 2318 passed, 23 skipped, 110 subtests passed** in 782 s — the single failure is the known load-sensitive bash-trap race `ExternalStageWrapperLifecycleTests::test_int_writes_pre_and_post`, unchanged from the pre-dispatch baseline and left alone. No frozen constant, threshold, band, seed or stratum was altered to obtain any verdict above, and no arm was re-scored.
+
+## 2026-08-26 — EXP-R2-228 returns: the in-context gain on a frozen protein decoder is local overlap, it dies by 30% identity, and one rung is moved the wrong way
+
+**The campaign completed: 24 of 24 cells `exited-ok`, 0 failures, 0 no-record**, on snapshot `20260826143603_cffa47b0ef19` at commit `8515860`, against cohort `33707cee59c5…`. 4,000 scored units across four arms and five conditions, float32 throughout. `§7.0` does not gate this entry: a measurement of what a model does is itself the result. Every reading below sits under the `CEILING` the registration froze and this artefact carries.
+
+### The verdicts the frozen compound returns
+
+| arm | pooled AUROC [95%] | pooled fractional reduction [95%] | its own position-only NLL | verdict |
+| --- | --- | --- | --- | --- |
+| `protgpt2` | **0.786** [0.756, 0.815] | **+0.072** [0.060, 0.084] | 7.583 nats/token | `in_context_copying_and_local_overlap` |
+| `progen2-small` | **0.653** [0.620, 0.685] | **+0.043** [0.035, 0.051] | 1.755 nats/token | `in_context_copying_and_local_overlap` |
+| `progen2-medium` | **0.379** [0.343, 0.415] | **−0.031** [−0.040, −0.022] | 1.514 nats/token | `no_gain_at_this_budget` |
+| `gpt2-large` (text) | 0.504 [0.469, 0.539] | −0.0003 [−0.0012, +0.0006] | 3.318 nats/token | `no_gain_at_this_budget` |
+
+Pooled over the four populated retained bands, 800 units per arm; the protein arms resample 710 near-duplicate groups and the text arm 201 source documents. The denominator travels with every fractional reduction (Appendix B rule 27), and no nats-per-token magnitude is differenced across arms (L23).
+
+### Clause 3 fails on both positive arms, and the whole `< 30` band says why
+
+**The band gradient is monotone, steep, and gone by 30% identity.** AUROC by identity band, retained stratum, 200 units each:
+
+| band | `protgpt2` | `progen2-small` | `progen2-medium` |
+| --- | --- | --- | --- |
+| 70–90 | 0.915 [0.862, 0.959] | 0.860 [0.803, 0.917] | 0.435 [0.354, 0.515] |
+| 50–70 | 0.935 [0.898, 0.965] | 0.670 [0.604, 0.737] | **0.225** [0.172, 0.281] |
+| 30–50 | 0.770 [0.709, 0.828] | 0.550 [0.482, 0.615] | 0.390 [0.322, 0.458] |
+| **< 30** | **0.525** [0.455, 0.593] | **0.530** [0.460, 0.600] | **0.465** [0.396, 0.530] |
+
+The decisive clause is read in the bottom local-overlap tercile of `< 30`, whose contexts carry longest common substrings of **3–5 residues** — below the 10-residue needle Kantroo et al. report. There it returns 0.597 [0.478, 0.716] on `protgpt2` and 0.567 [0.448, 0.687] on `progen2-small`: both include one half, so clause 3 fails and the line closes on the copying reading, as the registration specified and without narrowing to a favourable band.
+
+**That tercile is 67 units and its interval is wide, so the tercile alone would be a weak negative — but the whole 200-unit band behind it is not.** At `< 30` the retained band's AUROC interval tops out at 0.593, 0.600 and 0.530 on the three protein arms, so the campaign excludes anything above a very small effect at that identity on every one of them, at four times the decisive stratum's sample. The three terciles inside `< 30` are also flat against each other (0.567 / 0.485 / 0.537 on `progen2-small`; 0.597 / 0.455 / 0.522 on `protgpt2`), which is what a gain carried by local overlap looks like when the overlap is gone.
+
+**The excluded stratum was scored, and it is the highest reading anywhere.** In the 70–90 band, contexts whose longest common substring reaches 20 residues return AUROC **0.955** [0.919, 0.986] on `protgpt2` and **0.925** [0.878, 0.966] on `progen2-small`, above their own retained counterparts at the same identity (0.915 and 0.860). Kantroo et al.'s mechanism is therefore measured rather than only screened out, which is what the registration asked for.
+
+### `progen2-medium` is moved the wrong way, and it is not a null
+
+Its pooled AUROC is 0.379 [0.343, 0.415] and at 50–70% identity it is **0.225** [0.172, 0.281]: a genuine homologue in context makes this checkpoint's target **less** likely than a composition- and token-length-matched unrelated sequence, reliably, at four resampled hundreds of groups. Its mono-shuffled control also beats its homologue condition by 0.195 nats/token. The frozen rule returns `no_gain_at_this_budget` for it, which is correct as far as the compound goes, and understates what was measured: this is a reproducible *negative* conditioning effect on the one rung of this lineage the cited literature actually tested. Nothing here says why, and this campaign runs no intervention.
+
+### Two things the reading must carry
+
+**The text arm's pooled null is partly a construction.** Three of its four bands are BM25 relatedness bands and the fourth, `bm25_random`, is a draw from beyond rank 1000 — a deliberate null pooled into the same estimate. Per band: top-10 **0.585** [0.515, 0.650], 10–100 0.535 [0.465, 0.605], 100–1000 0.465 [0.400, 0.535], random 0.430 [0.360, 0.500]. The top-10 interval excludes one half. So "`gpt2-large` shows no gain" is the pooled compound's answer and not the whole measurement; the honest statement is that at k = 8 the text arm's retrieved-neighbour band returns a small effect the pooled endpoint washes out against its own random band. The protein `< 30` band is **not** the same object — it still requires a detected DIAMOND alignment — so the two pooling operations are not equivalent, and this is a defect of the parallel-factor design rather than of either measurement. **A text band and a protein identity band are still never differenced or ranked together.**
+
+**The registration's occupancy failure branch fires on its face and is refuted by its own diagnostic.** Measured against the k = 0 condition, merely filling the context accounts for 93% of what a homologue context does to `progen2-medium`'s target NLL, 121% on `protgpt2` and 238% on `progen2-small`. The branch's antecedent — "the position-only control moves the target's NLL as much as the homologue condition" — is therefore true on all three protein arms. Its consequent — "the endpoint is measuring context occupancy" — is not, and the campaign's own data refute it: k, the per-item token lengths and the filler are held identical across bands, so occupancy is common-mode inside every paired contrast, and an endpoint measuring occupancy could not move from 0.915 to 0.525 across bands **within one arm**. The branch was written against a `(k versus k = 0)` endpoint, which the same registration then barred; it does not discriminate on the paired endpoint that replaced it. Recorded as a defect in the registration's branch text, not resolved by fiat, and flagged for the next reader. **The campaign is not stopped on it**, because the clause it invokes is demonstrably not the condition the data are in.
+
+### What this licenses, and what it does not
+
+For `protgpt2` and `progen2-small`: **the gain is in-context copying and local overlap**, on this cohort at this budget. For `progen2-medium` and `gpt2-large`: **no gain at this budget** — a bounded negative about frozen decoders at the measured k, and *not* evidence against in-context homologue conditioning, which PoET, ProtMamba, E1, Protriever and ProFam already establish for models trained for it. None of the four is an existence result for relatedness beyond copying.
+
+**No mechanism claim, no knowledge claim, no scale claim.** The two ProGen2 rungs disagree in sign and this campaign forms no scale gate and may not receive `descriptive_gate_transition`. **ProtGPT2's larger reading carries its own confound**: it was pretrained on FASTA-formatted UniRef50 in which sequences are separated by the end-of-text token, so it is the one arm here with prior exposure to multi-sequence context, and a ProtGPT2-versus-ProGen2 pattern licenses no tokenisation, modality or scale reading. F15 stands over the `< 30` band: an alignment-level screen does not exclude profile-level homology, so it is not a homology-free stratum.
+
+### Artefacts
+
+`results/transfer/r228_context_homologue/context_homologue.json`, assembled on CPU from the twenty score records and four self-checks under `results/transfer/external_baseline/20260826143603_cffa47b0ef19/`, each digest-verified against cohort `33707cee59c5…` and its own arm's plan before it was read. The censuses that decided the cohort are committed at `evidence/context_homologue_20260826/cohort_census.json`.
