@@ -35,6 +35,7 @@ if str(REPO_ROOT) not in sys.path:
 from src.transfer import (  # noqa: E402
     channels,
     circuits,
+    context_homologue,
     designed_referent,
     homology,
     induction_robustness,
@@ -2244,6 +2245,17 @@ FLOOR_RESPECTING_RESAMPLERS: dict[str, dict[str, object]] = {
             np.ones(n),
             replicates=400,
             seed=0,
+        ),
+    },
+    # EXP-R2-228's per-unit endpoint mean. ``degenerate`` rather than ``raises``
+    # because the record carries the verdict and the point estimate beside it:
+    # "this stratum holds too few near-duplicate groups to bound" is a fact about
+    # the stratum that belongs in the artefact, and the interval field is nulled
+    # so it cannot be read as one.
+    "context_homologue.group_bootstrap_mean": {
+        "refusal": "degenerate",
+        "below": lambda n: context_homologue.group_bootstrap_mean(
+            np.linspace(0.0, 1.0, n), np.arange(n), resamples=200, seed=0
         ),
     },
     "homology.bootstrap_stratum": {

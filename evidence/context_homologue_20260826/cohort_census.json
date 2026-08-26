@@ -1,0 +1,693 @@
+{
+  "arms": {
+    "gpt2-large": {
+      "condition_token_gap": {
+        "mono_shuffled": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "n": 800,
+          "q1": 0.0,
+          "q3": 0.0
+        },
+        "position_only": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "n": 800,
+          "q1": 0.0,
+          "q3": 0.0
+        },
+        "unrelated": {
+          "max": 29.0,
+          "mean": -1.9,
+          "median": -2.0,
+          "min": -27.0,
+          "n": 800,
+          "q1": -9.0,
+          "q3": 5.0
+        }
+      },
+      "context_fraction": {
+        "max": 0.9189453125,
+        "mean": 0.8461181640625,
+        "median": 0.84765625,
+        "min": 0.7568359375,
+        "n": 800,
+        "q1": 0.822265625,
+        "q3": 0.871337890625
+      },
+      "digest": "0908bedd7506cd8254e6c72457a8f05ab818ecf4242eea25cf2e198635ced40e",
+      "k_distribution": {
+        "max": 9.0,
+        "mean": 8.00375,
+        "median": 8.0,
+        "min": 7.0,
+        "n": 800,
+        "q1": 8.0,
+        "q3": 8.0
+      },
+      "modality": "text",
+      "n_units": 800,
+      "refusals": [],
+      "rendering": {
+        "content_offset_tokens": 1,
+        "id_concatenation_matches_joint_tokenisation": true,
+        "id_concatenation_note": "items are tokenised separately and concatenated as ids so the target's token grid is identical under every condition. Where this flag is false the arm's BPE would merge across an item boundary, which is exactly the drift the id-level concatenation removes",
+        "input_format": "raw",
+        "item_prefix_repr": "'<|endoftext|>'",
+        "marker_decodes_to": "<|endoftext|>",
+        "rendered_tokens": 36,
+        "shuffle_unit": "tokens",
+        "tokenisation": "bpe"
+      },
+      "shuffle_exact_items": 6403,
+      "shuffle_short_items": 0,
+      "shuffle_trim_excess_tokens": {
+        "n": 0
+      },
+      "shuffle_trimmed_items": 0,
+      "tiled_filler_items": 173,
+      "unrelated_token_gap": {
+        "max": 29.0,
+        "mean": -1.9,
+        "median": -2.0,
+        "min": -27.0,
+        "n": 800,
+        "q1": -9.0,
+        "q3": 5.0
+      },
+      "widened_length_matches": 0
+    },
+    "progen2-medium": {
+      "condition_token_gap": {
+        "mono_shuffled": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "n": 1000,
+          "q1": 0.0,
+          "q3": 0.0
+        },
+        "position_only": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "n": 1000,
+          "q1": 0.0,
+          "q3": 0.0
+        },
+        "unrelated": {
+          "max": 29.0,
+          "mean": 1.21,
+          "median": 2.0,
+          "min": -33.0,
+          "n": 1000,
+          "q1": -7.0,
+          "q3": 9.0
+        }
+      },
+      "context_fraction": {
+        "max": 0.9267578125,
+        "mean": 0.772869140625,
+        "median": 0.78125,
+        "min": 0.556640625,
+        "n": 1000,
+        "q1": 0.71875,
+        "q3": 0.833984375
+      },
+      "digest": "b86b1abe7642fd41e3494344cb1d2733caed8b3631d5703fc10fa50e5f545c29",
+      "k_distribution": {
+        "max": 14.0,
+        "mean": 6.035,
+        "median": 6.0,
+        "min": 3.0,
+        "n": 1000,
+        "q1": 4.0,
+        "q3": 7.0
+      },
+      "modality": "protein",
+      "n_units": 1000,
+      "refusals": [],
+      "rendering": {
+        "content_offset_tokens": 1,
+        "id_concatenation_matches_joint_tokenisation": true,
+        "id_concatenation_note": "items are tokenised separately and concatenated as ids so the target's token grid is identical under every condition. Where this flag is false the arm's BPE would merge across an item boundary, which is exactly the drift the id-level concatenation removes",
+        "input_format": "n_to_c_control",
+        "item_prefix_repr": "''",
+        "marker_decodes_to": "1",
+        "rendered_tokens": 125,
+        "shuffle_unit": "residues",
+        "tokenisation": "residue"
+      },
+      "shuffle_exact_items": 6035,
+      "shuffle_short_items": 0,
+      "shuffle_trim_excess_tokens": {
+        "n": 0
+      },
+      "shuffle_trimmed_items": 0,
+      "tiled_filler_items": 0,
+      "unrelated_token_gap": {
+        "max": 29.0,
+        "mean": 1.21,
+        "median": 2.0,
+        "min": -33.0,
+        "n": 1000,
+        "q1": -7.0,
+        "q3": 9.0
+      },
+      "widened_length_matches": 0
+    },
+    "progen2-small": {
+      "condition_token_gap": {
+        "mono_shuffled": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "n": 1000,
+          "q1": 0.0,
+          "q3": 0.0
+        },
+        "position_only": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "n": 1000,
+          "q1": 0.0,
+          "q3": 0.0
+        },
+        "unrelated": {
+          "max": 29.0,
+          "mean": 1.21,
+          "median": 2.0,
+          "min": -33.0,
+          "n": 1000,
+          "q1": -7.0,
+          "q3": 9.0
+        }
+      },
+      "context_fraction": {
+        "max": 0.9267578125,
+        "mean": 0.772869140625,
+        "median": 0.78125,
+        "min": 0.556640625,
+        "n": 1000,
+        "q1": 0.71875,
+        "q3": 0.833984375
+      },
+      "digest": "881e2ee03752fe59be474de925d54f4d5ba88cdb6375b9041998a4505baa88e4",
+      "k_distribution": {
+        "max": 14.0,
+        "mean": 6.035,
+        "median": 6.0,
+        "min": 3.0,
+        "n": 1000,
+        "q1": 4.0,
+        "q3": 7.0
+      },
+      "modality": "protein",
+      "n_units": 1000,
+      "refusals": [],
+      "rendering": {
+        "content_offset_tokens": 1,
+        "id_concatenation_matches_joint_tokenisation": true,
+        "id_concatenation_note": "items are tokenised separately and concatenated as ids so the target's token grid is identical under every condition. Where this flag is false the arm's BPE would merge across an item boundary, which is exactly the drift the id-level concatenation removes",
+        "input_format": "n_to_c_control",
+        "item_prefix_repr": "''",
+        "marker_decodes_to": "1",
+        "rendered_tokens": 125,
+        "shuffle_unit": "residues",
+        "tokenisation": "residue"
+      },
+      "shuffle_exact_items": 6035,
+      "shuffle_short_items": 0,
+      "shuffle_trim_excess_tokens": {
+        "n": 0
+      },
+      "shuffle_trimmed_items": 0,
+      "tiled_filler_items": 0,
+      "unrelated_token_gap": {
+        "max": 29.0,
+        "mean": 1.21,
+        "median": 2.0,
+        "min": -33.0,
+        "n": 1000,
+        "q1": -7.0,
+        "q3": 9.0
+      },
+      "widened_length_matches": 0
+    },
+    "protgpt2": {
+      "condition_token_gap": {
+        "mono_shuffled": {
+          "max": 0.0,
+          "mean": -0.054,
+          "median": 0.0,
+          "min": -7.0,
+          "n": 1000,
+          "q1": 0.0,
+          "q3": 0.0
+        },
+        "position_only": {
+          "max": 0.0,
+          "mean": 0.0,
+          "median": 0.0,
+          "min": 0.0,
+          "n": 1000,
+          "q1": 0.0,
+          "q3": 0.0
+        },
+        "unrelated": {
+          "max": 42.0,
+          "mean": 3.23,
+          "median": 3.0,
+          "min": -31.0,
+          "n": 1000,
+          "q1": -2.0,
+          "q3": 9.0
+        }
+      },
+      "context_fraction": {
+        "max": 0.97265625,
+        "mean": 0.6825234375,
+        "median": 0.72314453125,
+        "min": 0.173828125,
+        "n": 1000,
+        "q1": 0.462890625,
+        "q3": 0.9150390625
+      },
+      "digest": "a57e2d6a1f643d8cb03d77a7f86045ad39e24b1a26e4add8e03ab616a8219a60",
+      "k_distribution": {
+        "max": 37.0,
+        "mean": 14.94,
+        "median": 13.0,
+        "min": 8.0,
+        "n": 1000,
+        "q1": 10.0,
+        "q3": 18.0
+      },
+      "modality": "protein",
+      "n_units": 1000,
+      "refusals": [],
+      "rendering": {
+        "content_offset_tokens": 2,
+        "id_concatenation_matches_joint_tokenisation": true,
+        "id_concatenation_note": "items are tokenised separately and concatenated as ids so the target's token grid is identical under every condition. Where this flag is false the arm's BPE would merge across an item boundary, which is exactly the drift the id-level concatenation removes",
+        "input_format": "fasta_wrapped",
+        "item_prefix_repr": "''",
+        "marker_decodes_to": "<|endoftext|>\n",
+        "rendered_tokens": 45,
+        "shuffle_unit": "residues",
+        "tokenisation": "multi_residue_bpe"
+      },
+      "shuffle_exact_items": 8444,
+      "shuffle_short_items": 14,
+      "shuffle_trim_excess_tokens": {
+        "max": 36.0,
+        "mean": 5.22616476396174,
+        "median": 4.0,
+        "min": 1.0,
+        "n": 6482,
+        "q1": 2.0,
+        "q3": 8.0
+      },
+      "shuffle_trimmed_items": 6482,
+      "tiled_filler_items": 11,
+      "unrelated_token_gap": {
+        "max": 42.0,
+        "mean": 3.23,
+        "median": 3.0,
+        "min": -31.0,
+        "n": 1000,
+        "q1": -2.0,
+        "q3": 9.0
+      },
+      "widened_length_matches": 0
+    }
+  },
+  "ceiling": {
+    "a_negative_is_bounded_to_frozen_decoders_at_this_budget": "it is not evidence against in-context homologue conditioning, which PoET, ProtMamba, E1, Protriever and ProFam already establish for models trained for it",
+    "a_positive_is_not_homology_understanding": "it is a statement that context relatedness lowers a target's NLL beyond four matched controls on one cohort. F15 stands over it: an alignment-level screen does not exclude profile-level homology, so even the < 30 band is not a homology-free stratum",
+    "cross_modality_comparison_is_confined_to_the_dimensionless_endpoints": "no nats-per-token magnitude, no k, and no band label crosses the modality boundary",
+    "no_claim_about_scale": "progen2-small and progen2-medium are two rungs on one lineage at one budget; this campaign forms no scale gate and may not receive the descriptive_gate_transition label",
+    "not_a_claim_about_in_context_learning_as_a_general_capacity": "nothing here is about few-shot task learning or a scaling law in either modality, which is the reading the Breslow et al. headline would invite",
+    "not_a_knowledge_or_mechanism_claim": "a positive says a behaviour exists; it does not say which heads, layers or circuits produce it, and this campaign runs no intervention. It does not reopen the induction line and does not contribute to it",
+    "protgpt2_carries_a_prior_multi_sequence_exposure": "ProtGPT2 was pretrained on FASTA-formatted UniRef50 in which sequences are hard-wrapped at 60 residues and separated by the end-of-text token, with its BPE merges learned over exactly that byte stream -- a multi-sequence window the ProGen2 arms never saw. A pattern in which ProtGPT2 shows a gain and the ProGen2 arms do not is consistent with that prior exposure and licenses no tokenisation, modality or scale reading. It is a confound of the arm, not of the modality",
+    "the_text_and_protein_band_definitions_are_different_quantities": "a BM25 rank band and a DIAMOND identity band are never differenced, ranked together, or plotted on a shared axis"
+  },
+  "cohort_digest": "33707cee59c523dec945f9cc6f815bf5e5a1610eeff6e40ca2f16ce3134a7532",
+  "draw": {
+    "band_target_floor": 200,
+    "high_local_overlap_lcs": 20,
+    "identity_bands": [
+      [
+        "id_70_90",
+        70.0,
+        90.0
+      ],
+      [
+        "id_50_70",
+        50.0,
+        70.0
+      ],
+      [
+        "id_30_50",
+        30.0,
+        50.0
+      ],
+      [
+        "id_lt_30",
+        0.0,
+        30.0
+      ]
+    ],
+    "local_overlap_kmer": 7,
+    "min_context_items": 8,
+    "near_duplicate_identity": 90.0,
+    "protein_band_residues": [
+      64,
+      246
+    ],
+    "protein_pool": 20000,
+    "seed_note": "the campaign's own draws are seeded at 20260826; the corpus permutation is the panel's one declared --cohort-draw-seed, which the manifest pins to the same value and which this record carries",
+    "seeds": {
+      "bootstrap_seed": 20260826,
+      "campaign_draw_seed": 20260826,
+      "cohort_draw_seed": 20260826
+    },
+    "text_bands": [
+      [
+        "bm25_top10",
+        0,
+        10
+      ],
+      [
+        "bm25_10_100",
+        10,
+        100
+      ],
+      [
+        "bm25_100_1000",
+        100,
+        1000
+      ],
+      [
+        "bm25_random",
+        1000,
+        0
+      ]
+    ],
+    "text_high_overlap_lcs": 50,
+    "text_pool": 12000,
+    "text_shingle_words": 13,
+    "text_token_band": [
+      80,
+      130
+    ]
+  },
+  "excluded_arms": {
+    "progen2-base": "its staged config declares n_positions 2048 while every other arm here declares 1024. Holding a context budget fixed across a 2048-position arm and 1024-position arms confounds the corpus contrast with the budget, and letting the budget scale with the window confounds it with the position-embedding regime. The budget is fixed at 1024 positions on every arm and this rung is out, which also means this campaign measures nothing about long-context behaviour beyond 1024 positions on any arm",
+    "progen2-large": "staged non-member; nothing in this design needs it",
+    "progen2-xlarge": "staged non-member; nothing in this design needs it",
+    "zymctrl": "its declared rendering wraps content in an EC conditioning tag, so every in-context homologue would arrive carrying an enzyme-class label and the estimand would no longer be about sequence context. Scoring without the tag is 1.73 nats off distribution (L15, EXP-R2-034) and scoring with a fabricated one is worse"
+  },
+  "pre_registration": "EXP-R2-228",
+  "protein": {
+    "bootstrap_unit": "the target's near-duplicate group, the connected components of the identity >= 90.0 relation from the same DIAMOND alignment that defines the bands",
+    "census": {
+      "id_30_50": {
+        "high_local_overlap": {
+          "drawn": 0,
+          "eligible_targets": 2,
+          "floor": 200,
+          "populated": false,
+          "reason": "2 targets carry at least 8 high_local_overlap context items, below the pre-declared floor of 200; this stratum is dropped before any score exists and is not merged into a neighbouring band"
+        },
+        "retained": {
+          "drawn": 200,
+          "eligible_targets": 9317,
+          "floor": 200,
+          "populated": true
+        }
+      },
+      "id_50_70": {
+        "high_local_overlap": {
+          "drawn": 0,
+          "eligible_targets": 134,
+          "floor": 200,
+          "populated": false,
+          "reason": "134 targets carry at least 8 high_local_overlap context items, below the pre-declared floor of 200; this stratum is dropped before any score exists and is not merged into a neighbouring band"
+        },
+        "retained": {
+          "drawn": 200,
+          "eligible_targets": 4699,
+          "floor": 200,
+          "populated": true
+        }
+      },
+      "id_70_90": {
+        "high_local_overlap": {
+          "drawn": 200,
+          "eligible_targets": 456,
+          "floor": 200,
+          "populated": true
+        },
+        "retained": {
+          "drawn": 200,
+          "eligible_targets": 662,
+          "floor": 200,
+          "populated": true
+        }
+      },
+      "id_lt_30": {
+        "high_local_overlap": {
+          "drawn": 0,
+          "eligible_targets": 0,
+          "floor": 200,
+          "populated": false,
+          "reason": "0 targets carry at least 8 high_local_overlap context items, below the pre-declared floor of 200; this stratum is dropped before any score exists and is not merged into a neighbouring band"
+        },
+        "retained": {
+          "drawn": 200,
+          "eligible_targets": 4609,
+          "floor": 200,
+          "populated": true
+        }
+      }
+    },
+    "diamond": {
+      "evalue": 0.001,
+      "max_target_seqs": 500,
+      "pairs": 639706,
+      "sensitivity": "very-sensitive",
+      "tool": {
+        "binary_sha256": "5d04a9ecbbceea5d1a6496070155012c2538788def552f85e0d65095a532a5f5",
+        "executable": "/Data/lzp/transfer_work/context_homologue/diamond/diamond",
+        "tarball": "/Data/lzp/InterpretabilityTransfer/external_resources/tools/diamond-linux64-v2.1.24.tar.gz",
+        "tarball_sha256": "2c0c94dce4e2c75af881209ef824c7bc320bcba005ad02489111709590ae685d",
+        "version": "2.1.24"
+      }
+    },
+    "filler": {
+      "candidates_with_no_detected_relative": 2586,
+      "index": 2364,
+      "overlaps_a_target": false,
+      "symbols": 246
+    },
+    "local_overlap": {
+      "id_30_50|retained": {
+        "max": 19.0,
+        "mean": 9.735,
+        "median": 9.0,
+        "min": 4.0,
+        "n": 200,
+        "q1": 8.0,
+        "q3": 12.0
+      },
+      "id_50_70|retained": {
+        "max": 19.0,
+        "mean": 13.7,
+        "median": 14.0,
+        "min": 6.0,
+        "n": 200,
+        "q1": 11.0,
+        "q3": 16.0
+      },
+      "id_70_90|high_local_overlap": {
+        "max": 71.0,
+        "mean": 33.875,
+        "median": 32.0,
+        "min": 20.0,
+        "n": 200,
+        "q1": 26.0,
+        "q3": 39.0
+      },
+      "id_70_90|retained": {
+        "max": 19.0,
+        "mean": 17.1,
+        "median": 18.0,
+        "min": 11.0,
+        "n": 200,
+        "q1": 16.0,
+        "q3": 19.0
+      },
+      "id_lt_30|retained": {
+        "max": 14.0,
+        "mean": 6.165,
+        "median": 6.0,
+        "min": 3.0,
+        "n": 200,
+        "q1": 5.0,
+        "q3": 7.0
+      }
+    },
+    "near_duplicate_groups": 16758,
+    "near_duplicate_pairs": 12392,
+    "sampling": {
+      "corpus": "plain_swissprot",
+      "eligible_records": 213034,
+      "mode": "seeded_permutation",
+      "requested": 20000,
+      "seed": 20260826,
+      "skip": 0
+    }
+  },
+  "schema_version": "r2_context_homologue_v1",
+  "text": {
+    "bootstrap_unit": "the source document; one passage is carved per document, so each unit is its own group",
+    "carving": {
+      "documents_examined": 12000,
+      "dropped_no_round_trip": 591,
+      "dropped_too_short": 0,
+      "never_a_prefix": true,
+      "passages": 11409,
+      "seed": 20260826,
+      "token_band": [
+        80,
+        130
+      ]
+    },
+    "census": {
+      "bm25_100_1000": {
+        "high_local_overlap": {
+          "drawn": 0,
+          "eligible_targets": 0,
+          "floor": 200,
+          "populated": false,
+          "reason": "0 targets carry at least 8 high_local_overlap context items, below the pre-declared floor of 200; this stratum is dropped before any score exists and is not merged into a neighbouring band"
+        },
+        "retained": {
+          "drawn": 200,
+          "eligible_targets": 201,
+          "floor": 200,
+          "populated": true
+        }
+      },
+      "bm25_10_100": {
+        "high_local_overlap": {
+          "drawn": 0,
+          "eligible_targets": 0,
+          "floor": 200,
+          "populated": false,
+          "reason": "0 targets carry at least 8 high_local_overlap context items, below the pre-declared floor of 200; this stratum is dropped before any score exists and is not merged into a neighbouring band"
+        },
+        "retained": {
+          "drawn": 200,
+          "eligible_targets": 201,
+          "floor": 200,
+          "populated": true
+        }
+      },
+      "bm25_random": {
+        "high_local_overlap": {
+          "drawn": 0,
+          "eligible_targets": 0,
+          "floor": 200,
+          "populated": false,
+          "reason": "0 targets carry at least 8 high_local_overlap context items, below the pre-declared floor of 200; this stratum is dropped before any score exists and is not merged into a neighbouring band"
+        },
+        "retained": {
+          "drawn": 200,
+          "eligible_targets": 201,
+          "floor": 200,
+          "populated": true
+        }
+      },
+      "bm25_top10": {
+        "high_local_overlap": {
+          "drawn": 0,
+          "eligible_targets": 0,
+          "floor": 200,
+          "populated": false,
+          "reason": "0 targets carry at least 8 high_local_overlap context items, below the pre-declared floor of 200; this stratum is dropped before any score exists and is not merged into a neighbouring band"
+        },
+        "retained": {
+          "drawn": 200,
+          "eligible_targets": 200,
+          "floor": 200,
+          "populated": true
+        }
+      },
+      "examined_passages": 201
+    },
+    "filler": {
+      "candidates_unrelated_to_every_target": 74,
+      "index": 3402,
+      "overlaps_a_target": false,
+      "symbols": 770
+    },
+    "local_overlap": {
+      "bm25_100_1000|retained": {
+        "max": 25.0,
+        "mean": 12.91,
+        "median": 12.5,
+        "min": 8.0,
+        "n": 200,
+        "q1": 11.0,
+        "q3": 14.0
+      },
+      "bm25_10_100|retained": {
+        "max": 34.0,
+        "mean": 15.155,
+        "median": 15.0,
+        "min": 5.0,
+        "n": 200,
+        "q1": 13.0,
+        "q3": 17.0
+      },
+      "bm25_random|retained": {
+        "max": 19.0,
+        "mean": 10.435,
+        "median": 10.0,
+        "min": 7.0,
+        "n": 200,
+        "q1": 9.0,
+        "q3": 12.0
+      },
+      "bm25_top10|retained": {
+        "max": 44.0,
+        "mean": 17.365,
+        "median": 16.0,
+        "min": 8.0,
+        "n": 200,
+        "q1": 14.0,
+        "q3": 19.0
+      }
+    },
+    "sampling": {
+      "corpus": "openwebtext_screen",
+      "eligible_records": 396133,
+      "mode": "seeded_permutation",
+      "requested": 12000,
+      "seed": 20260826,
+      "skip": 0
+    }
+  },
+  "written_utc": "2026-08-26T20:59:37+00:00"
+}

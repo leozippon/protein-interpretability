@@ -541,6 +541,17 @@ class EveryCorpusDrawDeclaresItsSeed(unittest.TestCase):
                 # which is why the two draws share --cohort-draw-seed rather than
                 # each carrying their own.
                 "38_mode_subspaces.py",
+                # Draws BOTH constructors under one --cohort-draw-seed: the
+                # Swiss-Prot pool its DIAMOND all-against-all identity bands are
+                # built over, and the OpenWebText documents its 80-130-token
+                # passages are carved from. The campaign's own draws -- which
+                # target, which context items, the mono-shuffles, the passage
+                # offsets and the bootstrap -- are seeded separately at the
+                # registration's frozen 20260826, and the manifest pins
+                # --cohort-draw-seed to the same value; both reach the cohort
+                # artefact and its content digest, which every later sub-stage
+                # verifies before it reads a record.
+                "46_context_homologue.py",
             },
         )
 

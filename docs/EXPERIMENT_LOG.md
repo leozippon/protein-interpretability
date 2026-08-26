@@ -18253,3 +18253,87 @@ The three paired Δ point estimates coincide at +0.1356 because both baselines a
 ### Artefacts
 
 `results/transfer/external_baseline/20260826110835_3bf9ccfc64c1/r225_s20_progen3_{112m,3b}/model_progen3-{112m,3b}.json`, assembled with the frozen `lookup.json` into `results/transfer/r225_progen3/retrieval_bound/`, and `results/transfer/second_stage_capability/protein_progen3/second_stage_capability.json`. Nothing is promoted to `evidence/`. Suite with `TRANSFER_MODEL_BASE_DIR` and `TRANSFER_TEXT_MODEL_BASE_DIR` exported: 2244 passed, 22 skipped, two failures, both in `ExternalStageWrapperLifecycleTests` (`test_int_writes_pre_and_post` and `test_term_writes_pre_and_post`) and both the known wall-clock trap race — the four lifecycle tests pass in 5.83 s when the host is not also driving a campaign. `panel_contract.py --verify` passes.
+
+## 2026-08-26 — EXP-R2-228 built and frozen: the cohort, the four per-arm plans, the k every arm actually reaches, and what the mono-shuffle cost to keep
+
+**A build and interface record. No endpoint, no contrast, no AUROC and no verdict exists.** Everything below is a cohort fact, a tokenizer fact or a test result; no checkpoint has been scored on a single unit of this cohort. The registration above is unchanged by any of it.
+
+### What exists now
+
+`src/transfer/context_homologue.py` carries the design, the binding ceiling and every frozen constant; `scripts/transfer/46_context_homologue.py` is the operational sequence in six sub-stages — `cohort`, `plan`, `census`, `self-check`, `score`, `analyse` — of which only `self-check` and `score` need a card. `tests/test_context_homologue.py` holds 25 tests and `scripts/transfer/campaign_r228_context_homologue.tsv` holds 24 cells in 12 slots on two cards. The stage is registered in the cohort-draw contract as a **drawing** stage rather than exempted from it, its `group_bootstrap_mean` is declared in the resampler inventory beside the other eight that reach the unit floor, and it has a row in the measurement-package table.
+
+### The frozen cohort, published before any model was loaded
+
+Digest `33707cee59c523dec945f9cc6f815bf5e5a1610eeff6e40ca2f16ce3134a7532`, and **reproducible**: a second independent build from the same corpora under the same seeds, in a different working directory, returned the identical digest. `evidence/context_homologue_20260826/cohort_census.json` is the durable extract — every digest, every per-band count with the reason each dropped stratum was dropped, the local overlap the primary contexts actually carry, and the realised k — because the artefacts it summarises are 28 MB and live outside version control.
+
+The protein pool is `arms.protein_cohort(20000, 64, 246, seed=20260826)` — the registration's frozen value passed through the panel's one declared `--cohort-draw-seed` rather than restated as a literal — searched all-against-all with the staged DIAMOND 2.1.24 at `--very-sensitive --masking 0`, e-value 1e-3, which returns **639,706** ordered pairs in about two seconds, of which 12,392 are near duplicates at identity ≥ 90 and define **16,758 bootstrap groups over the 20,000 records**. The text pool is **11,409** contiguous passages of 80–130 GPT-2 BPE tokens, one per document, each carved at a seeded **non-zero** offset from an OpenWebText document drawn under the same flag; 591 of 12,000 were dropped because re-encoding the decoded run did not reproduce the token run exactly, and none was too short to carve.
+
+**Every retained identity band clears the 200-target floor and exactly one high-overlap stratum does.** Eligible targets carrying at least eight context items, before the draw:
+
+| identity band | `retained` eligible | `high_local_overlap` eligible |
+| --- | --- | --- |
+| 70–90 | 662 | 456 |
+| 50–70 | 4,699 | **134** |
+| 30–50 | 9,317 | **2** |
+| < 30 | 4,609 | **0** |
+
+Two hundred are drawn from each populated stratum. The high-overlap stratum being populated only at 70–90 is the point of it rather than a shortfall: verbatim 20-residue relatives are what high global identity buys, and they thin to nothing by the `< 30` band. The three unpopulated strata are reported as unpopulated and dropped **here**, before any score exists, and are not merged into a neighbour. All four BM25 bands reach the floor, from 201 passages examined.
+
+**The local-overlap screen bites where copying lives and nowhere else**, which is what the gate's third clause depends on. Median longest common substring over eight context items, *before* the screen: **30** residues at 70–90, **15** at 50–70, **10** at 30–50, **6** at `< 30`. So at 70–90 a 20-residue exclusion removes 85% of candidate contexts, at 50–70 20%, at 30–50 3%, and at `< 30` nothing — global identity plainly does not screen the mechanism, and the screen is not doing the identity band's work over again. *After* the screen, the primary contexts carry medians of 18, 14, 9 and **6** residues (quartiles 5 and 7 at `< 30`, maximum 14), so the decisive stratum — the bottom overlap tercile of the `< 30` band — sits **below Kantroo et al.'s 10-residue needle**. That is why a threshold of 20 rather than 10 is not a way of admitting 10-residue copies: the threshold removes verbatim copies, and the tercile is what answers the needle.
+
+### The k every arm actually reaches, measured
+
+k is an outcome of a fixed 1024-position token budget, and all of it is published from tokenizers alone — no weights were loaded to produce any of it.
+
+| arm | units | k min / median / max | median share of the 1024-position window spent on context |
+| --- | --- | --- | --- |
+| `gpt2-large` (text) | 800 | 7 / 8 / 9 | 0.848 |
+| `protgpt2` | 1,000 | 8 / 13 / 37 | 0.723 |
+| `progen2-small` | 1,000 | 3 / 6 / 14 | 0.781 |
+| `progen2-medium` | 1,000 | 3 / 6 / 14 | 0.781 |
+
+The context-fraction-matched passage cohort did what the registration designed it to do. On the 800-character document cohort the panel's matched pair was not executable at all — a median OpenWebText document is 711 BPE tokens, so `gpt2-large` could not reach k = 1 while `protgpt2` reached ten or more. Here every arm reaches k in the single figures or better and the four arms spend within twelve percentage points of each other's window on context. **Not one unit on any arm was refused for want of budget**, and no unit reached the 48-item recording cap, which the planner raises on rather than allowing to bind.
+
+### The three exclusions, and the confound declared before any reading
+
+`progen2-base` is out because its staged config declares `n_positions` **2048** against 1024 everywhere else: a fixed budget across the two confounds the corpus contrast with the budget, and a scaled budget confounds it with the position-embedding regime. The window is read through `arms.config_context_length` rather than off `n_positions`, so an arm that spells it differently raises before any weight loads instead of resolving to whichever attribute happened to exist. `zymctrl` is out because its declared rendering would put an EC tag on every in-context homologue and change the estimand; L15 prices scoring without the tag at 1.73 nats and a fabricated one is worse. `progen2-large` and `progen2-xlarge` are staged non-members nothing here needs. All four are values in `EXCLUDED_ARMS` with their reasons and travel in every artefact.
+
+**ProtGPT2's prior multi-sequence exposure is declared up front rather than discovered afterwards.** It was pretrained on FASTA-formatted UniRef50 with sequences hard-wrapped at 60 residues and separated by the end-of-text token, and its BPE merges were learned over exactly that byte stream — a multi-sequence window the ProGen2 arms never saw. A pattern in which ProtGPT2 shows a gain and ProGen2 does not is **consistent with that exposure** and licenses no tokenisation, modality or scale reading. It sits in `CEILING`, which every artefact carries.
+
+### The mono-shuffle: three measurements, and what they cost
+
+The registration asks for a residue permutation whose composition is preserved *exactly* and, separately, for every control to be token-length matched. On ProtGPT2 those are two operations, and which one to write was settled by measurement rather than by argument.
+
+**A token-level shuffle is not an acceptable substitute on this arm.** ProtGPT2's BPE pieces reach **32 residues** on natural Swiss-Prot sequences in this band (median 3, 95th percentile 4). Permuting tokens would leave runs three times the length of Kantroo et al.'s needle intact inside a single piece — the exact signal this control exists to destroy. So the protein shuffle is residues and the text shuffle is tokens, as frozen.
+
+**A residue permutation costs a few per cent more tokens, with a heavy tail:** median 1.027× the natural count, 1.111× at the 90th percentile, up to 2×, which summed over a k in the teens is a context tens to hundreds of tokens longer than the one it must match.
+
+**Most items admit a permutation of exactly the right length**, so the shuffle searches 64 seeds for one and takes the first. On `gpt2-large`, `progen2-small` and `progen2-medium` all 6,403 / 6,035 / 6,035 items match on the first attempt, because a token there is a symbol. On `protgpt2`, **8,444 of 14,940 items (56.5%) match exactly**, 6,482 are truncated from the closest longer permutation by a median of 4 tokens (quartiles 2 and 8, maximum 36), and **14** admit no permutation at least as long as the item they replace. A truncation is a uniform random subsample of the item's residues, because a prefix of a permutation is one. The largest resulting context-length mismatch on any unit of any arm is **7 tokens**, against items of 24–247 tokens — inside "to within one item" everywhere. Conditioning on token count does mildly select permutations that are more BPE-compressible, which makes the control look slightly *more* natural and the design correspondingly more conservative; it is declared rather than left implicit.
+
+The other two controls are exact or better. The position-only filler — the longest of the 2,586 pool records with no detected relative anywhere in the pool — is cut to each homologue item's token count **exactly on every arm and every unit**. The composition- and unigram-matched unrelated items are matched item by item inside a ±5% window whose upper bound is additionally clamped by the slack the homologue context left, so a matched context can never spend positions the paired contrast is meant to hold fixed; the realised per-unit gap has a median of ±2–3 tokens and a maximum of 42 on `protgpt2`, 33 on the ProGen2 rungs and 29 on `gpt2-large`, again inside one item.
+
+### The k = 0 condition exists, and it is barred from the gate
+
+The registration bars `(k minus k = 0)` as the effect and, in the same breath, makes a failure branch of "the position-only control moves the target's NLL as much as the homologue condition" — which cannot be checked without a k = 0 reference. Both are honoured: `no_context` is scored, it is the only input to the occupancy diagnostic, it carries `DIAGNOSTIC_NEVER_THE_EFFECT` wherever it appears, and `context_homologue.gate` **raises** if handed a block containing it. A test holds that refusal.
+
+### Known-answer validation, twice
+
+**Arithmetic.** On planted per-unit likelihoods the endpoints return their known values: a planted 0.4-nat homologue advantage against a 2.5-nat position-only denominator returns AUROC exactly 1.0 and fractional reduction exactly 0.16, and the compound returns the three-clause positive; a planted null returns AUROC exactly 0.5 and closes the line; a gain that is strong pooled and flat in the decisive stratum returns `in_context_copying_and_local_overlap` rather than the positive.
+
+**On a real checkpoint, against a published result.** Appending a copy of a target to itself in front of the target — Kantroo et al.'s own manipulation, on the lineage they measured — collapses the target's NLL by more than a nat on `progen2-small`, through this campaign's own rendering, item concatenation and scored-span code, while a length-matched unrelated context moves it by less than a nat in either direction. Had the rendering, the id-level concatenation or the scored span been wrong, that would not appear. It appears for reasons that have nothing to do with homology, which is the whole reason the control structure exists.
+
+**One interface smoke run on CPU** — seventy units of `progen2-small` across all five bands and all five conditions — exercised the artefact chain end to end: digest verification, the rebuild-versus-plan drift check, identical target token grids across conditions, the paired endpoints, the group bootstrap and the compound. It is an interface check on a subset of one arm and is **not** read as a result; no frozen constant was changed after it.
+
+### Two things the implementation had to reconcile, recorded rather than discovered later
+
+**The corpus-draw seed.** The registration freezes 20260826 for this campaign's draws; the repository's cohort-draw contract requires every drawing stage to expose `--cohort-draw-seed` defaulting to the one imported `DEFAULT_CORPUS_DRAW_SEED` and forbids restating a seed as a literal. Both hold: the flag carries the panel default, the manifest pins it to 20260826, and the cohort artefact records both seeds under a `seeds` block its digest covers.
+
+**Items are tokenised separately and concatenated as ids**, never by joining the rendered strings and tokenising once, because the target's token grid has to be identical under every condition for the contrast to be paired at all. The self-check reports per arm whether id-level concatenation agrees with joint tokenisation; on all four arms it does, so the choice costs nothing here and removes the failure mode everywhere. The scored span is located by decoding the marker prefix and requiring it to be a clean prefix of the rendered item — one token for `gpt2-large`'s end-of-text separator and ProGen2's `1` direction marker, two for ProtGPT2's end-of-text plus newline — and an arm whose BPE merged across that boundary would stop rather than move the span.
+
+### Dispatch
+
+`scripts/transfer/campaign_r228_context_homologue.tsv` schedules **24 cells in 12 slots on cuda:0 and cuda:1 only**. A concurrent official campaign holds cuda:2 of this allocation and is on its final slot; the queue refuses a cell whose card is not idle, and no cell here names that card. Slots 1–2 are the four interface self-checks; slots 3–12 are the five conditions in the registration's frozen order — position-only and mono-shuffled first, `no_context` third, then unrelated, then homologue — four arms to a condition, two to a slot. Every cell is float32 and forward-pass only: this campaign samples nothing and computes no gradient.
+
+The cohort and the four plans are pushed to the snapshot's results run directory before launch and are nobody's `expect` basename; each cell verifies the cohort's content digest and its own plan's, and refuses a plan pinned to another cohort. `--stage analyse` is deliberately not in the manifest: it loads no model and runs on the workstation over the pulled score artefacts, which is also where the 2,000-resample group bootstrap on seed 20260826 lives.
+
+**No model was loaded to produce any figure in this entry except the two known-answer validations and the seventy-unit interface smoke run, both named as such.**

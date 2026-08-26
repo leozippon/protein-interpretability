@@ -1,0 +1,70 @@
+# EXP-R2-228: does in-context homologue conditioning exist at all in a frozen decoder?
+#
+# The GPU half of D1.i, and the only half that needs a card. Everything that
+# decides WHAT is measured -- the DIAMOND all-against-all band structure, the BM25
+# passage bands, the local-overlap screen, the per-arm token budget and the
+# realised k -- is a CPU fact and was published on the workstation before any
+# checkpoint was loaded, which is the registration's own operational sequence.
+# What runs here is forward passes and nothing else: no sampling, no gradient.
+#
+# TWO CARDS, NOT THREE. A concurrent official campaign holds cuda:2 of this
+# allocation, so every cell here is scheduled on cuda:0 or cuda:1 and two cells
+# share a slot. A cell whose card is not idle is REFUSED and not launched, which
+# is the property that keeps this campaign from displacing that one.
+#
+# STAGING BEFORE DISPATCH. The frozen cohort and the four per-arm plans are
+# evidence rather than code, so they do not travel inside the snapshot. Push them
+# to <results_run_dir>/cohort.json and <results_run_dir>/plan_<arm>.json before
+# launching -- the shape EXP-R2-226 used for wildtypes.json and EXP-R2-227 for
+# class_queue.json -- and they are nobody's expect basename, because an input
+# staged beside a result is not completion. Every cell verifies the cohort's
+# content digest and the plan's, and a plan pinned to another cohort is refused:
+# the plan's item indices would name records that cohort does not hold.
+#
+# SLOTS 1-2 ARE THE INTERFACE GATE. Each self-check resolves the arm's declared
+# rendering, locates the scored span against the marker prefix -- a BPE merge
+# straddling that boundary would move the span this campaign's whole contrast
+# lives on -- and records a fixed record's NLL at the campaign precision.
+#
+# SLOTS 3-12 ARE THE FROZEN CONDITION ORDER, and it is the registration's: the
+# position-only and mono-shuffled controls are the two conditions most likely to
+# close the line, so they are measured before the condition the campaign hopes
+# for. no_context follows them; it is a diagnostic that exists only to price the
+# position-only control against the registration's own failure branch, it is
+# never the effect, and the analysis refuses to gate on it.
+#
+# float32 ON EVERY ARM AND EVERY CONDITION. The endpoint is a paired difference
+# between two log-likelihoods a few hundredths of a nat apart, every arm here is
+# under 800M parameters, and a reduced-precision cast buys nothing a 143 GB card
+# needs. Declared, identical across arms and conditions, and recorded in every
+# artefact.
+#
+# The analysis is NOT here. --stage analyse loads no model; it runs on the
+# workstation over the pulled artefacts, which is also where the group bootstrap's
+# 2,000 resamples on seed 20260826 are frozen.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	r228	0	46_context_homologue.py	r228_selfcheck_gpt2-large	-	self_check_gpt2-large.json	--stage self-check --arm gpt2-large --dtype float32 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json
+1	r228	1	46_context_homologue.py	r228_selfcheck_protgpt2	-	self_check_protgpt2.json	--stage self-check --arm protgpt2 --dtype float32 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json
+2	r228	0	46_context_homologue.py	r228_selfcheck_progen2-small	-	self_check_progen2-small.json	--stage self-check --arm progen2-small --dtype float32 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json
+2	r228	1	46_context_homologue.py	r228_selfcheck_progen2-medium	-	self_check_progen2-medium.json	--stage self-check --arm progen2-medium --dtype float32 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json
+3	r228	0	46_context_homologue.py	r228_score_gpt2-large_position_only	-	scores_gpt2-large_position_only.json	--stage score --arm gpt2-large --condition position_only --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --plan ${TRANSFER_RESULTS_RUN_DIR}/plan_gpt2-large.json
+3	r228	1	46_context_homologue.py	r228_score_protgpt2_position_only	-	scores_protgpt2_position_only.json	--stage score --arm protgpt2 --condition position_only --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --plan ${TRANSFER_RESULTS_RUN_DIR}/plan_protgpt2.json
+4	r228	0	46_context_homologue.py	r228_score_progen2-small_position_only	-	scores_progen2-small_position_only.json	--stage score --arm progen2-small --condition position_only --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --plan ${TRANSFER_RESULTS_RUN_DIR}/plan_progen2-small.json
+4	r228	1	46_context_homologue.py	r228_score_progen2-medium_position_only	-	scores_progen2-medium_position_only.json	--stage score --arm progen2-medium --condition position_only --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --plan ${TRANSFER_RESULTS_RUN_DIR}/plan_progen2-medium.json
+5	r228	0	46_context_homologue.py	r228_score_gpt2-large_mono_shuffled	-	scores_gpt2-large_mono_shuffled.json	--stage score --arm gpt2-large --condition mono_shuffled --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --plan ${TRANSFER_RESULTS_RUN_DIR}/plan_gpt2-large.json
+5	r228	1	46_context_homologue.py	r228_score_protgpt2_mono_shuffled	-	scores_protgpt2_mono_shuffled.json	--stage score --arm protgpt2 --condition mono_shuffled --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --plan ${TRANSFER_RESULTS_RUN_DIR}/plan_protgpt2.json
+6	r228	0	46_context_homologue.py	r228_score_progen2-small_mono_shuffled	-	scores_progen2-small_mono_shuffled.json	--stage score --arm progen2-small --condition mono_shuffled --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --plan ${TRANSFER_RESULTS_RUN_DIR}/plan_progen2-small.json
+6	r228	1	46_context_homologue.py	r228_score_progen2-medium_mono_shuffled	-	scores_progen2-medium_mono_shuffled.json	--stage score --arm progen2-medium --condition mono_shuffled --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --plan ${TRANSFER_RESULTS_RUN_DIR}/plan_progen2-medium.json
+7	r228	0	46_context_homologue.py	r228_score_gpt2-large_no_context	-	scores_gpt2-large_no_context.json	--stage score --arm gpt2-large --condition no_context --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --plan ${TRANSFER_RESULTS_RUN_DIR}/plan_gpt2-large.json
+7	r228	1	46_context_homologue.py	r228_score_protgpt2_no_context	-	scores_protgpt2_no_context.json	--stage score --arm protgpt2 --condition no_context --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --plan ${TRANSFER_RESULTS_RUN_DIR}/plan_protgpt2.json
+8	r228	0	46_context_homologue.py	r228_score_progen2-small_no_context	-	scores_progen2-small_no_context.json	--stage score --arm progen2-small --condition no_context --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --plan ${TRANSFER_RESULTS_RUN_DIR}/plan_progen2-small.json
+8	r228	1	46_context_homologue.py	r228_score_progen2-medium_no_context	-	scores_progen2-medium_no_context.json	--stage score --arm progen2-medium --condition no_context --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --plan ${TRANSFER_RESULTS_RUN_DIR}/plan_progen2-medium.json
+9	r228	0	46_context_homologue.py	r228_score_gpt2-large_unrelated	-	scores_gpt2-large_unrelated.json	--stage score --arm gpt2-large --condition unrelated --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --plan ${TRANSFER_RESULTS_RUN_DIR}/plan_gpt2-large.json
+9	r228	1	46_context_homologue.py	r228_score_protgpt2_unrelated	-	scores_protgpt2_unrelated.json	--stage score --arm protgpt2 --condition unrelated --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --plan ${TRANSFER_RESULTS_RUN_DIR}/plan_protgpt2.json
+10	r228	0	46_context_homologue.py	r228_score_progen2-small_unrelated	-	scores_progen2-small_unrelated.json	--stage score --arm progen2-small --condition unrelated --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --plan ${TRANSFER_RESULTS_RUN_DIR}/plan_progen2-small.json
+10	r228	1	46_context_homologue.py	r228_score_progen2-medium_unrelated	-	scores_progen2-medium_unrelated.json	--stage score --arm progen2-medium --condition unrelated --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --plan ${TRANSFER_RESULTS_RUN_DIR}/plan_progen2-medium.json
+11	r228	0	46_context_homologue.py	r228_score_gpt2-large_homologue	-	scores_gpt2-large_homologue.json	--stage score --arm gpt2-large --condition homologue --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --plan ${TRANSFER_RESULTS_RUN_DIR}/plan_gpt2-large.json
+11	r228	1	46_context_homologue.py	r228_score_protgpt2_homologue	-	scores_protgpt2_homologue.json	--stage score --arm protgpt2 --condition homologue --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --plan ${TRANSFER_RESULTS_RUN_DIR}/plan_protgpt2.json
+12	r228	0	46_context_homologue.py	r228_score_progen2-small_homologue	-	scores_progen2-small_homologue.json	--stage score --arm progen2-small --condition homologue --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --plan ${TRANSFER_RESULTS_RUN_DIR}/plan_progen2-small.json
+12	r228	1	46_context_homologue.py	r228_score_progen2-medium_homologue	-	scores_progen2-medium_homologue.json	--stage score --arm progen2-medium --condition homologue --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --plan ${TRANSFER_RESULTS_RUN_DIR}/plan_progen2-medium.json
