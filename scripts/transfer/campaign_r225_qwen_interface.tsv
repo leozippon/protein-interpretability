@@ -1,0 +1,22 @@
+# EXP-R2-225 all-or-stop interface qualification of Qwen2.5-7B, one arm, one cell.
+#
+# This is the prerequisite, not the measurement. The campaign's deliverable amendment
+# routes the pure-text wave through 01_cohort_power.py and then stage 41, and
+# second_stage_interface_qualification.py is the fixed-sequence gate that stands in
+# front of it: "Failure of any clause stops that arm ... no other arm is moved into
+# the vacant slot". So stage 01 for this rung is a SEPARATE dispatch taken only after
+# this cell returns PASS. A slot barrier orders cells but does not make one
+# conditional on another's verdict, and an all-or-stop gate needs conditionality
+# rather than order.
+#
+# The unit is the arm, which is that stage's own declaration and the reason each
+# checkpoint is one cell writing one artefact named for it. Only Qwen2.5-7B is here:
+# Qwen2.5-32B's 62 GB were still staging when this was written, and the freeze's
+# operational sequence verifies the smaller rung first in any case.
+#
+# --dtype bfloat16 is the stage's own default and this campaign's precision; it is
+# written out so the manifest states the precision the gate was passed at, since a
+# pass at one precision is not a pass at another.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	r225	1	second_stage_interface_qualification.py	r225_iq_qwen2_5_7b	-	second_stage_interface_qwen2.5-7b.json	--arm qwen2.5-7b --dtype bfloat16
