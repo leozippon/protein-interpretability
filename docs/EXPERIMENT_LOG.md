@@ -18337,3 +18337,11 @@ The registration bars `(k minus k = 0)` as the effect and, in the same breath, m
 The cohort and the four plans are pushed to the snapshot's results run directory before launch and are nobody's `expect` basename; each cell verifies the cohort's content digest and its own plan's, and refuses a plan pinned to another cohort. `--stage analyse` is deliberately not in the manifest: it loads no model and runs on the workstation over the pulled score artefacts, which is also where the 2,000-resample group bootstrap on seed 20260826 lives.
 
 **No model was loaded to produce any figure in this entry except the two known-answer validations and the seventy-unit interface smoke run, both named as such.**
+
+### Dispatched, and the interface gate passed
+
+Snapshot `20260826143603_cffa47b0ef19`, pinned at commit `8515860`, launched 2026-08-26T21:50:41Z. The in-pod dry run resolved all 24 cells against the real allocation first; the cohort and the four plans were pushed to the run directory and digest-verified on arrival. Cards 0 and 1 were idle at launch and card 2 was left alone.
+
+**All four interface self-checks passed in the first two slots**, and each resolved exactly what this campaign's contrast depends on: the marker prefix is one token on `gpt2-large` and both ProGen2 rungs and two on `protgpt2`, the mono-shuffle unit is residues on the three protein arms and tokens on the text arm, and id-level concatenation agrees with joint tokenisation on all four — so the scored span cannot have moved with the context content on any of them. Every arm declares 1024 positions.
+
+One reproduction diagnostic worth recording: `progen2-small` returns **2.6505 nats/token** on the fixed self-check record in the pod, against **2.6505** measured on this workstation's CPU before dispatch. It is a device-agreement check on the scoring path and is an input to nothing.
