@@ -1,0 +1,35 @@
+# EXP-R2-224 first-round fitness scoring: ProteinGym substitutions (stage 20) and
+# the MegaScale designed referent (stage 29), on all three rungs.
+#
+# All three rungs, not the two new ones. The freeze scores every rung on the frozen
+# queues inside this campaign so the paired Delta-rho is formed within one run, and
+# says in terms that the historical F10 and F12 ProGen2-medium numbers are not inputs
+# to any gate here -- agreement with them is a reproduction diagnostic that cannot
+# retune a frozen rule. Stage 42 reads a dtype from three stage-20 payloads and three
+# stage-29 payloads, so three is also what the assembly expects.
+#
+# bfloat16, the pre-data amendment's binding declaration for these two endpoints, and
+# the precision the existing medium artefacts already carry, so the reproduction
+# diagnostic stays like-for-like. Stage 01 is float32 for its own recorded reason and
+# is not this manifest's cells.
+#
+# Everything else is each stage's own default, which is what the medium payloads on
+# disk were produced at: stage 20 at --variants 1000 --seed 20260807 --batch-size 16,
+# stage 29 at --batch-size 512, which is that stage's published setting rather than
+# its argparse default of 256 and is therefore stated.
+#
+# Both score stages read an input out of their own --out, which this runner injects:
+# 20_retrieval_bound.py's score reads wildtypes.json and 29_designed_referent.py's
+# reads cohort.json. Both are staged into each cell's output directory before dispatch,
+# and neither is the cell's expect basename -- an input staged beside a result is not
+# completion, which is why expect names the model payload exactly.
+#
+# One slot per stage, three cards, so each barrier waits on like-shaped cells.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	r224	0	20_retrieval_bound.py	r224_s20_medium	-	model_progen2-medium.json	--stages score --arms progen2-medium --dtype bfloat16
+1	r224	1	20_retrieval_bound.py	r224_s20_large	-	model_progen2-large.json	--stages score --arms progen2-large --dtype bfloat16
+1	r224	2	20_retrieval_bound.py	r224_s20_xlarge	-	model_progen2-xlarge.json	--stages score --arms progen2-xlarge --dtype bfloat16
+2	r224	0	29_designed_referent.py	r224_s29_medium	-	model_progen2-medium.json	--stages score --arms progen2-medium --dtype bfloat16 --batch-size 512
+2	r224	1	29_designed_referent.py	r224_s29_large	-	model_progen2-large.json	--stages score --arms progen2-large --dtype bfloat16 --batch-size 512
+2	r224	2	29_designed_referent.py	r224_s29_xlarge	-	model_progen2-xlarge.json	--stages score --arms progen2-xlarge --dtype bfloat16 --batch-size 512

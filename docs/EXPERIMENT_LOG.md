@@ -17151,3 +17151,44 @@ Stage 42 could not see precision at all, so a ladder assembled from rungs scored
 Against the frozen artefacts, with the existing `progen2-medium` payload standing in each rung slot, the four pre-repair refusals were `align_dms` on 16 skipped assays, `align_megascale design` on 146 wild types against the fixed 130, `_fragment_margins` on the two missing rungs, and — by inspection of the released head — the xlarge width. After the repair the same inputs align: declared 217 assays / 174 families, analysed 201 / 163, 16 excluded and equal to the frozen list; design 130 wild types over 40 series with the cohort digest matching the scored payloads; natural 266 over 124; fragment margins present for `progen2-medium` and named missing for the two upper rungs; one precision resolved on each endpoint. The stage's tests now include the real stage-20 and stage-29 payload shapes as a regression, alongside negative paths for a rung-specific skip, a skip that is not a context overflow, a skip against another context, a swapped exclusion set, a declared zero-hit design missing from a rung, a design census read from another cohort, and a mixed-precision ladder.
 
 **No model was loaded and no model result is claimed at this amendment.**
+
+## 2026-08-26 — EXP-R2-224 first round dispatched: interface qualification PASSES at both precisions, and all sixteen stage-01 blocks are scored
+
+**First execution of EXP-R2-224. No gate verdict, interval, or transition is claimed here** — this entry records the all-or-stop prerequisite and the stage-01 qualification inputs only. Stages 20, 29, 41 and 42 have not run, so no DMS or MegaScale reading, no paired Δρ, and no `descriptive_gate_transition` exists.
+
+### The all-or-stop gate, run twice as the amendment requires
+
+`scale_interface_qualification.py` at pinned commit `327e90b1`, two cells sharing one frozen snapshot, on cuda:0 and cuda:1. Both wrote a `verdict: PASS` artefact; the stage refuses to write a non-PASS one, and both were pulled and digest-verified.
+
+| run | dtype | verdict | medium live width | large live width | xlarge live width |
+|---|---|---|---|---|---|
+| `scale_interface_qual_bf16` | bfloat16 | **PASS** | 32 | 51200 | 32 |
+| `scale_interface_qual_f32` | float32 | **PASS** | 32 | 51200 | 32 |
+
+Every rung loaded with `missing_keys`, `unexpected_keys`, `mismatched_keys` and `error_msgs` all zero, declared scoring-target support 32, and repeated its native fixed-sequence NLL to a maximum per-target absolute difference of exactly `0.0` nats, inside the 1e-6 tolerance. The wrong-marker cost cleared the strictly-greater-than-0.05-nat bar on every rung; `progen2-large`, the narrowest margin of the six readings, returned **0.1256** nats per scored target at bfloat16 and **0.1275** at float32. The 74-residue probe and its SHA-256 are unchanged.
+
+**The amendment's width correction is confirmed against the live head rather than against a config key.** `progen2-xlarge` read 32 from `lm_head.out_features`, exactly as the amendment predicted from the safetensors header; the pre-amendment freeze of 51200 would have refused every xlarge run in this campaign. Support and live width coincide on medium and xlarge and differ on large, and were checked separately.
+
+A pass says the frozen loader, output interface, native direction marker and negative control are usable at that precision. It is not protein capability, a scale transition, mechanism evidence, or biological knowledge, and it does not admit either staged rung to the panel.
+
+### Stage 01: sixteen blocks, sixteen artefacts, one shared per-block cohort
+
+`01_cohort_power.py` at pinned commit `3cbe002d`, dispatched as `campaign_r224_stage01.tsv` through the in-pod campaign queue over the three cards this allocation exposes. Final tally: **16 exited-ok, 0 exited-nonzero, 0 no-artifact, 0 refused**, `# FAILURES 0` and `# NO-RECORD 0`.
+
+**Configuration**, identical on both rungs except where noted: `--kind protein --arms progen2-{large,xlarge} --allow-staged-scale-arms --cohort-name swissprot_progen2_{large,xlarge}_f32 --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 7000k` for k = 0…7 `--unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype float32`, which is ProGen2-medium's frozen `swissprot_progen2_medium_f32` dispatch with the arm and the cohort name changed. float32 is the pre-data amendment's binding declaration for this endpoint.
+
+**Every block's cohort digest equals ProGen2-medium's for that block**, checked on all sixteen artefacts against `f565fd96d429, cd05041b6b6c, 6feaea006d66, 004929e4d1fe, 4726e777a3e9, be0c3398ea3e, 97544228e375, 7cd213e12f2f`. That identity is what `qualify_stage41` requires and it was not left to chance: each cell's expect basename carried its block's medium digest, so a cell that drew anything else would have written a differently named file and been reported no-artifact rather than paired against a block it does not share. The eight digests were also reproduced on the workstation from the same corpus before dispatch — the draw reads the corpus, the band, the pool and the two seeds, never the arm.
+
+**Screening point estimates only.** `power_verdict` is `PASS` on all sixteen. Context information reads **1.2757 – 1.4280** nats across the eight blocks on `progen2-large` and **1.6282 – 1.7536** on `progen2-xlarge`, against medium's **1.3567** on block 0. **None of this is an identification.** EXP-R2-224 identifies context information only by the EXP-R2-221 rule — the displacement-corrected near-duplicate-group bootstrap 95% lower bound on the qualification cohort — which is stage 41 and has not run. The per-block spread here is the same order as the 0.10–0.17 nat block-selection spread EXP-R2-216 recorded, so no ordering between rungs is asserted from these numbers.
+
+### One interface refusal, and what it changed
+
+The first dispatch refused all three `progen2-large` cells of slot 1 with exit 1, having touched no card: `budget.truncation_curve` rejects a live logit width above 1024 without `logits_to_keep` support, because the untrimmed path is a different unembedding kernel and would not reproduce a curve measured on the trimmed one. `progen2-large` emits 51200 columns and trips it; `progen2-xlarge` emits 32 and does not. `panel_contract`'s cohort-item rules already carry this rule — protein arms with vocabulary over 1024 take `--skip-truncation` — but they bucket panel members only, and both staged rungs are non-members, so the manifest now applies it by hand to the eight large cells and leaves the eight xlarge cells exactly as the freeze wrote them.
+
+**This is a discovery about the interface, not a threshold moved after seeing a number**: no score existed when it was made, the guard is the model's own, and the truncation curve is a reported diagnostic that `41_context_information_bootstrap.py` never reads. The identification rule runs on the sufficient-statistics sidecars, which the flag does not touch. The consequence to carry forward is that the ladder's stage-01 artefacts hold a truncation curve for medium and xlarge and not for large.
+
+**One operational note.** Killing the first runner did not kill its already-launched children, which were still holding all three cards when the corrected campaign launched, so its slot 1 was correctly `refused-busy-gpu` rather than run onto occupied cards. Re-dispatching the same manifest under the same campaign name skipped the thirteen complete cells and ran the three refused ones; the queue's resume rule and its busy-card refusal both behaved as documented.
+
+**Artefacts.** `results/transfer/external_baseline/20260825184935_83c4309de08a/scale_interface_qual_{bf16,f32}/` and `results/transfer/external_baseline/20260825191243_f4c3b12790e2/r224_s01_{large,xlarge}_b0…b7/`, pulled and digest-verified. Nothing is promoted to `evidence/`.
+
+**Still to run before any EXP-R2-224 gate can return a verdict:** stage 41 over the three rungs' twenty-four blocks, stage 20 `--stages score` and stage 29 `--stages score` on both new rungs at bfloat16, and stage 42.
