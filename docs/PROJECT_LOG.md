@@ -1937,6 +1937,10 @@ Two registrations, no results. Both entries are in `docs/EXPERIMENT_LOG.md`; the
 
 **Three things are left open rather than closed.** A per-checkpoint behavioural verdict is still hard-coded in the concept-alignment module and gates two causal stages; it rests on the reversal cost rather than on a floor and agrees with the current reading, but it is a third hand-maintained copy of a decision the artefact now publishes. Roughly two dozen historical runtime logs under the ignored log tree contain a pod name in full; nothing produced by the recent runs does, and whether ignored runtime logs fall under the guardrail's "durable logs" is a decision for the repository owner rather than something to settle by rewriting history. And the reader-facing summary still describes the older panel and conclusions; it carries another author's uncommitted rewrite and was deliberately left untouched by this pass.
 
+## 2026-08-24 — Hangzhou access trees renamed
+
+The private access tree is `~/hangzhou-compute` (was `~/hangzhou-remote`). The open access tree is `~/open-hangzhou-compute`. Controllers now read `HANGZHOU_COMPUTE_ROOT` instead of `H200_ACCESS_ROOT`. Historical log lines that name the old path were left as written.
+
 ## 2026-08-25 — the reader summary states only the current qualification rule
 
 The `summary.md` row for basic measurability now describes the current native-rendering, grouped-bootstrap, displacement-corrected identification and precision-referenced denominator criteria without retaining superseded threshold history. It also distinguishes residue 5-mers from text five-word shingles and states that short records are scored at their actual valid length. No code, result or qualification verdict changed.
@@ -1968,6 +1972,12 @@ The Nature Biotechnology paper *Property guidance for protein sequence generativ
 ## 2026-08-25 — EXP-R2-224 code and local negative-path verification complete
 
 The opt-in ProGen2 medium→large→xlarge implementation is merged and pushed through `a49c314`. Large and xlarge remain staged non-members of the panel; the scoring-target support is 32 while the live output width remains uncropped. Independent audit findings were repaired before dispatch: stage 42 now consumes the operative EXP-R2-221 identification rows, refuses incomplete fixed censuses, reports one compound transition block, and enforces the pre-data bootstrap freeze of 2,000 draws at seed 20260825. The five focused modules completed **250 tests plus 3 subtests** in 18.07 seconds; the new scale-capability module has no Lens finding, and `git diff --check` is clean. A local resource probe found every L20 already using 41.4–42.7 GiB, so no real large/xlarge model forward was attempted there. No model capability score or gate verdict exists; real loading and fixed-NLL checks remain behind a healthy released GPU allocation.
+
+## 2026-08-25 — a qualification artefact stops asserting a check it never performed
+
+The ProGen2 scale-interface qualification stage wrote a hard-coded all-zeros loading-info block under `strict_load`, so the artefact stated that the checkpoint had loaded strictly and cleanly at a point holding no evidence of it. The scoring function receives an already-constructed arm and the driver around it accepts an injected loader, so an arm that never loaded strictly could reach a PASS artefact carrying that claim; on the production path the claim was true by coincidence rather than established where it was written. The loader now keeps the counts its strict check returns and records them on the arm, leaving the field empty when no strict load produced them, and the stage refuses an arm without them instead of recording a check that never ran. The published schema is unchanged and the counts are now the ones the check returned. Negative-path coverage was added for both the direct call and the injected-loader route.
+
+Two smaller corrections landed beside it. `--print-code-hash` stages and hashes the snapshot locally and exits before anything reaches the cluster, and the access-layer executability check already exempted it, but the pod guard above it did not: the flag could not run on a host without an allocation, the usage text contradicted itself, and the orchestration suite passed a dummy pod name to reach it — that workaround is now unnecessary. The worker header named the retired helper-script access form rather than the dispatcher CLI the controller actually invokes, and its results-root warning had lost a clause to a scrub; the warning now states its condition generically rather than by naming a host or path.
 
 ## 2026-08-25 — the campaign queue refuses a card the allocation does not have
 

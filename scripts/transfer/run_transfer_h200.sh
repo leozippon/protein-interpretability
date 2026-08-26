@@ -39,16 +39,15 @@ set -euo pipefail
 # H200 access (privacy: no infrastructure identifiers belong in this
 # file). Pods are disposable; this controller never defaults to one. Set
 # H200_POD to a running pod before invoking this script (see
-# ~/hangzhou-remote/README.md). Before doing anything else, this script
-# invokes the documented cluster health check
-# (~/hangzhou-remote/ssh_tunnel/h200_status.sh), reads the terminal
-# `Health=` line that check states its verdict on, and aborts unless it
-# says ok -- rather than reimplementing tunnel/master/node/pod checks
-# itself, and rather than trusting the probe's exit status, which travels
-# on the layer that returns 0 for a remote command that exited 7 (L20). All
-# GPFS access goes through the documented access-layer tools
-# (h200_sync.sh, h200_gpfs_push.sh, h200_pod_bash.sh, h200_pod_exec.sh) --
-# this script never opens its own connection to the cluster.
+# ~/hangzhou-compute/README.md). Before doing anything else, this script
+# invokes the documented cluster health check (`h200 status` via
+# H200_CLI), reads the terminal `Health=` line that check states its
+# verdict on, and aborts unless it says ok -- rather than reimplementing
+# tunnel/master/node/pod checks itself, and rather than trusting the
+# probe's exit status, which travels on the layer that returns 0 for a
+# remote command that exited 7 (L20). All GPFS access goes through that
+# same CLI (`h200 sync`, `h200 push`, `h200 bash`, `h200 exec`) -- this
+# script never opens its own connection to the cluster.
 #
 # Usage:
 #   export H200_POD=<running-pod-name>
@@ -66,12 +65,12 @@ set -euo pipefail
 # All paths and lists are overridable via environment variables; run with
 # --help (or read the config block below) for the full list.
 
-H200_ACCESS_ROOT="${H200_ACCESS_ROOT:-${HOME}/hangzhou-remote}"
-H200_STATUS_CHECK="${H200_STATUS_CHECK:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_status.sh}"
-H200_SYNC="${H200_SYNC:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_sync.sh}"
-H200_GPFS_PUSH="${H200_GPFS_PUSH:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_gpfs_push.sh}"
-H200_POD_BASH="${H200_POD_BASH:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_pod_bash.sh}"
-H200_POD_EXEC="${H200_POD_EXEC:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_pod_exec.sh}"
+if [[ -n "${H200_ACCESS_ROOT:-}" ]]; then
+  echo "H200_ACCESS_ROOT is no longer used; unset it and use HANGZHOU_COMPUTE_ROOT" >&2
+  exit 2
+fi
+HANGZHOU_COMPUTE_ROOT="${HANGZHOU_COMPUTE_ROOT:-${HOME}/hangzhou-compute}"
+H200_CLI="${H200_CLI:-${HANGZHOU_COMPUTE_ROOT}/h200}"
 
 # Caller-side bound on the cluster health probe, in seconds. The probe is an
 # end-to-end check across several SSH and Kubernetes boundaries and normally
@@ -236,7 +235,8 @@ the code now on disk -- the same rule resolve_run_id enforces for a resumed
 run-id, applied at the one other place a snapshot can be adopted.
 
 Environment overrides: H200_POD (required except for --help and
---print-code-hash), H200_ACCESS_ROOT,
+--print-code-hash), HANGZHOU_COMPUTE_ROOT,
+H200_CLI (access-layer CLI; defaults to ${HANGZHOU_COMPUTE_ROOT}/h200),
 H200_STATUS_TIMEOUT_SECONDS (caller-side bound on the cluster health probe, in
 seconds; at least 90), REPO_ROOT, PROJECT_ROOT (the checkout; --pin decides
 what is frozen out of it), GPFS_PROJECT_ROOT,
@@ -485,9 +485,9 @@ reject_duplicate_values() {
 # what this script prints; the verdict word is the only part that is needed and
 # the only part that cannot carry an infrastructure identifier.
 verify_h200_cluster() {
-  if [ ! -x "${H200_STATUS_CHECK}" ]; then
-    echo "H200 cluster health check not found or not executable: ${H200_STATUS_CHECK}" >&2
-    echo "see ~/hangzhou-remote/README.md; this controller will not schedule without it" >&2
+  if [ ! -x "${H200_CLI}" ]; then
+    echo "H200 access-layer CLI not found or not executable: ${H200_CLI}" >&2
+    echo "see ~/hangzhou-compute/README.md; this controller will not schedule without it" >&2
     exit 2
   fi
   log "running H200 cluster health check (tunnel, master, nodes, GPU allocation, pod match)"
@@ -495,7 +495,7 @@ verify_h200_cluster() {
   local status=0
   # `|| status=$?` rather than a bare assignment: errexit is suspended in a `||`
   # list, and a probe that exits non-zero is not by itself an answer here.
-  report="$(timeout "${H200_STATUS_TIMEOUT_SECONDS}" "${H200_STATUS_CHECK}" 2>&1)" \
+  report="$(timeout "${H200_STATUS_TIMEOUT_SECONDS}" "${H200_CLI}" status 2>&1)" \
     || status=$?
   verdict="$(printf '%s\n' "${report}" | sed -n 's/^Health=\(.*\)$/\1/p' | tail -1)"
   if [ -z "${verdict}" ] && [ "${status}" = "124" ]; then
@@ -801,7 +801,7 @@ resolve_run_id() {
 # owner/expiry contract; this change deliberately does not add a partial lock.
 check_snapshot_absence() {
   local reply
-  reply="$("${H200_POD_BASH}" "test -e '${SNAPSHOT_DIR}' && echo EXISTS || echo ABSENT")"
+  reply="$("${H200_CLI}" bash "test -e '${SNAPSHOT_DIR}' && echo EXISTS || echo ABSENT")"
   case "${reply}" in
     ABSENT) SNAPSHOT_EXISTS=0 ;;
     EXISTS)
@@ -836,7 +836,7 @@ check_snapshot_absence() {
 # pattern factored out so the remaining call sites cannot drift back.
 pod_predicate() {
   local question="$1" command="$2" reply
-  reply="$("${H200_POD_BASH}" "( ${command} ) >/dev/null 2>&1 && echo YES || echo NO")"
+  reply="$("${H200_CLI}" bash "( ${command} ) >/dev/null 2>&1 && echo YES || echo NO")"
   case "${reply}" in
     YES) return 0 ;;
     NO) return 1 ;;
@@ -859,7 +859,7 @@ verify_remote_snapshot() {
 
 push_snapshot() {
   log "pushing code snapshot: ${STAGING_DIR} -> ${SNAPSHOT_DIR}"
-  "${H200_SYNC}" push "${STAGING_DIR}" "${SNAPSHOT_DIR}"
+  "${H200_CLI}" sync push "${STAGING_DIR}" "${SNAPSHOT_DIR}"
   verify_remote_snapshot
   log "snapshot pushed: run_id=${RUN_ID} code_hash=${CODE_HASH}"
 }
@@ -968,7 +968,7 @@ push_run_manifest() {
   destination="${SNAPSHOT_DIR}/INVOCATIONS/${digest}.json"
   printf -v snapshot_q '%q' "${SNAPSHOT_DIR}"
   printf -v destination_q '%q' "${destination}"
-  "${H200_POD_BASH}" "mkdir -p -- ${snapshot_q}/INVOCATIONS"
+  "${H200_CLI}" bash "mkdir -p -- ${snapshot_q}/INVOCATIONS"
   if pod_predicate "invocation manifest present" "test -e ${destination_q}"; then
     if ! pod_predicate "invocation manifest checksum" \
         "printf '%s  %s\n' '${digest}' ${destination_q} | sha256sum -c -"; then
@@ -979,7 +979,7 @@ push_run_manifest() {
     return
   fi
   log "pushing append-only invocation manifest -> ${destination}"
-  "${H200_GPFS_PUSH}" "${RUN_MANIFEST}" "${destination}"
+  "${H200_CLI}" push "${RUN_MANIFEST}" "${destination}"
   if ! pod_predicate "invocation manifest checksum after transfer" \
       "printf '%s  %s\n' '${digest}' ${destination_q} | sha256sum -c -"; then
     echo "invocation manifest failed checksum verification after transfer: ${destination}" >&2
@@ -1110,7 +1110,7 @@ if [ -n "${H200_POD:-}" ]; then
   export H200_POD
 elif [ "${PRINT_CODE_HASH}" != "1" ]; then
   echo "set H200_POD to a running pod name before launching (pods are disposable;" >&2
-  echo "this controller does not default to one) -- see ~/hangzhou-remote/README.md" >&2
+  echo "this controller does not default to one) -- see ~/hangzhou-compute/README.md" >&2
   exit 2
 fi
 
@@ -1139,14 +1139,10 @@ require_local_path "worker script" "${CODE_ROOT}/scripts/transfer/h200_worker.sh
 # layer to be installed. Demanding it there would make the snapshot-reuse check
 # unrunnable on any host without the tunnel -- including a test host -- and a
 # check that cannot run is a check that gets skipped.
-for tool in "${H200_STATUS_CHECK}" "${H200_SYNC}" "${H200_GPFS_PUSH}" \
-  "${H200_POD_BASH}" "${H200_POD_EXEC}"; do
-  if [ "${PRINT_CODE_HASH}" = "1" ]; then break; fi
-  if [ ! -x "${tool}" ]; then
-    echo "required access-layer tool not found or not executable: ${tool}" >&2
-    exit 2
-  fi
-done
+if [ "${PRINT_CODE_HASH}" != "1" ] && [ ! -x "${H200_CLI}" ]; then
+  echo "required access-layer CLI not found or not executable: ${H200_CLI}" >&2
+  exit 2
+fi
 
 # The campaign panel comes from scripts/transfer/panel_contract.sh, generated
 # from src/transfer/arms.py's PANEL and sourced by both this controller and the
@@ -1263,7 +1259,7 @@ resolve_run_id
 log "run_id=${RUN_ID} code_hash=${CODE_HASH} snapshot_dir=${SNAPSHOT_DIR}"
 
 POD_COMMAND=(
-  "${H200_POD_EXEC}" -- bash "${SNAPSHOT_DIR}/scripts/transfer/h200_worker.sh"
+  "${H200_CLI}" exec -- bash "${SNAPSHOT_DIR}/scripts/transfer/h200_worker.sh"
   --run-id "${RUN_ID}" --snapshot-dir "${SNAPSHOT_DIR}"
   --results-root "${GPFS_RESULTS_ROOT}" --logs-root "${GPFS_LOGS_ROOT}/${RUN_ID}"
   --arms "${ARMS}" --gpus "${GPUS}" --text-arm "${TEXT_ARM}" --stages "${STAGES}"
@@ -1273,13 +1269,13 @@ POD_COMMAND=(
 [ "${FORCE}" = "1" ] && POD_COMMAND+=(--force)
 
 if [ "${DRY_RUN}" = "1" ]; then
-  log "[dry-run] would run H200 cluster health check: ${H200_STATUS_CHECK}"
+  log "[dry-run] would run H200 cluster health check: ${H200_CLI} status"
   log "[dry-run]   bounded at ${H200_STATUS_TIMEOUT_SECONDS}s and required to state Health=ok"
-  log "[dry-run] would check snapshot absence via: ${H200_POD_BASH} \"test -e '${SNAPSHOT_DIR}' ...\""
+  log "[dry-run] would check snapshot absence via: ${H200_CLI} bash \"test -e '${SNAPSHOT_DIR}' ...\""
   log "[dry-run] would push code snapshot ($( wc -l < "${FILE_LIST}" ) files) via:"
-  log "[dry-run]   ${H200_SYNC} push <local-staging> ${SNAPSHOT_DIR}"
+  log "[dry-run]   ${H200_CLI} sync push <local-staging> ${SNAPSHOT_DIR}"
   log "[dry-run] would push run manifest via:"
-  log "[dry-run]   ${H200_GPFS_PUSH} <local-run-manifest> ${SNAPSHOT_DIR}/INVOCATIONS/<manifest-sha256>.json"
+  log "[dry-run]   ${H200_CLI} push <local-run-manifest> ${SNAPSHOT_DIR}/INVOCATIONS/<manifest-sha256>.json"
   log "[dry-run] would invoke worker:"
   log "[dry-run]   ${POD_COMMAND[*]}"
   log "dry run complete; nothing was transferred or executed"

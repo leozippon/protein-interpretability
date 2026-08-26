@@ -44,7 +44,7 @@ This table is a hand-maintained copy of a generated declaration, which is the fa
 
 ## Controller And Worker
 
-`run_transfer_h200.sh` is the controller and runs from the repository root on Compute. It freezes the complete transfer package and transitive local imports, hashes the snapshot, pushes it through `~/hangzhou-remote`, records a run manifest, and invokes the matching worker inside a selected pod.
+`run_transfer_h200.sh` is the controller and runs from the repository root on Compute. It freezes the complete transfer package and transitive local imports, hashes the snapshot, pushes it through `~/hangzhou-compute`, records a run manifest, and invokes the matching worker inside a selected pod.
 
 `h200_worker.sh` runs only inside the pod from that frozen snapshot. It verifies the generated panel contract, imports selected entry points before scheduling GPUs, checks resources, dispatches stages according to their declared scope, writes through temporary directories, and records per-item checksums for resume.
 
@@ -102,14 +102,14 @@ Use each entry point's `--help` for its current interface. Keep validation outpu
 Pods are disposable and have no repository default. Query status, select a running pod in the current shell, inspect its actual GPUs, and preview the campaign:
 
 ```bash
-~/hangzhou-remote/ssh_tunnel/h200_status.sh
-~/hangzhou-remote/ssh_tunnel/h200_kubectl.sh get pods -o wide
+~/hangzhou-compute/h200 status
+~/hangzhou-compute/h200 kubectl get pods -o wide
 export H200_POD=<running-pod-name>
-~/hangzhou-remote/ssh_tunnel/h200_pod_exec.sh -- nvidia-smi
+~/hangzhou-compute/h200 exec -- nvidia-smi
 bash scripts/transfer/run_transfer_h200.sh --dry-run
 ```
 
-`h200_status.sh` is an end-to-end probe across several SSH and Kubernetes
+`h200 status` is an end-to-end probe across several SSH and Kubernetes
 boundaries and normally takes 40–50 seconds. Give it a caller-side timeout of at
 least 90 seconds. A timeout before the terminal `Health=` line is inconclusive,
 not evidence that the cluster is unhealthy.
@@ -140,7 +140,8 @@ bash scripts/transfer/run_transfer_h200.sh --dry-run
 | Variable | Meaning |
 |---|---|
 | `H200_POD` | Required shell-local pod selection |
-| `H200_ACCESS_ROOT` | External access-helper root; defaults to `~/hangzhou-remote` |
+| `HANGZHOU_COMPUTE_ROOT` | Private access-layer root; defaults to `~/hangzhou-compute` |
+| `H200_CLI` | Access-layer CLI; defaults to `${HANGZHOU_COMPUTE_ROOT}/h200` |
 | `ARMS` | Comma-separated requested arms; defaults to the 15-arm campaign panel |
 | `STAGES` | Comma-separated requested stages; defaults to all 13 contract stages |
 | `GPUS` | Comma-separated pod-relative GPU indices |
@@ -235,8 +236,8 @@ scripts/transfer/run_external_baseline_h200.sh --pin "$PIN_COMMIT" \
 
 ```bash
 R=<pod result dir>; L=<local result dir>
-~/hangzhou-remote/ssh_tunnel/h200_pod_bash.sh "cd '$R' && find . -type f -printf '%P\n' | sort | xargs sha256sum" > /tmp/sums
-~/hangzhou-remote/ssh_tunnel/h200_sync.sh pull "$R" "$L"
+~/hangzhou-compute/h200 bash "cd '$R' && find . -type f -printf '%P\n' | sort | xargs sha256sum" > /tmp/sums
+~/hangzhou-compute/h200 sync pull "$R" "$L"
 ( cd "$L" && sha256sum -c /tmp/sums )
 ```
 
@@ -258,7 +259,7 @@ Everything above assumes dispatch is cheap: one invocation per cell, each polled
 
 The observation channel is one small status file on GPFS, rewritten atomically on every state change, so `cat`ting it is the whole of "where is the campaign". It carries a metadata block — slot, tally by state, and always-present `# FAILURES` and `# NO-RECORD` lines — then one row per cell with its state, exit code, timestamps and artefact path. A failed cell is recorded and the campaign continues; a nonzero exit is never reported as completion, and because each cell is the runner's own child its exit status is read rather than inferred from a sentinel grep. Each manifest cell must declare an exact JSON basename in the `expect` column. Re-dispatching after an interruption skips a cell only when that exact file exists, is nonempty valid JSON, and has a SHA-256 sidecar. Unrelated JSON in the output directory is not completion.
 
-`pull_records_h200.sh` retrieves the verdict without the payload. `h200_sync.sh pull` is a directory operation and cannot be asked for a subset, so a cell's ~46 KB record otherwise waits behind an 8.6 GB or 17.2 GB dictionary — a transfer that has failed twice on chunk-size mismatch. One level below it, `h200_gpfs_pull.sh` is already per-file and already digest-verified, so the only thing missing was file selection. By default this script pulls `*.json` only, verifies the delivered set against pod-side digests with the same comparison the driver admits a result on, and leaves the weights on GPFS where every downstream stage reads dictionaries from anyway; `--with-weights` pulls everything through the same path. Point it at a whole run root to collect every cell's record in one invocation.
+`pull_records_h200.sh` retrieves the verdict without the payload. `h200 sync pull` is a directory operation and cannot be asked for a subset, so a cell's ~46 KB record otherwise waits behind an 8.6 GB or 17.2 GB dictionary — a transfer that has failed twice on chunk-size mismatch. One level below it, `h200 pull` is already per-file and already digest-verified, so the only thing missing was file selection. By default this script pulls `*.json` only, verifies the delivered set against pod-side digests with the same comparison the driver admits a result on, and leaves the weights on GPFS where every downstream stage reads dictionaries from anyway; `--with-weights` pulls everything through the same path. Point it at a whole run root to collect every cell's record in one invocation.
 
 ## Operator Checklist
 

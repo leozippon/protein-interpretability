@@ -28,52 +28,87 @@ if str(TRANSFER_DIR) not in sys.path:
 import panel_contract as pc  # noqa: E402
 
 
-#: A stand-in for h200_pod_bash.sh that evaluates its argument on this host.
+#: Bodies for the per-command stubs the test `h200` dispatcher execs.
 #:
 #: The controller's remote predicates answer on stdout rather than by exit status,
 #: because the real access layer returns 0 whatever the remote command exits with
 #: (L20). A stub that merely succeeds therefore exercises none of them: it returns
 #: an empty reply and pod_predicate correctly refuses it. Evaluating the command
 #: locally is what makes these tests test the predicate rather than the stub.
-_STUB_DIR = Path(tempfile.mkdtemp(prefix="h200_stub_"))
-LOCAL_POD_BASH = _STUB_DIR / "pod_bash.sh"
-LOCAL_POD_BASH.write_text('#!/usr/bin/env bash\nbash -c "$1"\n', encoding="utf-8")
-LOCAL_POD_BASH.chmod(0o755)
-
-#: The same stand-in, on a pod whose GPU 0 still carries the dispatched stage.
 #:
-#: The external-baseline poll reads two things, not one: the completion test on
-#: the output directory, and an `nvidia-smi` reading that decides what an
-#: incomplete directory means -- still running, or ran and wrote nothing.
-#: LOCAL_POD_BASH forwards both to this host, so the second one answers out of
-#: the workstation's own GPU 0, and the verdict for an unfinished run flips
-#: between UNRESOLVED and ABSENT with whatever else happens to be training on B.
-#: A poll test that leaves that input free is not testing the completion test at
-#: all; it is reporting the ambient GPU state. This stub holds it at the state
-#: the poll scenarios are about -- the stage is on the card and has not written
-#: yet -- and evaluates every other command locally, as LOCAL_POD_BASH does.
-LOCAL_POD_BASH_GPU_BUSY = _STUB_DIR / "pod_bash_gpu_busy.sh"
-LOCAL_POD_BASH_GPU_BUSY.write_text(
+#: The default status stub used to be `/bin/true`, which is precisely what the
+#: controller may no longer accept: the probe answers on its terminal `Health=`
+#: line, because the layer carrying its exit status returns 0 for a command that
+#: exited 7 (L20). A stub that only succeeds exercises none of that gate.
+H200_DISPATCHER = """#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+TUN="${ROOT}/ssh_tunnel"
+cmd="${1:-}"
+shift || true
+case "${cmd}" in
+  status) exec "${TUN}/h200_status.sh" ;;
+  exec) exec "${TUN}/h200_pod_exec.sh" "$@" ;;
+  bash) exec "${TUN}/h200_pod_bash.sh" "$@" ;;
+  push) exec "${TUN}/h200_gpfs_push.sh" "$@" ;;
+  pull) exec "${TUN}/h200_gpfs_pull.sh" "$@" ;;
+  sync) exec "${TUN}/h200_sync.sh" "$@" ;;
+  *)
+    echo "unknown h200 command: ${cmd}" >&2
+    exit 2
+    ;;
+esac
+"""
+POD_BASH_LOCAL = '#!/usr/bin/env bash\nbash -c "$1"\n'
+POD_BASH_GPU_BUSY = (
     "#!/usr/bin/env bash\n"
     'case "$1" in\n'
     "  nvidia-smi*) printf '0, 40000\\n' ;;\n"
     '  *) bash -c "$1" ;;\n'
-    "esac\n",
-    encoding="utf-8",
+    "esac\n"
 )
-LOCAL_POD_BASH_GPU_BUSY.chmod(0o755)
+STATUS_OK = "#!/usr/bin/env bash\nprintf 'Health=ok\\n'\n"
+TRUE_STUB = "#!/usr/bin/env bash\nexit 0\n"
+LAUNCHED_STUB = "#!/usr/bin/env bash\necho LAUNCHED\n"
 
-#: A stand-in for h200_status.sh that states the verdict a healthy probe states.
-#:
-#: The default here used to be `/bin/true`, which is precisely what the
-#: controller may no longer accept: the probe answers on its terminal `Health=`
-#: line, because the layer carrying its exit status returns 0 for a command that
-#: exited 7 (L20). A stub that only succeeds exercises none of that gate.
-LOCAL_STATUS_OK = _STUB_DIR / "status_ok.sh"
-LOCAL_STATUS_OK.write_text(
-    "#!/usr/bin/env bash\nprintf 'Health=ok\\n'\n", encoding="utf-8"
-)
-LOCAL_STATUS_OK.chmod(0o755)
+
+def _write_executable(path: Path, body: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+def write_h200_dispatcher(access_root: Path) -> Path:
+    """Single stub `h200` that execs the per-command scripts under ssh_tunnel/."""
+
+    return _write_executable(access_root / "h200", H200_DISPATCHER)
+
+
+def install_h200_command_stubs(
+    access_root: Path,
+    *,
+    status: str = STATUS_OK,
+    pod_bash: str = POD_BASH_LOCAL,
+    pod_exec: str = TRUE_STUB,
+    sync: str = TRUE_STUB,
+    push: str = TRUE_STUB,
+    pull: str = TRUE_STUB,
+) -> Path:
+    """Write per-command stubs and the dispatcher. Returns the dispatcher path."""
+
+    tunnel = access_root / "ssh_tunnel"
+    _write_executable(tunnel / "h200_status.sh", status)
+    _write_executable(tunnel / "h200_pod_bash.sh", pod_bash)
+    _write_executable(tunnel / "h200_pod_exec.sh", pod_exec)
+    _write_executable(tunnel / "h200_sync.sh", sync)
+    _write_executable(tunnel / "h200_gpfs_push.sh", push)
+    _write_executable(tunnel / "h200_gpfs_pull.sh", pull)
+    return write_h200_dispatcher(access_root)
+
+
+_STUB_ROOT = Path(tempfile.mkdtemp(prefix="h200_stub_"))
+LOCAL_H200 = install_h200_command_stubs(_STUB_ROOT)
 
 
 def extract_function(path: Path, name: str) -> str:
@@ -97,11 +132,8 @@ def controller_env(**overrides: str) -> dict[str, str]:
     env.update(
         {
             "H200_POD": "test-pod",
-            "H200_STATUS_CHECK": str(LOCAL_STATUS_OK),
-            "H200_SYNC": "/bin/true",
-            "H200_GPFS_PUSH": "/bin/true",
-            "H200_POD_BASH": str(LOCAL_POD_BASH),
-            "H200_POD_EXEC": "/bin/true",
+            "HANGZHOU_COMPUTE_ROOT": str(_STUB_ROOT),
+            "H200_CLI": str(LOCAL_H200),
             "ARMS": "gpt2-large",
             "GPUS": "0",
             "STAGES": "cohort_power",
@@ -796,37 +828,36 @@ class SnapshotContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             project = make_project_copy(root)
-            helpers = root / "helpers"
-            helpers.mkdir()
             marker = root / "worker-invocations"
             # The probe states its verdict on stdout; `:` says nothing and the
             # controller now refuses silence rather than reading exit status.
-            self.write_executable(helpers / "status", "printf 'Health=ok\\n'\n")
-            self.write_executable(
-                helpers / "sync",
-                '[ "$1" = push ]\nmkdir -p "$3"\ncp -a "$2/." "$3/"\n',
-            )
-            self.write_executable(
-                helpers / "push",
-                'mkdir -p "$(dirname "$2")"\ncp -p "$1" "$2"\n',
-            )
-            self.write_executable(helpers / "pod_bash", 'exec bash -c "$1"\n')
-            self.write_executable(
-                helpers / "pod_exec",
+            access_root = root / "access"
+            cli = install_h200_command_stubs(
+                access_root,
+                pod_bash='#!/usr/bin/env bash\nset -euo pipefail\nexec bash -c "$1"\n',
+                sync=(
+                    "#!/usr/bin/env bash\nset -euo pipefail\n"
+                    '[ "$1" = push ]\nmkdir -p "$3"\ncp -a "$2/." "$3/"\n'
+                ),
+                push=(
+                    "#!/usr/bin/env bash\nset -euo pipefail\n"
+                    'mkdir -p "$(dirname "$2")"\ncp -p "$1" "$2"\n'
+                ),
                 # A worker that reaches its EXIT trap states its status on its last
                 # line; the controller reads that rather than the transport's
                 # exit code, which is always 0 (L20).
-                'printf "called\\n" >> "$POD_EXEC_MARKER"\nprintf "TRANSFER_WORKER_EXIT=0\\n"\n',
+                pod_exec=(
+                    "#!/usr/bin/env bash\nset -euo pipefail\n"
+                    'printf "called\\n" >> "$POD_EXEC_MARKER"\n'
+                    'printf "TRANSFER_WORKER_EXIT=0\\n"\n'
+                ),
             )
             package_root = root / "gpfs" / "packages"
             env = controller_env(
                 PROJECT_ROOT=str(project),
                 REPO_ROOT=str(project),
-                H200_STATUS_CHECK=str(helpers / "status"),
-                H200_SYNC=str(helpers / "sync"),
-                H200_GPFS_PUSH=str(helpers / "push"),
-                H200_POD_BASH=str(helpers / "pod_bash"),
-                H200_POD_EXEC=str(helpers / "pod_exec"),
+                HANGZHOU_COMPUTE_ROOT=str(access_root),
+                H200_CLI=str(cli),
                 GPFS_PACKAGE_ROOT=str(package_root),
                 GPFS_RESULTS_ROOT=str(root / "gpfs" / "results"),
                 GPFS_LOGS_ROOT=str(root / "gpfs" / "logs"),
@@ -886,32 +917,32 @@ class SnapshotContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             project = make_project_copy(root)
-            helpers = root / "helpers"
-            helpers.mkdir()
-            self.write_executable(helpers / "status", "printf 'Health=ok\\n'\n")
-            self.write_executable(
-                helpers / "sync",
-                '[ "$1" = push ]\nmkdir -p "$3"\ncp -a "$2/." "$3/"\n',
-            )
-            self.write_executable(
-                helpers / "push",
-                'mkdir -p "$(dirname "$2")"\ncp -p "$1" "$2"\n',
-            )
-            self.write_executable(helpers / "pod_bash", 'exec bash -c "$1"\n')
-            self.write_executable(
-                helpers / "pod_exec",
+            access_root = root / "access"
+            cli = install_h200_command_stubs(
+                access_root,
+                pod_bash='#!/usr/bin/env bash\nset -euo pipefail\nexec bash -c "$1"\n',
+                sync=(
+                    "#!/usr/bin/env bash\nset -euo pipefail\n"
+                    '[ "$1" = push ]\nmkdir -p "$3"\ncp -a "$2/." "$3/"\n'
+                ),
+                push=(
+                    "#!/usr/bin/env bash\nset -euo pipefail\n"
+                    'mkdir -p "$(dirname "$2")"\ncp -p "$1" "$2"\n'
+                ),
                 # The transport exits 7 here, but on the real cluster it would exit
                 # 0; what makes this detectable is the worker's own sentinel.
-                'printf "worker output\\n"\nprintf "TRANSFER_WORKER_EXIT=7\\n"\nexit 7\n',
+                pod_exec=(
+                    "#!/usr/bin/env bash\nset -euo pipefail\n"
+                    'printf "worker output\\n"\n'
+                    'printf "TRANSFER_WORKER_EXIT=7\\n"\n'
+                    "exit 7\n"
+                ),
             )
             env = controller_env(
                 PROJECT_ROOT=str(project),
                 REPO_ROOT=str(project),
-                H200_STATUS_CHECK=str(helpers / "status"),
-                H200_SYNC=str(helpers / "sync"),
-                H200_GPFS_PUSH=str(helpers / "push"),
-                H200_POD_BASH=str(helpers / "pod_bash"),
-                H200_POD_EXEC=str(helpers / "pod_exec"),
+                HANGZHOU_COMPUTE_ROOT=str(access_root),
+                H200_CLI=str(cli),
                 GPFS_PACKAGE_ROOT=str(root / "gpfs" / "packages"),
                 GPFS_RESULTS_ROOT=str(root / "gpfs" / "results"),
                 GPFS_LOGS_ROOT=str(root / "gpfs" / "logs"),
@@ -969,7 +1000,7 @@ HEALTHY_STATUS_STUB = "#!/usr/bin/env bash\nprintf 'Health=ok\\n'\n"
 
 
 def access_layer_stubs(tmp, pod_exec_body, status_body=HEALTHY_STATUS_STUB) -> Path:
-    """The five access-layer tools as local stubs, under an ssh_tunnel/ root."""
+    """Per-command stubs plus a stub `h200` dispatcher under the access root."""
 
     access = Path(tmp) / "ssh_tunnel"
     access.mkdir(parents=True)
@@ -987,17 +1018,19 @@ def access_layer_stubs(tmp, pod_exec_body, status_body=HEALTHY_STATUS_STUB) -> P
         '#!/usr/bin/env bash\nmkdir -p -- "$(dirname -- "$2")"\ncp -- "$1" "$2"\n',
         encoding="utf-8",
     )
-    for name in ("h200_status", "h200_sync", "h200_gpfs_push"):
+    (access / "h200_gpfs_pull.sh").write_text(TRUE_STUB, encoding="utf-8")
+    for name in ("h200_status", "h200_sync", "h200_gpfs_push", "h200_gpfs_pull"):
         (access / f"{name}.sh").chmod(0o755)
     # Every remote question this controller asks answers on stdout, and the
     # command string carries its own echo, so the stub evaluates it locally
     # rather than merely succeeding.
     pod_bash = access / "h200_pod_bash.sh"
-    pod_bash.write_text('#!/usr/bin/env bash\nbash -c "$1"\n', encoding="utf-8")
+    pod_bash.write_text(POD_BASH_LOCAL, encoding="utf-8")
     pod_bash.chmod(0o755)
     exec_helper = access / "h200_pod_exec.sh"
     exec_helper.write_text(pod_exec_body, encoding="utf-8")
     exec_helper.chmod(0o755)
+    write_h200_dispatcher(Path(tmp))
     return access
 
 
@@ -1011,17 +1044,13 @@ def run_controller_with_stubs(tmp, access, **overrides) -> subprocess.CompletedP
     """
 
     project = make_project_copy(Path(tmp))
-    # H200_ACCESS_ROOT is the parent of ssh_tunnel/, which is where
-    # access_layer_stubs put the stubs.
+    # HANGZHOU_COMPUTE_ROOT is the parent of ssh_tunnel/, which is where
+    # access_layer_stubs put the per-command stubs and the `h200` dispatcher.
     environment = controller_env(
         PROJECT_ROOT=str(project),
         REPO_ROOT=str(project),
-        H200_ACCESS_ROOT=str(access.parent),
-        H200_STATUS_CHECK=str(access / "h200_status.sh"),
-        H200_SYNC=str(access / "h200_sync.sh"),
-        H200_GPFS_PUSH=str(access / "h200_gpfs_push.sh"),
-        H200_POD_BASH=str(access / "h200_pod_bash.sh"),
-        H200_POD_EXEC=str(access / "h200_pod_exec.sh"),
+        HANGZHOU_COMPUTE_ROOT=str(access.parent),
+        H200_CLI=str(access.parent / "h200"),
         GPFS_PACKAGE_ROOT=str(Path(tmp) / "packages"),
         GPFS_RESULTS_ROOT=str(Path(tmp) / "results"),
         GPFS_LOGS_ROOT=str(Path(tmp) / "logs"),
@@ -1515,7 +1544,7 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
                 "--label", "stale", "--gpu", "0", "--expect", "score.json",
             ],
             capture_output=True, text=True, cwd=str(REPO_ROOT),
-            env={**os.environ, "H200_POD": "unused", "H200_POD_BASH": str(LOCAL_POD_BASH)},
+            env={**os.environ, "H200_POD": "unused", "H200_CLI": str(LOCAL_H200)},
             timeout=600,
         )
         self.assertNotEqual(result.returncode, 0, "a stale run-id must not be adopted")
@@ -1532,7 +1561,7 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
         result = subprocess.run(
             ["bash", str(CONTROLLER), "--print-code-hash"],
             capture_output=True, text=True, cwd=str(REPO_ROOT),
-            env={**os.environ, "H200_ACCESS_ROOT": "/nonexistent-access-root"},
+            env={**os.environ, "HANGZHOU_COMPUTE_ROOT": "/nonexistent-access-root"},
             timeout=600,
         )
         self.assertEqual(result.returncode, 0, result.stderr[-2000:])
@@ -1564,7 +1593,7 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
         run_id_hash = subprocess.run(
             ["bash", str(CONTROLLER), "--print-code-hash"],
             capture_output=True, text=True, cwd=str(REPO_ROOT),
-            env={**os.environ, "H200_ACCESS_ROOT": "/nonexistent-access-root"},
+            env={**os.environ, "HANGZHOU_COMPUTE_ROOT": "/nonexistent-access-root"},
             timeout=600,
         ).stdout
         code_hash = re.search(r"^CODE_HASH=([0-9a-f]{64})$", run_id_hash, re.M).group(1)
@@ -1592,7 +1621,7 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
         root, run_id, snapshot, _ = self._dispatch_fixture()
 
         # The pod-side log the stage would have written before raising. The
-        # liveness check reads it through H200_POD_BASH, so it must sit at the
+        # liveness check reads it through `h200 bash`, so it must sit at the
         # path the driver derives from GPFS_PROJECT_ROOT.
         pod_log = root / "logs" / "external_baseline" / f"{run_id}_score.log"
         pod_log.parent.mkdir(parents=True, exist_ok=True)
@@ -1604,9 +1633,7 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        pod_exec = root / "pod_exec.sh"
-        pod_exec.write_text('#!/usr/bin/env bash\necho LAUNCHED\n', encoding="utf-8")
-        pod_exec.chmod(0o755)
+        cli = install_h200_command_stubs(root, pod_exec=LAUNCHED_STUB)
 
         result = subprocess.run(
             ["bash", str(self.DRIVER), "--run-id", run_id,
@@ -1614,7 +1641,7 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
              "--label", "score", "--gpu", "0", "--expect", "score.json"],
             capture_output=True, text=True, cwd=str(REPO_ROOT),
             env={**os.environ, "H200_POD": "unused",
-                 "H200_POD_BASH": str(LOCAL_POD_BASH), "H200_POD_EXEC": str(pod_exec),
+                 "H200_CLI": str(cli),
                  "GPFS_PROJECT_ROOT": str(root), "LOCAL_OUTPUT_ROOT": str(root),
                  "LIVENESS_SETTLE_SECONDS": "0", "GRACE_SECONDS": "0",
                  "POLL_SECONDS": "1", "TIMEOUT_SECONDS": "3"},
@@ -1651,9 +1678,9 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
         root, run_id, snapshot, out_dir = self._dispatch_fixture()
         (out_dir / staged).write_text("{}", encoding="utf-8")
 
-        pod_exec = root / "pod_exec.sh"
-        pod_exec.write_text('#!/usr/bin/env bash\necho LAUNCHED\n', encoding="utf-8")
-        pod_exec.chmod(0o755)
+        cli = install_h200_command_stubs(
+            root, pod_bash=POD_BASH_GPU_BUSY, pod_exec=LAUNCHED_STUB
+        )
 
         command = [
             "bash", str(self.DRIVER), "--run-id", run_id,
@@ -1665,8 +1692,7 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
         result = subprocess.run(
             command, capture_output=True, text=True, cwd=str(REPO_ROOT),
             env={**os.environ, "H200_POD": "unused",
-                 "H200_POD_BASH": str(LOCAL_POD_BASH_GPU_BUSY),
-                 "H200_POD_EXEC": str(pod_exec),
+                 "H200_CLI": str(cli),
                  "GPFS_PROJECT_ROOT": str(root),
                  # Not REPO_ROOT: the driver reads the stage file and computes the
                  # code hash from that, so it has to stay the real checkout.
@@ -1825,7 +1851,7 @@ class PinnedCodeSourceTests(unittest.TestCase):
         environment = {
             key: value for key, value in os.environ.items() if not key.startswith("ARGS_")
         }
-        environment.update({"H200_POD": "unused", "H200_ACCESS_ROOT": "/nonexistent-access-root"})
+        environment.update({"H200_POD": "unused", "HANGZHOU_COMPUTE_ROOT": "/nonexistent-access-root"})
         if project_root is not None:
             environment["PROJECT_ROOT"] = str(project_root)
         result = subprocess.run(
@@ -1842,9 +1868,7 @@ class PinnedCodeSourceTests(unittest.TestCase):
         """One driver invocation, carried to its dispatch or to its refusal."""
 
         gpfs = self.root / "gpfs"
-        pod_exec = self.root / "pod_exec.sh"
-        pod_exec.write_text("#!/usr/bin/env bash\necho LAUNCHED\n", encoding="utf-8")
-        pod_exec.chmod(0o755)
+        cli = install_h200_command_stubs(self.root, pod_exec=LAUNCHED_STUB)
         # The log a stage that died in start-up would have left. Its presence is
         # how a dispatch that got all the way through the guard announces
         # itself: exit 6, DIED AT DISPATCH.
@@ -1863,7 +1887,7 @@ class PinnedCodeSourceTests(unittest.TestCase):
             ],
             capture_output=True, text=True, cwd=str(self.project),
             env={**os.environ, "H200_POD": "unused",
-                 "H200_POD_BASH": str(LOCAL_POD_BASH), "H200_POD_EXEC": str(pod_exec),
+                 "H200_CLI": str(cli),
                  "GPFS_PROJECT_ROOT": str(gpfs), "LOCAL_OUTPUT_ROOT": str(self.output_root),
                  "LIVENESS_SETTLE_SECONDS": "0", "GRACE_SECONDS": "0",
                  "POLL_SECONDS": "1", "TIMEOUT_SECONDS": "3"},
@@ -1940,7 +1964,7 @@ class PinnedCodeSourceTests(unittest.TestCase):
              "--pin", self.commit, "--print-code-hash"],
             capture_output=True, text=True, cwd=str(self.project),
             env={**os.environ, "H200_POD": "unused",
-                 "H200_ACCESS_ROOT": "/nonexistent-access-root",
+                 "HANGZHOU_COMPUTE_ROOT": "/nonexistent-access-root",
                  # Refused after the pin is established, which is the window a
                  # leak would open in.
                  "ARMS": "no-such-arm"},
@@ -1979,7 +2003,7 @@ class PinnedCodeSourceTests(unittest.TestCase):
              "--expect", "score.json"],
             capture_output=True, text=True, cwd=str(self.project),
             env={**os.environ, "H200_POD": "unused",
-                 "H200_POD_BASH": str(LOCAL_POD_BASH),
+                 "H200_CLI": str(LOCAL_H200),
                  "LOCAL_OUTPUT_ROOT": str(self.output_root)},
             timeout=600,
         )

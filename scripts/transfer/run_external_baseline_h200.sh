@@ -92,10 +92,12 @@ set -euo pipefail
 #   written here, where a launcher looks, rather than only in the experiment log,
 #   where the second agent did not look.
 
-H200_ACCESS_ROOT="${H200_ACCESS_ROOT:-${HOME}/hangzhou-remote}"
-H200_SYNC="${H200_SYNC:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_sync.sh}"
-H200_POD_BASH="${H200_POD_BASH:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_pod_bash.sh}"
-H200_POD_EXEC="${H200_POD_EXEC:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_pod_exec.sh}"
+if [[ -n "${H200_ACCESS_ROOT:-}" ]]; then
+  echo "H200_ACCESS_ROOT is no longer used; unset it and use HANGZHOU_COMPUTE_ROOT" >&2
+  exit 2
+fi
+HANGZHOU_COMPUTE_ROOT="${HANGZHOU_COMPUTE_ROOT:-${HOME}/hangzhou-compute}"
+H200_CLI="${H200_CLI:-${HANGZHOU_COMPUTE_ROOT}/h200}"
 
 CONTROLLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="${REPO_ROOT:-$(cd "${CONTROLLER_DIR}/../.." && pwd)}"
@@ -253,7 +255,7 @@ if [ -n "${RUN_ID}" ] || [ -n "${SNAPSHOT_DIR}" ]; then
   # A snapshot that is not on the pod is the other failure this option could
   # hide: the launch would start, find no stage file, and the poll loop would
   # report ABSENT as though the measurement had failed.
-  "${H200_POD_BASH}" "test -f '${SNAPSHOT_DIR}/scripts/transfer/${STAGE}' && echo FOUND" \
+  "${H200_CLI}" bash "test -f '${SNAPSHOT_DIR}/scripts/transfer/${STAGE}' && echo FOUND" \
       2>/dev/null | grep -q FOUND || {
     echo "reused snapshot ${SNAPSHOT_DIR} does not carry ${STAGE} on the pod; refusing" >&2
     exit 3
@@ -315,7 +317,7 @@ HOST_PRE="${GPFS_PROJECT_ROOT}/logs/external_baseline/${RUN_ID}_${LABEL}.host_pr
 HOST_POST="${GPFS_PROJECT_ROOT}/logs/external_baseline/${RUN_ID}_${LABEL}.host_post.txt"
 WRAP="${GPFS_PROJECT_ROOT}/logs/external_baseline/${RUN_ID}_${LABEL}.wrap.sh"
 log "launching ${STAGE} on cuda:${GPU}"
-"${H200_POD_EXEC}" -- bash -lc "
+"${H200_CLI}" exec -- bash -lc "
   set -euo pipefail
   export TRANSFER_PACKAGE_ROOT='${SNAPSHOT_DIR}'
   source '${SNAPSHOT_DIR}/scripts/transfer/h200_env.sh'
@@ -353,12 +355,12 @@ WRAP
 # did (L20), so a sentinel read out of the stage's own log is the only signal
 # that can say no.
 sleep "${LIVENESS_SETTLE_SECONDS:-45}"
-EARLY="$("${H200_POD_BASH}" \
+EARLY="$("${H200_CLI}" bash \
   "tail -n 40 '${POD_LOG}' 2>/dev/null | grep -c -E 'Traceback|error: unrecognized arguments|error: argument|No such file or directory|ModuleNotFoundError|CUDA out of memory' || true" \
   2>/dev/null | tr -dc '0-9')"
 if [ -n "${EARLY}" ] && [ "${EARLY}" -gt 0 ]; then
   log "${LABEL} DIED AT DISPATCH"
-  "${H200_POD_BASH}" "tail -n 20 '${POD_LOG}'" 2>/dev/null >&2 || true
+  "${H200_CLI}" bash "tail -n 20 '${POD_LOG}'" 2>/dev/null >&2 || true
   echo "the stage exited during start-up; this is a dispatch failure, not an ABSENT" >&2
   echo "measurement. Nothing was scheduled on cuda:${GPU}." >&2
   exit 6
@@ -370,7 +372,7 @@ fi
 # below, because the two call sites must agree: a poll that accepted a file the
 # confirming re-poll rejected would turn a finished run into an ABSENT.
 present() {
-  "${H200_POD_BASH}" \
+  "${H200_CLI}" bash \
     "test -f '${OUT_DIR}/${EXPECT}' && echo PRESENT" \
     2>/dev/null | grep -q PRESENT
 }
@@ -393,7 +395,7 @@ while [ "${waited}" -lt "${TIMEOUT_SECONDS}" ]; do
   if present; then
     status="PRESENT"; break
   fi
-  busy="$("${H200_POD_BASH}" \
+  busy="$("${H200_CLI}" bash \
     "nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits" 2>/dev/null || true)"
   if [ -n "${busy}" ] && ! printf '%s\n' "${busy}" \
       | awk -F', *' -v g="${GPU}" '$1==g && $2>1000{f=1}END{exit !f}'; then
@@ -409,7 +411,7 @@ log "${LABEL} ${status} after ${waited}s"
 [ "${status}" = "PRESENT" ] || exit 4
 
 ADMIT_PATH="${OUT_DIR}/${EXPECT}"
-ADMIT_DIGEST="$("${H200_POD_BASH}" "
+ADMIT_DIGEST="$("${H200_CLI}" bash "
   set -euo pipefail
   python3 -c 'import json,sys
 path=sys.argv[1]
@@ -423,7 +425,7 @@ if [ -z "${ADMIT_DIGEST}" ]; then
   echo "expected artefact is missing, empty, or not valid JSON: ${ADMIT_PATH}" >&2
   exit 4
 fi
-"${H200_POD_BASH}" "printf '%s  %s\\n' '${ADMIT_DIGEST}' '$(basename "${ADMIT_PATH}")' > '${ADMIT_PATH}.sha256.tmp' && mv -f '${ADMIT_PATH}.sha256.tmp' '${ADMIT_PATH}.sha256'" >/dev/null
+"${H200_CLI}" bash "printf '%s  %s\\n' '${ADMIT_DIGEST}' '$(basename "${ADMIT_PATH}")' > '${ADMIT_PATH}.sha256.tmp' && mv -f '${ADMIT_PATH}.sha256.tmp' '${ADMIT_PATH}.sha256'" >/dev/null
 log "admitted digest ${ADMIT_DIGEST} for $(basename "${ADMIT_PATH}")"
 
 # --------------------------------------------------------- pull and verify
@@ -431,10 +433,10 @@ log "admitted digest ${ADMIT_DIGEST} for $(basename "${ADMIT_PATH}")"
 LOCAL_OUT="${LOCAL_OUTPUT_ROOT}/results/transfer/external_baseline/${RUN_ID}/${LABEL}"
 REMOTE_SUMS="$(mktemp)"
 trap 'rm -f "${REMOTE_SUMS}"' EXIT
-"${H200_POD_BASH}" "cd '${OUT_DIR}' && find . -type f -printf '%P\n' | sort | xargs sha256sum" \
+"${H200_CLI}" bash "cd '${OUT_DIR}' && find . -type f -printf '%P\n' | sort | xargs sha256sum" \
   > "${REMOTE_SUMS}"
 mkdir -p "$(dirname "${LOCAL_OUT}")"
-"${H200_SYNC}" pull "${OUT_DIR}" "${LOCAL_OUT}"
+"${H200_CLI}" sync pull "${OUT_DIR}" "${LOCAL_OUT}"
 
 # An external-baseline stage has no worker, so nothing writes a .manifests
 # checksum for the pull to check. Admit a result only if the digests taken on

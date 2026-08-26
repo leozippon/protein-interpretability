@@ -21,9 +21,9 @@ set -euo pipefail
 # the dictionary beside it is 8.6 GB at d_hidden 8192 and about 17.2 GB at
 # 16384. run_external_baseline_h200.sh pulls a cell with
 #
-#     "${H200_SYNC}" pull "${OUT_DIR}" "${LOCAL_OUT}"
+#     "${H200_CLI}" sync pull "${OUT_DIR}" "${LOCAL_OUT}"
 #
-# and h200_sync.sh's pull is a directory operation -- it tars the whole source
+# and `h200 sync pull` is a directory operation -- it tars the whole source
 # directory in the pod, moves the archive, and extracts it. It is ALL-OR-NOTHING
 # PER DIRECTORY: there is no way to ask it for a subset. So today the verdict
 # waits behind the payload by construction, and EXP-R2-204 records that an
@@ -31,7 +31,7 @@ set -euo pipefail
 # unstable link that is the wrong default.
 #
 # The smallest change, and it does not touch the access layer. One level below
-# h200_sync.sh, h200_gpfs_pull.sh is already per-FILE and already
+# `h200 sync`, `h200 pull` is already per-FILE and already
 # digest-verified: it reads the remote size and sha256 first, short-circuits
 # when the local copy already matches, stages and pulls in chunks with retries,
 # and refuses on a checksum mismatch. Everything missing was file SELECTION, and
@@ -84,9 +84,12 @@ set -euo pipefail
 #      on the first real use. Any loop must be exercised with more than one
 #      iteration before it is called validated.        PASSED 08-17 after the fix.
 
-H200_ACCESS_ROOT="${H200_ACCESS_ROOT:-${HOME}/hangzhou-remote}"
-H200_POD_BASH="${H200_POD_BASH:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_pod_bash.sh}"
-H200_GPFS_PULL="${H200_GPFS_PULL:-${H200_ACCESS_ROOT}/ssh_tunnel/h200_gpfs_pull.sh}"
+if [[ -n "${H200_ACCESS_ROOT:-}" ]]; then
+  echo "H200_ACCESS_ROOT is no longer used; unset it and use HANGZHOU_COMPUTE_ROOT" >&2
+  exit 2
+fi
+HANGZHOU_COMPUTE_ROOT="${HANGZHOU_COMPUTE_ROOT:-${HOME}/hangzhou-compute}"
+H200_CLI="${H200_CLI:-${HANGZHOU_COMPUTE_ROOT}/h200}"
 
 usage() {
   sed -n '/^# Usage:/,/^# Exit codes/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -127,7 +130,7 @@ fi
 SUMS="$(mktemp)"
 trap 'rm -f "${SUMS}"' EXIT
 log "listing ${WHAT} under ${REMOTE_DIR}"
-"${H200_POD_BASH}" \
+"${H200_CLI}" bash \
   "cd '${REMOTE_DIR}' && find . -type f ${FIND_FILTER} -printf '%P\n' | sort | xargs -r sha256sum" \
   > "${SUMS}"
 
@@ -148,7 +151,7 @@ mkdir -p "${LOCAL_DIR}"
 while read -r _sha name; do
   [ -n "${name}" ] || continue
   mkdir -p "${LOCAL_DIR}/$(dirname "${name}")"
-  # `< /dev/null` is load-bearing. h200_gpfs_pull.sh reads stdin, and inside a
+  # `< /dev/null` is load-bearing. `h200 pull` reads stdin, and inside a
   # `while read ... done < file` loop that means it consumes the loop's remaining
   # input: the first iteration ran, swallowed the other eleven lines, and the loop
   # ended silently having pulled nothing. The digest check caught it -- exit 5, NOT
@@ -157,11 +160,11 @@ while read -r _sha name; do
   #
   # This is invisible with a one-file selection, which is exactly how it survived
   # validation: a loop exercised with a single iteration is not an exercised loop.
-  "${H200_GPFS_PULL}" "${REMOTE_DIR}/${name}" "${LOCAL_DIR}/${name}" < /dev/null
+  "${H200_CLI}" pull "${REMOTE_DIR}/${name}" "${LOCAL_DIR}/${name}" < /dev/null
 done < "${SUMS}"
 
 # Admission is the driver's rule, unchanged: a result is admitted only if the
-# digests taken on each side agree. h200_gpfs_pull.sh verifies each file as it
+# digests taken on each side agree. `h200 pull` verifies each file as it
 # moves; this re-checks the delivered set as a whole, so a file that never
 # arrived is caught as well as one that arrived wrong.
 if ( cd "${LOCAL_DIR}" && LC_ALL=C sha256sum -c "${SUMS}" >/dev/null 2>&1 ); then

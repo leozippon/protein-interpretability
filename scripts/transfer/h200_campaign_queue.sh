@@ -73,7 +73,7 @@ set -euo pipefail
 #   eval "$(scripts/transfer/run_transfer_h200.sh --pin <commit-r207> --freeze-only)"
 #   R207_SNAPSHOT="$SNAPSHOT_DIR"
 #
-#   ~/hangzhou-remote/ssh_tunnel/h200_pod_exec.sh -- bash -lc "
+#   ~/hangzhou-compute/ssh_tunnel/h200_pod_exec.sh -- bash -lc "
 #     setsid nohup bash '${CC_SNAPSHOT}/scripts/transfer/h200_campaign_queue.sh' \
 #       --manifest '${CC_SNAPSHOT}/scripts/transfer/<campaign>.tsv' \
 #       --snapshot cc='${CC_SNAPSHOT}' \
@@ -98,7 +98,7 @@ set -euo pipefail
 #
 # Then, however rarely the link allows:
 #
-#   ~/hangzhou-remote/ssh_tunnel/h200_pod_bash.sh \
+#   ~/hangzhou-compute/ssh_tunnel/h200_pod_bash.sh \
 #     "cat <gpfs>/logs/external_baseline/<campaign>.status.tsv"
 #
 # A campaign may need more than one snapshot because its cells are pinned to
