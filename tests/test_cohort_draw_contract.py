@@ -297,6 +297,25 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "amendment that freezes them for both campaigns put them, and this stage "
         "refuses a run that changes either"
     ),
+    "44_adaptation_stage_capability.py": (
+        "42_scale_capability.py's reason, on EXP-R2-226's ProLLaMA lineage: it "
+        "re-reads the stage-20, stage-29, stage-41 and qualification artefacts "
+        "from disk and resamples the units those runs already fixed, loading no "
+        "corpus and no model. Its one draw is the paired group bootstrap, which "
+        "resamples fixed units -- ProteinGym wild-type families, MegaScale design "
+        "series and WT_clusters -- rather than a corpus, and it is frozen before "
+        "any of these readings were taken at 2,000 resamples on seed 20260826; "
+        "the stage refuses a run that changes either, and both reach the artefact"
+    ),
+    "adaptation_stage_qualification.py": (
+        "scale_interface_qualification.py's reason, with EXP-R2-226's own frozen "
+        "constants: it scores ONE hard-coded 80-residue probe, pinned by its own "
+        "SHA-256, against the reverse of itself under the bare Seq=<...> block. It "
+        "asks whether a rung loads strictly, scores deterministically and reads "
+        "the residue order at all, so there is no population to sample and rule "
+        "1's hazard is absent rather than answered. A cohort here would make an "
+        "all-or-stop gate depend on a draw"
+    ),
     "second_stage_interface_qualification.py": (
         "scale_interface_qualification.py's reason, with its own frozen "
         "constants: it scores one hard-coded probe per modality, each pinned by "
