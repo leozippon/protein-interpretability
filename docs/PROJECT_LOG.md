@@ -2083,3 +2083,13 @@ Two things had to be measured before the campaign could be honest about itself. 
 The frozen class queue is tracked evidence rather than a result, because it is built before any generation exists and every later step is pinned to its digest; it does not travel inside a code snapshot, so a dispatch stages it beside the run and each cell verifies it. The instrument gate ran before any generation was scored and removed three classes on their own anchors — two EC numbers and one superfamily — leaving 14 and 15, both above the floor.
 
 Twelve cells are queued on the one free card, self-checks first and the text positive control before the protein arms.
+
+## 2026-08-26 — EXP-R2-225's ProGen3 ladder runs, and the programme records its first gate transition
+
+The only Wave A wave carrying a fitness endpoint was blocked by two records rather than by any science: the 3B had no stage-20 payload at all, and the 112M's 2026-08-08 payload predated both the stratum field and the per-checkpoint self-check name that stage 43 requires to tell one rung's band from the other's. Scoring both rungs through the current stage 20 clears both at once and leaves the historical payload where it is; the two 112M passes agree to a mean absolute 0.0048 in per-assay ρ, which is a reproduction diagnostic across two GPU architectures and not an input to anything.
+
+What made the run worth its 95 minutes is the gate in front of it. Stock `from_pretrained` on these releases returns randomly initialised experts and routers without raising, so the loader's per-checkpoint NLL band is the whole of this wave's qualification — ProGen3 has no `ArmSpec` and can never have a stage-41 record. The 3B's first measurement on a GPU came in at 1.5038 nats/token against a band derived from 1.5045 on CPU, which is the kind of agreement that makes a band a tripwire rather than a formality.
+
+The compound returned `true` on `progen3-112m → progen3-3b`, the first on that label in the programme after EXP-R2-224's four `false`. The two campaigns are the same arithmetic on different lineages, censuses and strata, and they are not two rows of one table. Nor is a `true` verdict a claim about scale: the rungs differ in depth, width, parameter count and declared corpus at once, and LOOKUP on this lineage is an external UniRef50 profile baseline whose residual runs in the model's favour.
+
+One operational note worth carrying. Pre-placing byte-identical copies of a staged input at the pull destination short-circuits the per-file pull, as EXP-R2-226 found; the same trick kept the two `wildtypes.json` copies off the link here, and the admission still names them.

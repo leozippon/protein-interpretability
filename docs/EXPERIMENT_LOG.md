@@ -18188,3 +18188,68 @@ The concurrent official campaign was not displaced — its cells hold their own 
 ### Ceiling — unchanged, and now written into the artefacts rather than only here
 
 Every artefact this stage emits carries the whole of it: predicted structures, pLDDT and sequence-inferred labels cannot demonstrate functional competence or acquired knowledge; **max identity to the arm's own retrievable corpus is a covariate and is never a novelty claim** (F15 — a profile search seeded only by a prefix recruited the same-fold partner on 56 of 199 triples the alignment screen cleared); this is a behavioural measurement of a prompt interface and **does not reopen internal-feature steering** (§9.1's measured 0/8), the drug-design line or the wet-lab line; it is not a knowledge claim and §7.0 does not gate it; the oracle bounds the reading (L9) and a superfamily assignment is a homology statement by construction; the classes come from the arm's own labelled corpus, so the cohort is not independent of its training distribution; the two conditioned arms' rates are never differenced; and EXP-R2-013/014's lysozyme numbers are attainability only.
+
+## 2026-08-26 — EXP-R2-225 Wave A, the ProGen3 ladder: the campaign's only fitness endpoint runs, and the compound returns a transition
+
+**Run id `20260826110835_3bf9ccfc64c1` at pinned commit `67fdcd6`, two cells in one slot on two H200s, `# FAILURES 0`, `# NO-RECORD 0`, both `exited-ok`.** Records pulled with `pull_records_h200.sh` and admitted verbatim: `digests verified; results/transfer/external_baseline/20260826110835_3bf9ccfc64c1 ADMITTED (4 file(s))`. Stage 20's score stage writes only `model_<arm>.json`, so no `.npz` sidecar exists on these cells and nothing downstream wants one; the two extra admitted files are the `wildtypes.json` staged into each cell's own `--out`.
+
+### What was blocking it, confirmed before anything was dispatched
+
+Both prerequisites the previous entry recorded were reproduced exactly. `43_second_stage_capability.py --wave protein_progen3 --retrieval-bound-dir results/transfer/retrieval_bound` refused with `FileNotFoundError: results/transfer/retrieval_bound/model_progen3-3b.json does not exist`, before any arithmetic. And the 2026-08-08 `progen3-112m` payload records `score: "summed log-likelihood of the rendered variant"` with **no `scoring_stratum` key anywhere**, which `require_uniform_stratum` refuses rather than infers, and a `loader.self_check` block with **no `checkpoint` field**, which `progen3_self_check` needs distinct across the two rungs so that a band measured on one cannot pass as the other's qualification. So both rungs were re-scored by the current stage 20 rather than one, and the historical payload is left untouched at `results/transfer/retrieval_bound/`.
+
+**The blocker was the record and not the estimand, which matters for how the older numbers may be read.** `_ProGen3Scorer` has scored this lineage bidirectionally since F10; what 2026-08-08 lacked was a payload field saying so, the generic `score` string having been written by the stage rather than by the scorer. The two 112M runs are therefore the same measurement on different silicon, and they reproduce: identical assay set, identical `mutant_digest` on all 217 assays, unweighted assay-mean ρ **0.2745** on the 2026-08-08 L20 pass against **0.2757** here, mean absolute per-assay difference **0.0048**, and 7 of 217 assays moving by more than 0.02. The largest single move is `NPC1_HUMAN_Erwood_2022_RPE1`, +0.2776 to +0.4626 at 1280 tokens. That is bfloat16 arithmetic on two GPU architectures, **a reproduction diagnostic and not a gate input**: the freeze forms the paired Δρ inside one run, and no historical number entered this reading.
+
+### Dispatch
+
+```
+eval "$(scripts/transfer/run_transfer_h200.sh --pin HEAD --freeze-only)"   # RUN_ID=20260826110835_3bf9ccfc64c1, PIN_COMMIT=67fdcd6
+# stage wildtypes.json into each cell's own --out, in-pod, digest-verified
+# slot 1  20_retrieval_bound.py --stages score --arms progen3-112m --dtype bfloat16   (cuda:0)
+# slot 1  20_retrieval_bound.py --stages score --arms progen3-3b   --dtype bfloat16   (cuda:1)
+```
+
+Manifest `scripts/transfer/campaign_r225_progen3.tsv`, SHA-256 `fa813de7b68f2fe8…`, byte-identical inside the snapshot to the committed copy. `wildtypes.json` (`e080a37758e29c66…`) was copied in-pod from `results/transfer/retrieval_bound/` into both cell directories and its digest verified against this repository's copy before the launch; it is an input staged beside a result and is not either cell's `expect` basename. The in-pod `--dry-run` resolved both cells before anything was launched and the status file was read back showing `running=2` — `QUEUE_LAUNCHED` on its own is not evidence. Neither cell passes `--progen3-checkpoint`: one value cannot serve two rungs, so `PROGEN3_CHECKPOINTS` resolves each rung's directory and the band stays keyed by the loaded config's architecture fingerprint. `progen3-3b`'s 5.6 GB of weights had been staged to GPFS earlier the same day over the ~2 MB/s link and were verified complete in-pod against the release index before dispatch. Everything else is the stage default the frozen `lookup.json` was produced at: `--variants 1000 --seed 20260807 --batch-size 16`. The 112M cell ran 40 minutes and the 3B cell 95 minutes.
+
+### The loader gate, which is this wave's whole qualification
+
+ProGen3 has **no stage-41 identification record and cannot have one as staged**: it has no `ArmSpec`, so `01_cohort_power.py` cannot resolve it and writes no sufficient-statistics sidecar. Its qualification is `src.transfer.progen3.self_check`, run before either cell scored an assay and required out of the stage-20 payload by stage 43 at `verdict: PASS` per rung with distinct declared checkpoints. That path works end to end and `qualification.passed` is `true`.
+
+| rung | measured NLL, nats/token | declared band | verdict | declared reference on that checkpoint | nearest recorded corruption |
+|---|---:|---|---|---:|---|
+| `progen3-112m` | **2.2884647846221924** | 1.9867 – 2.5867 | PASS | 2.2867 (L20 bfloat16) | `w1_v1_swapped` 3.1793 |
+| `progen3-3b` | **1.5038070678710938** | 1.2045 – 1.8045 | PASS | 1.5045 (CPU bfloat16) | `gate_rows_rolled_by_one` 3.9304 |
+
+**The 3B's first measurement on a GPU lands 0.0007 nats from the value the band was derived from on CPU**, and 2.43 nats below the nearest corruption. The gate is load-bearing rather than decorative: stock `from_pretrained` on these releases returns randomly initialised experts and routers **without raising**, at 18.4764 and 11.7474 nats/token on the two checkpoints.
+
+### Census, and the one stratum both rungs are read under
+
+Declared cohort 217 assays over 174 wild-type families; **analysis set equal to it**, with an empty context-exclusion set on both rungs, which is what `PROGEN3_DMS_CENSUS` declares and what the payloads' empty `skipped` blocks satisfy. Precision `bfloat16` on both rungs, resolved from the payloads. Scoring stratum `bidirectional_mean_of_directional_sums` on both, checked against the wave's declaration.
+
+**This is not EXP-R2-224's analysis set and the two do not pool.** That ladder analyses 201/163 because 16 assays overflow ProGen2's 1024 positions; ProGen3 declares 65536 and stage 20 records no context for it, so nothing is unscorable. Beyond the census the estimand differs — the mean of the N-to-C and C-to-N summed log-likelihoods against a summed left-to-right one — and `require_uniform_stratum` exists to make that a refusal rather than a sentence. No artefact may present the ProGen3 and ProGen2 ladders in one column.
+
+### The reading, on the 174-family group bootstrap at the inherited `resamples=2000`, `seed=20260825`
+
+| endpoint | `progen3-112m` | `progen3-3b` | paired Δ, 112M → 3B |
+|---|---|---|---|
+| raw Spearman ρ | +0.2750 (+0.2468 to +0.3047) | +0.4106 (+0.3874 to +0.4349) | **+0.1356 (+0.1082 to +0.1647)** |
+| MODEL − LOOKUP | −0.0801 (−0.1135 to −0.0460) | **+0.0555 (+0.0345 to +0.0774)** | +0.1356 (+0.1071 to +0.1634) |
+| MODEL − BLOSUM62, reported and never gated | +0.0688 (+0.0398 to +0.0975) | +0.2044 (+0.1835 to +0.2259) | +0.1356 (+0.1072 to +0.1647) |
+
+The three paired Δ point estimates coincide at +0.1356 because both baselines are the same per-assay channel for both rungs, so a between-rung difference of contrasts is the between-rung difference of the model terms; only the resampling draw differs, and each interval is reported as drawn.
+
+**`descriptive_gate_transition` on `progen3-112m__progen3-3b`: `verdict: true`**, both conditions met — `larger_model_minus_lookup: true` and `raw_spearman_delta: true`. `blosum62_is_not_a_dms_gate: true`. The artefact states what the label means in its own words: *"the larger rung clears its own baseline contrast and is paired-significantly better than the smaller; this is not a claim that the smaller rung failed"*. Under L44 the smaller rung's own contrast travels beside it in `reported_not_gated`: `smaller_model_minus_lookup: false`, and it is not merely inconclusive — the 112M's MODEL − LOOKUP interval excludes zero **negatively**, so on this queue the 112M ranks substitutions worse than the external UniRef50 profile channel does and the 3B is the first rung of this lineage to clear it.
+
+**This is the programme's first `descriptive_gate_transition: true`.** EXP-R2-224's four adjacent-pair gates all returned `false`, and the two campaigns' compounds are the same arithmetic on different lineages, censuses and strata. They are not two rows of one table.
+
+### Ceiling — what this does not license
+
+- **Not a scale claim.** Depth, width and parameter count move together between 112M and 3B (10 layers at width 384 against 24 at 1280), corpus and training stay confounded with the rung — the 112M card declares no corpus at all while the 3B declares Profluent Protein Atlas v1 — and the pre-registration is explicit that a gate flip is descriptive of two named checkpoints and never a causal effect of parameter count. A `true` verdict is no more a claim about scale than EXP-R2-224's four `false` ones were.
+- **Not knowledge, and not a retrieval exclusion.** LOOKUP here is an **external UniRef50 profile baseline and not a retrieval bound**: the family paper declares Profluent Protein Atlas v1, which lists UniRef among several sources, and neither the card nor the paper identifies the staged UniRef50 snapshot as that set. The residual is signed and runs the wrong way — the Atlas is certainly the larger corpus, so the searched profile under-counts this arm's retrievable support and the comparison flatters the model. Beating a sequence baseline is not evidence that a model has learned biology.
+- **Not mechanism.** Nothing here says where in the network the capability sits.
+- **Not a panel admission.** `not_panel_admission: true`; scoring these checkpoints admits neither to the eleven-arm panel.
+- **Not a completed campaign, and no MegaScale row.** EXP-R2-225 delivers no MegaScale row on any wave; `29_designed_referent.py` refuses this lineage in the same reading as the N-to-C arms and that row remains a conditional future deliverable. Wave A's other two waves carry context information only and return no gate by construction; Wave B is unrun.
+- **One fixed run.** Calling a transition a robust qualitative change requires independent-data replication.
+
+### Artefacts
+
+`results/transfer/external_baseline/20260826110835_3bf9ccfc64c1/r225_s20_progen3_{112m,3b}/model_progen3-{112m,3b}.json`, assembled with the frozen `lookup.json` into `results/transfer/r225_progen3/retrieval_bound/`, and `results/transfer/second_stage_capability/protein_progen3/second_stage_capability.json`. Nothing is promoted to `evidence/`. Suite with `TRANSFER_MODEL_BASE_DIR` and `TRANSFER_TEXT_MODEL_BASE_DIR` exported: 2244 passed, 22 skipped, two failures, both in `ExternalStageWrapperLifecycleTests` (`test_int_writes_pre_and_post` and `test_term_writes_pre_and_post`) and both the known wall-clock trap race — the four lifecycle tests pass in 5.83 s when the host is not also driving a campaign. `panel_contract.py --verify` passes.
