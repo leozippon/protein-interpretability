@@ -68,6 +68,7 @@ from src.transfer.arms import (  # noqa: E402
     REPO,
     STAGED_ARMS,
     STAGED_SCALE_ARMS,
+    STAGED_SECOND_STAGE_ARMS,
     Cohort,
     arm_spec,
     load_arm,
@@ -293,16 +294,21 @@ def validate_arms(names: list[str], args: argparse.Namespace) -> None:
     scored on an unconditioned prompt, which is separately measured at 1.73 nats
     of conditioning leak (EXP-R2-034).
 
-    Staged scale rungs are not panel members. Without
-    ``--allow-staged-scale-arms`` they are unknown arms, exactly as before.
-    With that flag only :data:`STAGED_SCALE_ARMS` may be added, and they are
-    resolved through :func:`src.transfer.arms.arm_spec` rather than through
-    :func:`panel_contract.arm_can_run`.
+    Staged checkpoints are not panel members, and reach this stage through two
+    separate doors that never admit each other's arms. Without
+    ``--allow-staged-scale-arms`` the EXP-R2-224 ProGen2 rungs
+    (:data:`STAGED_SCALE_ARMS`) are unknown arms, exactly as before; without
+    ``--allow-second-stage-arms`` the EXP-R2-225 checkpoints
+    (:data:`STAGED_SECOND_STAGE_ARMS`) are too. Either flag admits only its own
+    tuple, and both resolve through :func:`src.transfer.arms.arm_spec` rather
+    than through :func:`panel_contract.arm_can_run`.
     """
 
     allow_staged = bool(getattr(args, "allow_staged_scale_arms", False))
+    allow_second_stage = bool(getattr(args, "allow_second_stage_arms", False))
     unknown = []
     staged = []
+    second_stage = []
     panel_names = []
     for name in names:
         if name in PANEL:
@@ -311,10 +317,28 @@ def validate_arms(names: list[str], args: argparse.Namespace) -> None:
         if allow_staged and name in STAGED_SCALE_ARMS:
             staged.append(name)
             continue
+        if allow_second_stage and name in STAGED_SECOND_STAGE_ARMS:
+            second_stage.append(name)
+            continue
         unknown.append(name)
     if unknown:
         raise ValueError(f"unknown arms {unknown}; panel is {sorted(PANEL)}")
     specs = {name: arm_spec(name) for name in names}
+    # A second-stage checkpoint that cannot honour ``budget`` cannot produce this
+    # stage's estimand at all, and the refusal is answerable from its declaration
+    # alone. Raising here rather than inside the scoring loop is what keeps a
+    # multi-billion-parameter load off the card for a run that was never going to
+    # return a number.
+    without_budget = [
+        name for name in second_stage if "budget" not in specs[name].capabilities
+    ]
+    if without_budget:
+        raise ValueError(
+            f"second-stage arms {without_budget} declare no 'budget' capability, "
+            "so context information is not defined on them. Their declaration in "
+            "src.transfer.arms carries the reason; it is not discharged by naming "
+            "them here"
+        )
     mismatched = [name for name in names if specs[name].modality != args.kind]
     if mismatched:
         raise ValueError(
@@ -359,7 +383,11 @@ def _cohort_power_stage_contract(names: list[str]) -> dict[str, Any]:
     """Panel contract for panel arms; a staged-only run must not impersonate one."""
 
     panel_names = [name for name in names if name in PANEL]
-    staged = [name for name in names if name in STAGED_SCALE_ARMS]
+    staged = [
+        name
+        for name in names
+        if name in STAGED_SCALE_ARMS or name in STAGED_SECOND_STAGE_ARMS
+    ]
     if not panel_names and staged:
         return {
             "stage": "cohort_power",
@@ -372,6 +400,35 @@ def _cohort_power_stage_contract(names: list[str]) -> dict[str, Any]:
             ),
         }
     return stage_contract_record("cohort_power", panel_names)
+
+
+def _second_stage_record(names: list[str], allow_second_stage: bool) -> dict[str, Any] | None:
+    """What an EXP-R2-225 second-stage run declares about the arms it measured.
+
+    Separate from :func:`_staged_scale_record` because the two campaigns are
+    separate: this one names no ladder, because its checkpoints are not one
+    lineage, and it records each arm's own scoring-target alphabet rather than
+    one shared 32.
+    """
+
+    second_stage = [name for name in names if name in STAGED_SECOND_STAGE_ARMS]
+    if not second_stage:
+        return None
+    return {
+        "not_panel_admission": True,
+        "allow_second_stage_arms": bool(allow_second_stage),
+        "scope": "exp_r2_225_second_stage_checkpoints",
+        "allowed_second_stage_arms": list(STAGED_SECOND_STAGE_ARMS),
+        "measured_second_stage_arms": second_stage,
+        "scoring_target_alphabet": {
+            name: scoring_target_alphabet(arm_spec(name)) for name in second_stage
+        },
+        "reason": (
+            "these checkpoints remain outside PANEL and CAMPAIGN_PANEL; this "
+            "artefact is an opt-in second-stage qualification, not panel "
+            "admission and not a capability claim"
+        ),
+    }
 
 
 def _staged_scale_record(names: list[str], allow_staged: bool) -> dict[str, Any] | None:
@@ -511,6 +568,16 @@ def main() -> None:
         "PROTEIN_SCALE_LADDER. They stay outside the panel; the artefact "
         "declares not_panel_admission rather than asking panel_contract to "
         "admit them",
+    )
+    parser.add_argument(
+        "--allow-second-stage-arms",
+        action="store_true",
+        help="opt in to the EXP-R2-225 second-stage checkpoints "
+        "(STAGED_SECOND_STAGE_ARMS). A separate door from "
+        "--allow-staged-scale-arms and not a widening of it: neither flag admits "
+        "the other's arms, and neither is panel admission. An arm whose "
+        "declaration carries no 'budget' capability is refused here rather than "
+        "after it is loaded",
     )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--dtype", default="bfloat16")
@@ -863,6 +930,10 @@ def main() -> None:
     if staged_scale is not None:
         payload["not_panel_admission"] = True
         payload["staged_scale"] = staged_scale
+    second_stage = _second_stage_record(names, bool(args.allow_second_stage_arms))
+    if second_stage is not None:
+        payload["not_panel_admission"] = True
+        payload["second_stage"] = second_stage
     write_json(destination, payload)
     print(f"wrote {destination}")
     if sufficient_statistics is not None:

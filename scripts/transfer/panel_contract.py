@@ -200,11 +200,19 @@ CAMPAIGN_PANEL: tuple[str, ...] = (
 #: declaration has -- nothing is outside the campaign -- and not a gap in it.
 PANEL_MEMBERS_NOT_STAGED: dict[str, str] = {}
 
-#: Checkpoints that are staged on GPFS and load cleanly but are NOT declared in
+#: Checkpoints that are staged and load cleanly but are NOT declared in
 #: :data:`~src.transfer.arms.PANEL`, with the measured reason. Recorded here rather
 #: than left as an absence, because "we have not got round to it" and "admitting it
 #: would corrupt a statistic" are different facts and only one of them is a
-#: decision. Both were load-checked on the pod (EXP-R2-068).
+#: decision. The two ProGen2 rungs were load-checked on the pod (EXP-R2-068); the
+#: six EXP-R2-225 second-stage checkpoints carry the reason each was staged
+#: without being admitted, and every one of those reasons is a property this
+#: repository has read off the checkpoint rather than an intention about it.
+#:
+#: ``tests/test_replaceable_arms.py`` requires this table's keys to be exactly
+#: :data:`~src.transfer.arms.STAGED_ARMS`, so a checkpoint cannot become
+#: reachable to a loader without a reason for its non-admission being written
+#: here.
 STAGED_BUT_NOT_ADMITTED: dict[str, str] = {
     "progen2-large": (
         "2779.4M parameters, 32 blocks of width 2560, loads and runs -- but its "
@@ -227,6 +235,61 @@ STAGED_BUT_NOT_ADMITTED: dict[str, str] = {
         "number. Admissible once the panel reads a declared alphabet size instead "
         "of trusting a config key that two checkpoints in this lineage spell "
         "differently"
+    ),
+    # ---- EXP-R2-225 second stage. Staged for a descriptive Direction-1 read;
+    # none is qualified and none is admitted.
+    "galactica-6.7b": (
+        "a joint language-protein decoder, 32 blocks of width 4096 over a 50000-"
+        "piece vocab_size, and neither of its two modes has been through "
+        "21_joint_mode_qualification.py. Admission is refused on the shape of the "
+        "declaration rather than on the checkpoint: one ArmSpec carries one "
+        "modality, one input_format and one evaluation cohort, and a joint "
+        "checkpoint has two of each -- its protein rendering is "
+        "joint_modes.JOINT_RENDERINGS['galactica'], which Cohort.input_strings "
+        "cannot produce. galactica-1.3b has been qualified and is not in the "
+        "panel either, for the same reason. Measured beside that: its "
+        "special_tokens_map.json is {} and its tokenizer reports no pad token, "
+        "so no batch can be built for it through the panel's own tokenizer door"
+    ),
+    "galactica-30b": (
+        "as galactica-6.7b, at 48 blocks of width 7168 over the same 50000-piece "
+        "vocab_size. Additionally unmeasured: EXP-R2-225 requires device memory "
+        "to be measured rather than asserted before this checkpoint is called a "
+        "single-card candidate, and no such measurement exists"
+    ),
+    "qwen2.5-7b": (
+        "28 blocks of width 3584 over a vocab_size of 152064, the same "
+        "architecture, tokenizer and pretraining mixture as the panel member "
+        "qwen2.5-0.5b. Nothing about it would corrupt a panel statistic; it is "
+        "out because panel membership is a campaign obligation on every stage, "
+        "and a descriptive second-stage scale reading needs a staged rung rather "
+        "than a fifteenth arm every campaign must then schedule"
+    ),
+    "qwen2.5-32b": (
+        "as qwen2.5-7b, at 64 blocks of width 5120 over the same 152064 "
+        "vocab_size. Additionally unmeasured: no device-memory measurement exists "
+        "for it, so it is a single-card H200 candidate and not a checkpoint this "
+        "repository has run"
+    ),
+    "proteinglm-7b-clm": (
+        "36 blocks of width 4096 over a padded vocab_size of 128, and its native "
+        "rendering is not established. Its card documents generation only, behind "
+        "a three-token <gmask><sop><eos> prompt that the same call strips again, "
+        "and says nothing about which positions a residue likelihood is read "
+        "over; its tokenizer splits on whitespace, so an unspaced residue string "
+        "reaches the model as one out-of-vocabulary word. It is declared with an "
+        "undeclared input format and an empty capability set, which refuses every "
+        "measurement with that reason attached"
+    ),
+    "rita-xl": (
+        "24 blocks of width 2048 over a vocab_size of 26, native rendering raw. "
+        "Out of the panel because its rita architecture is declared in none of "
+        "the tables the interpretability families resolve through, so it could "
+        "carry only budget, and because its tokenizer declares no pad and no eos "
+        "token at all -- special_tokens_map.json is {} while tokenizer.json "
+        "defines <PAD> at 1 and <EOS> at 2 -- so load_arm_spec's "
+        "pad_token = eos_token fallback has nothing to copy and any padded batch "
+        "is refused"
     ),
 }
 

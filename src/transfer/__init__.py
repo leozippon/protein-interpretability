@@ -95,6 +95,10 @@ Measurements, by the stage whose transfer they probe:
                          concept-name mask without which a cross-modal concept
                          alignment is a string match
 ``scaling``              cross-arm reading: scale, lineage and modality decomposition
+``scale_comparison``     cross-arm reading: the paired rung-to-rung arithmetic a
+                         descriptive scale ladder is read with, held once so that
+                         two campaigns on the same frozen queues cannot drift
+                         apart on the operations that make them comparable
 
 **Stage 2, instrument fidelity, once had no module here and now has six, and
 both halves of that belong on record.** The line the original note described is
@@ -153,6 +157,7 @@ __all__ = [
     "relational",
     "replaceable",
     "routing",
+    "scale_comparison",
     "scaling",
     "scoring",
     "sequence_description",

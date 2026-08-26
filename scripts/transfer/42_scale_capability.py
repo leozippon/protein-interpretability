@@ -20,13 +20,19 @@ ProGen2 rung shares, so the ladder is read on the 201 assays over 163 families
 that every rung can score. MegaScale scores all 146 designs; F12's design census
 is the 130 certified zero-hit designs, and that flag is carried by the stage-29
 cohort rather than by the per-arm payloads.
+
+The freeze lives here and the arithmetic lives in
+:mod:`src.transfer.scale_comparison`. Every rung name, census count, seed and
+resample count below is this campaign's declaration and is checked here; the
+paired resampling, the cohort alignment and the stage-41 qualification are one
+implementation shared with the second-stage campaign, because those two must not
+be free to drift apart on exactly the operations that make them comparable.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -43,7 +49,17 @@ from src.transfer.arms import (  # noqa: E402
     arm_spec,
 )
 from src.transfer import designed_referent as D  # noqa: E402
+from src.transfer import scale_comparison as C  # noqa: E402
 from src.transfer.io import sha256_file, write_json  # noqa: E402
+from src.transfer.scale_comparison import (  # noqa: E402
+    compound_verdict,
+    lower_bound_positive,
+    # Re-exported under the stage's own spelling. Nothing here calls it; the
+    # stage's tests do, to state the property the design census rests on -- that
+    # the unrestricted design side of a stage-29 payload is 146 wild types, so
+    # F12's 130 cannot be read off that file and must come from the cohort.
+    side_keys as _side_keys,  # noqa: F401
+)
 
 SCHEMA_VERSION = "r2_transfer_scale_capability_v2"
 DEFAULT_OUT = REPO / "results/transfer/scale_capability"
@@ -94,6 +110,26 @@ MEGASCALE_DESIGN_WILDTYPES = 130
 MEGASCALE_DESIGN_SERIES = 40
 MEGASCALE_NATURAL_WILDTYPES = 266
 MEGASCALE_NATURAL_CLUSTERS = 124
+
+#: The same two censuses as objects, which is the form
+#: :mod:`src.transfer.scale_comparison` checks them in. The numbers above stay
+#: the declaration; these bind them to this campaign's label so a refusal names
+#: the freeze it came from, and are the only route by which the library learns a
+#: count at all.
+DMS_CENSUS = C.DmsCensus(
+    label="EXP-R2-224",
+    declared_assays=DMS_DECLARED_ASSAYS,
+    declared_clusters=DMS_DECLARED_CLUSTERS,
+    analysis_assays=DMS_ANALYSIS_ASSAYS,
+    analysis_clusters=DMS_ANALYSIS_CLUSTERS,
+    context_excluded_assays=DMS_CONTEXT_EXCLUDED_ASSAYS,
+)
+MEGASCALE_CENSUS = C.MegascaleCensus(
+    design_wildtypes=MEGASCALE_DESIGN_WILDTYPES,
+    design_series=MEGASCALE_DESIGN_SERIES,
+    natural_wildtypes=MEGASCALE_NATURAL_WILDTYPES,
+    natural_clusters=MEGASCALE_NATURAL_CLUSTERS,
+)
 
 DESCRIPTIVE_NOT_CAUSAL = (
     "checkpoint differences on this ladder are descriptive of the named "
@@ -148,12 +184,7 @@ def _timestamp() -> str:
 def require_rung_order(names: list[str]) -> None:
     """Refuse any comparison whose rung list is not medium, large, xlarge."""
 
-    got = list(names)
-    if got != list(SCALE_RUNGS):
-        raise ValueError(
-            f"the descriptive comparison is fixed as {list(SCALE_RUNGS)}; "
-            f"got {got}"
-        )
+    C.require_rungs(names, SCALE_RUNGS)
 
 
 def require_frozen_bootstrap(resamples: int, seed: int) -> None:
@@ -167,74 +198,6 @@ def require_frozen_bootstrap(resamples: int, seed: int) -> None:
         )
 
 
-def lower_bound_positive(record: dict[str, Any]) -> bool | None:
-    """True/False when an interval exists; None when it cannot be read."""
-
-    if record.get("degenerate") or record.get("interval") is None:
-        return None
-    return bool(record["interval"][0] > 0.0)
-
-
-def compound_verdict(conditions: dict[str, bool | None]) -> bool | str:
-    """True only when every named condition is True; unresolved if any is missing."""
-
-    if any(value is None for value in conditions.values()):
-        return "unresolved"
-    return all(bool(value) for value in conditions.values())
-
-
-def _aligned_keys(left: dict[str, Any], right: dict[str, Any], *, label: str) -> list[str]:
-    if set(left) != set(right):
-        missing = sorted(set(left) ^ set(right))
-        raise ValueError(f"{label} keys disagree: {missing}")
-    return sorted(left)
-
-
-def paired_unit_delta(
-    smaller: dict[str, float],
-    larger: dict[str, float],
-    units: dict[str, str],
-    *,
-    resamples: int,
-    seed: int,
-) -> dict[str, Any]:
-    """Paired Δρ over the original unit labels, resampled as those units."""
-
-    names = _aligned_keys(smaller, larger, label="paired Δρ")
-    if not names:
-        raise ValueError("paired Δρ has no shared units")
-    missing = [name for name in names if name not in units]
-    if missing:
-        raise ValueError(f"paired Δρ is missing unit labels for {missing}")
-    extra = sorted(set(units) - set(names))
-    if extra:
-        raise ValueError(f"paired Δρ has unit labels with no paired values: {extra}")
-    unit_names = [units[name] for name in names]
-    if any(not label for label in unit_names):
-        raise ValueError("paired Δρ has an empty unit label")
-    values = [larger[name] - smaller[name] for name in names]
-    return D.unit_bootstrap(values, unit_names, resamples=resamples, seed=seed)
-
-
-def unit_mean_record(
-    values: dict[str, float],
-    units: dict[str, str],
-    *,
-    resamples: int,
-    seed: int,
-) -> dict[str, Any]:
-    names = sorted(values)
-    missing = [name for name in names if name not in units]
-    if missing:
-        raise ValueError(f"unit labels missing for {missing}")
-    return D.unit_bootstrap(
-        [values[name] for name in names],
-        [units[name] for name in names],
-        resamples=resamples,
-        seed=seed,
-    )
-
-
 def _endpoint(
     per_rung: dict[str, dict[str, float]],
     units: dict[str, str],
@@ -242,86 +205,16 @@ def _endpoint(
     resamples: int,
     seed: int,
 ) -> dict[str, Any]:
-    rungs = {
-        name: unit_mean_record(per_rung[name], units, resamples=resamples, seed=seed + index)
-        for index, name in enumerate(SCALE_RUNGS)
-    }
-    adjacent = {}
-    for offset, (smaller, larger) in enumerate(ADJACENT_PAIRS):
-        delta = paired_unit_delta(
-            per_rung[smaller],
-            per_rung[larger],
-            units,
-            resamples=resamples,
-            seed=seed + 10 + offset,
-        )
-        adjacent[f"{smaller}__{larger}"] = delta
-    return {"per_rung": rungs, "adjacent_delta_rho": adjacent}
+    """One endpoint over this ladder's frozen rungs and adjacent pairs."""
 
-
-def _assay_names(payload: dict[str, Any], *, label: str) -> list[str]:
-    names = [row["assay"] for row in payload["assays"]]
-    if len(names) != len(set(names)):
-        raise ValueError(f"{label} repeats an assay")
-    return names
-
-
-def context_excluded_assays(
-    models: dict[str, dict[str, Any]], lookup_set: set[str]
-) -> set[str]:
-    """The assays no rung can score, refused unless every rung skips the same set.
-
-    A rendered variant longer than the 1024-position context every ProGen2 rung
-    shares is unscorable on all three, so skipping it defines the cohort. A skip
-    one rung takes and another does not would break the pairing the comparison
-    rests on, and a skip taken for any other reason is a scoring failure rather
-    than a cohort definition. Both are refusals.
-    """
-
-    per_rung: dict[str, set[str]] = {}
-    for name in SCALE_RUNGS:
-        skipped = models[name].get("skipped")
-        if skipped is None:
-            raise ValueError(
-                f"{name} carries no skipped block; stage 20 writes one on every "
-                "scored arm and its absence cannot be read as an empty skip"
-            )
-        names: set[str] = set()
-        for row in skipped:
-            assay = str(row["assay"])
-            if assay in names:
-                raise ValueError(f"{name} repeats skipped assay {assay}")
-            reason = str(row.get("reason", ""))
-            if DMS_CONTEXT_EXCLUSION_REASON not in reason:
-                raise ValueError(
-                    f"{name} skipped {assay} for {reason!r}; only a rendered "
-                    "variant exceeding this ladder's shared context defines the "
-                    "cohort, every other skip is a scoring failure"
-                )
-            if int(row["context"]) != PROGEN2_CONTEXT:
-                raise ValueError(
-                    f"{name} skipped {assay} against context {row['context']}, "
-                    f"not this ladder's shared {PROGEN2_CONTEXT}"
-                )
-            if int(row["max_tokens"]) <= PROGEN2_CONTEXT:
-                raise ValueError(
-                    f"{name} skipped {assay} at {row['max_tokens']} tokens, "
-                    f"which fits the {PROGEN2_CONTEXT}-position context"
-                )
-            names.add(assay)
-        per_rung[name] = names
-    reference = per_rung[SCALE_RUNGS[0]]
-    for name, names in per_rung.items():
-        if names != reference:
-            raise ValueError(
-                f"{name} and {SCALE_RUNGS[0]} disagree on whether "
-                f"{sorted(names ^ reference)} can be scored; a paired "
-                "comparison needs one common support across the rungs"
-            )
-    outside = sorted(reference - lookup_set)
-    if outside:
-        raise ValueError(f"skipped assays {outside} are not in the LOOKUP cohort")
-    return reference
+    return C.endpoint(
+        per_rung,
+        units,
+        rungs=SCALE_RUNGS,
+        pairs=ADJACENT_PAIRS,
+        resamples=resamples,
+        seed=seed,
+    )
 
 
 def align_dms(
@@ -330,105 +223,23 @@ def align_dms(
     *,
     require_fixed_census: bool = True,
 ) -> dict[str, Any]:
-    """Align the DMS cohort: three model assay sets equal the jointly scored subset.
+    """Align the DMS cohort against this campaign's frozen interface and census.
 
-    LOOKUP declares ProteinGym's 217-assay substitution queue. The rungs score
-    the 201 of those assays that fit the 1024-position context they share. The
-    returned record carries both, so the artefact can say which cohort was
-    declared and which was analysed instead of implying they are the same set.
+    ``require_fixed_census=False`` drops the four count checks and the frozen
+    exclusion set; every structural refusal -- a rung-specific skip, a skip that
+    is not a shared-context overflow, a skip against another context, an assay
+    set that disagrees with the jointly scored LOOKUP subset -- still applies,
+    because those are properties of the pairing rather than of the census.
     """
 
-    require_rung_order(list(models))
-    lookup_assays = _assay_names(lookup, label="LOOKUP")
-    lookup_set = set(lookup_assays)
-    excluded = context_excluded_assays(models, lookup_set)
-    analysis_assays = [name for name in lookup_assays if name not in excluded]
-    analysis_set = set(analysis_assays)
-    for name in SCALE_RUNGS:
-        model_set = set(_assay_names(models[name], label=name))
-        if model_set != analysis_set:
-            raise ValueError(
-                f"{name} assay set disagrees with the jointly scored LOOKUP "
-                f"subset: {sorted(model_set ^ analysis_set)}"
-            )
-    by_assay = {row["assay"]: row for row in lookup["assays"]}
-    units: dict[str, str] = {}
-    raw: dict[str, dict[str, float]] = {name: {} for name in SCALE_RUNGS}
-    contrasts: dict[str, dict[str, dict[str, float]]] = {
-        "model_minus_lookup": {name: {} for name in SCALE_RUNGS},
-        "model_minus_blosum62": {name: {} for name in SCALE_RUNGS},
-    }
-    for assay in analysis_assays:
-        lookup_row = by_assay[assay]
-        expected_digest = lookup_row["mutant_digest"]
-        expected_wildtype = lookup_row.get("wildtype_id")
-        expected_n = lookup_row.get("n_variants")
-        for rung in SCALE_RUNGS:
-            rows = {row["assay"]: row for row in models[rung]["assays"]}
-            entry = rows[assay]
-            if entry["mutant_digest"] != expected_digest:
-                raise ValueError(
-                    f"{assay}: mutant_digest disagrees between {rung} and LOOKUP"
-                )
-            if expected_wildtype is not None and entry.get("wildtype_id") not in (
-                None,
-                expected_wildtype,
-            ):
-                raise ValueError(
-                    f"{assay}: wildtype_id disagrees between {rung} and LOOKUP"
-                )
-            if expected_n is not None and entry.get("n_variants") not in (
-                None,
-                expected_n,
-            ):
-                raise ValueError(
-                    f"{assay}: n_variants disagrees between {rung} and LOOKUP"
-                )
-            rho = float(entry["spearman"])
-            raw[rung][assay] = rho
-            contrasts["model_minus_lookup"][rung][assay] = (
-                rho - float(lookup_row["spearman"]["lookup"])
-            )
-            contrasts["model_minus_blosum62"][rung][assay] = (
-                rho - float(lookup_row["spearman"]["blosum62"])
-            )
-        units[assay] = str(lookup_row["cluster"])
-    declared_clusters = {str(row["cluster"]) for row in lookup["assays"]}
-    if require_fixed_census:
-        if len(lookup_assays) != DMS_DECLARED_ASSAYS:
-            raise ValueError(
-                f"DMS cohort is {len(lookup_assays)} assays, not the fixed "
-                f"{DMS_DECLARED_ASSAYS}-assay ProteinGym substitution census"
-            )
-        if len(declared_clusters) != DMS_DECLARED_CLUSTERS:
-            raise ValueError(
-                f"LOOKUP has {len(declared_clusters)} clusters, not the fixed "
-                f"{DMS_DECLARED_CLUSTERS}-family census"
-            )
-        if sorted(excluded) != list(DMS_CONTEXT_EXCLUDED_ASSAYS):
-            raise ValueError(
-                "the context-excluded assays are not the frozen EXP-R2-224 set: "
-                f"{sorted(set(excluded) ^ set(DMS_CONTEXT_EXCLUDED_ASSAYS))}"
-            )
-        if len(analysis_assays) != DMS_ANALYSIS_ASSAYS:
-            raise ValueError(
-                f"the jointly scored DMS set is {len(analysis_assays)} assays, "
-                f"not the fixed {DMS_ANALYSIS_ASSAYS}"
-            )
-        if len(set(units.values())) != DMS_ANALYSIS_CLUSTERS:
-            raise ValueError(
-                f"the jointly scored DMS set spans {len(set(units.values()))} "
-                f"families, not the fixed {DMS_ANALYSIS_CLUSTERS}"
-            )
-    return {
-        "declared_assays": lookup_assays,
-        "declared_clusters": len(declared_clusters),
-        "context_excluded_assays": sorted(excluded),
-        "analysis_assays": analysis_assays,
-        "units": units,
-        "raw": raw,
-        "contrasts": contrasts,
-    }
+    return C.align_dms(
+        models,
+        lookup,
+        rungs=SCALE_RUNGS,
+        context=PROGEN2_CONTEXT,
+        exclusion_reason=DMS_CONTEXT_EXCLUSION_REASON,
+        census=DMS_CENSUS if require_fixed_census else None,
+    )
 
 
 def zero_hit_design_cohort(path: Path) -> dict[str, Any]:
@@ -454,25 +265,6 @@ def zero_hit_design_cohort(path: Path) -> dict[str, Any]:
     }
 
 
-def _side_keys(
-    payload: dict[str, Any],
-    *,
-    side: str,
-    spearman_of,
-    admissible: frozenset[str] | None = None,
-) -> set[str]:
-    keys = set()
-    for name, entry in payload["wildtypes"].items():
-        if entry.get("kind") != side:
-            continue
-        if admissible is not None and name not in admissible:
-            continue
-        if spearman_of(entry) is None:
-            continue
-        keys.add(name)
-    return keys
-
-
 def align_megascale(
     models: dict[str, dict[str, Any]],
     baselines: dict[str, Any],
@@ -482,89 +274,17 @@ def align_megascale(
     admissible: frozenset[str] | None = None,
     require_fixed_census: bool = True,
 ) -> tuple[dict[str, str], dict[str, dict[str, float]], dict[str, dict[str, float]]]:
-    """Align one MegaScale side: non-null keys equal across rungs and the baseline.
+    """Align one MegaScale side against this campaign's frozen rungs and census."""
 
-    ``admissible`` restricts the side to a declared census. The design side is
-    restricted to the certified zero-hit designs; on the natural control, where
-    hitting the corpus is the expected state, it has no meaning and is ``None``.
-    """
-
-    require_rung_order(list(models))
-    digests = {name: payload["cohort_sha256"] for name, payload in models.items()}
-    if len(set(digests.values())) != 1:
-        raise ValueError(f"MegaScale cohort_sha256 disagrees across rungs: {digests}")
-    model_keys = {
-        name: _side_keys(
-            payload,
-            side=side,
-            spearman_of=lambda entry: entry.get("spearman"),
-            admissible=admissible,
-        )
-        for name, payload in models.items()
-    }
-    first_keys = model_keys[SCALE_RUNGS[0]]
-    for name, keys in model_keys.items():
-        if keys != first_keys:
-            raise ValueError(
-                f"{name} {side} non-null Spearman keys disagree with "
-                f"{SCALE_RUNGS[0]}: {sorted(keys ^ first_keys)}"
-            )
-    if admissible is not None and first_keys != set(admissible):
-        raise ValueError(
-            f"the declared {side} census is not scored on every rung: "
-            f"{sorted(first_keys ^ set(admissible))}"
-        )
-    baseline_keys = _side_keys(
+    return C.align_megascale(
+        models,
         baselines,
+        rungs=SCALE_RUNGS,
         side=side,
-        spearman_of=lambda entry: (entry.get("spearman") or {}).get(baseline_name),
+        baseline_name=baseline_name,
         admissible=admissible,
+        census=MEGASCALE_CENSUS if require_fixed_census else None,
     )
-    if baseline_keys != first_keys:
-        raise ValueError(
-            f"baseline {side} keys for {baseline_name} disagree with the models: "
-            f"{sorted(baseline_keys ^ first_keys)}"
-        )
-    expected_n, expected_units, unit_label = (
-        (MEGASCALE_DESIGN_WILDTYPES, MEGASCALE_DESIGN_SERIES, "design series")
-        if side == "design"
-        else (MEGASCALE_NATURAL_WILDTYPES, MEGASCALE_NATURAL_CLUSTERS, "WT_cluster")
-    )
-    if require_fixed_census and len(first_keys) != expected_n:
-        raise ValueError(
-            f"MegaScale {side} has {len(first_keys)} wild types, not the fixed "
-            f"{expected_n}"
-        )
-    units: dict[str, str] = {}
-    raw: dict[str, dict[str, float]] = {name: {} for name in SCALE_RUNGS}
-    contrast: dict[str, dict[str, float]] = {name: {} for name in SCALE_RUNGS}
-    for wildtype in sorted(first_keys):
-        baseline_entry = baselines["wildtypes"][wildtype]
-        expected_kind = side
-        expected_unit = str(baseline_entry["unit"])
-        if baseline_entry.get("kind") != expected_kind:
-            raise ValueError(f"{wildtype}: baseline kind is not {expected_kind}")
-        for rung, payload in models.items():
-            entry = payload["wildtypes"][wildtype]
-            if entry.get("kind") != expected_kind:
-                raise ValueError(f"{wildtype}: {rung} kind disagrees with the baseline")
-            if str(entry["unit"]) != expected_unit:
-                raise ValueError(f"{wildtype}: {rung} unit disagrees with the baseline")
-            rho = float(entry["spearman"])
-            raw[rung][wildtype] = rho
-            contrast[rung][wildtype] = rho - float(baseline_entry["spearman"][baseline_name])
-            if entry.get("n_variants") not in (None, baseline_entry.get("n_variants")):
-                raise ValueError(
-                    f"{wildtype}: {rung} n_variants disagrees with the baseline"
-                )
-        units[wildtype] = expected_unit
-    n_units = len(set(units.values()))
-    if require_fixed_census and n_units != expected_units:
-        raise ValueError(
-            f"MegaScale {side} has {n_units} {unit_label} units, not the fixed "
-            f"{expected_units}"
-        )
-    return units, raw, contrast
 
 
 def require_uniform_dtype(models: dict[str, dict[str, Any]], *, label: str) -> str:
@@ -638,99 +358,10 @@ def _fragment_margins(fragment_order: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _positive_finite_interval(value: Any) -> list[float] | None:
-    if not isinstance(value, (list, tuple)) or len(value) != 2:
-        return None
-    try:
-        interval = [float(value[0]), float(value[1])]
-    except (TypeError, ValueError):
-        return None
-    if not all(math.isfinite(endpoint) for endpoint in interval) or interval[0] <= 0.0:
-        return None
-    return interval
-
-
 def qualify_stage41(report: dict[str, Any]) -> dict[str, Any]:
-    """Qualify the three rungs from a full stage-41 report's ``arm_results``.
+    """Qualify this campaign's three rungs from a full stage-41 report."""
 
-    Summary-only artefacts, missing rungs or blocks, mixed identification
-    verdicts, and disagreed cohort digests are refusals. Every retained row
-    must be ``PASS``.
-    """
-
-    if "arm_results" not in report:
-        raise ValueError(
-            "stage 42 needs a full stage-41 report with arm_results; "
-            "a summary-only artefact is not an identification record"
-        )
-    rows = [
-        row
-        for row in report["arm_results"]
-        if row.get("arm") in SCALE_RUNGS and not row.get("is_unigram_null_control")
-    ]
-    by_rung: dict[str, list[dict[str, Any]]] = {name: [] for name in SCALE_RUNGS}
-    for row in rows:
-        by_rung[row["arm"]].append(row)
-    missing = [name for name in SCALE_RUNGS if not by_rung[name]]
-    if missing:
-        raise ValueError(f"stage-41 arm_results is missing rungs {missing}")
-    block_sets = {
-        name: frozenset(row["block_id"] for row in by_rung[name]) for name in SCALE_RUNGS
-    }
-    for name in SCALE_RUNGS:
-        if len(block_sets[name]) != len(by_rung[name]):
-            raise ValueError(f"stage-41 arm_results repeats a block for {name}")
-    reference_blocks = block_sets[SCALE_RUNGS[0]]
-    if not reference_blocks:
-        raise ValueError("stage-41 arm_results carries no blocks for the scale rungs")
-    for name, blocks in block_sets.items():
-        if blocks != reference_blocks:
-            raise ValueError(
-                f"{name} covers blocks {sorted(blocks)}, not {sorted(reference_blocks)}"
-            )
-    record: dict[str, Any] = {
-        "source": "stage41_arm_results",
-        "passed": True,
-        "blocks": sorted(reference_blocks),
-        "rungs": {},
-    }
-    statuses: list[str] = []
-    for name in SCALE_RUNGS:
-        per_block: dict[str, Any] = {}
-        for row in by_rung[name]:
-            status = row.get("per_arm_identification_status")
-            statuses.append(str(status))
-            interval = _positive_finite_interval(
-                row.get("displacement_corrected_ci_95")
-            )
-            if status != "PASS" or interval is None:
-                raise ValueError(
-                    f"{name} block {row.get('block_id')} identification is "
-                    f"{status!r}, not PASS with a finite displacement-corrected "
-                    "interval strictly above zero"
-                )
-            per_block[row["block_id"]] = {
-                "per_arm_identification_status": status,
-                "displacement_corrected_ci_95": list(interval),
-                "cohort_digest": row["cohort_digest"],
-                "cohort_name": row.get("cohort_name"),
-            }
-        record["rungs"][name] = {"blocks": per_block}
-    mixed = sorted(set(statuses))
-    if mixed != ["PASS"]:
-        raise ValueError(
-            f"stage-41 identification is not uniformly PASS across rungs: {mixed}"
-        )
-    for block_id in reference_blocks:
-        digests = {
-            name: record["rungs"][name]["blocks"][block_id]["cohort_digest"]
-            for name in SCALE_RUNGS
-        }
-        if len(set(digests.values())) != 1:
-            raise ValueError(
-                f"block {block_id} cohort_digest disagrees across rungs: {digests}"
-            )
-    return record
+    return C.qualify_stage41(report, rungs=SCALE_RUNGS)
 
 
 def descriptive_gate_transitions(

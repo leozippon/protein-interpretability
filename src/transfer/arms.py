@@ -107,6 +107,18 @@ _DTYPES = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torc
 #: one.
 PRETRAINING_UNDECLARED = "undeclared"
 
+#: Value of :attr:`ArmSpec.input_format` for a staged checkpoint whose native
+#: rendering -- what a scored record is wrapped in, and which of the resulting
+#: positions are cohort content -- this repository has **not** established from
+#: the checkpoint's own card. It is a sentinel for the same reason
+#: :data:`PRETRAINING_UNDECLARED` is: the alternative is to borrow another arm's
+#: rendering, which produces a number the checkpoint was never trained behind and
+#: no downstream check can see. Every renderer in this module raises on it by
+#: falling through to its own "unsupported input format" refusal, so a
+#: checkpoint declared this way is loadable and shape-checkable and cannot be
+#: scored until its rendering is evidenced and declared.
+INPUT_FORMAT_UNDECLARED = "undeclared_native_rendering"
+
 #: How a cohort's records were drawn from their corpus. ``seeded_permutation``
 #: is the only mode Appendix B rule 1 of the transfer audit permits for a
 #: reported number; ``file_order`` is retained because several frozen artefacts
@@ -834,6 +846,251 @@ STAGED_ARMS: dict[str, ArmSpec] = {
     ),
 }
 
+# ---------------------------------------------- EXP-R2-225 second-stage staging
+#
+# Six larger public checkpoints, staged for the independent Direction-1 second
+# stage. They are declared here for the same reason the two ProGen2 rungs above
+# are: a checkpoint that a measurement may reach needs one declaration of its
+# depth, width, rendering, corpus and scoring alphabet, and inventing any of
+# those at a call site is how a wrong number gets written. Declaring them is
+# **not** admission: none is in :data:`PANEL`, :func:`load_arm` still refuses
+# every one by name, and the only door that names them is
+# :data:`STAGED_SECOND_STAGE_ARMS`, which every stage must be opted into
+# explicitly.
+#
+# ``capabilities`` below is what each arm was measured to honour today, not what
+# it would be convenient to run, and four of the six therefore declare nothing at
+# all. Two reasons compose, and they are independent.
+#
+# Architecture: only ``qwen2`` is declared in :data:`_ATTENTION_PATH`,
+# :data:`_DECOMPOSABLE`, :meth:`Arm.blocks`, ``scaling.LENS_ARCHITECTURES`` and
+# ``circuits._CIRCUIT_ARCHITECTURES``, so only the two Qwen rungs could carry an
+# interpretability family at all; ``opt``, ``rita`` and ``proteinglm`` are in
+# none of those tables and a grant would raise at an arbitrary depth of a run
+# instead of refusing at its start. Widening those tables is a separate decision
+# with its own verification and is not taken here.
+#
+# Interface: ``budget`` needs only a forward pass and a tokenizer, so it is the
+# one family an undeclared architecture could still honour -- and three of these
+# checkpoints cannot, for reasons measured on this host and recorded beside each.
+# Both Galactica rungs and ``rita-xl`` ship an empty ``special_tokens_map.json``
+# and no pad token, so :func:`tokenize_batch` refuses every batch;
+# ``proteinglm-7b-clm`` has no established rendering and no importable modeling
+# code. An empty set is the honest declaration for all four, and it is a refusal
+# carrying a reason rather than a field nobody filled in.
+
+# Galactica 6.7B and 30B, the upper two rungs of EXP-R2-225's joint 1.3->6.7->30B
+# trajectory. Standard OPT decoders: 32x4096 and 48x7168, one 50000-piece
+# tokenizer, float16 weights, a 2048-position context.
+#
+# **This declaration describes the TEXT mode and nothing else.** Galactica is a
+# joint checkpoint, and its protein mode is a different rendering --
+# ``[START_AMINO]...[END_AMINO]``, declared in
+# :data:`src.transfer.joint_modes.JOINT_RENDERINGS` -- which no field of an
+# ``ArmSpec`` carries and which :meth:`Cohort.input_strings` cannot produce. A
+# ``text`` modality is therefore the honest reading of this row: it is the mode
+# whose rendering this module can serve, and a protein cohort handed to either
+# arm is refused rather than rendered into a convention the checkpoint was not
+# trained behind.
+#
+# **What is not discharged, and why the capability set is empty.**
+# ``21_joint_mode_qualification.py`` states that a joint checkpoint which has not
+# passed it "must not be in ``arms.py`` at all", and neither of these two has
+# been through it: ``galactica-1.3b``'s stage-21 qualification is that
+# checkpoint's, not this lineage's. That rule is about admitting an unqualified
+# joint checkpoint to a *measurement*, and the empty ``capabilities`` below is
+# what keeps this declaration on the loader-contract side of it: every
+# measurement family refuses these two by name, with the reason attached.
+#
+# ``budget`` is withheld on a measured fact rather than on the rule alone.
+# Galactica's ``special_tokens_map.json`` is literally ``{}`` and its
+# ``tokenizer_config.json`` declares no special token, so the loaded tokenizer
+# reports ``pad_token`` and ``eos_token`` as ``None`` even though its own
+# ``tokenizer.json`` defines ``<pad>`` at id 1 and ``</s>`` at id 2 and its
+# config declares ``pad_token_id`` 1. :func:`load_arm_spec`'s
+# ``pad_token = eos_token`` fallback therefore copies nothing, and
+# :func:`tokenize_batch` refuses every batch -- one-record batches included --
+# with "tokenizer has no pad token". Measured on this host: both rungs' configs
+# resolve and ``galactica-6.7b`` loads strictly clean at float16 with
+# 6,657,359,872 parameters and returns finite logits of width 50000, and its
+# tokenizer still reports no pad token. Declaring ``budget`` would name a family
+# neither rung can currently enter.
+for _name, _dir, _layers, _width in (
+    ("galactica-6.7b", "galactica-6.7b", 32, 4096),
+    ("galactica-30b", "galactica-30b", 48, 7168),
+):
+    STAGED_ARMS[_name] = ArmSpec(
+        name=_name,
+        path=MODEL_ROOT / _dir,
+        path_variable="TRANSFER_MODEL_BASE_DIR",
+        modality="text",
+        n_layer=_layers,
+        d_model=_width,
+        tokenisation="bpe",
+        input_format="raw",
+        evaluation_cohort_source="openwebtext",
+        architecture="opt",
+        # The card states a 106B-token scientific mix and defers the protein
+        # source to Taylor et al. (arXiv:2211.09085), which names a reviewed
+        # Swiss-Prot subset rather than UniRef. Recorded as the mix rather than
+        # as either component, because neither is the whole corpus.
+        pretraining_corpus="galactica_scientific_corpus",
+        capabilities=frozenset(),
+        # config.vocab_size, declared explicitly because every staged arm must:
+        # 50000 against a 50000-piece tokenizer, so the support and the live
+        # width coincide here rather than differing as they do on progen2-large.
+        scoring_target_alphabet_size=50000,
+    )
+del _name, _dir, _layers, _width
+
+# Qwen2.5-7B and Qwen2.5-32B, the upper two rungs of EXP-R2-225's pure-text
+# 0.5->7->32B trajectory, and the same architecture, tokenizer and pretraining
+# mixture as the panel's ``qwen2.5-0.5b``. **Base checkpoints only**: the
+# instruction-tuned siblings are a training-objective contrast no ``ArmSpec``
+# field records, and the prereg forbids substituting one.
+#
+# These two may honestly carry :data:`_ROTARY_CAPABILITIES`, and they are the
+# only two of the six that may carry anything past ``budget``: ``qwen2`` is
+# declared in every table those families resolve through, and the per-head
+# decomposition additionally verifies itself against the live forward pass, so a
+# checkpoint whose layout differed from the 0.5B's would fail that check rather
+# than produce a silent number. ``lens`` remains the intent
+# ``scaling.lens_supported`` records as a reasoned skip, exactly as on the 0.5B.
+#
+# **The declared context is 131072 and must be capped wherever a length is
+# chosen.** Both configs declare ``max_position_embeddings`` 131072, against the
+# 1024 and 2048 of every protein arm here and the 384-token window stage 01
+# scores at. Nothing in this module reads it -- :func:`tokenize_batch` takes
+# ``max_len`` as an argument -- but the two fitness stages derive an arm's
+# context as ``n_positions or max_position_embeddings`` and would read 131072
+# for these rungs, so a caller that ever routes one of them through a
+# context-derived length must cap it at the panel's own window rather than at
+# this checkpoint's ceiling.
+for _name, _dir, _layers, _width in (
+    ("qwen2.5-7b", "Qwen2.5-7B", 28, 3584),
+    ("qwen2.5-32b", "Qwen2.5-32B", 64, 5120),
+):
+    STAGED_ARMS[_name] = ArmSpec(
+        name=_name,
+        path=TEXT_MODEL_BASE / _dir,
+        path_variable="TRANSFER_TEXT_MODEL_BASE_DIR",
+        modality="text",
+        n_layer=_layers,
+        d_model=_width,
+        tokenisation="bpe",
+        input_format="raw",
+        evaluation_cohort_source="openwebtext",
+        architecture="qwen2",
+        pretraining_corpus="qwen2.5_pretraining_mixture",
+        capabilities=_ROTARY_CAPABILITIES,
+        # config.vocab_size. 152064 on both, which is the 0.5B's 151936 padded
+        # further; declared rather than read because every staged arm declares.
+        scoring_target_alphabet_size=152064,
+    )
+del _name, _dir, _layers, _width
+
+# ProteinGLM-7B-CLM, EXP-R2-225's new-lineage pure-protein decoder point. 36
+# blocks of width 4096, a 128-symbol padded vocabulary, a 1024-position context,
+# and **float32 weights on disk** -- the only checkpoint in this file that is not
+# stored in a half precision, so a caller that wants half precision asks for it
+# and the loader's observed-dtype check enforces the answer.
+#
+# **Its native rendering is not established, so it declares none and can enter
+# nothing.** The card documents generation only: ``model.chat(tokenizer, seq)``,
+# whose prompt is the three tokens ``<gmask><sop><eos>`` that the same method
+# then strips from the output. What a residue *likelihood* is read over -- whether
+# those three positions are scored, whether a terminator belongs at the end --
+# the card does not say, and the repository has no measurement of it. Its
+# tokenizer is a further obstacle to guessing: ``ProteinGLMTokenizer._tokenize``
+# splits on whitespace, so an unspaced residue string is one out-of-vocabulary
+# word rather than a residue run, and the card's own path reaches per-residue ids
+# only through ``apply_chat_template(..., is_split_into_words=True)``.
+# :func:`tokenize_batch` calls the tokenizer directly and would therefore score
+# ``<unk>``.
+#
+# So the rendering is :data:`INPUT_FORMAT_UNDECLARED` and the capability set is
+# empty. Both are refusals with a reason: every renderer here raises on the
+# format, and :meth:`Arm.require` raises on every family. Establishing the
+# convention -- a rendering, a scored-position rule, and a fixed-sequence
+# negative control that makes the wrong one measurably worse -- is what would
+# license changing these two fields, and no part of it exists yet.
+#
+# **A second, independent blocker, measured rather than anticipated.** Its
+# config resolves through :func:`config_shape` at 36 x 4096 and its scoring
+# alphabet reads 128, but ``AutoModelForCausalLM.from_pretrained`` never reaches
+# the weights: ``modeling_proteinglm.py`` imports ``deepspeed``, which the
+# validated ``ct`` environment does not provide, so the load raises ImportError
+# before a parameter is read. This checkpoint is therefore **unloadable on this
+# host as staged**, which is a dependency decision rather than an interface one
+# and is recorded here so that a campaign discovers it from the declaration
+# instead of from a failed dispatch.
+STAGED_ARMS["proteinglm-7b-clm"] = ArmSpec(
+    name="proteinglm-7b-clm",
+    path=MODEL_ROOT / "proteinglm-7b-clm",
+    path_variable="TRANSFER_MODEL_BASE_DIR",
+    modality="protein",
+    n_layer=36,
+    d_model=4096,
+    tokenisation="residue",
+    input_format=INPUT_FORMAT_UNDECLARED,
+    evaluation_cohort_source="swissprot",
+    architecture="proteinglm",
+    # Card citations Chen et al. (arXiv:2401.06199) and Cheng et al.
+    # (arXiv:2411.02142): UniRef50/S + UniRef90 + ColabFoldDB. The staged
+    # UniRef50 snapshot is not identified as that mix.
+    pretraining_corpus="uniref50s_uniref90_colabfolddb",
+    capabilities=frozenset(),
+    # ``padded_vocab_size`` and ``vocab_size`` both read 128 and the head is
+    # built at that width; the tokenizer's own file lists 128 symbols.
+    scoring_target_alphabet_size=128,
+)
+
+# RITA-XL, EXP-R2-225's secondary new-architecture single point. 24 blocks of
+# width 2048, a 26-symbol residue vocabulary, a 1024-position context, float16
+# weights. Its card states the rendering this one needs: a bare residue string,
+# scored as the UniRef-100 language-model loss the card's own table reports, with
+# no marker and no wrapper -- which is ``raw``.
+#
+# ``rita`` is in none of the architecture tables the interpretability families
+# resolve through, so ``budget`` would be the most it could carry -- and it
+# cannot carry that either, on the same measured tokenizer fact Galactica fails
+# on. Its ``special_tokens_map.json`` is literally ``{}`` while its
+# ``tokenizer.json`` defines ``<PAD>`` at id 1 and ``<EOS>`` at id 2, and its
+# config declares ``eos_token_id`` 50256, an id its 26-symbol vocabulary does not
+# contain, so :func:`load_arm_spec`'s ``pad_token = eos_token`` fallback has
+# nothing to copy and :func:`tokenize_batch` refuses every batch with "tokenizer
+# has no pad token". Unlike Galactica's, this one cannot be repaired from the
+# config, which is why the capability is withheld rather than deferred to a
+# fallback: the id the config names does not exist in the vocabulary.
+#
+# Measured on this host: loads strictly clean at 1,208,655,872 parameters,
+# 24 x 2048 matching the declaration, live output width 26 from
+# ``lm_head.out_features``, and a 16-residue probe returns finite logits at a
+# mean next-token NLL of 2.2363 nats. The tokenizer appends ``<EOS>`` to a bare
+# residue string of its own accord, which is the rendering the card describes and
+# is why ``input_format`` is ``raw``. Its remote modeling code additionally
+# fails a float16 forward pass on CPU -- ``att @ v`` mixes float32 and half
+# inside its own attention -- so the numbers above are the float32 reading.
+#
+# ``scoring_target_alphabet_size`` is declared at the config's 26 rather than
+# inherited, as every staged arm's is.
+STAGED_ARMS["rita-xl"] = ArmSpec(
+    name="rita-xl",
+    path=MODEL_ROOT / "RITA_xl",
+    path_variable="TRANSFER_MODEL_BASE_DIR",
+    modality="protein",
+    n_layer=24,
+    d_model=2048,
+    tokenisation="residue",
+    input_format="raw",
+    evaluation_cohort_source="swissprot",
+    architecture="rita",
+    pretraining_corpus="uniref100",
+    capabilities=frozenset(),
+    scoring_target_alphabet_size=26,
+)
+
+
 
 def _check_staged_arms() -> None:
     """A staged checkpoint is not a panel member, and says which it is."""
@@ -1025,6 +1282,79 @@ PROTEIN_SCALE_LADDER = (
 #: The staged rungs of :data:`PROTEIN_SCALE_LADDER`. Opt-in scale stages may
 #: name these and no other staged checkpoint.
 STAGED_SCALE_ARMS = tuple(name for name in PROTEIN_SCALE_LADDER if name in STAGED_ARMS)
+
+#: EXP-R2-225's second-stage checkpoints: the six larger public models staged for
+#: the independent Direction-1 second stage, in the prereg's own wave order.
+#:
+#: A **separate** door from :data:`STAGED_SCALE_ARMS`, and separate on purpose.
+#: That tuple is the two upper rungs of one ProGen2 lineage and is what
+#: EXP-R2-224's first round is frozen on; the three stages that key on it -- stage
+#: 01's ``--allow-staged-scale-arms``, stage 20's ``SCOREABLE_ARMS`` and stage
+#: 29's staged-rung branch -- must keep refusing exactly what they refuse today,
+#: which they do only if that tuple keeps meaning exactly what it meant. So this
+#: campaign gets its own name and its own per-stage opt-in rather than widening
+#: the first round's.
+#:
+#: Membership here is staging and nothing else. It does not qualify a
+#: checkpoint, does not admit one to :data:`PANEL`, and above all does not grant
+#: a capability: each arm's ``capabilities`` is what that arm was measured to
+#: honour, and today only the two Qwen rungs honour anything. The other four
+#: declare an empty set -- the two Galactica rungs and ``rita-xl`` because their
+#: tokenizers report no pad token so no batch can be built, and
+#: ``proteinglm-7b-clm`` because its native rendering is not established and its
+#: modeling code needs a package the environment does not have. They are in this
+#: tuple anyway, and that is the point: a stage then refuses them with their own
+#: recorded reason instead of with "unknown arm", which is the difference between
+#: a decision and an omission.
+STAGED_SECOND_STAGE_ARMS = (
+    "galactica-6.7b",
+    "galactica-30b",
+    "qwen2.5-7b",
+    "qwen2.5-32b",
+    "proteinglm-7b-clm",
+    "rita-xl",
+)
+
+
+def _check_second_stage_arms() -> None:
+    """The two staged doors name real staged checkpoints and never each other.
+
+    Checked at import for the reason every other declaration here is: the whole
+    value of two separate opt-ins is that EXP-R2-224's first round cannot be
+    widened by an edit to EXP-R2-225's list, and an overlap would widen it
+    silently. A name in neither dictionary would be a door onto nothing, which
+    fails at whichever call site resolves it first rather than here.
+    """
+
+    unknown = [name for name in STAGED_SECOND_STAGE_ARMS if name not in STAGED_ARMS]
+    if unknown:
+        raise AssertionError(
+            f"STAGED_SECOND_STAGE_ARMS names {unknown}, which are not declared in "
+            "STAGED_ARMS"
+        )
+    if len(set(STAGED_SECOND_STAGE_ARMS)) != len(STAGED_SECOND_STAGE_ARMS):
+        raise AssertionError("STAGED_SECOND_STAGE_ARMS repeats an arm")
+    both = sorted(set(STAGED_SECOND_STAGE_ARMS) & set(STAGED_SCALE_ARMS))
+    if both:
+        raise AssertionError(
+            f"{both} are in both staged doors; EXP-R2-224's first round and "
+            "EXP-R2-225's second stage are separate opt-ins and an arm in both "
+            "would widen the first round without an edit to it"
+        )
+    undecided = sorted(
+        name
+        for name in STAGED_ARMS
+        if name not in STAGED_SECOND_STAGE_ARMS and name not in STAGED_SCALE_ARMS
+    )
+    if undecided:
+        raise AssertionError(
+            f"staged checkpoints {undecided} are behind neither opt-in door; a "
+            "staged arm must be reachable through a named door or be removed, "
+            "never be unreachable by omission"
+        )
+
+
+_check_second_stage_arms()
 
 #: Source labels recorded beside every scoring-target alphabet.
 SCORING_TARGET_ALPHABET_CONFIG = "config.vocab_size"
@@ -1498,6 +1828,55 @@ def require_clean_loading_info(
     return counts
 
 
+#: Config attributes that declare transformer depth, in the order consulted.
+#: Three spellings appear among the checkpoints this module loads: ``n_layer``
+#: (GPT-2, ProGen2), ``num_hidden_layers`` (Llama, Qwen2, OPT) and ``num_layers``
+#: (RITA, ProteinGLM).
+_DEPTH_ATTRIBUTES = ("n_layer", "num_hidden_layers", "num_layers")
+
+#: Config attributes that declare residual width, in the order consulted. Four
+#: spellings: ``n_embd`` (GPT-2, ProGen2-medium), ``hidden_size`` (Llama, Qwen2,
+#: OPT, ProteinGLM), ``embed_dim`` (ProGen2-xlarge) and ``d_model`` (RITA).
+_WIDTH_ATTRIBUTES = ("n_embd", "hidden_size", "embed_dim", "d_model")
+
+
+def _first_declared(config: Any, attributes: tuple[str, ...], *, quantity: str) -> int:
+    for attribute in attributes:
+        value = getattr(config, attribute, None)
+        if value is not None:
+            return int(value)
+    raise AttributeError(
+        f"this config declares no {quantity}: none of {list(attributes)} is set "
+        "on it. A checkpoint whose shape cannot be read must stop the load, "
+        "because the alternative is to skip the shape check that is the only "
+        "thing standing between a mis-declared arm and a plausible-looking number"
+    )
+
+
+def config_shape(config: Any) -> tuple[int, int]:
+    """Depth and width of a checkpoint, from whichever key its config spells them in.
+
+    One declared fallback order per quantity, resolved here rather than by a
+    per-checkpoint exception at the loader. This is what makes admitting a new
+    architecture a matter of extending a declaration -- and it is a declaration
+    rather than a search, because the order is fixed, the candidates are named in
+    the refusal, and a config that spells depth or width in none of them raises
+    instead of resolving to whichever attribute happened to exist on it.
+
+    ``config.vocab_size`` is deliberately absent from both orders and from every
+    other shape question here: two ProGen2 checkpoints in this repository spell
+    the output width differently, so depth and width -- which every checkpoint
+    declares and which identify a rung of a scale ladder -- are what the loader
+    verifies. See :func:`scoring_target_alphabet` for the separate question of
+    what a scored target's support is.
+    """
+
+    return (
+        _first_declared(config, _DEPTH_ATTRIBUTES, quantity="depth"),
+        _first_declared(config, _WIDTH_ATTRIBUTES, quantity="width"),
+    )
+
+
 def load_arm_spec(
     spec: ArmSpec,
     device: str = "cuda:0",
@@ -1537,12 +1916,7 @@ def load_arm_spec(
     path = str(require_input_path(spec.path, _MODEL_PATH_VARIABLES))
 
     config = AutoConfig.from_pretrained(path, trust_remote_code=True)
-    n_layer = getattr(config, "n_layer", None) or getattr(config, "num_hidden_layers")
-    d_model = (
-        getattr(config, "n_embd", None)
-        or getattr(config, "hidden_size", None)
-        or getattr(config, "embed_dim")
-    )
+    n_layer, d_model = config_shape(config)
     if (n_layer, d_model) != (spec.n_layer, spec.d_model):
         raise ValueError(
             f"{name}: declared {spec.n_layer}L/{spec.d_model}d, loaded {n_layer}L/{d_model}d"

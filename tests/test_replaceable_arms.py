@@ -182,9 +182,19 @@ class TheProteinScaleLadder(unittest.TestCase):
         # Budget is now granted because the scoring-target alphabet is declared
         # as 32. That is not panel admission: load_arm still refuses, and the
         # 51200-column large head is still the live interface.
-        for name, spec in A.STAGED_ARMS.items():
+        #
+        # The capability and alphabet assertions are about THESE two rungs. The
+        # table also holds EXP-R2-225's second-stage checkpoints, whose alphabets
+        # are their own vocabularies and whose capability sets differ per
+        # architecture; what every staged checkpoint owes in common is a declared
+        # alphabet and non-membership, and that is asserted over the whole table
+        # below.
+        for name in A.STAGED_SCALE_ARMS:
+            spec = A.STAGED_ARMS[name]
             self.assertEqual(sorted(spec.capabilities), ["budget", "pathway"], name)
             self.assertEqual(spec.scoring_target_alphabet_size, 32, name)
+        for name, spec in A.STAGED_ARMS.items():
+            self.assertIsNotNone(spec.scoring_target_alphabet_size, name)
             self.assertNotIn(name, PANEL, name)
         alphabet = A.scoring_target_alphabet(A.STAGED_ARMS["progen2-xlarge"])
         self.assertEqual(alphabet["size"], 32)
@@ -204,12 +214,15 @@ class TheProteinScaleLadder(unittest.TestCase):
             scaling.register_arm_spec(member, {"n_layer": 32, "d_model": 2560})
         self.assertIn("STAGED_ARMS", str(caught.exception))
         self.assertNotIn("progen2-large", PANEL)
-        # Both staged rungs are in that ladder, so both are covered.
+        # Both staged ProGen2 rungs are in that ladder, so both are covered.
+        # The second-stage checkpoints are in no ladder, so this refusal is not
+        # the thing that keeps them out of the panel -- load_arm's name check is,
+        # and test_the_panel_door_stays_panel_only asserts it over all of them.
         self.assertEqual(
             sorted(
                 rung.name for rung in scaling.DEFAULT_LADDER if rung.name in A.STAGED_ARMS
             ),
-            sorted(A.STAGED_ARMS),
+            sorted(A.STAGED_SCALE_ARMS),
         )
 
     def test_the_panel_door_stays_panel_only(self):
