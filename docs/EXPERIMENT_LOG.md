@@ -18481,3 +18481,227 @@ For `protgpt2` and `progen2-small`: **the gain is in-context copying and local o
 ### Artefacts
 
 `results/transfer/r228_context_homologue/context_homologue.json`, assembled on CPU from the twenty score records and four self-checks under `results/transfer/external_baseline/20260826143603_cffa47b0ef19/`, each digest-verified against cohort `33707cee59c5…` and its own arm's plan before it was read. The censuses that decided the cohort are committed at `evidence/context_homologue_20260826/cohort_census.json`.
+
+## 2026-08-26 — EXP-R2-229 pre-registered: does one joint decoder's protein mode resolve at a different depth from its own text mode? The route, the instrument gate, and the frozen compound
+
+**Taking `EXP-R2-229`, the next free identifier. No Galactica lens trajectory at 1.3B, 6.7B or 30B exists at registration, and no gate verdict has been computed on any rung.** This is a Direction-2 measurement — apply an existing interpretability method across model families — and it is the first use of the `opt` architecture support commit `e500d14` added. It admits no checkpoint to the panel, authorises no knowledge claim, and §7.0 does not gate it.
+
+**The one sentence this campaign is for.** *Whether the logit lens arrives at a joint decoder's own final prediction at a different relative depth in its protein mode than in its text mode, measured on the same weights, the same head, the same tokenizer and one depth grid.*
+
+### The route, established by reading code before anything was designed
+
+The audit's §2 records the panel's structural limit: the only family spanning both modalities is GPT-2, five text arms against one protein arm, so every modality coefficient is carried by `protgpt2` alone. Galactica spans both modalities at four rungs of one training run. Three candidate routes were checked and only the third survives.
+
+- **`08_lens_family.py` cannot reach it.** `--arms` is declared `choices=sorted(PANEL)`, and no Galactica rung is in `arms.PANEL`.
+- **`07_convergence_control.py`'s ladder route reaches at most the TEXT mode, and not without a code change.** `e500d14`'s log entry records that `scaling.register_arm_spec` refuses by name every checkpoint `STAGED_ARMS` declares, "which blocked the `LadderMember` route that is the only way to put an `opt` rung under the lens", and reverting the two `STAGED_ARMS` rows removed that blocker — confirmed here: no Galactica name is in `STAGED_ARMS` today. But **two further blockers remain, and the second is structural.** First, `scaling.LADDER_TABLE_COLUMNS` carries no `architecture` column, so `parse_ladder_table` builds every member at `LadderMember`'s default `architecture="gpt2"`; a Galactica row from an operator table would resolve `transformer.h`, find nothing, and raise. That is a small honest fix (one optional column). Second and decisively, **`LadderMember.input_format` must be one of `scaling.INPUT_FORMATS`, and no branch of `arms.Cohort.input_strings` emits `[START_AMINO]…[END_AMINO]` with the `SPL1T-TH1S-Pl3A5E` escape.** Adding one would put a second copy of a rendering `src/transfer/joint_modes.py` already declares, which is exactly what Appendix B rule 12 forbids. So the ladder route can produce a scale axis in text and cannot produce the modality half of a modality×scale surface at all. **The claim that the `LadderMember` route is "the only way to put an `opt` rung under the lens" is true only of the text mode, and this entry corrects it.**
+- **The route that works needs no change to any shared file, and it is the door the repository already documents.** `arms.load_arm_spec` takes an `ArmSpec` **object** rather than a panel name; `scaling.register_arm_spec`'s own docstring names it as the way "an opt-in measurement … reaches it … instead" of entering `PANEL`. A stage can therefore construct a per-run declaration for a checkpoint reached by path, load through that one implementation — with its shape check, dtype read-back, strict-loading check and Galactica's config-declared pad token — and build the protein windows through `joint_modes`, which is where the rendering, its scored span and the refusal of a merged tokenisation already live. **Nothing enters `arms.py`**, so `21_joint_mode_qualification.py`'s rule that an unqualified joint checkpoint "must not be in `arms.py` at all" holds unchanged, and `e500d14`'s revert is not undone. `src/transfer/lenses.py`, `src/transfer/scaling.py`, `07_convergence_control.py` and `08_lens_family.py` are **unmodified by this campaign.**
+
+New files: `src/transfer/joint_lens.py` (the design, the frozen constants, the ceiling), `scripts/transfer/47_joint_mode_lens.py` (the operational sequence), `tests/test_joint_mode_lens.py` (41 tests), `scripts/transfer/campaign_r229_joint_lens.tsv`. Three registry edits and no others: the stage is registered as a **drawing** stage in the cohort-draw contract rather than exempted from it, `joint_lens.depth_bootstrap` is declared in the invariant test's **floor-respecting** resampler inventory with a below-floor call, and the stage has a row in the measurement-package table.
+
+**The stage has two steps, because the verdict is a CPU function of an artefact and a report while the trajectory needs a card.** `--stage measure` loads the checkpoint and writes every trajectory, depth statistic, contrast and the control's attainability; `--stage gate` loads nothing, reads that artefact beside the rung's stage-41 report, and writes the verdict beside it. That is stage 21's own argument for its sufficient-statistics sidecar, and it has a second reason here: the stage-41 reports are a CPU analysis tree on the workstation and are not on the accelerator host's filesystem, so a campaign cell cannot read one. Every GPU cell therefore publishes its gate as `refused` naming that reason, and no verdict exists until the second step is run. The binding ceiling is a constant in `joint_lens` and is written into **both** artefacts, so a reader of one file does not have to find this freeze to know what its numbers may not be used for.
+
+### What is held fixed, and the confound this removes rather than tests
+
+Between the two modes of one Galactica rung the parameters, depth, width, final layer norm, unembedding, tokenizer, training run and corpus mixture are not merely matched but **the same objects**; only the content of the scored positions differs. No previous modality contrast in this programme held any of those fixed — the declared `MATCHED_PAIR` `gpt2-large`/`protgpt2` shares a shape and a vocabulary size, not a checkpoint.
+
+**It is therefore not a test of the limited-output-interface hypothesis, and this is stated before any number.** `JOINT_RENDERINGS["galactica"]` declares `residue_subspace_disjoint_from_text = False`: Galactica's residues are ordinary single-letter pieces of a 50,000-token text vocabulary and both modes emit through one head. The design holds the output interface fixed and varies the content. It **separates** the confound every earlier comparison carried; it cannot speak to what a twenty-output protein unembedding can express.
+
+### Arms, and the rung that is the instrument rather than a result
+
+Four staged rungs of `facebook/galactica`, all `OPTForCausalLM`, `word_embed_proj_dim == hidden_size`, `do_layer_norm_before` true, `pad_token_id` 1, one byte-identical `tokenizer.json` on all four: **125m (12×768), 1.3b (24×2048), 6.7b (32×4096), 30b (48×7168)**.
+
+**Gated rungs: 1.3b, 6.7b, 30b** — exactly the set whose protein mode `41_context_information_bootstrap.py` identifies. From `results/transfer/r225_stage41/galactica/*/protein/`: 1.3b **+0.047678** nats/residue, interval [+0.038694, +0.057614]; 6.7b **+0.199442**, [+0.157915, +0.246007]; 30b **+0.438892**, [+0.342841, +0.542005]. All three pass the EXP-R2-221 sign rule. Their text modes read +4.643871, +4.891750 and +5.034191 nats/token. The stage reads that verdict from the report rather than restating a floor, and **refuses a gate on any rung whose report it is not given or whose protein mode the report does not identify.**
+
+**125m is the instrument rung and is barred from the gate by the same rule.** Its protein mode reads **−0.131060** nats/residue at a reversal cost of +0.089600 — `unmeasurable_on_this_cohort` — so no capability verdict may be taken from it. Its trajectories are still measured and reported, because the primary quantity is read against the model's **own** final prediction and is therefore target-free and stays defined on a mode that reads nothing from context, which a cross-entropy does not.
+
+### The frozen draw, and the digest check that replaces a band declaration
+
+`21_joint_mode_qualification.py`'s own defaults, which is the draw every Galactica rung was qualified under: **seed 20260728** (`arms.DEFAULT_CORPUS_DRAW_SEED`, imported and not restated), **128 records** per mode, protein band **64–246 residues** on Swiss-Prot, text floor **800 characters** on the OpenWebText screening subset. Reproduced on CPU before any model was loaded: protein content digest `0dd37e88b0db6947f4f6949f516ee4af95a3d27625ef9754f3d3629cd392c70e`, text `2c9f8a8ea44850c0abacc2efcc66bd353840faa3369c8878f3ab3828f54c06c3` — byte-identical to the digests in the stage-41 reports. **Appendix B rule 13 is discharged by identity rather than by declaring a band beside a different one.**
+
+**The text SCORED WINDOW is 164 tokens, not that stage's 512, and the choice is made before any reading.** The 128 protein records carry 20,866 residues, mean 163.0 per record; a 164-token text window yields 163 scored targets per document and 20,864 in total, a 0.01% difference. Matching there matches the two modes on **position in context**, which is a strong driver of every lens quantity: a 512-token text window would have scored text positions three times deeper into their own context than the protein positions they are contrasted with. Every document in the draw is at least 226 tokens, so none is short of the window.
+
+### The four cells, over one load
+
+`text_declared` — the corpus record, all_valid targets after the first. **This is the positive control.** `protein_declared` — the declared `[START_AMINO]…[END_AMINO]` rendering with the per-residue escape, scored on exactly the span stage 21 scores; verified at one token per residue (20,866 scored targets for 20,866 residues) and refused otherwise. `protein_declared_capped` — the same forward pass read under a mask keeping only targets at token index ≤ 163, the 17,959 positions the text window can match on position; **a sensitivity, not a gate**. `protein_naive` — the same block with the escape removed, 11,656 scored targets at 1.7902 residues each, which prices the rendering (Appendix B rule 4) in the estimand's own units; **reported, never gated**.
+
+### The estimand, and why the primary divides by nothing
+
+Eleven relative-depth points (`lenses.DEFAULT_DEPTH_FRACTIONS`), read as block outputs. At the deepest point the lens head applied to the final residual **is** the model's head, so top-1 agreement with the final prediction is exactly 1.0 and KL to it exactly 0.0; both are asserted in code and a trajectory failing either stops the run.
+
+**Primary: the relative depth at which top-1 agreement with the model's own final prediction first reaches an absolute level c ∈ {0.25, 0.50, 0.75}.** A level is a point on one scale that means the same thing in both modes, so no per-mode normaliser enters; it is dimensionless, which is what lets it cross the mode boundary where a nats-per-token magnitude cannot (L23, Appendix B rules 26/27). **One tokenizer serves both modes, which removes the tokenizer half of that hazard and not the other half** — one scored protein token is one residue and one scored text token is a BPE piece — so every per-token magnitude in the artefact is reported per mode and is **never** differenced across modes.
+
+Its one asymmetry is a floor, and it is bounded and signed: a lens predicting at random agrees with the final top-1 about 1/20 of the time in protein mode, where the final distribution lives on twenty residue letters, and about 1/50,000 in text mode. That lifts the protein curve by at most 0.05 at every depth and therefore makes the protein mode reach any level **earlier** than it otherwise would, so it **biases against** a finding that the protein mode resolves deeper and cannot manufacture one. Every level is above it.
+
+**Secondary, and a genuine second functional: the span-normalised depth** at which a falling quantity has fallen by fraction τ of its own total fall (`lenses.resolution_depth`, τ from `concept_lens.RESOLUTION_TAUS` = 0.25/0.50/0.75), read on KL-to-final and on top-1 disagreement. Its defect is the mirror image and is why it is not primary: the normaliser is the value at the shallowest grid point, where the logit lens reads a residual still close to the embedding. That value is mode-dependent for reasons unrelated to resolution — measured on the instrument rung, the protein mode's shallowest-layer lens has an entropy of **0.437** nats against the text mode's **2.464**. Requiring both families to agree is stronger than either, because their defects do not point the same way.
+
+The contrast is **within one checkpoint**: `delta = depth(protein_declared) − depth(text_declared)`, read on one grid, so the 1/n_layer floor of any depth — 0.083, 0.042, 0.031, 0.021 across the four rungs — cancels exactly inside a rung and does not across one. A per-mode depth is a descriptive curve; the contrast is what a verdict is taken on.
+
+### The instrument gate, run on 125m before any gated rung, and Appendix B rule 2
+
+Rule 2 requires gate attainability to be checked on the positive control before a gate is applied to a protein reading. Galactica supplies an unusually clean control — the **same weights** in text mode — and the check was run end to end on the instrument rung at both precisions, 128 records, four cells, peak device memory 1,084 MiB.
+
+**Attainability: PASS.** The text mode's agreement reaches all three levels and its KL falls across the grid, so all four gated statistics are defined on the control. Text agreement runs 0.030867 → 1.000000 and reaches 0.25/0.50/0.75 at relative depths 0.448667 / 0.775122 / 0.922931.
+
+**Precision invariance, which is what actually licenses bfloat16.** The 30B rung is 57 GB of weights at bfloat16 against 143,771 MiB of card, so float32 is unavailable on the rung the ladder exists for and a ladder measured at two precisions is not one ladder. Every published depth statistic was computed at both precisions on 125m: the largest absolute gap on any of the twelve primary readings is **9.09e-04** in relative depth, the largest on any of the thirty-six statistics is **4.72e-03** (the naive control's span at τ=0.50), and the **primary contrast at level 0.50 moves by 2.8e-05** — against a grid spacing of 0.0833. `verify_lens_head` reads max KL **0.000e+00** at float32 (the head is the model's own computation) and **7.878e-04 / 9.843e-04 / 2.151e-04** nats at bfloat16 across the three renderings.
+
+**The lens-head tolerance is frozen at 1e-2 nats and is a ceiling on a known rounding term, not a decision threshold.** Stage 08's 1e-3 is a float32 number and a bfloat16 forward cannot meet it — the residual gap *is* the bfloat16 rounding, which is the signal `verify_lens_head`'s docstring says it is. 1e-2 sits an order of magnitude above the measured floor of the control and two orders below the smallest number the trajectory is read at.
+
+### Decision rule, per gated rung
+
+**One compound, three clauses, all of which must hold. Nothing else in the artefact is a gate.**
+
+1. `delta` on the **primary** statistic has a 95% interval excluding zero at **every** level c ∈ {0.25, 0.50, 0.75};
+2. its **sign is the same at every level** — one level would be a threshold result, which Appendix B rule 17 does not admit, and this clause is not decorative: on the instrument rung the *span* family's sign flips across its own sweep (−0.005355 at τ=0.25 against +0.615071 at τ=0.50);
+3. the **span-normalised KL depth at τ = 0.50** carries that same sign with its own interval excluding zero.
+
+Bootstrap unit **the scored record**; **2,000 resamples**; **seed 20260826**; not revised after a result exists. The resampled record set is drawn once per draw and reused at every grid layer, so each draw carries one trajectory rather than eleven independent cohorts. The two modes are scored on two corpora and are therefore resampled independently, and the contrast is assembled draw by draw. A draw in which either side has no crossing point is counted and excluded, and above **5%** of the draw set on either side the interval is refused rather than published over a silently thinned set — a cap that can bind only on the span family, since an agreement level below one is always reached.
+
+**What each outcome licenses.**
+
+- **All three clauses, on a gated rung** — *the logit lens arrives at this checkpoint's own final prediction at a different relative depth in its protein mode than in its text mode, on this cohort*. That is a statement about one checkpoint's internal trajectory with architecture, depth, width, head, tokenizer and training run held identical. It is **not** a claim about protein decoders in general, **not** a claim about when a computation resolves (see the ceiling), and **not** evidence about output-interface size.
+- **Clause 1 or 2 fails** — no depth separation is identified on that rung at this cohort and this grid. A bounded negative about that checkpoint, not about the modality.
+- **Clause 3 fails while 1 and 2 hold** — the reading lives in one functional of the trajectory and is reported as that, not narrowed to the functional that gave it.
+- **The same compound on all three gated rungs, same direction** — a descriptive modality×scale surface. **It is not a causal effect of scale**: depth, width and parameter count co-vary across 12×768 → 24×2048 → 32×4096 → 48×7168, all four rungs come from one training run on one corpus mixture, and no rung differs from another in one factor.
+
+**Reported and explicitly not gated:** the per-layer trajectories with record-cluster intervals; the per-mode depths; the position-capped sensitivity; the naive-rendering control; per-mode cross-entropy, entropy and KL magnitudes in nats per token; the monotonicity flags; peak device memory; and **the secondary scale reading** — whether `delta` at level 0.50 moves with the rung's own protein-mode context information, which rises +0.048 → +0.199 → +0.439 across the gated rungs while the text mode moves only +4.64 → +4.89 → +5.03. A `delta` that shrinks as protein context information rises would say the depth difference tracks how much the mode extracts from context at all; a flat `delta` would say it does not. This is the reading the four-rung surface buys and it is a curve, never a gate.
+
+### Failure branches and the stop
+
+- **A rung's stage-41 protein report is absent, or does not identify its protein mode** → trajectories are published and the gate returns `refused` with that reason. Do not substitute the screening verdict, a different cohort, or another rung's report.
+- **The text control's own statistics are not defined** → the gate is a specification defect, not a measurement, and returns `refused` (Appendix B rule 2). Do not read the protein side.
+- **`verify_lens_head` exceeds the frozen tolerance on any cell** → that rung stops. Do not loosen the tolerance to recover it.
+- **The declared rendering does not reach one token per residue** → `joint_modes` raises and the rung stops; there is no flag that downgrades it.
+- **A trajectory whose deepest grid point is not the model itself** (KL ≠ 0 or agreement ≠ 1) → the run stops, because the block list or the final normalisation was resolved to the wrong object.
+- **More than 5% of draws leave a statistic without a crossing point** → that interval is refused, and a refused primary interval refuses the gate rather than failing it.
+- **`galactica-30b` runs out of memory** → reported as measured at the frozen draw and **not** retried at a smaller one; the draw is what makes the rung comparable to the three below it.
+- **The position-capped sensitivity reverses the sign of `delta`** → the reading is position in context, and it is reported as that rather than as a modality difference.
+
+### Ceiling — binding, and written before any gated number exists
+
+- **Not a test of the limited output interface.** Galactica's residues are ordinary letters of its text vocabulary and both modes share one head; this design separates output-interface size from content modality and cannot test the former.
+- **Not a causal claim about scale.** Depth, width and parameter count co-vary across all four rungs, which also share one training run and one corpus mixture.
+- **Not a claim about when a computation resolves.** No tuned lens is fitted, so the untuned logit lens's basis error — which grows with distance from the final layer — is present in both modes and is **not separated**. This measurement cannot distinguish "the computation resolves later in this mode" from "this mode's intermediate states sit further from the final basis". **A tuned-lens replication is the declared next measurement, and no reading here is citable as a claim about resolution of computation until one exists.**
+- **Not causal at all.** A lens is a correlational read of what a residual stream projects to through the model's own head. Nothing here intervenes.
+- **One checkpoint family, one rendering, one seed, one draw.** No second-draw sensitivity is run and every interval is within-draw (Appendix B rule 1's skip-offset half is not discharged).
+- **No per-token magnitude crosses the mode boundary.** Only the dimensionless depths do; L23 and rules 26/27 bar the rest, and one shared tokenizer removes only the tokenizer half of that hazard.
+- **Nothing here reaches a pure-protein decoder.** Galactica's protein mode is one mode of a scientific-text model; `protgpt2`, `zymctrl` and the ProGen2 rungs are not measured and the panel's modality coefficient is not refitted.
+- **Galactica's pretraining corpus is not identified**, so nothing here is contamination-controlled and F15 stands over any reading.
+- **`galactica-125m` is an instrument, not a rung of the result.** Its protein mode is unidentified and its numbers are published as the attainability and precision-invariance evidence they are.
+
+### Operational sequence
+
+1. Code, tests and this freeze committed before any dispatch; the pinned freeze snapshots committed code only.
+2. The instrument gate above is already discharged on the L20 host, at both precisions, on the instrument rung. **Recorded here before any gated rung is scored.**
+3. Dispatch the three gated rungs and the instrument rung through `h200_campaign_queue.sh` after an in-pod `--dry-run`, three cards, smallest rungs first and `galactica-30b` in its own slot. Confirm the status file before treating anything as launched. A concurrent agent may dispatch to the same allocation; `refused-busy-gpu` records a cell without aborting the campaign.
+4. Check `nvidia-smi` inside the selected pod before and after (Appendix B rule 19). Allocation is not utilisation. No pod name is recorded anywhere.
+
+**No gated model result is claimed at this registration.** Every number above is either a cohort fact computed on CPU, a value read from an existing stage-21 or stage-41 artefact, or an instrument measurement on the barred 125m rung.
+
+## 2026-08-26 — EXP-R2-227 scored: both native conditioning interfaces select the class they are asked for, and the two arms mean very different things by it
+
+The generation half of the programme's first sampling campaign is measured. The twelve cells of `campaign_r227_conditioned_generation` (run id `20260826121259_422e2b28e53a`) came back complete — `exited-ok=12`, zero failures, zero no-records — and this entry records their retrieval, the scoring pass, and the compound each arm returns. **The three-clause compound holds on both conditioned arms and on both text control arms.** Nothing about the frozen design was adjusted to reach that: queue digest, class cohorts, sampling configuration, resample count and seed are the ones the 2026-08-26 registration and build entries froze, and the scorer refuses any other.
+
+### Retrieval, and one known limitation checked rather than assumed
+
+```
+export H200_POD=<running-pod-name>
+scripts/transfer/pull_records_h200.sh --dry-run <gpfs>/results/external_baseline/20260826121259_422e2b28e53a results/transfer/external_baseline/20260826121259_422e2b28e53a
+scripts/transfer/pull_records_h200.sh          <gpfs>/results/external_baseline/20260826121259_422e2b28e53a results/transfer/external_baseline/20260826121259_422e2b28e53a
+```
+
+The dry run selected 13 files — six `generations_<arm>.json`, six `generation_self_check_<arm>.json` and the run-root copy of the frozen queue — and moved nothing. The pull then returned, verbatim:
+
+```
+[pull-records] 2026-08-26T14:18:27-07:00 digests verified; results/transfer/external_baseline/20260826121259_422e2b28e53a ADMITTED (13 file(s))
+```
+
+**The script's `*.json`-only selection is a real limitation and it was checked against this run's contents rather than assumed harmless.** The GPFS directory holds 25 files: the 13 records and 12 `*.json.sha256` sidecars the driver writes beside them. `--stage score` reads only JSON — the queue, the instruments record, the two anchor artefacts and the six generation records — so nothing the scoring pass needs stayed behind and no separate bundle was required. The 12 sidecars were read in one pod round trip and compared against the digests of the files now on Compute: all twelve agree, so the admitted records are byte-identical to what the pod wrote when it wrote them, not merely to what GPFS holds today. Both conditioned arms' records carry `queue_digest 73ae535c…`, all six self-checks record `passed: true`, and the sampling block is identical across all six arms.
+
+### The scoring pass
+
+```
+python scripts/transfer/45_conditioned_generation.py --stage score \
+  --queue evidence/conditioned_generation_20260826/class_queue.json \
+  --instruments results/transfer/conditioned_generation/instruments.json \
+  --generation-dir results/transfer/conditioned_generation \
+  --anchor-dir results/transfer/conditioned_generation \
+  --out results/transfer/conditioned_generation \
+  --work /Data/lzp/work/r227 --hmmscan-shards 24 --hmmscan-threads 4 \
+  --identity-corpus data/uniref50/uniref50.fasta \
+  --identity-db /Data/lzp/homology_db/uniref50_full.dmnd
+```
+
+CPU only, 76 minutes on Compute: HMMER 3.4 against the pressed Pfam-A (27,481 profiles) at the release's own **gathering thresholds** (`--cut_ga`), 24 shards × 4 threads, 6,793 non-empty sequences searched on each arm's pass; then DIAMOND `--very-sensitive` against UniRef50 (60,315,044 records) for the max-identity covariate, about 28 minutes per arm. `--identity-corpus` was passed deliberately: without it that covariate reports NOT RUN, which is honest but says nothing, and here it turns out to carry most of what separates the two arms.
+
+### The compound, per arm — and which of the two readings each returns
+
+The gate is the registration's, unchanged: requested−mismatched positive, requested−floor positive, and at least half the classes individually positive, on a class-clustered bootstrap at `resamples=2000`, `seed=20260826`, with ProGen2-medium as the declared floor and ProtGPT2 reported beside it and never gated on.
+
+| arm | classes | requested − mismatched | requested − floor (ProGen2-medium) | requested − floor (ProtGPT2, reported) | clauses 1/2/3 | classes individually positive | outcome |
+|---|---:|---|---|---|---|---:|---|
+| `zymctrl` (EC) | 14 | **+0.8822 [0.7202, 0.9872]** | **+0.8822 [0.7151, 0.9863]** | +0.8819 [0.7148, 0.9861] | true / true / true | 14 of 14 | `conditioning_moves_generation_toward_the_requested_class` |
+| `prollama` (superfamily) | 15 | **+0.1267 [0.0527, 0.2360]** | **+0.1267 [0.0470, 0.2337]** | +0.1260 [0.0463, 0.2334] | true / true / true | 11 of 15 | `conditioning_moves_generation_toward_the_requested_class` |
+
+**Both arms return the first reading, not the second.** Neither returns `tag_moves_the_distribution_without_selecting_the_requested_class`, which is the outcome the campaign exists to be able to return and which L15's 1.73 nats of EC tag leak cannot distinguish on its own. That is the whole point of the measurement and it is now settled for these two interfaces on these two cohorts: the tag and the instruction do not merely move the distribution, they move it toward the class named in the prompt.
+
+**The two arms mean very different things by the same label, and the per-class rates say so plainly.** ZymCTRL assigns to the requested EC number at 0.573–1.000 on thirteen of its fourteen admitted classes, with the mismatched side at 0.000 on every one; the exception is `3.4.11.10` at 0.005. ProLLaMA's requested-side rates run 0.000–0.710 with a median near 0.06, and its verdict rests on a mismatched side that is 0.000 everywhere: eleven classes are strictly positive, four are exact ties at zero, and none is negative. A compound that holds on a mean contrast of +0.13 built from rates that small is a real positive and a weak capability at once, and the artefact's own licence sentence is the correct reading of it — *this arm's native conditioning interface moves generation toward the requested class on this class cohort under this oracle*, and nothing more.
+
+| ZymCTRL class | p(req) | p(mis) | ProLLaMA class | p(req) | p(mis) |
+|---|---:|---:|---|---:|---:|
+| 1.2.1.38, 2.1.1.192, 2.3.1.234, 2.7.7.3, 2.7.7.77, 2.8.4.4 | 1.000 | 0.000 | IPR036416 Peptidyl-tRNA hydrolase | 0.710 | 0.000 |
+| 6.1.1.17 | 0.993 | 0.000 | IPR036400 Cytochrome b5-like | 0.290 | 0.000 |
+| 2.3.1.31 | 0.988 | 0.000 | IPR036509 Peptide methionine sulfoxide red. | 0.265 | 0.000 |
+| 3.6.1.27 | 0.976 | 0.000 | IPR035906 MetI-like superfamily | 0.195 | 0.000 |
+| 1.11.1.24 | 0.970 | 0.000 | IPR036049 Large ribosomal subunit | 0.170 | 0.000 |
+| 7.4.2.8 | 0.935 | 0.000 | IPR012295 TBP domain superfamily | 0.070 | 0.000 |
+| 2.1.1.228 | 0.912 | 0.000 | IPR035903, IPR038594, IPR034904, IPR036691, IPR036621 | 0.060–0.005 | 0.000 |
+| 2.7.7.4 | 0.573 | 0.000 | IPR004115, IPR027413, IPR035500, IPR037124 | 0.000 | 0.000 |
+| 3.4.11.10 | 0.005 | 0.000 | | | |
+
+Removed at the anchor stage, before any generation was scored, and reported as unmeasurable rather than as failing classes: ZymCTRL's `7.1.1.2` (referent draw carried no Pfam family at the declared share; real-side 0.000) and `7.2.1.1` (real-side 0.450); ProLLaMA's `IPR011029` (real-side 0.690, against a 0.70 floor). Both cohorts clear the eight-class bootstrap floor at 14 and 15, and neither was topped up.
+
+### The text positive control is attained, on both arms
+
+Twelve Unicode-script classes, a deterministic zero-parameter oracle, and the same three references.
+
+| arm | requested − mismatched | requested − floor | classes with a positive lower bound | outcome |
+|---|---|---|---:|---|
+| `llama-3.2-3b` | +0.2070 [0.1558, 0.2641] | +0.2078 [0.1581, 0.2648] | 12 of 12 | `conditioning_moves_generation_toward_the_requested_class` |
+| `qwen2.5-0.5b` | +0.0809 [0.0427, 0.1233] | +0.0824 [0.0429, 0.1297] | 8 of 12 (required 8) | `conditioning_moves_generation_toward_the_requested_class` |
+
+`text_positive_control_attained: true`, so the registration's failure branch does not fire and no missing-control limitation is carried. The control prices the estimand's *shape*, not the protein instrument: it shows the compound returns a strong positive when instrument error is removed, so neither protein reading can be blamed on the estimand. Qwen clearing the screen at exactly its declared eight is worth recording as it stands, without rounding it up.
+
+### Covariates — reported, never gated, and two of them bound the reading
+
+**Termination.** A generation that ran to the 400-token budget without reaching its arm's end delimiter is a fragment, and the anchors were priced on whole real proteins. Pooled over admitted classes, ZymCTRL terminates on **0.660** of requested-condition generations and 0.611 of mismatched ones, with per-class rates spanning the full 0.000–1.000 range; ProLLaMA terminates on **1.000** of both, at mean lengths of 76–170 residues. The floors differ sharply: ProtGPT2 0.995, **ProGen2-medium 0.030** — the declared floor is reporting almost entirely on 400-residue fragments, which is a property of the floor and not of the arms measured against it. **Termination does not explain the verdicts and is not offered as an explanation.** Three ZymCTRL classes whose requested-condition generations never once reached `<end>` (`2.8.4.4`, `6.1.1.17`, `7.4.2.8`) still assign at 1.000, 0.993 and 0.935; the single failing class, `3.4.11.10`, has the second-lowest termination at 0.110. The fragment caveat therefore qualifies the comparison against whole-protein anchors, and nothing more.
+
+**Maximum identity to the searched corpus, a covariate and never a novelty claim (F15).** ZymCTRL's 6,400 generations have a median max identity to UniRef50 of **69.2%** (mean 66.5, p90 91.6, max 100.0), with only 285 finding no alignment at all. ProLLaMA's 6,400 have a median of **0.0%**, 5,607 with no alignment, and a maximum of 64.7. The two floors sit between them at medians of 0.0 and means near 10. **This runs in the restrictive direction and is recorded as such**: a ZymCTRL generation that Pfam assigns to the requested class is typically a close relative of something in UniRef50, so the high assignment rate is consistent with retrieval of training-distribution material and the campaign does not separate the two. F15 binds the other way as well — ProLLaMA's zero-identity generations are not thereby novel, since a profile-level homologue can survive an alignment screen that finds nothing.
+
+**Near-duplicate grouping, recomputed as a diagnostic because the report does not persist it.** The declared safeguard is that a burst of near-identical samples cannot inflate a class rate, and the artefact publishes the grouped rate without publishing how much grouping changed it. Rerunning the stage's own deterministic grouping over the admitted cells: ZymCTRL collapses **3,942 groups over 5,600 samples (0.704)**, the most collapsed cell being `2.1.1.228|mismatched` at 97 groups of 200; ProLLaMA collapses nothing at all, **6,000 of 6,000**; the floors sit at 194/200 and 200/200. So the safeguard is doing substantial work on exactly the arm whose rates are high, and ZymCTRL's numbers are the post-collapse ones. This is a transparency gap in the artefact rather than a defect in the estimand, and `src/transfer/conditioned_generation.py` was left alone accordingly.
+
+**Composition and length** are in the artefact per cell, per condition, for the reason the registration gives: a tag that changes only those is the alternative the mismatched-label reference exists to expose.
+
+### Channels that reported unavailable, which is correct behaviour and not a failure to fix
+
+- **CLEAN's EC channel produced no verdict.** `clean_ec.runnable: false`, missing `CLEAN trained model weights (*.pt/*.pth)` and `ESM-1b encoder weights (esm1b_t33_650M_UR50S)`. Nothing was substituted; a stub would be an instrument that always agrees. The registration declares the compound "per arm and per oracle channel", and with one oracle channel available there is one gate per arm — on `pfam_hmmer` — and none on `clean_ec`. EXP-R2-015's 0.960/0.000 CLEAN anchor remains a real historical measurement and is not evidence the instrument can run today.
+- **ESMFold is absent from Compute entirely**, so pLDDT and Foldseek top-TM are withheld together: Foldseek needs a predicted structure. `structural_covariates.runnable: false`, missing `ESMFold checkpoint directory`. Both were covariates that were never gated on, so nothing in the compound depends on them.
+
+### Ceiling — what this does and does not license
+
+A pass licenses exactly the artefact's own sentence: **this arm's native conditioning interface moves generation toward the requested class, on this class cohort, under this oracle.** It is a behavioural capability statement about that arm.
+
+- **It is not functional competence and not acquired biological knowledge.** A Pfam assignment says a generation matches a curated profile. It does not say the protein folds, binds, or catalyses anything. No structure was predicted, no pLDDT exists, and predicted structure could not have carried that claim either.
+- **It is not a novelty claim.** Max identity to corpus is a covariate. ZymCTRL's median 69.2% identity to UniRef50 means the restrictive reading is the live one, and this campaign does not separate class-selective generation from retrieval of training-distribution material.
+- **It is not mechanism, and it does not reopen internal-feature steering.** §9.1's retirement stands. Nothing here injected a feature, a direction or a coefficient; the intervention is the prompt the checkpoint was trained to receive. The retired line intervened on internal features and returned a measured 0/8. These two lines must not appear in one column, and the artefact carries that distinction in `not_the_retired_steering_line`.
+- **It is not a knowledge claim** and §7.0 does not gate it. A measurement of what a model does is itself the result.
+- **The oracle bounds the reading (L9),** and a superfamily assignment is a homology statement by construction, so ProLLaMA's positive is a homology-level statement even where it is strongest.
+- **The cohort is not independent of the arm.** Classes are drawn from each arm's own labelled corpus and the campaign does not correct for that.
+- **The two arms' rates are never differenced.** They are asked for different kinds of class through the same oracle applied to different referents; +0.8822 and +0.1267 sit side by side and no contrast between them is defined here.
+- **EXP-R2-013/014's lysozyme numbers were attainability only** and remain unreproduced, unsuperseded and uncompared-against.
+- **One fixed run, one sampling configuration, one seed.** No re-seed, no narrowed class set, no swapped oracle.
+
+### Artefacts and validation
+
+`results/transfer/conditioned_generation/conditioned_generation.json`, SHA-256 `3821ab2013aaa03fc219e34394dfadeb09182f8da74a74b22141487c1546e2af`, assembled on Compute from the twelve admitted records under `results/transfer/external_baseline/20260826121259_422e2b28e53a/` together with the instruments and anchor artefacts. Nothing is promoted to `evidence/`; the frozen queue was already there and is unchanged.
+
+`panel_contract.py --verify` passes. Full suite with `TRANSFER_MODEL_BASE_DIR` and `TRANSFER_TEXT_MODEL_BASE_DIR` exported: **2315 passed, 5 failed, 23 skipped, 110 subtests passed in 712.97 s**, run while another campaign was editing the same working tree. Re-running all five in isolation on a quiet host: **54 passed in 16.26 s**, the whole `test_conditioned_generation.py` module included. One failure is the documented load-sensitive bash-trap race in `ExternalStageWrapperLifecycleTests`; the other four (`test_cohort_draw_contract.py` ×2, `test_h200_orchestration.py::test_every_external_baseline_stage_appears_in_the_research_plan`, `test_transfer_audit_invariants.py::test_the_resampler_inventory_is_complete_and_its_gaps_are_named`) were transient states of EXP-R2-229's in-flight edits to those same files and are green now that the edit is coherent. This campaign changed no tracked source file.
