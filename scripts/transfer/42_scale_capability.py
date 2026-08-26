@@ -36,7 +36,7 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -288,25 +288,9 @@ def align_megascale(
 
 
 def require_uniform_dtype(models: dict[str, dict[str, Any]], *, label: str) -> str:
-    """One scoring precision across the three rungs of one endpoint.
+    """One scoring precision across this campaign's three rungs."""
 
-    A rung scored at a different precision from the rung it is paired against
-    makes the paired difference partly a difference of arithmetic rather than of
-    checkpoints. Nothing downstream can detect that from the numbers, so it is
-    refused here, where every rung's own record of what it was scored at is in
-    hand.
-    """
-
-    seen: dict[str, str] = {}
-    for name in SCALE_RUNGS:
-        settings = models[name].get("settings")
-        dtype = settings.get("dtype") if isinstance(settings, Mapping) else None
-        if not dtype:
-            raise ValueError(f"{label}: {name} records no scoring dtype")
-        seen[name] = str(dtype)
-    if len(set(seen.values())) != 1:
-        raise ValueError(f"{label}: the rungs were scored at mixed precision: {seen}")
-    return next(iter(seen.values()))
+    return C.require_uniform_dtype(models, rungs=SCALE_RUNGS, label=label)
 
 
 def _require_same_cohort(*payloads: dict[str, Any], label: str) -> str:

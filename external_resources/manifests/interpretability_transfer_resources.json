@@ -3,7 +3,7 @@
   "repository": "InterpretabilityTransfer",
   "contract": {
     "source": "scripts/transfer/panel_contract.py --json",
-    "schema_version": "r2_transfer_panel_contract_v5",
+    "schema_version": "r2_transfer_panel_contract_v6",
     "verify": "python scripts/transfer/panel_contract.py --verify",
     "arm_count": 15,
     "stage_count": 13,

@@ -4,7 +4,7 @@
 # one place. h200_worker.sh re-derives this file from src/transfer/arms.py in
 # its preflight (panel_contract.py --verify) and refuses to schedule a GPU if
 # the two disagree, so a stale copy cannot reach a measurement.
-TRANSFER_CONTRACT_SCHEMA='r2_transfer_panel_contract_v5'
+TRANSFER_CONTRACT_SCHEMA='r2_transfer_panel_contract_v6'
 TRANSFER_CAMPAIGN_PANEL='gpt2 gpt2-medium gpt2-large gpt2-xl dialogpt-small qwen2.5-0.5b llama-3.2-3b protgpt2 zymctrl progen2-base progen2-medium progen2-small bygpt5-medium-en bygpt5-small-en bygpt5-base-en'
 TRANSFER_STAGE_ORDER='cohort_power pathway_budget estimand_power circuit_primitives relational_channel explanation_channel convergence_control lens_family probe_and_erasure homology_control induction_path_patching paa_census collision_null_census'
 TRANSFER_PAA_CENSUS_WIDTH='192'

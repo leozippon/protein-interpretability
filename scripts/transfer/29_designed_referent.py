@@ -75,6 +75,7 @@ from src.transfer.arms import (  # noqa: E402
     STAGED_SCALE_ARMS,
     Cohort,
     arm_spec,
+    config_context_length,
     load_arm,
     load_arm_spec,
     tokenize_batch,
@@ -416,11 +417,7 @@ class _ArmLikelihood:
             if name in PANEL
             else load_arm_spec(spec, device=device, dtype=dtype)
         )
-        config = self.arm.model.config
-        self.context = int(
-            getattr(config, "n_positions", None)
-            or getattr(config, "max_position_embeddings")
-        )
+        self.context = config_context_length(self.arm.model.config)
 
     def render(self, sequences: list[str]) -> list[str]:
         cohort = Cohort(

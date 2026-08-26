@@ -2003,6 +2003,49 @@ def config_shape(config: Any) -> tuple[int, int]:
     )
 
 
+#: Config attributes that declare the position budget, in the order consulted.
+#: Four spellings among the checkpoints this module reaches: ``n_positions``
+#: (GPT-2, ProGen2), ``max_position_embeddings`` (Llama, Qwen2, OPT, ProGen3),
+#: ``max_seq_len`` (RITA) and ``seq_length`` (ProteinGLM).
+_CONTEXT_ATTRIBUTES = (
+    "n_positions",
+    "max_position_embeddings",
+    "max_seq_len",
+    "seq_length",
+)
+
+
+def config_context_length(config: Any) -> int:
+    """How many positions a checkpoint declares, from whichever key spells it.
+
+    :func:`config_shape`'s discipline, applied to the one other config quantity a
+    stage derives behaviour from. The order is a declaration rather than a
+    search: it is fixed, every candidate is named in the refusal, and a config
+    that spells the budget in none of them raises **before any weight loads**
+    rather than resolving to whichever attribute happened to exist. That last
+    property is the point of resolving it here. The two fitness stages used to
+    read ``n_positions or max_position_embeddings`` inline, which raises
+    ``AttributeError`` on ``rita-xl`` (``max_seq_len``) and on
+    ``proteinglm-7b-clm`` (``seq_length``) -- but only after the checkpoint has
+    been loaded onto a card, because the config is read off the loaded model.
+
+    **A declared budget is a ceiling, not a scoring window, and the two are not
+    interchangeable.** The protein arms here declare 1024 or 2048 and the panel's
+    own evaluation windows sit below that, so the distinction has never bitten;
+    ``qwen2.5-7b`` and ``qwen2.5-32b`` declare **131072**, and ProGen3 declares
+    65536. A caller that turns this number into a length must therefore cap it at
+    the window its own measurement is declared on. Today three call sites choose a
+    length from it -- ``20_retrieval_bound.py`` and ``29_designed_referent.py``,
+    which use it as the token budget a rendered variant may not exceed and as
+    ``tokenize_batch``'s ``max_len``, and ``28_epistasis_coupling.py``, which uses
+    it the same way -- and none of them admits a Qwen rung: stages 20 and 29 are
+    protein-only and stage 28 indexes :data:`PANEL` directly. The cap is owed the
+    moment one does.
+    """
+
+    return _first_declared(config, _CONTEXT_ATTRIBUTES, quantity="context length")
+
+
 def load_arm_spec(
     spec: ArmSpec,
     device: str = "cuda:0",

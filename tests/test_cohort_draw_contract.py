@@ -287,6 +287,26 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "is no population to sample: rule 1's hazard is absent rather than "
         "answered, and a cohort here would make the check depend on a draw"
     ),
+    "43_second_stage_capability.py": (
+        "42_scale_capability.py's reason, on EXP-R2-225's rungs: it re-reads the "
+        "stage-20 and stage-41 artefacts from disk and resamples the units those "
+        "runs already fixed, loading no corpus and no model. Its one draw is the "
+        "paired group bootstrap, which resamples fixed units rather than a "
+        "corpus, and it does not even declare that -- the 2,000 resamples on seed "
+        "20260825 are imported from 42_scale_capability.py, where the pre-data "
+        "amendment that freezes them for both campaigns put them, and this stage "
+        "refuses a run that changes either"
+    ),
+    "second_stage_interface_qualification.py": (
+        "scale_interface_qualification.py's reason, with its own frozen "
+        "constants: it scores one hard-coded probe per modality, each pinned by "
+        "its own SHA-256, against a frozen anagram of itself. It asks whether a "
+        "loader and an output interface are usable, so there is no population to "
+        "sample and rule 1's hazard is absent rather than answered. It builds an "
+        "arms.Cohort only to reach input_strings, which renders the one probe it "
+        "already holds and selects nothing, exactly as 29_designed_referent.py "
+        "does"
+    ),
 }
 
 

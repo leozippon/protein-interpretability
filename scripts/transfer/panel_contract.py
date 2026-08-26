@@ -58,7 +58,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.transfer.arms import MODEL_ROOT, PANEL, TEXT_MODEL_BASE, TEXT_MODEL_ROOT  # noqa: E402
+from src.transfer.arms import (  # noqa: E402
+    MODEL_ROOT,
+    PANEL,
+    STAGED_ARMS,
+    TEXT_MODEL_BASE,
+    TEXT_MODEL_ROOT,
+)
 from src.transfer.circuits import _CIRCUIT_ARCHITECTURES  # noqa: E402
 from src.transfer.collision_null import CENSUS_ARCHITECTURES  # noqa: E402
 from src.transfer.path_patching import SUPPORTED_ARCHITECTURES  # noqa: E402
@@ -84,8 +90,13 @@ SHELL_CONTRACT = Path(__file__).resolve().parent / "panel_contract.sh"
 #: arm list is declared against rather than a scale knob. v5 adds each stage's
 #: ``excluded_arms`` -- the named per-arm refusals no declared property can
 #: express -- so that a reader of the payload can tell an arm nobody asked for
-#: from one this stage decided against.
-SCHEMA_VERSION = "r2_transfer_panel_contract_v5"
+#: from one this stage decided against. v6 adds ``staged_arm_cohort_power`` and
+#: ``truncation_curve_logit_limit``: the same ``--skip-truncation`` rule the
+#: cohort-power buckets apply to panel members, answered per staged checkpoint,
+#: because a staged rung reaches a card through a campaign manifest rather than
+#: through those buckets and the flag was consequently applied by hand during the
+#: EXP-R2-224 stage-01 dispatch.
+SCHEMA_VERSION = "r2_transfer_panel_contract_v6"
 
 
 # --------------------------------------------------------------- campaign panel
@@ -1193,7 +1204,7 @@ def cohort_power_items(requested: list[str] | tuple[str, ...] | None = None) -> 
             buckets["text"].append(arm)
         elif spec.input_format == "ec_conditioned":
             buckets["protein_small_vocab"].append(arm)
-        elif _vocab_regime(arm) == "large":
+        elif vocabulary_regime(arm) == "large":
             buckets["protein_large_vocab"].append(arm)
         elif arm == "progen2-medium":
             buckets["protein_progen2_medium"].append(arm)
@@ -1230,15 +1241,123 @@ def cohort_power_items(requested: list[str] | tuple[str, ...] | None = None) -> 
     return items
 
 
-#: Vocabulary regime per arm, keyed off the declared tokenisation family rather
-#: than read from a config file, because the campaign panel's regimes are a
+#: Vocabulary regime per panel arm, keyed off the declared tokenisation family
+#: rather than read from a config file, because the campaign panel's regimes are a
 #: declared design property (the 1600-fold aperture spread of L8) and a scheduler
 #: must not need a checkpoint on disk to plan a run.
 _LARGE_VOCAB_TOKENISATIONS = frozenset({"bpe", "multi_residue_bpe"})
 
+#: The output width above which ``budget.truncation_curve`` refuses to compute a
+#: curve at all, on a build of ``transformers`` whose forward takes no
+#: ``logits_to_keep``. It is the model's own guard, restated here as the number
+#: this scheduler buckets on rather than as a second threshold: the untrimmed
+#: path is a different unembedding kernel and would not reproduce a curve
+#: measured on the trimmed one.
+TRUNCATION_CURVE_LOGIT_LIMIT = 1024
 
-def _vocab_regime(arm: str) -> str:
+#: Released output-head width per staged checkpoint, which is what the guard
+#: above reads and what a panel arm's tokenisation family is only a *proxy* for.
+#:
+#: Declared for the staged checkpoints specifically because the proxy fails on
+#: them: ``progen2-large`` is residue-tokenised -- ``small`` by every panel rule
+#: here -- over a 51200-column head, and that is precisely the arm the rule was
+#: applied to by hand during the EXP-R2-224 stage-01 dispatch after
+#: ``budget.truncation_curve`` refused its three cells. Every entry is the width
+#: the checkpoint's own ``config.json`` declares (``vocab_size``, and
+#: ``vocab_size_lm_head`` on ``progen2-xlarge``, which carries no ``vocab_size``
+#: key at all), so ``tests/test_second_stage_capability.py`` checks each against
+#: the file rather than against this table.
+#:
+#: ``progen2-large``'s 51200 is also the frozen ``REQUIRED_LIVE_WIDTH`` of
+#: ``scale_interface_qualification.py``. The two are deliberately not shared:
+#: that one is an EXP-R2-224 experimental requirement, frozen before the
+#: campaign and checked against the *live* head as the artefact of an all-or-stop
+#: gate, and this one is a scheduling declaration read before any checkpoint is
+#: opened. Binding a scheduler to a frozen experiment's constant would make
+#: planning depend on that experiment's freeze.
+STAGED_OUTPUT_LOGIT_WIDTH: dict[str, int] = {
+    "progen2-large": 51200,
+    "progen2-xlarge": 32,
+    "qwen2.5-7b": 152064,
+    "qwen2.5-32b": 152064,
+    "proteinglm-7b-clm": 128,
+    "rita-xl": 26,
+}
+
+
+def _check_staged_output_widths() -> None:
+    """Every staged checkpoint declares a width, so none falls outside the rule.
+
+    The defect this closes is not a wrong width, it is an *absent* one: an arm
+    with no declared width would silently take the small-vocabulary branch and be
+    scheduled without ``--skip-truncation``, which is exactly how the three
+    ``progen2-large`` cells were refused with exit 1 having touched no card.
+    """
+
+    missing = sorted(set(STAGED_ARMS) - set(STAGED_OUTPUT_LOGIT_WIDTH))
+    if missing:
+        raise AssertionError(
+            f"staged checkpoints {missing} declare no output-head width, so the "
+            "truncation-curve rule cannot be applied to them and they would be "
+            "scheduled as if their heads were narrow"
+        )
+    unknown = sorted(set(STAGED_OUTPUT_LOGIT_WIDTH) - set(STAGED_ARMS))
+    if unknown:
+        raise AssertionError(
+            f"{unknown} declare an output-head width but are not staged arms"
+        )
+
+
+_check_staged_output_widths()
+
+
+def vocabulary_regime(arm: str) -> str:
+    """``"large"`` when this arm's declared output vocabulary exceeds the limit.
+
+    One rule, two declared sources, and the second exists because the first is a
+    proxy. A panel arm's regime follows its declared tokenisation family, which is
+    a design property of the campaign panel and needs no checkpoint on disk. A
+    staged checkpoint declares its released head width directly, because
+    tokenisation does not predict it there.
+    """
+
+    if arm in STAGED_OUTPUT_LOGIT_WIDTH:
+        return (
+            "large"
+            if STAGED_OUTPUT_LOGIT_WIDTH[arm] > TRUNCATION_CURVE_LOGIT_LIMIT
+            else "small"
+        )
     return "large" if PANEL[arm].tokenisation in _LARGE_VOCAB_TOKENISATIONS else "small"
+
+
+def skips_truncation_curve(arm: str) -> bool:
+    """Does this arm need ``--skip-truncation`` on ``01_cohort_power.py``?
+
+    The rule ``COHORT_POWER_ITEM_RULES`` already states for panel members --
+    a vocabulary above the limit makes the curve uncomputable -- asked of any
+    arm this repository declares, panel member or staged checkpoint. It is the
+    same question either way, and answering it in one place is what turns the
+    EXP-R2-224 dispatch's hand-applied flag into a scheduling rule.
+    """
+
+    return vocabulary_regime(arm) == "large"
+
+
+def staged_cohort_power_args(arm: str) -> tuple[str, ...]:
+    """The ``01_cohort_power.py`` flags a staged checkpoint takes from this rule.
+
+    Panel members get theirs through :func:`cohort_power_items`, which buckets
+    whole invocations. A staged rung is dispatched one arm at a time by a
+    campaign manifest rather than by that bucketing, so the flags it owes are
+    answered per arm here and land in :func:`contract_payload`.
+    """
+
+    if arm not in STAGED_OUTPUT_LOGIT_WIDTH:
+        raise KeyError(
+            f"{arm!r} is not a staged checkpoint; panel members take their "
+            "cohort_power flags from cohort_power_items()"
+        )
+    return ("--skip-truncation",) if skips_truncation_curve(arm) else ()
 
 
 # ------------------------------------------------------- per-arm data locations
@@ -1439,6 +1558,19 @@ def contract_payload() -> dict[str, Any]:
             }
             for item in cohort_power_items()
         ],
+        # The same truncation-curve rule, answered per staged checkpoint. Not
+        # rendered into panel_contract.sh: the worker schedules panel arms, and a
+        # staged rung reaches a card through a campaign manifest, which is what
+        # this block is for.
+        "staged_arm_cohort_power": {
+            arm: {
+                "output_logit_width": STAGED_OUTPUT_LOGIT_WIDTH[arm],
+                "vocabulary_regime": vocabulary_regime(arm),
+                "extra_args": list(staged_cohort_power_args(arm)),
+            }
+            for arm in sorted(STAGED_OUTPUT_LOGIT_WIDTH)
+        },
+        "truncation_curve_logit_limit": TRUNCATION_CURVE_LOGIT_LIMIT,
     }
 
 

@@ -92,12 +92,14 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.transfer import profiles as P  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
+    MODEL_ROOT,
     PANEL,
     REPO,
     STAGED_SCALE_ARMS,
     UNIREF90_BFD30_INCOMPLETE_SEARCH,
     Cohort,
     arm_spec,
+    config_context_length,
     env_path,
     load_arm,
     load_arm_spec,
@@ -122,6 +124,10 @@ from src.transfer.homology import (  # noqa: E402
     write_query_fasta,
 )
 from src.transfer.io import sha256_file, write_json  # noqa: E402
+from src.transfer.scale_comparison import (  # noqa: E402
+    STRATUM_BIDIRECTIONAL,
+    STRATUM_N_TO_C,
+)
 from src.transfer.statistics import mean_interval  # noqa: E402
 
 SCHEMA_VERSION = P.SCHEMA_VERSION
@@ -169,11 +175,71 @@ ARM_CORPUS: dict[str, dict[str, str]] = {
 }
 
 
+#: EXP-R2-225's pure-protein Wave A rung, in a table of its own rather than in
+#: :data:`ARM_CORPUS`, because that dictionary is also this stage's ``--arms``
+#: default and a second campaign must not silently widen the first's default run.
+#: It is in ``--arms``' *choices*, exactly as the staged ProGen2 rungs are.
+#:
+#: **The identification is not a retrieval bound and says so.** EXP-R2-225: LOOKUP
+#: "is **not** automatically a pretraining-retrieval lower bound. Only an arm with
+#: evidenced identity or containment between that search corpus and the training
+#: set may be called a retrieval bound." The ProGen3 family paper (Bhatnagar et
+#: al., bioRxiv 10.1101/2025.04.15.649055) declares Profluent Protein Atlas v1,
+#: which lists UniRef among IMG/M, ENA, GenBank, NCBI NR and metagenomic sources;
+#: neither the card nor the paper identifies the staged UniRef50 snapshot as that
+#: set. So MODEL - LOOKUP on this rung is a capability comparison against an
+#: external UniRef50 profile channel. It does not exclude training-corpus
+#: retrieval and does not lower-bound it. The direction of the remaining bias is
+#: still recorded, because it is not symmetric: the Atlas is certainly larger than
+#: the searched snapshot, so LOOKUP under-counts retrievable support and the
+#: residual flatters the model.
+#:
+#: The in-repo 112M card states no corpus at all, which is why its
+#: :data:`ARM_CORPUS` entry reads ``undeclared`` and this one does not. The two
+#: rungs are the same lineage and not the same declaration.
+SECOND_STAGE_PROTEIN_CORPUS: dict[str, dict[str, str]] = {
+    "progen3-3b": {
+        "declared": "profluent_protein_atlas_v1",
+        "identification": "external UniRef50 profile baseline, not a retrieval bound",
+        "note": "the ProGen3 family paper (Bhatnagar et al., bioRxiv "
+        "10.1101/2025.04.15.649055) declares Profluent Protein Atlas v1, which "
+        "lists UniRef among IMG/M, ENA, GenBank, NCBI NR and metagenomic "
+        "sources. The staged UniRef50 snapshot is NOT identified as that set, so "
+        "LOOKUP here is an external profile channel and MODEL - LOOKUP is a "
+        "capability comparison against it, not a retrieval exclusion and not a "
+        "lower bound on retrieval. The Atlas is certainly the larger corpus, so "
+        "the searched profile under-counts this arm's retrievable support and "
+        "the residual runs in the model-favouring direction",
+    },
+}
+
+#: The ProGen3 rungs this stage can score, and the directory each is loaded from.
+#:
+#: ProGen3 has no :class:`ArmSpec`: it is reached through
+#: :func:`src.transfer.progen3.load_progen3`, which converts the released
+#: megablocks packing and refuses on any missing or unexpected key, because the
+#: ordinary entry point returns a model with every expert random and raises
+#: nothing. So the checkpoint directory is declared per rung here. ``None`` keeps
+#: the 112M on the module's own ``TRANSFER_PROGEN3_DIR`` default and on
+#: ``--progen3-checkpoint``, so F10's frozen dispatch is unchanged; the 3B is
+#: addressed beside it because one ``--progen3-checkpoint`` cannot serve two
+#: rungs in one run. The band each is self-checked against is
+#: :data:`src.transfer.progen3.SELF_CHECK_REFERENCES`, keyed by the config
+#: fingerprint rather than by these names, so a relocated or renamed directory
+#: cannot be gated against the other rung's number.
+PROGEN3_CHECKPOINTS: dict[str, Path | None] = {
+    "progen3-112m": None,
+    "progen3-3b": MODEL_ROOT / "progen3-3b",
+}
+
+
 def corpus_record(arm: str) -> dict[str, str]:
-    """Corpus identification for a default arm or an explicit staged scale rung."""
+    """Corpus identification for a default arm or an explicitly named rung."""
 
     if arm in ARM_CORPUS:
         return ARM_CORPUS[arm]
+    if arm in SECOND_STAGE_PROTEIN_CORPUS:
+        return SECOND_STAGE_PROTEIN_CORPUS[arm]
     if arm in STAGED_SCALE_ARMS:
         spec = arm_spec(arm)
         return {
@@ -182,11 +248,15 @@ def corpus_record(arm: str) -> dict[str, str]:
             "note": UNIREF90_BFD30_INCOMPLETE_SEARCH,
         }
     raise KeyError(
-        f"unknown arm {arm!r}; arms are {sorted(set(ARM_CORPUS) | set(STAGED_SCALE_ARMS))}"
+        f"unknown arm {arm!r}; arms are {sorted(SCOREABLE_ARMS)}"
     )
 
 
-SCOREABLE_ARMS = tuple(sorted(set(ARM_CORPUS) | set(STAGED_SCALE_ARMS)))
+SCOREABLE_ARMS = tuple(
+    sorted(
+        set(ARM_CORPUS) | set(STAGED_SCALE_ARMS) | set(SECOND_STAGE_PROTEIN_CORPUS)
+    )
+)
 
 #: Per-assay covariates the difficulty control is fitted on. Every one is a
 #: property of the assay, computable before either channel is scored, so the
@@ -672,9 +742,7 @@ def stage_score(args: argparse.Namespace) -> dict[str, Any]:
     catalogue = _read(args.out / "wildtypes.json")
     results: dict[str, Any] = {}
     for arm in args.arms:
-        if arm == "progen3-112m" or arm in ARM_CORPUS or arm in STAGED_SCALE_ARMS:
-            pass
-        else:
+        if arm not in SCOREABLE_ARMS:
             raise KeyError(
                 f"unknown arm {arm!r}; arms are {sorted(SCOREABLE_ARMS)}"
             )
@@ -727,7 +795,8 @@ def stage_score(args: argparse.Namespace) -> dict[str, Any]:
                 "batch_size": args.batch_size,
                 "dtype": args.dtype,
                 "device": args.device,
-                "score": "summed log-likelihood of the rendered variant",
+                "score": scorer.score_description,
+                "scoring_stratum": scorer.scoring_stratum,
             },
             "assays": rows,
             "skipped": skipped,
@@ -741,6 +810,13 @@ def stage_score(args: argparse.Namespace) -> dict[str, Any]:
 class _ArmScorer:
     """Summed log-likelihood of a variant under one arm, in its own rendering."""
 
+    #: What this scorer computes, and the stratum that convention belongs to.
+    #: Written into every payload it produces, because EXP-R2-225 forbids pooling
+    #: strata and a rule about not mixing conventions needs each artefact to say
+    #: which one it carries rather than leave a reader to infer it from the arm.
+    score_description = "summed log-likelihood of the rendered variant"
+    scoring_stratum = STRATUM_N_TO_C
+
     def __init__(self, arm_name: str, args: argparse.Namespace) -> None:
         import torch
 
@@ -753,11 +829,7 @@ class _ArmScorer:
             if arm_name in PANEL
             else load_arm_spec(spec, device=args.device, dtype=args.dtype)
         )
-        config = self.arm.model.config
-        self.context = int(
-            getattr(config, "n_positions", None)
-            or getattr(config, "max_position_embeddings")
-        )
+        self.context = config_context_length(self.arm.model.config)
 
     def _render(self, sequences: list[str]) -> list[str]:
         # Rendering is the panel's decision, not this stage's: Appendix B rule 12
@@ -804,19 +876,38 @@ class _ArmScorer:
 
 
 class _ProGen3Scorer:
-    """ProGen3-112M, scored bidirectionally as its published perplexities are."""
+    """A ProGen3 rung, scored bidirectionally as its published perplexities are.
 
-    def __init__(self, args: argparse.Namespace) -> None:
+    The mean of the N-to-C and C-to-N summed log-likelihoods. That is a
+    **different estimand** from the left-to-right sum every other scorer here
+    computes, and it is labelled as such rather than left to be inferred: under
+    EXP-R2-225 the two are separate strata, and a paired comparison may be formed
+    within one of them and never across both.
+    """
+
+    score_description = (
+        "mean of the N-to-C and C-to-N summed log-likelihoods of the residue "
+        "string, the lineage's published bidirectional convention"
+    )
+    scoring_stratum = STRATUM_BIDIRECTIONAL
+
+    def __init__(self, arm: str, args: argparse.Namespace) -> None:
         import torch
 
         from src.transfer.progen3 import load_progen3, self_check
 
         self.torch = torch
+        self.name = arm
         self.batch_size = args.batch_size
         kwargs: dict[str, Any] = {"device": args.device, "dtype": getattr(torch, args.dtype)}
-        if args.progen3_checkpoint is not None:
+        declared = PROGEN3_CHECKPOINTS[arm]
+        if declared is not None:
+            kwargs["checkpoint"] = declared
+        elif args.progen3_checkpoint is not None:
             kwargs["checkpoint"] = args.progen3_checkpoint
         self.pg = load_progen3(**kwargs)
+        # Resolved from the loaded config's own fingerprint, so a rung gated
+        # against another rung's band is a KeyError here and not a number.
         self.check = self_check(self.pg)
         self.context = None
 
@@ -849,9 +940,12 @@ class _ProGen3Scorer:
 
 
 def _load_scorer(arm: str, args: argparse.Namespace) -> tuple[Any, int | None, dict[str, Any]]:
-    if arm == "progen3-112m":
-        scorer = _ProGen3Scorer(args)
-        return scorer, None, {"self_check": scorer.check}
+    if arm in PROGEN3_CHECKPOINTS:
+        scorer = _ProGen3Scorer(arm, args)
+        return scorer, None, {
+            "self_check": scorer.check,
+            "checkpoint": str(scorer.pg.checkpoint),
+        }
     scorer = _ArmScorer(arm, args)
     return (
         scorer,
