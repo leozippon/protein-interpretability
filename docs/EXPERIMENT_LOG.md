@@ -17809,3 +17809,44 @@ Sampled from `nvidia-smi` at 15-second cadence on the cards these cells held: **
 ### Artefacts
 
 On GPFS under the run's cell directories, each with the queue's SHA-256 sidecar. Pulled to `results/transfer/r225_qwen/`: the interface qualification (`ADMITTED`, 1 file) and the first three block verdicts, each per-file digest-verified. The remaining block verdicts were read in-pod rather than transferred, and the eight held-out reference payloads — about 20 MB each — were deliberately left on GPFS: the link was carrying `galactica-30b`'s 57 GB at the time, and stage 41 for this wave cannot run until the 32B rung exists anyway. Nothing is promoted to `evidence/`.
+
+## 2026-08-26 — EXP-R2-225 Wave A: `galactica-30b` qualifies in both modes, and it fits on one H200 at 60,025 MiB — measured, not projected
+
+**The joint wave's top rung, and the freeze's clause-5 measurement.** Same stage, same draws, same precision as the 6.7B rung; the only change is the checkpoint. This is a screening qualification, not an identification, not a capability result, and not a rung ordering.
+
+### The device-memory measurement, which is the point of running this rung first
+
+EXP-R2-225 clause 5 says `facebook/galactica-30b` is a single-card H200 **candidate** and that nobody may claim it fits until device memory has been measured on that checkpoint. It is measured now.
+
+**Peak device memory: 60,025 MiB of 143,771 MiB, 41.7% of one card, at bfloat16.** Two independent `nvidia-smi` samplers ran across the cell — one at 15-second cadence and one at 5-second — and they agree at **60,023** and **60,025** MiB, which is what makes this a measurement rather than a single reading. Weight loading alone sat at 58,477 MiB across seven shards. There was **no out-of-memory event**, and none was expected to be close: the earlier campaign's ProGen2-xlarge cell reaching 137.7 GB on one card did so at a much larger scored window than this stage's 128 records and 512-token text window, so the two are not the same kind of load and this result does not license a claim about any other stage's footprint on this checkpoint. The cell ran two minutes end to end, of which 66 seconds was loading 57 GB off GPFS.
+
+Staging those 57 GB over the offline link took **4h35m** at about 3 MB/s on two concurrent digest-verified streams. The measurement it enabled took two minutes.
+
+### Command and shape
+
+Dispatched from `campaign_r225_galactica_30b.tsv`, one cell on card 0 after an in-pod dry run, at exactly the 6.7B rung's draws: `--rendering galactica --modes both --dtype bfloat16 --sequences 128 --unigram-sequences 400 --protein-min-len 64 --protein-max-len 246 --text-min-chars 800 --max-tokens 512 --cohort-draw-seed 20260728`, `--protein-context` left at its default so the protein block is the bare `[START_AMINO]…[END_AMINO]` form.
+
+Read back from the built model: 48 layers, width 7168, 56 heads, vocabulary 50000, `max_position_embeddings` 2048, `model_type` `opt`, observed dtype bfloat16, tokenizer vocabulary 50000, rendering resolved to delimiters 17/18. Both modes drew the same cohorts as the 6.7B cell — protein digest `0dd37e88b0db`, text digest `2c9f8a8ea448` — which is what the shared seed is for.
+
+### Readings
+
+| mode | context information | screen verdict | supporting readings |
+|---|---|---|---|
+| protein | **+0.438892 nats per scored residue** | `measurable` | clean 2.4472 against held-out unigram 2.8861, at **1.000 residues per scored token**; reversal cost **+0.486051** nats/residue; naive-rendering price **+0.675870** nats/residue |
+| text | **+5.034191 nats per scored token** | `measurable` | clean 2.466094 against held-out unigram 7.5003 |
+
+Both modes clear the 0.05-nat pre-interval screen, and on this rung both also clear the retired 0.30-nat floor, which still decides nothing.
+
+### What this does not say
+
+**Not an identification.** `identification_verdict_is_the_criterion` is `false` here as it is on every stage-21 artefact. The EXP-R2-221 rule needs `41_context_information_bootstrap.py` over the `records/` sidecars, which is a separate stage and this wave's declared next step. Until it runs, both numbers are screening point estimates.
+
+**Not a scale trajectory, and deliberately not tabulated as one.** The 1.3B, 6.7B and 30B readings are not placed in one column here. A Galactica ladder is what stage 43 forms, from identified quantities, under a frozen paired bootstrap — not from three screening point estimates read off three qualification artefacts. The temptation is obvious and is refused for the same reason EXP-R2-224's stage-01 entry refused it: a per-block or per-draw spread of the same order as the difference being read makes a point comparison uninformative, and no interval on any of these readings exists yet.
+
+**Not a fitness result, and no route to one exists.** The campaign's deliverable amendment records that no Galactica protein mode can enter ProteinGym or MegaScale: both stages resolve an `ArmSpec` by name and Galactica is declared as an arm nowhere, which is stage 21's own rule about unqualified joint checkpoints. That is the absence of a route, not a failed qualification.
+
+**Not knowledge, and not causal about parameter count.** Depth, width and parameter count move together across 1.3B → 6.7B → 30B, and the corpus is one mixture throughout.
+
+### Artefact
+
+`results/transfer/r225_galactica/r225_s21_galactica_30b/joint_mode_qualification.json`, pulled digest-verified and ADMITTED with its four sufficient-statistics sidecars. Nothing is promoted to `evidence/`.
