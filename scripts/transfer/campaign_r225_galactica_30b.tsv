@@ -1,0 +1,33 @@
+# EXP-R2-225 Wave A, joint scale trajectory: stage-21 both-mode qualification of
+# facebook/galactica-30b, the top rung of 1.3 -> 6.7 -> 30B.
+#
+# A separate manifest from the 6.7B rung's, and separate because the prereg's
+# operational sequence verifies the smaller arms first and only then attempts this
+# one. That ordering is discharged rather than assumed: the 6.7B rung ran end to end
+# on this interface and qualified in both modes before this manifest was written, and
+# the campaign's interface gate had already read a live head off Qwen2.5-7B. A second
+# slot inside the 6.7B manifest would have released this cell about a minute after
+# that one finished -- the 6.7B cell takes 60 s -- and at the measured staging rate
+# this checkpoint's 57 GB were still hours from GPFS at that moment.
+#
+# Every draw is the value the prereg binds this wave to, identical to the 6.7B cell
+# and to facebook/galactica-1.3b's existing qualification: corrected cohort draw seed
+# 20260728, 128 scored records, a 400-record held-out unigram reference, residue band
+# 64-246, text floor 800 characters, a 512-token scored text window, bfloat16, and the
+# bare [START_AMINO]...[END_AMINO] rendering that --protein-context's default leaves in
+# place. All four Galactica rungs carry a byte-identical tokenizer.json (SHA-256
+# 1fc4783be108baf2...), so the rendering's residue ids and its escape behaviour are the
+# same object on every rung rather than a per-rung assumption.
+#
+# THIS CELL IS ALSO THE DEVICE-MEMORY MEASUREMENT clause 5 of the freeze demands before
+# anyone may say this checkpoint runs on one H200. 48 layers of width 7168 at bfloat16
+# is about 57 GB of weights against 143771 MiB of card, and the config declares a
+# 2048-position context that --max-tokens 512 stays well inside; that is an arithmetic
+# expectation and NOT the measurement. The measurement is the peak device memory
+# sampled on the card while this cell runs, and until it exists this checkpoint is a
+# single-card candidate and nothing more. An out-of-memory failure here is reported as
+# measured and is not retried at a smaller draw: the draw is what makes the rung
+# comparable to the two below it.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	r225	0	21_joint_mode_qualification.py	r225_s21_galactica_30b	-	joint_mode_qualification.json	--checkpoint ${TRANSFER_MODEL_BASE_DIR}/galactica-30b --rendering galactica --modes both --dtype bfloat16 --sequences 128 --unigram-sequences 400 --protein-min-len 64 --protein-max-len 246 --text-min-chars 800 --max-tokens 512 --cohort-draw-seed 20260728

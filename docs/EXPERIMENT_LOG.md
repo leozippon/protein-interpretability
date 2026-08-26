@@ -17709,3 +17709,50 @@ The two unmeasured entries are unmeasured for a recorded resource reason rather 
 **One arm is declared unavailable before anything loads.** `proteinglm-7b-clm`, on two independent facts recorded earlier the same day: Transformers' AST import check raises on the bare `deepspeed` name at `modeling_proteinglm.py` line 15, and this repository emits no `<gmask><sop><eos>` rendering, so even a loadable checkpoint would have no native input format here. It is reported unavailable and no other model is moved into its slot. ProGen3 and the joint wave are not given a second, weaker door: they qualify through `progen3.self_check` and stage 21 respectively.
 
 **No capability score, interval, or gate verdict is claimed.** The two measured widths are interface facts read during implementation.
+
+## 2026-08-26 — EXP-R2-225 Wave A: `galactica-6.7b` qualifies in both modes, and the joint ladder's middle rung is measured on 14.6 GB of one H200
+
+**The joint wave's first new rung, and a screening verdict only.** This is `21_joint_mode_qualification.py`, which the same-day deliverable amendment names as this wave's qualification route. It is not a capability result, not an admission of this checkpoint to the panel, and not an identification: the stage publishes one cohort draw and no bootstrap, so the EXP-R2-221 criterion is **not evaluated here** and the artefact says so in its own words. No Galactica fitness number exists and none can, because the amendment records that no route to ProteinGym or MegaScale exists for a Galactica protein mode.
+
+### Staging, which was the whole cost
+
+`facebook/galactica-6.7b` was not on GPFS. It was staged from the workstation over the offline link, 13.4 GB in eleven files, each digest-verified on both sides by the per-file push path. **The link was measured rather than assumed at about 2.0 MB/s on one stream** — a 536,870,912-byte probe pushed in 4m27s, consistent with the 90 MB stage-42 records pull that took 11m48s — and about 3 MB/s aggregate on two concurrent streams. Staging took 1h15m; the cell it enabled took **60 seconds**. That ratio is the operational fact worth carrying forward: on this campaign the binding resource is the staging link, not the cards.
+
+### Command
+
+Dispatched through the in-pod campaign queue from `campaign_r225_galactica_6b.tsv`, one cell on one card, after an in-pod dry run:
+
+```
+21_joint_mode_qualification.py --device cuda:0 --out <cell> \
+  --checkpoint ${TRANSFER_MODEL_BASE_DIR}/galactica-6.7b --rendering galactica \
+  --modes both --dtype bfloat16 --sequences 128 --unigram-sequences 400 \
+  --protein-min-len 64 --protein-max-len 246 --text-min-chars 800 \
+  --max-tokens 512 --cohort-draw-seed 20260728
+```
+
+Every draw is the value the freeze binds this wave to, and each was checked against `facebook/galactica-1.3b`'s existing qualification artefact rather than restated from the prereg: corrected cohort draw seed **20260728**, **128** scored records, a **400**-record held-out unigram reference, band 64–246 residues, 800-character text floor, 512-token text window, bfloat16, and `--protein-context` left at its default so the protein block is the bare `[START_AMINO]…[END_AMINO]` form. All four Galactica rungs carry a byte-identical `tokenizer.json`, SHA-256 `1fc4783be108baf2…`, so the rendering is the same object on every rung.
+
+### What the checkpoint read back as, and what it scored
+
+The loader read 32 layers of width 4096, 32 heads, vocabulary 50000, `max_position_embeddings` 2048, `model_type` `opt`, observed dtype bfloat16 — read off the built model rather than echoed from the request — and the rendering resolved to delimiters 17/18.
+
+| mode | context information | screen verdict | supporting readings |
+|---|---|---|---|
+| protein | **+0.199442 nats per scored residue** | `measurable` | clean 2.6866 against held-out unigram 2.8861, at **1.000 residues per scored token**; reversal cost **+0.199663** nats/residue; naive-rendering price **+0.432265** nats/residue |
+| text | **+4.891750 nats per scored token** | `measurable` | clean 2.6085 against held-out unigram 7.5003 |
+
+Both modes clear the 0.05-nat pre-interval screen. The retired 0.30-nat floor is reported and decides nothing; the protein mode does not clear it and that is not a verdict about the protein mode.
+
+**The reversal control is the substantive protein-side evidence and it is reported, never gated.** +0.1997 nats per residue is what an unadapted text model does not pay — `Llama-2-7b-hf` reads −0.0013 on this control — so this checkpoint reads protein sequence directionally. The text mode's residue-subspace-mass control is `WITHHELD` with its own reason: Galactica declares no residue subspace disjoint from text, so that statistic would be about twenty capital letters.
+
+### Device memory, measured
+
+Peak device memory on the card while this cell ran, sampled from `nvidia-smi` at 15-second intervals: **14,641 MiB of 143,771 MiB** for the 6.7B rung at bfloat16. That is the rung's measurement and is **not** an extrapolation to any other rung; the freeze's clause 5 is discharged per checkpoint and `galactica-30b` remains a single-card candidate until its own cell is measured.
+
+### Artefact, and what still has to happen before this is an identification
+
+`results/transfer/r225_galactica/r225_s21_galactica_6b/joint_mode_qualification.json`, schema `r2_transfer_joint_mode_qualification_v2`, pulled digest-verified and ADMITTED with its four sufficient-statistics sidecars. Nothing is promoted to `evidence/`.
+
+`identification_verdict_is_the_criterion` is `false` in the artefact. The EXP-R2-221 rule is the displacement-corrected near-duplicate-group bootstrap lower bound, which needs `41_context_information_bootstrap.py` over the `records/` sidecars beside this report. Until that runs, both readings above are **screening point estimates** and neither mode is identified. The precedent that makes this distinction non-hypothetical is on this very lineage: the screen refuses `galactica-1.3b`'s protein mode at +0.047678 and the criterion identifies it on a corrected interval reaching down only to +0.038694.
+
+**No rung ordering is claimed.** The 1.3B rung's readings are not placed beside these, because a comparison between rungs is what stage 43 forms from identified quantities and not what a screening number supports.
