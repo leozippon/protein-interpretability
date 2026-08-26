@@ -1,0 +1,35 @@
+# EXP-R2-225 Wave A, pure-text scale trajectory: stage-01 context-information
+# qualification of Qwen2.5-32B on the eight frozen OpenWebText blocks.
+#
+# DISPATCH ONLY AFTER campaign_r225_qwen32b_interface.tsv RETURNS PASS for this arm.
+#
+# The draw is byte-for-byte the 7B rung's and the panel's: each expect basename carries
+# the cohort digest recomputed on this workstation from the same corpus at the same
+# draw, and all eight reproduce the EXP-R2-216/221 digests qwen2.5-0.5b was qualified
+# on. Pool 1000, --cohort-skip 7000k for k = 0..7, n 200, character floor 800, held-out
+# unigram reference 4000, --seed 20260727 -- the seed EXP-R2-225 binds the Qwen rungs
+# to. Completing this rung is what lets 41_context_information_bootstrap.py form the
+# wave's single shared identification report across 0.5B, 7B and 32B; until then no
+# Qwen context-information quantity is identified and no rung ordering exists.
+#
+# --allow-second-stage-arms is this campaign's door and admits only
+# STAGED_SECOND_STAGE_ARMS. --skip-truncation because budget.truncation_curve cannot
+# compute a curve above a 1024-column live head and this arm emits 152064.
+#
+# --max-len 384 IS THE CAP. Qwen2.5-32B declares max_position_embeddings 131072.
+# Stage 01 derives no length from a config, but the cap is written out because the two
+# fitness stages do derive one that way and would read 131072 for this rung.
+#
+# Eight cells of one shape over three cards, so a slot barrier waits on like-shaped
+# work; the last slot leaves one card idle, which is what eight cells on three cards
+# costs and is cheaper than an uneven slot.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	r225	0	01_cohort_power.py	r225_s01_qwen32b_b0	-	power_openwebtext_78cbc340a2df.json	--kind text --arms qwen2.5-32b --allow-second-stage-arms --skip-truncation --n-seq 200 --min-chars 800 --max-len 384 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 0 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype bfloat16
+1	r225	1	01_cohort_power.py	r225_s01_qwen32b_b1	-	power_openwebtext_b584d1fed322.json	--kind text --arms qwen2.5-32b --allow-second-stage-arms --skip-truncation --n-seq 200 --min-chars 800 --max-len 384 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 7000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype bfloat16
+1	r225	2	01_cohort_power.py	r225_s01_qwen32b_b2	-	power_openwebtext_1cb0091f9dcd.json	--kind text --arms qwen2.5-32b --allow-second-stage-arms --skip-truncation --n-seq 200 --min-chars 800 --max-len 384 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 14000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype bfloat16
+2	r225	0	01_cohort_power.py	r225_s01_qwen32b_b3	-	power_openwebtext_4bf93116f3db.json	--kind text --arms qwen2.5-32b --allow-second-stage-arms --skip-truncation --n-seq 200 --min-chars 800 --max-len 384 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 21000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype bfloat16
+2	r225	1	01_cohort_power.py	r225_s01_qwen32b_b4	-	power_openwebtext_ea00bfd4c168.json	--kind text --arms qwen2.5-32b --allow-second-stage-arms --skip-truncation --n-seq 200 --min-chars 800 --max-len 384 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 28000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype bfloat16
+2	r225	2	01_cohort_power.py	r225_s01_qwen32b_b5	-	power_openwebtext_0afa7103d401.json	--kind text --arms qwen2.5-32b --allow-second-stage-arms --skip-truncation --n-seq 200 --min-chars 800 --max-len 384 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 35000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype bfloat16
+3	r225	0	01_cohort_power.py	r225_s01_qwen32b_b6	-	power_openwebtext_a8d517dbe5a3.json	--kind text --arms qwen2.5-32b --allow-second-stage-arms --skip-truncation --n-seq 200 --min-chars 800 --max-len 384 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 42000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype bfloat16
+3	r225	1	01_cohort_power.py	r225_s01_qwen32b_b7	-	power_openwebtext_3342aeb07562.json	--kind text --arms qwen2.5-32b --allow-second-stage-arms --skip-truncation --n-seq 200 --min-chars 800 --max-len 384 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 49000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype bfloat16

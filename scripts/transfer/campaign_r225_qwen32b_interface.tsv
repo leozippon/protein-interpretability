@@ -1,0 +1,18 @@
+# EXP-R2-225 all-or-stop interface qualification of Qwen2.5-32B, one arm, one cell.
+#
+# The 7B rung's counterpart is campaign_r225_qwen_interface.tsv, which was named before
+# a second rung's manifest existed. Each rung gets its own file because the manifest is
+# part of a run's identity -- the queue records its SHA-256 in the status file -- so a
+# used manifest is never edited to add a cell.
+#
+# The gate stops an arm on failure and this is the rung the freeze is most cautious
+# about: Qwen2.5-32B is a single-card H200 CANDIDATE, and the campaign's own interface
+# entry records its live output width as DECLARED (152064 from config.vocab_size) and
+# not measured, because no card was free to read a head off when that stage was
+# written. This cell is what measures it. A live head that loads at another width
+# stops the arm here rather than producing a number later.
+#
+# Card 0, and stage 01 for this rung is a separate dispatch taken only on PASS.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	r225	0	second_stage_interface_qualification.py	r225_iq_qwen2_5_32b	-	second_stage_interface_qwen2.5-32b.json	--arm qwen2.5-32b --dtype bfloat16
