@@ -17756,3 +17756,56 @@ Peak device memory on the card while this cell ran, sampled from `nvidia-smi` at
 `identification_verdict_is_the_criterion` is `false` in the artefact. The EXP-R2-221 rule is the displacement-corrected near-duplicate-group bootstrap lower bound, which needs `41_context_information_bootstrap.py` over the `records/` sidecars beside this report. Until that runs, both readings above are **screening point estimates** and neither mode is identified. The precedent that makes this distinction non-hypothetical is on this very lineage: the screen refuses `galactica-1.3b`'s protein mode at +0.047678 and the criterion identifies it on a corrected interval reaching down only to +0.038694.
 
 **No rung ordering is claimed.** The 1.3B rung's readings are not placed beside these, because a comparison between rungs is what stage 43 forms from identified quantities and not what a screening number supports.
+
+## 2026-08-26 — EXP-R2-225 Wave A: `qwen2.5-7b` clears the interface gate and is scored on all eight text blocks
+
+**A prerequisite and a qualification input. No capability result, no rung ordering, and no identification.** The pure-text wave's route is `01_cohort_power.py` and then `41_context_information_bootstrap.py`; only the first half exists here, and stage 41 for this wave needs all three rungs, so nothing below is an identified quantity.
+
+### The all-or-stop gate, run first and separately
+
+`second_stage_interface_qualification.py --arm qwen2.5-7b --dtype bfloat16` on one card, dispatched from its own manifest **before** any stage-01 cell, because the gate stops an arm on failure and the campaign queue's slot barrier orders cells without making one conditional on another's verdict. Two dispatches, not two slots.
+
+**`verdict: PASS`**, on the stage's own frozen constants: strict load with `missing_keys`, `unexpected_keys`, `mismatched_keys` and `error_msgs` all **0**; live output width **152064** read from `lm_head.out_features` and equal to the campaign's declaration, with `declaration_measured_live: true`; the fixed 47-word English probe scored twice at a repeat maximum absolute difference of **0.0** nats against a 1e-6 tolerance; and the frozen anagram control costing **3.223175 nats per scored target** against a floor of 0.25 — the native mean is 3.175813 and the shuffled mean 6.398988 over 58 scored targets. Shape read back as 28 layers of width 3584. The artefact states what a pass means in its own words: the loader, the output interface and the negative control are usable at this precision, and that is not a capability or knowledge result.
+
+### Stage 01, eight blocks, the draw the freeze binds this rung to
+
+Eight cells over four slots on two cards, every cell of one shape so the barrier waits on like-shaped work:
+
+```
+01_cohort_power.py --kind text --arms qwen2.5-7b --allow-second-stage-arms \
+  --skip-truncation --n-seq 200 --min-chars 800 --max-len 384 \
+  --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip <0..49000 by 7000> \
+  --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics \
+  --seed 20260727 --dtype bfloat16
+```
+
+**The eight blocks are the panel's own, and that is measured rather than declared.** Each cell's expect basename was computed on the workstation from the same corpus at the same draw before dispatch, and all eight reproduce the EXP-R2-216/221 digests `qwen2.5-0.5b` was qualified on — `78cbc340a2df`, `b584d1fed322`, `1cb0091f9dcd`, `4bf93116f3db`, `ea00bfd4c168`, `0afa7103d401`, `a8d517dbe5a3`, `3342aeb07562` — and every cell wrote exactly the file its expect named. `--seed 20260727` is the seed EXP-R2-225 binds the Qwen rungs to for comparability with the 0.5B rung.
+
+**`--allow-second-stage-arms` is this campaign's own door.** It admits only `STAGED_SECOND_STAGE_ARMS`, is not `--allow-staged-scale-arms`, and does not widen EXP-R2-224's first round; the two doors never admit each other's arms, and the arm was checked for a declared `budget` capability before anything loaded. `--skip-truncation` because `budget.truncation_curve` cannot compute a curve above a 1024-column live head on this build and this arm emits 152064 — the same rule `panel_contract` applies to every text arm, applied by hand because a staged non-member sits in no cohort-power bucket.
+
+**The 131072-position context is capped and the cap is stated.** `qwen2.5-7b` declares `max_position_embeddings` 131072. Stage 01 never derives a length from a config — `max_len` is an argument all the way down — and `--max-len 384` is written out in the manifest so the bound is visible rather than inherited from a default. The two fitness stages *do* derive a context that way, so any future route that sends this rung through one must cap it there too.
+
+### Result: eight of eight PASS, all `measurable`
+
+`# FAILURES 0`, `# NO-RECORD 0`, eight cells `exited-ok`. `power_verdict` is `PASS` and `measurability` is `measurable` on every block.
+
+| block | cohort digest | context information (nats/token) | scored tokens | symbols/token |
+|---|---|---:|---:|---:|
+| b0 | `78cbc340a2df` | 5.447964 | 71112 | 4.6630 |
+| b1 | `b584d1fed322` | 5.407382 | 71992 | 4.6473 |
+| b2 | `1cb0091f9dcd` | 5.437575 | 71489 | 4.6467 |
+| b3 | `4bf93116f3db` | 5.480477 | 71030 | 4.6464 |
+| b4 | `ea00bfd4c168` | 5.373597 | 72393 | 4.5951 |
+| b5 | `0afa7103d401` | 5.401179 | 70851 | 4.6678 |
+| b6 | `a8d517dbe5a3` | 5.401785 | 71332 | 4.5988 |
+| b7 | `3342aeb07562` | 5.424004 | 71879 | 4.6574 |
+
+**Screening point estimates only, and no ordering against any other rung.** `power_verdict` answers whether the reading justifies an interval. Identification is the EXP-R2-221 rule — the displacement-corrected near-duplicate-group bootstrap 95% lower bound — which is `41_context_information_bootstrap.py` over the sufficient-statistics sidecars, and which this wave takes as one shared report across 0.5B, 7B and 32B. That report cannot be formed until the 32B rung is scored, so **no Qwen context-information quantity is identified yet and `qwen2.5-0.5b`'s readings are deliberately not placed beside these**. The block-to-block spread here is 0.107 nats, which is the scale at which a between-rung difference would have to be read, and is one more reason a point comparison is not taken.
+
+### Device memory, measured
+
+Sampled from `nvidia-smi` at 15-second cadence on the cards these cells held: **15,055 MiB of 143,771 MiB** peak for `qwen2.5-7b` at bfloat16, covering both the interface gate and the stage-01 cells. The cadence is coarse enough that a sub-15-second spike could be missed, so this is a measured peak over the sampled series rather than a proven maximum. It is this rung's figure and licenses nothing about `qwen2.5-32b`, which remains a single-card candidate until its own cell is measured.
+
+### Artefacts
+
+On GPFS under the run's cell directories, each with the queue's SHA-256 sidecar. Pulled to `results/transfer/r225_qwen/`: the interface qualification (`ADMITTED`, 1 file) and the first three block verdicts, each per-file digest-verified. The remaining block verdicts were read in-pod rather than transferred, and the eight held-out reference payloads — about 20 MB each — were deliberately left on GPFS: the link was carrying `galactica-30b`'s 57 GB at the time, and stage 41 for this wave cannot run until the 32B rung exists anyway. Nothing is promoted to `evidence/`.
