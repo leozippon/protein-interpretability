@@ -1,0 +1,49 @@
+# EXP-R2-226: what protein continued pretraining bought on a protein task.
+#
+# Three rungs of one lineage -- Llama-2-7b-hf -> ProLLaMA_Stage_1 -> ProLLaMA -- on
+# the two frozen protein-capability queues, all three under the IDENTICAL bare
+# Seq=<...> block. Stage 2's declared instruction form is deliberately not used on
+# any rung: a true superfamily would be an L15-class conditioning leak on the
+# quantity being measured and a fabricated one would put a false fact inside the
+# measurement.
+#
+# bfloat16 on every rung and at both endpoints, EXP-R2-226's declaration. The
+# released checkpoints declare float16, so the load is a declared cast, identical
+# on all three rungs, which is what the paired difference requires. Everything
+# else is each stage's own default, which is what the existing artefacts on these
+# queues were produced at: stage 20 at --variants 1000 --seed 20260807
+# --batch-size 16, stage 29 at --batch-size 512, which is that stage's published
+# setting rather than its argparse default of 256 and is therefore stated.
+#
+# Slot 1 is the all-or-stop qualification gate, one rung per card: strict load
+# with Transformers' loading diagnostics exposed, a fixed-sequence NLL self-check
+# run twice, and -- on the adapted rungs only -- a directional-reversal control
+# that must cost strictly more than 0.05 nats per scored token. The base rung is
+# exempt from the third clause and enters as a DECLARED FLOOR, not as a qualified
+# protein arm: its measured reversal cost is -0.0013 nats per scored token.
+#
+# Slots 2 and 3 refuse to score a rung whose slot-1 artefact is absent, is not
+# PASS, or was taken at another precision, so "an arm is scored only after every
+# clause holds" is executable here rather than a sentence in a log entry. That is
+# also why every scoring cell names its own rung's qualification directory.
+#
+# Cells of one slot are the same shape and the same size, so the queue's hard
+# inter-slot barrier waits on comparable durations rather than on one long cell.
+#
+# Both score stages read an input out of their own --out, which this runner
+# injects: 20_retrieval_bound.py's score reads wildtypes.json and
+# 29_designed_referent.py's reads cohort.json. Both are staged into each cell's
+# output directory before dispatch, and neither is a cell's expect basename -- an
+# input staged beside a result is not completion, which is why expect names the
+# model payload exactly.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	r226	0	adaptation_stage_qualification.py	r226_qual_base	-	adaptation_stage_qualification_llama-2-7b.json	--rung llama-2-7b --dtype bfloat16
+1	r226	1	adaptation_stage_qualification.py	r226_qual_stage1	-	adaptation_stage_qualification_prollama-stage-1.json	--rung prollama-stage-1 --dtype bfloat16
+1	r226	2	adaptation_stage_qualification.py	r226_qual_stage2	-	adaptation_stage_qualification_prollama.json	--rung prollama --dtype bfloat16
+2	r226	0	20_retrieval_bound.py	r226_s20_base	-	model_llama-2-7b.json	--stages score --arms llama-2-7b --dtype bfloat16 --joint-qualification-dir ${TRANSFER_RESULTS_RUN_DIR}/r226_qual_base
+2	r226	1	20_retrieval_bound.py	r226_s20_stage1	-	model_prollama-stage-1.json	--stages score --arms prollama-stage-1 --dtype bfloat16 --joint-qualification-dir ${TRANSFER_RESULTS_RUN_DIR}/r226_qual_stage1
+2	r226	2	20_retrieval_bound.py	r226_s20_stage2	-	model_prollama.json	--stages score --arms prollama --dtype bfloat16 --joint-qualification-dir ${TRANSFER_RESULTS_RUN_DIR}/r226_qual_stage2
+3	r226	0	29_designed_referent.py	r226_s29_base	-	model_llama-2-7b.json	--stages score --arms llama-2-7b --dtype bfloat16 --batch-size 512 --joint-qualification-dir ${TRANSFER_RESULTS_RUN_DIR}/r226_qual_base
+3	r226	1	29_designed_referent.py	r226_s29_stage1	-	model_prollama-stage-1.json	--stages score --arms prollama-stage-1 --dtype bfloat16 --batch-size 512 --joint-qualification-dir ${TRANSFER_RESULTS_RUN_DIR}/r226_qual_stage1
+3	r226	2	29_designed_referent.py	r226_s29_stage2	-	model_prollama.json	--stages score --arms prollama --dtype bfloat16 --batch-size 512 --joint-qualification-dir ${TRANSFER_RESULTS_RUN_DIR}/r226_qual_stage2

@@ -204,6 +204,53 @@ ARM_IDENTIFICATION: Mapping[str, Mapping[str, str]] = {
     },
 }
 
+#: What EXP-R2-226's ProLLaMA rungs let the certificate say. A separate table
+#: from :data:`ARM_IDENTIFICATION` because those are panel arms and staged scale
+#: rungs, resolved through ``arms.arm_spec``, and these are joint checkpoints
+#: reached by path -- ``21_joint_mode_qualification.py``'s rule keeps them out of
+#: ``arms.py`` entirely. The two tables answer the same question and are kept
+#: apart so that neither door can be opened onto the other's wall.
+#:
+#: The question is the certificate's: EXP-R2-190 ran it against UniRef50 alone,
+#: so what a zero-hit design licenses about a checkpoint depends on what that
+#: checkpoint's corpus is known to be.
+JOINT_LINEAGE_IDENTIFICATION: Mapping[str, Mapping[str, str]] = {
+    "llama-2-7b": {
+        "identification": "undeclared_corpus_no_exclusion_possible",
+        "note": (
+            "Llama-2's documentation describes its pretraining data only as "
+            "publicly available online sources and declares no corpus listing and "
+            "no protein content. The certificate searched UniRef50, which cannot "
+            "be shown to contain or to be contained in this checkpoint's training "
+            "data, so a design's absence from it implies nothing at all about this "
+            "rung and the residual cannot even be signed. This rung enters the "
+            "ladder as a declared floor -- its measured directional-reversal cost "
+            "is -0.0013 nats per scored token -- and a correlation from it is "
+            "never a protein capability."
+        ),
+    },
+    "prollama-stage-1": {
+        "identification": "unbounded_in_the_model_favouring_direction",
+        "note": (
+            "the corpus FAMILY is declared by the model's own training script and "
+            "is UniRef50 representative ids (EXP-R2-152's correction). A family is "
+            "not an identity: the searched snapshot is not evidenced as that "
+            "release or that clustering, so a design absent from it may still be "
+            "present in this rung's corpus. The gap runs in the direction that "
+            "flatters the model."
+        ),
+    },
+    "prollama": {
+        "identification": "unbounded_in_the_model_favouring_direction",
+        "note": (
+            "as prollama-stage-1, and no narrower: stage 2's instruction split is "
+            "derived independently from the same UniRef50 representative ids and "
+            "carries no disjointness guarantee against the stage-1 corpus. Same "
+            "direction, at least as wide."
+        ),
+    },
+}
+
 #: Arms excluded from this estimand, with the reason, so that a narrower panel is
 #: a declared decision rather than a default nobody checked (L18).
 EXCLUDED_ARMS: Mapping[str, str] = {

@@ -124,11 +124,34 @@ from src.transfer.homology import (  # noqa: E402
     write_query_fasta,
 )
 from src.transfer.io import sha256_file, write_json  # noqa: E402
+from src.transfer import joint_lineage as L  # noqa: E402
 from src.transfer.scale_comparison import (  # noqa: E402
     STRATUM_BIDIRECTIONAL,
     STRATUM_N_TO_C,
 )
 from src.transfer.statistics import mean_interval  # noqa: E402
+
+def _load_stage(filename: str) -> Any:
+    """One sibling stage module, loaded by path.
+
+    ``17_train_transcoder.py``'s device for the same problem: a stage whose name
+    begins with a digit is not importable, and the alternative -- restating this
+    campaign's qualification contract here -- would be a second declaration of
+    when a rung may be scored.
+    """
+
+    import importlib.util
+
+    path = REPO_ROOT / "scripts/transfer" / filename
+    spec = importlib.util.spec_from_file_location(path.stem.replace("-", "_"), path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+QUALIFICATION = _load_stage("adaptation_stage_qualification.py")
 
 SCHEMA_VERSION = P.SCHEMA_VERSION
 STAGES = ("wildtypes", "search", "profile", "lookup", "score", "analyse")
@@ -233,6 +256,83 @@ PROGEN3_CHECKPOINTS: dict[str, Path | None] = {
 }
 
 
+#: EXP-R2-226's ProLLaMA lineage, in a table of its own for the same reason
+#: :data:`SECOND_STAGE_PROTEIN_CORPUS` has one: this dictionary is not the
+#: ``--arms`` default and a third campaign must not silently widen the first's
+#: default run. The rungs are in ``--arms``' *choices* and nowhere else. The
+#: checkpoints themselves are declared once, in
+#: :mod:`src.transfer.joint_lineage`, because ``29_designed_referent.py`` reads
+#: the same three and two declarations of which weights a rung means is exactly
+#: what the shared module exists to prevent (Appendix B rule 12).
+#:
+#: **Not one of these is a retrieval bound, and the reasons differ by rung.**
+#: EXP-R2-225's rule: LOOKUP "is **not** automatically a pretraining-retrieval
+#: lower bound. Only an arm with evidenced identity or containment between that
+#: search corpus and the training set may be called a retrieval bound." This
+#: lineage is the one case in the programme where the training corpus *family* is
+#: declared by the model's own training scripts -- EXP-R2-152's correction read
+#: ProLLaMA's released ``run_pt.sh`` and records the stage-1 continued-pretraining
+#: corpus as UniRef50 representative ids -- and a family is still not an identity.
+#: The staged snapshot this stage searches, ``data/uniref50/uniref50.fasta`` at
+#: 60,315,044 records, is not evidenced as that release or that clustering, so
+#: MODEL - LOOKUP here is a capability comparison against an external UniRef50
+#: profile channel. It excludes no retrieval and lower-bounds none. F15 already
+#: bounds what any alignment-level exclusion could buy in any case: a screen that
+#: finds nothing does not exclude profile-level homology.
+JOINT_LINEAGE_CORPUS: dict[str, dict[str, str]] = {
+    "llama-2-7b": {
+        "declared": "undeclared for protein content",
+        "identification": "external UniRef50 profile baseline, not a retrieval bound",
+        "note": "Llama-2's released documentation describes its pretraining data "
+        "only as publicly available online sources and states no corpus listing "
+        "and no protein content, so no corpus can be attributed to this "
+        "checkpoint. UniRef50 is searched because it is what this repository "
+        "stages and what the two adapted rungs' declared corpus family names. "
+        "Neither containment direction is evidenced here, so unlike the adapted "
+        "rungs the residual bias CANNOT be signed: this rung's LOOKUP is an "
+        "external profile channel and nothing more. The rung itself enters the "
+        "ladder as a declared floor rather than as a qualified protein arm -- its "
+        "measured directional-reversal cost is -0.0013 nats per scored token -- so "
+        "whatever correlation it returns is what this queue yields from a "
+        "checkpoint with no directional reading of sequence",
+    },
+    "prollama-stage-1": {
+        "declared": "uniref50_representative_ids (ProLLaMA stage-1 continued pretraining)",
+        "identification": "external UniRef50 profile baseline, not a retrieval bound",
+        "note": "the corpus FAMILY is declared by the model's own training script, "
+        "read at EXP-R2-152's correction: stage-1 continued pretraining is on "
+        "UniRef50 representative ids. That is a family and not an identity -- the "
+        "staged snapshot is not evidenced as that release or that clustering -- so "
+        "LOOKUP is an external UniRef50 profile channel and MODEL - LOOKUP is a "
+        "capability comparison against it, not a retrieval exclusion and not a "
+        "lower bound on retrieval. If it is ever read as one the bias direction "
+        "must travel with it: a differing release or subset makes LOOKUP "
+        "under-count the training set, so the residual runs in the "
+        "model-favouring direction. This campaign is NOT contamination-controlled: "
+        "UniRef50 contains the Swiss-Prot proteins these assays are built on",
+    },
+    "prollama": {
+        "declared": "uniref50_representative_ids, then a superfamily instruction split derived from it",
+        "identification": "external UniRef50 profile baseline, not a retrieval bound",
+        "note": "as prollama-stage-1, and no narrower: EXP-R2-152's review records "
+        "that stage 2's instruction split is derived independently from the SAME "
+        "UniRef50 representative ids as the stage-1 corpus and carries no "
+        "disjointness guarantee against it. The same non-identity, the same "
+        "model-favouring residual direction, and the same absence of contamination "
+        "control apply. This rung is scored under the bare Seq=<...> block and not "
+        "under its own declared instruction form, so a reading at or below stage "
+        "1's is not evidence that instruction tuning removed a capability",
+    },
+}
+
+if sorted(JOINT_LINEAGE_CORPUS) != sorted(L.LINEAGE_RUNGS):
+    raise AssertionError(
+        "every rung this stage can reach must declare what its LOOKUP channel is "
+        "entitled to; a door onto a rung with no corpus record is a KeyError a "
+        "long way into a scored run"
+    )
+
+
 def corpus_record(arm: str) -> dict[str, str]:
     """Corpus identification for a default arm or an explicitly named rung."""
 
@@ -240,6 +340,8 @@ def corpus_record(arm: str) -> dict[str, str]:
         return ARM_CORPUS[arm]
     if arm in SECOND_STAGE_PROTEIN_CORPUS:
         return SECOND_STAGE_PROTEIN_CORPUS[arm]
+    if arm in JOINT_LINEAGE_CORPUS:
+        return JOINT_LINEAGE_CORPUS[arm]
     if arm in STAGED_SCALE_ARMS:
         spec = arm_spec(arm)
         return {
@@ -254,7 +356,10 @@ def corpus_record(arm: str) -> dict[str, str]:
 
 SCOREABLE_ARMS = tuple(
     sorted(
-        set(ARM_CORPUS) | set(STAGED_SCALE_ARMS) | set(SECOND_STAGE_PROTEIN_CORPUS)
+        set(ARM_CORPUS)
+        | set(STAGED_SCALE_ARMS)
+        | set(SECOND_STAGE_PROTEIN_CORPUS)
+        | set(JOINT_LINEAGE_CORPUS)
     )
 )
 
@@ -797,6 +902,11 @@ def stage_score(args: argparse.Namespace) -> dict[str, Any]:
                 "device": args.device,
                 "score": scorer.score_description,
                 "scoring_stratum": scorer.scoring_stratum,
+                **(
+                    {"symbol_unit_accounting": scorer.residue_accounting()}
+                    if hasattr(scorer, "residue_accounting")
+                    else {}
+                ),
             },
             "assays": rows,
             "skipped": skipped,
@@ -939,7 +1049,78 @@ class _ProGen3Scorer:
         self.torch.cuda.empty_cache()
 
 
+class _JointRungScorer:
+    """One rung of the ProLLaMA lineage, under the bare ``Seq=<...>`` block.
+
+    A thin adapter over :class:`src.transfer.joint_lineage.BareBlockScorer`,
+    which owns the rendering, the scored span and the arithmetic. It exists
+    because this stage hands its scorers raw sequences twice -- once for the
+    context check and once for the likelihood -- while the shared scorer takes
+    the rendered records; re-rendering is about 0.4 ms per sequence against a
+    forward pass and is paid rather than cached, so the two calls cannot drift.
+
+    **The estimand is not the panel arms'.** The sum is over the residue-spelling
+    token run only, and the tokens are merged multi-residue SentencePiece pieces
+    rather than single residues. Both facts reach the payload: the ladder this
+    rung belongs to is never pooled with a residue-unit family's, and the
+    measured residues per scored token travels beside every magnitude it
+    produces (Appendix B rule 26, limitation L23).
+    """
+
+    def __init__(self, arm: str, args: argparse.Namespace) -> None:
+        loaded = L.load_rung(arm, device=args.device, dtype=args.dtype)
+        self.scorer = L.BareBlockScorer(loaded, batch_size=args.batch_size)
+        self.name = arm
+        self.context = loaded.context
+        self.facts = loaded.facts
+
+    @property
+    def score_description(self) -> str:
+        return self.scorer.score_description
+
+    @property
+    def scoring_stratum(self) -> str:
+        return self.scorer.scoring_stratum
+
+    def token_lengths(self, sequences: list[str]) -> list[int]:
+        return self.scorer.token_lengths(self.scorer.render(sequences))
+
+    def log_likelihood(self, sequences: list[str]) -> np.ndarray:
+        return self.scorer.log_likelihood(self.scorer.render(sequences))
+
+    def residue_accounting(self) -> dict[str, Any]:
+        return self.scorer.residue_accounting()
+
+    def release(self) -> None:
+        self.scorer.release()
+
+
 def _load_scorer(arm: str, args: argparse.Namespace) -> tuple[Any, int | None, dict[str, Any]]:
+    if arm in JOINT_LINEAGE_CORPUS:
+        qualification = QUALIFICATION.read_verdict(
+            args.joint_qualification_dir, arm, dtype=args.dtype
+        )
+        scorer = _JointRungScorer(arm, args)
+        return scorer, scorer.context, {
+            "checkpoint": scorer.facts["checkpoint"],
+            "context": scorer.context,
+            "input_format": f"{L.RENDERING_FAMILY}:{L.PROTEIN_MODE} bare block",
+            "checkpoint_facts": scorer.facts,
+            "qualification": {
+                "verdict": qualification["verdict"],
+                "source": str(
+                    Path(args.joint_qualification_dir)
+                    / QUALIFICATION.artefact_name(arm)
+                ),
+                "nll_self_check": qualification["nll_self_check"]["verdict"],
+                "directional_reversal": qualification["directional_reversal"]["verdict"],
+                "directional_reversal_cost_nats_per_scored_token": (
+                    qualification["directional_reversal"].get(
+                        "cost_nats_per_scored_token"
+                    )
+                ),
+            },
+        }
     if arm in PROGEN3_CHECKPOINTS:
         scorer = _ProGen3Scorer(arm, args)
         return scorer, None, {
@@ -1393,6 +1574,24 @@ def _read(path: Path) -> dict[str, Any]:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
+def _require_joint_qualification_dir(args: argparse.Namespace) -> None:
+    """An EXP-R2-226 rung needs its qualification, and nothing else may name one."""
+
+    joint = sorted(set(args.arms) & set(JOINT_LINEAGE_CORPUS))
+    if joint and args.joint_qualification_dir is None:
+        raise ValueError(
+            f"--arms names the EXP-R2-226 rungs {joint} and no "
+            "--joint-qualification-dir. That campaign scores a rung only after "
+            "every qualification clause holds, so an unqualified rung is refused "
+            "here rather than discovered in an artefact"
+        )
+    if not joint and args.joint_qualification_dir is not None:
+        raise ValueError(
+            "--joint-qualification-dir belongs to the EXP-R2-226 rungs and no "
+            "arm in --arms is one of them"
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stages", nargs="+", default=list(STAGES), choices=STAGES)
@@ -1479,7 +1678,17 @@ def main() -> None:
     parser.add_argument("--dtype", default="bfloat16", choices=("bfloat16", "float16"))
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--progen3-checkpoint", type=Path, default=None)
+    parser.add_argument(
+        "--joint-qualification-dir",
+        type=Path,
+        default=None,
+        help="directory holding adaptation_stage_qualification_<rung>.json for "
+        "every EXP-R2-226 rung named in --arms. Required with one and refused "
+        "without one: that campaign's rule is that a rung is scored only after "
+        "every qualification clause holds, and an unqualified rung is not scored",
+    )
     args = parser.parse_args()
+    _require_joint_qualification_dir(args)
 
     if args.assays is None:
         args.assays = list(available_assays(args.proteingym_dir))

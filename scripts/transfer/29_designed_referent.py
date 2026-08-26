@@ -80,11 +80,34 @@ from src.transfer.arms import (  # noqa: E402
     load_arm_spec,
     tokenize_batch,
 )
+from src.transfer import joint_lineage as L  # noqa: E402
 from src.transfer.io import sha256_file, write_json  # noqa: E402
 from src.transfer.kmer_background import count_kmers  # noqa: E402
 from src.transfer.kmer_background import load as load_kmer_background  # noqa: E402
 from src.transfer.kmer_background import save as kmer_background_save  # noqa: E402
 from src.transfer.probes import PROTEINGYM_ROOT  # noqa: E402
+
+def _load_stage(filename: str) -> Any:
+    """One sibling stage module, loaded by path.
+
+    ``17_train_transcoder.py``'s device for the same problem: a stage whose name
+    begins with a digit is not importable, and the alternative -- restating
+    EXP-R2-226's qualification contract here -- would be a second declaration of
+    when a rung of that lineage may be scored.
+    """
+
+    import importlib.util
+
+    path = REPO_ROOT / "scripts/transfer" / filename
+    spec = importlib.util.spec_from_file_location(path.stem.replace("-", "_"), path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+QUALIFICATION = _load_stage("adaptation_stage_qualification.py")
 
 SCHEMA_VERSION = D.SCHEMA_VERSION
 STAGES = (
@@ -458,25 +481,117 @@ class _ArmLikelihood:
         self.torch.cuda.empty_cache()
 
 
+class _JointRungLikelihood:
+    """One rung of the ProLLaMA lineage, under the bare ``Seq=<...>`` block.
+
+    The same three-method shape :class:`_ArmLikelihood` has -- render, then
+    measure the renderings -- over
+    :class:`src.transfer.joint_lineage.BareBlockScorer`, which owns the
+    rendering, the scored span and the arithmetic. What it renders to is a
+    record rather than a string, which is the whole difference: the sum is taken
+    over the residue-spelling token run the rendering declares and over none of
+    the four wrapper tokens.
+
+    **The estimand is not the panel arms'.** These tokens are merged
+    multi-residue SentencePiece pieces, not single residues, so a magnitude from
+    this rung is in nats per token and is not commensurable with a residue-unit
+    family's (Appendix B rule 26, limitation L23). The measured rate travels in
+    the payload.
+    """
+
+    def __init__(self, name: str, *, device: str, dtype: str, batch_size: int) -> None:
+        loaded = L.load_rung(name, device=device, dtype=dtype)
+        self.scorer = L.BareBlockScorer(loaded, batch_size=batch_size)
+        self.name = name
+        self.context = loaded.context
+        self.facts = loaded.facts
+
+    def render(self, sequences: list[str]) -> list[Any]:
+        return self.scorer.render(sequences)
+
+    def token_lengths(self, rendered: list[Any]) -> list[int]:
+        return self.scorer.token_lengths(rendered)
+
+    def log_likelihood(self, rendered: list[Any]) -> np.ndarray:
+        return self.scorer.log_likelihood(rendered)
+
+    def residue_accounting(self) -> dict[str, Any]:
+        return self.scorer.residue_accounting()
+
+    def release(self) -> None:
+        self.scorer.release()
+
+
+def _open_scorer(name: str, args: argparse.Namespace) -> tuple[Any, dict[str, Any], dict[str, str]]:
+    """One arm or one EXP-R2-226 rung, with its settings and its identification.
+
+    The two doors are separate all the way down, deliberately. A panel arm is
+    resolved through ``arms.arm_spec`` and carries an ``ARM_IDENTIFICATION``
+    entry; a joint checkpoint is not in ``arms.py`` at all
+    (``21_joint_mode_qualification.py``'s rule) and carries a
+    ``JOINT_LINEAGE_IDENTIFICATION`` entry. Neither table is indexed with a name
+    the other door admitted.
+    """
+
+    if name in L.RUNGS:
+        qualification = QUALIFICATION.read_verdict(
+            args.joint_qualification_dir, name, dtype=args.dtype
+        )
+        scorer = _JointRungLikelihood(
+            name, device=args.device, dtype=args.dtype, batch_size=args.batch_size
+        )
+        settings = {
+            "checkpoint": scorer.facts["checkpoint"],
+            "input_format": f"{L.RENDERING_FAMILY}:{L.PROTEIN_MODE} bare block",
+            "context": scorer.context,
+            "device": args.device,
+            "dtype": args.dtype,
+            "batch_size": args.batch_size,
+            "score": scorer.scorer.score_description,
+            "scoring_stratum": scorer.scorer.scoring_stratum,
+            "checkpoint_facts": scorer.facts,
+            "qualification": {
+                "verdict": qualification["verdict"],
+                "nll_self_check": qualification["nll_self_check"]["verdict"],
+                "directional_reversal": qualification["directional_reversal"]["verdict"],
+                "directional_reversal_cost_nats_per_scored_token": (
+                    qualification["directional_reversal"].get(
+                        "cost_nats_per_scored_token"
+                    )
+                ),
+            },
+        }
+        return scorer, settings, dict(D.JOINT_LINEAGE_IDENTIFICATION[name])
+    if name in D.EXCLUDED_ARMS:
+        raise KeyError(f"{name} is excluded: {D.EXCLUDED_ARMS[name]}")
+    spec = arm_spec(name)
+    if spec.modality != "protein":
+        raise KeyError(f"{name} is not a protein arm")
+    if name not in PANEL and name not in STAGED_SCALE_ARMS:
+        raise KeyError(f"{name} is not a protein panel arm or a staged scale rung")
+    scorer = _ArmLikelihood(
+        name, device=args.device, dtype=args.dtype, batch_size=args.batch_size
+    )
+    settings = {
+        "checkpoint": str(spec.path),
+        "input_format": spec.input_format,
+        "context": scorer.context,
+        "device": args.device,
+        "dtype": args.dtype,
+        "batch_size": args.batch_size,
+        "score": "summed log-likelihood of the rendered variant",
+    }
+    return scorer, settings, dict(D.ARM_IDENTIFICATION[name])
+
+
 def stage_score(args: argparse.Namespace) -> dict[str, Any]:
     cohort_path = args.cohort or args.out / "cohort.json"
     referent = D.load_referent(cohort_path)
     digest = sha256_file(cohort_path)
     results: dict[str, Any] = {}
     for name in args.arms:
-        if name in D.EXCLUDED_ARMS:
-            raise KeyError(f"{name} is excluded: {D.EXCLUDED_ARMS[name]}")
-        spec = arm_spec(name)
-        if spec.modality != "protein":
-            raise KeyError(f"{name} is not a protein arm")
-        if name not in PANEL and name not in STAGED_SCALE_ARMS:
-            raise KeyError(
-                f"{name} is not a protein panel arm or a staged scale rung"
-            )
         print(f"[score] {name} over {len(referent.wildtypes)} wild types", flush=True)
-        scorer = _ArmLikelihood(
-            name, device=args.device, dtype=args.dtype, batch_size=args.batch_size
-        )
+        scorer, settings, identification = _open_scorer(name, args)
         rows: dict[str, Any] = {}
         skipped: list[dict[str, Any]] = []
         blocks: list[np.ndarray] = []
@@ -524,15 +639,14 @@ def stage_score(args: argparse.Namespace) -> dict[str, Any]:
             "arm": name,
             "created_utc": _timestamp(),
             "cohort_sha256": digest,
-            "identification": dict(D.ARM_IDENTIFICATION[name]),
+            "identification": identification,
             "settings": {
-                "checkpoint": str(spec.path),
-                "input_format": spec.input_format,
-                "context": scorer.context,
-                "device": args.device,
-                "dtype": args.dtype,
-                "batch_size": args.batch_size,
-                "score": "summed log-likelihood of the rendered variant",
+                **settings,
+                **(
+                    {"symbol_unit_accounting": scorer.residue_accounting()}
+                    if hasattr(scorer, "residue_accounting")
+                    else {}
+                ),
             },
             "wildtypes": rows,
             "skipped": skipped,
@@ -1904,6 +2018,24 @@ def stage_fragment_order(args: argparse.Namespace) -> dict[str, Any]:
 # ------------------------------------------------------------------------ main
 
 
+def _require_joint_qualification_dir(args: argparse.Namespace) -> None:
+    """An EXP-R2-226 rung needs its qualification, and nothing else may name one."""
+
+    joint = sorted(set(args.arms) & set(L.RUNGS))
+    if joint and args.joint_qualification_dir is None:
+        raise ValueError(
+            f"--arms names the EXP-R2-226 rungs {joint} and no "
+            "--joint-qualification-dir. That campaign scores a rung only after "
+            "every qualification clause holds, so an unqualified rung is refused "
+            "here rather than discovered in an artefact"
+        )
+    if not joint and args.joint_qualification_dir is not None:
+        raise ValueError(
+            "--joint-qualification-dir belongs to the EXP-R2-226 rungs and no arm "
+            "in --arms is one of them"
+        )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stages", nargs="+", default=list(STAGES), choices=STAGES)
@@ -1915,6 +2047,15 @@ def main() -> None:
         help="the frozen cohort artefact; defaults to cohort.json under --out",
     )
     parser.add_argument("--arms", nargs="+", default=list(DEFAULT_ARMS))
+    parser.add_argument(
+        "--joint-qualification-dir",
+        type=Path,
+        default=None,
+        help="directory holding adaptation_stage_qualification_<rung>.json for "
+        "every EXP-R2-226 rung named in --arms. Required with one and refused "
+        "without one: that campaign scores a rung only after every qualification "
+        "clause holds, and an unqualified rung is not scored",
+    )
     parser.add_argument("--megascale-dir", type=Path, default=None)
     parser.add_argument("--certificate-dir", type=Path, default=None)
     parser.add_argument(
@@ -1947,6 +2088,7 @@ def main() -> None:
     parser.add_argument("--dtype", default="bfloat16", choices=("bfloat16", "float16"))
     parser.add_argument("--batch-size", type=int, default=256)
     args = parser.parse_args()
+    _require_joint_qualification_dir(args)
 
     args.out.mkdir(parents=True, exist_ok=True)
     print(f"[paths] out={args.out}")
