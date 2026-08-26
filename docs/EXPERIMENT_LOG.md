@@ -17850,3 +17850,47 @@ Both modes clear the 0.05-nat pre-interval screen, and on this rung both also cl
 ### Artefact
 
 `results/transfer/r225_galactica/r225_s21_galactica_30b/joint_mode_qualification.json`, pulled digest-verified and ADMITTED with its four sufficient-statistics sidecars. Nothing is promoted to `evidence/`.
+
+## 2026-08-26 — EXP-R2-225 Wave A: `qwen2.5-32b` clears the interface gate and completes the pure-text ladder's scoring at 72,775 MiB
+
+**The last rung of the 0.5 → 7 → 32B trajectory to be scored, and the second single-card candidate to be measured.** Same two-dispatch shape as the 7B rung: the all-or-stop interface gate first and alone, then the eight stage-01 blocks only after it returned PASS. No identification, no rung ordering, no capability claim.
+
+### The gate
+
+`second_stage_interface_qualification.py --arm qwen2.5-32b --dtype bfloat16`, one cell, 90 seconds. **`verdict: PASS`**: strict load with `missing_keys`, `unexpected_keys`, `mismatched_keys` and `error_msgs` all **0**; shape read back as 64 layers of width 5120; the fixed English probe scored twice at a repeat maximum absolute difference of **0.0** nats against a 1e-6 tolerance; and the frozen anagram costing **3.718895 nats per scored target** against the 0.25 floor, native mean 2.813460 against shuffled 6.532356 over 58 targets.
+
+**The live output width is now read rather than only declared.** The campaign's interface stage froze this rung's width at 152064 from `config.vocab_size` because no card was free to read a head off when it was written, and the artefact still carries `declaration_measured_live: false` to record that the *declaration* was made that way. The check itself read `lm_head.out_features` on the loaded model and got **152064**, equal to the declaration. A live head at any other width would have stopped the arm here.
+
+### Stage 01, eight blocks, three cards
+
+Identical draw to the 7B rung and to the panel: `--kind text --arms qwen2.5-32b --allow-second-stage-arms --skip-truncation --n-seq 200 --min-chars 800 --max-len 384 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip <0..49000 by 7000> --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype bfloat16`. Eight cells of one shape over three cards in three slots; `# FAILURES 0`, `# NO-RECORD 0`, eight `exited-ok`, about eleven minutes end to end.
+
+**Every cell wrote the file its expect named**, which is what proves each drew the intended block: `78cbc340a2df`, `b584d1fed322`, `1cb0091f9dcd`, `4bf93116f3db`, `ea00bfd4c168`, `0afa7103d401`, `a8d517dbe5a3`, `3342aeb07562`. The per-block scored-token counts and symbols-per-token are identical to the 7B rung's to every digit, which is the arithmetic consequence of a byte-identical cohort and a shared tokenizer and is the check that the two rungs are on the same draw.
+
+| block | context information (nats/token) | verdict | scored tokens | symbols/token |
+|---|---:|---|---:|---:|
+| b0 | 5.623603 | PASS `measurable` | 71112 | 4.6630 |
+| b1 | 5.598515 | PASS `measurable` | 71992 | 4.6473 |
+| b2 | 5.605361 | PASS `measurable` | 71489 | 4.6467 |
+| b3 | 5.678343 | PASS `measurable` | 71030 | 4.6464 |
+| b4 | 5.545618 | PASS `measurable` | 72393 | 4.5951 |
+| b5 | 5.573252 | PASS `measurable` | 70851 | 4.6678 |
+| b6 | 5.573130 | PASS `measurable` | 71332 | 4.5988 |
+| b7 | 5.590225 | PASS `measurable` | 71879 | 4.6574 |
+
+### Device memory, measured, and the two figures are different loads
+
+At bfloat16 on one H200 of 143,771 MiB, sampled at 5-second cadence:
+
+- **interface gate: 63,025 MiB** — essentially the weights, on one probe of 58 scored targets.
+- **stage 01: 72,775 MiB** peak, on each of the three cards running a block.
+
+The second is the figure that matters for scheduling this rung, and the gap between them is the point: a device-memory number is a number for a *stage at its draw*, not a property of a checkpoint. Neither licenses a claim about what this checkpoint would take on a fitness queue with a longer window. There was no out-of-memory event, and both Qwen rungs and both Galactica rungs have now been measured on the card rather than projected onto it.
+
+### What is still not identified
+
+`power_verdict` is the pre-interval screen. The EXP-R2-221 identification rule is `41_context_information_bootstrap.py` over the sufficient-statistics sidecars, and the pure-text wave takes **one shared report across 0.5B, 7B and 32B**. All three rungs' sidecars now exist — the 0.5B rung's from the EXP-R2-216/221 panel cells and the other two from this campaign, on byte-identical cohorts — so that report is now formable and is this wave's next step. Until it exists **no Qwen context-information quantity is identified and no rung ordering is claimed.** The 7B rung reads 5.3736–5.4805 across the same eight blocks and the 32B rung 5.5456–5.6783; the two ranges do not overlap, and that is still not a result, because a between-rung difference on this estimand is what the shared bootstrap decides and neither range is an interval.
+
+### Artefacts
+
+`results/transfer/r225_qwen/r225_iq_qwen2_5_32b/second_stage_interface_qwen2.5-32b.json`, pulled digest-verified and ADMITTED. The eight block verdicts and their sidecars are on GPFS under the run's cell directories with the queue's SHA-256 sidecars; they were read in-pod rather than transferred, since stage 41 for this wave will read the sidecars where they are. Nothing is promoted to `evidence/`.
