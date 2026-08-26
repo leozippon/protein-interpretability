@@ -530,6 +530,7 @@ def run_self_check(args: argparse.Namespace) -> dict[str, Any]:
             seed=cg.SAMPLING_SEED,
             batch_size=SELF_CHECK_SAMPLES,
             max_new_tokens=SELF_CHECK_TOKENS,
+            use_cache=spec.kv_cache,
         )
         samples = (
             [cg.extract_protein(text, end_delimiter=end) for text in raw]
@@ -555,6 +556,7 @@ def run_self_check(args: argparse.Namespace) -> dict[str, Any]:
                 "that the arm loads, renders its own prompt and returns a sequence"
             ),
             "end_delimiter": end,
+            "kv_cache": spec.kv_cache,
             "probes": probes,
             "passed": passed,
             "failure_branch": (
@@ -636,10 +638,24 @@ def run_generate(args: argparse.Namespace) -> dict[str, Any]:
             max_new_tokens=args.max_new_tokens,
             temperature=args.temperature,
             top_p=args.top_p,
+            use_cache=spec.kv_cache,
         )
         if spec.modality == "protein":
             samples = [cg.extract_protein(text, end_delimiter=end) for text in raw]
             statistics = cg.composition(samples)
+            # A generation that ran to the token budget without ever reaching its
+            # arm's end delimiter is a truncated fragment, not a finished
+            # sequence, and the two are different objects. The count is reported
+            # per cell rather than left to be inferred from a length histogram;
+            # it is a covariate and is never gated on.
+            statistics["n_terminated"] = int(sum(1 for text in raw if end in text))
+            statistics["termination_rate"] = statistics["n_terminated"] / len(raw)
+            statistics["termination_note"] = (
+                "the frozen budget is 400 new tokens, which on a residue-tokenised arm "
+                "is 400 residues; a cell whose termination rate is low is reporting on "
+                "domain-length fragments and the per-class anchors were measured on "
+                "whole real proteins"
+            )
         else:
             samples = raw
             statistics = cg.text_statistics(samples)
@@ -651,7 +667,11 @@ def run_generate(args: argparse.Namespace) -> dict[str, Any]:
             "samples": samples,
             "statistics": statistics,
         }
-        print(f"{spec.name} {key}: {len(samples)} samples, {statistics['n_empty']} empty", flush=True)
+        print(
+            f"{spec.name} {key}: {len(samples)} samples, {statistics['n_empty']} empty, "
+            f"terminated {statistics.get('n_terminated', '-')}",
+            flush=True,
+        )
 
     payload = _preamble("conditioned_generation_samples")
     payload.update(
@@ -672,6 +692,12 @@ def run_generate(args: argparse.Namespace) -> dict[str, Any]:
                 "campaign_seed": int(args.sampling_seed),
                 "generations_per_cell": int(args.generations),
                 "batch_size": int(args.batch_size),
+                "kv_cache": spec.kv_cache,
+                "kv_cache_note": (
+                    "whether this checkpoint's modeling code honours Transformers' "
+                    "current Cache interface; an arm declared False samples with the "
+                    "cache off, which recomputes the prefix every step and is correct"
+                ),
                 "per_cell_seed_rule": (
                     "sha256 of the campaign, arm, class and condition, added to the "
                     "campaign seed, so a class and its mismatched partner never share a "

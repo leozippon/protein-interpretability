@@ -734,6 +734,15 @@ class GenerationArm:
     checkpoint: str
     end_delimiter: str | None
     note: str
+    #: Whether this checkpoint's modeling code honours Transformers' current
+    #: ``Cache`` interface. **Do not assume it uniformly.** RITA-XL ignores
+    #: ``past_key_values`` outright, and ProGen2's released remote code carries the
+    #: legacy tuple cache and the pre-4.40 ``prepare_inputs_for_generation(self,
+    #: input_ids, past=None)`` signature, so ``generate`` builds a ``DynamicCache``
+    #: the model never receives and raises before a token is produced. An arm
+    #: declared ``False`` here samples with the cache off, which recomputes the
+    #: prefix every step -- slower, and correct.
+    kv_cache: bool = True
 
     @property
     def conditioned(self) -> bool:
@@ -780,6 +789,13 @@ ARMS: dict[str, GenerationArm] = {
         loader="panel",
         checkpoint="progen2-medium",
         end_delimiter="2",
+        # Measured on this host, not assumed: `_prepare_cache_for_generation`
+        # builds a `DynamicCache` from `config.num_hidden_layers`, which
+        # `ProGenConfig` does not declare, and the released
+        # `prepare_inputs_for_generation` takes `past=` rather than
+        # `past_key_values=`, so a cache generate created would never reach the
+        # model anyway. Sampling with the cache off is the correct path.
+        kv_cache=False,
         note=(
             "764.8M, the declared floor for ZymCTRL: an unconditioned protein arm at "
             "comparable scale generating under no class request. Prompted with the "
@@ -1027,6 +1043,7 @@ def sample_continuations(
     max_new_tokens: int = MAX_NEW_TOKENS,
     temperature: float = TEMPERATURE,
     top_p: float = TOP_P,
+    use_cache: bool = True,
 ) -> list[str]:
     """``n`` sampled continuations of one prompt, decoded with specials kept.
 
@@ -1073,6 +1090,7 @@ def sample_continuations(
                 repetition_penalty=REPETITION_PENALTY,
                 max_new_tokens=max_new_tokens,
                 pad_token_id=pad,
+                use_cache=use_cache,
             )
             outputs.extend(
                 tokenizer.decode(row[prompt_length:], skip_special_tokens=False)
