@@ -552,6 +552,14 @@ class EveryCorpusDrawDeclaresItsSeed(unittest.TestCase):
                 # artefact and its content digest, which every later sub-stage
                 # verifies before it reads a record.
                 "46_context_homologue.py",
+                # Draws BOTH constructors under one --cohort-draw-seed, and draws
+                # them at exactly 21_joint_mode_qualification.py's own defaults:
+                # the point of EXP-R2-229 is that the lens is read on the identical
+                # 128 records that stage qualified each Galactica rung on, so the
+                # two cohort content digests are checked against that stage's
+                # artefacts rather than the band being declared beside them
+                # (Appendix B rule 13).
+                "47_joint_mode_lens.py",
             },
         )
 

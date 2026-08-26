@@ -1,0 +1,48 @@
+# EXP-R2-229: the logit lens in BOTH modes of one Galactica checkpoint, four rungs
+# of one training run. Four cells, one per rung, and each cell loads its checkpoint
+# ONCE and measures four modes over those weights -- text, the declared protein
+# rendering, the same forward pass under a position-capped mask, and the naive
+# rendering. There is no per-mode cell because there is no per-mode load.
+#
+# Every draw is the value the freeze binds this campaign to, and every one of them
+# is 21_joint_mode_qualification.py's own default, because the point of this
+# measurement is that the lens is read on the IDENTICAL 128 records that stage
+# qualified each rung on: cohort draw seed 20260728, 128 records, residue band
+# 64-246, text floor 800 characters. Those are the stage's defaults and are not
+# restated on the command line -- a default spelled again in a manifest is a second
+# declaration that stops tracking the first. The two content digests are checked
+# against the stage-41 reports inside every artefact.
+#
+# --checkpoint is a path and not an arm name on purpose, and no ArmSpec for these
+# rungs exists anywhere in arms.py: 21_joint_mode_qualification.py's rule is that a
+# joint checkpoint which has not passed it must not be in arms.py at all, and
+# e500d14 reverted an earlier STAGED_ARMS declaration on exactly that ground.
+# ${TRANSFER_MODEL_BASE_DIR} is substituted by the runner from h200_env.sh, so no
+# site path is written here.
+#
+# NO --identification IS PASSED HERE. The verdict is a CPU function of this
+# artefact and the rung's own 41_context_information_bootstrap.py report, and those
+# reports live in the analysis tree on the workstation rather than on GPFS. Every
+# cell therefore writes its gate as `refused` with that reason, and `--stage gate`
+# takes the verdict after the records are pulled. The split is stage 21's own
+# argument for its sufficient-statistics sidecar.
+#
+# Slot 1 is the three rungs that fit comfortably beside each other on three cards.
+# galactica-30b has slot 2 to itself: 48 layers of width 7168 is about 57 GB of
+# weights at bfloat16 against 143771 MiB of card, and stage 21 measured its peak at
+# 60,025 MiB there, so it is a single-card cell and is given a card with nothing
+# else settling on it. An out-of-memory failure is reported as measured and is NOT
+# retried at a smaller draw: the draw is what makes the rung comparable to the
+# three below it.
+#
+# galactica-125m is the INSTRUMENT rung. Its protein mode reads -0.131060 nats per
+# residue on the qualification cohort and is not identified, so no capability
+# verdict may be taken from it; it is here for the fourth text rung and because its
+# trajectories are the attainability and precision-invariance evidence the freeze
+# rests on.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	r229	0	47_joint_mode_lens.py	r229_lens_galactica_125m	-	joint_mode_lens.json	--checkpoint ${TRANSFER_MODEL_BASE_DIR}/galactica-125m --rendering galactica --dtype bfloat16
+1	r229	1	47_joint_mode_lens.py	r229_lens_galactica_1b	-	joint_mode_lens.json	--checkpoint ${TRANSFER_MODEL_BASE_DIR}/galactica-1.3b --rendering galactica --dtype bfloat16
+1	r229	2	47_joint_mode_lens.py	r229_lens_galactica_6b	-	joint_mode_lens.json	--checkpoint ${TRANSFER_MODEL_BASE_DIR}/galactica-6.7b --rendering galactica --dtype bfloat16
+2	r229	0	47_joint_mode_lens.py	r229_lens_galactica_30b	-	joint_mode_lens.json	--checkpoint ${TRANSFER_MODEL_BASE_DIR}/galactica-30b --rendering galactica --dtype bfloat16

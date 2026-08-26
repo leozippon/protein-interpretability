@@ -40,6 +40,7 @@ from src.transfer import (  # noqa: E402
     homology,
     induction_robustness,
     information_bootstrap,
+    joint_lens,
     path_patching,
     pathways,
     prediction_addressed,
@@ -2318,6 +2319,45 @@ FLOOR_RESPECTING_RESAMPLERS: dict[str, dict[str, object]] = {
         "below": lambda n: designed_referent.unit_bootstrap(
             list(np.linspace(0.1, 0.5, n)),
             [f"unit{index}" for index in range(n)],
+            resamples=200,
+            seed=0,
+        ),
+    },
+    # EXP-R2-229's joint-mode lens. The unit is the scored record and the
+    # published quantity is a relative depth, so a below-floor run must not emit
+    # one: a percentile over a handful of records would be compared against the
+    # other mode of the same checkpoint, which is exactly the comparison the
+    # floor exists to stop. Below the floor no draw is taken at all and every
+    # interval carries its own refusal beside the merged floor record.
+    "joint_lens.depth_bootstrap": {
+        "refusal": "degenerate",
+        "below": lambda n: joint_lens.depth_bootstrap(
+            {
+                0: [
+                    {
+                        "token_count": 4,
+                        "ce_sum": 4.0,
+                        "kl_sum": 3.6,
+                        "agreement_count": 0.4,
+                        "entropy_sum": 4.0,
+                    }
+                    for _ in range(n)
+                ],
+                1: [
+                    {
+                        "token_count": 4,
+                        "ce_sum": 2.0,
+                        "kl_sum": 0.0,
+                        "agreement_count": 4.0,
+                        "entropy_sum": 2.0,
+                    }
+                    for _ in range(n)
+                ],
+            },
+            [0.5, 1.0],
+            [0, 1],
+            levels=[0.5],
+            taus=[0.5],
             resamples=200,
             seed=0,
         ),
