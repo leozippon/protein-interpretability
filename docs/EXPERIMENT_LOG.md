@@ -17894,3 +17894,143 @@ The second is the figure that matters for scheduling this rung, and the gap betw
 ### Artefacts
 
 `results/transfer/r225_qwen/r225_iq_qwen2_5_32b/second_stage_interface_qwen2.5-32b.json`, pulled digest-verified and ADMITTED. The eight block verdicts and their sidecars are on GPFS under the run's cell directories with the queue's SHA-256 sidecars; they were read in-pod rather than transferred, since stage 41 for this wave will read the sidecars where they are. Nothing is promoted to `evidence/`.
+
+## 2026-08-26 — EXP-R2-225 Wave A identified: stage 41 on two ladders, stage 43 on two waves, and no gate verdict anywhere because neither wave carries a gate
+
+**Qualification endpoints only, and that is the whole of what Wave A can deliver.** CPU on the workstation over sufficient statistics already written; no model was loaded, no GPU was touched, and no card was taken from the campaign in flight beside this one. Two of the three Wave A ladders reached `43_second_stage_capability.py`; the pure-protein wave did not run and what stops it is recorded below rather than left to be discovered at dispatch. **No `descriptive_gate_transition` exists on this campaign, and none can: the deliverable amendment leaves Wave A with one endpoint, and a context-information curve is never that label.**
+
+### The sidecars were still on GPFS, and one earlier sentence about them was wrong
+
+`pull_records_h200.sh` selects `*.json`, which is its purpose — it is what keeps an 8.6 GB dictionary out of a 46 KB verdict's transfer. The consequence for this campaign is that the `power_*.records.npz` sufficient-statistics sidecars of every EXP-R2-225 cell stayed in the pod, and stage 41 reads nothing else. **The `galactica-30b` entry's "pulled digest-verified and ADMITTED with its four sufficient-statistics sidecars" names the four cohort and reference record JSONs; the two sidecars per rung were still on GPFS when it was written.** The correction is recorded here and no number of that entry moves.
+
+Twenty sidecars — sixteen Qwen stage-01, four Galactica stage-21 — were retrieved as one 33,973,166-byte archive (`b6ad1c2abba1222e…`), and every member was re-verified against the digest read in-pod before installation: all twenty `OK`. One bundle rather than thirty-two per-file pulls, because a per-file pull costs about a minute of round trip whatever it moves and the link was simultaneously staging another campaign's checkpoint. The twelve stage-01 block verdicts that had been read in-pod were pulled with them, so the local tree now holds every EXP-R2-225 stage-01 artefact rather than a prefix of them.
+
+### The check both ladders turn on, measured rather than assumed
+
+`scale_comparison.qualify_stage41` and `qualify_per_rung_stage41` both require the rungs to cover an identical block set, no rung to repeat a block, every retained row to be `PASS` with a finite displacement-corrected interval strictly above zero, and **one cohort digest per block across the rungs**. On a ladder assembled out of two campaigns that last condition is the one most likely to fail, so it was checked on the sidecars themselves before either stage ran — `Cohort.digest` hashes records only, so neither a different `--cohort-name` nor a different process dtype can move it, and `41_context_information_bootstrap.py` keys a block on the pair (cohort digest, reference digest).
+
+- **Pure text.** All eight blocks carry one cohort digest **and one reference digest** across `qwen2.5-0.5b`, `qwen2.5-7b` and `qwen2.5-32b` — `78cbc340a2df`/`16e44607de05` through `3342aeb07562`/`0aefa8fc2656`. The three rungs therefore merge into one block per draw rather than sitting in three blocks that could not be paired. **`qwen2.5-0.5b` did not have to be re-run**: its EXP-R2-216/221 panel sidecars are on the identical draw, and the panel's `cohort_openwebtext_*.json` and `reference_openwebtext_*.json` were supplied for all three rungs, which makes the identity checked on the records and not only on the hash.
+- **Joint.** All three Galactica rungs carry protein cohort `0dd37e88b0db` against reference `0219f3dc56f5` and text cohort `2c9f8a8ea448` against reference `a9b562f8a517`, at identical settings: `--cohort-draw-seed 20260728`, 128 scored records, a 400-record held-out reference, band 64–246, text floor 800 characters, a 512-token window, bfloat16, `--rendering galactica` with `--protein-context` at its default. `facebook/galactica-1.3b`'s existing qualification is comparable to the two new rungs on every one of those.
+
+### Stage 41
+
+The joint ladder is three reports and not three rows of one, because `21_joint_mode_qualification.py` writes one sidecar per checkpoint per mode and stage 41's `arm` field then names the **condition** rather than the checkpoint. Six invocations, at EXP-R2-220/221's own seed so the 1.3B rung's published reading is reproduced rather than merely agreed with:
+
+```
+41_context_information_bootstrap.py --sidecar <records>/power_<mode>_scored_<digest>.records.npz \
+  --cohort-json <records>/cohort_<mode>_scored_<digest>.json \
+  --reference-json <records>/reference_<mode>_scored_<digest>.json \
+  --expected-arms protein_declared protein_reversed   # --expected-arms text_declared for text \
+  --seed 20260822 --n-bootstrap 2000 \
+  --out results/transfer/r225_stage41/galactica/<rung>/<mode>
+```
+
+| rung | `protein_declared` | `protein_reversed` | `text_declared` |
+|---|---|---|---|
+| `galactica-1.3b` | **PASS** +0.038694 to +0.057287 | FAIL −0.017335 to +0.000256 | **PASS** +4.573885 to +4.713326 |
+| `galactica-6.7b` | **PASS** +0.157588 to +0.245680 | FAIL −0.009512 to +0.009727 | **PASS** +4.822338 to +4.961908 |
+| `galactica-30b` | **PASS** +0.342513 to +0.541677 | FAIL −0.058356 to −0.035925 | **PASS** +4.962296 to +5.108150 |
+
+Intervals are displacement-corrected 95% near-duplicate-group bootstraps, the EXP-R2-221 rule. `galactica-1.3b` reproduces EXP-R2-221 **bit-exactly** on both modes, which is what one block, one sidecar and one seed should give and is the check that the two new rungs were analysed by the same instrument. The reversed condition is unidentified on every rung and is reported, never gated; the 30B rung's reversed interval lies strictly **below** zero, which is a property of that reading and not a capability statement.
+
+The pure-text ladder is one shared report over twenty-four sidecars — the eight EXP-R2-216/221 panel blocks plus the sixteen this campaign wrote:
+
+```
+41_context_information_bootstrap.py --sidecar <24> --cohort-json <24> --reference-json <24> \
+  --arms qwen2.5-0.5b qwen2.5-7b qwen2.5-32b \
+  --expected-arms qwen2.5-0.5b qwen2.5-7b qwen2.5-32b \
+  --seed 20260820 --n-bootstrap 2000 --out results/transfer/r225_stage41/qwen
+```
+
+**All twenty-four rows are `PASS`**, each with a displacement-corrected interval strictly above zero.
+
+| block | cohort digest | `qwen2.5-0.5b` | `qwen2.5-7b` | `qwen2.5-32b` |
+|---|---|---|---|---|
+| b0 | `78cbc340a2df` | +4.7863 to +4.9273 | +5.3808 to +5.5219 | +5.5497 to +5.7038 |
+| b1 | `b584d1fed322` | +4.7386 to +4.8772 | +5.3395 to +5.4832 | +5.5247 to +5.6820 |
+| b2 | `1cb0091f9dcd` | +4.7828 to +4.9252 | +5.3634 to +5.5109 | +5.5304 to +5.6798 |
+| b3 | `4bf93116f3db` | +4.8158 to +4.9499 | +5.4172 to +5.5489 | +5.6094 to +5.7533 |
+| b4 | `ea00bfd4c168` | +4.7151 to +4.8572 | +5.3046 to +5.4467 | +5.4725 to +5.6257 |
+| b5 | `0afa7103d401` | +4.7408 to +4.8639 | +5.3402 to +5.4660 | +5.5063 to +5.6432 |
+| b6 | `a8d517dbe5a3` | +4.7456 to +4.9054 | +5.3264 to +5.4868 | +5.4955 to +5.6623 |
+| b7 | `3342aeb07562` | +4.7648 to +4.9341 | +5.3406 to +5.5185 | +5.5049 to +5.6874 |
+
+`qwen2.5-0.5b`'s point estimates reproduce EXP-R2-221 to **exactly 0.0** on all eight blocks, and its corrected lower bounds to at most **3.1e-3** nats. The residual is Monte-Carlo and is expected: this sweep holds eight blocks where the panel sweep held twenty-four, so stage 41's per-block seed cursor differs on seven of the eight — b0, where the cursor is the seed in both, is bit-identical. **No panel reading is superseded**; `qwen2.5-0.5b` remains a panel member on its existing estimands and the new rungs inherit nothing from that membership.
+
+### One paired quantity does exist on the pure-text ladder, and it is an auxiliary interval
+
+Because the three Qwen rungs share a block, `41_context_information_bootstrap.py` forms their adjacent-pair contrasts **inside** the resample iteration under common indices, which is a genuinely paired difference rather than two intervals read side by side. It is reported here because omitting it would be selective, and it is reported with its ceiling attached.
+
+The stage contrasts `information_bits_per_symbol`, which is the axis it declares comparable across arms and is **bits per character, not per token**. On this ladder the two axes are interchangeable in a way they usually are not: the three rungs tokenise identically — 71112, 71992, 71489, 71030, 72393, 70851, 71332 and 71879 scored tokens on b0…b7, the same on all three — so symbols per token is one number per block (4.5951 to 4.6678) shared by every rung, and a bits-per-symbol difference converts to nats per token by a common factor. Both are given, because the identification intervals above are in nats per token and a difference must not be compared against a spread in the other unit.
+
+| pair | bits per symbol, across the eight blocks | the same, nats per token |
+|---|---|---|
+| `qwen2.5-0.5b` − `qwen2.5-7b` | −0.17978 to −0.18671 | −0.5804 to −0.6014 |
+| `qwen2.5-7b` − `qwen2.5-32b` | −0.05149 to −0.06144 | −0.1662 to −0.1979 |
+
+Every one of the sixteen 95% intervals excludes zero; the widest are −0.6244 to −0.5586 and −0.2213 to −0.1527 nats per token.
+
+**This is not a gate and cannot become one.** EXP-R2-225's own sentence is that auxiliary intervals are not gates; `43_second_stage_capability.py` does not read these rows, its `context_information` block records `is_a_gate: false` and `label_eligible: false`, and `descriptive_gate_transition` is reserved for the compound DMS block on same-family adjacent rungs. Each row is also **within one block**, and the between-block spread is reported beside it and never folded into it — 0.0941 nats per token for `qwen2.5-0.5b`, 0.1069 for `qwen2.5-7b`, 0.1327 for `qwen2.5-32b`. Both adjacent differences are larger than the largest of those spreads, the 0.5→7B one by about a factor of four and the 7→32B one only modestly, which is the honest way to say how far these differences sit above the noise the block draw alone contributes. And none of it is causal: depth, width and parameter count move together across 0.5 → 7 → 32B and the corpus is confounded with the rung, so this is a descriptive difference between three named checkpoints on one text estimand and no more.
+
+**The joint ladder has no such quantity at all**, by construction rather than by omission: its rungs are three separate reports, so the only paired contrast inside each is `protein_declared` against `protein_reversed` on that one checkpoint, and no between-rung difference is formed anywhere.
+
+### Stage 43
+
+The frozen bootstrap is imported and not restated: `resamples=2000`, `seed=20260825`, read from `42_scale_capability.py` where the EXP-R2-224 pre-data amendment put them, and `require_frozen_bootstrap` refuses any other pair from the command line.
+
+```
+43_second_stage_capability.py --wave joint_galactica \
+  --context-information-report <rung>=results/transfer/r225_stage41/galactica/<rung>/<mode>/context_information_bootstrap.json \
+  --qualification-row-arm protein_declared        # and again at text_declared \
+  --out results/transfer/second_stage_capability/joint_galactica_<mode>
+
+43_second_stage_capability.py --wave text_qwen \
+  --context-information-summary results/transfer/r225_stage41/qwen/context_information_bootstrap.json \
+  --out results/transfer/second_stage_capability/text_qwen
+```
+
+| wave | qualification route | verdict | blocks |
+|---|---|---|---|
+| `joint_galactica` on `protein_declared` | `stage41_arm_results_per_rung` | `passed: true` | `b0` |
+| `joint_galactica` on `text_declared` | `stage41_arm_results_per_rung` | `passed: true` | `b0` |
+| `text_qwen` | `stage41_arm_results` | `passed: true` | `b0`…`b7` |
+
+Every one of the three artefacts records `is_a_gate: false`, `label_eligible: false`, and `descriptive_gate_transitions: {"dms": {}}` with the note that a wave carrying no fitness endpoint has no gate to return. **There is no gate verdict on this campaign to report, and its absence is a property of the declared deliverable set rather than a failure of any rung.** `not_deliverable` carries all six entries — MegaScale on every wave, ProteinGym on Galactica and on Qwen, context information on ProGen3 — so a reader learns what was not run from the report rather than from its absence.
+
+**The separation visible in the qualification tables is not itself a tested contrast.** Each of those intervals identifies one rung's own reading; two intervals that do not overlap have not been differenced, and on block b7 the 7B and 32B qualification intervals **do** overlap (+5.3406 to +5.5185 against +5.5049 to +5.6874) even though the paired contrast on that block excludes zero — which is exactly why the side-by-side reading is refused and the paired one is kept separate from it and out of every gate. **No rung ordering is claimed on either ladder**, and stage 43 asserts none.
+
+### The pure-protein wave did not run, and precisely what stops it
+
+`protein_progen3` is the only Wave A ladder carrying a fitness endpoint and the only one that could produce a `descriptive_gate_transition`. It has **two** unmet prerequisites, and the first is fatal on its own:
+
+1. **`Profluent-Bio/progen3-3b` has no stage-20 payload anywhere.** `43_second_stage_capability.py --wave protein_progen3 --retrieval-bound-dir results/transfer/retrieval_bound` refuses with `FileNotFoundError: results/transfer/retrieval_bound/model_progen3-3b.json does not exist`, before any arithmetic. `20_retrieval_bound.py` declares the rung and scores ProGen3 bidirectionally, so the route exists; the cell has not been dispatched.
+2. **The existing `progen3-112m` payload cannot be paired even once the 3B rung exists.** It was written on 2026-08-08 and its `settings` block records `dtype: bfloat16` and `score: "summed log-likelihood of the rendered variant"` with **no `scoring_stratum` field at all**. `scale_comparison.require_uniform_stratum` refuses a rung that records none — "the field was introduced with this campaign, so its absence means the payload predates the rule and cannot vouch for what it was scored under" — and the recorded `score` is the N-to-C convention rather than the bidirectional estimand EXP-R2-225 binds this lineage to. **Both rungs therefore need scoring by the current stage 20**, not one.
+
+That is a missing dispatch and not a refusal of the science: the wave's qualification route (`progen3.self_check`, required out of the stage-20 payload) and its DMS census are in place and unexercised.
+
+### What none of this licenses
+
+- **Not a capability result and not a knowledge claim.** Context information is a qualification endpoint. It is not averaged with a fitness gate, no fitness gate exists on this campaign, and nothing here is evidence that any checkpoint has learned biology.
+- **Not causal about parameter count.** Depth, width and parameter count move together on both ladders, corpus and training stay confounded with the rung, and the prereg's reading is descriptive.
+- **Not a rung ordering.** See the b7 overlap above.
+- **Not a panel admission.** `not_panel_admission: true` on every artefact.
+- **Not evidence about Galactica on a fitness queue.** The joint wave has no ProteinGym or MegaScale route at all — an absence of a route, not a failed qualification — and no Galactica protein mode has failed anything.
+- **One fixed run.** Calling any movement here a robust qualitative change requires independent-data replication.
+
+### One superseded sentence in the code, corrected
+
+`43_second_stage_capability.py`'s `MEGASCALE_PROGEN3_REFUSAL` described the conflict between the freeze's MegaScale clause and its strata clause as open and "reported for a pre-data amendment". The 2026-08-26 deliverable amendment **is** that amendment, so the string and the matching docstring bullet now state the settled position: the exclusion's ground stands, its scope narrows to refusing ProGen3 in the same reading as the N-to-C arms, and the row is a future deliverable conditional on three things that do not exist — a route needing no `ArmSpec` together with the lineage's own bidirectional scorer, a per-rung `ARM_IDENTIFICATION` entry recording that this lineage carries **no** corpus-disjointness certificate, and a stratum field in stage 29's payloads. **The refusal itself is unchanged and nothing about what runs changes.**
+
+### Artefacts
+
+`results/transfer/r225_stage41/galactica/<rung>/{protein,text}/context_information_bootstrap.json` (six), `results/transfer/r225_stage41/qwen/context_information_bootstrap.json`, and `results/transfer/second_stage_capability/{joint_galactica_protein,joint_galactica_text,text_qwen}/second_stage_capability.json`. Exact input path lists are in each report's own configuration block. Nothing is promoted to `evidence/`.
+
+## 2026-08-26 — EXP-R2-224 stage-29 `fragment_order` on the two new rungs: what it would cost, and the recommendation not to spend it now
+
+**Nothing waits on this.** `results/transfer/scale_capability/scale_capability.json` already records `rungs_present: ["progen2-medium"]`, `rungs_missing: ["progen2-large", "progen2-xlarge"]` and `reported_not_gated: true`, with the note that a rung missing from that pass stops no gate. EXP-R2-224's four gate verdicts are complete and none of them reads a fragment margin.
+
+**What is actually missing is two directories and nothing else.** `stage_fragment_order` reads only `model_<arm>.json` per arm, and all three rungs' payloads are already staged together in `results/transfer/r224_fitness/designed_referent/`. What it cannot find is `data/kmer_background/uniref50_holdout/{a,b}` — the per-draw held-out k-mer counts. Everything expensive around them survives: the corpus counts at k = 1…7 (10.5 GB, an 81-minute pass over 24.6 GB of UniRef50), the two held-out FASTAs, and `split.json` from the 160-second corpus scan. `background_summary.json` shows both draws were counted on 2026-08-13, so the directories were written and then removed.
+
+**Cost, measured against those facts.** `--stages background` would reuse the corpus manifest and the existing split, and would re-count two 12 MB FASTAs of about 8.4 M residues each — roughly a two-thousandth of the corpus pass, so seconds of counting. The real cost is storage: the representation is dense, so each draw needs 20^7 × 8 bytes = **10.24 GB** at k = 7 plus 0.5 GB at k = 6, about **21.6 GB persisted for the pair**, holding at most 8.4 M non-zero counts in 1.28 G slots — over 99 % zeros. `/Data` is at 96 % with 436 GB free. The `fragment_order` pass that follows is CPU-only but loads the corpus and both draws with plain `np.load`, so about **32 GB resident**; the host has 344 GB available and that is not the constraint.
+
+**Recommendation: do not regenerate now; regenerate transiently on demand.** The margins are reported and never gated, and their absence is already declared in the stage-42 artefact. If the two rungs' 3–7-mer margins are wanted, run `--stages background` and `--stages fragment_order` in one sitting — under ten minutes of CPU, since every expensive input is retained — and delete `uniref50_holdout/{a,b}` afterwards rather than keeping 21.6 GB of dense zeros on a volume at 96 %. If they are ever wanted repeatedly, the change worth making is a sparse held-out representation in `kmer_background`, which is a larger change than a reported-only endpoint justifies today. **No regeneration was started.**

@@ -33,11 +33,13 @@ unreachable with its reason rather than given a gate no artefact can feed:
   ``designed_referent.EXCLUDED_ARMS`` because its published scoring convention is
   bidirectional -- a different estimand from the summed left-to-right
   log-likelihood every arm in that stage is read under. That refusal's ground is
-  EXP-R2-225's own strata rule, so the prereg's "ProteinGym and MegaScale are
-  entered ... by pure-protein arms" and its "N-to-C, bidirectional, and masked /
-  pseudo-likelihood are separate strata" cannot both hold as written for this
-  wave. Resolving that is a pre-data amendment, not a thing this stage may decide
-  by building the gate anyway.
+  EXP-R2-225's own strata rule, which read against the prereg's "ProteinGym and
+  MegaScale are entered ... by pure-protein arms" left a conflict the
+  2026-08-26 pre-data amendment has since settled: the ground stands, its scope
+  narrows to refusing ProGen3 in the same reading as the N-to-C arms, and the
+  row becomes a **future** deliverable conditional on three things that do not
+  exist. EXP-R2-225 delivers no MegaScale row on any wave, so this stage builds
+  no gate for one.
 * **ProteinGym and MegaScale on Galactica protein mode.** No code path reaches
   either: Galactica is declared as an arm nowhere and is reachable only through
   ``21_joint_mode_qualification.py --checkpoint <dir> --rendering galactica``,
@@ -124,9 +126,16 @@ MEGASCALE_PROGEN3_REFUSAL = (
     "its published scoring convention is bidirectional, which is a different "
     "estimand from the summed left-to-right log-likelihood every arm in that "
     "stage is read under. The refusal's ground IS this campaign's own strata "
-    "rule, so the prereg's MegaScale clause and its strata clause cannot both "
-    "hold for this wave as written. Neither is overridden here; the conflict is "
-    "reported for a pre-data amendment"
+    "rule, and the conflict that ground raised with the prereg's MegaScale "
+    "clause is settled by the 2026-08-26 EXP-R2-225 pre-data amendment: the "
+    "ground stands, its scope is narrowed to refusing ProGen3 in the same "
+    "reading as the N-to-C arms, and the row is a FUTURE deliverable and not "
+    "this campaign's. It is conditional on three things that do not exist -- a "
+    "route to these weights needing no ArmSpec together with the bidirectional "
+    "scorer the lineage itself publishes, an ARM_IDENTIFICATION entry per rung "
+    "recording that this lineage carries no corpus-disjointness certificate at "
+    "all, and a stratum field in stage 29's payloads. Until all three exist "
+    "this refusal stands and EXP-R2-225 reports no MegaScale row on any wave"
 )
 GALACTICA_FITNESS_REFUSAL = (
     "no code path exists. Galactica is declared as an arm nowhere -- "
