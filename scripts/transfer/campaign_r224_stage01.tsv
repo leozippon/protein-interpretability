@@ -1,0 +1,42 @@
+# EXP-R2-224 first-round stage-01 Swiss-Prot context-information qualification,
+# progen2-large and progen2-xlarge on the eight frozen EXP-R2-216 blocks.
+#
+# The eight blocks reproduce ProGen2-medium's frozen `swissprot_progen2_medium_f32`
+# draw exactly: seeded permutation of the whole corpus at --cohort-draw-seed 20260728,
+# pool 1000, --cohort-skip 7000k for k = 0..7, band 64-246, n 200, held-out unigram
+# reference 4000, --seed 20260727. Cohort.digest hashes records only, so each cell's
+# expect basename carries that block's medium digest: a cell that drew anything else
+# writes a differently named file and is reported no-artifact rather than silently
+# paired against a block it does not share. The digests were reproduced on the
+# workstation from the same corpus before this manifest was written.
+#
+# float32, not the stage default, and not a preference. The medium blocks these two
+# rungs are placed beside were produced at float32 because a bfloat16 instability was
+# measured on that checkpoint, and they are reused rather than re-scored; a ladder
+# scored at two precisions is partly a comparison of arithmetic. This is the
+# EXP-R2-224 pre-data amendment's binding declaration for stage 01 into stage 41.
+# ProteinGym and MegaScale are scored at bfloat16 by that same amendment and are not
+# this manifest's cells.
+#
+# Slots are homogeneous in rung so a slot barrier waits on like-sized cells: three
+# slots of large, then three of xlarge, across the three cards this allocation
+# exposes. float32 weights are about 11.1 GB for large and 25.8 GB for xlarge, both
+# comfortable on one 143 GB card, so no cell shards.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	r224	0	01_cohort_power.py	r224_s01_large_b0	-	power_swissprot_progen2_large_f32_f565fd96d429.json	--kind protein --arms progen2-large --allow-staged-scale-arms --cohort-name swissprot_progen2_large_f32 --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 0 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype float32
+1	r224	1	01_cohort_power.py	r224_s01_large_b1	-	power_swissprot_progen2_large_f32_cd05041b6b6c.json	--kind protein --arms progen2-large --allow-staged-scale-arms --cohort-name swissprot_progen2_large_f32 --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 7000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype float32
+1	r224	2	01_cohort_power.py	r224_s01_large_b2	-	power_swissprot_progen2_large_f32_6feaea006d66.json	--kind protein --arms progen2-large --allow-staged-scale-arms --cohort-name swissprot_progen2_large_f32 --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 14000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype float32
+2	r224	0	01_cohort_power.py	r224_s01_large_b3	-	power_swissprot_progen2_large_f32_004929e4d1fe.json	--kind protein --arms progen2-large --allow-staged-scale-arms --cohort-name swissprot_progen2_large_f32 --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 21000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype float32
+2	r224	1	01_cohort_power.py	r224_s01_large_b4	-	power_swissprot_progen2_large_f32_4726e777a3e9.json	--kind protein --arms progen2-large --allow-staged-scale-arms --cohort-name swissprot_progen2_large_f32 --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 28000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype float32
+2	r224	2	01_cohort_power.py	r224_s01_large_b5	-	power_swissprot_progen2_large_f32_be0c3398ea3e.json	--kind protein --arms progen2-large --allow-staged-scale-arms --cohort-name swissprot_progen2_large_f32 --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 35000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype float32
+3	r224	0	01_cohort_power.py	r224_s01_large_b6	-	power_swissprot_progen2_large_f32_97544228e375.json	--kind protein --arms progen2-large --allow-staged-scale-arms --cohort-name swissprot_progen2_large_f32 --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 42000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype float32
+3	r224	1	01_cohort_power.py	r224_s01_large_b7	-	power_swissprot_progen2_large_f32_7cd213e12f2f.json	--kind protein --arms progen2-large --allow-staged-scale-arms --cohort-name swissprot_progen2_large_f32 --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 49000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype float32
+4	r224	0	01_cohort_power.py	r224_s01_xlarge_b0	-	power_swissprot_progen2_xlarge_f32_f565fd96d429.json	--kind protein --arms progen2-xlarge --allow-staged-scale-arms --cohort-name swissprot_progen2_xlarge_f32 --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 0 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype float32
+4	r224	1	01_cohort_power.py	r224_s01_xlarge_b1	-	power_swissprot_progen2_xlarge_f32_cd05041b6b6c.json	--kind protein --arms progen2-xlarge --allow-staged-scale-arms --cohort-name swissprot_progen2_xlarge_f32 --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 7000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype float32
+4	r224	2	01_cohort_power.py	r224_s01_xlarge_b2	-	power_swissprot_progen2_xlarge_f32_6feaea006d66.json	--kind protein --arms progen2-xlarge --allow-staged-scale-arms --cohort-name swissprot_progen2_xlarge_f32 --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 14000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype float32
+5	r224	0	01_cohort_power.py	r224_s01_xlarge_b3	-	power_swissprot_progen2_xlarge_f32_004929e4d1fe.json	--kind protein --arms progen2-xlarge --allow-staged-scale-arms --cohort-name swissprot_progen2_xlarge_f32 --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 21000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype float32
+5	r224	1	01_cohort_power.py	r224_s01_xlarge_b4	-	power_swissprot_progen2_xlarge_f32_4726e777a3e9.json	--kind protein --arms progen2-xlarge --allow-staged-scale-arms --cohort-name swissprot_progen2_xlarge_f32 --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 28000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype float32
+5	r224	2	01_cohort_power.py	r224_s01_xlarge_b5	-	power_swissprot_progen2_xlarge_f32_be0c3398ea3e.json	--kind protein --arms progen2-xlarge --allow-staged-scale-arms --cohort-name swissprot_progen2_xlarge_f32 --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 35000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype float32
+6	r224	0	01_cohort_power.py	r224_s01_xlarge_b6	-	power_swissprot_progen2_xlarge_f32_97544228e375.json	--kind protein --arms progen2-xlarge --allow-staged-scale-arms --cohort-name swissprot_progen2_xlarge_f32 --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 42000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype float32
+6	r224	1	01_cohort_power.py	r224_s01_xlarge_b7	-	power_swissprot_progen2_xlarge_f32_7cd213e12f2f.json	--kind protein --arms progen2-xlarge --allow-staged-scale-arms --cohort-name swissprot_progen2_xlarge_f32 --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 1000 --cohort-draw-seed 20260728 --cohort-skip 49000 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --dtype float32

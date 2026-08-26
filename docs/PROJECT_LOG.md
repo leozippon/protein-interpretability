@@ -1992,3 +1992,11 @@ Two smaller corrections landed beside it. `--print-code-hash` stages and hashes 
 **One workaround is retired rather than carried.** The two orchestration tests that reach `--print-code-hash` passed a dummy pod name only because the guard above that flag used to demand one. The guard now exempts the flag, so those tests set no pod name and the exemption is under test rather than only asserted in a commit message.
 
 **One failure is left exactly as found.** `ExternalStageWrapperLifecycleTests::test_int_writes_pre_and_post` times out at thirty seconds, both in the full run and alone, on a pristine checkout of the commit this work started from; its SIGTERM twin passes every time. Nothing here touches the wrapper it exercises, and it is recorded rather than repaired.
+
+## 2026-08-25 — the EXP-R2-224 stage-01 campaign gets a manifest of its own
+
+The first round's Swiss-Prot qualification needs sixteen cells — `progen2-large` and `progen2-xlarge` on the eight frozen blocks — and the allocation exposes three cards, so it is a queue problem rather than sixteen dispatches. `campaign_r224_stage01.tsv` declares them in six slots, homogeneous in rung so a slot barrier waits on like-sized cells, and every cell names card 0, 1 or 2.
+
+Each cell's expect basename carries its block's ProGen2-medium cohort digest. That is not decoration: `Cohort.digest` hashes records only and stage 42 refuses a stage-41 ladder whose rungs do not share a per-block digest, so a cell that drew anything else writes a differently named file and is reported as no-artifact instead of being paired against a block it does not share. The eight digests were reproduced on the workstation from the same corpus, at both ends of the skip ladder, before the manifest was written — the draw reads only the corpus, the band, the pool and the two seeds, and never the arm.
+
+The cells are scored at float32 because the medium blocks they are placed beside were, and those blocks are reused rather than re-scored. ProteinGym and MegaScale are scored at bfloat16 by the same amendment and are not this manifest's cells.
