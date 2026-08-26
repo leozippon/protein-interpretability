@@ -326,6 +326,25 @@ def _query_to_key_value(arm: Arm, device: torch.device) -> torch.Tensor:
 #: rather than by attribute search: an architecture this module has not been
 #: taught must fail here, not resolve to whichever attribute happened to exist on
 #: it and yield a number that looks like every other number in the table.
+#:
+#: ``opt`` is refused here on two independent structural facts, both measured on
+#: galactica-125m rather than inferred from the class:
+#:
+#: * :func:`embedding_module` has nothing to name. An OPT decoder computes its
+#:   initial residual as ``embed_tokens(ids) + embed_positions(mask)`` inline, so
+#:   no module's output is the tensor entering block zero: hooking
+#:   ``embed_tokens`` misses the learned absolute position term, measured at up
+#:   to 1.43 in absolute value against a residual that the two summed reproduce
+#:   exactly. :func:`component_reconstruction` would then be short one term of a
+#:   sum it requires to close.
+#: * :meth:`src.transfer.arms.Arm.mlp` has no module to return either -- see
+#:   ``arms._DECOMPOSABLE`` -- so the per-layer feed-forward term of that same
+#:   sum cannot be captured in the panel's shape.
+#:
+#: Both are properties of the architecture, not gaps in a branch table, so they
+#: are recorded rather than worked around. ``src.transfer.lenses`` does serve
+#: ``opt``: a lens needs the block outputs and the output head, and both are
+#: exactly where that module declares them.
 _GPT_STYLE = frozenset({"gpt2", "progen"})
 _ROTARY_STYLE = frozenset({"llama", "qwen2"})
 _CIRCUIT_ARCHITECTURES = _GPT_STYLE | _ROTARY_STYLE

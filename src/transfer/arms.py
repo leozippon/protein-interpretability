@@ -190,6 +190,17 @@ _ROTARY_DECODERS = frozenset({"llama", "qwen2"})
 #: ``nn.Identity`` that replaces cross-attention, and the module that computes
 #: the pattern is the ``T5Attention`` inside that wrapper. Integers index, strings
 #: are attributes.
+#:
+#: ``opt`` is absent although its attention *is* nameable -- ``self_attn`` on the
+#: block, an ``OPTAttention`` whose eager forward materialises a
+#: ``(batch, head, token, token)`` pattern, measured. It is left out because
+#: nothing can reach it. :meth:`Arm.attention` additionally requires
+#: :data:`_DECOMPOSABLE`, which refuses ``opt``;
+#: :meth:`Arm.attention_pattern_module` is reached only by
+#: ``src.transfer.prediction_addressed``, whose own ``PAA_ARCHITECTURES`` is what
+#: schedules that census and does not name ``opt`` either -- and admitting it
+#: there is a separate verification of the knockout path, not a table entry. An
+#: entry here alone would be a claim of support with no path to it.
 _ATTENTION_PATH: dict[str, tuple[str | int, ...]] = {
     "gpt2": ("attn",),
     "progen": ("attn",),
@@ -214,6 +225,19 @@ _ATTENTION_PATH: dict[str, tuple[str | int, ...]] = {
 #: how a per-head decomposition must be built but not what the attention pathway
 #: is, and the pathway measurements ablate a whole sublayer output rather than a
 #: head.
+#:
+#: ``opt`` is absent, and measured rather than assumed. An ``OPTDecoderLayer``
+#: has no feed-forward *submodule* at all: ``fc1`` and ``fc2`` are attributes of
+#: the block itself, and the block flattens batch and time before them
+#: (``hidden_states.reshape(-1, d)``) and restores the shape only after the
+#: residual add. So the one module whose output is the feed-forward residual term
+#: is ``fc2``, and it emits a ``(batch * token, d_model)`` tensor where every
+#: other arm's MLP emits ``(batch, token, d_model)``. The values are exact --
+#: block input + attention output + ``fc2`` output reproduces the block output to
+#: 0.0 on galactica-125m -- but the rank is not the one the fifteen call sites
+#: that hook :meth:`Arm.mlp` read, so declaring it here would hand a decomposition
+#: a tensor of a different shape from every other arm's. Commensurate sublayers
+#: is precisely what this set claims, and that claim would not hold.
 _DECOMPOSABLE = frozenset({"gpt2", "progen", *_ROTARY_DECODERS})
 
 
@@ -267,6 +291,12 @@ class MlpNeuronTensor:
 
 #: Where each architecture keeps the activation its down-projection consumes.
 #: ``gpt2`` only, and see :class:`MlpNeuronTensor` for why the others are absent.
+#:
+#: ``opt`` is absent for the reason it is absent from :data:`_DECOMPOSABLE`: its
+#: block has no MLP module for this path to be walked from, and its hidden tensor
+#: -- the input of ``fc2``, measured on galactica-125m at a minimum of -0.16997,
+#: just inside the GELU bound below -- carries the block's flattened
+#: ``(batch * token, d_mlp)`` shape rather than the panel's.
 #:
 #: ``gelu_new`` is the tanh approximation GPT-2, ProtGPT2 and ZymCTRL all declare;
 #: its minimum is -0.169 at x = -0.752, so -0.17 is a true lower bound and any
@@ -612,12 +642,12 @@ del _name, _dir, _n_layer, _d_model
 #: tokenizer. ``lens`` is granted on the same footing as the ByGPT5 rungs: the
 #: output aperture of a final normalisation followed by a linear unembedding is
 #: the same quantity here as in GPT-2, but ``src.transfer.lenses.lens_head``
-#: resolves that normalisation as ``transformer.ln_f`` and requires an
-#: ``nn.LayerNorm`` with a learned bias, so until it grows an RMSNorm branch the
-#: capability is an intent that ``src.transfer.scaling.lens_supported`` records
-#: as a reasoned skip. ``pathway`` is granted outright: it ablates a whole
-#: sublayer output and needs nothing but the block, MLP and attention modules
-#: this file resolves.
+#: requires an ``nn.LayerNorm`` with a learned bias at the path
+#: ``src.transfer.lenses.FINAL_LAYER_NORM_PATH`` declares, so until that head
+#: grows an RMSNorm form the capability is an intent that
+#: ``src.transfer.scaling.lens_supported`` records as a reasoned skip.
+#: ``pathway`` is granted outright: it ablates a whole sublayer output and needs
+#: nothing but the block, MLP and attention modules this file resolves.
 #:
 #: ``circuits`` is withheld. Grouped-query attention is *not* the obstacle -- a
 #: correct per-head decomposition replicates each key/value head's ``W_V`` across
@@ -848,7 +878,7 @@ STAGED_ARMS: dict[str, ArmSpec] = {
 
 # ---------------------------------------------- EXP-R2-225 second-stage staging
 #
-# Six larger public checkpoints, staged for the independent Direction-1 second
+# Four larger public checkpoints, staged for the independent Direction-1 second
 # stage. They are declared here for the same reason the two ProGen2 rungs above
 # are: a checkpoint that a measurement may reach needs one declaration of its
 # depth, width, rendering, corpus and scoring alphabet, and inventing any of
@@ -859,89 +889,68 @@ STAGED_ARMS: dict[str, ArmSpec] = {
 # explicitly.
 #
 # ``capabilities`` below is what each arm was measured to honour today, not what
-# it would be convenient to run, and four of the six therefore declare nothing at
+# it would be convenient to run, and two of the four therefore declare nothing at
 # all. Two reasons compose, and they are independent.
 #
 # Architecture: only ``qwen2`` is declared in :data:`_ATTENTION_PATH`,
-# :data:`_DECOMPOSABLE`, :meth:`Arm.blocks`, ``scaling.LENS_ARCHITECTURES`` and
+# :data:`_DECOMPOSABLE`, ``scaling.LENS_ARCHITECTURES`` and
 # ``circuits._CIRCUIT_ARCHITECTURES``, so only the two Qwen rungs could carry an
-# interpretability family at all; ``opt``, ``rita`` and ``proteinglm`` are in
-# none of those tables and a grant would raise at an arbitrary depth of a run
-# instead of refusing at its start. Widening those tables is a separate decision
-# with its own verification and is not taken here.
+# interpretability family at all; ``rita`` and ``proteinglm`` are in none of
+# those tables and a grant would raise at an arbitrary depth of a run instead of
+# refusing at its start. Widening those tables is a separate decision with its
+# own verification and is not taken here.
 #
 # Interface: ``budget`` needs only a forward pass and a tokenizer, so it is the
-# one family an undeclared architecture could still honour -- and three of these
+# one family an undeclared architecture could still honour -- and both of these
 # checkpoints cannot, for reasons measured on this host and recorded beside each.
-# Both Galactica rungs and ``rita-xl`` ship an empty ``special_tokens_map.json``
-# and no pad token, so :func:`tokenize_batch` refuses every batch;
-# ``proteinglm-7b-clm`` has no established rendering and no importable modeling
-# code. An empty set is the honest declaration for all four, and it is a refusal
-# carrying a reason rather than a field nobody filled in.
+# ``rita-xl`` ships an empty ``special_tokens_map.json``, declares no pad token
+# and names an out-of-vocabulary end-of-sequence id, so :func:`tokenize_batch`
+# refuses every batch; ``proteinglm-7b-clm`` serves no rendering here and its
+# modeling code does not import in this environment. An empty set is the honest
+# declaration for both, and it is a refusal carrying a reason rather than a field
+# nobody filled in.
 
-# Galactica 6.7B and 30B, the upper two rungs of EXP-R2-225's joint 1.3->6.7->30B
-# trajectory. Standard OPT decoders: 32x4096 and 48x7168, one 50000-piece
-# tokenizer, float16 weights, a 2048-position context.
-#
-# **This declaration describes the TEXT mode and nothing else.** Galactica is a
-# joint checkpoint, and its protein mode is a different rendering --
-# ``[START_AMINO]...[END_AMINO]``, declared in
-# :data:`src.transfer.joint_modes.JOINT_RENDERINGS` -- which no field of an
-# ``ArmSpec`` carries and which :meth:`Cohort.input_strings` cannot produce. A
-# ``text`` modality is therefore the honest reading of this row: it is the mode
-# whose rendering this module can serve, and a protein cohort handed to either
-# arm is refused rather than rendered into a convention the checkpoint was not
-# trained behind.
-#
-# **What is not discharged, and why the capability set is empty.**
+# **Galactica is deliberately NOT declared here, at either rung.** EXP-R2-225's
+# joint 1.3->6.7->30B trajectory is a wave of this campaign, and the two upper
+# rungs were briefly declared in this table; they are not, because
 # ``21_joint_mode_qualification.py`` states that a joint checkpoint which has not
-# passed it "must not be in ``arms.py`` at all", and neither of these two has
-# been through it: ``galactica-1.3b``'s stage-21 qualification is that
-# checkpoint's, not this lineage's. That rule is about admitting an unqualified
-# joint checkpoint to a *measurement*, and the empty ``capabilities`` below is
-# what keeps this declaration on the loader-contract side of it: every
-# measurement family refuses these two by name, with the reason attached.
+# passed it "must not be in ``arms.py`` at all" and no route needs them here.
 #
-# ``budget`` is withheld on a measured fact rather than on the rule alone.
-# Galactica's ``special_tokens_map.json`` is literally ``{}`` and its
-# ``tokenizer_config.json`` declares no special token, so the loaded tokenizer
-# reports ``pad_token`` and ``eos_token`` as ``None`` even though its own
-# ``tokenizer.json`` defines ``<pad>`` at id 1 and ``</s>`` at id 2 and its
-# config declares ``pad_token_id`` 1. :func:`load_arm_spec`'s
-# ``pad_token = eos_token`` fallback therefore copies nothing, and
-# :func:`tokenize_batch` refuses every batch -- one-record batches included --
-# with "tokenizer has no pad token". Measured on this host: both rungs' configs
-# resolve and ``galactica-6.7b`` loads strictly clean at float16 with
-# 6,657,359,872 parameters and returns finite logits of width 50000, and its
-# tokenizer still reports no pad token. Declaring ``budget`` would name a family
-# neither rung can currently enter.
-for _name, _dir, _layers, _width in (
-    ("galactica-6.7b", "galactica-6.7b", 32, 4096),
-    ("galactica-30b", "galactica-30b", 48, 7168),
-):
-    STAGED_ARMS[_name] = ArmSpec(
-        name=_name,
-        path=MODEL_ROOT / _dir,
-        path_variable="TRANSFER_MODEL_BASE_DIR",
-        modality="text",
-        n_layer=_layers,
-        d_model=_width,
-        tokenisation="bpe",
-        input_format="raw",
-        evaluation_cohort_source="openwebtext",
-        architecture="opt",
-        # The card states a 106B-token scientific mix and defers the protein
-        # source to Taylor et al. (arXiv:2211.09085), which names a reviewed
-        # Swiss-Prot subset rather than UniRef. Recorded as the mix rather than
-        # as either component, because neither is the whole corpus.
-        pretraining_corpus="galactica_scientific_corpus",
-        capabilities=frozenset(),
-        # config.vocab_size, declared explicitly because every staged arm must:
-        # 50000 against a 50000-piece tokenizer, so the support and the live
-        # width coincide here rather than differing as they do on progen2-large.
-        scoring_target_alphabet_size=50000,
-    )
-del _name, _dir, _layers, _width
+# The rule holds because the checkpoint path is sufficient, which was checked
+# stage by stage rather than assumed. Every Direction-2 stage that reads a joint
+# checkpoint -- 15, 17, 23, 24, 25, 30, 32, 33 and 38 -- takes ``--checkpoint``
+# (or ``--joint-checkpoint``) with ``--rendering`` and reaches the weights
+# through ``21_joint_mode_qualification.load_tokenizer``/``load_model`` into
+# :class:`src.transfer.replaceable.JointReplaceable`; none of them resolves an
+# ``ArmSpec``. The lens, circuit and pathway stages take ``--arms`` out of
+# :data:`PANEL` and load through :func:`load_arm`, which refuses a staged name
+# outright, so a row here would not have reached them either. And the budget
+# estimand is not withheld by the absence: stage 21 computes stage 01's own
+# context information on a joint checkpoint by path, deliberately, so that a
+# joint reading is commensurable with the panel's.
+#
+# A row here would also have cost something. ``scaling.register_arm_spec`` --
+# the one door that can put a rung under the lens without editing this file --
+# refuses by name every checkpoint that :data:`STAGED_ARMS` declares, so
+# declaring Galactica here *blocks* the scale-ladder route rather than opening
+# it.
+#
+# And an ``ArmSpec`` cannot describe this checkpoint in the first place. One spec
+# carries one modality, one ``input_format`` and one evaluation cohort; Galactica
+# has two of each, and its protein rendering --
+# ``[START_AMINO]...[END_AMINO]``, declared in
+# :data:`src.transfer.joint_modes.JOINT_RENDERINGS` -- is one
+# :meth:`Cohort.input_strings` cannot produce. A row here could only ever have
+# been the text half, which is not the modality contrast the joint rungs are
+# staged for.
+#
+# What the architecture can do is a separate question from what may be declared,
+# and it is answered where it belongs: ``opt`` is declared in
+# :meth:`Arm.blocks` and in :data:`src.transfer.lenses.FINAL_LAYER_NORM_PATH`,
+# so a ladder rung declared through ``scaling.LadderMember`` reaches the lens
+# family, and this module's tokenizer door now resolves Galactica's pad token
+# from its own config (see :func:`adopt_config_declared_pad_token`, whose
+# docstring records the measurement on all four rungs).
 
 # Qwen2.5-7B and Qwen2.5-32B, the upper two rungs of EXP-R2-225's pure-text
 # 0.5->7->32B trajectory, and the same architecture, tokenizer and pretraining
@@ -950,7 +959,7 @@ del _name, _dir, _layers, _width
 # field records, and the prereg forbids substituting one.
 #
 # These two may honestly carry :data:`_ROTARY_CAPABILITIES`, and they are the
-# only two of the six that may carry anything past ``budget``: ``qwen2`` is
+# only two of the four that may carry anything past ``budget``: ``qwen2`` is
 # declared in every table those families resolve through, and the per-head
 # decomposition additionally verifies itself against the live forward pass, so a
 # checkpoint whose layout differed from the 0.5B's would fail that check rather
@@ -995,35 +1004,73 @@ del _name, _dir, _layers, _width
 # stored in a half precision, so a caller that wants half precision asks for it
 # and the loader's observed-dtype check enforces the answer.
 #
-# **Its native rendering is not established, so it declares none and can enter
-# nothing.** The card documents generation only: ``model.chat(tokenizer, seq)``,
-# whose prompt is the three tokens ``<gmask><sop><eos>`` that the same method
-# then strips from the output. What a residue *likelihood* is read over -- whether
-# those three positions are scored, whether a terminator belongs at the end --
-# the card does not say, and the repository has no measurement of it. Its
-# tokenizer is a further obstacle to guessing: ``ProteinGLMTokenizer._tokenize``
-# splits on whitespace, so an unspaced residue string is one out-of-vocabulary
-# word rather than a residue run, and the card's own path reaches per-residue ids
-# only through ``apply_chat_template(..., is_split_into_words=True)``.
-# :func:`tokenize_batch` calls the tokenizer directly and would therefore score
-# ``<unk>``.
+# **Its native rendering IS now evidenced, and the field is still the sentinel.**
+# The two statements are not in tension, and keeping them apart is the point of
+# the sentinel: :data:`INPUT_FORMAT_UNDECLARED` says this repository serves no
+# rendering for this checkpoint, not that nobody knows what one would be. What is
+# measured -- on the real weights, not read off the card -- is that the native
+# rendering is the card's own generation prompt used as a prefix:
+# ``<gmask><sop><eos>`` at ids ``[29, 32, 34]``, followed by the residue run,
+# scored over residues 2..L. It reads **1.1277 nats/residue** against **2.8974**
+# for the same residues shuffled and **16.9930** for a bare residue string with
+# no prefix, so the convention is identified by a control that makes the wrong
+# one measurably worse rather than by assertion. Two independent corroborations:
+# the only special-token embedding rows with a trained norm are ``<gmask>``
+# 1.4439, ``<sop>`` 1.2600 and ``<eos>`` 1.6526 against ~1.057 for every other
+# special and all 92 unused rows, which also settles that the terminator is
+# ``<eos>`` (34) and not ``<eop>`` (33) -- ``P(<eop>)`` after the final residue is
+# 0.00000 and that row was never trained; and the head is tied, the output layer
+# being bit-identical to the input embedding. Total mass on all untrained ids is
+# 5.4e-08, so the uncropped 128-wide logits are safe to score.
 #
-# So the rendering is :data:`INPUT_FORMAT_UNDECLARED` and the capability set is
-# empty. Both are refusals with a reason: every renderer here raises on the
-# format, and :meth:`Arm.require` raises on every family. Establishing the
-# convention -- a rendering, a scored-position rule, and a fixed-sequence
-# negative control that makes the wrong one measurably worse -- is what would
-# license changing these two fields, and no part of it exists yet.
+# The field stays :data:`INPUT_FORMAT_UNDECLARED` because *serving* that
+# rendering is a separate piece of work: no branch of :meth:`Cohort.input_strings`
+# emits that prefix, and no scored-position rule for it is declared. Declaring a
+# format name this module cannot render would turn a refusal that names its
+# reason into one that looks like a supported path. It is a pending
+# implementation now, not an unknown convention.
 #
-# **A second, independent blocker, measured rather than anticipated.** Its
-# config resolves through :func:`config_shape` at 36 x 4096 and its scoring
-# alphabet reads 128, but ``AutoModelForCausalLM.from_pretrained`` never reaches
-# the weights: ``modeling_proteinglm.py`` imports ``deepspeed``, which the
-# validated ``ct`` environment does not provide, so the load raises ImportError
-# before a parameter is read. This checkpoint is therefore **unloadable on this
-# host as staged**, which is a dependency decision rather than an interface one
-# and is recorded here so that a campaign discovers it from the declaration
-# instead of from a failed dispatch.
+# **What the tokenizer does, corrected.** This declaration previously recorded
+# that ``ProteinGLMTokenizer`` splits on whitespace so an unspaced residue string
+# reaches the model as one out-of-vocabulary word. That is measurably false and
+# is retracted: the tokenizer sets ``unique_no_split_tokens`` to the whole
+# vocabulary and updates its trie, so the trie splits the string before
+# ``_tokenize`` is reached. ``tokenize('MLFVVL')`` returns the six residues and a
+# 101-residue sequence through :func:`tokenize_batch`'s exact call returns 102
+# ids with zero ``<unk>`` and an exact round trip. Its ``pad_token_id`` is 0, so
+# unlike ``rita-xl`` it can build batches. The tokenizer is not a blocker.
+#
+# **The blocker is a spurious import, and it is narrow.**
+# ``modeling_proteinglm.py`` line 15 reads ``import torch, deepspeed``, and
+# Transformers' AST-based ``check_imports`` fires on the presence of that name
+# before the module body runs, so ``AutoModelForCausalLM.from_pretrained`` raises
+# before a parameter is read and this checkpoint is **unloadable on this host as
+# staged**. The name is only used at lines 41-42, inside ``get_checkpoint_fn()``,
+# which is reachable only from a training path guarded three times over by
+# ``gradient_checkpointing``, ``self.training`` and ``torch.is_grad_enabled()``.
+# It is therefore dead on the inference path, and a derived-at-load-time patch is
+# the follow-up that would make this arm loadable. The checkpoint is
+# cc-by-nc-4.0 and must not be vendored to achieve that.
+#
+# **And a hazard that must gate any capability grant, whatever the loader does.**
+# This model returns ``hidden_states`` as ``[seq, batch, hidden]`` while
+# returning logits as ``[batch, seq, vocab]`` -- measured at 37 hidden states of
+# shape (88, 1, 4096) beside logits of (1, 88, 128). Every other arm here is
+# batch-first throughout, so a lens, probe or patching read that assumes the
+# panel's axis order would be silently wrong on this one. Two further interface
+# facts compose with it: ``output_attentions`` is dead, the modeling file setting
+# ``all_self_attentions = None`` unconditionally, and ``attn_implementation`` is
+# inert because the string appears nowhere in that file -- its only switch is
+# ``config.use_pytorch_sdpa`` -- so :func:`load_arm_spec`'s attention read-back
+# would vouch for a contract nothing enforces and
+# :meth:`Arm.require_eager_attention` would pass on a model that never honoured
+# the request. So ``lens``, ``circuits``, ``pathway`` and ``relational`` must not
+# be granted to ``proteinglm`` on the strength of a loader alone; ``budget`` may
+# become honest once one exists, and that is the follow-up's call.
+#
+# The capability set is therefore empty, and it is a refusal with a reason:
+# :meth:`Arm.require` raises on every family, and every renderer here raises on
+# the input format.
 STAGED_ARMS["proteinglm-7b-clm"] = ArmSpec(
     name="proteinglm-7b-clm",
     path=MODEL_ROOT / "proteinglm-7b-clm",
@@ -1053,15 +1100,18 @@ STAGED_ARMS["proteinglm-7b-clm"] = ArmSpec(
 #
 # ``rita`` is in none of the architecture tables the interpretability families
 # resolve through, so ``budget`` would be the most it could carry -- and it
-# cannot carry that either, on the same measured tokenizer fact Galactica fails
-# on. Its ``special_tokens_map.json`` is literally ``{}`` while its
-# ``tokenizer.json`` defines ``<PAD>`` at id 1 and ``<EOS>`` at id 2, and its
-# config declares ``eos_token_id`` 50256, an id its 26-symbol vocabulary does not
-# contain, so :func:`load_arm_spec`'s ``pad_token = eos_token`` fallback has
-# nothing to copy and :func:`tokenize_batch` refuses every batch with "tokenizer
-# has no pad token". Unlike Galactica's, this one cannot be repaired from the
-# config, which is why the capability is withheld rather than deferred to a
-# fallback: the id the config names does not exist in the vocabulary.
+# cannot carry that either, on a measured tokenizer fact. Its
+# ``special_tokens_map.json`` is literally ``{}`` while its ``tokenizer.json``
+# defines ``<PAD>`` at id 1 and ``<EOS>`` at id 2, so the loaded tokenizer
+# reports no pad and no end-of-sequence token and :func:`load_arm_spec`'s
+# ``pad_token = eos_token`` fallback has nothing to copy. Neither does the
+# config-declared step behind it: this config declares **no** ``pad_token_id``
+# at all, and the ``eos_token_id`` 50256 it does declare is an id its 26-symbol
+# vocabulary does not contain. So the tokenizer this loader returns still reports
+# no pad token and :func:`tokenize_batch` still refuses every batch -- one-record
+# batches included -- with "tokenizer has no pad token". That is why the
+# capability is withheld rather than deferred to a fallback: there is nothing
+# here to resolve a pad token *from*.
 #
 # Measured on this host: loads strictly clean at 1,208,655,872 parameters,
 # 24 x 2048 matching the declaration, live output width 26 from
@@ -1283,8 +1333,13 @@ PROTEIN_SCALE_LADDER = (
 #: name these and no other staged checkpoint.
 STAGED_SCALE_ARMS = tuple(name for name in PROTEIN_SCALE_LADDER if name in STAGED_ARMS)
 
-#: EXP-R2-225's second-stage checkpoints: the six larger public models staged for
-#: the independent Direction-1 second stage, in the prereg's own wave order.
+#: EXP-R2-225's second-stage checkpoints: the larger public models staged for the
+#: independent Direction-1 second stage, in the prereg's own wave order.
+#:
+#: The campaign's joint wave -- ``galactica-6.7b`` and ``galactica-30b`` -- is
+#: **not** here, and the comment above their would-be declaration says why: a
+#: joint checkpoint is reached by path, and every stage that needs one already
+#: does. This tuple is therefore this file's list, not the prereg's.
 #:
 #: A **separate** door from :data:`STAGED_SCALE_ARMS`, and separate on purpose.
 #: That tuple is the two upper rungs of one ProGen2 lineage and is what
@@ -1298,17 +1353,15 @@ STAGED_SCALE_ARMS = tuple(name for name in PROTEIN_SCALE_LADDER if name in STAGE
 #: Membership here is staging and nothing else. It does not qualify a
 #: checkpoint, does not admit one to :data:`PANEL`, and above all does not grant
 #: a capability: each arm's ``capabilities`` is what that arm was measured to
-#: honour, and today only the two Qwen rungs honour anything. The other four
-#: declare an empty set -- the two Galactica rungs and ``rita-xl`` because their
-#: tokenizers report no pad token so no batch can be built, and
-#: ``proteinglm-7b-clm`` because its native rendering is not established and its
-#: modeling code needs a package the environment does not have. They are in this
-#: tuple anyway, and that is the point: a stage then refuses them with their own
-#: recorded reason instead of with "unknown arm", which is the difference between
-#: a decision and an omission.
+#: honour, and today only the two Qwen rungs honour anything. The other two
+#: declare an empty set -- ``rita-xl`` because its tokenizer declares no pad
+#: token and names an end-of-sequence id its own vocabulary does not contain, so
+#: no batch can be built, and ``proteinglm-7b-clm`` because this module renders
+#: nothing for it and its modeling code does not import in this environment.
+#: They are in this tuple anyway, and that is the point: a stage then
+#: refuses them with their own recorded reason instead of with "unknown arm",
+#: which is the difference between a decision and an omission.
 STAGED_SECOND_STAGE_ARMS = (
-    "galactica-6.7b",
-    "galactica-30b",
     "qwen2.5-7b",
     "qwen2.5-32b",
     "proteinglm-7b-clm",
@@ -1589,6 +1642,17 @@ class Arm:
             if not hasattr(self.model, "decoder") or not hasattr(self.model.decoder, "block"):
                 raise TypeError(f"{self.name}: declared t5_decoder but no decoder.block")
             return self.model.decoder.block
+        if architecture == "opt":
+            # ``OPTForCausalLM`` keeps an ``OPTModel`` at ``.model`` and the
+            # decoder one level below it, so the block list is two attributes
+            # further down than either of the branches above: GPT-2's
+            # ``.transformer.h`` and a rotary decoder's ``.model.layers`` both
+            # stop one level short of it. Reaching ``.model`` and stopping would
+            # find no ``layers`` at all, which is why the walk is spelled out.
+            inner = getattr(getattr(self.model, "model", None), "decoder", None)
+            if inner is None or not hasattr(inner, "layers"):
+                raise TypeError(f"{self.name}: declared opt but no model.decoder.layers")
+            return inner.layers
         if architecture in _ROTARY_DECODERS:
             # The causal-LM wrapper holds the bare decoder at ``.model``, one
             # level below where GPT-2 keeps ``.transformer``, and the block list
@@ -1828,6 +1892,68 @@ def require_clean_loading_info(
     return counts
 
 
+def adopt_config_declared_pad_token(tokenizer: Any, config: Any, *, arm: str) -> None:
+    """Give a tokenizer the pad token its **own config** declares, or leave it none.
+
+    Several public checkpoints ship a tokenizer that carries the pad token in its
+    vocabulary and declares it nowhere the tokenizer object reads. Galactica is
+    the measured case in this repository: all four staged rungs ship
+    ``special_tokens_map.json`` == ``{}`` and a ``tokenizer_config.json`` naming
+    no special token, so the loaded ``PreTrainedTokenizerFast`` reports
+    ``pad_token``, ``eos_token``, ``bos_token`` and ``unk_token`` all ``None`` --
+    while the same directory's ``tokenizer.json`` defines ``<pad>`` at id 1 as a
+    special token and ``config.json`` declares ``pad_token_id`` 1.
+    :func:`tokenize_batch` then refuses every batch, one-record batches included.
+
+    **The config is the checkpoint author's declaration, and it is checked rather
+    than trusted.** The id is resolved back through the tokenizer's own
+    vocabulary and the assignment is read back, so this adopts a token that
+    exists in the vocabulary this tokenizer will encode with, not an integer that
+    happened to be in a JSON file. Three outcomes, and only one of them proceeds:
+
+    * the config declares no ``pad_token_id`` -- nothing to establish, so nothing
+      is invented. The tokenizer is left with no pad token and the refusal stays
+      exactly where it is today, in :func:`tokenize_batch`. ``rita-xl`` is this
+      case: its config declares no pad id and its ``eos_token_id`` 50256 is not
+      an id its 26-symbol vocabulary contains.
+    * the declared id does not map to a token in this vocabulary, or the
+      assignment does not read back at that id -- the checkpoint contradicts
+      itself and the load stops here, with both ids named. Padding with an id
+      nothing maps to would put a token the model never saw into every short row
+      of every batch.
+    * the declared id names a token -- it is adopted, and
+      ``tokenizer.pad_token_id`` is that id.
+
+    Why padding with the declared id is safe once established: :func:`tokenize_batch`
+    right-pads, attention is causal, and the returned mask excludes every padding
+    position from both the attention and the scored targets. What must not happen
+    is padding with a *wrong* id, and the read-back is what rules that out.
+    """
+
+    declared = getattr(config, "pad_token_id", None)
+    if declared is None:
+        return
+    declared = int(declared)
+    token = tokenizer.convert_ids_to_tokens(declared)
+    if not isinstance(token, str):
+        raise ValueError(
+            f"{arm}: config declares pad_token_id {declared}, which this "
+            "tokenizer's vocabulary does not map to a token. A checkpoint whose "
+            "config and tokenizer disagree about the padding symbol cannot be "
+            "padded: the id would be encoded into every short row of every batch "
+            "as a token the model never saw"
+        )
+    tokenizer.pad_token = token
+    resolved = tokenizer.pad_token_id
+    if resolved is None or int(resolved) != declared:
+        raise ValueError(
+            f"{arm}: config declares pad_token_id {declared} ({token!r}), but "
+            f"setting it read back as {resolved!r}. The tokenizer's vocabulary "
+            "and its config do not agree on this symbol's id, so no padding id "
+            "is established for it"
+        )
+
+
 #: Config attributes that declare transformer depth, in the order consulted.
 #: Three spellings appear among the checkpoints this module loads: ``n_layer``
 #: (GPT-2, ProGen2), ``num_hidden_layers`` (Llama, Qwen2, OPT) and ``num_layers``
@@ -1959,6 +2085,8 @@ def load_arm_spec(
     tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+    if tokenizer.pad_token is None:
+        adopt_config_declared_pad_token(tokenizer, config, arm=name)
     # Read back rather than echo the request. A remote-code architecture that
     # never consults ``attn_implementation`` would otherwise be recorded as
     # eager on the strength of having been asked, and ``require_eager_attention``

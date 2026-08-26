@@ -240,25 +240,100 @@ class LensHead:
         return self.weight - self.weight.mean(dim=0, keepdim=True)
 
 
+#: Path from the causal-LM wrapper down to the **final normalisation** each
+#: architecture applies to the residual stream before its unembedding, and
+#: therefore the set of architectures a lens head can be built for.
+#:
+#: Declared per architecture and walked, for the reason
+#: :data:`src.transfer.arms._ATTENTION_PATH` is declared rather than searched: a
+#: lens reads a *deep* residual through the model's own output head, so a head
+#: assembled from the wrong normalisation still produces a full distribution at
+#: every layer and every number taken from it is wrong without announcing it.
+#: Searching for the first attribute called something plausible is exactly how
+#: that happens.
+#:
+#: ``gpt2`` and ``progen`` both keep it at ``transformer.ln_f``. ``opt`` keeps it
+#: at ``model.decoder.final_layer_norm`` -- two levels down, because
+#: ``OPTForCausalLM`` holds an ``OPTModel`` at ``.model`` and the decoder below
+#: that -- and the name is **not** unique in an OPT tree: every
+#: ``OPTDecoderLayer`` also has a ``final_layer_norm``, which is that block's
+#: *pre*-feed-forward normalisation and a different object. The path is what
+#: keeps the two apart.
+#:
+#: Two OPT variants must not resolve here, and neither does:
+#:
+#: * a post-norm OPT (``do_layer_norm_before`` false, which is what
+#:   ``facebook/opt-350m`` declares) has ``decoder.final_layer_norm is None`` by
+#:   construction, so the walk below finds ``None`` and raises. That is the right
+#:   refusal for a stronger reason than the missing module: on a post-norm block
+#:   the block *output* is already normalised, so it is not the residual a lens
+#:   reads.
+#: * an OPT whose ``word_embed_proj_dim`` differs from ``hidden_size`` carries a
+#:   ``project_out`` between the final norm and the head, which changes the basis
+#:   the unembedding reads. Nothing extra is needed to refuse it: that projection
+#:   exists exactly when ``lm_head.in_features`` is ``word_embed_proj_dim`` rather
+#:   than ``hidden_size``, and the width check below already raises on it. Every
+#:   Galactica rung sets the two equal and has no such projection.
+#:
+#: The rotary lineages are absent because their final normalisation is an RMSNorm
+#: and :class:`LensHead` is a LayerNorm head: it applies a centring and a learned
+#: bias that an RMSNorm decoder does not have.
+FINAL_LAYER_NORM_PATH: dict[str, tuple[str, ...]] = {
+    "gpt2": ("transformer", "ln_f"),
+    "progen": ("transformer", "ln_f"),
+    "opt": ("model", "decoder", "final_layer_norm"),
+}
+
+
+def final_layer_norm(arm: Arm) -> nn.LayerNorm:
+    """Walk :data:`FINAL_LAYER_NORM_PATH` to the arm's own final normalisation."""
+
+    path = FINAL_LAYER_NORM_PATH.get(arm.spec.architecture)
+    if path is None:
+        raise TypeError(
+            f"{arm.name}: no final normalisation is declared for "
+            f"{arm.spec.architecture!r}, so a lens head cannot be built for it; "
+            f"declared: {sorted(FINAL_LAYER_NORM_PATH)}"
+        )
+    module: Any = arm.model
+    for step in path:
+        module = getattr(module, step, None)
+        if module is None:
+            raise TypeError(
+                f"{arm.name}: declared {arm.spec.architecture} but has no "
+                f"{'.'.join(path)} final normalisation"
+            )
+    if not isinstance(module, nn.LayerNorm):
+        raise TypeError(
+            f"{arm.name}: {'.'.join(path)} is a {type(module).__name__}, not a "
+            "LayerNorm; this lens head applies a centring and a learned bias that "
+            "another normalisation form does not have"
+        )
+    return module
+
+
 def lens_head(arm: Arm) -> LensHead:
     """Extract the final norm and unembedding, failing on any other topology."""
 
-    transformer = getattr(arm.model, "transformer", None)
-    if transformer is None or not hasattr(transformer, "ln_f"):
-        raise TypeError(f"{arm.name}: no transformer.ln_f final normalisation")
     head = getattr(arm.model, "lm_head", None)
     if not isinstance(head, nn.Linear):
         raise TypeError(f"{arm.name}: lm_head is not a linear unembedding")
-    norm = transformer.ln_f
-    if not isinstance(norm, nn.LayerNorm):
-        raise TypeError(f"{arm.name}: transformer.ln_f is not a LayerNorm")
+    norm = final_layer_norm(arm)
     if norm.normalized_shape != (arm.d_model,):
         raise ValueError(
-            f"{arm.name}: ln_f normalises {norm.normalized_shape}, expected {(arm.d_model,)}"
+            f"{arm.name}: final normalisation normalises {norm.normalized_shape}, "
+            f"expected {(arm.d_model,)}"
         )
     if norm.weight is None or norm.bias is None:
-        raise ValueError(f"{arm.name}: ln_f has no learned gain or bias")
+        raise ValueError(
+            f"{arm.name}: final normalisation has no learned gain or bias"
+        )
     if head.in_features != arm.d_model:
+        # Also the check that refuses an OPT carrying a ``project_out`` between
+        # the final norm and the head: that projection exists exactly when the
+        # head's input width is the embedding projection width rather than the
+        # residual width, and a lens that skipped it would read a basis the
+        # unembedding was never applied to.
         raise ValueError(
             f"{arm.name}: lm_head reads width {head.in_features}, expected {arm.d_model}"
         )

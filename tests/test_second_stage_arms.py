@@ -1,8 +1,8 @@
 """EXP-R2-225's staged second-stage checkpoints: declaration, doors, shapes.
 
-What these pin is not that the six checkpoints work -- four of them cannot yet
+What these pin is not that the staged checkpoints work -- half of them cannot yet
 be measured at all -- but that what the registry *says* about each one is true,
-and that saying it widened nothing else. Three invariants carry that:
+and that saying it widened nothing else. Four invariants carry that:
 
 * the first round's door is byte-identical in meaning, so the three stages that
   key on :data:`~src.transfer.arms.STAGED_SCALE_ARMS` refuse exactly what they
@@ -10,7 +10,10 @@ and that saying it widened nothing else. Three invariants carry that:
 * no arm declares a capability its architecture cannot honour, checked against
   the tables that implement each family rather than against a list written here;
 * every declared depth, width and scoring alphabet is the one in the
-  checkpoint's own ``config.json``, checked against the file.
+  checkpoint's own ``config.json``, checked against the file;
+* the campaign's joint wave is declared as an arm nowhere, which is the rule
+  ``21_joint_mode_qualification.py`` states and the one this staging could most
+  easily have crossed.
 """
 
 from __future__ import annotations
@@ -48,7 +51,16 @@ from src.transfer.circuits import _CIRCUIT_ARCHITECTURES  # noqa: E402
 #: The architectures this campaign brings in that no measurement family
 #: implements. Named here so the test below can assert their absence from every
 #: table rather than assert a capability set by hand.
-UNIMPLEMENTED_ARCHITECTURES = frozenset({"opt", "rita", "proteinglm"})
+#:
+#: ``opt`` was in this set while EXP-R2-225's joint wave was declared in
+#: :data:`~src.transfer.arms.STAGED_ARMS`. It is in neither now: the two
+#: Galactica rungs are reached by path rather than declared as arms
+#: (``21_joint_mode_qualification.py``'s rule, and the comment in
+#: ``src.transfer.arms`` where their declaration would have sat), and the
+#: architecture itself is served by the lens family --
+#: ``tests/test_opt_architecture.py`` is where what it may and may not enter is
+#: pinned.
+UNIMPLEMENTED_ARCHITECTURES = frozenset({"rita", "proteinglm"})
 
 
 def _load_stage(filename: str):
@@ -65,8 +77,6 @@ def _load_stage(filename: str):
 
 def test_the_second_stage_checkpoints_are_staged_and_are_not_panel_members():
     assert STAGED_SECOND_STAGE_ARMS == (
-        "galactica-6.7b",
-        "galactica-30b",
         "qwen2.5-7b",
         "qwen2.5-32b",
         "proteinglm-7b-clm",
@@ -118,6 +128,27 @@ def test_an_overlapping_or_unknown_second_stage_door_is_refused_at_import():
 # ----------------------------------------------------------- honest capabilities
 
 
+def test_the_joint_wave_is_not_declared_as_an_arm():
+    """``21_joint_mode_qualification.py``'s rule, asserted where it can be broken.
+
+    A joint checkpoint that has not passed that stage "must not be in ``arms.py``
+    at all", and nothing about a staging campaign changes that. It costs nothing
+    to keep: every Direction-2 stage that reads a joint checkpoint takes it as a
+    ``--checkpoint`` with a ``--rendering``, the panel stages refuse a staged name
+    outright, and stage 21 itself computes stage 01's estimand on one by path. A
+    row here would additionally have blocked the ladder route, because
+    ``scaling.register_arm_spec`` refuses by name every checkpoint STAGED_ARMS
+    declares.
+    """
+
+    for name in ("galactica-125m", "galactica-1.3b", "galactica-6.7b", "galactica-30b"):
+        assert name not in STAGED_ARMS, name
+        assert name not in PANEL, name
+        assert name not in STAGED_SECOND_STAGE_ARMS, name
+    assert not any(spec.architecture == "opt" for spec in STAGED_ARMS.values())
+    assert not any(spec.architecture == "opt" for spec in PANEL.values())
+
+
 def test_the_new_architectures_are_in_none_of_the_tables_that_implement_a_family():
     """The premise the empty capability sets rest on, asserted not assumed."""
 
@@ -164,7 +195,14 @@ def test_an_empty_capability_set_refuses_every_family_by_name():
 
 
 def test_an_undeclared_rendering_cannot_be_rendered():
-    """ProteinGLM's rendering is not established, so no cohort renders for it."""
+    """This module serves ProteinGLM no rendering, so no cohort renders for it.
+
+    Its native convention has since been evidenced -- a ``<gmask><sop><eos>``
+    prefix, identified against a shuffled and an unprefixed control -- and the
+    field is still the sentinel, because no branch of ``Cohort.input_strings``
+    emits that prefix. The sentinel is what keeps "this repository renders
+    nothing here" from being mistaken for a supported format name.
+    """
 
     spec = STAGED_ARMS["proteinglm-7b-clm"]
     assert spec.input_format == A.INPUT_FORMAT_UNDECLARED

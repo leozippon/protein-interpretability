@@ -93,6 +93,7 @@ from .arms import (
 )
 from .budget import ratio_denominator_admissibility
 from .circuits import _CIRCUIT_ARCHITECTURES
+from .lenses import FINAL_LAYER_NORM_PATH
 from .statistics import mean_interval
 
 #: v3 (EXP-R2-218): the convergence row carries the denominator's own bootstrap
@@ -278,13 +279,22 @@ INPUT_FORMATS = ("raw", "fasta_wrapped", "n_to_c_control", "ec_conditioned")
 #: ValueError ``circuits`` itself raises. It is never silently wrong.
 CIRCUITS_INPUT_FORMATS = ("raw", "fasta_wrapped", "n_to_c_control", "ec_conditioned")
 
-#: Architectures ``src.transfer.lenses.lens_head`` can build a lens head for. It
-#: resolves the final normalisation as ``transformer.ln_f`` and raises otherwise,
-#: so a T5-derived decoder cannot enter the lens family yet even though the panel
-#: grants it the ``lens`` capability. Declared here for the same reason as
-#: :data:`CIRCUITS_INPUT_FORMATS`: too narrow costs a recorded, reasoned skip,
-#: too wide surfaces as the module's own TypeError. It is never silently wrong.
-LENS_ARCHITECTURES = ("gpt2", "progen")
+#: Architectures ``src.transfer.lenses.lens_head`` can build a lens head for.
+#:
+#: **Read from that module rather than restated here.** This was a literal pair
+#: for as long as the lens resolved one hard-coded ``transformer.ln_f``, and the
+#: comment defended the duplication on the ground that it can only fail safely:
+#: too narrow costs a recorded skip, too wide surfaces as the module's own
+#: TypeError. That defence is no longer needed. The lens now declares where each
+#: architecture keeps its final normalisation, in
+#: :data:`src.transfer.lenses.FINAL_LAYER_NORM_PATH`, so the set it can serve is
+#: a fact that module holds and this one reads. Neither direction of drift is
+#: possible any more, and a new architecture is admitted by extending one table.
+#:
+#: A T5-derived decoder is still outside it even though the panel grants ByGPT5
+#: the ``lens`` capability: the capability is an intent, this is what the module
+#: delivers, and :func:`lens_supported` is where the two are compared.
+LENS_ARCHITECTURES = tuple(sorted(FINAL_LAYER_NORM_PATH))
 
 #: Capabilities the rotary text rungs carry.  Written out rather than imported
 #: from :mod:`src.transfer.arms`, where it is private, because
@@ -1189,9 +1199,11 @@ def lens_supported(member: LadderMember) -> tuple[bool, str | None]:
     if member.architecture in LENS_ARCHITECTURES:
         return True, None
     return False, (
-        f"src.transfer.lenses.lens_head resolves the final normalisation as "
-        f"transformer.ln_f and has no {member.architecture!r} branch, so the output "
-        "aperture cannot be measured on this arm"
+        f"architecture {member.architecture!r} is not in "
+        f"src.transfer.lenses.FINAL_LAYER_NORM_PATH {sorted(LENS_ARCHITECTURES)}, so "
+        "src.transfer.lenses.lens_head cannot resolve the final normalisation this "
+        "rung's own output head applies and the output aperture cannot be measured "
+        "on this arm"
     )
 
 

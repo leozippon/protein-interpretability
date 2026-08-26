@@ -634,12 +634,14 @@ def default_lens_arms() -> list[str]:
     """The campaign arms this script can actually serve, from the one declaration.
 
     Not the arms whose ``ArmSpec`` declares the ``lens`` capability:
-    ``lens_head`` resolves the final normalisation as ``transformer.ln_f`` and
-    requires an ``nn.LayerNorm`` with a learned gain and bias, so an RMSNorm
-    rotary decoder raises partway through a scheduled run. The
-    intended-versus-deliverable split is deliberate and recorded on ``ArmSpec``
-    and in ``src.transfer.scaling.lens_supported``; a default that schedules an
-    arm the module cannot serve is a defect regardless of intent.
+    ``lens_head`` resolves the final normalisation through
+    ``src.transfer.lenses.FINAL_LAYER_NORM_PATH`` and requires an
+    ``nn.LayerNorm`` with a learned gain and bias, so an architecture that table
+    does not declare, or an RMSNorm rotary decoder, raises partway through a
+    scheduled run. The intended-versus-deliverable split is deliberate and
+    recorded on ``ArmSpec`` and in ``src.transfer.scaling.lens_supported``; a
+    default that schedules an arm the module cannot serve is a defect regardless
+    of intent.
 
     This file carried its own ``LENS_ARCHITECTURES = ("gpt2", "progen")`` until
     EXP-R2-067 -- a second copy of ``scaling.LENS_ARCHITECTURES``, which
