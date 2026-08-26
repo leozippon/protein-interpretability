@@ -368,6 +368,40 @@ def zero_hit_design_cohort(path: Path) -> dict[str, Any]:
     }
 
 
+def fragment_margins(
+    fragment_order: dict[str, Any] | None, *, rungs: Sequence[str]
+) -> dict[str, Any]:
+    """The 3-7-mer margins this ladder carries, and the rungs it does not.
+
+    EXP-R2-226 lists these in its ``reported_not_gated`` block "where the
+    artefact carries them, with the rungs it does not carry named". The
+    stage-29 fragment pass is a separate run over the corpus k-mer background
+    and this campaign did not commission one, so the honest report is which
+    rungs the existing artefact holds -- and naming the ones it does not is the
+    point, because an endpoint nobody ran must not read as an endpoint that
+    returned nothing.
+    """
+
+    arms = (fragment_order or {}).get("arms") or {}
+    present = [name for name in rungs if name in arms]
+    missing = [name for name in rungs if name not in arms]
+    return {
+        "reported_not_gated": True,
+        "rungs_present": present,
+        "rungs_missing": missing,
+        "source_arms": sorted(arms),
+        "not_run_reason": (
+            None
+            if not missing
+            else "the stage-29 fragment_order pass on disk carries no rung of this "
+            "lineage, so these margins were not measured for this ladder. They are "
+            "reported and never gated, so their absence stops nothing; it is named "
+            "here rather than silently omitted"
+        ),
+        "cohort_sha256": (fragment_order or {}).get("cohort_sha256"),
+    }
+
+
 def adaptation_stage_transitions(
     dms: dict[str, Any] | None,
     megascale: dict[str, Any] | None,
@@ -468,6 +502,7 @@ def compare_lineage(
     megascale_models: dict[str, dict[str, Any]] | None,
     baselines: dict[str, Any] | None,
     design_cohort: dict[str, Any] | None,
+    fragment_order: dict[str, Any] | None,
     qualification_reports: dict[str, dict[str, Any]],
     resamples: int,
     seed: int,
@@ -627,6 +662,7 @@ def compare_lineage(
             None if megascale is not None else "no stage-29 payload was supplied"
         ),
         TRANSITION_LABEL + "s": adaptation_stage_transitions(dms, megascale, pairs=pairs),
+        "fragment_order": fragment_margins(fragment_order, rungs=rungs),
     }
 
 
@@ -684,6 +720,14 @@ def main() -> None:
         help="directory holding model_<rung>.json, baselines.json and cohort.json "
         "from stage 29. Omitted means the MegaScale endpoint is reported NOT RUN",
     )
+    parser.add_argument(
+        "--fragment-order",
+        type=Path,
+        default=None,
+        help="an existing stage-29 fragment_order.json. Its 3-7-mer margins are "
+        "reported and never gated; the rungs it does not carry are named, so an "
+        "endpoint nobody ran does not read as one that returned nothing",
+    )
     parser.add_argument("--bootstrap", type=int, default=BOOTSTRAP_RESAMPLES)
     parser.add_argument("--seed", type=int, default=DEFAULT_BOOTSTRAP_SEED)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
@@ -703,6 +747,9 @@ def main() -> None:
         megascale_models = _load_rung_models(args.designed_referent_dir, rungs)
         baselines = _read(args.designed_referent_dir / "baselines.json")
         design_cohort = zero_hit_design_cohort(args.designed_referent_dir / "cohort.json")
+    fragment_order = None
+    if args.fragment_order is not None:
+        fragment_order = _read(args.fragment_order)
 
     payload = compare_lineage(
         ladder=ladder,
@@ -711,6 +758,7 @@ def main() -> None:
         megascale_models=megascale_models,
         baselines=baselines,
         design_cohort=design_cohort,
+        fragment_order=fragment_order,
         qualification_reports=reports,
         resamples=args.bootstrap,
         seed=args.seed,

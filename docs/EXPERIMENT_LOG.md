@@ -18080,3 +18080,66 @@ Slots are laid out so the queue's hard inter-slot barrier waits on comparable du
 | `prollama` | PASS | PASS | 0.0 | 4.3245 | PASS, **+0.0968** |
 
 The probe is the frozen 80-residue avGFP fragment, 54 scored tokens under the bare block on this lineage's shared tokenizer. Both repeats agreed to exactly zero nats on every target on all three rungs, against a 1e-6 tolerance. The two reversal costs sit at 2.4x and 1.9x the frozen 0.05 floor and below EXP-R2-152's +0.1442 / +0.1465, which were measured over 128 Swiss-Prot records rather than one probe; the ordering — Stage 1 above Stage 2, both far above the base — is the same.
+
+## 2026-08-26 — EXP-R2-226 measured: what protein continued pretraining bought on two protein tasks. Both compounds return no transition, and both say so for the same reason
+
+**Run id `20260826094227_c0ca3ed5d15a` at pinned commit `dc40ce0`, nine cells in three slots on three H200s, `# FAILURES 0`, `# NO-RECORD 0`, all nine `exited-ok`.** Records pulled with `pull_records_h200.sh` and admitted verbatim: `digests verified; results/transfer/external_baseline/20260826094227_c0ca3ed5d15a ADMITTED (15 file(s))`. The three `model_<rung>.npz` sufficient-statistic sidecars stage 29 writes are not `*.json` and were left on GPFS; nothing downstream of this campaign reads them.
+
+Artefacts: `results/transfer/r226_lineage/{qualification,retrieval_bound,designed_referent}/` and `results/transfer/r226_lineage/adaptation_stage_capability.json`.
+
+**The ladder is the full three rungs.** All three qualified at bfloat16 (recorded in the previous entry); the Stage-2 gate passed at +0.0968 nats per scored token against the frozen 0.05 floor, so the declared base → Stage 1 fallback did not fire. The EXP-R2-221 clause is reused, not redrawn, and `qualify_per_rung_stage41` passes it on the `protein_declared` condition for all three rungs on the one shared block.
+
+**The census came out exactly as the interface predicted.** All **217 assays over 174 families** scored on every rung; the skipped block is empty on all three, so no assay left the analysis set and this ladder's analysis cohort equals its declared cohort. The three rungs scored an identical **48,865,670** tokens at an identical **1.540** residues per scored token — the byte-identical `tokenizer.model` made the segmentation identical, which is what the paired difference needs. MegaScale: **130** certified zero-hit designs over **40** series and **266** natural domains over **124** `WT_cluster`s at 1.496 residues per scored token, cohort `caaa233dc44146d4…`.
+
+### ProteinGym substitutions — no transition on either pair
+
+Bootstrap frozen at 2,000 resamples on seed 20260826, resampled over the 174 wild-type families. The queue's own gates passed first: `positive_control` LOOKUP +0.3537 against floor +0.2098, `mismatched_profile` −0.0132 against BLOSUM62 +0.2097, `label_shuffle` max |z| 3.13 against 4.15 over 1518 values.
+
+| | raw Spearman | MODEL − LOOKUP | MODEL − BLOSUM62 |
+|---|---|---|---|
+| `llama-2-7b` | −0.0071 [−0.0228, +0.0076] | −0.3621 [−0.3900, −0.3338] | −0.2133 [−0.2345, −0.1896] |
+| `prollama-stage-1` | +0.1358 [+0.1110, +0.1628] | −0.2193 [−0.2538, −0.1862] | −0.0704 [−0.0999, −0.0411] |
+| `prollama` | +0.1507 [+0.1240, +0.1777] | −0.2043 [−0.2372, −0.1729] | −0.0555 [−0.0840, −0.0282] |
+| paired Δρ base → Stage 1 | **+0.1429 [+0.1150, +0.1699]** | | |
+| paired Δρ Stage 1 → Stage 2 | **+0.0149 [+0.0036, +0.0274]** | | |
+
+**`adaptation_stage_transition`: `False` on both pairs.** The compound has two clauses and they split cleanly. `raw_spearman_delta` is **True** on both pairs — the adaptation moved the ranking, and so did the instruction stage, by a much smaller amount whose interval still excludes zero. `later_model_minus_lookup` is **False** on both, because no rung of this lineage clears the UniRef50 profile channel: LOOKUP reads +0.3537 and the best model rung reads +0.1507. Stage 20's own per-arm verdict is `retrieval_dominated` on all three.
+
+### MegaScale designed referent — no transition on either pair, and the instrument did not clear its own bar
+
+Resampled over the 40 design series and the 124 `WT_cluster`s.
+
+| | design raw ρ | design − hydropathy | design − BLOSUM62 | natural raw ρ | natural − hydropathy | natural − BLOSUM62 |
+|---|---|---|---|---|---|---|
+| `llama-2-7b` | −0.1102 [−0.1291, −0.0913] | −0.5487 [−0.5757, −0.5205] | −0.2718 [−0.2986, −0.2444] | −0.0451 [−0.0648, −0.0244] | −0.2627 [−0.3015, −0.2217] | −0.2234 [−0.2540, −0.1940] |
+| `prollama-stage-1` | +0.0217 [−0.0192, +0.0642] | −0.4169 [−0.4621, −0.3692] | −0.1400 [−0.1881, −0.0899] | +0.1212 [+0.0882, +0.1544] | −0.0964 [−0.1451, −0.0493] | −0.0571 [−0.0948, −0.0205] |
+| `prollama` | +0.0082 [−0.0261, +0.0442] | −0.4303 [−0.4754, −0.3877] | −0.1534 [−0.1970, −0.1094] | +0.1319 [+0.0984, +0.1660] | −0.0857 [−0.1358, −0.0339] | −0.0464 [−0.0830, −0.0095] |
+
+Design-side paired Δρ: base → Stage 1 **+0.1319 [+0.0872, +0.1761]**, Stage 1 → Stage 2 **−0.0135 [−0.0277, +0.0018]**. Natural-control paired Δρ, reported and not gated: base → Stage 1 +0.1663 [+0.1310, +0.2042], Stage 1 → Stage 2 +0.0107 [−0.0032, +0.0256].
+
+**`adaptation_stage_transition`: `False` on both pairs.** All four baseline-contrast clauses are `False` on both pairs — no rung clears hydropathy or BLOSUM62 on either side. On base → Stage 1 the design-side Δρ clause is `True` and the others are not; on Stage 1 → Stage 2 every clause including Δρ is `False`. Stage 29's own per-arm verdict is `uninterpretable_instrument_bound` on all three rungs, which is the pre-registered reading when the natural control fails: **nothing may be read from the design side here**, because the gate was never shown attainable on this referent for this family.
+
+**Reported and not gated**, beyond the tables above: MODEL − BLOSUM62 on every rung; the frozen `shuffled_label_spearman` control, which passed; the natural-cluster-paired raw Δρ; and, under L44, the earlier rung's own contrasts beside each gate — every one of which is also `False`, so no gate here rests on an earlier rung having failed. The 3–7-mer fragment margins are **NOT RUN for this ladder**: the stage-29 `fragment_order` artefact on disk carries `progen2-small/base/medium` and `protgpt2` and no rung of this lineage. All three rungs are named as missing in the artefact rather than silently omitted; the endpoint is reported-never-gated, so its absence stops nothing.
+
+### What this is, and the four things it is not
+
+**What it is.** A descriptive capability measurement. On both frozen queues the released adaptation moved the ranking substantially at the first step — +0.1429 on ProteinGym and +0.1319 on the designs, both excluding zero — and the instruction step moved it by about a tenth of that or not at all. That is a measurement of what the checkpoints do. **It is not a knowledge claim, not a mechanism claim, and not a causal claim about continued pretraining**; §7.0 does not gate this campaign because no knowledge claim is in play.
+
+**Four things it is not, stated because each is a reading someone could take from the table above.**
+
+1. **Not a capability transition.** Both compounds returned `False` on both pairs, and that is the result. It is reported as measured and is not narrowed to a subcohort, re-run at another seed, or restated as a trend.
+2. **Not evidence that the adapted rungs know function.** The one thing that separates a moved ranking from an acquired capability is whether the model beats the channel that has the corpus, and neither adapted rung does: LOOKUP reads +0.3537 against +0.1507, and BLOSUM62 — which is free of any corpus — reads +0.2097 against the same. Every MODEL − LOOKUP and MODEL − BLOSUM62 interval on this ladder lies wholly below zero.
+3. **Not readable at all on the MegaScale design side.** The natural control failed on all three rungs, so `uninterpretable_instrument_bound` is the verdict and the design-side numbers carry no reading. The design-side Δρ of +0.1319 is printed because the pre-registration says to print it, not because it may be interpreted.
+4. **Not a statement about the instruction format.** Stage 2 was scored under the bare `Seq=<...>` block by design. Its Stage 1 → Stage 2 readings — +0.0149 on ProteinGym, −0.0135 on the designs — are what that rung does outside the format it was tuned in, and are not evidence that instruction tuning removed or added a capability.
+
+**Ceiling — binding, and written before any of these numbers existed.**
+
+- **Not knowledge.** A transition on either endpoint is not evidence of biological knowledge, is not a retrieval exclusion, and is not admissible under §7.0, which does not gate this campaign because no knowledge claim is in play.
+- **Not mechanism.** Nothing here says where in the network the capability sits, and this campaign does not touch the mode-subspace, dictionary or crosscoder lines that do.
+- **Not causal about "continued pretraining".** The step that separates base from Stage 1 changes the corpus, retrains `embed_tokens` and `lm_head` outright — 262.1 M of a 582.0 M trainable budget, 45.0% of it — and fixes a LoRA rank, a schedule and a data order at once. What this prices is what **this released adaptation, as a whole,** bought on **these queues**.
+- **Not a protein capability for the base rung.** It reads a directional-reversal cost of −0.0013 nats per scored token in EXP-R2-152 and was exempted from the clause here; whatever correlation it returns is what the queue yields without a directional reading of sequence.
+- **Not contamination-controlled.** ProLLaMA's declared continued-pretraining corpus family is UniRef50, which contains the Swiss-Prot proteins these assays are built on. This campaign does not exclude retrieval, does not bound it, and must not be read as doing either. The ubiquitin observation above is a direct illustration, not a correction.
+- **Not a cross-family comparison.** No correlation from this ladder is placed beside a ProGen2, ProtGPT2, ProGen3 or Galactica reading, and no artefact presents the two ladders in one column.
+- **Not a claim that the earlier rung lacks the capability** (L44), and not a robust qualitative change: one fixed run reports a curve and a per-endpoint table, and calling a transition robust requires independent-data replication.
+- **Not a statement about the instruction format.** Stage 2 was scored under the bare block by design, so a Stage 2 reading at or below Stage 1's is not evidence that instruction tuning removed a capability.
+- **Not commensurable in magnitude with a residue-unit family.** One scored symbol here is a merged multi-residue SentencePiece piece. Spearman is unit-free, which is why the ranking estimand is admissible where a per-token one is not; the measured residues per scored token is reported beside it and no magnitude may be converted by division.
