@@ -1,0 +1,57 @@
+# EXP-R2-225 Wave A, the pure-protein ladder: ProGen3-112M -> ProGen3-3B on
+# ProteinGym substitutions (stage 20).
+#
+# BOTH rungs are scored here, not only the new one. The 2026-08-08 progen3-112m
+# payload predates two things this wave needs: `scoring_stratum`, which
+# scale_comparison.require_uniform_stratum refuses to assume from an arm name --
+# "the field was introduced with this campaign, so its absence means the payload
+# predates the rule and cannot vouch for what it was scored under" -- and the
+# per-checkpoint `checkpoint` name inside the self-check record, which
+# 43_second_stage_capability.py requires to be DISTINCT across the two rungs so a
+# band borrowed from the other rung cannot pass as this one's qualification. So
+# the older payload cannot be paired with a new one and is re-scored beside it.
+#
+# The rungs are bidirectional and belong to a stratum of their own. Both cells
+# route through _ProGen3Scorer, whose estimand is the mean of the N-to-C and
+# C-to-N summed log-likelihoods. That is not the summed left-to-right
+# log-likelihood every N-to-C arm is read under, and WAVE_STRATUM checks the two
+# payloads say so. Nothing from this campaign may be read in one column with the
+# ProGen2 or ProLLaMA ladders.
+#
+# bfloat16 on both rungs, one precision per endpoint, which is what
+# require_uniform_dtype resolves from the pair and what the existing 112M
+# artefact already carries. Everything else is the stage's own default and the
+# setting the frozen lookup.json was produced at: --variants 1000 --seed
+# 20260807 --batch-size 16. The per-assay mutant_digest pins the variant set and
+# align_dms refuses a payload whose digest disagrees with LOOKUP's, so those two
+# numbers are not free.
+#
+# No --progen3-checkpoint on either cell, deliberately. One value cannot serve
+# two rungs in one campaign, so PROGEN3_CHECKPOINTS resolves each rung's
+# directory: the 112M keeps the module's TRANSFER_PROGEN3_DIR default and the 3B
+# is addressed at ${TRANSFER_MODEL_BASE_DIR}/progen3-3b, which h200_env.sh
+# declares. The self-check band is keyed by the loaded config's architecture
+# fingerprint rather than by either directory name, so a relocated checkpoint is
+# a KeyError there and never somebody else's number.
+#
+# The gate that makes these cells worth running is inside the loader and runs
+# before any assay is scored: src.transfer.progen3.self_check refuses a load
+# outside the band measured on that checkpoint. Stock from_pretrained on these
+# releases returns randomly initialised experts and routers WITHOUT raising --
+# 18.4764 nats/token against 2.2867 on the 112M, 11.7474 against 1.5045 on the
+# 3B -- so a cell that dies here has produced the finding and must not be
+# retried around.
+#
+# One slot, one card each, because there is no second stage to sequence: this
+# wave carries the DMS endpoint alone. MegaScale is refused for the whole
+# lineage at 29_designed_referent.py, and neither rung has or can have a stage-41
+# record, ProGen3 having no ArmSpec for 01_cohort_power.py to resolve.
+#
+# 20_retrieval_bound.py's score stage reads wildtypes.json out of its own --out,
+# which this runner injects, so that file is staged into each cell's output
+# directory before dispatch. It is an INPUT staged beside a result and is not a
+# cell's expect basename -- expect names the model payload exactly.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	r225	0	20_retrieval_bound.py	r225_s20_progen3_112m	-	model_progen3-112m.json	--stages score --arms progen3-112m --dtype bfloat16
+1	r225	1	20_retrieval_bound.py	r225_s20_progen3_3b	-	model_progen3-3b.json	--stages score --arms progen3-3b --dtype bfloat16
