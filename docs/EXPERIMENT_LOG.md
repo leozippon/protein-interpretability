@@ -18346,9 +18346,11 @@ Snapshot `20260826143603_cffa47b0ef19`, pinned at commit `8515860`, launched 202
 
 One reproduction diagnostic worth recording: `progen2-small` returns **2.6505 nats/token** on the fixed self-check record in the pod, against **2.6505** measured on this workstation's CPU before dispatch. It is a device-agreement check on the scoring path and is an input to nothing.
 
-## 2026-08-26 — EXP-R2-228 measured: in-context homologue conditioning in frozen decoders is copying and local overlap, and it vanishes below the needle
+## 2026-08-26 — EXP-R2-228 measured: in-context homologue conditioning in frozen decoders is copying and local overlap, it vanishes below the needle, and one rung is moved the wrong way
 
-**The result. No arm passes the three-clause compound.** Two protein arms return `in_context_copying_and_local_overlap` and two arms return `no_gain_at_this_budget`. The decisive clause — that the gain survive inside the bottom local-overlap tercile of the `< 30` identity band — **fails on every arm**, and it fails on the two arms that carry a large pooled gain. That is the reading the registration froze for exactly this outcome: the line closes on Kantroo et al.'s mechanism and is not narrowed to a favourable band.
+**One entry, consolidated from the two that commit `ad4a77e` swept in.** Two analyses of this campaign were written concurrently and both reached the log; this entry is their union and replaces both. Every figure below was re-read from the artefact rather than carried across, and the merge makes two corrections, each named where it occurs. Nothing is dropped: the provenance record, the digest sidecar check, the realised `k` distributions, the frozen gate's structural asymmetry and the validation run come from the first entry; the band tables, the text-band breakdown, the wrong-way rung and the two specification defects from the second.
+
+**The result. No arm passes the three-clause compound.** Two protein arms return `in_context_copying_and_local_overlap` and two arms return `no_gain_at_this_budget`. The decisive clause — that the gain survive inside the bottom local-overlap tercile of the `< 30` identity band — **fails on every arm**, and it fails on the two arms that carry a large pooled gain. That is the reading the registration froze for exactly this outcome: the line closes on Kantroo et al.'s mechanism and is not narrowed to a favourable band. **§7.0 does not gate this entry**: a measurement of what a model does is itself the result, and every reading below sits under the ceiling the registration froze and the artefact carries.
 
 ### Provenance
 
@@ -18370,84 +18372,24 @@ python scripts/transfer/46_context_homologue.py --stage analyse \
   --out results/transfer/external_baseline/20260826143603_cffa47b0ef19
 ```
 
-Cohort digest `33707cee59c523dec945f9cc6f815bf5e5a1610eeff6e40ca2f16ce3134a7532`, unchanged and re-verified by every sub-stage; group bootstrap 2,000 resamples at seed 20260826. `evidence/context_homologue_20260826/endpoints.json` is the durable extract — every endpoint, interval, clause and verdict, with the per-unit rows dropped because the full artefact is 3.3 MB and lives outside version control. **No unit was refused on any arm.**
+Cohort digest `33707cee59c523dec945f9cc6f815bf5e5a1610eeff6e40ca2f16ce3134a7532`, unchanged and re-verified by every sub-stage; group bootstrap 2,000 resamples at seed 20260826. **No unit was refused on any arm.**
+
+**The analysis reproduced exactly across independently assembled inputs, and that is a fact about the artefacts rather than about anyone's process.** The campaign's records were pulled from the pod a second time (`ADMITTED`, 29 files), flattened a second time and re-analysed on CPU a second time, against the same cohort digest at the same resamples and seed. The second artefact is **byte-identical to the first apart from its `written_utc` stamp** — every band, stratum, tercile, interval and verdict, `protgpt2`'s by-band 0.915 / 0.935 / 0.770 / 0.525 included. A seeded group bootstrap reproducing exactly across independent input assembly is evidence that the analysis path is deterministic and that the inputs were assembled correctly. It is **not** an independent measurement: both runs read the same twenty score records written by the same pod, and no model was re-run.
 
 ### The four verdicts, as the artefact states them
 
-| arm | outcome | pooled fractional reduction | pooled AUROC |
-| --- | --- | --- | --- |
-| `gpt2-large` (text) | `no_gain_at_this_budget` | −0.0003, [−0.0012, +0.0006] | 0.5038, [0.4692, 0.5387] |
-| `protgpt2` | `in_context_copying_and_local_overlap` | +0.0722, [+0.0604, +0.0845] | 0.7863, [0.7563, 0.8148] |
-| `progen2-small` | `in_context_copying_and_local_overlap` | +0.0426, [+0.0348, +0.0508] | 0.6525, [0.6200, 0.6851] |
-| `progen2-medium` | `no_gain_at_this_budget` | −0.0305, [−0.0400, −0.0216] | 0.3787, [0.3434, 0.4146] |
+Pooled over the four populated retained bands, 800 units per arm; the protein arms resample 710 near-duplicate groups and the text arm 201 source documents. The denominator travels with every fractional reduction (Appendix B rule 27), and no nats-per-token magnitude is differenced across arms (L23).
 
-Pooled is over the 800 retained units of the four bands, 710 near-duplicate groups on the protein arms and 201 source documents on the text arm.
-
-### The decisive stratum, which is where the campaign is decided
-
-The bottom local-overlap tercile of the `< 30` identity band, 67 units, **measured longest-common-substring range [3, 5] residues** — below Kantroo et al.'s 10-residue needle, which is the property the third clause depends on.
-
-| arm | fractional reduction | AUROC | ΔNLL homologue − unrelated (descriptive) | clause 3 |
+| arm | pooled AUROC [95%] | pooled fractional reduction [95%] | its own position-only NLL | outcome |
 | --- | --- | --- | --- | --- |
-| `protgpt2` | +0.0020, [−0.0128, +0.0170] | 0.5970, [**0.4775**, 0.7164] | −0.0187, [−0.1091, +0.0727] | fails |
-| `progen2-small` | +0.0039, [+0.0002, +0.0084] | 0.5672, [**0.4478**, 0.6866] | −0.0089, [−0.0173, −0.0012] | fails |
-| `progen2-medium` | −0.0023, [−0.0136, +0.0097] | 0.4627, [0.3433, 0.5821] | +0.0098, [−0.0109, +0.0303] | fails |
-| `gpt2-large` | — | — | — | fails, stratum empty |
-
-`progen2-small` is the closest call in the campaign and it is instructive: its fractional-reduction lower bound clears zero at +0.00019, and its **AUROC lower bound is 0.4478 and does not clear one half**, so the clause fails on the endpoint that carries no denominator. Both endpoints are required and neither was relaxed.
-
-### Why the two positives are copying, read off the design's own strata
-
-The effect is monotone in exactly the quantity Kantroo et al. predict and collapses where copying cannot operate. On `protgpt2`, AUROC runs **0.9550 → 0.9150 → 0.9350 → 0.7700 → 0.5250** across the high-overlap 70–90 stratum, retained 70–90, 50–70, 30–50 and `< 30`; on `progen2-small`, **0.9250 → 0.8600 → 0.6700 → 0.5500 → 0.5300**. The **high-overlap stratum carries the largest effect on both arms** — fractional reduction +0.2902, [+0.2508, +0.3331] on `protgpt2` and +0.2269, [+0.1871, +0.2688] on `progen2-small` — which is the copying mechanism *measured* rather than only excluded, and it is the reason that stratum was scored instead of discarded. By the `< 30` band both arms are at chance.
-
-The high-overlap stratum is populated **only at 70–90**, as the build reported before any score existed. The three unpopulated strata, `< 30` among them at 0 eligible items, stayed dropped and were never merged into a neighbour.
-
-### The two negatives
-
-`gpt2-large` sits at chance on both endpoints in every BM25 band; its largest single reading is AUROC 0.5850, [0.5150, 0.6500] in `bm25_top10`, and its pooled interval spans one half. `progen2-medium` is not merely null but **reversed**: pooled AUROC 0.3787, [0.3434, 0.4146] and fractional reduction −0.0305, [−0.0400, −0.0216], meaning a true-homologue context leaves the target *less* likely than its own composition-matched unrelated context. The reversal is present in every retained band and absent from the high-overlap stratum (+0.0146, [−0.0252, +0.0539]). **No scale reading is available for it.** The ceiling's `no_claim_about_scale` clause is binding: `progen2-small` and `progen2-medium` are two rungs of one lineage at one budget, this campaign forms no scale gate, and the divergence between them is reported as an unexplained arm difference and nothing more.
-
-### The k that was actually reachable, as run
-
-k is an outcome of the fixed 1024-position budget, not a setting. Over retained units: `gpt2-large` 7 / 8 / 9 (min/median/max), `protgpt2` 8 / 14 / 37, `progen2-small` and `progen2-medium` 3 / 6 / 14. Median share of the window spent on context: 0.848, 0.723, 0.781, 0.781. Every arm reached k ≥ 3 on every unit and no unit approached the 48-item recording cap.
-
-### The k = 0 diagnostic, which is never the effect
-
-Reported because the registration's own failure branch needs it, and read for nothing else. `no_context` minus `position_only`: −2.8240, [−2.9804, −2.6774] on `protgpt2`; −0.3631, [−0.3773, −0.3493] on `progen2-medium`; −0.2047, [−0.2189, −0.1913] on `progen2-small`; −0.0316, [−0.0359, −0.0272] on `gpt2-large`. **Mere occupancy accounts for 121% of the whole homologue move on `protgpt2` and 93% on `progen2-medium`** — so a naive (k versus k = 0) comparison would have reported a large "effect" on the two arms whose paired contrast is respectively copying-explained and reversed. `gate()` refuses a block carrying this condition and was not asked to read one.
-
-### One structural property of the frozen gate, recorded rather than patched
-
-`DECISIVE_BAND` is `id_lt_30`, a DIAMOND identity band, so the text arm — which carries BM25 rank bands — has an **empty decisive stratum and cannot satisfy clause 3 as the gate is frozen**. It did not bind here: `gpt2-large` fails clauses 1 and 2 on their own, so its outcome is `no_gain_at_this_budget` whatever clause 3 does. It is recorded as a declared asymmetry of the compound rather than corrected now, because changing a gate after seeing the scores it governs is the failure this registration was written to prevent. Any future text-side reading of clause 3 needs the analogous stratum named **before** the run that decides it.
-
-### What this does not license
-
-A positive here would have been behavioural existence and nothing else; there is no positive to qualify. The two negatives are **bounded to frozen, single-sequence-pretrained decoders at a 1024-position budget on this cohort** and are **not** evidence against in-context homologue conditioning in general — every established positive in this literature (PoET, ProtMamba, E1, Protriever, ProFam) comes from a model **trained** for the conditioning, which is precisely why the frozen-decoder question was worth asking and why a null answers it. Nothing here is a knowledge or mechanism claim: no head, layer or circuit is implicated, and this campaign ran no intervention. F15 stands over the `< 30` band, which an alignment-level screen does not make homology-free.
-
-**Only the two dimensionless endpoints cross the modality boundary.** The per-token ΔNLL figures above are descriptive, are reported beside each arm's own position-only denominator, and are never differenced across arms (L23, Appendix B rules 26/27) — `protgpt2`'s position-only NLL is 7.5826 nats/token against `progen2-small`'s 1.7554 and `gpt2-large`'s 3.3182, and a per-token magnitude compared across those is not one estimand. A BM25 rank band and a DIAMOND identity band are two different measurements and are not ranked together or plotted on a shared axis, so the text arm's null is a null on its own bands and not a band-matched counterpart to the protein result.
-
-**`protgpt2`'s prior multi-sequence exposure is the standing confound and it points the same way as the result.** It was pretrained on FASTA-formatted UniRef50 with sequences hard-wrapped at 60 residues and separated by the end-of-text token, with its BPE merges learned over that byte stream — a multi-sequence window the ProGen2 arms never saw. It carries the largest pooled gain of the panel. That pattern is **consistent with the exposure** and licenses no tokenisation, modality or scale reading; it is a confound of the arm, not of the modality. It does not rescue the arm's clause 3 either, which fails on it as on every other.
-
-### Validation
-
-`scripts/transfer/panel_contract.py --verify` passes. Full suite under the campaign's model base directories: **1 failed, 2318 passed, 23 skipped, 110 subtests passed** in 782 s — the single failure is the known load-sensitive bash-trap race `ExternalStageWrapperLifecycleTests::test_int_writes_pre_and_post`, unchanged from the pre-dispatch baseline and left alone. No frozen constant, threshold, band, seed or stratum was altered to obtain any verdict above, and no arm was re-scored.
-
-## 2026-08-26 — EXP-R2-228 returns: the in-context gain on a frozen protein decoder is local overlap, it dies by 30% identity, and one rung is moved the wrong way
-
-**The campaign completed: 24 of 24 cells `exited-ok`, 0 failures, 0 no-record**, on snapshot `20260826143603_cffa47b0ef19` at commit `8515860`, against cohort `33707cee59c5…`. 4,000 scored units across four arms and five conditions, float32 throughout. `§7.0` does not gate this entry: a measurement of what a model does is itself the result. Every reading below sits under the `CEILING` the registration froze and this artefact carries.
-
-### The verdicts the frozen compound returns
-
-| arm | pooled AUROC [95%] | pooled fractional reduction [95%] | its own position-only NLL | verdict |
-| --- | --- | --- | --- | --- |
-| `protgpt2` | **0.786** [0.756, 0.815] | **+0.072** [0.060, 0.084] | 7.583 nats/token | `in_context_copying_and_local_overlap` |
-| `progen2-small` | **0.653** [0.620, 0.685] | **+0.043** [0.035, 0.051] | 1.755 nats/token | `in_context_copying_and_local_overlap` |
+| `protgpt2` | **0.786** [0.756, 0.815] | **+0.072** [+0.060, +0.084] | 7.583 nats/token | `in_context_copying_and_local_overlap` |
+| `progen2-small` | **0.653** [0.620, 0.685] | **+0.043** [+0.035, +0.051] | 1.755 nats/token | `in_context_copying_and_local_overlap` |
 | `progen2-medium` | **0.379** [0.343, 0.415] | **−0.031** [−0.040, −0.022] | 1.514 nats/token | `no_gain_at_this_budget` |
 | `gpt2-large` (text) | 0.504 [0.469, 0.539] | −0.0003 [−0.0012, +0.0006] | 3.318 nats/token | `no_gain_at_this_budget` |
 
-Pooled over the four populated retained bands, 800 units per arm; the protein arms resample 710 near-duplicate groups and the text arm 201 source documents. The denominator travels with every fractional reduction (Appendix B rule 27), and no nats-per-token magnitude is differenced across arms (L23).
+### The band gradient, which is why the two positives are copying
 
-### Clause 3 fails on both positive arms, and the whole `< 30` band says why
-
-**The band gradient is monotone, steep, and gone by 30% identity.** AUROC by identity band, retained stratum, 200 units each:
+**The effect is monotone in exactly the quantity Kantroo et al. predict and it collapses where copying cannot operate.** AUROC by identity band, retained stratum, 200 units each:
 
 | band | `protgpt2` | `progen2-small` | `progen2-medium` |
 | --- | --- | --- | --- |
@@ -18456,31 +18398,81 @@ Pooled over the four populated retained bands, 800 units per arm; the protein ar
 | 30–50 | 0.770 [0.709, 0.828] | 0.550 [0.482, 0.615] | 0.390 [0.322, 0.458] |
 | **< 30** | **0.525** [0.455, 0.593] | **0.530** [0.460, 0.600] | **0.465** [0.396, 0.530] |
 
-The decisive clause is read in the bottom local-overlap tercile of `< 30`, whose contexts carry longest common substrings of **3–5 residues** — below the 10-residue needle Kantroo et al. report. There it returns 0.597 [0.478, 0.716] on `protgpt2` and 0.567 [0.448, 0.687] on `progen2-small`: both include one half, so clause 3 fails and the line closes on the copying reading, as the registration specified and without narrowing to a favourable band.
+**The excluded verbatim-overlap stratum was scored, and it is the strongest reading anywhere in the campaign.** In the 70–90 band, contexts whose longest common substring reaches 20 residues return AUROC **0.955** [0.919, 0.986] on `protgpt2` and **0.925** [0.878, 0.966] on `progen2-small`, above their own retained counterparts at the same identity (0.915 and 0.860), with fractional reductions of **+0.290** [+0.251, +0.333] and **+0.227** [+0.187, +0.269] against retained-band figures of +0.182 and +0.125. That is a **positive finding about the mechanism, distinct from the null about homologue conditioning**: Kantroo et al. (arXiv:2504.17068) tested `progen2-medium`, a panel arm, and this campaign *measures* their copying effect on two other frozen decoders rather than merely screening it out. It is why that stratum was scored instead of discarded. On `progen2-medium` the same stratum reads 0.530 [0.436, 0.624] and +0.015 [−0.025, +0.054] — the one arm on which the copying signal is absent, and the same arm whose retained bands are reversed.
 
-**That tercile is 67 units and its interval is wide, so the tercile alone would be a weak negative — but the whole 200-unit band behind it is not.** At `< 30` the retained band's AUROC interval tops out at 0.593, 0.600 and 0.530 on the three protein arms, so the campaign excludes anything above a very small effect at that identity on every one of them, at four times the decisive stratum's sample. The three terciles inside `< 30` are also flat against each other (0.567 / 0.485 / 0.537 on `progen2-small`; 0.597 / 0.455 / 0.522 on `protgpt2`), which is what a gain carried by local overlap looks like when the overlap is gone.
+The high-overlap stratum is populated **only at 70–90**, as the build reported before any score existed. The three unpopulated strata, `< 30` among them at 0 eligible items, stayed dropped and were never merged into a neighbour.
 
-**The excluded stratum was scored, and it is the highest reading anywhere.** In the 70–90 band, contexts whose longest common substring reaches 20 residues return AUROC **0.955** [0.919, 0.986] on `protgpt2` and **0.925** [0.878, 0.966] on `progen2-small`, above their own retained counterparts at the same identity (0.915 and 0.860). Kantroo et al.'s mechanism is therefore measured rather than only screened out, which is what the registration asked for.
+### The decisive stratum, and the wider band standing behind it
 
-### `progen2-medium` is moved the wrong way, and it is not a null
+The decisive clause is read in the bottom local-overlap tercile of the `< 30` identity band, 67 units, **measured longest-common-substring range [3, 5] residues** — below Kantroo et al.'s 10-residue needle, which is the property the third clause depends on.
 
-Its pooled AUROC is 0.379 [0.343, 0.415] and at 50–70% identity it is **0.225** [0.172, 0.281]: a genuine homologue in context makes this checkpoint's target **less** likely than a composition- and token-length-matched unrelated sequence, reliably, at four resampled hundreds of groups. Its mono-shuffled control also beats its homologue condition by 0.195 nats/token. The frozen rule returns `no_gain_at_this_budget` for it, which is correct as far as the compound goes, and understates what was measured: this is a reproducible *negative* conditioning effect on the one rung of this lineage the cited literature actually tested. Nothing here says why, and this campaign runs no intervention.
+| arm | fractional reduction | AUROC | ΔNLL homologue − unrelated (descriptive) | clause 3 |
+| --- | --- | --- | --- | --- |
+| `protgpt2` | +0.0020 [−0.0128, +0.0170] | 0.597 [**0.477**, 0.716] | −0.0187 [−0.1091, +0.0727] | fails |
+| `progen2-small` | +0.0039 [+0.0002, +0.0084] | 0.567 [**0.448**, 0.687] | −0.0089 [−0.0173, −0.0012] | fails |
+| `progen2-medium` | −0.0023 [−0.0136, +0.0097] | 0.463 [0.343, 0.582] | +0.0098 [−0.0109, +0.0303] | fails |
+| `gpt2-large` | — | — | — | fails, stratum absent |
 
-### Two things the reading must carry
+`progen2-small` is the closest call in the campaign and it is instructive: its fractional-reduction lower bound clears zero at +0.00019, and its **AUROC lower bound is 0.448 and does not clear one half**, so the clause fails on the endpoint that carries no denominator. Both endpoints are required and neither was relaxed.
 
-**The text arm's pooled null is partly a construction.** Three of its four bands are BM25 relatedness bands and the fourth, `bm25_random`, is a draw from beyond rank 1000 — a deliberate null pooled into the same estimate. Per band: top-10 **0.585** [0.515, 0.650], 10–100 0.535 [0.465, 0.605], 100–1000 0.465 [0.400, 0.535], random 0.430 [0.360, 0.500]. The top-10 interval excludes one half. So "`gpt2-large` shows no gain" is the pooled compound's answer and not the whole measurement; the honest statement is that at k = 8 the text arm's retrieved-neighbour band returns a small effect the pooled endpoint washes out against its own random band. The protein `< 30` band is **not** the same object — it still requires a detected DIAMOND alignment — so the two pooling operations are not equivalent, and this is a defect of the parallel-factor design rather than of either measurement. **A text band and a protein identity band are still never differenced or ranked together.**
+**That tercile is 67 units and its interval is wide, so the tercile alone would be a weak negative — the negative does not rest on it.** The whole 200-unit `< 30` retained band behind it is flat on all three protein arms, with AUROC upper bounds of **0.593, 0.600 and 0.530**, so the campaign excludes anything above a very small effect at that identity on every protein arm at **four times** the decisive stratum's sample. The three terciles inside `< 30` are also flat against each other — 0.597 / 0.455 / 0.522 on `protgpt2`, 0.567 / 0.485 / 0.537 on `progen2-small`, 0.463 / 0.470 / 0.463 on `progen2-medium` — which is what a gain carried by local overlap looks like once the overlap is gone.
 
-**The registration's occupancy failure branch fires on its face and is refuted by its own diagnostic.** Measured against the k = 0 condition, merely filling the context accounts for 93% of what a homologue context does to `progen2-medium`'s target NLL, 121% on `protgpt2` and 238% on `progen2-small`. The branch's antecedent — "the position-only control moves the target's NLL as much as the homologue condition" — is therefore true on all three protein arms. Its consequent — "the endpoint is measuring context occupancy" — is not, and the campaign's own data refute it: k, the per-item token lengths and the filler are held identical across bands, so occupancy is common-mode inside every paired contrast, and an endpoint measuring occupancy could not move from 0.915 to 0.525 across bands **within one arm**. The branch was written against a `(k versus k = 0)` endpoint, which the same registration then barred; it does not discriminate on the paired endpoint that replaced it. Recorded as a defect in the registration's branch text, not resolved by fiat, and flagged for the next reader. **The campaign is not stopped on it**, because the clause it invokes is demonstrably not the condition the data are in.
+**And the decisive stratum's own sample size is demonstrably able to resolve an effect, which is what Appendix B rule 40 asks of a reported zero.** The bottom overlap tercile of the 70–90 band is the same 67 units and reads AUROC **0.955** [0.903, 1.000] on `protgpt2` and **0.910** [0.831, 0.971] on `progen2-small`. The instrument resolves a large effect at n = 67 on these arms; what it does not find at n = 67 in the `< 30` band is therefore a statement about the stratum and not about the resolution.
 
-### What this licenses, and what it does not
+### The two negatives
 
-For `protgpt2` and `progen2-small`: **the gain is in-context copying and local overlap**, on this cohort at this budget. For `progen2-medium` and `gpt2-large`: **no gain at this budget** — a bounded negative about frozen decoders at the measured k, and *not* evidence against in-context homologue conditioning, which PoET, ProtMamba, E1, Protriever and ProFam already establish for models trained for it. None of the four is an existence result for relatedness beyond copying.
+**`gpt2-large` sits at chance on both endpoints in every BM25 band.** Its largest single reading is AUROC 0.585 [0.515, 0.650] in `bm25_top10`, its pooled interval spans one half, and the per-band breakdown and what may be read off it are in Defect 2 below rather than here.
 
-**No mechanism claim, no knowledge claim, no scale claim.** The two ProGen2 rungs disagree in sign and this campaign forms no scale gate and may not receive `descriptive_gate_transition`. **ProtGPT2's larger reading carries its own confound**: it was pretrained on FASTA-formatted UniRef50 in which sequences are separated by the end-of-text token, so it is the one arm here with prior exposure to multi-sequence context, and a ProtGPT2-versus-ProGen2 pattern licenses no tokenisation, modality or scale reading. F15 stands over the `< 30` band: an alignment-level screen does not exclude profile-level homology, so it is not a homology-free stratum.
+**`progen2-medium` is not merely null but reversed.** Pooled AUROC 0.379 [0.343, 0.415] and fractional reduction −0.031 [−0.040, −0.022]; at 50–70% identity AUROC is **0.225** [0.172, 0.281] over 195 resampled near-duplicate groups. A genuine homologue in context leaves this checkpoint's target **less** likely than its own composition- and token-length-matched unrelated context, reliably, across four resampled hundreds of groups. Its mono-shuffled control also beats its homologue condition by **0.195 nats/token** [0.181, 0.209], where the same contrast runs the other way on `protgpt2` (+0.428) and `progen2-small` (+0.100). Both endpoints sit on the reversed side of their null in all four retained bands, and the reversal **excludes** its null on both endpoints in the two middle bands (50–70 and 30–50) while the 70–90 and `< 30` intervals span it; the high-overlap stratum carries no reversal at all, as the band gradient above records. *(Second correction taken in the merge: one prior entry read "the reversal is present in every retained band", which is true of the point estimates and not of two of the four intervals.)* **The frozen compound records `no_gain_at_this_budget` for it, which is correct as far as the compound goes and understates what was measured**: this is a reproducible *negative* conditioning effect on the one rung of this lineage the cited literature actually tested. The frozen verdict is not relabelled. Nothing here says why, and this campaign runs no intervention.
+
+**No scale reading is available for that divergence.** The ceiling's `no_claim_about_scale` clause is binding: `progen2-small` and `progen2-medium` are two rungs of one lineage at one budget, this campaign forms no scale gate and may not receive `descriptive_gate_transition`, and the divergence between them is reported as an unexplained arm difference and nothing more.
+
+### The k that was actually reachable, as run
+
+k is an outcome of the fixed 1024-position budget, not a setting, and the negative is a negative **at these k**. Over retained units, min / median / max: `gpt2-large` 7 / 8 / 9, `protgpt2` 8 / **13** / 37, `progen2-small` and `progen2-medium` 3 / 6 / 14. Median share of the window spent on context: 0.848, 0.723, 0.781, 0.781. Every arm reached k ≥ 3 on every unit and no unit approached the 48-item recording cap. *(Correction taken in the merge: one prior entry gave `protgpt2`'s median as 14, which is its **mean** of 14.94 rounded; the artefact's median is 13, and the project log's chronology already carried 13.)*
+
+### The k = 0 diagnostic, which is never the effect
+
+Reported because the registration's own failure branch needs it, and read for nothing else. `no_context` minus `position_only`: **−2.8240** [−2.9804, −2.6774] on `protgpt2`; **−0.3631** [−0.3773, −0.3493] on `progen2-medium`; **−0.2047** [−0.2189, −0.1913] on `progen2-small`; **−0.0316** [−0.0359, −0.0272] on `gpt2-large`. A naive (k versus k = 0) comparison would therefore have reported a large "effect" on the two arms whose paired contrast is respectively copying-explained and reversed. `gate()` refuses a block carrying this condition and was not asked to read one.
+
+### Two defects in the frozen specification, recorded rather than resolved by fiat
+
+Neither is a defect in a measurement, and neither changes a verdict. Both are defects in the **registration's own text**, identified after the data existed — which is why both are recorded rather than amended. EXP-R2-224's third pre-data implementation amendment could correct four criteria of exactly this species because no score existed yet; that door is shut here. The frozen wording stands as written, and what follows says why it does not reach the endpoint that was actually used.
+
+**Defect 1 — the occupancy failure branch fires on its face, and its consequent is refuted by the design that contains it.** The registration declares: *"The position-only control moves the target's NLL as much as the homologue condition → the endpoint is measuring context occupancy, the campaign stops, and that is reported as the finding."* Measured against the `no_context` condition, mere occupancy accounts for **93%** of what a homologue context does to `progen2-medium`'s target NLL, **121%** on `protgpt2` and **238%** on `progen2-small`. **The antecedent is true on all three protein arms, and this entry states that plainly rather than reading past it.** *The consequent is not asserted*, and the campaign's own data refute it. Within every target, k, the per-item context token length and the filler content are held identical across bands and across conditions, so occupancy is **common-mode inside every paired contrast** and cancels in the homologue-minus-matched-unrelated difference both endpoints are formed from; an endpoint measuring occupancy could not run 0.915 → 0.525 **within one arm** across bands that differ only in what the context contains. The branch was written against a `(k versus k = 0)` endpoint — the one contrast the same registration then barred by name, in favour of the paired contrast — and it does not discriminate on the endpoint that replaced it. **This is a post-hoc specification defect: a criterion refuted by the design's own constraints, of the same species as the criteria a pre-data amendment can still repair, and past the point at which one can be taken.** The campaign was correctly not stopped on it, because the condition the branch names is not the condition the data are in. The branch text is not retroactively rewritten, here or in the registration entry; a successor design that keeps this branch must restate it against the endpoint it will actually gate.
+
+**Defect 2 — the parallel-factor design is asymmetric across the modality boundary, in two directions at once.** Three of the four text bands are BM25 relatedness bands. The fourth, `bm25_random`, draws its context items from beyond rank 1000 — the same region `TEXT_UNRELATED_RANK` defines as unrelated and from which that arm's matched-unrelated control is itself drawn — so it is a band whose expected AUROC is one half **by construction**, and it is pooled into the same estimate as the three relatedness bands. The protein side has no counterpart: every member of every protein band is a pair DIAMOND actually aligned, and `id_lt_30` is a *detected* alignment below 30% identity rather than the absence of one. The two pooling operations are not the same operation. Per text band, 200 units and 200 source documents each:
+
+| band | AUROC [95%] | fractional reduction [95%] |
+| --- | --- | --- |
+| `bm25_top10` | **0.585** [0.515, 0.650] | +0.0017 [−0.0001, +0.0034] |
+| `bm25_10_100` | 0.535 [0.465, 0.605] | +0.0004 [−0.0011, +0.0020] |
+| `bm25_100_1000` | 0.465 [0.400, 0.535] | −0.0011 [−0.0030, +0.0007] |
+| `bm25_random` | 0.430 [0.360, 0.500] | −0.0020 [−0.0036, −0.0006] |
+
+The second direction is in the gate itself. `DECISIVE_BAND` is `id_lt_30`, a DIAMOND identity band, and the analysis reads the decisive stratum as that band's retained bottom overlap tercile. A text arm has no such band, so its decisive block is absent, both of clause 3's lower bounds are `None` in the artefact, and **clause 3 cannot hold on a text arm as the gate is frozen**. It did not bind here — `gpt2-large` fails clauses 1 and 2 on their own, so its outcome is `no_gain_at_this_budget` whatever clause 3 does. It is recorded rather than corrected now, because changing a gate after seeing the scores it governs is the failure this registration was written to prevent. **Any future text-side reading of clause 3 must name the analogous stratum before the run that decides it.**
+
+**The disposition.** The pre-registered compound answer stands as frozen: `gpt2-large` shows **no gain at this budget**. Revising a compound after seeing the scores it governs would breach the discipline that makes every other result in this programme citable. The band-level breakdown above is reported **beside** it, explicitly **post-hoc and descriptive**, and it is not a second verdict — a point worth stating precisely, because `bm25_top10`'s AUROC interval excludes one half while its **fractional-reduction interval does not exclude zero**, so even read alone that band satisfies one of the compound's two pooled clauses and not the other. What the breakdown supports is narrower and worth carrying: at k = 8 the text arm's top-ranked-neighbour band returns a small discrimination effect that the pooled endpoint dilutes against a band constructed to carry none, so "no gain" is the compound's answer and not the whole measurement. The design asymmetry itself is catalogued as **L45**. **A text band and a protein identity band remain two different measurements** and are never differenced, ranked together, or plotted on a shared axis.
+
+### What this does and does not license
+
+For `protgpt2` and `progen2-small`: **the gain is in-context copying and local overlap**, on this cohort at this budget. For `progen2-medium` and `gpt2-large`: **no gain at this budget** — a bounded negative about frozen decoders at the measured k. None of the four is an existence result for relatedness beyond copying.
+
+The negatives are **bounded to frozen, single-sequence-pretrained decoders at a 1024-position budget on this cohort** and are **not** evidence against in-context homologue conditioning in general: every established positive in this literature — PoET, ProtMamba, E1, Protriever, ProFam — comes from a model **trained** for the conditioning, which is precisely why the frozen-decoder question was worth asking and why a null answers it.
+
+**No mechanism claim, no knowledge claim, no scale claim.** No head, layer or circuit is implicated and this campaign ran no intervention; it does not reopen the induction line. F15 stands over the `< 30` band, which an alignment-level screen does not make homology-free.
+
+**Only the two dimensionless endpoints cross the modality boundary.** The per-token ΔNLL figures above are descriptive, are reported beside each arm's own position-only denominator, and are never differenced across arms (L23, Appendix B rules 26/27) — `protgpt2`'s position-only NLL is 7.5826 nats/token against `progen2-small`'s 1.7554 and `gpt2-large`'s 3.3182, and a per-token magnitude compared across those is not one estimand.
+
+**`protgpt2`'s prior multi-sequence exposure is the standing confound and it points the same way as the result.** It was pretrained on FASTA-formatted UniRef50 with sequences hard-wrapped at 60 residues and separated by the end-of-text token, with its BPE merges learned over that byte stream — a multi-sequence window the ProGen2 arms never saw. It carries the largest pooled gain of the panel. That pattern is **consistent with the exposure** and licenses no tokenisation, modality or scale reading; it is a confound of the arm, not of the modality. It does not rescue its clause 3 either, which fails on it as on every other arm.
+
+### Validation
+
+`scripts/transfer/panel_contract.py --verify` passes. Full suite under the campaign's model base directories: **1 failed, 2318 passed, 23 skipped, 110 subtests passed** in 782 s — the single failure is the known load-sensitive bash-trap race `ExternalStageWrapperLifecycleTests::test_int_writes_pre_and_post`, unchanged from the pre-dispatch baseline and left alone. No frozen constant, threshold, band, seed or stratum was altered to obtain any verdict above, and no arm was re-scored.
 
 ### Artefacts
 
-`results/transfer/r228_context_homologue/context_homologue.json`, assembled on CPU from the twenty score records and four self-checks under `results/transfer/external_baseline/20260826143603_cffa47b0ef19/`, each digest-verified against cohort `33707cee59c5…` and its own arm's plan before it was read. The censuses that decided the cohort are committed at `evidence/context_homologue_20260826/cohort_census.json`.
+`results/transfer/r228_context_homologue/context_homologue.json`, 3.3 MB, assembled on CPU from the twenty score records and the four per-arm plans under `results/transfer/external_baseline/20260826143603_cffa47b0ef19/` — the only inputs `--stage analyse` reads — each digest-verified against cohort `33707cee59c5…` and its own arm's plan before it was read. It lives under ignored `results/` because of its size, and its per-unit rows are the bulk of it. The censuses that decided the cohort are committed at `evidence/context_homologue_20260826/cohort_census.json`. A durable per-endpoint extract — every endpoint, interval, clause and verdict with the per-unit rows dropped — exists at `evidence/context_homologue_20260826/endpoints.json` and **is not committed at this entry**.
 
 ## 2026-08-26 — EXP-R2-229 pre-registered: does one joint decoder's protein mode resolve at a different depth from its own text mode? The route, the instrument gate, and the frozen compound
 
@@ -18707,3 +18699,58 @@ A pass licenses exactly the artefact's own sentence: **this arm's native conditi
 `results/transfer/conditioned_generation/conditioned_generation.json`, SHA-256 `3821ab2013aaa03fc219e34394dfadeb09182f8da74a74b22141487c1546e2af`, assembled on Compute from the twelve admitted records under `results/transfer/external_baseline/20260826121259_422e2b28e53a/` together with the instruments and anchor artefacts. Nothing is promoted to `evidence/`; the frozen queue was already there and is unchanged.
 
 `panel_contract.py --verify` passes. Full suite with `TRANSFER_MODEL_BASE_DIR` and `TRANSFER_TEXT_MODEL_BASE_DIR` exported: **2315 passed, 5 failed, 23 skipped, 110 subtests passed in 712.97 s**, run while another campaign was editing the same working tree. Re-running all five in isolation on a quiet host: **54 passed in 16.26 s**, the whole `test_conditioned_generation.py` module included. One failure is the documented load-sensitive bash-trap race in `ExternalStageWrapperLifecycleTests`; the other four (`test_cohort_draw_contract.py` ×2, `test_h200_orchestration.py::test_every_external_baseline_stage_appears_in_the_research_plan`, `test_transfer_audit_invariants.py::test_the_resampler_inventory_is_complete_and_its_gaps_are_named`) were transient states of EXP-R2-229's in-flight edits to those same files and are green now that the edit is coherent. This campaign changed no tracked source file.
+
+## 2026-08-26 — EXP-R2-229 measured: one joint decoder's protein mode reaches its own answer later than its text mode, on both identified rungs — and the top rung is stopped by its own instrument gate
+
+**Dispatched and scored the same day as the freeze above, on the snapshot pinned at commit `c15df78` (run id `20260826162425_b7bf9f48d52d`, code hash `b7bf9f48d52d…`, 131 files checksum-verified in-pod).** Four cells in two slots on three cards, in-pod `--dry-run` first, status file confirmed before anything was treated as launched. Cards read `0 MiB, 0 %` on all three before dispatch and after (Appendix B rule 19). Records pulled with `pull_records_h200.sh`, whose verdict is quoted verbatim: `digests verified; results/transfer/r229_joint_lens ADMITTED (3 file(s))`.
+
+**Three cells `exited-ok`, one `exited-nonzero`, `# NO-RECORD 0`.** All three completed rungs loaded strictly with every Transformers counter zero, drew the qualification cohorts to the expected digests (`0dd37e88b0db6947…` protein, `2c9f8a8ea44850c0…` text), and rendered at exactly **1.000** residues per scored token on 20,866 residues against 20,864 text targets. Peak device memory 1,106 / 3,623 / 14,209 MiB.
+
+### `galactica-30b` is stopped by the gate the freeze wrote for exactly this, and the tolerance is not moved
+
+The 48×7168 cell loaded in 27 s and died at its **first** `verify_lens_head`, on the **text** cell, before any trajectory existed: the float32 lens head disagreed with the model's own bfloat16 final distribution by **8.569e-02 nats** against the frozen **1e-2** ceiling. The registered failure branch is *"`verify_lens_head` exceeds the frozen tolerance on any cell → that rung stops. Do not loosen the tolerance to recover it."* It is not loosened, and the ladder is reported at three rungs.
+
+**The refusal is a measurement, and it is the interface finding of this campaign.** The bfloat16 lens-head floor scales steeply with shape — 12×768 **6.05e-04**, 24×2048 **9.64e-04**, 32×4096 **1.88e-03**, 48×7168 **8.57e-02** — so the ceiling the freeze derived from the estimand's own crossing levels (two orders of magnitude below the smallest, about 1.8 nats) is met by the three smaller rungs with two to three orders of margin and missed by the top one. A 30B reading needs float32, which is about 120 GB of weights against 143,771 MiB of card — arithmetic, **not** a measurement, and this campaign did not attempt it. **Mixing precisions across the ladder is inadmissible** by the freeze's own text, so recovering the top rung means re-running all four at float32 under a successor freeze, and that is named here rather than done: a configuration chosen after seeing which rung a threshold refused is a new measurement, not this one.
+
+### Both identified rungs return the compound, in the same direction
+
+`--stage gate` was taken on CPU from each artefact beside that rung's own `41_context_information_bootstrap.py` protein report, whose cohort digest matches the lens cohort exactly (`same_cohort: true` on both).
+
+| rung | shape | protein-mode context information | verdict | direction |
+|---|---|---|---|---|
+| `galactica-1.3b` | 24×2048, 1,315,201,024 params | +0.047678 nats/residue, sign rule PASS | **`modality_depth_separation`** | `protein_resolves_deeper` |
+| `galactica-6.7b` | 32×4096, 6,657,359,872 params | +0.199442 nats/residue, sign rule PASS | **`modality_depth_separation`** | `protein_resolves_deeper` |
+
+All three clauses hold on both: every level's interval excludes zero, the sign is invariant across the level sweep, and the span-normalised KL depth agrees at τ = 0.50.
+
+**The primary contrast, protein minus text in relative depth**, record-cluster bootstrap at 2,000 resamples on seed 20260826, zero undefined draws anywhere:
+
+| rung | level 0.25 | level 0.50 | level 0.75 | KL span τ=0.50 |
+|---|---|---|---|---|
+| `1.3b` | +0.302587 [+0.297127, +0.310858] | **+0.138115** [+0.133186, +0.143543] | +0.034926 [+0.033855, +0.036126] | +0.280902 [+0.277967, +0.284035] |
+| `6.7b` | +0.308675 [+0.294708, +0.322554] | **+0.135186** [+0.129198, +0.141252] | +0.041569 [+0.039760, +0.043472] | +0.194700 [+0.190169, +0.199097] |
+| `125m` (barred) | +0.469420 [+0.455594, +0.484743] | +0.169956 [+0.165456, +0.174473] | +0.049480 [+0.047752, +0.051227] | +0.615087 [+0.014814, +0.619136] |
+
+**The pre-registered secondary scale reading returns flat.** Between the two identified rungs the protein mode's own context information rises more than fourfold, +0.047678 → +0.199442 nats/residue, while the contrast at level 0.50 moves +0.138115 → +0.135186 with intervals that overlap almost entirely. **The depth difference does not track how much the protein mode extracts from context**, which is the reading the scale axis was built to be able to return and the one it did return. Nothing here identifies an effect of parameter count: depth, width and parameter count co-vary and both rungs come from one training run.
+
+**The position cap prices its own confound at nothing.** Restricting the protein mask to targets the 164-token text window can match on position in context (17,959 of 20,866) moves the contrast by at most 4.2e-04 in relative depth on any rung. The position tail is not carrying the result.
+
+**The naive-rendering control shrinks the contrast without erasing it, and the shrinkage grows with scale.** At level 0.50 the same 128 proteins under the merged rendering (1.7902 residues per scored token, 11,656 targets) read +0.129688, +0.070529 and +0.048787 against the declared +0.169956, +0.138115 and +0.135186. So on `galactica-6.7b` about **two thirds** of the declared contrast is attributable to the per-residue target granularity that the declared rendering reaches and the naive one does not, and about **one third** survives it. Reported, never gated, and it bounds the reading rather than supporting it.
+
+### The reading without the interpolation, which is stronger than the statistic and is how it should be quoted
+
+The frozen statistic interpolates a crossing depth, and on the protein side that interpolation runs into the final grid interval, whose deep endpoint is exactly 1.0 by construction. The interpolation-free statement is the one to carry: **at every measured interior depth, the protein-mode lens agrees with the model's own final top-1 on almost none of its scored positions.** On `galactica-1.3b` the protein agreement trajectory reads 0.106, 0.005, 0.002, 0.004, 0.006, 0.006, 0.007, 0.007, 0.009, 0.136 and then 1.000 at the model itself; on `galactica-6.7b` 0.001, 0.000, 0.000, 0.000, 0.007, 0.024, 0.026, 0.037, 0.096, 0.296, 1.000. The text mode of the very same weights is at 0.469 and 0.521 by ~0.80 relative depth and crosses one half at **0.8137** and **0.7983**. So the honest headline is that the protein mode's output head shows nothing of the model's own final answer until the last block or two, while the text mode's shows half of it four-fifths of the way down — and **the frozen depth statistic's magnitude on the protein side is grid-limited and should not be quoted to three decimals as if the grid resolved it.**
+
+### The confound this campaign found in its own primary statistic, recorded post-hoc
+
+Top-1 agreement is read at an absolute level on a scale both modes share, and the freeze bounded the one asymmetry it had anticipated — the ~1/20 against ~1/50000 chance floor, which biases *against* this result and is confirmed in the data, since the protein mode starts **higher** than the text mode on two of three rungs (0.098 against 0.031 at 125m, 0.106 against 0.038 at 1.3b) and still crosses later. The asymmetry it did **not** anticipate is the margin: the protein mode's final-layer entropy is 2.760, 2.843 and 2.699 nats over an effective support of about twenty residues — close to flat — while the text mode's is 3.538, 2.940 and 2.665 nats over 50,000 tokens. A nearly flat final distribution has a low-margin argmax, so agreeing with it is a more demanding event in protein mode than in text mode at the same level. **This is a real limitation of the primary statistic and it is not repaired here.** What partly answers it is the second functional the compound already required: the span-normalised **KL** depth carries no argmax margin at all, and it puts the protein mode later on both rungs by +0.2809 and +0.1947. Two statistics whose defects point in different directions agree on the direction; neither is clean alone.
+
+### What this licenses, and what it does not
+
+For `galactica-1.3b` and `galactica-6.7b`: **the logit lens arrives at this checkpoint's own final prediction at a later relative depth in its protein mode than in its text mode, on this cohort** — with the parameters, depth, width, final normalisation, unembedding, tokenizer and training run identical objects rather than merely matched. That is the contrast the panel cannot make anywhere else, and it is a statement about two modes of two checkpoints and about nothing wider.
+
+Every clause of the freeze's ceiling stands, and three of them bind hard on this result. It is **not** a test of the limited-output-interface hypothesis — both modes emit through one head over one 50,000-token vocabulary, so this separates interface size from content modality rather than testing it. It is **not** a causal claim about scale. And it is **not** a claim about when a computation resolves: no tuned lens is fitted, so the untuned lens's basis error is present in both modes and undivided, and this measurement cannot distinguish "the computation resolves later in this mode" from "this mode's intermediate states sit further from the final basis". **The tuned-lens replication is the declared next measurement and this reading is not citable as a claim about resolution of computation until one exists.** One family, one rendering, one seed, one draw; no per-token magnitude crosses the mode boundary; nothing reaches a pure-protein decoder and the panel's modality coefficient is not refitted.
+
+### Artefacts
+
+`results/transfer/r229_joint_lens/r229_lens_galactica_{125m,1b,6b}/joint_mode_lens.json`, each carrying its own trajectories, per-layer record-cluster intervals, depth statistics, contrasts, text-control attainability and the binding ceiling; and `joint_mode_lens_gate.json` beside the two identified rungs. `galactica-30b` wrote no artefact and its refusal is in the campaign status file and its pod log.
