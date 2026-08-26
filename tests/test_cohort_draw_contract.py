@@ -57,6 +57,20 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "only to positions, over a 150-of-396,000 file-order prefix"
     ),
     "12_induction_robustness.py": "reads artefacts from disk; loads no corpus",
+    "45_conditioned_generation.py": (
+        "its unit is the CLASS, not the corpus record: EXP-R2-227 draws sixteen full "
+        "EC numbers and sixteen InterPro homologous superfamilies under a seeded "
+        "permutation of each arm's own admissible class list, and then draws that "
+        "class's referent and anchor records as two disjoint windows of a second "
+        "seeded permutation of the class's own records. A cohort constructor cannot "
+        "serve either: it selects across the whole corpus under one length band and "
+        "keeps no class partition, and this stage needs a per-class draw whose "
+        "referent half is disjoint from its anchor half. Rule 1 is answered by "
+        "--draw-seed, whose default is the registration's frozen 20260826, by the "
+        "census of every eligible class that reaches the artefact, and by the frozen "
+        "queue's own content digest, which every later sub-stage verifies before it "
+        "reads a class"
+    ),
     "41_context_information_bootstrap.py": (
         "reads sufficient-statistics sidecars and cohort records from disk and "
         "resamples them; loads no corpus and no model. Its own resampling is "

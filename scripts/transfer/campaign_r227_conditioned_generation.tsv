@@ -1,0 +1,59 @@
+# EXP-R2-227: does a conditioned arm generate what it is asked for?
+#
+# The GPU half of D1.h, and the only half that needs a card. The HMMER/Pfam-A
+# oracle, the InterPro release and the UniRef50 corpus are staged on the
+# workstation and not in this pod, so the instrument build, the frozen class
+# queue, the per-class instrument anchors and the scoring all run on CPU there;
+# what runs here is sampling.
+#
+# ONE CARD, ONE CELL PER SLOT. The allocation exposes three cards and a
+# concurrent official campaign holds two of them, so every cell is scheduled on
+# the free card and the slots are the sequence. A cell whose card is not idle is
+# REFUSED and not launched, which is the property that keeps this campaign from
+# displacing that one.
+#
+# STAGING BEFORE DISPATCH. The frozen class queue is evidence rather than code,
+# so it does not travel inside the snapshot. Copy it to
+# <results_run_dir>/class_queue.json before launching -- the same shape
+# EXP-R2-226 used for wildtypes.json and cohort.json -- and it is nobody's
+# expect basename, because an input staged beside a result is not completion.
+# Every cell that reads it verifies its content digest and refuses a queue that
+# has drifted.
+#
+# SLOTS 1-6 ARE THE INTERFACE GATE. "An arm fails a load, self-check or
+# rendering check -> that arm stops. Do not substitute another conditioned arm;
+# there are only two." Each self-check samples two continuations of 24 tokens at
+# a configuration this campaign does not measure at, and --stage generate refuses
+# an arm whose self-check artefact is absent or failed. So the gate is executable
+# rather than a sentence in a log entry.
+#
+# SLOTS 7-8 BEFORE 9-12, deliberately. The registration's operational sequence
+# runs the text positive control's attainability screen before the protein
+# generations: the control shows the estimand returns a strong positive with
+# instrument error removed, so a weak protein reading cannot be blamed on the
+# estimand. Nothing about the ordering is relaxed to save time.
+#
+# bfloat16 ON EVERY ARM, self-check and generation alike. The released
+# checkpoints are float32 (ZymCTRL, ProtGPT2, ProGen2-medium), float16
+# (ProLLaMA) and bfloat16 (the two text arms), so this is a declared cast,
+# identical across arms and conditions, which is what a within-arm contrast
+# between conditions requires. It is recorded in every artefact.
+#
+# Everything else is the stage's own frozen default: top-p 0.95, temperature
+# 1.0, no top-k, no repetition penalty, at most 400 new tokens, 200 generations
+# per (arm x class x condition), campaign seed 20260826. --stage generate
+# refuses any of those moved.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	r227	2	45_conditioned_generation.py	r227_selfcheck_zymctrl	-	generation_self_check_zymctrl.json	--stage self-check --arm zymctrl --dtype bfloat16 --queue ${TRANSFER_RESULTS_RUN_DIR}/class_queue.json
+2	r227	2	45_conditioned_generation.py	r227_selfcheck_prollama	-	generation_self_check_prollama.json	--stage self-check --arm prollama --dtype bfloat16 --queue ${TRANSFER_RESULTS_RUN_DIR}/class_queue.json
+3	r227	2	45_conditioned_generation.py	r227_selfcheck_progen2-medium	-	generation_self_check_progen2-medium.json	--stage self-check --arm progen2-medium --dtype bfloat16 --queue ${TRANSFER_RESULTS_RUN_DIR}/class_queue.json
+4	r227	2	45_conditioned_generation.py	r227_selfcheck_protgpt2	-	generation_self_check_protgpt2.json	--stage self-check --arm protgpt2 --dtype bfloat16 --queue ${TRANSFER_RESULTS_RUN_DIR}/class_queue.json
+5	r227	2	45_conditioned_generation.py	r227_selfcheck_qwen2.5-0.5b	-	generation_self_check_qwen2.5-0.5b.json	--stage self-check --arm qwen2.5-0.5b --dtype bfloat16 --queue ${TRANSFER_RESULTS_RUN_DIR}/class_queue.json
+6	r227	2	45_conditioned_generation.py	r227_selfcheck_llama-3.2-3b	-	generation_self_check_llama-3.2-3b.json	--stage self-check --arm llama-3.2-3b --dtype bfloat16 --queue ${TRANSFER_RESULTS_RUN_DIR}/class_queue.json
+7	r227	2	45_conditioned_generation.py	r227_generate_qwen2.5-0.5b	-	generations_qwen2.5-0.5b.json	--stage generate --arm qwen2.5-0.5b --dtype bfloat16 --queue ${TRANSFER_RESULTS_RUN_DIR}/class_queue.json --self-check-dir ${TRANSFER_RESULTS_RUN_DIR}/r227_selfcheck_qwen2.5-0.5b --batch-size 25
+8	r227	2	45_conditioned_generation.py	r227_generate_llama-3.2-3b	-	generations_llama-3.2-3b.json	--stage generate --arm llama-3.2-3b --dtype bfloat16 --queue ${TRANSFER_RESULTS_RUN_DIR}/class_queue.json --self-check-dir ${TRANSFER_RESULTS_RUN_DIR}/r227_selfcheck_llama-3.2-3b --batch-size 25
+9	r227	2	45_conditioned_generation.py	r227_generate_zymctrl	-	generations_zymctrl.json	--stage generate --arm zymctrl --dtype bfloat16 --queue ${TRANSFER_RESULTS_RUN_DIR}/class_queue.json --self-check-dir ${TRANSFER_RESULTS_RUN_DIR}/r227_selfcheck_zymctrl --batch-size 25
+10	r227	2	45_conditioned_generation.py	r227_generate_progen2-medium	-	generations_progen2-medium.json	--stage generate --arm progen2-medium --dtype bfloat16 --queue ${TRANSFER_RESULTS_RUN_DIR}/class_queue.json --self-check-dir ${TRANSFER_RESULTS_RUN_DIR}/r227_selfcheck_progen2-medium --batch-size 25
+11	r227	2	45_conditioned_generation.py	r227_generate_protgpt2	-	generations_protgpt2.json	--stage generate --arm protgpt2 --dtype bfloat16 --queue ${TRANSFER_RESULTS_RUN_DIR}/class_queue.json --self-check-dir ${TRANSFER_RESULTS_RUN_DIR}/r227_selfcheck_protgpt2 --batch-size 25
+12	r227	2	45_conditioned_generation.py	r227_generate_prollama	-	generations_prollama.json	--stage generate --arm prollama --dtype bfloat16 --queue ${TRANSFER_RESULTS_RUN_DIR}/class_queue.json --self-check-dir ${TRANSFER_RESULTS_RUN_DIR}/r227_selfcheck_prollama --batch-size 25

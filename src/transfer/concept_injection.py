@@ -2014,31 +2014,44 @@ def run_hmmscan(
     query_fasta: Path,
     output_tbl: Path,
     *,
-    evalue: float,
+    evalue: float | None = None,
     threads: int,
+    gathering_threshold: bool = False,
 ) -> tuple[list[str], str]:
     """Assign Pfam families to the query sequences; return the command and the log tail.
 
     The E-value threshold is a parameter rather than a literal because it is the
     one knob that decides how many families a generated sequence appears to carry,
-    so it belongs in the artefact. No masking option is passed: HMMER's own null
-    model handles composition bias, and §0.05 records what happened the last time
-    a masking default silently truncated the evidence this programme reads.
+    so it belongs in the artefact. ``gathering_threshold`` instead passes
+    ``--cut_ga``, Pfam's own curated per-family cut, which is what makes "this
+    sequence carries this family" a statement of the release rather than a
+    threshold decision taken inside the measurement; the two are mutually
+    exclusive and one of them must be given. No masking option is passed: HMMER's
+    own null model handles composition bias, and §0.05 records what happened the
+    last time a masking default silently truncated the evidence this programme
+    reads.
     """
 
     query_fasta = Path(query_fasta)
     output_tbl = Path(output_tbl)
     if not query_fasta.is_file():
         raise FileNotFoundError(f"{query_fasta} does not exist")
-    if evalue <= 0 or threads < 1:
+    if threads < 1:
         raise ValueError("invalid hmmscan parameters")
+    if gathering_threshold == (evalue is not None):
+        raise ValueError(
+            "pass exactly one of evalue= and gathering_threshold=True; a run that "
+            "declared both would report a cut it did not apply"
+        )
+    if evalue is not None and evalue <= 0:
+        raise ValueError("invalid hmmscan parameters")
+    cut = ["--cut_ga"] if gathering_threshold else ["-E", repr(evalue)]
     command = [
         str(tool.hmmscan),
         "--tblout",
         str(output_tbl),
         "--noali",
-        "-E",
-        repr(evalue),
+        *cut,
         "--cpu",
         str(threads),
         str(database.path),
