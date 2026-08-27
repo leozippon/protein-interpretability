@@ -18754,3 +18754,108 @@ Every clause of the freeze's ceiling stands, and three of them bind hard on this
 ### Artefacts
 
 `results/transfer/r229_joint_lens/r229_lens_galactica_{125m,1b,6b}/joint_mode_lens.json`, each carrying its own trajectories, per-layer record-cluster intervals, depth statistics, contrasts, text-control attainability and the binding ceiling; and `joint_mode_lens_gate.json` beside the two identified rungs. `galactica-30b` wrote no artefact and its refusal is in the campaign status file and its pod log.
+
+## 2026-08-27 — EXP-R2-230 pre-registered: EXP-R2-229's depth contrast re-instrumented at float32 across the whole ladder, so the 48×7168 rung can be measured at all
+
+**Taking `EXP-R2-230`, the next free identifier. This is the SUCCESSOR FREEZE EXP-R2-229's own result entry named, not an amendment to it.** No float32 lens trajectory exists for any gated Galactica rung at registration, and no gate verdict has been computed at float32 on any rung. Direction-2, as EXP-R2-229 was. It admits no checkpoint to the panel, authorises no knowledge claim, and §7.0 does not gate it.
+
+**The one sentence this campaign is for**, carried unchanged from EXP-R2-229 with one thing added. *Whether the logit lens arrives at a joint decoder's own final prediction at a different relative depth in its protein mode than in its text mode, measured on the same weights, the same head, the same tokenizer and one depth grid* — **at every rung whose protein mode is identified, including the 48×7168 rung EXP-R2-229's instrument gate refused.**
+
+### Why this is a successor freeze and not an amendment, and why the tolerance does not move
+
+EXP-R2-229 measured its ladder at bfloat16 and `galactica-30b` was stopped by its own `verify_lens_head` at **8.569e-02** nats against a tolerance frozen at **1e-2**, on the TEXT cell, before any trajectory existed. That was the registered failure branch firing exactly as written — *"`verify_lens_head` exceeds the frozen tolerance on any cell → that rung stops. Do not loosen the tolerance to recover it."* The tolerance was not moved then and **is not moved here.** It is a ceiling on a known rounding term, and a lens head that does not reconstruct the model's own logits is not measuring the model.
+
+The recovery is therefore to change the **instrument** rather than the ceiling, and a precision is an instrument. EXP-R2-229's own text bars mixing precisions across rungs — a ladder measured at two precisions is not one ladder — so recovering the top rung means re-running the whole ladder at float32, and that is a new measurement. It has to be registered before its numbers exist rather than appended to a freeze that produced different ones, for the plain reason that **this configuration was chosen after seeing which rung a threshold refused.**
+
+**This is deliberately not treated the way EXP-R2-224's `REQUIRED_LIVE_WIDTH` was treated.** There a frozen constant had simply been mis-stated and was corrected by a pre-data amendment, because the corrected value was the one the freeze had always meant. A tolerance the instrument genuinely cannot meet at one width is a different object: the freeze meant exactly what it said, the number is right, and the thing that must change is the arithmetic underneath it. Correcting a mis-statement and relaxing a satisfied-elsewhere constraint are not the same act and this entry does not blur them.
+
+### The diagnosis, re-measured before this freeze was written rather than carried over
+
+EXP-R2-229's diagnosis was that the bfloat16 lens-head reconstruction floor scales with width. A diagnosis is not a measurement and a precision cannot be chosen from one, so it was re-measured first, at every width and at both precisions, by a new `47_joint_mode_lens.py --stage verify` that loads the checkpoint, builds the same head, the same grid and the same four cells `--stage measure` builds, and spends one forward pass per cell on `verify_lens_head` under a wide diagnostic ceiling — so that an error above the frozen tolerance comes back as a **number** rather than as a stop. It computes no trajectory, no depth, no contrast and no gate.
+
+Dispatched on the snapshot pinned at commit `47736e7` (run id `20260826170610_af30ae1774e4`), eight cells in four slots on three cards, in-pod `--dry-run` first, status file confirmed before anything was treated as launched, cards `0 MiB, 0 %` before and after (Appendix B rule 19). **Eight `exited-ok`, `# FAILURES 0`, `# NO-RECORD 0`.** Records pulled with `pull_records_h200.sh` after a dry run, verdict verbatim: `digests verified; results/transfer/r230_lens_head_precision ADMITTED (8 file(s))`.
+
+| rung | shape | parameters | bfloat16, worst cell | float32, every cell | float32 peak device memory |
+|---|---|---:|---|---|---:|
+| `galactica-125m` | 12×768 | 125,030,400 | 8.307770e-04 | **0.000000e+00** | 1,263 MiB |
+| `galactica-1.3b` | 24×2048 | 1,315,201,024 | 9.637047e-04 | **0.000000e+00** | 5,808 MiB |
+| `galactica-6.7b` | 32×4096 | 6,657,359,872 | 1.876587e-03 | **0.000000e+00** | 26,197 MiB |
+| `galactica-30b` | 48×7168 | 29,972,590,592 | **8.569e-02** | **0.000000e+00** | **115,153 MiB** |
+
+**The diagnosis reproduces to the digit and the refusal is not a fluke of one cell.** The bfloat16 text-cell floor reads 6.050138e-04 / 9.637047e-04 / 1.876587e-03 / 8.569e-02 across the four widths — the same four numbers EXP-R2-229 reported — and at 48×7168 *every* cell exceeds the tolerance, not only the text one: text 8.569e-02, declared protein 6.911e-02, position-capped 6.911e-02, naive 2.908e-02. At float32 the maximum KL is exactly **zero** at every width and in every cell, which is what the construction predicts and is here confirmed rather than assumed: with the model in float32 the lens head is not an approximation of the model's output computation, it *is* that computation. **float32 clears the frozen 1e-2 at width 7168 with the entire margin, so this experiment can run as conceived.**
+
+**Memory, measured and not computed.** `galactica-30b` at float32 peaks at **115,153 MiB allocated / 117,094 MiB reserved** against 143,771 MiB of card — about 26 GiB of headroom — against 59,272 MiB at bfloat16 on the same probe. It is a single-card cell and gets a slot to itself. An out-of-memory failure would be reported as measured and **not** retried at a smaller draw.
+
+### Precision comparability, and exactly how far that evidence reaches
+
+EXP-R2-229 read every published depth statistic at both precisions on `galactica-125m`: the largest bfloat16-vs-float32 gap on any of the twelve primary readings was **9.09e-04** in relative depth, on any of the thirty-six statistics **4.72e-03**, and the headline contrast at level 0.50 moved **2.8e-05** against that rung's grid spacing of 0.0833. **That was measured at width 768, not at width 7168**, on the rung whose protein mode is unidentified and which is barred from every gate. It is a reason to expect the two precisions to give the same estimand, not a demonstration that they do at the top of the ladder, and this freeze does not pretend otherwise.
+
+Reproduced here at float32 on the same rung before any gated rung was dispatched: the text control's levels read 0.447759 / 0.775223 / 0.922822 against EXP-R2-229's bfloat16 0.448667 / 0.775122 / 0.922931 — gaps of 9.08e-04, 1.01e-04 and 1.09e-04 — and the primary contrast at level 0.50 reads **+0.169726** against that campaign's bfloat16 **+0.169956**, a gap of 2.30e-04.
+
+**What the float32 `1.3b` and `6.7b` cells are, and are not.** They are the same weights, the same 128 records, the same seed, the same grid and the same four cells as EXP-R2-229's, differing **only in the arithmetic**. They are a precision check, not an independent replication, and agreement between them and the bfloat16 readings is **not** confirmation by a second measurement — no second draw, no second seed, no second cohort. What they buy is a ladder measured at one precision, which is the only thing that lets a 30B reading sit beside them at all.
+
+**Declared before any number exists, and a reporting rule rather than a gate:** if any primary reading on `galactica-1.3b` or `galactica-6.7b` moves by more than **0.01 in relative depth** between EXP-R2-229's bfloat16 value and this campaign's float32 value — an order of magnitude above the largest gap measured at width 768 and an order of magnitude below the grid's own point spacing of about 0.1 — that is a **precision sensitivity of the estimand** and it is published beside every reading in this campaign, the 30B one included, as a bound on all of them. It does not refuse the gate, because the float32 ladder is internally one instrument either way; it must not be discovered afterwards.
+
+### Carried unchanged from EXP-R2-229, by holding the same objects rather than restating them
+
+Nothing about the estimand, the cohort, the resampling or the compound is revised. These are the constants in `src/transfer/joint_lens.py` and the defaults of `scripts/transfer/47_joint_mode_lens.py`, unchanged since EXP-R2-229's pin apart from the tolerance moving out of an argument default into the module beside its reason:
+
+- **Primary:** the relative depth at which logit-lens top-1 agreement with the model's OWN final prediction first reaches an absolute level c ∈ {0.25, 0.50, 0.75}. A level divides by nothing, so no per-mode normaliser enters. Its one anticipated asymmetry is the ~1/20-against-~1/50000 chance floor, which lifts the protein curve and therefore makes the protein mode reach a level **earlier**, biasing against a finding that it resolves deeper.
+- **Second functional:** the span-normalised depth at which a falling quantity has fallen by fraction τ of its own total fall, read on KL-to-final and on top-1 disagreement, τ from `concept_lens.RESOLUTION_TAUS` = 0.25/0.50/0.75. Its defect is the mirror image — its normaliser is the shallowest grid point, which is mode-dependent — which is why the compound asks for both.
+- **The contrast is within one checkpoint**, `delta = depth(protein_declared) − depth(text_declared)`, so the 1/n_layer floor of any depth cancels exactly inside a rung and does not across one.
+- **The cohort is the qualification draw**, not a band declared beside one: seed 20260728, 128 records, protein band 64–246 residues, text floor 800 characters, checked by identity against the digests `0dd37e88b0db6947f4f6949f516ee4af95a3d27625ef9754f3d3629cd392c70e` (protein) and `2c9f8a8ea44850c0abacc2efcc66bd353840faa3369c8878f3ab3828f54c06c3` (text). Appendix B rule 13 is discharged by identity.
+- **Text scored window 164 tokens**, matching the two modes on scored positions per record (20,864 against 20,866) and therefore on position in context.
+- **Four cells over one load:** `text_declared` (the positive control), `protein_declared` (verified at exactly one token per residue and refused otherwise), `protein_declared_capped` (a sensitivity, never a gate), `protein_naive` (prices the rendering, reported and never gated).
+- **Bootstrap unit the scored record, 2,000 resamples, seed 20260826**, the record set drawn once per draw and reused at every grid layer, the two modes resampled independently and the contrast assembled draw by draw; a draw without a crossing point is counted and excluded, and above 5% of the draw set the interval is refused rather than published over a thinned one.
+- **The lens-head tolerance stays 1e-2 nats** on every cell of every rung.
+- **The gate refuses any rung whose own stage-41 report does not identify its protein mode**, and that verdict is read from the report rather than restated.
+
+**Gated rungs: `1.3b`, `6.7b`, `30b`** — exactly the set `41_context_information_bootstrap.py` identifies, at +0.047678 [+0.038694, +0.057614], +0.199442 [+0.157915, +0.246007] and +0.438892 [+0.342841, +0.542005] nats per residue, all three passing EXP-R2-221's sign rule. **`galactica-125m` is the instrument rung and is barred from the gate by the same rule**, its protein mode reading −0.131060 nats per residue, `unmeasurable_on_this_cohort`.
+
+### The instrument gate, run on 125m at float32 before any gated rung, and Appendix B rule 2
+
+Rule 2 requires gate attainability on the positive control before a gate is applied to a protein reading, and it is discharged at the precision this campaign will use, end to end on the instrument rung, on the L20 host, before dispatch.
+
+**Attainability: PASS.** The text mode's agreement runs 0.031010 → 1.000000 and reaches 0.25 / 0.50 / 0.75 at relative depths **0.447759 / 0.775223 / 0.922822**; its KL falls across the grid; all four gated statistics are defined on the control. `verify_lens_head` reads **0.000e+00** nats on all four cells. The draw reproduced to both frozen digests, the declared rendering reached exactly **1.000** residues per scored token on 20,866 residues against 20,864 text targets, and peak device memory was 1,240 MiB.
+
+### Decision rule, per gated rung — EXP-R2-229's compound, unchanged
+
+**One compound, three clauses, all of which must hold. Nothing else in the artefact is a gate.**
+
+1. `delta` on the **primary** statistic has a 95% interval excluding zero at **every** level c ∈ {0.25, 0.50, 0.75};
+2. its **sign is the same at every level**;
+3. the **span-normalised KL depth at τ = 0.50** carries that same sign with its own interval excluding zero.
+
+**What each outcome licenses** is EXP-R2-229's, unchanged. All three clauses on a gated rung: *the logit lens arrives at this checkpoint's own final prediction at a different relative depth in its protein mode than in its text mode, on this cohort* — a statement about one checkpoint's internal trajectory with architecture, depth, width, head, tokenizer and training run identical objects. Clause 1 or 2 fails: a bounded negative about that checkpoint, not about the modality. Clause 3 fails while 1 and 2 hold: the reading lives in one functional and is reported as that. **The same compound on all three gated rungs in the same direction is a descriptive modality×scale surface and is not a causal effect of scale.**
+
+**Reported and explicitly not gated:** the per-layer trajectories with record-cluster intervals; the per-mode depths; the position-capped sensitivity; the naive-rendering control; per-mode cross-entropy, entropy and KL magnitudes in nats per token; the monotonicity flags; peak device memory; the bfloat16-against-float32 comparison on the two rungs that have both; and **the secondary scale reading** — whether `delta` at level 0.50 moves with the rung's own protein-mode context information, which rises +0.048 → +0.199 → +0.439 across the three gated rungs while the text mode moves only +4.64 → +4.89 → +5.03. EXP-R2-229 returned that reading **flat** between its two identified rungs (+0.138115 → +0.135186 on overlapping intervals). Whether the third rung leaves it flat, strengthens it or breaks it is what this campaign's completed grid buys, and it is a curve, never a gate.
+
+### Failure branches and the stop
+
+- **`verify_lens_head` exceeds 1e-2 on any cell of any rung at float32** → that rung stops, the refusal is recorded as a finding about the instrument at that width, and it is **not chased**: no third precision, no reduced draw, no moved tolerance. The probe above says this should not happen at 7168, and if it happens anyway the probe and the measurement disagree and that disagreement is the result.
+- **A rung's stage-41 protein report is absent, or does not identify its protein mode** → trajectories are published and the gate returns `refused` with that reason.
+- **The text control's own statistics are not defined** → the gate is a specification defect, not a measurement, and returns `refused` (Appendix B rule 2). Do not read the protein side.
+- **The declared rendering does not reach one token per residue** → `joint_modes` raises and the rung stops; there is no flag that downgrades it.
+- **A trajectory whose deepest grid point is not the model itself** (KL ≠ 0 or agreement ≠ 1) → the run stops.
+- **More than 5% of draws leave a statistic without a crossing point** → that interval is refused, and a refused primary interval refuses the gate rather than failing it.
+- **`galactica-30b` runs out of memory** → reported as measured at the frozen draw and **not** retried at a smaller one.
+- **The position-capped sensitivity reverses the sign of `delta`** → the reading is position in context and is reported as that.
+
+### Ceiling — binding, and written before any gated number exists
+
+EXP-R2-229's nine clauses carry forward unchanged; they are the `CEILING` constant in `src/transfer/joint_lens.py` and are written into every artefact this stage produces, so a reader of one file does not have to find this freeze. In particular: **not** a test of the limited-output-interface hypothesis, since both modes emit through one head over one 50,000-token vocabulary and this design *separates* interface size from content modality rather than testing it; **not** a causal claim about scale, since depth, width and parameter count co-vary across 24×2048, 32×4096 and 48×7168 and all rungs come from one training run on one corpus mixture; **not** a claim about when a computation resolves, since no tuned lens is fitted, the untuned lens's basis error is present in both modes and undivided, and the tuned-lens replication remains the declared next measurement; not causal at all; one family, one rendering, one seed, one draw; no per-token magnitude crosses the mode boundary; nothing reaches a pure-protein decoder and the panel's modality coefficient is not refitted; Galactica's pretraining corpus is not identified, so F15 stands; and `galactica-125m` is an instrument, not a rung of the result.
+
+**Three further clauses are added here, and the first two are EXP-R2-229's post-hoc limitations promoted to pre-registration rather than rediscovered.**
+
+- **The primary statistic's magnitude is grid-limited on the protein side.** The frozen statistic interpolates a crossing depth, and on the protein side that interpolation lands inside the final grid interval, whose deep endpoint is exactly 1.0 by construction. The magnitude must not be quoted to three decimals as if the grid resolved it, and the interpolation-free statement is the one to carry: on both rungs EXP-R2-229 measured, the protein-mode lens agrees with the model's own final top-1 on almost none of its scored positions at every measured *interior* depth, while the text mode of the same weights is past one half four-fifths of the way down.
+- **The primary statistic carries a margin asymmetry the original freeze did not anticipate.** The protein mode's final-layer distribution is close to flat over an effective support of about twenty residues (final-layer entropy 2.760 / 2.843 / 2.699 nats on the three rungs measured), so its argmax is low-margin and agreeing with it is a more demanding event than agreeing with the text mode's at the same level. The margin-free KL span depth the compound already requires answers this **only partly**, and neither statistic is clean alone; the compound's value is that their defects point in different directions.
+- **A precision is not a control.** Reading the same records at two precisions prices the arithmetic and nothing else. It is not a second draw, a second cohort or a second seed, and Appendix B rule 1's skip-offset half remains undischarged.
+
+### Operational sequence
+
+1. Code, tests and this freeze committed before any dispatch; the pinned freeze snapshots committed code only.
+2. The instrument probe above and the Appendix B rule 2 attainability check are already discharged, at float32, before any gated rung is scored. **Recorded here before any gated number exists.**
+3. Dispatch the four rungs through `h200_campaign_queue.sh` after an in-pod `--dry-run`, three cards, smallest rungs first and `galactica-30b` in its own slot. Confirm the status file before treating anything as launched.
+4. Check `nvidia-smi` inside the selected pod before and after (Appendix B rule 19). Allocation is not utilisation. No pod name is recorded anywhere.
+
+**No gated model result is claimed at this registration.** Every number above is either a cohort fact computed on CPU, a value read from an existing stage-21, stage-41 or EXP-R2-229 artefact, or an instrument measurement — a lens-head reconstruction error, a peak memory figure, or a trajectory on the barred 125m rung.

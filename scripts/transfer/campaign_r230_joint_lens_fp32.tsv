@@ -1,0 +1,60 @@
+# EXP-R2-230: EXP-R2-229's joint-mode lens, re-instrumented at float32, on the
+# WHOLE ladder. Four cells, one per rung, and each cell loads its checkpoint ONCE
+# and measures four modes over those weights -- text, the declared protein
+# rendering, the same forward pass under a position-capped mask, and the naive
+# rendering. There is no per-mode cell because there is no per-mode load.
+#
+# WHY THE WHOLE LADDER AND NOT THE TOP RUNG ALONE. A precision is a change of
+# instrument, and EXP-R2-229's own text bars mixing precisions across rungs: a
+# ladder measured at two precisions is not one ladder, and a scale reading taken
+# across one would confound the arithmetic with the shape. So the three rungs
+# EXP-R2-229 already read at bfloat16 are read again here at float32, and the two
+# sets of numbers are never mixed inside one reading.
+#
+# WHAT THE FLOAT32 1.3b AND 6.7b CELLS ARE NOT. They are the same weights, the
+# same 128 records, the same seed and the same grid as EXP-R2-229's cells, and
+# they differ only in the arithmetic. They are a PRECISION CHECK and not an
+# independent replication, and no clause of this campaign treats agreement
+# between them and the bfloat16 readings as confirmation by a second measurement.
+#
+# Every draw is the stage's own default, which is 21_joint_mode_qualification.py's
+# default, which is the draw every Galactica rung was qualified under: cohort draw
+# seed 20260728, 128 records, residue band 64-246, text floor 800 characters.
+# Nothing is restated on the command line -- a default spelled again in a manifest
+# is a second declaration that stops tracking the first. The two content digests
+# are checked against the stage-41 reports inside every artefact.
+#
+# --dtype IS spelled here, because it is the one thing this campaign changes and a
+# declared instrument must be visible in the manifest that dispatched it. The
+# frozen lens-head tolerance is NOT spelled here: it is 1e-2 in
+# src.transfer.joint_lens and it is not moved.
+#
+# --checkpoint is a path and not an arm name on purpose, and no ArmSpec for these
+# rungs exists anywhere in arms.py: 21_joint_mode_qualification.py's rule is that a
+# joint checkpoint which has not passed it must not be in arms.py at all.
+# ${TRANSFER_MODEL_BASE_DIR} is substituted by the runner from h200_env.sh, so no
+# site path is written here.
+#
+# NO --identification IS PASSED HERE. The verdict is a CPU function of this
+# artefact and the rung's own 41_context_information_bootstrap.py report, and those
+# reports live in the analysis tree on the workstation rather than on GPFS. Every
+# cell therefore writes its gate as `refused` with that reason, and `--stage gate`
+# takes the verdict after the records are pulled.
+#
+# Slot 1 is the three rungs that fit comfortably beside each other on three cards
+# at float32: EXP-R2-230's instrument probe measured their peaks at 1,263 / 5,808 /
+# 26,197 MiB against 143,771 MiB of card. galactica-30b has slot 2 to itself, with
+# its float32 peak measured by the same probe before this campaign was dispatched.
+# An out-of-memory failure is reported as measured and is NOT retried at a smaller
+# draw: the draw is what makes the rung comparable to the three below it.
+#
+# galactica-125m is the INSTRUMENT rung. Its protein mode reads -0.131060 nats per
+# residue on the qualification cohort and is not identified, so no capability
+# verdict may be taken from it; it is here for the fourth text rung and because its
+# trajectories are the attainability evidence Appendix B rule 2 requires.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	r230	0	47_joint_mode_lens.py	r230_lens_galactica_125m	-	joint_mode_lens.json	--checkpoint ${TRANSFER_MODEL_BASE_DIR}/galactica-125m --rendering galactica --dtype float32
+1	r230	1	47_joint_mode_lens.py	r230_lens_galactica_1b	-	joint_mode_lens.json	--checkpoint ${TRANSFER_MODEL_BASE_DIR}/galactica-1.3b --rendering galactica --dtype float32
+1	r230	2	47_joint_mode_lens.py	r230_lens_galactica_6b	-	joint_mode_lens.json	--checkpoint ${TRANSFER_MODEL_BASE_DIR}/galactica-6.7b --rendering galactica --dtype float32
+2	r230	0	47_joint_mode_lens.py	r230_lens_galactica_30b	-	joint_mode_lens.json	--checkpoint ${TRANSFER_MODEL_BASE_DIR}/galactica-30b --rendering galactica --dtype float32
