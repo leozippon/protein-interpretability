@@ -18859,3 +18859,78 @@ EXP-R2-229's nine clauses carry forward unchanged; they are the `CEILING` consta
 4. Check `nvidia-smi` inside the selected pod before and after (Appendix B rule 19). Allocation is not utilisation. No pod name is recorded anywhere.
 
 **No gated model result is claimed at this registration.** Every number above is either a cohort fact computed on CPU, a value read from an existing stage-21, stage-41 or EXP-R2-229 artefact, or an instrument measurement — a lens-head reconstruction error, a peak memory figure, or a trajectory on the barred 125m rung.
+
+## 2026-08-27 — EXP-R2-230 measured: the 48×7168 rung is readable at float32, the modality×scale grid is complete, and the flat scale reading breaks at the top rung
+
+**Dispatched and scored the same day as the freeze above, on the snapshot pinned at commit `d54a22a` (run id `20260826172849_c3532364f6e1`, code hash `c3532364f6e1…`, checksum-verified in-pod).** Four cells in two slots on three cards, in-pod `--dry-run` first, status file confirmed before anything was treated as launched. Cards read `0 MiB, 0 %` on all three before dispatch and after (Appendix B rule 19). **Four `exited-ok`, `# FAILURES 0`, `# NO-RECORD 0`.** Records pulled with `pull_records_h200.sh` after a dry run, verdict verbatim: `digests verified; results/transfer/r230_joint_lens ADMITTED (4 file(s))`.
+
+**`galactica-30b` cleared the tolerance that stopped it, and the tolerance is still 1e-2.** At float32 its `verify_lens_head` reads **0.000e+00** nats on all four cells against a bfloat16 8.569e-02, it loaded strictly with every Transformers counter zero, and it wrote a full artefact. All four rungs drew the qualification cohorts to the expected digests (`0dd37e88b0db6947…` protein, `2c9f8a8ea44850c0…` text) and rendered at exactly **1.000** residues per scored token on 20,866 residues against 20,864 text targets. Peak device memory 1,263 / 5,808 / 26,197 / **115,153** MiB allocated against 143,771 of card.
+
+### All three identified rungs return the compound, in the same direction
+
+`--stage gate` was taken on CPU from each artefact beside that rung's own `41_context_information_bootstrap.py` protein report; `same_cohort: true` on all three.
+
+| rung | shape | protein-mode context information | verdict | direction |
+|---|---|---|---|---|
+| `galactica-1.3b` | 24×2048, 1,315,201,024 params | +0.047678 nats/residue, sign rule PASS | **`modality_depth_separation`** | `protein_resolves_deeper` |
+| `galactica-6.7b` | 32×4096, 6,657,359,872 params | +0.199442 nats/residue, sign rule PASS | **`modality_depth_separation`** | `protein_resolves_deeper` |
+| `galactica-30b` | 48×7168, 29,972,590,592 params | +0.438892 nats/residue, sign rule PASS | **`modality_depth_separation`** | `protein_resolves_deeper` |
+
+All three clauses hold on all three: every level's interval excludes zero, the sign is invariant across the level sweep, and the span-normalised KL depth agrees at τ = 0.50.
+
+**The primary contrast, protein minus text in relative depth**, record-cluster bootstrap at 2,000 resamples on seed 20260826, zero undefined draws anywhere:
+
+| rung | level 0.25 | level 0.50 | level 0.75 | KL span τ=0.50 |
+|---|---|---|---|---|
+| `1.3b` | +0.302360 [+0.296874, +0.310661] | **+0.138032** [+0.133109, +0.143391] | +0.035152 [+0.034106, +0.036331] | +0.280828 [+0.277900, +0.283957] |
+| `6.7b` | +0.308379 [+0.293964, +0.322786] | **+0.135188** [+0.129190, +0.141205] | +0.041803 [+0.039968, +0.043710] | +0.194659 [+0.190129, +0.199054] |
+| `30b` | +0.135549 [+0.123443, +0.146779] | **+0.026336** [+0.024805, +0.027776] | +0.013168 [+0.012403, +0.013888] | +0.094560 [+0.090320, +0.098670] |
+| `125m` (barred) | +0.469660 [+0.455630, +0.484606] | +0.169722 [+0.165281, +0.174341] | +0.049651 [+0.047923, +0.051401] | +0.615112 [+0.610343, +0.619177] |
+
+### The precision check the freeze required, and it does not fire
+
+The pre-declared reporting rule was that a primary reading moving by more than **0.01** in relative depth between EXP-R2-229's bfloat16 value and this campaign's float32 value would be published as a precision sensitivity bounding every reading here. Measured on the three rungs that have both: the largest gap on any primary per-mode depth is **3.354e-04**, on any of the thirty-six published depth statistics across all four cells **5.213e-03** (again the naive control's span, as at width 768), and on the headline contrast at level 0.50 **2.333e-04** — `+0.169722` against `+0.169956` at 125m, `+0.138032` against `+0.138115` at 1.3b, and `+0.135188` against `+0.135186` at 6.7b. **The rule does not fire and no precision-sensitivity bound is carried.** This is a precision check and not a replication: same weights, same 128 records, same seed, same grid, only the arithmetic differs, exactly as the freeze declared.
+
+### The pre-registered secondary scale reading: flat between the two lower rungs, and it BREAKS at the top one
+
+EXP-R2-229 could see only the 1.3b→6.7b step and reported it flat. With the third rung the reading is different and is reported as the freeze wrote it — a curve, never a gate.
+
+| rung | protein-mode context information | contrast at level 0.50 | KL span contrast at τ=0.50 |
+|---|---|---|---|
+| `1.3b` | +0.047678 | +0.138032 | +0.280828 |
+| `6.7b` | +0.199442 | +0.135188 | +0.194659 |
+| `30b` | +0.438892 | **+0.026336** | +0.094560 |
+
+**The depth difference is flat across the first step and falls by a factor of about five across the second**, on intervals that do not come close to overlapping ([+0.1292, +0.1412] against [+0.0248, +0.0278]). The second functional does not wait for the top rung to move: the span-normalised KL contrast falls monotonically across all three, +0.2808 → +0.1947 → +0.0946. So the honest statement is that **the agreement contrast is flat between 1.3b and 6.7b and small at 30b, while the KL contrast declines throughout**, and the two functionals agree on a decline once the third rung exists.
+
+**What moved is the text mode, not the protein mode, and this is the most informative thing in the grid.** The protein mode's own crossing at level 0.50 sits at 0.9449 / 0.9518 / 0.9335 / 0.9411 across 125m / 1.3b / 6.7b / 30b — essentially pinned near 0.94 at every rung. The text mode's crossing runs 0.7752 / 0.8138 / 0.7983 / **0.9147**. The contrast shrinks at 30B because that checkpoint's *text* mode also stops showing its own final answer until the last blocks, not because its protein mode starts showing one earlier.
+
+### The limitation the freeze pre-registered now binds on both sides, and it bounds this reading hard
+
+The freeze recorded that the primary statistic interpolates a crossing depth and that on the protein side that interpolation lands inside the final grid interval, whose deep endpoint is 1.0 by construction. **On `galactica-30b` it lands inside that interval on BOTH sides.** Both modes cross one half between the deepest interior grid point at relative depth 0.8958 and the model itself, so `+0.026336` is the difference of two interpolations inside one interval and its magnitude is not resolved by this grid.
+
+There is a structural reason it is worst at the top rung, and it is a property of the instrument rather than of the models: eleven relative-depth fractions resolve onto blocks, so the final grid interval is **one** block wide at 12 layers, two at 24, three at 32 and **five** at 48. The deep end of the trajectory is measured most coarsely exactly where the models are deepest.
+
+**The interpolation-free statement is the one to carry, and at 30B it is this.** At the deepest interior grid point the text mode agrees with its own final top-1 on **0.3891** of scored positions and the protein mode on **0.1161**; below that point the protein trajectory reads 0.0109, 0.000, 0.000, 0.0001, 0.0003, 0.0003, 0.0006, 0.0028, 0.0088 and the text trajectory 0.0094, 0.0038, 0.0141, 0.0317, 0.0562, 0.0752, 0.1184, 0.2014, 0.2761. Both modes of the 48×7168 checkpoint show almost nothing of the model's own final answer until the last block group; the protein mode shows about a third of what the text mode shows there. On `1.3b` and `6.7b` the text mode reaches 0.6484 and 0.6878 at its own deepest interior point and crosses one half *inside* an interior interval, which the 30B text mode does not.
+
+### Reported and not gated
+
+**The position cap prices its own confound at nothing, on every rung.** Restricting the protein mask to the 17,959 of 20,866 targets the 164-token text window can match on position moves the contrast at level 0.50 by at most **5.3e-04** in relative depth on any rung (30b: +0.026336 → +0.025810). The position tail is not carrying the result.
+
+**The naive-rendering control no longer subtracts most of the contrast at the top rung.** At level 0.50 the same 128 proteins under the merged rendering (1.7902 residues per scored token, 11,656 targets) read +0.129589, +0.071268, +0.049194 and **+0.031732** against the declared +0.169722, +0.138032, +0.135188 and +0.026336. On `6.7b` about two thirds of the declared contrast is target granularity; on `30b` the naive control is *larger* than the declared contrast. Reported, never gated, and it bounds the reading rather than supporting it.
+
+**The margin asymmetry the freeze pre-registered is smallest at the top rung.** Final-layer entropies, text against protein: 3.538/2.753 at 125m, 2.940/2.844 at 1.3b, 2.664/2.700 at 6.7b, **2.430/2.409** at 30b. At the two larger rungs the two modes' final distributions are nearly equally peaked, so the asymmetry the primary statistic carries is real but shrinks with scale; the margin-free KL span depth remains the reason the compound asks for two functionals.
+
+### What this licenses, and what it does not
+
+For `galactica-1.3b`, `galactica-6.7b` and `galactica-30b`: **the logit lens arrives at this checkpoint's own final prediction at a later relative depth in its protein mode than in its text mode, on this cohort** — with the parameters, depth, width, final normalisation, unembedding, tokenizer and training run identical objects rather than merely matched. The modality×scale grid this round set out to build is complete at three identified rungs and one instrument rung, measured at one precision.
+
+Every clause of the freeze's ceiling stands. It is **not** a test of the limited-output-interface hypothesis — both modes emit through one head over one 50,000-token vocabulary, so this separates interface size from content modality rather than testing it. It is **not** a causal claim about scale: depth, width and parameter count co-vary across 24×2048, 32×4096 and 48×7168, all rungs come from one training run on one corpus mixture, and no rung differs from another in one factor — so the fall in the contrast at 30B is a description of that checkpoint and not an effect of parameter count. It is **not** a claim about when a computation resolves: no tuned lens is fitted, the untuned lens's basis error is present in both modes and undivided, and **the tuned-lens replication remains the declared next measurement**; this is the clause that binds hardest on the 30B reading, because a 48-layer decoder's intermediate states are further from the final basis than a 24-layer one's by construction and this measurement cannot separate that from resolution. Not causal at all; one family, one rendering, one seed, one draw; no per-token magnitude crosses the mode boundary; nothing reaches a pure-protein decoder and the panel's modality coefficient is not refitted; Galactica's pretraining corpus is not identified, so F15 stands; and `galactica-125m` remains an instrument rather than a rung of the result.
+
+Two further things this specifically does not license. **The break in the flat reading is not a magnitude that this grid resolved** — at 48 layers both crossings fall inside a final interval five blocks wide, and the direction survives that while the size does not. And **a precision is not a control**: reading the same records at two precisions prices the arithmetic and nothing else, so Appendix B rule 1's skip-offset half is still undischarged and no second draw exists.
+
+### Artefacts and validation
+
+`results/transfer/r230_joint_lens/r230_lens_galactica_{125m,1b,6b,30b}/joint_mode_lens.json`, SHA-256 `ae69709414e9598d…`, `3d6018b5f18fea31…`, `1494675f19822f5b…`, `19e092f39d324f2b…`, each carrying its own trajectories, per-layer record-cluster intervals, depth statistics, contrasts, text-control attainability and the binding ceiling; `joint_mode_lens_gate.json` beside the three identified rungs; and the instrument probe's eight records under `results/transfer/r230_lens_head_precision/`. Nothing is promoted to `evidence/`.
+
+`panel_contract.py --verify` matches. Full suite with `TRANSFER_MODEL_BASE_DIR` and `TRANSFER_TEXT_MODEL_BASE_DIR` exported: **2366 passed, 1 failed, 23 skipped, 110 subtests passed in 754.18 s**; the single failure is the documented load-sensitive bash-trap race in `ExternalStageWrapperLifecycleTests::test_int_writes_pre_and_post`. The six added tests are in `tests/test_joint_mode_lens.py` (47 in that module, up from 41) and hold the pair of behaviours the tolerance depends on: a measurement refuses a lens head above 1e-2, and the instrument probe reports the same head as a finite number.
