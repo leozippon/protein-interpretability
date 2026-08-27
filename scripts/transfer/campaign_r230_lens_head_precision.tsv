@@ -1,0 +1,41 @@
+# EXP-R2-230, instrument probe: what the float32 lens head reconstructs at each
+# width and each precision, BEFORE any successor freeze is written.
+#
+# EXP-R2-229 measured its ladder at bfloat16 and `galactica-30b` was stopped by
+# its own `verify_lens_head` at 8.569e-02 nats against a frozen 1e-2, on the TEXT
+# cell, before any trajectory existed. The diagnosis in that entry is that the
+# bfloat16 lens-head reconstruction floor scales with width. **That diagnosis is
+# re-measured here rather than assumed**, and the float32 floor at width 7168 is
+# measured beside it, because a precision chosen after seeing which rung a
+# threshold refused would be a configuration fitted to a refusal. If float32 does
+# not bring the top rung under 1e-2, the successor measurement cannot run as
+# conceived and the tolerance is still not moved: a lens head that does not
+# reconstruct the model's own logits is measuring nothing.
+#
+# `--stage verify` loads the checkpoint, builds the same head, the same grid and
+# the same four cells `--stage measure` builds, and spends ONE forward pass per
+# cell on verify_lens_head under a wide diagnostic ceiling, so an error above the
+# frozen tolerance comes back as a number rather than as a stop. It computes no
+# trajectory, no depth, no contrast and no gate, and none may be inferred from it.
+#
+# Every draw is the stage's own default, which is 21_joint_mode_qualification.py's
+# default, which is the draw every Galactica rung was qualified under. Nothing is
+# restated on the command line: a default spelled again in a manifest is a second
+# declaration that stops tracking the first.
+#
+# Slots 1 and 2 are the three small rungs at the two precisions, three cards each.
+# `galactica-30b` has slots 3 and 4 to itself, one precision each: 48 layers of
+# width 7168 is about 57 GB of weights at bfloat16 and about 113 GB at float32
+# against 143771 MiB of card, so it is a single-card cell and the float32 cell is
+# the one that answers whether the successor measurement can run at all. An
+# out-of-memory failure there is REPORTED as measured and is not retried smaller.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	r230	0	47_joint_mode_lens.py	r230_verify_galactica_125m_bf16	-	joint_mode_lens_verify.json	--stage verify --checkpoint ${TRANSFER_MODEL_BASE_DIR}/galactica-125m --rendering galactica --dtype bfloat16
+1	r230	1	47_joint_mode_lens.py	r230_verify_galactica_1b_bf16	-	joint_mode_lens_verify.json	--stage verify --checkpoint ${TRANSFER_MODEL_BASE_DIR}/galactica-1.3b --rendering galactica --dtype bfloat16
+1	r230	2	47_joint_mode_lens.py	r230_verify_galactica_6b_bf16	-	joint_mode_lens_verify.json	--stage verify --checkpoint ${TRANSFER_MODEL_BASE_DIR}/galactica-6.7b --rendering galactica --dtype bfloat16
+2	r230	0	47_joint_mode_lens.py	r230_verify_galactica_125m_fp32	-	joint_mode_lens_verify.json	--stage verify --checkpoint ${TRANSFER_MODEL_BASE_DIR}/galactica-125m --rendering galactica --dtype float32
+2	r230	1	47_joint_mode_lens.py	r230_verify_galactica_1b_fp32	-	joint_mode_lens_verify.json	--stage verify --checkpoint ${TRANSFER_MODEL_BASE_DIR}/galactica-1.3b --rendering galactica --dtype float32
+2	r230	2	47_joint_mode_lens.py	r230_verify_galactica_6b_fp32	-	joint_mode_lens_verify.json	--stage verify --checkpoint ${TRANSFER_MODEL_BASE_DIR}/galactica-6.7b --rendering galactica --dtype float32
+3	r230	0	47_joint_mode_lens.py	r230_verify_galactica_30b_bf16	-	joint_mode_lens_verify.json	--stage verify --checkpoint ${TRANSFER_MODEL_BASE_DIR}/galactica-30b --rendering galactica --dtype bfloat16
+4	r230	0	47_joint_mode_lens.py	r230_verify_galactica_30b_fp32	-	joint_mode_lens_verify.json	--stage verify --checkpoint ${TRANSFER_MODEL_BASE_DIR}/galactica-30b --rendering galactica --dtype float32

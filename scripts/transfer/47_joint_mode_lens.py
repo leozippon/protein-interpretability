@@ -366,9 +366,214 @@ def take_gate(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+# ------------------------------------------------------------------ the load
+
+
+class PreparedRun:
+    """One loaded checkpoint, its head, its grid and the four cells' windows.
+
+    ``--stage measure`` and ``--stage verify`` need exactly the same object and
+    differ only in what they then do with it: the first spends a full trajectory
+    on every cell, the second spends one forward pass per cell and reports how
+    far the float32 lens head sits from the model's own final distribution. One
+    constructor rather than two keeps the probe measuring the instrument the
+    measurement actually uses, rather than a second assembly of it that could
+    drift (Appendix B rule 12).
+    """
+
+    def __init__(self, args: argparse.Namespace) -> None:
+        checkpoint = require_input_path(args.checkpoint.resolve(), "--checkpoint")
+        declaration = joint_modes.rendering(args.rendering)
+        # The tokenizer alone first, so a checkpoint/family mismatch is refused
+        # before a multi-gigabyte load -- 21_joint_mode_qualification.py's own order.
+        tokenizer = AutoTokenizer.from_pretrained(str(checkpoint))
+        tokenisation = joint_modes.resolve(tokenizer, declaration)
+        config = AutoConfig.from_pretrained(str(checkpoint))
+        architecture = str(getattr(config, "model_type", "undeclared"))
+        name = checkpoint.name
+
+        cohorts = draw_cohorts(args)
+        protein_spec = jl.joint_arm_spec(
+            checkpoint, name=name, mode="protein", config=config, architecture=architecture
+        )
+        text_spec = jl.joint_arm_spec(
+            checkpoint, name=name, mode="text", config=config, architecture=architecture
+        )
+
+        print(f"[{name}] loading {architecture} at {args.dtype}", flush=True)
+        protein_arm = load_arm_spec(
+            protein_spec, device=args.device, dtype=args.dtype, strict=True
+        )
+        text_arm = jl.mode_arm(protein_arm, text_spec)
+        torch.cuda.reset_peak_memory_stats(protein_arm.device)
+        head = lens_head(protein_arm)
+        grid = layer_grid(protein_arm.n_layer, args.depths)
+        print(
+            f"[{name}] {protein_arm.n_layer}L x {protein_arm.d_model}d, "
+            f"{len(grid)} grid points, vocab {head.vocab_size}",
+            flush=True,
+        )
+
+        text_windows = prepare_windows(
+            text_arm,
+            cohorts["text"],
+            max_len=args.text_window_tokens,
+            batch_size=args.batch_size,
+        )
+        declared = jl.protein_windows(
+            protein_arm,
+            tokenisation,
+            cohorts["protein"],
+            protein_context=args.protein_context,
+            variant=joint_modes.DECLARED,
+            batch_size=args.batch_size,
+        )
+        capped = jl.protein_windows(
+            protein_arm,
+            tokenisation,
+            cohorts["protein"],
+            protein_context=args.protein_context,
+            variant=joint_modes.DECLARED,
+            batch_size=args.batch_size,
+            position_cap=args.position_cap,
+        )
+        naive = jl.protein_windows(
+            protein_arm,
+            tokenisation,
+            cohorts["protein"],
+            protein_context=args.protein_context,
+            variant=joint_modes.NAIVE,
+            batch_size=args.batch_size,
+        )
+
+        self.checkpoint = checkpoint
+        self.name = name
+        self.config = config
+        self.architecture = architecture
+        self.tokenizer = tokenizer
+        self.tokenisation = tokenisation
+        self.cohorts = cohorts
+        self.protein_spec = protein_spec
+        self.text_spec = text_spec
+        self.protein_arm = protein_arm
+        self.text_arm = text_arm
+        self.head = head
+        self.grid = grid
+        self.plan = (
+            (jl.MODE_TEXT, text_arm, text_windows, jl.text_window_census(text_windows)),
+            (jl.MODE_PROTEIN, protein_arm, declared.windows, declared.census),
+            (jl.MODE_POSITION_CAPPED, protein_arm, capped.windows, capped.census),
+            (jl.MODE_PROTEIN_NAIVE, protein_arm, naive.windows, naive.census),
+        )
+
+    def checkpoint_record(self, args: argparse.Namespace) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "resolved_path": str(self.checkpoint),
+            "model_type": self.architecture,
+            "architectures": list(getattr(self.config, "architectures", []) or []),
+            "n_layer": self.protein_arm.n_layer,
+            "d_model": self.protein_arm.d_model,
+            "vocab_size": int(self.head.vocab_size),
+            "n_parameters": int(sum(p.numel() for p in self.protein_arm.model.parameters())),
+            "dtype_requested": args.dtype,
+            "dtype_observed": self.protein_arm.dtype,
+            "attn_implementation": self.protein_arm.attn_implementation,
+            "strict_load": self.protein_arm.strict_load,
+            "tokenizer_class": type(self.tokenizer).__name__,
+            "tokenizer_vocab_size": int(len(self.tokenizer)),
+            "shape_check_note": (
+                "the declared shape was read from this checkpoint's own config, so "
+                "load_arm_spec's comparison against that config is a tautology here "
+                "and asserts nothing; for a panel member the declaration is written "
+                "by hand and the comparison is a real check"
+            ),
+        }
+
+    def resources(self) -> dict[str, Any]:
+        return {
+            "peak_accelerator_memory_allocated_bytes": int(
+                torch.cuda.max_memory_allocated(self.protein_arm.device)
+            ),
+            "peak_accelerator_memory_reserved_bytes": int(
+                torch.cuda.max_memory_reserved(self.protein_arm.device)
+            ),
+        }
+
+
+def run_verify(args: argparse.Namespace) -> dict[str, Any]:
+    """What the float32 lens head reconstructs at this width and this precision.
+
+    The instrument probe, and nothing else. It loads the checkpoint, builds the
+    same head and the same four cells ``--stage measure`` builds, and spends one
+    forward pass per cell on
+    :func:`src.transfer.lenses.verify_lens_head` -- reported under
+    :data:`~src.transfer.joint_lens.DIAGNOSTIC_LENS_HEAD_CEILING_NATS` so that an
+    error above the frozen tolerance comes back as a **number** rather than as a
+    stop, and then judged against
+    :data:`~src.transfer.joint_lens.LENS_HEAD_TOLERANCE_NATS`.
+
+    It exists because the reconstruction floor turned out to scale with width and
+    a precision is therefore an instrument decision that must be measured before
+    it is frozen, not after a rung refuses. No trajectory, no depth, no contrast
+    and no gate is produced here, and none may be inferred from it.
+    """
+
+    started = datetime.now(timezone.utc).isoformat()
+    prepared = PreparedRun(args)
+    cells: dict[str, Any] = {}
+    for label, arm, windows, census in prepared.plan:
+        verification = verify_lens_head(
+            arm,
+            prepared.head,
+            windows[0],
+            tolerance_nats=jl.DIAGNOSTIC_LENS_HEAD_CEILING_NATS,
+        )
+        verification["clears_frozen_tolerance"] = bool(
+            verification["max_kl_nats"] <= jl.LENS_HEAD_TOLERANCE_NATS
+        )
+        verification["frozen_tolerance_nats"] = jl.LENS_HEAD_TOLERANCE_NATS
+        print(
+            f"  [{label}] lens head max KL {verification['max_kl_nats']:.3e} nats over "
+            f"{verification['positions']} positions; frozen tolerance "
+            f"{jl.LENS_HEAD_TOLERANCE_NATS:.3e} "
+            f"{'CLEARED' if verification['clears_frozen_tolerance'] else 'EXCEEDED'}",
+            flush=True,
+        )
+        cells[label] = {
+            "label": label,
+            "n_scored_positions_in_cohort": census["n_scored_positions"],
+            "lens_head_verification": verification,
+        }
+    return {
+        "schema_version": jl.SCHEMA_VERSION,
+        "stage": "verify",
+        "started_at_utc": started,
+        "finished_at_utc": datetime.now(timezone.utc).isoformat(),
+        "runner_sha256": sha256_file(Path(__file__)),
+        "joint_lens_module_sha256": sha256_file(REPO_ROOT / "src" / "transfer" / "joint_lens.py"),
+        "lenses_module_sha256": sha256_file(REPO_ROOT / "src" / "transfer" / "lenses.py"),
+        "checkpoint": prepared.checkpoint_record(args),
+        "thresholds": {
+            "frozen_lens_head_tolerance_nats": jl.LENS_HEAD_TOLERANCE_NATS,
+            "diagnostic_ceiling_nats": jl.DIAGNOSTIC_LENS_HEAD_CEILING_NATS,
+        },
+        "cells": cells,
+        "clears_frozen_tolerance_on_every_cell": all(
+            cell["lens_head_verification"]["clears_frozen_tolerance"] for cell in cells.values()
+        ),
+        "what_this_is_not": (
+            "an instrument probe and not a measurement: no trajectory, no depth "
+            "statistic, no contrast and no gate is computed here, and the frozen "
+            "tolerance is judged rather than adjusted"
+        ),
+        "resources": prepared.resources(),
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--stage", default="measure", choices=("measure", "gate"))
+    parser.add_argument("--stage", default="measure", choices=("measure", "verify", "gate"))
     parser.add_argument("--checkpoint", type=Path, default=None)
     parser.add_argument(
         "--artefact",
@@ -409,20 +614,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--block-windows", type=int, default=4)
     parser.add_argument("--metric-chunk", type=int, default=512)
     parser.add_argument("--max-cache-gib", type=float, default=8.0)
-    # The float32 lens head cannot reproduce a bfloat16 forward pass to the 1e-3
-    # stage 08 uses at float32, and that is the intended signal rather than a
-    # reason to loosen a check silently: the residual gap IS the bfloat16
-    # forward's own rounding. The tolerance is therefore set against the quantity
-    # it guards. The shallowest crossing level of this estimand is
-    # (1 - 0.75) x KL(shallowest), about 1.8 nats on every rung measured, so 1e-2
-    # nats sits two orders of magnitude below the smallest number the trajectory
-    # is read at and an order of magnitude above the measured rounding floor of
-    # the positive control (EXP-R2-229's instrument gate: 7.878e-04 nats in text
-    # mode and 1.409e-03 in protein mode on galactica-125m). It is a declared
-    # ceiling on a known rounding term, not a threshold anything is decided at,
-    # and the precision-invariance check the instrument gate records is what
-    # actually establishes that bfloat16 does not move the estimand.
-    parser.add_argument("--lens-head-tolerance-nats", type=float, default=1e-2)
+    # The frozen ceiling on the float32 lens head's reconstruction of the model's
+    # own final distribution, declared once in src.transfer.joint_lens and read
+    # from there. It is a ceiling on a known rounding term, not a threshold
+    # anything is decided at; the reason for its value, and the measured floors it
+    # sits against, are recorded with the constant.
+    parser.add_argument(
+        "--lens-head-tolerance-nats", type=float, default=jl.LENS_HEAD_TOLERANCE_NATS
+    )
     parser.add_argument("--bootstrap-resamples", type=int, default=jl.BOOTSTRAP_RESAMPLES)
     parser.add_argument("--bootstrap-seed", type=int, default=jl.BOOTSTRAP_SEED)
     parser.add_argument("--layer-bootstrap-samples", type=int, default=1000)
@@ -442,7 +641,7 @@ def validate(args: argparse.Namespace) -> None:
             raise ValueError("--stage gate loads no checkpoint; drop --checkpoint")
         return
     if args.checkpoint is None:
-        raise ValueError("--stage measure needs --checkpoint")
+        raise ValueError(f"--stage {args.stage} needs --checkpoint")
     if args.artefact is not None:
         raise ValueError("--artefact belongs to --stage gate")
     if args.sequences < 8:
@@ -479,17 +678,20 @@ def main() -> None:
             flush=True,
         )
         return
+    if args.stage == "verify":
+        report = run_verify(args)
+        write_json(out / "joint_mode_lens_verify.json", report)
+        print(
+            f"wrote {out / 'joint_mode_lens_verify.json'}: frozen tolerance "
+            + (
+                "cleared on every cell"
+                if report["clears_frozen_tolerance_on_every_cell"]
+                else "EXCEEDED on at least one cell"
+            ),
+            flush=True,
+        )
+        return
     started = datetime.now(timezone.utc).isoformat()
-
-    checkpoint = require_input_path(args.checkpoint.resolve(), "--checkpoint")
-    declaration = joint_modes.rendering(args.rendering)
-    # The tokenizer alone first, so a checkpoint/family mismatch is refused
-    # before a multi-gigabyte load -- 21_joint_mode_qualification.py's own order.
-    tokenizer = AutoTokenizer.from_pretrained(str(checkpoint))
-    tokenisation = joint_modes.resolve(tokenizer, declaration)
-    config = AutoConfig.from_pretrained(str(checkpoint))
-    architecture = str(getattr(config, "model_type", "undeclared"))
-    name = checkpoint.name
 
     identification = (
         None
@@ -497,68 +699,18 @@ def main() -> None:
         else identification_verdict(args.identification, "protein_declared")
     )
 
-    cohorts = draw_cohorts(args)
-    protein_spec = jl.joint_arm_spec(
-        checkpoint, name=name, mode="protein", config=config, architecture=architecture
-    )
-    text_spec = jl.joint_arm_spec(
-        checkpoint, name=name, mode="text", config=config, architecture=architecture
-    )
+    prepared = PreparedRun(args)
+    name = prepared.name
+    head = prepared.head
+    grid = prepared.grid
+    protein_arm = prepared.protein_arm
+    protein_spec = prepared.protein_spec
+    text_spec = prepared.text_spec
+    tokenisation = prepared.tokenisation
+    cohorts = prepared.cohorts
 
-    print(f"[{name}] loading {architecture} at {args.dtype}", flush=True)
-    protein_arm = load_arm_spec(
-        protein_spec, device=args.device, dtype=args.dtype, strict=True
-    )
-    text_arm = jl.mode_arm(protein_arm, text_spec)
-    torch.cuda.reset_peak_memory_stats(protein_arm.device)
-    head = lens_head(protein_arm)
-    grid = layer_grid(protein_arm.n_layer, args.depths)
-    print(
-        f"[{name}] {protein_arm.n_layer}L x {protein_arm.d_model}d, "
-        f"{len(grid)} grid points, vocab {head.vocab_size}",
-        flush=True,
-    )
-
-    text_windows = prepare_windows(
-        text_arm,
-        cohorts["text"],
-        max_len=args.text_window_tokens,
-        batch_size=args.batch_size,
-    )
-    declared = jl.protein_windows(
-        protein_arm,
-        tokenisation,
-        cohorts["protein"],
-        protein_context=args.protein_context,
-        variant=joint_modes.DECLARED,
-        batch_size=args.batch_size,
-    )
-    capped = jl.protein_windows(
-        protein_arm,
-        tokenisation,
-        cohorts["protein"],
-        protein_context=args.protein_context,
-        variant=joint_modes.DECLARED,
-        batch_size=args.batch_size,
-        position_cap=args.position_cap,
-    )
-    naive = jl.protein_windows(
-        protein_arm,
-        tokenisation,
-        cohorts["protein"],
-        protein_context=args.protein_context,
-        variant=joint_modes.NAIVE,
-        batch_size=args.batch_size,
-    )
-
-    plan = (
-        (jl.MODE_TEXT, text_arm, text_windows, jl.text_window_census(text_windows)),
-        (jl.MODE_PROTEIN, protein_arm, declared.windows, declared.census),
-        (jl.MODE_POSITION_CAPPED, protein_arm, capped.windows, capped.census),
-        (jl.MODE_PROTEIN_NAIVE, protein_arm, naive.windows, naive.census),
-    )
     cells: dict[str, dict[str, Any]] = {}
-    for label, arm, windows, census in plan:
+    for label, arm, windows, census in prepared.plan:
         print(f"[{name}] {label}: {census['n_scored_positions']} scored positions", flush=True)
         cells[label] = measure_cell(arm, head, grid, windows, census, args, label=label)
         gc.collect()
@@ -664,28 +816,7 @@ def main() -> None:
             "joint_modes_module_sha256": sha256_file(
                 REPO_ROOT / "src" / "transfer" / "joint_modes.py"
             ),
-            "checkpoint": {
-                "name": name,
-                "resolved_path": str(checkpoint),
-                "model_type": architecture,
-                "architectures": list(getattr(config, "architectures", []) or []),
-                "n_layer": protein_arm.n_layer,
-                "d_model": protein_arm.d_model,
-                "vocab_size": int(head.vocab_size),
-                "n_parameters": int(sum(p.numel() for p in protein_arm.model.parameters())),
-                "dtype_requested": args.dtype,
-                "dtype_observed": protein_arm.dtype,
-                "attn_implementation": protein_arm.attn_implementation,
-                "strict_load": protein_arm.strict_load,
-                "tokenizer_class": type(tokenizer).__name__,
-                "tokenizer_vocab_size": int(len(tokenizer)),
-                "shape_check_note": (
-                    "the declared shape was read from this checkpoint's own config, so "
-                    "load_arm_spec's comparison against that config is a tautology here "
-                    "and asserts nothing; for a panel member the declaration is written "
-                    "by hand and the comparison is a real check"
-                ),
-            },
+            "checkpoint": prepared.checkpoint_record(args),
             "declaration": {
                 "panel_membership": (
                     "none. This checkpoint is reached by path and is not in "
@@ -775,14 +906,7 @@ def main() -> None:
             "gate": gate,
             "verdict_vocabulary": list(jl.VERDICTS),
             "ceiling": jl.CEILING,
-            "resources": {
-                "peak_accelerator_memory_allocated_bytes": int(
-                    torch.cuda.max_memory_allocated(protein_arm.device)
-                ),
-                "peak_accelerator_memory_reserved_bytes": int(
-                    torch.cuda.max_memory_reserved(protein_arm.device)
-                ),
-            },
+            "resources": prepared.resources(),
         },
     )
     print(f"wrote {out / 'joint_mode_lens.json'}: gate {gate['verdict']}", flush=True)

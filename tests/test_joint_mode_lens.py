@@ -42,6 +42,7 @@ from src.transfer.lenses import (
     layer_grid,
     lens_metrics,
     lens_trajectory,
+    verify_lens_head,
 )
 
 MODEL_BASE = Path(os.environ.get("TRANSFER_MODEL_BASE_DIR", "/Data/public/models_R2"))
@@ -687,6 +688,71 @@ class IdentificationVerdictTests(unittest.TestCase):
                 self.stage.identification_verdict(path, "protein_declared")
 
 
+class LensHeadToleranceTests(unittest.TestCase):
+    """The tolerance is a stop, and the probe that measures past it is not.
+
+    EXP-R2-229 froze the tolerance before any rung was scored and it stopped
+    ``galactica-30b`` at bfloat16 -- correctly, because a lens head that does not
+    reconstruct the model's own logits is measuring nothing. EXP-R2-230 carries
+    the same number to a float32 ladder. What these hold is the pair of
+    behaviours that makes both statements true at once: a *measurement* refuses a
+    head above the frozen tolerance, and the *instrument probe* reports how far
+    above it is instead of raising, so a precision can be chosen from a measured
+    floor rather than from which rung happened to refuse.
+    """
+
+    def _diverged(self):
+        arm = _tiny_arm()
+        head = _tiny_head(arm)
+        torch.manual_seed(3)
+        head = LensHead(
+            weight=head.weight + torch.randn_like(head.weight),
+            bias=head.bias,
+            norm_weight=head.norm_weight,
+            norm_bias=head.norm_bias,
+            norm_eps=head.norm_eps,
+            d_model=head.d_model,
+            vocab_size=head.vocab_size,
+        )
+        return arm, head, _tiny_windows(arm, records=2, length=9, batch=2)[0]
+
+    def test_a_measurement_refuses_a_head_above_the_frozen_tolerance(self):
+        arm, head, window = self._diverged()
+        with self.assertRaisesRegex(FloatingPointError, "above the"):
+            verify_lens_head(
+                arm, head, window, tolerance_nats=jl.LENS_HEAD_TOLERANCE_NATS
+            )
+
+    def test_the_probe_reports_the_same_head_as_a_number_rather_than_a_stop(self):
+        arm, head, window = self._diverged()
+        report = verify_lens_head(
+            arm, head, window, tolerance_nats=jl.DIAGNOSTIC_LENS_HEAD_CEILING_NATS
+        )
+        self.assertGreater(report["max_kl_nats"], jl.LENS_HEAD_TOLERANCE_NATS)
+        self.assertTrue(np.isfinite(report["max_kl_nats"]))
+
+    def test_the_probes_ceiling_is_above_the_frozen_tolerance(self):
+        # If it were not, the probe would raise on exactly the rung it exists to
+        # measure and the successor freeze would have no floor to choose from.
+        self.assertGreater(
+            jl.DIAGNOSTIC_LENS_HEAD_CEILING_NATS, jl.LENS_HEAD_TOLERANCE_NATS
+        )
+
+    def test_the_tolerance_is_declared_once_and_the_stage_reads_it(self):
+        parser = _stage().build_parser()
+        args = parser.parse_args(["--checkpoint", "/nonexistent"])
+        self.assertEqual(args.lens_head_tolerance_nats, jl.LENS_HEAD_TOLERANCE_NATS)
+        self.assertEqual(jl.LENS_HEAD_TOLERANCE_NATS, 1e-2)
+
+    def test_the_measured_bfloat16_floor_crosses_the_tolerance_between_4096_and_7168(self):
+        # The recorded reason a precision is declared rather than inherited.
+        floor = jl.BFLOAT16_LENS_HEAD_FLOOR_NATS
+        self.assertEqual(sorted(floor), [768, 2048, 4096, 7168])
+        for width in (768, 2048, 4096):
+            self.assertLess(floor[width], jl.LENS_HEAD_TOLERANCE_NATS)
+        self.assertGreater(floor[7168], jl.LENS_HEAD_TOLERANCE_NATS)
+
+
 class StageArgumentTests(unittest.TestCase):
     def setUp(self):
         self.stage = _stage()
@@ -713,6 +779,12 @@ class StageArgumentTests(unittest.TestCase):
             self.stage.validate(self._args(checkpoint=None))
         with self.assertRaisesRegex(ValueError, "belongs to --stage gate"):
             self.stage.validate(self._args(artefact=Path("a")))
+
+    def test_the_verify_stage_needs_a_checkpoint_and_refuses_a_gate_input(self):
+        with self.assertRaisesRegex(ValueError, "--stage verify needs --checkpoint"):
+            self.stage.validate(self._args(stage="verify", checkpoint=None))
+        with self.assertRaisesRegex(ValueError, "belongs to --stage gate"):
+            self.stage.validate(self._args(stage="verify", artefact=Path("a")))
 
     def test_a_cohort_below_the_bootstrap_unit_floor_is_refused_before_a_load(self):
         with self.assertRaisesRegex(ValueError, "bootstrap unit floor"):

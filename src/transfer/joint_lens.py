@@ -221,6 +221,42 @@ BOOTSTRAP_SEED = 20260826
 #: only bind on the ``span`` family: an agreement level is always reached.
 MAX_UNDEFINED_DRAW_FRACTION = 0.05
 
+#: The ceiling :func:`src.transfer.lenses.verify_lens_head` is held to on every
+#: cell of every rung, in nats. It is a ceiling on a **known rounding term** and
+#: not a threshold anything is decided at: the lens head is materialised in
+#: float32 and this is how far the float32 head is allowed to sit from the
+#: model's own final distribution before nothing downstream means what it claims
+#: to. Stage 08 uses 1e-3, which is a float32 number; 1e-2 sits an order of
+#: magnitude above the float32-forward floor and two orders below the smallest
+#: number this estimand's trajectory is read at.
+#:
+#: **It was not chosen after seeing which rung it refused and it is not moved.**
+#: EXP-R2-229 froze it before any rung was scored and it stopped
+#: ``galactica-30b`` at bfloat16; EXP-R2-230 carries the same number to a
+#: float32 ladder rather than relaxing it, because a lens head that does not
+#: reconstruct the model's own logits is measuring nothing.
+LENS_HEAD_TOLERANCE_NATS = 1e-2
+
+#: The ceiling the instrument probe (``47_joint_mode_lens.py --stage verify``)
+#: passes instead, so that a reconstruction error ABOVE
+#: :data:`LENS_HEAD_TOLERANCE_NATS` is reported as a number rather than raised as
+#: a stop. It exists only to keep ``verify_lens_head``'s non-finite guard live
+#: while the probe measures the floor; no measurement is ever taken under it, and
+#: the probe publishes its verdict against :data:`LENS_HEAD_TOLERANCE_NATS`.
+DIAGNOSTIC_LENS_HEAD_CEILING_NATS = 1e3
+
+#: What the float32 lens head's reconstruction of a **bfloat16** forward pass
+#: measured, per rung, at EXP-R2-229's dispatch and re-measured at EXP-R2-230's:
+#: the floor is a property of the width, and it crosses
+#: :data:`LENS_HEAD_TOLERANCE_NATS` between 4096 and 7168. Recorded here as the
+#: reason a precision is declared rather than inherited.
+BFLOAT16_LENS_HEAD_FLOOR_NATS: dict[int, float] = {
+    768: 6.05e-04,
+    2048: 9.64e-04,
+    4096: 1.88e-03,
+    7168: 8.57e-02,
+}
+
 
 def agreement_key(level: float) -> str:
     return f"agreement_reaches_{level:.2f}"
