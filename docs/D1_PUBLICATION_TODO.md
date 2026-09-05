@@ -34,7 +34,7 @@ The user explicitly confirmed that the manuscript must **not be made public yet*
 
 ## Manuscript and figures
 
-- [x] Rewrite Introduction, Results and Discussion into a connected scientific argument, meeting the official 4,000–4,500-word guidance (current accepted text: 4,049 words); Methods remain complete and separate from this count.
+- [x] Rewrite Introduction, Results and Discussion into a connected scientific argument, meeting the official 4,000–4,500-word guidance (current accepted text: 4,059 words); Methods remain complete and separate from this count.
 - [x] Replace result-dependent placeholders only after terminal verification; finalize title and abstract around actual findings and their literature contribution.
 - [x] Apply the user's explicit reading-order correction: embed each main figure/table near its first Results discussion, remove internal commit/run identifiers from reader-facing prose, and compare paragraph/display organization with the published npj AI Article “The role of large language models in emergency care: a comprehensive benchmarking study” (`s44387-026-00078-2`). Do not copy publisher branding or prose. A compiling PDF with all displays appended at the end is not accepted as the final review layout.
 - [x] Integrate distributions, paired contrasts, uncertainty, family recognition, nonredundant yield and reference coverage without an unjustified common-task model ranking.
@@ -50,18 +50,18 @@ The user explicitly confirmed that the manuscript must **not be made public yet*
 - [x] Complete factual Reporting Summary answers, cover letter and submission checklist; preserve the AI-assistance disclosure. The old linked Editorial Policy Checklist is retired.
 - [x] Update the audit, summary, research plan and venue assessment to actual final status; remove obsolete suggestions from the current plan without rewriting history.
 
-- [ ] Complete the user’s additional quantitative comparison of section-length proportions, display placement, relative size and figure content against the selected published npj AI Articles; preserve the official single-column template. This bounded final pass is owned by manuscript_completion.
+- [x] Complete the additional quantitative comparison of section proportions, display placement, size and content: 14 main/Supplementary displays and 18 comparator displays are measured. Introduction is 16.4% of the final main text; Table 2 uses 9.5-pt data text and 86.2% of the column. Every main display is within two pages of its first citation, with all 30 pages visually accepted. The official single-column class remains unchanged.
 
 ## Final acceptance and delivery
 
-- [x] One bounded independent scientific review completed. No invalidating primary-result defect found; it identified three required corrections: report observed natural/shuffle confidence-event counts, describe the two conditional contrasts as one multiplicity family, and restore the missing PDFBench author. All three corrections are integrated. The original complete-page visual check passed; the additional quantitative display comparison above is in progress.
+- [x] One bounded independent scientific review completed. No invalidating primary-result defect found; it identified three required corrections: report observed natural/shuffle confidence-event counts, describe the two conditional contrasts as one multiplicity family, and restore the missing PDFBench author. All three corrections are integrated. The complete-page visual check and additional quantitative display comparison both passed.
 - [x] Run relevant code checks and compile the manuscript: six-script syntax/lint checks and the real 800-record annotation join pass; the 30-page main and four-page supplement compile and all 29 class-table rows match source. Recheck only artifacts changed by the additional display pass.
-- [ ] Assemble manuscript/source-figure package, minimum reproducibility data, source-code archive and SHA-256 delivery manifest under `results/transfer/generation_evidence/publication/20260905/`; link separate verified raw-structure archives. Exclude weights, reference databases, credentials and downloaded journal papers.
-- [ ] Distinguish a local review package from a public archival deposit; do not invent a DOI or imply journal submission has occurred.
+- [x] Assemble manuscript/source-figure package, minimum reproducibility data, source-code archive and SHA-256 delivery manifest under `results/transfer/generation_evidence/publication/20260905/`; link separate verified raw-structure archives. Exclude weights, reference databases, credentials and downloaded journal papers.
+- [x] Distinguish a local review package from a public archival deposit; do not invent a DOI or imply journal submission has occurred.
 - [x] Commit and push focused code/documentation changes; preserve unrelated user edits to `AGENTS.md` and `CLAUDE.md`, and preserve the user's changes in `summary.md`.
 - [x] Fulfil the explicit open-source request: the target GitHub repository is **public**, with the original software under MIT. Focused changes are pushed; the bounded current-file/history publication checks passed. The current manuscript has zero tracked files and remains local. Third-party terms are retained; the software license does not cover manuscript prose, figures or scientific data.
 - [x] Release only the temporary task allocation after all GPU/CPU jobs and retrievals finish; deletion completed at 2026-09-05 08:03 UTC after all four assigned GPUs were idle. The original single-GPU allocation and other users' workloads were left alone.
-- [ ] Deliver an honest assessment of Direction 1's contribution and npj AI readiness, plus remaining author-side tasks; completion of computation does not guarantee acceptance.
+- [x] Deliver an honest assessment of Direction 1's contribution and npj AI readiness, plus remaining author-side tasks; completion of computation does not guarantee acceptance.
 
 ## Parallel metrics assessment
 
@@ -71,6 +71,6 @@ The user explicitly confirmed that the manuscript must **not be made public yet*
 
 The original scientific run is `20260904232436_00129607e3c7` (`1b9a368`); the reference-support/sequential-schedule snapshot is `20260904234251_e2f89ea14a76` (`6c21e19`). R233 structure uses the newer schedule with the **original** inference snapshot. Remote root: `/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer`. Use its `runtimes/ct-20260905/bin/python`; the pod's default Python is unqualified.
 
-Select allocations only in the current shell, following `AGENTS.md`; never save pod names. The temporary allocation identified by label `research-campaign=d1-generation-20260905` was released after all GPU/CPU computation and transfers completed. The original single-GPU allocation remains. No experiment is awaiting retry; root coordinates final packaging.
+Select allocations only in the current shell, following `AGENTS.md`; never save pod names. The temporary allocation identified by label `research-campaign=d1-generation-20260905` was released after all GPU/CPU computation and transfers completed. The original single-GPU allocation remains. No experiment is awaiting retry; the local review delivery is complete. Author approval and an actual data-access/deposit arrangement remain separate submission requirements.
 
-Local results are under `results/transfer/generation_evidence/` and `results/transfer/progen3_generation_evidence/`; operational receipts are under ignored `logs/d1_generation_biology/` and `logs/npj_ai_review/`. The manuscript owner controls `manuscript/direction-one/` and the two publication plotting scripts; the structure owner controls workflow and structure-example figures. Root alone updates this task queue.
+Local results are under `results/transfer/generation_evidence/` and `results/transfer/progen3_generation_evidence/`; operational receipts are under ignored `logs/d1_generation_biology/` and `logs/npj_ai_review/`. The final private manuscript, editorial comparison, minimum data, committed source-code ZIP and SHA-256 manifest are under the local publication directory. The public repository contains the original software and reproducibility documentation; it contains no current manuscript files. Root alone updates this task queue.
