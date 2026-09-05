@@ -52,3 +52,7 @@ The repository root is the only live research root. Compact evidence stays with 
 The validated environment and H200 access rules are maintained in `AGENTS.md`; live cluster allocation must be checked rather than copied into documentation. External resource variables are declared in `external_resources/manifests/interpretability_transfer_resources.json`.
 
 Ignored files are not protected by Git. Never use `git clean -fdx` or `git clean -fdX`. Do not delete result trees, logs, checkpoints, datasets, or frozen provenance as though they were caches; only explicitly verified disposable paths may be removed.
+
+## License
+
+The project's original software is available under the [MIT license](LICENSE.md). Third-party code and manuscript support files retain their upstream terms. Model weights, databases, manuscript prose, figures and scientific data are outside the software license unless a separate release states otherwise; see [licensing scope and third-party notices](THIRD_PARTY_NOTICES.md).

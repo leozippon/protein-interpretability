@@ -77,6 +77,9 @@ env/
 *.tar.gz
 *.tgz
 
+# Unpublished paper drafts and figures stay local until the authors release them.
+manuscript/
+
 # Bioinformatics payloads
 *.vcf.gz
 *.vcf.bgz
