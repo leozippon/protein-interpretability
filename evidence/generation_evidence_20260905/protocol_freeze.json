@@ -1,0 +1,47 @@
+{
+  "experiment": "EXP-R2-232",
+  "frozen_at": "2026-09-05T14:04:33.921411+08:00",
+  "status": "frozen_before_generated_structural_outcomes",
+  "root_design_review": "accepted_for_execution_subject_to_control_only_calibration",
+  "files": {
+    "docs/D1_GENERATION_BIOLOGY_PREREGISTRATION.md": {
+      "sha256": "e9fcbb83a39caf745e4783565cd03fca26f4049b0e0df937b53b493129c16f8e",
+      "bytes": 15682
+    },
+    "evidence/generation_evidence_20260905/cohort_manifest.json": {
+      "sha256": "daec2d736774e29f7fbc8fb3d3186da7725ae38f3e7ae7b8a5e8181517a51713",
+      "bytes": 62396
+    },
+    "evidence/generation_evidence_20260905/selected_records.jsonl": {
+      "sha256": "aa96b39a6d1b7e6f1a485cb5319d1087da8f67fedcf3e99d22e46d2a438a5eb6",
+      "bytes": 994684
+    },
+    "results/transfer/generation_evidence/attempts.jsonl": {
+      "sha256": "06219cfc6068d0a3842e433928eefd773aa26ad929f6c368ef0f041ff2a513b5",
+      "bytes": 23410468
+    },
+    "results/transfer/generation_evidence/pilot_subset.jsonl": {
+      "sha256": "563367d5366c5dabd89d6022d9c35cdf4ce7919b94479712b52985262434238c",
+      "bytes": 169540
+    },
+    "results/transfer/generation_evidence/main_subset.jsonl": {
+      "sha256": "fa178339ff7fc6763e6f5e78785f3754a7e9bfe77864ead8803e240d21571cc6",
+      "bytes": 3610414
+    }
+  },
+  "predictor": {
+    "model": "facebook/esmfold_v1",
+    "revision": "75a3841ee059df2bf4d56688166c8fb459ddd97a",
+    "weight_sha256": "2ee07356b125d1e3e57503c204111fd7323347fc4735d41d3caac57c2a78e116",
+    "chunk_size": 128,
+    "trunk_passes": 4,
+    "esm_stem_dtype": "float16",
+    "folding_trunk_dtype": "float32",
+    "autocast": false,
+    "tf32": false,
+    "singleton": true,
+    "min_length": 16,
+    "max_length": 1024
+  },
+  "new_model_branch": "EXP-R2-233 requires its own separate pre-output protocol; do not alter this freeze"
+}

@@ -1,0 +1,14 @@
+# EXP-R2-233: one unconditional author-native ProGen3-3B generation point.
+# Freeze this queue with the runner before dispatch; GPU 0 is root-assigned.
+# Native prompt 1, N-to-C, 800 raw attempts, batch 8, seed 20260905 plus batch
+# index, bfloat16, temperature 0.85, top-p 0.95, top-k 50, repetition penalty 1.
+# Native API min/max-new-tokens 0/400 adds two terminal-token allowances, so the
+# effective HF maximum is 402. These settings are fixed in progen3_generation.py
+# and cannot be overridden by CLI. No label/prefix, reranking, or output filter.
+# The 3B-specific strict-load, cached-logit, and native-interface gates execute
+# before scientific attempts. Keep raw output, compiler failures and censoring.
+# Final completion is generation_summary.json, written only after all 800
+# attempts and the 128-original-plus-128-shuffle structure sample are persisted.
+# --out and --device are supplied once by the queue, not duplicated in args.
+# slot	key	gpu	stage	label	env	expect	args
+1	r233	0	generate_progen3_evidence.py	r233_progen3_3b_native	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1	generation_summary.json	--checkpoint /gpfs/jiaotongdamoxing/zhk_zip/models/progen3-3b --source /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/external_resources/ProGenMech/external/progen3/src

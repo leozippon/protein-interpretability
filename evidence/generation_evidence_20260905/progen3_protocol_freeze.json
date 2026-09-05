@@ -1,0 +1,27 @@
+{
+  "experiment": "EXP-R2-233",
+  "frozen_at": "2026-09-05T14:10:54.919072+08:00",
+  "status": "scientific_specification_frozen_before_3b_generation",
+  "protocol": {
+    "path": "docs/D1_PROGEN3_GENERATION_PREREGISTRATION.md",
+    "sha256": "f4944c0a48ab61285c2731fb6eb92e932d602c0f167433c080bdc7809cbe4826"
+  },
+  "current_source_files": {
+    "src/transfer/progen3_generation.py": "6347316e2cdcd76c28056a1efcd4f3089f7c78b80faaacd1e653b311a0f1899f",
+    "scripts/transfer/generate_progen3_evidence.py": "9628710f709211400d609db4b315f453db573d182f3b6103534a2746f88a60c4"
+  },
+  "runtime_source_and_checkpoint_manifest_required_before_first_scientific_batch": true,
+  "task": "native_N_to_C_unconditional",
+  "attempts": 800,
+  "batch_size": 8,
+  "batch_seed": "20260905 + batch_index",
+  "temperature": 0.85,
+  "top_p": 0.95,
+  "top_k": 50,
+  "repetition_penalty": 1,
+  "native_max_new_tokens": 400,
+  "effective_hf_max_new_tokens": 402,
+  "structure_sample": 128,
+  "structural_shuffles": 128,
+  "actual_3b_gate_required": true
+}
