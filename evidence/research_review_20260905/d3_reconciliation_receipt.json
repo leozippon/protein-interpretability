@@ -1,0 +1,610 @@
+{
+  "schema_version": "research_review_d3_reconciliation_v1",
+  "review_date": "2026-09-05",
+  "purpose": "Reconcile completed D3.j-C artifacts and resolve the frozen D3.k double-caliper attainability branch; no new model execution.",
+  "authority": "docs/INTERPRETABILITY_TRANSFER_AUDIT.md remains canonical for scientific interpretation.",
+  "d3jc": {
+    "experiment": "EXP-R2-223",
+    "run_id": "20260824051144_eecf13df49c5",
+    "pinned_commit": "885c96c2fcb00a93074e333bb14e0d0dfcd50dd6",
+    "code_hash": "eecf13df49c522f8491448dd5cf9571aab3b53695d97a02b3da2f17e53d8a3bf",
+    "manifest_sha256": "ff7be717e301112580cc43e5de90fa7ecc2e526e08181752098e03b23513875f",
+    "local_artifact_root": "results/transfer/external_baseline/20260824051144_eecf13df49c5",
+    "remote_receipt_relative_paths": [
+      "logs/external_baseline/d3jc_confirmation_20260824051144_eecf13df49c5.status.tsv",
+      "logs/external_baseline/d3jc_confirmation_20260824051144_eecf13df49c5.host_pre.txt",
+      "logs/external_baseline/d3jc_confirmation_20260824051144_eecf13df49c5.host_post.txt"
+    ],
+    "verification": {
+      "remote_actual_json_matches_persisted_sha256_sidecar": 14,
+      "local_json_matches_remotely_verified_json": 14,
+      "confirmation_prerequisite_crosslink_hashes_match": 16,
+      "method": "Root reviewer read live remote terminal/resource receipts and verified original sidecars; independent subagent computed all local hashes and prerequisite crosslinks.",
+      "frozen_campaign_tsv_matches_terminal_manifest_sha256": true
+    },
+    "terminal": {
+      "status": "DONE",
+      "started_utc": "2026-08-24T12:16:26Z",
+      "ended_utc": "2026-08-25T07:22:00Z",
+      "pending": 0,
+      "running": 0,
+      "exited_ok": 14,
+      "other_terminal_states": 0,
+      "failures": 0,
+      "no_record": 0,
+      "all_cell_exit_codes": 0
+    },
+    "resources": {
+      "pre_and_post_snapshots_exist": true,
+      "visible_h200_gpus": 4,
+      "memory_mib_per_gpu": 143771,
+      "gpu_utilization_percent_at_both_boundaries": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "gpu_memory_used_mib_at_both_boundaries": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "host_memory_total": "2.0 TiB",
+      "host_memory_used_pre": "163 GiB",
+      "host_memory_used_post": "165 GiB",
+      "swap_total": 0,
+      "historically_excluded_faulty_card": 2,
+      "note": "Historical allocation and card identity only; do not use this receipt to choose a currently healthy card."
+    },
+    "reported_campaign_result": "All four protein arms have CHEMISTRY on both predeclared tercile/order-7 confirmations.",
+    "limitations": [
+      "CHEMISTRY is the historical predeclared comparator-specific gate label, not biological knowledge or downstream causal-use evidence.",
+      "All ProGen2 arms return INSIDE_CEILING at the quintile sensitivity cut on both draws. Tercile and quartile pass; the result is cut-dependent.",
+      "ZymCTRL own model-Delta intervals include zero on both headline confirmations; the model-minus-ceiling intervals exclude zero. The predeclared rule requires a positive model point estimate, not a positive lower interval bound.",
+      "Per-record numerator/count sufficient statistics promised by the preregistration were computed in memory but not retained in confirmation JSONs. No non-JSON/non-SHA file exists in the remote result tree. The crossed intervals cannot be independently recomputed from the retained summaries alone.",
+      "Original SHA256 sidecars remain present remotely; the existing local result transfer omitted sidecars."
+    ],
+    "cells": [
+      {
+        "label": "d3jc_confirm1_progen2_base",
+        "sha256": "c9af46078b414aa33abe62eebcb205f121c5683cb67e45daf35e16ec808bd124",
+        "created_utc": "2026-08-24T21:13:37.167655+00:00",
+        "verdict": "CHEMISTRY",
+        "cuts": {
+          "quartile": {
+            "verdict": "CHEMISTRY",
+            "delta": 0.14413591530555186,
+            "delta_ci95": [
+              0.038257325691507846,
+              0.29323184747802644
+            ],
+            "ceiling_delta": -0.12051805451134731,
+            "model_minus_ceiling_ci95": [
+              0.11301726469160606,
+              0.4211401980970614
+            ],
+            "n_pairs": 51,
+            "effective_symbol_groups": 10.825988589230768,
+            "failed_clauses": []
+          },
+          "quintile": {
+            "verdict": "INSIDE_CEILING",
+            "delta": 0.06836391601381997,
+            "delta_ci95": [
+              -0.10568493274069996,
+              0.2419684658797607
+            ],
+            "ceiling_delta": -0.12779961555149255,
+            "model_minus_ceiling_ci95": [
+              -0.04270128487718845,
+              0.3855283280145399
+            ],
+            "n_pairs": 33,
+            "effective_symbol_groups": 8.514365286148994,
+            "failed_clauses": [
+              "difference_interval_excludes_zero_from_above"
+            ]
+          },
+          "tercile": {
+            "verdict": "CHEMISTRY",
+            "delta": 0.2030328166807412,
+            "delta_ci95": [
+              0.07939007762779297,
+              0.3286039993586753
+            ],
+            "ceiling_delta": -0.09402066444510496,
+            "model_minus_ceiling_ci95": [
+              0.15782749765712492,
+              0.42931992570067506
+            ],
+            "n_pairs": 80,
+            "effective_symbol_groups": 13.2945125824962,
+            "failed_clauses": []
+          }
+        }
+      },
+      {
+        "label": "d3jc_confirm1_progen2_medium",
+        "sha256": "2c344ff271d2759c93794a30e7f1db7797c42553632f1db067c180353543924e",
+        "created_utc": "2026-08-24T21:13:44.483134+00:00",
+        "verdict": "CHEMISTRY",
+        "cuts": {
+          "quartile": {
+            "verdict": "CHEMISTRY",
+            "delta": 0.15862869937556962,
+            "delta_ci95": [
+              0.051884876252730736,
+              0.30659717516066315
+            ],
+            "ceiling_delta": -0.12051805451134731,
+            "model_minus_ceiling_ci95": [
+              0.13441188557708653,
+              0.4346157592726233
+            ],
+            "n_pairs": 51,
+            "effective_symbol_groups": 10.825988589230768,
+            "failed_clauses": []
+          },
+          "quintile": {
+            "verdict": "INSIDE_CEILING",
+            "delta": 0.08123301529174032,
+            "delta_ci95": [
+              -0.0900237970700262,
+              0.25099005648191985
+            ],
+            "ceiling_delta": -0.12779961555149255,
+            "model_minus_ceiling_ci95": [
+              -0.022278209942367126,
+              0.3890529122460914
+            ],
+            "n_pairs": 33,
+            "effective_symbol_groups": 8.514365286148994,
+            "failed_clauses": [
+              "difference_interval_excludes_zero_from_above"
+            ]
+          },
+          "tercile": {
+            "verdict": "CHEMISTRY",
+            "delta": 0.21444947890615612,
+            "delta_ci95": [
+              0.08934373000291011,
+              0.3404374571418402
+            ],
+            "ceiling_delta": -0.09402066444510496,
+            "model_minus_ceiling_ci95": [
+              0.1671145849315217,
+              0.44064557230278273
+            ],
+            "n_pairs": 80,
+            "effective_symbol_groups": 13.2945125824962,
+            "failed_clauses": []
+          }
+        }
+      },
+      {
+        "label": "d3jc_confirm1_progen2_small",
+        "sha256": "c73a35d7fc459856dd1f5c6249a06a3f140e86185dd6025b82041bcef29fdd51",
+        "created_utc": "2026-08-25T07:20:31.969392+00:00",
+        "verdict": "CHEMISTRY",
+        "cuts": {
+          "quartile": {
+            "verdict": "CHEMISTRY",
+            "delta": 0.09882559186347173,
+            "delta_ci95": [
+              0.00817987885453234,
+              0.20592600555483961
+            ],
+            "ceiling_delta": -0.12051805451134731,
+            "model_minus_ceiling_ci95": [
+              0.0733980789187015,
+              0.3420323752443427
+            ],
+            "n_pairs": 51,
+            "effective_symbol_groups": 10.825988589230768,
+            "failed_clauses": []
+          },
+          "quintile": {
+            "verdict": "INSIDE_CEILING",
+            "delta": 0.033837047296357003,
+            "delta_ci95": [
+              -0.12022453303272897,
+              0.1574104955466442
+            ],
+            "ceiling_delta": -0.12779961555149255,
+            "model_minus_ceiling_ci95": [
+              -0.06901708446822849,
+              0.3051179959855465
+            ],
+            "n_pairs": 33,
+            "effective_symbol_groups": 8.514365286148994,
+            "failed_clauses": [
+              "difference_interval_excludes_zero_from_above"
+            ]
+          },
+          "tercile": {
+            "verdict": "CHEMISTRY",
+            "delta": 0.14190409487889316,
+            "delta_ci95": [
+              0.04217292951561846,
+              0.23285824492108123
+            ],
+            "ceiling_delta": -0.09402066444510496,
+            "model_minus_ceiling_ci95": [
+              0.10798965866534944,
+              0.3481188161956152
+            ],
+            "n_pairs": 80,
+            "effective_symbol_groups": 13.2945125824962,
+            "failed_clauses": []
+          }
+        }
+      },
+      {
+        "label": "d3jc_confirm1_zymctrl",
+        "sha256": "6b8d0c25074310da3fd2e80c7a93de7d66b37676a6a15de1d528b2e459e6931e",
+        "created_utc": "2026-08-24T21:04:45.619757+00:00",
+        "verdict": "CHEMISTRY",
+        "cuts": {
+          "quartile": {
+            "verdict": "CHEMISTRY",
+            "delta": 0.12015118501300237,
+            "delta_ci95": [
+              -0.037280773598563556,
+              0.3404849092690781
+            ],
+            "ceiling_delta": -0.11989771917189387,
+            "model_minus_ceiling_ci95": [
+              0.07014241224173567,
+              0.448394081588011
+            ],
+            "n_pairs": 50,
+            "effective_symbol_groups": 10.295145701157137,
+            "failed_clauses": []
+          },
+          "quintile": {
+            "verdict": "CHEMISTRY",
+            "delta": 0.1324593729573429,
+            "delta_ci95": [
+              -0.06885199177090551,
+              0.41733343607358625
+            ],
+            "ceiling_delta": -0.14391410419839865,
+            "model_minus_ceiling_ci95": [
+              0.056416669767035486,
+              0.5542526193886796
+            ],
+            "n_pairs": 31,
+            "effective_symbol_groups": 9.16478216146875,
+            "failed_clauses": []
+          },
+          "tercile": {
+            "verdict": "CHEMISTRY",
+            "delta": 0.1826570151196707,
+            "delta_ci95": [
+              -0.016213979730592597,
+              0.36460815955549003
+            ],
+            "ceiling_delta": -0.09252354952160732,
+            "model_minus_ceiling_ci95": [
+              0.08129597828344656,
+              0.445081529026404
+            ],
+            "n_pairs": 80,
+            "effective_symbol_groups": 14.182785197126972,
+            "failed_clauses": []
+          }
+        }
+      },
+      {
+        "label": "d3jc_confirm2_progen2_base",
+        "sha256": "8d07fe68300729fddce72015c20754476eec419d3969353fe9c7562b267998f2",
+        "created_utc": "2026-08-25T05:20:32.524256+00:00",
+        "verdict": "CHEMISTRY",
+        "cuts": {
+          "quartile": {
+            "verdict": "CHEMISTRY",
+            "delta": 0.13795639563219014,
+            "delta_ci95": [
+              0.035203486627562154,
+              0.28097768495690745
+            ],
+            "ceiling_delta": -0.11834002432993218,
+            "model_minus_ceiling_ci95": [
+              0.11591854719335064,
+              0.4069175358043944
+            ],
+            "n_pairs": 51,
+            "effective_symbol_groups": 10.827963876354024,
+            "failed_clauses": []
+          },
+          "quintile": {
+            "verdict": "INSIDE_CEILING",
+            "delta": 0.05074014972832419,
+            "delta_ci95": [
+              -0.11508184525282547,
+              0.22669807966666136
+            ],
+            "ceiling_delta": -0.12950947878198305,
+            "model_minus_ceiling_ci95": [
+              -0.05667341065141857,
+              0.36892420665922315
+            ],
+            "n_pairs": 33,
+            "effective_symbol_groups": 8.514899848918013,
+            "failed_clauses": [
+              "difference_interval_excludes_zero_from_above"
+            ]
+          },
+          "tercile": {
+            "verdict": "CHEMISTRY",
+            "delta": 0.18806372014325523,
+            "delta_ci95": [
+              0.07402749377829691,
+              0.30077590683238375
+            ],
+            "ceiling_delta": -0.09173310166176205,
+            "model_minus_ceiling_ci95": [
+              0.15063968748763606,
+              0.40046856061234826
+            ],
+            "n_pairs": 80,
+            "effective_symbol_groups": 13.312873203500901,
+            "failed_clauses": []
+          }
+        }
+      },
+      {
+        "label": "d3jc_confirm2_progen2_medium",
+        "sha256": "63892ca97fce55ed854c7588617d6daa5b2103d157b45bab3393a139e956cb49",
+        "created_utc": "2026-08-25T05:21:00.624123+00:00",
+        "verdict": "CHEMISTRY",
+        "cuts": {
+          "quartile": {
+            "verdict": "CHEMISTRY",
+            "delta": 0.14678352710729864,
+            "delta_ci95": [
+              0.044783283156509486,
+              0.2884139553725688
+            ],
+            "ceiling_delta": -0.11834002432993218,
+            "model_minus_ceiling_ci95": [
+              0.13145920841221953,
+              0.4117956813987239
+            ],
+            "n_pairs": 51,
+            "effective_symbol_groups": 10.827963876354024,
+            "failed_clauses": []
+          },
+          "quintile": {
+            "verdict": "INSIDE_CEILING",
+            "delta": 0.05794985713730261,
+            "delta_ci95": [
+              -0.09829746095099438,
+              0.22849122969388705
+            ],
+            "ceiling_delta": -0.12950947878198305,
+            "model_minus_ceiling_ci95": [
+              -0.04149924572221105,
+              0.36831565508269765
+            ],
+            "n_pairs": 33,
+            "effective_symbol_groups": 8.514899848918013,
+            "failed_clauses": [
+              "difference_interval_excludes_zero_from_above"
+            ]
+          },
+          "tercile": {
+            "verdict": "CHEMISTRY",
+            "delta": 0.19650805302720226,
+            "delta_ci95": [
+              0.07874598289276107,
+              0.3090534097090882
+            ],
+            "ceiling_delta": -0.09173310166176205,
+            "model_minus_ceiling_ci95": [
+              0.15935528558147902,
+              0.40613431296475333
+            ],
+            "n_pairs": 80,
+            "effective_symbol_groups": 13.312873203500901,
+            "failed_clauses": []
+          }
+        }
+      },
+      {
+        "label": "d3jc_confirm2_progen2_small",
+        "sha256": "c1b1dbece76756e67e2cf52095d344c24ac40fbb364d33b149c3d83cc40e89a4",
+        "created_utc": "2026-08-25T07:20:58.622190+00:00",
+        "verdict": "CHEMISTRY",
+        "cuts": {
+          "quartile": {
+            "verdict": "CHEMISTRY",
+            "delta": 0.09781148435627124,
+            "delta_ci95": [
+              0.013714783520054402,
+              0.1942491960092455
+            ],
+            "ceiling_delta": -0.11834002432993218,
+            "model_minus_ceiling_ci95": [
+              0.07383060728712425,
+              0.33723153876602635
+            ],
+            "n_pairs": 51,
+            "effective_symbol_groups": 10.827963876354024,
+            "failed_clauses": []
+          },
+          "quintile": {
+            "verdict": "INSIDE_CEILING",
+            "delta": 0.030061401796932452,
+            "delta_ci95": [
+              -0.1155902283831546,
+              0.15040571036405892
+            ],
+            "ceiling_delta": -0.12950947878198305,
+            "model_minus_ceiling_ci95": [
+              -0.06787284874503052,
+              0.3098338092873901
+            ],
+            "n_pairs": 33,
+            "effective_symbol_groups": 8.514899848918013,
+            "failed_clauses": [
+              "difference_interval_excludes_zero_from_above"
+            ]
+          },
+          "tercile": {
+            "verdict": "CHEMISTRY",
+            "delta": 0.13108243017264182,
+            "delta_ci95": [
+              0.04199929604111211,
+              0.21174194605027322
+            ],
+            "ceiling_delta": -0.09173310166176205,
+            "model_minus_ceiling_ci95": [
+              0.1087076809240513,
+              0.32541912158521175
+            ],
+            "n_pairs": 80,
+            "effective_symbol_groups": 13.312873203500901,
+            "failed_clauses": []
+          }
+        }
+      },
+      {
+        "label": "d3jc_confirm2_zymctrl",
+        "sha256": "29fc3f4543de5d0732cd476dedce70c41902934e19518dc004f47123ca1ce67a",
+        "created_utc": "2026-08-25T05:11:03.270640+00:00",
+        "verdict": "CHEMISTRY",
+        "cuts": {
+          "quartile": {
+            "verdict": "CHEMISTRY",
+            "delta": 0.10556890440753819,
+            "delta_ci95": [
+              -0.045491542902027844,
+              0.3133060289679182
+            ],
+            "ceiling_delta": -0.11093534870401603,
+            "model_minus_ceiling_ci95": [
+              0.06298396767636483,
+              0.4148565352037066
+            ],
+            "n_pairs": 50,
+            "effective_symbol_groups": 10.343195185798804,
+            "failed_clauses": []
+          },
+          "quintile": {
+            "verdict": "CHEMISTRY",
+            "delta": 0.12669196300057772,
+            "delta_ci95": [
+              -0.0771498602135177,
+              0.4166100150344674
+            ],
+            "ceiling_delta": -0.1332047962338582,
+            "model_minus_ceiling_ci95": [
+              0.031066214149233922,
+              0.5516405653585622
+            ],
+            "n_pairs": 31,
+            "effective_symbol_groups": 9.153086704411288,
+            "failed_clauses": []
+          },
+          "tercile": {
+            "verdict": "CHEMISTRY",
+            "delta": 0.1529717728502531,
+            "delta_ci95": [
+              -0.036651287411237826,
+              0.3479288356788949
+            ],
+            "ceiling_delta": -0.0863550717406611,
+            "model_minus_ceiling_ci95": [
+              0.06411909924163756,
+              0.4226482969366689
+            ],
+            "n_pairs": 80,
+            "effective_symbol_groups": 14.240577880437488,
+            "failed_clauses": []
+          }
+        }
+      },
+      {
+        "label": "d3jc_construct_progen2_base",
+        "sha256": "1770d5d110da8d426c46a1f7d528bb0fed9e8ea4fe0aa16be63e68ac201123d7",
+        "created_utc": "2026-08-24T12:19:57.288099+00:00",
+        "verdict": "AXIS_CONSTRUCTED"
+      },
+      {
+        "label": "d3jc_construct_progen2_medium",
+        "sha256": "d35ac050eddbb45d5a78e2d5458569cfddbb66d8cc37d04fafbbb97ecbdfef8e",
+        "created_utc": "2026-08-24T12:19:55.361740+00:00",
+        "verdict": "AXIS_CONSTRUCTED"
+      },
+      {
+        "label": "d3jc_construct_progen2_small",
+        "sha256": "1fb2a6dd9329e8de1644b9aece6f401e96f80c77d1eef1ee3161be1a582ba84e",
+        "created_utc": "2026-08-24T12:24:55.799367+00:00",
+        "verdict": "AXIS_CONSTRUCTED"
+      },
+      {
+        "label": "d3jc_construct_zymctrl",
+        "sha256": "22d18f3dd458a57a7aa7535fb6a2f30480bfcd3631217eb56e76cb65df692489",
+        "created_utc": "2026-08-24T12:20:23.612493+00:00",
+        "verdict": "AXIS_CONSTRUCTED"
+      },
+      {
+        "label": "d3jc_text_control_1",
+        "sha256": "4e2690006c5f9f65e2bb199813db47bd62c4d73417bac40111246dc65a14cce3",
+        "created_utc": "2026-08-24T13:07:10.866821+00:00",
+        "verdict": "PASS"
+      },
+      {
+        "label": "d3jc_text_control_2",
+        "sha256": "ea6c788cf7fb0326971c78061effe27464d251b725592cda0ec980bd9a4b2d6e",
+        "created_utc": "2026-08-24T13:07:17.456023+00:00",
+        "verdict": "PASS"
+      }
+    ],
+    "remote_receipt_sha256": {
+      "logs/external_baseline/d3jc_confirmation_20260824051144_eecf13df49c5.status.tsv": "153fa0c9dd64ec85a5cf505b83cc557d7b076f5edb859a025fc1cc7a5a467321",
+      "logs/external_baseline/d3jc_confirmation_20260824051144_eecf13df49c5.host_pre.txt": "8b9f10e9633a15309afa99c9b1622ae465c37a91a4ef396803d256688ff25e28",
+      "logs/external_baseline/d3jc_confirmation_20260824051144_eecf13df49c5.host_post.txt": "6e3fec06f8077689964f40808e580c1085b532b7b0f40874013721ea4c738d9c"
+    }
+  },
+  "d3k_double_caliper": {
+    "manifest_sha256": "c5e1793ad50c8647a8b19b41d039d5dda941fc75964fb7df3783e93974e12038",
+    "candidate_set": "frozen 16-pair homology_matched set",
+    "n_pairs": 16,
+    "bit_score_caliper": 20.0,
+    "bit_score_gaps": {
+      "EPHA10": 73.09999999999997,
+      "EPHB6": 92.19999999999999,
+      "IRAK2": 37.3,
+      "IRAK3": 23.30000000000001,
+      "KSR1": 55.5,
+      "MLKL": 81.6,
+      "PEAK1": 208.89999999999998,
+      "PRAG1": 103.89999999999999,
+      "PTK7": 34.19999999999999,
+      "RYK": 21.100000000000023,
+      "STRADA": 90.5,
+      "STRADB": 90.20000000000002,
+      "TRIB1": 133.3,
+      "TRIB3": 152.8,
+      "ULK4": 81.0,
+      "VRK3": 26.0
+    },
+    "surviving_first_caliper": [],
+    "maximum_possible_double_caliper_survivors": 0,
+    "frozen_minimum": 8,
+    "result": "STOP: 0 possible survivors is below the frozen floor of 8",
+    "scope_limit": "The frozen candidate set is unattainable; no model result and no impossibility claim for the human kinome."
+  },
+  "d3k_reproduction": {
+    "manifest": "results/transfer/pseudokinase_contradiction/pseudokinase_contradiction.jsonl.manifest.json",
+    "operation": "For each matching.homology_matched.pairs entry compute abs(bits_active-bits_dead), then count entries <= matching.bit_score_caliper. Any intersection with another caliper can only have fewer survivors.",
+    "frozen_stop_sources": [
+      "docs/INTERPRETABILITY_TRANSFER_AUDIT.md:1255",
+      "docs/EXPERIMENT_LOG.md:16096"
+    ],
+    "runtime": "CPU-only, ct Python; no new model or CUDA execution."
+  }
+}

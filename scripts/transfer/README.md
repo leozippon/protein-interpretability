@@ -261,6 +261,21 @@ The observation channel is one small status file on GPFS, rewritten atomically o
 
 `pull_records_h200.sh` retrieves the verdict without the payload. `h200 sync pull` is a directory operation and cannot be asked for a subset, so a cell's ~46 KB record otherwise waits behind an 8.6 GB or 17.2 GB dictionary — a transfer that has failed twice on chunk-size mismatch. One level below it, `h200 pull` is already per-file and already digest-verified, so the only thing missing was file selection. By default this script pulls `*.json` only, verifies the delivered set against pod-side digests with the same comparison the driver admits a result on, and leaves the weights on GPFS where every downstream stage reads dictionaries from anyway; `--with-weights` pulls everything through the same path. Point it at a whole run root to collect every cell's record in one invocation.
 
+## Generation evidence and local figures
+
+The completed generation supplement has separately frozen [conditional](../../docs/D1_GENERATION_BIOLOGY_PREREGISTRATION.md) and [native](../../docs/D1_PROGEN3_GENERATION_PREREGISTRATION.md) protocols. `analyze_generation_biology.py` reads the retained ledgers, declared samples and complete prediction indices; it does not run inference. Use the exact inputs and code revisions recorded in the experiment log. A new plotting run does not alter the scientific execution snapshot.
+
+| Entry point | Retained input and output |
+|---|---|
+| `join_native_generation_annotations.py` | Joins first native profile/reference annotations to all attempts by exact ID and sequence SHA-256, producing a separate derived ledger and provenance receipt. It rejects mismatched coverage, sequences and target-class annotations. |
+| `plot_generation_manuscript.py` | Full attempt ledger to class-level recognition and nonredundant-yield figures and source tables. |
+| `plot_generation_structure_manuscript.py` | Saved primary analysis and ledger to conditional/native contrasts, distributions, reference-support displays and source tables; fresh conditional reference metadata is a separate optional sidecar. |
+| `plot_generation_supplement.py` | Full ledger, fixed selection and pilot analysis to profile confusion, length support and natural calibration displays. |
+| `build_generation_workflow.py` | Declared study populations and analysis flow to matching editable draw.io, SVG and PDF artwork, plus a raster preview. |
+| `plot_generation_structure_examples.py` | Retained prediction coordinates to a fixed hash-selected original/shuffle illustration for each generator, with PyMOL scenes and residue-confidence source data. Selection does not use confidence scores. |
+
+Run each entry point with `--help` for its input paths. These figures use Matplotlib in the validated `ct` environment; molecular rendering additionally uses an existing PyMOL executable, supplied through its command-line option. No structure model is loaded for plotting. The manuscript and artwork remain in ignored `manuscript/`; complete ledgers, source data and raw prediction archives remain in ignored `results/`. A local review package is not a public archival deposit, and model weights and reference database binaries are not redistributed.
+
 ## Operator Checklist
 
 1. Run `python scripts/transfer/panel_contract.py --verify`.
