@@ -9,6 +9,8 @@ training disjointness or biochemical function.
 from __future__ import annotations
 
 import json
+import platform
+import sys
 from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
@@ -32,9 +34,9 @@ def read_attempts(path: Path) -> list[dict]:
     return rows
 
 
-def best_hits(table: Path, sequences: dict[str, str]) -> dict[str, homology.Hit]:
+def best_hits(table: Path, sequences: dict[str, str], *, fields: tuple[str, ...] = homology.DIAMOND_FIELDS) -> dict[str, homology.Hit]:
     best: dict[str, homology.Hit] = {}
-    for hit in homology.parse_hits(table):
+    for hit in homology.parse_hits(table, fields=fields):
         if hit.query not in sequences or len(sequences[hit.query]) != hit.qlen:
             raise ValueError(f"alignment query/length mismatch: {hit.query}")
         if not 1 <= min(hit.qstart, hit.qend) <= max(hit.qstart, hit.qend) <= hit.qlen:
@@ -50,6 +52,11 @@ def best_hits(table: Path, sequences: dict[str, str]) -> dict[str, homology.Hit]
 
 
 def reference_fields(hit: homology.Hit | None, *, searched: bool, empty: bool = False) -> dict[str, Any]:
+    target_coverage = None
+    if hit and hit.sseq_gapped is not None:
+        target_coverage = sum(residue != "-" for residue in hit.sseq_gapped) / hit.slen
+        if not 0 < target_coverage <= 1:
+            raise ValueError(f"invalid subject coverage: {hit.query}")
     return {
         "reference_search_status": "aligned_query_coverage_available" if hit else ("no_reported_alignment" if searched else ("empty_not_searched" if empty else "not_searched")),
         "reference_identity": hit.identity_over_query if hit else None,
@@ -58,8 +65,8 @@ def reference_fields(hit: homology.Hit | None, *, searched: bool, empty: bool = 
         "reference_aligned_region_identity_percent": hit.pident if hit else None,
         "reference_subject": hit.subject if hit else None,
         "reference_subject_length": hit.slen if hit else None,
-        "reference_target_coverage": None,
-        "reference_target_coverage_status": "subject_coordinates_not_retained",
+        "reference_target_coverage": target_coverage,
+        "reference_target_coverage_status": "aligned_subject_residue_fraction" if target_coverage is not None else "subject_coordinates_not_retained",
         "reference_hit_selection": "max_identity_over_query_then_bitscore_then_evalue_then_subject",
     }
 
@@ -110,6 +117,66 @@ def recover_r227(attempts: Path, table: Path, query_fasta: Path, report: Path, o
         "note": "Original report omitted coverage. Retained final-arm qstart/qend/qlen permit partial recovery; earlier-arm raw table was overwritten. Frozen attempts/subsets remain unchanged.",
     }
     return write_sidecar(output_rows, output, provenance)
+
+
+def reference_only(attempts: Path, output: Path, *, diamond: Path, diamond_db: Path,
+                   reference_metadata: Path, threads: int = 8) -> dict:
+    """Fresh full-ledger R232 search; never replace an old identity/coverage pair."""
+    rows = read_attempts(attempts)
+    if len(rows) != 16400 or Counter(row["role"] for row in rows) != {"generation": 12800, "natural_reference": 3200, "unconditioned_floor": 400}:
+        raise ValueError("R232 reference-only extension requires the complete frozen 16400-record ledger")
+    if threads < 1:
+        raise ValueError("reference search needs a positive thread count")
+    paths = {"attempts": attempts, "diamond": diamond, "diamond_db": diamond_db,
+             "reference_metadata": reference_metadata}
+    for path in paths.values():
+        if not path.is_file():
+            raise FileNotFoundError(path)
+    configuration = {
+        "campaign": "EXP-R2-232", "extension": "fresh_full_ledger_reference_search",
+        "inputs": {label: sha256_file(path) for label, path in paths.items()},
+        "reference_metadata": json.loads(reference_metadata.read_text()),
+        "threads": threads, "sensitivity": "very-sensitive", "evalue": 1e-3,
+        "max_target_seqs": 5, "masking": 0, "fields": list(homology.ALIGNMENT_FIELDS),
+        "runtime": {"python": sys.version, "platform": platform.platform()},
+        "source_hashes": {"annotation_module": sha256_file(Path(__file__)),
+                          "homology_module": sha256_file(Path(homology.__file__))},
+        "unchanged": "original ledger, profiles, structure subset and primary endpoints",
+    }
+    config_path = output / "search_configuration.json"
+    ge.write_immutable(config_path, (json.dumps(configuration, sort_keys=True, indent=2) + "\n").encode())
+    manifest_path = output / "reference_fresh_manifest.json"
+    sidecar = output / "reference_fresh_annotations.jsonl"
+    if manifest_path.is_file():
+        manifest = json.loads(manifest_path.read_text())
+        if manifest["annotations_sha256"] != sha256_file(sidecar):
+            raise ValueError("completed fresh reference annotation hash mismatch")
+        return manifest
+    sequences = {row["id"]: row["sequence"] for row in rows if row["sequence"] and row["valid_aa20"]}
+    fasta = ci.write_fasta(output / "queries.fasta", sequences)
+    table = output / "reference_hits.tsv"
+    command, log_tail = homology.run_diamond_blastp(
+        SimpleNamespace(executable=diamond), SimpleNamespace(path=diamond_db),
+        fasta, table, threads=threads, sensitivity="very-sensitive", evalue=1e-3,
+        max_target_seqs=5, fields=homology.ALIGNMENT_FIELDS,
+    )
+    best = best_hits(table, sequences, fields=homology.ALIGNMENT_FIELDS)
+    annotations = []
+    for row in rows:
+        fields = reference_fields(best.get(row["id"]), searched=row["id"] in sequences, empty=not row["sequence"])
+        annotations.append({"id": row["id"], "sequence_sha256": row["sequence_sha256"],
+                            **{key: row[key] for key in ("reference_identity", "reference_coverage", "reference_search_status")},
+                            **{key.replace("reference_", "reference_fresh_", 1): value for key, value in fields.items()}})
+    ge.write_immutable(sidecar, ge.jsonl_bytes(annotations))
+    manifest = {"campaign": "EXP-R2-232", "new_inference": True, "records": len(rows),
+                "n_searched": len(sequences), "n_not_searched": len(rows) - len(sequences),
+                "fresh_search_status": dict(Counter(row["reference_fresh_search_status"] for row in annotations)),
+                "configuration_sha256": sha256_file(config_path),
+                "annotations_sha256": sha256_file(sidecar), "query_fasta_sha256": sha256_file(fasta),
+                "diamond_table_sha256": sha256_file(table), "diamond_command": command, "diamond_log_tail": log_tail,
+                "note": "Fresh hit identity and coverage travel together. Old reported identities remain unchanged; same named searchable corpus does not certify full training disjointness."}
+    ge.write_immutable(manifest_path, (json.dumps(manifest, sort_keys=True, indent=2) + "\n").encode())
+    return manifest
 
 
 def annotate_native(attempts: Path, output: Path, *, hmmscan: Path, pfam_hmm: Path,

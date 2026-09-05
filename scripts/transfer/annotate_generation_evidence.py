@@ -27,10 +27,15 @@ def main() -> None:
         native.add_argument(f"--{name}", type=Path, required=True)
     native.add_argument("--threads", type=int, default=8)
     native.add_argument("--shards", type=int, default=4)
+    reference = commands.add_parser("reference-only")
+    for name in ("attempts", "out", "diamond", "diamond-db", "reference-metadata"):
+        reference.add_argument(f"--{name}", type=Path, required=True)
+    reference.add_argument("--threads", type=int, default=8)
     args = vars(parser.parse_args())
     command = args.pop("command")
     args["output"] = args.pop("out")
-    result = ga.recover_r227(**args) if command == "recover-r227" else ga.annotate_native(**args)
+    functions = {"recover-r227": ga.recover_r227, "native-progen3": ga.annotate_native, "reference-only": ga.reference_only}
+    result = functions[command](**args)
     print(json.dumps(result, sort_keys=True))
 
 
