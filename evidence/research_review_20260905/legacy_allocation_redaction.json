@@ -1,0 +1,44 @@
+{
+  "schema_version": "legacy_allocation_redaction_v1",
+  "issued_utc": "2026-09-05T08:03:18.729673+00:00",
+  "scope": "Two current working-tree publication copies of historical operational receipts; original experiment records remain in Git history.",
+  "source_git_revision": "6c21e19cd9112b5becba56e722e7d258d2e0ef50",
+  "reason": "Apply the current repository prohibition on persisting disposable allocation names when publishing code, protocols and reproducibility documentation.",
+  "records": [
+    {
+      "path": "evidence/p0_2_full_launch_20260722/launch_receipt.json",
+      "json_pointer": "/execution/pod_name",
+      "original_sha256": "306d2b56bf3cf756fa5c56dd86e0f24d3555fc6c49c02d59747216e31d3104b9",
+      "published_copy_sha256": "831ca853ce2abff440e43c609cd54156054e6f64cd28cfcc9d3cb1bce8ed9623",
+      "replacement_value": "historical-research-allocation",
+      "only_declared_field_value_changed": true,
+      "all_other_bytes_unchanged": true
+    },
+    {
+      "path": "evidence/p0_2_screening_20260722/terminal_receipt.json",
+      "json_pointer": "/lineage/pod_name",
+      "original_sha256": "83bf4563a27886a1e1f148eb4094f9a7b02533936a02981caac17a805de04d6c",
+      "published_copy_sha256": "a1aa7e1eab47870211ca2826e12b5097d88d2f743e3138b00b07b2534a7953c5",
+      "replacement_value": "historical-research-allocation",
+      "only_declared_field_value_changed": true,
+      "all_other_bytes_unchanged": true
+    }
+  ],
+  "historical_reference_policy": "Original SHA256 values in logs and nested receipt lineage continue to identify the exact original experiment-era bytes. They are not replaced by the published-copy hashes. Resolve the original files at source_git_revision; use published_copy_sha256 to verify the current redacted representation.",
+  "supersedes_prior_exception": {
+    "document": "docs/EXPERIMENT_LOG.md",
+    "section": "Pod names in tracked files: eleven redacted, two receipts accepted as a limitation (2026-08-18)",
+    "disposition": "This transparent publication reissue supersedes the earlier choice to leave these two working-tree copies unredacted. It preserves the original byte-level evidence through its Git revision and original digests, and does not revise the earlier experimental observation."
+  },
+  "scientific_content_unchanged": true,
+  "original_nested_reference_hashes_unchanged": true,
+  "git_history_rewritten": false,
+  "historical_identifiers_removed_from_git_history": false,
+  "validation": {
+    "original_blobs_verified_at_source_git_revision": true,
+    "expected_original_and_published_sha256_verified": true,
+    "only_two_declared_string_values_changed": true,
+    "no_active_code_or_test_consumers_found_in_current_tracked_tree": true,
+    "historical_identifier_values_absent_from_tracked_working_tree": true
+  }
+}

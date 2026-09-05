@@ -13,7 +13,7 @@
     "launcher_sha256": "bc511f78f872ce70cc85ed098ec9aad15e44aa2dc1a5add3de2a52683fcef2f6",
     "git_commit": "d765d4bf761d566fb45b6318c6067c9981cf96ad",
     "git_dirty": true,
-    "pod_name": "damoxing-zhk-zipbio-master-0",
+    "pod_name": "historical-research-allocation",
     "node_name": "i-d5cvmv6heob1nidq4ujg",
     "gpu_model": "NVIDIA H200",
     "screening_seed": 20260717

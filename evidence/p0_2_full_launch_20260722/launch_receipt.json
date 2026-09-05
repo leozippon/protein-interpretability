@@ -11,7 +11,7 @@
   },
   "execution": {
     "mode": "fresh",
-    "pod_name": "damoxing-zhk-zipbio-master-0",
+    "pod_name": "historical-research-allocation",
     "node_name": "i-d5cvmv6heob1nidq4ujg",
     "gpu_indices": [
       0,
