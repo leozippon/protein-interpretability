@@ -1175,10 +1175,20 @@ def paired_family_bootstrap(
     seed: int = 0,
     minimum_units: int = MINIMUM_BOOTSTRAP_UNITS,
 ) -> dict[str, Any]:
-    """Paired family-cluster bootstrap of accuracy difference. No fake CI."""
+    """Bootstrap all-attempts accuracy difference by resampling paired families.
 
+    Each sampled family retains all its records, including on repeated draws;
+    unequal family sizes therefore retain their weight in the accuracy metric.
+    """
+
+    if n_resamples <= 0:
+        raise ValueError("n_resamples must be positive")
     left_map = {row["accession"]: row for row in left}
     right_map = {row["accession"]: row for row in right}
+    if len(left_map) != len(left):
+        raise ValueError("paired bootstrap requires unique accessions in left arm")
+    if len(right_map) != len(right):
+        raise ValueError("paired bootstrap requires unique accessions in right arm")
     if set(left_map) != set(right_map):
         raise ValueError("paired bootstrap requires identical accession sets")
     families: dict[str, list[str]] = {}
@@ -1192,36 +1202,32 @@ def paired_family_bootstrap(
             "available": False,
             "reason": floor["degenerate_reason"],
             "n_families": int(len(families)),
+            "estimand": "all_attempts_accuracy_difference",
+            "resampling_unit": "family_group",
             "delta": None,
             "interval": None,
         }
 
-    def family_delta(names: Sequence[str]) -> float:
-        left_hits = []
-        right_hits = []
-        for family in names:
-            accessions = families[family]
-            left_hits.append(
-                np.mean([float(left_map[acc]["correct"]) for acc in accessions])
-            )
-            right_hits.append(
-                np.mean([float(right_map[acc]["correct"]) for acc in accessions])
-            )
-        return float(np.mean(left_hits) - np.mean(right_hits))
-
     names = tuple(sorted(families))
-    point = family_delta(names)
+    family_totals = np.array([len(families[name]) for name in names], dtype=np.int64)
+    family_hit_deltas = np.array([
+        sum(
+            float(left_map[acc]["correct"]) - float(right_map[acc]["correct"])
+            for acc in families[name]
+        )
+        for name in names
+    ], dtype=np.float64)
+    point = float(family_hit_deltas.sum() / family_totals.sum())
     rng = np.random.default_rng(seed)
-    name_array = np.array(names, dtype=object)
-    samples = [
-        family_delta(tuple(str(item) for item in rng.choice(name_array, size=len(names), replace=True)))
-        for _ in range(n_resamples)
-    ]
+    indices = rng.integers(len(names), size=(n_resamples, len(names)))
+    samples = family_hit_deltas[indices].sum(axis=1) / family_totals[indices].sum(axis=1)
     lo, hi = np.quantile(samples, [0.025, 0.975])
     return {
         "available": True,
         "reason": None,
         "n_families": int(len(families)),
+        "estimand": "all_attempts_accuracy_difference",
+        "resampling_unit": "family_group",
         "delta": point,
         "interval": [float(lo), float(hi)],
         "n_resamples": int(n_resamples),

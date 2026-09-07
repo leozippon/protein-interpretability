@@ -1,7 +1,7 @@
 # 隐状态桥能力试验合同（M0/M1）
 
 **日期：** 2026-09-07
-**状态：** 用户授权的方向一探索性能力试验。L20 M0 接口已通过（仪器可跑，不是能力结果）；M1 尚未运行。详细结果见 EXP-R2-234。
+**状态：** 用户授权的方向一探索性能力试验。L20 M0 接口已通过（仪器可跑，不是能力结果）；H200 prepare-train 已按 PIN `acb254abc74c4bb9f2fc5ac09ee963ea2a58192f` 提交，结果待验收，不得写成远端 M0 通过或训练完成。详细事实单源见 EXP-R2-234（本地 prepare/M0）与 EXP-R2-235（H200 提交与 pretest 分析修正）。
 **权威：** 科学结论、关闭路线与准入仍以 `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` 为准。方案背景见 `docs/mostik-protein-language-bridge.md`。本文只规定本试验的执行合同，不更新 F/L，不改变方向一→二→三的顺序。
 
 ## 范围
@@ -47,7 +47,7 @@ ct 4.57.3 与 H200 标准环境版本不同须记录。Qwen3.5 不受现有环�
 
 ## M0 / M1
 
-M0 不超过 32 条非 test 记录，检验：原生渲染与方向标记、声明长度拒绝而非截断、内容位 mask、桥参数有梯度、donor 与 receiver 权重不变、oracle-label 能跟住上述 JSON。任一项失败则停在接口，不进入 M1。L20 只空闲 GPU1 做接口；训练全 H200。接口过才训。M0 通过只说明仪器可跑，不是能力结果。L20 M0 已通过；该通过不表示 H200 环境已验收。
+M0 不超过 32 条非 test 记录，检验：原生渲染与方向标记、声明长度拒绝而非截断、内容位 mask、桥参数有梯度、donor 与 receiver 权重不变、oracle-label 能跟住上述 JSON。任一项失败则停在接口，不进入 M1。L20 只空闲 GPU1 做接口；训练全 H200。接口过才训。M0 通过只说明仪器可跑，不是能力结果。L20 M0 已通过；该通过不表示 H200 环境已验收。H200 prepare-train 已提交，结果待验收。
 
 M1 首轮预算见上节。checkpoint 只在 train/val 上选，训练不扫 test。三桥 checkpoint 固定后，各臂对锁定 test 各评一次，不能按 test 调参。各臂共享同一锁定 ID 列表，不得为某一臂单独补样本。
 
@@ -64,9 +64,9 @@ M1 首轮预算见上节。checkpoint 只在 train/val 上选，训练不扫 tes
 | 同架构随机初始化冻结 donor 桥 | 预训练特异对照 |
 | oracle-label | 只格式仪器，不当能力结果 |
 
-所有 attempt 生成 JSON。主读出是 class accuracy：JSON 有效且 class 正确才算对；无效 JSON 计为 class 错，不丢弃分母。valid JSON、name 一致性、macro-F1、support、confusion 分列，不把辅助列升格为主读出。name 一致性是辅助单列，不改写主指标；可另列 joint class+name 准确率。无 support 类的 macro-F1 政策须写入 run config 与 support 表，不臆造分数。共同 ID 严格对齐的 family paired-bootstrap 差值；单位不足报 `unavailable`，不做记录级或 token 级回退。3-mer 最近邻只在 fit 上建 gallery、拟合与调参，不得把 val/test 用于这三项；把 val/test 序列当查询合法。
+所有 attempt 生成 JSON。主读出是 class accuracy：JSON 有效且 class 正确才算对；无效 JSON 计为 class 错，不丢弃分母。valid JSON、name 一致性、macro-F1、support、confusion 分列，不把辅助列升格为主读出。name 一致性是辅助单列，不改写主指标；可另列 joint class+name 准确率。无 support 类的 macro-F1 政策须写入 run config 与 support 表，不臆造分数。主差值是全部 attempt 上的 class accuracy 差（记录加权比例，不是各族准确率再平均的族宏差）。共同 ID 必须严格对齐；重复 accession 或错配 ID/`family_group` 拒绝，不折叠。family paired-bootstrap 以 `family_group` 为有放回抽样单位，抽中一次即保留该族全部记录权重，重复抽中则重复计入，不把各族准确率等权平均。单位不足报 `unavailable`，不做记录级或 token 级回退。分析在未见任何真实 test 表现前固定：`n_resamples` 5000、`seed` 20260907、95% percentile 区间。四个预训练 donor 桥减去规定对照（raw-sequence、fit-only 3-mer 最近邻、3-mer 同预算桥、随机冻结 donor 桥）的区间是探索性边际估计，不作多重校正，不设 epsilon，不报 confirmatory PASS。3-mer 最近邻只在 fit 上建 gallery、拟合与调参，不得把 val/test 用于这三项；把 val/test 序列当查询合法。
 
-首轮探索性 pilot 只报估计和区间，不事后挑 epsilon 宣称确认 PASS，也不把 val 选模结果写成 test 确认。若后续确认，epsilon、主要对照、预算在独立 pilot 后、final 前冻结，要求 CI 下界大于该 epsilon。注释一致性、CLAP、结构置信都不是湿实验功能。
+首轮探索性 pilot 只报估计和区间，不事后挑 epsilon 宣称确认 PASS，也不把 val 选模结果写成 test 确认。若后续确认，epsilon、主要对照、预算在独立 pilot 后、final 前冻结，要求 CI 下界大于该 epsilon。注释一致性、CLAP、结构置信都不是湿实验功能。训练超参与既有 M0/M1 门不变。
 
 ## 决策
 
@@ -74,4 +74,4 @@ M1 首轮预算见上节。checkpoint 只在 train/val 上选，训练不扫 tes
 
 ## 执行
 
-H200 用 `scripts/transfer/run_transfer_h200.sh` 冻结，再以现有 `scripts/transfer/run_external_baseline_h200.sh --stage 48_latent_bridge.py` 执行。代码需先提交明确 PIN 再 freeze，排除 AGENTS/CLAUDE 用户改动；PIN 尚未提交，不得写成已完成。绑定 code、data、model、runtime receipts。receipts 至少含 commit、数据哈希、模型路径与版本、Python/PyTorch/Transformers 版本、GPU 计数与峰值显存。本用户先用现有 1 张空闲 H200，不抢其他进程，不持久化 pod 名。缓存、训练、推理的时间与峰值显存分别记录，三者不得混成一条墙钟。M0 仅 L20，不表示 H200 环境已验收。
+H200 用 `scripts/transfer/run_transfer_h200.sh` 冻结，再以现有 `scripts/transfer/run_external_baseline_h200.sh --stage 48_latent_bridge.py` 执行。代码需先提交明确 PIN 再 freeze，排除 AGENTS/CLAUDE 用户改动。训练/评估源码 PIN 为 `acb254abc74c4bb9f2fc5ac09ee963ea2a58192f`，已 commit 并 SSH 推送 `main`；H200 prepare-train 已对该 PIN 提交，结果待验收，不得写成远端 M0 通过或训练完成。绑定 code、data、model、runtime receipts。receipts 至少含 commit、数据哈希、模型路径与版本、Python/PyTorch/Transformers 版本、GPU 计数与峰值显存。本用户先用现有 1 张空闲 H200，不抢其他进程，不持久化 pod 名。缓存、训练、推理的时间与峰值显存分别记录，三者不得混成一条墙钟。L20 M0 通过不表示 H200 环境已验收。

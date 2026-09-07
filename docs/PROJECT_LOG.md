@@ -2318,3 +2318,7 @@ Public Mostik materials were checked and a candidate memo was written at `docs/m
 ## 2026-09-07 — Latent-bridge capability-pilot preparation and M0 qualification
 
 The user authorized an exploratory M0/M1 direction-1 capability trial under `docs/LATENT_BRIDGE_CAPABILITY_PILOT.md`. EXP-R2-234 now records completed prepare, content-SHA staging of Qwen2.5-0.5B-Instruct, 39 CPU tests plus ct-directed Pyright, and L20 GPU1 M0 interface pass. Implementation remains unpinned; M1 has not run; remote H200 load is still pending. Closed scientific gates are unchanged. No communication-capability result or test-set performance is claimed.
+
+## 2026-09-07 — Pin latent-bridge source and freeze the pretest bootstrap estimand
+
+Training/evaluation source PIN `acb254abc74c4bb9f2fc5ac09ee963ea2a58192f` was committed and SSH-pushed to `main`. H200 prepare-train was submitted against that PIN; results are pending acceptance and are not claimed here. A pretest correction makes the paired family bootstrap a record-weighted all-attempts accuracy difference with family resampling, not a family-macro mean; H200 train/eval never calls the old bootstrap, and a later analysis commit will be recorded separately without changing data, models, training, or generation. EXP-R2-234 remains the local L20 M0 record from before the PIN. EXP-R2-235 records this dispatch and analysis freeze. User edits to `AGENTS.md` and `CLAUDE.md` remain unstaged.

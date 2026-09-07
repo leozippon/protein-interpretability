@@ -395,6 +395,72 @@ class CacheAndNnTests(unittest.TestCase):
         result = lb.paired_family_bootstrap(tiny, tiny, minimum_units=8)
         self.assertFalse(result["available"])
         self.assertIsNone(result["interval"])
+        self.assertEqual(result["estimand"], "all_attempts_accuracy_difference")
+        self.assertEqual(result["resampling_unit"], "family_group")
+        mismatched = [dict(tiny[0], family_group="G"), tiny[1]]
+        with self.assertRaisesRegex(ValueError, "mismatched family_group"):
+            lb.paired_family_bootstrap(tiny, mismatched)
+
+    def test_bootstrap_unequal_families_preserve_all_attempts(self) -> None:
+        # The three-record family gains three hits; each singleton loses one.
+        families = ["F", "F", "F", "G", "H"]
+        left = []
+        right = []
+        for i, family in enumerate(families):
+            for rows, correct in ((left, family == "F"), (right, family != "F")):
+                rows.append({
+                    "accession": str(i), "family_group": family, "correct": correct,
+                    "true_class": 1, "predicted_class": 1 if correct else None,
+                    "valid_json": correct,
+                    "predicted_name": "oxidoreductase" if correct else None,
+                })
+        options = {"seed": 17, "n_resamples": 11, "minimum_units": 3}
+        result = lb.paired_family_bootstrap(left, right, **options)
+        metric_delta = (
+            lb.prediction_metrics(left)["class_exact_accuracy"]
+            - lb.prediction_metrics(right)["class_exact_accuracy"]
+        )
+        self.assertTrue(result["available"])
+        self.assertAlmostEqual(result["delta"], metric_delta)
+        self.assertAlmostEqual(result["delta"], 1 / 5)
+        self.assertNotAlmostEqual(result["delta"], (1 - 1 - 1) / 3)
+        self.assertEqual(result["estimand"], "all_attempts_accuracy_difference")
+        self.assertEqual(result["resampling_unit"], "family_group")
+
+        # Independent reference: expand every sampled family to its records,
+        # counting a repeated family repeatedly rather than averaging families.
+        record_deltas = {"F": [1, 1, 1], "G": [-1], "H": [-1]}
+        rng = np.random.default_rng(options["seed"])
+        samples = []
+        for _ in range(options["n_resamples"]):
+            drawn = rng.choice(["F", "G", "H"], size=3, replace=True)
+            hits = [hit for family in drawn for hit in record_deltas[family]]
+            samples.append(sum(hits) / len(hits))
+        expected_interval = np.quantile(samples, [0.025, 0.975])
+        np.testing.assert_allclose(result["interval"], expected_interval)
+        self.assertEqual(result, lb.paired_family_bootstrap(left, right, **options))
+        self.assertEqual(
+            result, lb.paired_family_bootstrap(list(reversed(left)), right, **options)
+        )
+        self.assertEqual(
+            result, lb.paired_family_bootstrap(left, list(reversed(right)), **options)
+        )
+
+    def test_bootstrap_duplicate_accessions_rejected(self) -> None:
+        rows = [{"accession": "a", "family_group": "F", "correct": True}]
+        for arm in ("left", "right"):
+            with self.subTest(arm=arm):
+                left = rows * 2 if arm == "left" else rows
+                right = rows * 2 if arm == "right" else rows
+                with self.assertRaisesRegex(ValueError, f"unique accessions in {arm} arm"):
+                    lb.paired_family_bootstrap(left, right)
+
+    def test_bootstrap_nonpositive_resample_count_rejected(self) -> None:
+        rows = [{"accession": "a", "family_group": "F", "correct": True}]
+        for n_resamples in (0, -1):
+            with self.subTest(n_resamples=n_resamples):
+                with self.assertRaisesRegex(ValueError, "n_resamples must be positive"):
+                    lb.paired_family_bootstrap(rows, rows, n_resamples=n_resamples)
 
 
 class BudgetAndCliTests(unittest.TestCase):
