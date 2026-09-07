@@ -1,7 +1,7 @@
 # 隐状态桥能力试验合同（M0/M1）
 
 **日期：** 2026-09-07
-**状态：** 用户授权的方向一探索性能力试验。L20 M0 接口已通过（仪器可跑，不是能力结果）；H200 prepare-train 已按 PIN `acb254abc74c4bb9f2fc5ac09ee963ea2a58192f` 提交，结果待验收，不得写成远端 M0 通过或训练完成。详细事实单源见 EXP-R2-234（本地 prepare/M0）与 EXP-R2-235（H200 提交与 pretest 分析修正）。
+**状态：** 已完成。接口验证通过，但尚未确立预训练带来的独有增益；主准确率还低于事后补充的训练集多数类参考。目前不扩大模型或进入机制研究。事实单源见 EXP-R2-234（本地 prepare/L20 M0）与 EXP-R2-235（H200 执行与锁定测试）。
 **权威：** 科学结论、关闭路线与准入仍以 `docs/INTERPRETABILITY_TRANSFER_AUDIT.md` 为准。方案背景见 `docs/mostik-protein-language-bridge.md`。本文只规定本试验的执行合同，不更新 F/L，不改变方向一→二→三的顺序。
 
 ## 范围
@@ -28,7 +28,7 @@
 
 从 `ec` 提取唯一顶级数字。空、无法解析、跨顶级类、非法氨基酸、超过声明长度的记录分别显式计数后排除，不静默 truncate，也不用描述文本补标签。监督来自 `ec` 而非 `description_masked`。donor 只见 `'1'` + 原序列，不见 EC、类名或注释。receiver 在桥接臂只见桥给出的 soft-prefix 与要求输出该 JSON 的指令，不见序列与标签；raw-sequence 对照臂可见完整序列，仍不见标签。
 
-split：fit=train，eval=val，family_holdout=锁定 test。验证 accession 与 dup 不交、held-out family-group 不交；任一泄漏则停止，不改 split 后继续。cap 按固定 seed 与 ID hash 选，不按标签难度或模型分数挑样本。prepare 须写出过滤前/后计数、按原因排除数、各类 support、实有 train/val/test 条数、长度分布与哈希。资源预查只 admit EC 1–6 概念；EC7 的实际样本 support 由 prepare 报告，不能承诺七类都可评价。有效数量先 prepare 统计；不足声明 cap 时记录实有数量，任何改预算在训练前写入，不得在看 test 后改。本轮 prepare 已完成，计数与哈希见 EXP-R2-234。
+split：fit=train，eval=val，family_holdout=锁定 test。验证 accession 与 dup 不交、held-out family-group 不交；任一泄漏则停止，不改 split 后继续。cap 按固定 seed 与 ID hash 选，不按标签难度或模型分数挑样本。prepare 须写出过滤前/后计数、按原因排除数、各类 support、实有 train/val/test 条数、长度分布与哈希。资源预查只 admit EC 1–6 概念；EC7 的实际样本 support 由 prepare 报告，不能承诺七类都可评价。有效数量先 prepare 统计；不足声明 cap 时记录实有数量，任何改预算在训练前写入，不得在看 test 后改。
 
 ## 模型与训练
 
@@ -37,9 +37,9 @@ split：fit=train，eval=val，family_holdout=锁定 test。验证 accession 与
 | 角色 | 首轮 | 备注 |
 |---|---|---|
 | donor | ProGen2-medium | H200 已有权重；small 可做接口。L20 M0 用 medium。 |
-| receiver | Qwen2.5-0.5B-Instruct | Compute 已转存 GPFS 并做内容 SHA 校验；远端 load 仍待独立 M0，不得写成已完成。不得冒充 PANEL 同名 base。 |
+| receiver | Qwen2.5-0.5B-Instruct | Compute 已转存 GPFS 并做内容 SHA 校验；H200 M0 已从该路径加载并通过接口门。不得冒充 PANEL 同名 base。 |
 | 对照文本 | 同一 0.5B-Instruct | 首轮 mandatory raw-sequence 用该 Instruct。7B/32B base 仅可选后续，不混入主臂。 |
-| 扩容 | 首次不扩容 | 现成 3B-Instruct 仅在后续容量需要时再议。 |
+| 扩容 | 本轮不扩容 | 现成 3B-Instruct 仅在后续另有容量证据时再议；不按当前 test 扩大 receiver 或 GPU。 |
 
 ct 4.57.3 与 H200 标准环境版本不同须记录。Qwen3.5 不受现有环境支持，先不升级。Instruct 权重必须与 PANEL 同名 base 分目录存放，加载失败显式报错，不得回退到 base。
 
@@ -47,7 +47,7 @@ ct 4.57.3 与 H200 标准环境版本不同须记录。Qwen3.5 不受现有环�
 
 ## M0 / M1
 
-M0 不超过 32 条非 test 记录，检验：原生渲染与方向标记、声明长度拒绝而非截断、内容位 mask、桥参数有梯度、donor 与 receiver 权重不变、oracle-label 能跟住上述 JSON。任一项失败则停在接口，不进入 M1。L20 只空闲 GPU1 做接口；训练全 H200。接口过才训。M0 通过只说明仪器可跑，不是能力结果。L20 M0 已通过；该通过不表示 H200 环境已验收。H200 prepare-train 已提交，结果待验收。
+M0 不超过 32 条非 test 记录，检验：原生渲染与方向标记、声明长度拒绝而非截断、内容位 mask、桥参数有梯度、donor 与 receiver 权重不变、oracle-label 能跟住上述 JSON。任一项失败则停在接口，不进入 M1。L20 只空闲 GPU1 做接口；训练全 H200。接口过才训。M0 通过只说明仪器可跑，不是能力结果。
 
 M1 首轮预算见上节。checkpoint 只在 train/val 上选，训练不扫 test。三桥 checkpoint 固定后，各臂对锁定 test 各评一次，不能按 test 调参。各臂共享同一锁定 ID 列表，不得为某一臂单独补样本。
 
@@ -74,4 +74,4 @@ M1 首轮预算见上节。checkpoint 只在 train/val 上选，训练不扫 tes
 
 ## 执行
 
-H200 用 `scripts/transfer/run_transfer_h200.sh` 冻结，再以现有 `scripts/transfer/run_external_baseline_h200.sh --stage 48_latent_bridge.py` 执行。代码需先提交明确 PIN 再 freeze，排除 AGENTS/CLAUDE 用户改动。训练/评估源码 PIN 为 `acb254abc74c4bb9f2fc5ac09ee963ea2a58192f`，已 commit 并 SSH 推送 `main`；H200 prepare-train 已对该 PIN 提交，结果待验收，不得写成远端 M0 通过或训练完成。绑定 code、data、model、runtime receipts。receipts 至少含 commit、数据哈希、模型路径与版本、Python/PyTorch/Transformers 版本、GPU 计数与峰值显存。本用户先用现有 1 张空闲 H200，不抢其他进程，不持久化 pod 名。缓存、训练、推理的时间与峰值显存分别记录，三者不得混成一条墙钟。L20 M0 通过不表示 H200 环境已验收。
+H200 用 `scripts/transfer/run_transfer_h200.sh` 冻结，再以现有 `scripts/transfer/run_external_baseline_h200.sh --stage 48_latent_bridge.py` 执行。代码需先提交明确 PIN 再 freeze，排除 AGENTS/CLAUDE 用户改动。训练/评估源码 PIN 为 `acb254abc74c4bb9f2fc5ac09ee963ea2a58192f`；独立分析 PIN `111c3d4076d5fe0c44d5e26dc61b83420ae80da4` 不同，不改变训练或生成。绑定 code、data、model、runtime receipts。receipts 至少含 commit、数据哈希、模型路径与版本、Python/PyTorch/Transformers 版本、GPU 计数与峰值显存。本用户先用现有 1 张空闲 H200，不抢其他进程，不持久化 pod 名。缓存、训练、推理的时间与峰值显存分别记录，三者不得混成一条墙钟。L20 M0 通过不单独构成 H200 验收。
