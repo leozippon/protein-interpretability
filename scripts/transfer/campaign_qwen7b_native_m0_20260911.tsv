@@ -1,0 +1,6 @@
+# Engineering M0 only: one SGD check on an existing exposed train record and seven fixed format controls.
+# Not a scientific QA/EC capability run; no training/evaluation follow-up is dispatched by this manifest.
+# Dispatch only in the configured owner's freshly verified idle allocation, with a separate remote execution timeout.
+# A fresh output/status namespace and pre-load complete model/prepared byte checks are external prerequisites; do not resume this queue.
+# slot	key	gpu	stage	label	env	expect	args
+0	m0	0	48_latent_bridge.py	qwen7b_native_m0_01	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1 PYTHONOPTIMIZE=0	report.json	--substage interface --donor progen2-medium --prepared /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260907112059_d18a3093e3d3/prepare/prepared.json --receiver-path /gpfs/jiaotongdamoxing/zhk_zip/models/Qwen2.5-7B-Instruct.inventory-22d565765866a463bf298d419e0c42b277b6d08cb2595d3d700887ff1f0fc4cf.attempt-20260909-versioned-01 --prompt-mode chat --dtype bfloat16 --max-interface-records 2 --batch-size 1 --max-residues 512 --max-tokens 1024 --max-prompt-tokens 1024 --max-new-tokens 64 --k-soft 8 --trainable-budget 3000000 --seed 20260911
