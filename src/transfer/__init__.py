@@ -27,6 +27,8 @@ is the *only* copy of the decision it carries, which is Appendix B rule 12:
 ``near_duplicates`` why the unit of independence in a protein corpus is not the
                     record, and the group relation a split is taken over instead
 ``io``              the one atomic, NaN-rejecting artefact writer
+``metadata_seed_loader`` strict byte-bound metadata records and complete seed
+                    partitions; no scientific eligibility or role assignment
 
 Measurements, by the stage whose transfer they probe:
 
@@ -94,6 +96,8 @@ Measurements, by the stage whose transfer they probe:
 ``sequence_description`` cohort: genuine sequence-description pairs, and the
                          concept-name mask without which a cross-modal concept
                          alignment is a string match
+``residue_prefix``       interface: bounded in-memory residue handoff, content
+                         mean and learned-query prefix; not a cache or QA trainer
 ``scaling``              cross-arm reading: scale, lineage and modality decomposition
 ``scale_comparison``     cross-arm reading: the paired rung-to-rung arithmetic a
                          descriptive scale ladder is read with, held once so that
@@ -147,6 +151,7 @@ __all__ = [
     "joint_modes",
     "kmer_background",
     "lenses",
+    "metadata_seed_loader",
     "near_duplicates",
     "path_patching",
     "pathways",
@@ -156,6 +161,7 @@ __all__ = [
     "progen3",
     "relational",
     "replaceable",
+    "residue_prefix",
     "routing",
     "scale_comparison",
     "scaling",
