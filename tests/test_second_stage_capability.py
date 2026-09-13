@@ -676,10 +676,76 @@ def test_stage_20_labels_the_two_scoring_strata_it_can_produce():
 
 def test_stage_20_still_refuses_an_arm_it_declares_nothing_for():
     stage = _load_stage("20_retrieval_bound.py")
-    for name in ("rita-xl", "proteinglm-7b-clm", "qwen2.5-7b", "galactica-6.7b"):
+    # Galactica is a new stage-20 scoring door; the frozen EXP-R2-225
+    # joint_galactica wave still has no DMS path (see
+    # test_the_two_over_assumptions_are_refused_with_their_reasons).
+    for name in ("proteinglm-7b-clm", "qwen2.5-7b"):
         with pytest.raises(KeyError):
             stage.corpus_record(name)
         assert name not in stage.SCOREABLE_ARMS
+
+
+def test_stage_20_admits_rita_xl_without_widening_the_default_run():
+    stage = _load_stage("20_retrieval_bound.py")
+    assert set(stage.ARM_CORPUS) == {"protgpt2", "progen2-medium", "progen3-112m"}
+    assert "rita-xl" in stage.SCOREABLE_ARMS
+    assert "rita-xl" not in stage.ARM_CORPUS
+    record = stage.corpus_record("rita-xl")
+    assert record["declared"] == "uniref100"
+    assert record["identification"] == (
+        "external UniRef50 profile baseline, not a retrieval bound"
+    )
+    assert "NOT identified" in record["note"]
+    assert "does not mint a fitness PASS" in record["note"]
+
+
+def test_stage_20_routes_rita_xl_with_dtype_passed_through(monkeypatch):
+    stage = _load_stage("20_retrieval_bound.py")
+    captured: dict[str, object] = {}
+
+    class _StopBeforeWeights:
+        def __init__(self, *, checkpoint, device, dtype, batch_size):
+            captured["checkpoint"] = checkpoint
+            captured["device"] = device
+            captured["dtype"] = dtype
+            captured["batch_size"] = batch_size
+            raise RuntimeError("stop-before-weights")
+
+    monkeypatch.setattr(stage.RITA, "RitaFitnessScorer", _StopBeforeWeights)
+    args = SimpleNamespace(device="cpu", dtype="bfloat16", batch_size=8)
+    with pytest.raises(RuntimeError, match="stop-before-weights"):
+        stage._load_scorer("rita-xl", args)
+    assert captured["dtype"] == "bfloat16"
+    assert captured["checkpoint"] == STAGED_ARMS["rita-xl"].path
+    assert captured["device"] == "cpu"
+    assert captured["batch_size"] == 8
+
+    args_f32 = SimpleNamespace(device="cpu", dtype="float32", batch_size=1)
+    with pytest.raises(RuntimeError, match="stop-before-weights"):
+        stage._load_scorer("rita-xl", args_f32)
+    assert captured["dtype"] == "float32"
+    assert captured["checkpoint"] == STAGED_ARMS["rita-xl"].path
+
+
+def test_stage_20_native_extension_arms_bind_csv_and_wildtypes_hashes(tmp_path):
+    stage = _load_stage("20_retrieval_bound.py")
+    gym = tmp_path / "gym"
+    gym.mkdir()
+    csv_path = gym / "assay_a.csv"
+    csv_path.write_text(
+        "mutant,mutated_sequence,DMS_score,DMS_score_bin\nM1A,AKT,0.1,1\n",
+        encoding="utf-8",
+    )
+    wildtypes = tmp_path / "wildtypes.json"
+    wildtypes.write_text("{}" + "\n", encoding="utf-8")
+    args = SimpleNamespace(proteingym_dir=gym, out=tmp_path)
+    assert stage._native_extension_csv_sha256("protgpt2", "assay_a", args) is None
+    assert stage._native_extension_input_fingerprints("protgpt2", args) is None
+    csv_hash = stage._native_extension_csv_sha256("galactica-1.3b", "assay_a", args)
+    assert csv_hash == stage.sha256_file(csv_path)
+    assert stage._native_extension_csv_sha256("rita-xl", "assay_a", args) == csv_hash
+    fingerprints = stage._native_extension_input_fingerprints("rita-xl", args)
+    assert fingerprints == {"wildtypes_sha256": stage.sha256_file(wildtypes)}
 
 
 # ------------------------------------- the qualification end to end, on a stub arm

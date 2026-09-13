@@ -78,6 +78,10 @@ Measurements, by the stage whose transfer they probe:
                          silently random
 ``fitness``              external baseline: zero-shot DMS fitness scoring, and
                          the substitution-matrix floor it has to be read against
+``galactica_fitness``    external baseline: native ProteinGym scoring door for
+                         Galactica checkpoints; not a dual-mode fitness verdict
+``rita_fitness``         external baseline: native ProteinGym scoring door for
+                         RITA; not a qualified information arm or retrieval bound
 ``homology``             control: is a measured mechanism memorisation?
 ``profiles``             control: MODEL - LOOKUP, what a decoder adds to a lookup
                          of its own pretraining corpus
@@ -150,6 +154,7 @@ __all__ = [
     "epistasis",
     "families",
     "fitness",
+    "galactica_fitness",
     "homology",
     "induction_robustness",
     "io",
@@ -169,6 +174,7 @@ __all__ = [
     "replaceable",
     "residue_extraction",
     "residue_prefix",
+    "rita_fitness",
     "routing",
     "scale_comparison",
     "scaling",

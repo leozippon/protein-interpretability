@@ -95,6 +95,7 @@ from src.transfer.arms import (  # noqa: E402
     MODEL_ROOT,
     PANEL,
     REPO,
+    STAGED_ARMS,
     STAGED_SCALE_ARMS,
     UNIREF90_BFD30_INCOMPLETE_SEARCH,
     Cohort,
@@ -111,6 +112,7 @@ from src.transfer.fitness import (  # noqa: E402
     load_assay,
     wildtype_of,
 )
+from src.transfer.probes import PROTEINGYM_ROOT  # noqa: E402
 from src.transfer.homology import (  # noqa: E402
     ALIGNMENT_FIELDS,
     TRUNCATION_RULES,
@@ -124,7 +126,9 @@ from src.transfer.homology import (  # noqa: E402
     write_query_fasta,
 )
 from src.transfer.io import sha256_file, write_json  # noqa: E402
+from src.transfer import galactica_fitness as G  # noqa: E402
 from src.transfer import joint_lineage as L  # noqa: E402
+from src.transfer import rita_fitness as RITA  # noqa: E402
 from src.transfer.scale_comparison import (  # noqa: E402
     STRATUM_BIDIRECTIONAL,
     STRATUM_N_TO_C,
@@ -332,6 +336,42 @@ if sorted(JOINT_LINEAGE_CORPUS) != sorted(L.LINEAGE_RUNGS):
         "long way into a scored run"
     )
 
+#: Galactica ProteinGym scoring, in a table of its own for the same reason
+#: :data:`SECOND_STAGE_PROTEIN_CORPUS` has one: this dictionary is not the
+#: ``--arms`` default and a later campaign must not silently widen the first's
+#: default run. The four rungs are in ``--arms``' *choices* and nowhere else.
+#: Checkpoints are declared once in :mod:`src.transfer.galactica_fitness`.
+#:
+#: **Not a retrieval bound.** EXP-R2-225: LOOKUP "is **not** automatically a
+#: pretraining-retrieval lower bound." Galactica's released scientific corpus is
+#: not identified as the staged UniRef50 snapshot, so MODEL - LOOKUP is a
+#: capability comparison against an external profile channel. Dual-mode
+#: interface qualification is a separate existing record; this door does not
+#: mint a fitness PASS from a checkpoint name. ``galactica-125m`` is the
+#: small-scale dual-mode-unidentified reference of this supplement.
+GALACTICA_CORPUS = G.GALACTICA_CORPUS
+
+if sorted(GALACTICA_CORPUS) != sorted(G.GALACTICA_RUNGS):
+    raise AssertionError(
+        "every Galactica rung this stage can reach must declare what its LOOKUP "
+        "channel is entitled to; a door onto a rung with no corpus record is a "
+        "KeyError a long way into a scored run"
+    )
+
+#: RITA ProteinGym scoring, in a table of its own for the same reason
+#: :data:`GALACTICA_CORPUS` has one: this dictionary is not the ``--arms``
+#: default. The checkpoint path is declared once in :data:`STAGED_ARMS`.
+#: LOOKUP against staged UniRef50 is an external profile baseline, not a
+#: retrieval bound, snapshot identity, or signed residual.
+RITA_CORPUS = RITA.RITA_CORPUS
+
+if list(RITA_CORPUS) != [RITA.RITA_ARM]:
+    raise AssertionError(
+        "the RITA scoring door must declare exactly the staged rita-xl corpus "
+        "record; a door onto a rung with no corpus record is a KeyError a long "
+        "way into a scored run"
+    )
+
 
 def corpus_record(arm: str) -> dict[str, str]:
     """Corpus identification for a default arm or an explicitly named rung."""
@@ -342,6 +382,10 @@ def corpus_record(arm: str) -> dict[str, str]:
         return SECOND_STAGE_PROTEIN_CORPUS[arm]
     if arm in JOINT_LINEAGE_CORPUS:
         return JOINT_LINEAGE_CORPUS[arm]
+    if arm in GALACTICA_CORPUS:
+        return GALACTICA_CORPUS[arm]
+    if arm in RITA_CORPUS:
+        return RITA_CORPUS[arm]
     if arm in STAGED_SCALE_ARMS:
         spec = arm_spec(arm)
         return {
@@ -360,8 +404,34 @@ SCOREABLE_ARMS = tuple(
         | set(STAGED_SCALE_ARMS)
         | set(SECOND_STAGE_PROTEIN_CORPUS)
         | set(JOINT_LINEAGE_CORPUS)
+        | set(GALACTICA_CORPUS)
+        | set(RITA_CORPUS)
     )
 )
+
+
+def _is_native_extension_arm(arm: str) -> bool:
+    return arm in GALACTICA_CORPUS or arm in RITA_CORPUS
+
+
+def _stage20_proteingym_dir(args: argparse.Namespace) -> Path:
+    """The directory :func:`load_assay` reads when ``directory=args.proteingym_dir``."""
+
+    return Path(args.proteingym_dir) if args.proteingym_dir is not None else PROTEINGYM_ROOT
+
+
+def _native_extension_csv_sha256(arm: str, assay: str, args: argparse.Namespace) -> str | None:
+    if not _is_native_extension_arm(arm):
+        return None
+    return sha256_file(_stage20_proteingym_dir(args) / f"{assay}.csv")
+
+
+def _native_extension_input_fingerprints(
+    arm: str, args: argparse.Namespace
+) -> dict[str, str] | None:
+    if not _is_native_extension_arm(arm):
+        return None
+    return {"wildtypes_sha256": sha256_file(args.out / "wildtypes.json")}
 
 #: Per-assay covariates the difficulty control is fitted on. Every one is a
 #: property of the assay, computable before either channel is scored, so the
@@ -877,15 +947,17 @@ def stage_score(args: argparse.Namespace) -> dict[str, Any]:
                 print(f"  {name:44s} SKIPPED ({max(tokens)} > {context} tokens)")
                 continue
             prediction = scorer.log_likelihood(assay.sequences)
-            rows.append(
-                {
-                    "assay": name,
-                    "wildtype_id": catalogue["assay_to_wildtype"][name],
-                    "mutant_digest": _digest(assay.mutants),
-                    "spearman": _spearman(prediction, assay.scores),
-                    "max_tokens": int(max(tokens)),
-                }
-            )
+            row = {
+                "assay": name,
+                "wildtype_id": catalogue["assay_to_wildtype"][name],
+                "mutant_digest": _digest(assay.mutants),
+                "spearman": _spearman(prediction, assay.scores),
+                "max_tokens": int(max(tokens)),
+            }
+            if _is_native_extension_arm(arm):
+                row["n_variants"] = len(assay.mutants)
+                row["csv_sha256"] = _native_extension_csv_sha256(arm, name, args)
+            rows.append(row)
             print(f"  {name:44s} model {rows[-1]['spearman']:+.4f}")
         payload = {
             "schema_version": SCHEMA_VERSION,
@@ -911,6 +983,9 @@ def stage_score(args: argparse.Namespace) -> dict[str, Any]:
             "assays": rows,
             "skipped": skipped,
         }
+        fingerprints = _native_extension_input_fingerprints(arm, args)
+        if fingerprints is not None:
+            payload["input_fingerprints"] = fingerprints
         write_json(args.out / f"model_{arm}.json", payload)
         results[arm] = payload
         scorer.release()
@@ -1120,6 +1195,37 @@ def _load_scorer(arm: str, args: argparse.Namespace) -> tuple[Any, int | None, d
                     )
                 ),
             },
+        }
+    if arm in GALACTICA_CORPUS:
+        loaded = G.load_galactica(arm, device=args.device, dtype=args.dtype)
+        scorer = G.GalacticaFitnessScorer(loaded, batch_size=args.batch_size)
+        return scorer, scorer.context, {
+            "checkpoint": loaded.facts["checkpoint"],
+            "context": scorer.context,
+            "input_format": (
+                f"{G.RENDERING_FAMILY} declared protein rendering, context=None"
+            ),
+            "checkpoint_facts": loaded.facts,
+            "scientific_role": loaded.facts["scientific_role"],
+        }
+    if arm in RITA_CORPUS:
+        scorer = RITA.RitaFitnessScorer(
+            checkpoint=STAGED_ARMS[arm].path,
+            device=args.device,
+            dtype=args.dtype,
+            batch_size=args.batch_size,
+        )
+        return scorer, scorer.context, {
+            "checkpoint": scorer.facts["checkpoint"],
+            "context": scorer.context,
+            "native_eos_token_id": scorer.facts["native_eos_token_id"],
+            "config_eos_token_id": scorer.facts["config_eos_token_id"],
+            "config_eos_token_id_status": scorer.facts[
+                "config_eos_token_id_status"
+            ],
+            "input_format": "raw sequence with tokenizer-native terminal EOS",
+            "checkpoint_facts": scorer.facts,
+            "scientific_role": scorer.facts["scientific_role"],
         }
     if arm in PROGEN3_CHECKPOINTS:
         scorer = _ProGen3Scorer(arm, args)
@@ -1675,7 +1781,9 @@ def main() -> None:
         "could move a record up a stratum, which is the harm the guard names",
     )
     parser.add_argument("--device", default="cuda:0")
-    parser.add_argument("--dtype", default="bfloat16", choices=("bfloat16", "float16"))
+    parser.add_argument(
+        "--dtype", default="bfloat16", choices=("bfloat16", "float16", "float32")
+    )
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--progen3-checkpoint", type=Path, default=None)
     parser.add_argument(
