@@ -1542,12 +1542,10 @@ def cache_donor_features(
     return features
 
 
-def donor_token_ids(
-    tokenizer: Any, record: PreparedRecord, *, max_tokens: int,
-    max_residues: int | None,
+def native_donor_token_ids(
+    tokenizer: Any, sequence: str, *, max_tokens: int, max_residues: int | None,
 ) -> list[int]:
-    sequence = record.sequence
-    if not sequence or record.length != len(sequence) or not set(sequence) <= STANDARD_RESIDUES:
+    if not sequence or not set(sequence) <= STANDARD_RESIDUES:
         raise ValueError("donor requires a complete standard-AA sequence with matching length")
     if max_residues is not None and len(sequence) > max_residues:
         raise ValueError("sequence exceeds max_residues; refusing truncation")
@@ -1557,6 +1555,18 @@ def donor_token_ids(
     if any(token is None or token == tokenizer.unk_token_id for token in expected) or ids != expected:
         raise ValueError("native donor rendering must be marker + every residue token, without truncation")
     return ids
+
+
+def donor_token_ids(
+    tokenizer: Any, record: PreparedRecord, *, max_tokens: int,
+    max_residues: int | None,
+) -> list[int]:
+    sequence = record.sequence
+    if not sequence or record.length != len(sequence):
+        raise ValueError("donor requires a complete standard-AA sequence with matching length")
+    return native_donor_token_ids(
+        tokenizer, sequence, max_tokens=max_tokens, max_residues=max_residues,
+    )
 
 
 def build_bridge_for_features(

@@ -96,8 +96,13 @@ Measurements, by the stage whose transfer they probe:
 ``sequence_description`` cohort: genuine sequence-description pairs, and the
                          concept-name mask without which a cross-modal concept
                          alignment is a string match
+``residue_extraction``   interface: sequence-only residue capture into a bounded
+                         ResidueBatch; not a native donor load or QA trainer
 ``residue_prefix``       interface: bounded in-memory residue handoff, content
                          mean and learned-query prefix; not a cache or QA trainer
+``query_prefix_train_state``
+                         interface: sealed QueryPrefix update/resume owner;
+                         not a Trainer, collator, or scientific QA loop
 ``scaling``              cross-arm reading: scale, lineage and modality decomposition
 ``scale_comparison``     cross-arm reading: the paired rung-to-rung arithmetic a
                          descriptive scale ladder is read with, held once so that
@@ -159,8 +164,10 @@ __all__ = [
     "probes",
     "profiles",
     "progen3",
+    "query_prefix_train_state",
     "relational",
     "replaceable",
+    "residue_extraction",
     "residue_prefix",
     "routing",
     "scale_comparison",

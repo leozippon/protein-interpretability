@@ -2549,6 +2549,10 @@ One bounded read-only review on pinned xai/grok-4.6 identified a material execut
 
 The original executor's syntax/file-helper checks and installed-ct basic Pyright passed in task `bd1861303`, with16GiB test children and an unrestricted parent; one-file primary LSP was clean. These checks do not repair its containment defect. A dedicated Linux session/subreaper supervisor must retain and terminate adopted descendants after the queue exits, without changing the frozen queue or model code, and must pass a realistic unchanged-queue fixture before launch. The first inherited-context developer invocation failed at the provider's500000-token limit with637420prompt tokens and zero tools/writes; its native error is preserved, not reported as development success. A same-route fresh-context developer now has the complete current AGENTS.md and bounded task in an18114-byte briefing. Supervisor development/remote qualification remain pending; new model dispatches remain0.
 
+## 2026-09-11 — Reclassify the matched-pair prefix-matching census in the overview
+
+The user authorized adjusting summary subheadings and experiment grouping while keeping the three research directions and their order. The gpt2-large/ProtGPT2 exact-repeat prefix attention census was moved from Direction 1's capability table into Direction 2's existing repeat-attention row, renamed as a descriptive pattern census, and ordered census → tokenizer control → causal selector. This is a classification change, not a new experiment and not a change to scientific results, F-register entries, historical part-1 identifiers, or withdrawn claims. The canonical audit's part-1 paragraph now states that distinction. The overview also marks the q75–q99 panel statement as historical and retired; the matched-pair result is unchanged. Validation: git diff --check passed. No model experiments were run.
+
 
 ## 2026-09-12 — Complete bounded execution qualification and submit one native M0
 
@@ -2590,3 +2594,125 @@ Two disjoint, limited repairs are underway: bounded summary accumulation/regress
 Parent accepted the repaired strict seed loader and bounded residue-prefix interface using separate original-producer/short-read and tiny-Qwen2 causal-alignment probes. Both repairs remained narrow; the initial code, failed attempts and concrete counterexamples were preserved. Source/test hashes and the existing latent_bridge.py remained fixed through verification. The two new package declarations/exports are present, and the final integrated15-test plus basic/strict installed-ct checks passed under the previously qualified CPU supervisor. Active primary-LSP diagnostics are retained separately rather than presented as a clean workspace.
 
 The living plan now distinguishes the accepted synthetic handoffs from the unbuilt real closure operator, native extractor/cache/QA path and recoverable trainer. It also retains the trained question-prior control, positional visibility for no-PLM, and predeclared label-independent mismatch diagnostic, without freezing scientific recipes or budgets. Acceptance receipts and measured resources are detailed in EXPERIMENT_LOG.md. Task24 remains in progress for useful long-task design and recovery qualification; data isolation/roles/support and all new GPU/scientific-training gates remain open. User AGENTS.md/CLAUDE.md/overview/audit and the unrelated chronology entry were preserved.
+
+
+## 2026-09-12 — Authorize GPU training and multiple owned H200 devices
+
+The user explicitly authorized starting GPU training and supported using multiple H200 GPUs after the CPU-interface delivery. This supersedes the earlier lack of GPU-training permission; it does not authorize other owners' allocations or waive data isolation, immutable exposure roles, scientific support, native interface or recovery requirements. The living plan reflects the new authorization. Parent launched a fresh, redacted owner-only health/GPU/ECC observation (`bc365065a`) and disjoint read-only work on native residue extraction and the minimal accumulation/checkpoint/resume state machine. Results are pending at this entry; no new GPU model cell has started. The intended first useful tranche advances the new per-residue interface and recovery semantics, not a repeat of consumed mean-M0 or a toy scientific campaign. Its concrete workload, budget and frozen source/asset/output bindings must be accepted before dispatch.
+
+
+## 2026-09-12 — Confirm one owned H200 for the authorized training path
+
+The fresh owner-only observation completed successfully and found one eligible idle H200, not a multi-GPU project allocation. Parent will proceed with single-device native interface/recovery preparation and expand only if additional project-owned resources are available. No other owner was queried or used, no reservation was created and no model task started. Exact observations are in EXPERIMENT_LOG.md. The native extraction survey identified a sequence-only token helper plus unpooled capture as the smallest next implementation; a developer has the bounded extractor and localized legacy-wrapper compatibility scope, while the independent training-state plan remains pending.
+
+## 2026-09-12 — Organize the summary by capability, mechanism diagnostics and knowledge questions
+
+At the user's request, retained the three direction titles and order while moving the four shared qualification/interface/split checks before Direction 1. Direction 1 now proceeds from external sequence scoring through native conditions and homologue context, the five completed generation endpoints, adaptation's behavioral gains/text cost, and unfinished capability endpoints. Direction 2 starts its perturbation section with input-distance decay, explicitly a sensitivity diagnostic rather than useful long-range information use or an established propagation mechanism. Its attention census, method controls, readouts, sparse interventions and lineage comparisons remain separate from Direction 3's five knowledge-discrimination routes. The generation supplement preserves its own denominators and does not count as passing knowledge identification.
+
+The audit change extends only its two existing classification sentences to cover EXP-R2-074/075/076 alongside the prefix census; historical part-1 staging, identifiers, retractions and evidence status remain unchanged. All 37 experiment families / 41 table rows remain traceable: four shared checks, ten Direction-1 endpoint rows (six families), 22 Direction-2 rows and five Direction-3 rows. Relative to the task baseline, 39 rows are byte-identical; the context-information and distance-decay rows clarify statistical units without dropping their original numbers. The accepted 5.46/5.62 matched-pair account and permanently withdrawn panel-tail interpretation are unchanged. Existing user edits and concurrent work were preserved; no model, code, test, data or research-plan change belongs to this reorganization.
+
+Verification for this documentation change: read the current summary and research plan in full and the affected canonical classification/evidence sections, not the full audit; checked host memory/disk before the bounded CPU document check. The installed ct Python structural check passed experiment coverage, table widths, unchanged direction/external-score anchors, model table, conclusion section, frozen prefix row and the canonical two-sentence scope. Baseline-relative diffs and `git diff --check` passed; session diagnostics reported no issues for the two edited scientific documents. No new experiment, test suite, model run, network access or GPU work was performed for this change.
+
+
+## 2026-09-12 — Choose token-weighted recoverable adapter updates
+
+The training-state planner completed; its cleaned handle returned `Agent not found`, so parent recovered the final answer from the retained native JSONL rather than rerunning it. Recovery evidence is `logs/bridge_complementarity_20260912/resume_training_plan_recovery_01/`; message metadata records xai/grok-4.6, while requested high effort is not independently attested. Parent independently read the legacy loop/save/loss and selected a small new update/state owner, leaving the old EC runner unchanged. Normalize each microbatch FP32 NLL sum by the predeclared whole-window supervised-token count; step AdamW once at a complete boundary; persist the actual sampler permutation/cursor/private generator, optimizer and supported RNG states. Parent rejected all-visible-GPU RNG capture and replacement checkpoint publication: only the explicit training device is included, and checkpoints use fresh exclusive sealed directories.
+
+A developer is implementing and CPU-qualifying this state engine in a disjoint scope from native extraction. The first native engineering tranche is specified in `logs/bridge_complementarity_20260912/query-prefix-native-tranche-decision.md`: one owned H200, deterministic synthetic fixtures, continuous/interrupted/fresh-process-resume legs,8complete updates total plus one discarded microbatch backward, and one1800s execution/60s termination boundary. It uses the per-residue query path, not mean-M0 or a biological QA campaign. Code/API, manifest/snapshot, native operator, asset bindings and fresh resource gates are still required; no GPU model cell has started and scientific QA admission remains unchanged.
+
+
+## 2026-09-12 — Repair explicit extractor execution context before native use
+
+The completed extractor delivery was recovered from its retained native transcript after its handle had been cleaned; the failure and actual xai/grok-4.6 message route are retained in `native_residue_extractor_parent_review_01/`. Parent reviewed the complete new source/tests and the localized legacy diff. Independent CPU counterexamples showed that root-only eval validation and ambient-default staging were insufficient. Parent made the limited execution-context repairs, kept the original four tests plus one grouped regression, and started supervised parent qualification. Original delivery, failures, probe and repaired source snapshots remain separate. No native GPU model was dispatched.
+
+
+## 2026-09-12 — Preserve the extractor fixture failure and continue disjoint preparation
+
+The first supervised62-test parent run exposed a fixture precondition, not a reason to weaken the new donor-mode check. Parent explicitly set the deliberate failing block to eval and launched a fresh qualification attempt, retaining the failure and old runner. In parallel, a read-only planner is examining the missing guarded full metadata-closure operator, disjoint from native extraction and training-state development; this does not run real closure or inspect new scientific label support.
+
+
+## 2026-09-12 — Make actual type-check coverage an acceptance invariant
+
+A failed parent validation exposed that Pyright ignores absolute include paths and can exit0 after analyzing zero files. Parent rejects those type-coverage claims, preserves the failure, and fixes the runner to use resolved relative includes and require the intended positive analyzed-file count. A bounded evidence reader is identifying prior same-day claims affected by this exact root cause; this is not a reopening of scientific experiments. The extractor source and corrected test fixture are unchanged, and no GPU model has started.
+
+## 2026-09-12 — Clarify Galactica dual-mode qualification wording
+
+Replaced “失败下限” in the overview dual-mode status cell: Galactica-1.3B, 6.7B and 30B pass dual-mode qualification; 125M protein mode does not, as a small-scale fail-to-qualify referent. This does not imply a parameter-count threshold or general capability failure. Shared measurement premises remain before the three directions. No new experiment. Verification: `git diff --check` passed on the two edited files.
+
+
+## 2026-09-12 — Bound the missing full-closure operator design
+
+The read-only closure planner completed. Parent recovered its report from retained native JSONL after the handle was cleaned up, without rerunning the agent, then checked the accepted core API/policy, its documentation and census acceptance receipt. The chosen direction is a single guarded CPU operator composing the strict loader and unchanged grouped closure, retaining every qualified node and publishing a canonical partition rather than exposure roles. Derived-byte acceptance remains distinct from fresh upstream authentication.
+
+`logs/bridge_complementarity_20260912/guarded-closure-operator-decision.md` records the parent disposition: explicit finite work/output budgets, measured memory/placement justification, safe source/dependency packaging and qualified publication remain launch gates. A marker alone is not acceptance; require normal child termination, closed supervisor/output evidence and an externally admitted receipt identity. No real projection/components, new task-label support or models were accessed in this design, and no real closure was launched. Metadata closure remains a scientific-cohort gate, not a prerequisite for the separately bounded synthetic GPU recovery tranche.
+
+
+## 2026-09-12 — Preserve correct gradient math and repair RNG completeness
+
+Independent CPU evidence confirmed the delivered window normalization at the raw-gradient level while reproducing incomplete Python Gaussian-cache support and ambient-default placement of nominally CPU sampler/RNG tensors. Parent retains the initial delivery and probe, and will preserve the correct sum/N update mathematics. A separate completed static checkpoint audit and its pending independent probe cover actual AdamW state validation, binding before deserialization and refusal to seal unrestorable state. The repair is being consolidated around these concrete boundaries rather than expanded into a general training framework. No GPU model cell was dispatched.
+
+
+## 2026-09-12 — Correct the scope of the prior interface acceptance
+
+Parent withdraws the five-file integrated basic/strict coverage assertion because both historical checker invocations ignored every intended include path. The15 runtime tests remain valid; the four inspected developer/repair final configurations use relative includes and are not affected by this exact defect. Original receipts are retained, with a separate scoped correction and fresh explicit-coverage measurement pending. No scientific result is reopened.
+
+For the future native fixture preparation, global Python/NumPy/Torch CPU/selected-device seeds are explicitly fixed to20260912, separately from the private sampler seed. QueryPrefix will be initialized in an explicit FP32 CPU context and then moved explicitly to the selected CUDA device; the proposed tokenizer-only preparation can bind initial adapter bytes without loading pretrained models. This is a pre-execution recipe clarification, not a completed preparation or native admission.
+
+
+## 2026-09-12 — Accept the synthetic extraction boundary and prepare fixed inputs
+
+Parent accepted the repaired sequence-only extractor and narrow legacy token-helper refactor after62runtime tests, independent execution-context/AST checks and real positive-count typing coverage. Existing115 whole-legacy strict diagnostics were reproduced and normalized against the archive rather than hidden. Original failures and the zero-file coverage correction remain preserved; package integration and native donor execution are still pending.
+
+A disjoint developer is preparing only the fixed synthetic token IDs and CPU QueryPrefix initialization in `native_query_fixture_preparation_v1/`, using qualified local tokenizer/config subsets and the existing prompt/token helpers. It must not load pretrained weights, access scientific data or use GPUs. Training-state boundary repair remains separate; source files under its pending independent probe are unchanged.
+
+
+## 2026-09-12 — Repair the demonstrated checkpoint boundary defects
+
+All checkpoint review findings now have independent tiny CPU counterexamples, including silently altered optimizer LR and accepted-but-unusable state. Parent closed the probe before admitting source edits and assigned the two-file state/RNG repair in a scope disjoint from tokenizer-fixture preparation. Correct raw-gradient normalization is retained. The broader native-training task waits on this explicit repair blocker; no GPU execution has been admitted.
+
+Parent also inspected the existing queue dispatch: a new stage script can use injected --device/--out without modifying the shared queue or panel. `native-recovery-driver-contract.md` fixes a proposed finite call budget and diagnostic per-window RNG sentinels, so selected-device CUDA state actually advances and replay tests restoration rather than an untouched seed. Sentinels do not perturb model inputs/loss. The contract retains8optimizer updates and one discarded training backward, separates native-interface probe calls, and leaves the running tokenizer fixture inputs unchanged. No native driver has yet been implemented or dispatched.
+
+
+## 2026-09-12 — Replace the retracted typing coverage with measured results
+
+The corrected check actually covered the intended five files. Basic reports0errors and41warnings; strict reports41errors, all from the initializer public-name declaration pattern. The other four files have no reported diagnostics in these checks. Parent classified and preserved the measured evidence without claiming integrated strict cleanliness or changing imports/suppressions; the historical receipt remains unchanged and its unsupported coverage assertion remains retracted. The15runtime tests are unaffected. Training-state repair and tokenizer-only fixture preparation continue in their separate scopes; no new GPU cell has started.
+
+
+## 2026-09-12 — Review the fixed engineering fixture delivery
+
+The tokenizer-only developer delivered actual synthetic token IDs, CPU QueryPrefix initialization and sampler expectations in its ignored directory. Parent recovered the cleaned handle from retained native output, verified the claimed scope against the source and noted the producer publication limitation without overwriting its evidence. Independent content checking and exclusive parent publication are now running; fixture acceptance is pending. Training-state repair remains disjoint, and no native GPU cell or scientific cohort has been admitted.
+
+
+## 2026-09-12 — Bind engineering fixture identities and keep state repair unaccepted
+
+Parent independently accepted the tokenizer/CPU QueryPrefix fixture after direct ID, fingerprint and sampler checks and exclusive republication. Producer publication remains a recorded limitation. The repaired training-state module now refuses the previously reproduced checkpoint and RNG defects in an independent tiny CPU probe, and the verified sum/N gradient formula is unchanged. Module acceptance still waits on the scoped source review; package integration and native 0/75/0 recovery are not admitted. No new GPU cell has started.
+
+
+## 2026-09-12 — Prepare native recovery and implement synthetic closure in parallel
+
+The living plan now records the accepted tokenizer/CPU fixture and that repaired training-state runtime refusals are not module acceptance. `native-query-recovery-assignment.md` binds the accepted fixture bytes and the already frozen 0/75/0 call budget; it must not be implemented until the training-state source review and parent acceptance complete. A disjoint developer is implementing only the synthetic guarded closure operator under `guarded_closure_operator_v1/`, composing the accepted seed loader and unchanged grouped core. Real full-universe closure, nine operational work caps, package integration and GPU dispatch remain unadmitted.
+
+
+## 2026-09-12 — Qualify synthetic closure publication, not the real universe
+
+Parent accepted the guarded operator that loads the synthetic seed fixture, calls the unchanged grouped core and publishes exclusively. The living plan now records this synthetic gate. Real full-universe closure, operational work/memory budgets, residual homology and immutable exposure roles remain open and still block scientific QA cohort admission. Training-state module acceptance, package integration and native GPU recovery remain on the separate engineering track.
+
+
+## 2026-09-12 — Keep training-state unaccepted and repair remaining boundary gaps
+
+The repaired checkpoint module still failed a scoped source review on optimizer parameter association and incomplete RNG/step validation. Parent did not accept it and did not start native recovery. A limited follow-up repair is in qualification. Synthetic closure remains accepted only for the synthetic fixture; scientific cohort admission is unchanged.
+
+
+## 2026-09-13 — Accept the training-state CPU boundary and integrate exports
+
+Parent accepted the QueryPrefix update/resume owner after the association/RNG follow-up repair and independent counterexamples. Native 0/75/0 recovery is now unblocked on the library side but still requires package export qualification, a committed stage/manifest, a new freeze, and a fresh owner/GPU/ECC gate. Those steps have not started. Synthetic closure remains fixture-only.
+
+
+## 2026-09-13 — Record measured package typing and start native stage code
+
+Package exports for the sequence extractor and QueryPrefix train-state are integrated. Runtime tests of those two test modules passed. Five-file typing coverage was measured and is not strict-clean because of the declaration-only initializer. A disjoint developer is implementing the native 0/75/0 stage script and CPU controller tests without GPU dispatch, freeze, or git. Scientific QA admission remains blocked on real closure/homology/roles/support.
+
+
+## 2026-09-13 — Stop at dummy recovery controller; native GPU remains unrun
+
+The queue-compatible recovery stage now has an accepted CPU dummy path for process sequencing and expected fault 75. The living plan records that this is not native BF16 capture or a GPU cell. Remaining dispatch prerequisites are a committed manifest, standard freeze, and a fresh owner-only H200 gate. No new GPU cell started.
