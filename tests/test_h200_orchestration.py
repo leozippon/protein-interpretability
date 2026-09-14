@@ -1664,6 +1664,173 @@ class ExternalBaselineDispatchTests(unittest.TestCase):
             f"a dead dispatch left a pulled result directory behind: {pulled}",
         )
 
+    def _copying_sync(
+        self, root: Path, *, mutate_expect: str | None = None,
+    ) -> tuple[str, Path]:
+        """One local ``sync pull`` that copies bytes; records each invocation."""
+
+        sync_log = root / "sync.calls"
+        mutate = ""
+        if mutate_expect is not None:
+            mutate = f'printf "CORRUPT" > "$3/{mutate_expect}"\n'
+        body = (
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            f"printf '%s\\n' \"$*\" >> '{sync_log}'\n"
+            'if [ "${1:-}" = "pull" ]; then\n'
+            '  mkdir -p "$3"\n'
+            '  cp -a "$2"/. "$3"/\n'
+            f"{mutate}"
+            "fi\n"
+        )
+        return body, sync_log
+
+    def _run_score_driver(
+        self, root: Path, run_id: str, snapshot: Path, cli: Path,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["bash", str(self.DRIVER), "--run-id", run_id,
+             "--snapshot-dir", str(snapshot), "--stage", "20_retrieval_bound.py",
+             "--label", "score", "--gpu", "0", "--expect", "score.json"],
+            capture_output=True, text=True, cwd=str(REPO_ROOT),
+            env={**os.environ, "H200_POD": "unused",
+                 "H200_CLI": str(cli),
+                 "GPFS_PROJECT_ROOT": str(root), "LOCAL_OUTPUT_ROOT": str(root),
+                 "LIVENESS_SETTLE_SECONDS": "0", "GRACE_SECONDS": "0",
+                 "POLL_SECONDS": "1", "TIMEOUT_SECONDS": "3"},
+            timeout=600,
+        )
+
+    def _write_startup_traceback(self, root: Path, run_id: str) -> None:
+        pod_log = root / "logs" / "external_baseline" / f"{run_id}_score.log"
+        pod_log.parent.mkdir(parents=True, exist_ok=True)
+        pod_log.write_text(
+            "Traceback (most recent call last):\n"
+            '  File "20_retrieval_bound.py", line 1, in <module>\n'
+            "RuntimeError: probe failed after writing the outcome\n",
+            encoding="utf-8",
+        )
+
+    def test_early_failure_with_expected_json_is_collected_then_exits_nonzero(self):
+        """A start-up death that already wrote --expect must not strand that file.
+
+        The liveness check used to tail the traceback and exit 6 before the
+        single admission/pull path, so a producer that writes a failed JSON
+        and then raises left the artefact on the pod. The launcher that only
+        consumes wrapper-local output then reported missing_artifact.
+        """
+
+        root, run_id, snapshot, out_dir = self._dispatch_fixture()
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        payload = b'{"status":"failed","probe_passed":false}\n'
+        (out_dir / "score.json").write_bytes(payload)
+        digest = hashlib.sha256(payload).hexdigest()
+        self._write_startup_traceback(root, run_id)
+        sync_body, sync_log = self._copying_sync(root)
+        cli = install_h200_command_stubs(root, pod_exec=LAUNCHED_STUB, sync=sync_body)
+        result = self._run_score_driver(root, run_id, snapshot, cli)
+        combined = result.stdout[-800:] + result.stderr[-800:]
+
+        self.assertEqual(result.returncode, 6, combined)
+        self.assertIn("DIED AT DISPATCH", result.stdout)
+        self.assertNotIn("ADMITTED", result.stdout)
+        self.assertNotIn("Nothing was scheduled", result.stderr)
+        self.assertNotIn("Nothing was scheduled", result.stdout)
+        self.assertIsNone(
+            re.search(r"score (PRESENT|ABSENT|UNRESOLVED) after", result.stdout),
+            "early-failure collection must skip grace/poll",
+        )
+        self.assertIn("failure evidence retained", result.stdout)
+        pulled = (
+            root / "results" / "transfer" / "external_baseline" / run_id
+            / "score" / "score.json"
+        )
+        self.assertTrue(pulled.is_file(), combined)
+        self.assertEqual(pulled.read_bytes(), payload)
+        self.assertEqual(hashlib.sha256(pulled.read_bytes()).hexdigest(), digest)
+        calls = [
+            line for line in sync_log.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        self.assertEqual(len(calls), 1, calls)
+        self.assertTrue(calls[0].startswith("pull "), calls)
+
+    def test_early_failure_collection_rejects_invalid_json_or_checksum(self):
+        """Collection errors stay nonzero; they are not a retained failure."""
+
+        for case in ("malformed", "checksum"):
+            with self.subTest(case=case):
+                root, run_id, snapshot, out_dir = self._dispatch_fixture()
+                self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+                if case == "malformed":
+                    (out_dir / "score.json").write_text("not json\n", encoding="utf-8")
+                    sync_body, sync_log = self._copying_sync(root)
+                    expected_rc = 4
+                else:
+                    payload = b'{"status":"failed","probe_passed":false}\n'
+                    (out_dir / "score.json").write_bytes(payload)
+                    sync_body, sync_log = self._copying_sync(
+                        root, mutate_expect="score.json",
+                    )
+                    expected_rc = 5
+                self._write_startup_traceback(root, run_id)
+                cli = install_h200_command_stubs(
+                    root, pod_exec=LAUNCHED_STUB, sync=sync_body,
+                )
+                result = self._run_score_driver(root, run_id, snapshot, cli)
+                combined = result.stdout[-800:] + result.stderr[-800:]
+                self.assertEqual(result.returncode, expected_rc, combined)
+                self.assertNotEqual(result.returncode, 0, combined)
+                self.assertNotIn("ADMITTED", result.stdout)
+                self.assertNotIn("failure evidence retained", result.stdout)
+                calls = []
+                if sync_log.exists():
+                    calls = [
+                        line for line in sync_log.read_text(encoding="utf-8").splitlines()
+                        if line.strip()
+                    ]
+                if case == "malformed":
+                    self.assertIn("not valid JSON", result.stderr)
+                    self.assertEqual(calls, [])
+                else:
+                    self.assertIn("NOT ADMITTED", result.stderr)
+                    self.assertEqual(len(calls), 1, calls)
+
+    def test_successful_present_artefact_is_still_admitted_after_one_sync_pull(self):
+        """The normal poll/admission path still admits after one sync pull."""
+
+        root, run_id, snapshot, out_dir = self._dispatch_fixture()
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        payload = b'{"status":"ok","probe_passed":true}\n'
+        (out_dir / "score.json").write_bytes(payload)
+        digest = hashlib.sha256(payload).hexdigest()
+        sync_body, sync_log = self._copying_sync(root)
+        cli = install_h200_command_stubs(root, pod_exec=LAUNCHED_STUB, sync=sync_body)
+        result = self._run_score_driver(root, run_id, snapshot, cli)
+        combined = result.stdout[-800:] + result.stderr[-800:]
+
+        self.assertEqual(result.returncode, 0, combined)
+        self.assertIn("ADMITTED", result.stdout)
+        self.assertNotIn("failure evidence retained", result.stdout)
+        self.assertNotIn("DIED AT DISPATCH", result.stdout)
+        self.assertIsNotNone(
+            re.search(r"score PRESENT after", result.stdout),
+            combined,
+        )
+        pulled = (
+            root / "results" / "transfer" / "external_baseline" / run_id
+            / "score" / "score.json"
+        )
+        self.assertTrue(pulled.is_file(), combined)
+        self.assertEqual(pulled.read_bytes(), payload)
+        self.assertEqual(hashlib.sha256(pulled.read_bytes()).hexdigest(), digest)
+        calls = [
+            line for line in sync_log.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        self.assertEqual(len(calls), 1, calls)
+        self.assertTrue(calls[0].startswith("pull "), calls)
+
     def _poll_verdict(self, staged: str, expect: str) -> str:
         """Run one dispatch to the point of its poll verdict and return it.
 

@@ -344,6 +344,15 @@ WRAP
   echo LAUNCHED
 "
 
+# What "done" looks like in the output directory. Declared once and used by
+# every existence probe, because a start-up check that accepted a file the poll
+# would reject (or the reverse) would split one artefact into two meanings.
+present() {
+  "${H200_CLI}" bash \
+    "test -f '${OUT_DIR}/${EXPECT}' && echo PRESENT" \
+    2>/dev/null | grep -q PRESENT
+}
+
 # ------------------------------------------------------------- liveness check
 
 # A stage that dies in its first seconds -- a bad flag, a missing checkpoint, an
@@ -354,28 +363,28 @@ WRAP
 # tracking a pid, because the access layer returns 0 whatever the remote command
 # did (L20), so a sentinel read out of the stage's own log is the only signal
 # that can say no.
+#
+# If that death already wrote --expect, skip grace/poll and send that exact file
+# through the admission/pull path below. Exiting here used to strand the file on
+# the pod; a launcher that only reads wrapper-local output then saw nothing.
 sleep "${LIVENESS_SETTLE_SECONDS:-45}"
 EARLY="$("${H200_CLI}" bash \
   "tail -n 40 '${POD_LOG}' 2>/dev/null | grep -c -E 'Traceback|error: unrecognized arguments|error: argument|No such file or directory|ModuleNotFoundError|CUDA out of memory' || true" \
   2>/dev/null | tr -dc '0-9')"
+EARLY_FAILURE=0
 if [ -n "${EARLY}" ] && [ "${EARLY}" -gt 0 ]; then
   log "${LABEL} DIED AT DISPATCH"
   "${H200_CLI}" bash "tail -n 20 '${POD_LOG}'" 2>/dev/null >&2 || true
-  echo "the stage exited during start-up; this is a dispatch failure, not an ABSENT" >&2
-  echo "measurement. Nothing was scheduled on cuda:${GPU}." >&2
-  exit 6
+  if ! present; then
+    echo "the stage exited during start-up; this is a dispatch failure, not an ABSENT" >&2
+    echo "measurement. No expected artifact was found; returning without collection." >&2
+    exit 6
+  fi
+  echo "the stage exited during start-up after writing ${EXPECT}; collecting that evidence." >&2
+  EARLY_FAILURE=1
 fi
 
 # --------------------------------------------------------------------- poll
-
-# What "done" looks like in the output directory. Declared once and asked twice
-# below, because the two call sites must agree: a poll that accepted a file the
-# confirming re-poll rejected would turn a finished run into an ABSENT.
-present() {
-  "${H200_CLI}" bash \
-    "test -f '${OUT_DIR}/${EXPECT}' && echo PRESENT" \
-    2>/dev/null | grep -q PRESENT
-}
 
 # An item is absent only once the GPU it was scheduled on is observed idle.
 # Checking for the artefact the moment the launcher returns reports MISSING on
@@ -387,28 +396,30 @@ present() {
 # is 537k rows) before the model reaches the card, so an idle GPU during that
 # window means "not started yet", not "finished without writing". The first
 # invocation declared ABSENT after 0 s on a run that then completed normally.
-GRACE_SECONDS="${GRACE_SECONDS:-600}"
-sleep "${GRACE_SECONDS}"
-waited="${GRACE_SECONDS}"
-status="UNRESOLVED"
-while [ "${waited}" -lt "${TIMEOUT_SECONDS}" ]; do
-  if present; then
-    status="PRESENT"; break
-  fi
-  busy="$("${H200_CLI}" bash \
-    "nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits" 2>/dev/null || true)"
-  if [ -n "${busy}" ] && ! printf '%s\n' "${busy}" \
-      | awk -F', *' -v g="${GPU}" '$1==g && $2>1000{f=1}END{exit !f}'; then
-    sleep 45
+if [ "${EARLY_FAILURE}" -eq 0 ]; then
+  GRACE_SECONDS="${GRACE_SECONDS:-600}"
+  sleep "${GRACE_SECONDS}"
+  waited="${GRACE_SECONDS}"
+  status="UNRESOLVED"
+  while [ "${waited}" -lt "${TIMEOUT_SECONDS}" ]; do
     if present; then
       status="PRESENT"; break
     fi
-    status="ABSENT"; break
-  fi
-  sleep "${POLL_SECONDS}"; waited=$((waited + POLL_SECONDS))
-done
-log "${LABEL} ${status} after ${waited}s"
-[ "${status}" = "PRESENT" ] || exit 4
+    busy="$("${H200_CLI}" bash \
+      "nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits" 2>/dev/null || true)"
+    if [ -n "${busy}" ] && ! printf '%s\n' "${busy}" \
+        | awk -F', *' -v g="${GPU}" '$1==g && $2>1000{f=1}END{exit !f}'; then
+      sleep 45
+      if present; then
+        status="PRESENT"; break
+      fi
+      status="ABSENT"; break
+    fi
+    sleep "${POLL_SECONDS}"; waited=$((waited + POLL_SECONDS))
+  done
+  log "${LABEL} ${status} after ${waited}s"
+  [ "${status}" = "PRESENT" ] || exit 4
+fi
 
 ADMIT_PATH="${OUT_DIR}/${EXPECT}"
 ADMIT_DIGEST="$("${H200_CLI}" bash "
@@ -442,6 +453,10 @@ mkdir -p "$(dirname "${LOCAL_OUT}")"
 # checksum for the pull to check. Admit a result only if the digests taken on
 # each side agree; a silently truncated pull is a known failure mode here.
 if ( cd "${LOCAL_OUT}" && sha256sum -c "${REMOTE_SUMS}" >/dev/null 2>&1 ); then
+  if [ "${EARLY_FAILURE}" -eq 1 ]; then
+    log "failure evidence retained; ${LOCAL_OUT} collected"
+    exit 6
+  fi
   log "digests verified; ${LOCAL_OUT} ADMITTED"
 else
   echo "digest mismatch between pod and B; NOT ADMITTED: ${LOCAL_OUT}" >&2
