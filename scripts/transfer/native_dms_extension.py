@@ -788,6 +788,17 @@ def check_longest_eligible_batch(
     return record
 
 
+def _require_recorded_facts(value: Any, *, where: str) -> dict[str, Any]:
+    """Refuse missing or empty loader facts; do not treat them as success."""
+
+    if not isinstance(value, Mapping) or not value:
+        raise ValueError(
+            f"{where}: recorded facts must be a non-empty mapping of observed "
+            f"loader facts; missing or empty facts are refused, got {value!r}"
+        )
+    return dict(value)
+
+
 def run_probe(
     *,
     arm: str,
@@ -821,6 +832,9 @@ def run_probe(
         )
     assert scorer is not None
     try:
+        facts = _require_recorded_facts(
+            getattr(scorer, "facts", None), where=f"{arm} probe"
+        )
         family = _arm_family(arm)
         synthetic = GALACTICA_SYNTHETIC if family == "galactica" else RITA_SYNTHETIC
         alignment = check_author_alignment(scorer, synthetic, arm=arm, dtype=dtype)
@@ -829,7 +843,6 @@ def run_probe(
         longest = check_longest_eligible_batch(
             scorer, cohort, arm=arm, batch_size=int(batch_size)
         )
-        facts = dict(getattr(scorer, "facts", {}))
         payload = {
             "schema_version": SCHEMA_VERSION,
             "status": STATUS,
@@ -1254,6 +1267,7 @@ def run_analyse(
     loaded_scores = {name: _read_json(path) for name, path in score_paths.items()}
     lookup_hash = sha256_file(lookup_path)
     for name, probe in loaded_probes.items():
+        _require_recorded_facts(probe.get("facts"), where=f"{name} probe")
         fingerprints = _require_mapping(probe, "fingerprints", where=f"{name} probe")
         stored = _require_present(
             fingerprints, "lookup_sha256", where=f"{name} probe fingerprints"

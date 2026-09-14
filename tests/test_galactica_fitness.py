@@ -176,7 +176,11 @@ def _scorer(
         tokenizer=tokenizer,
         tokenisation=tokenisation,
         context=context,
-        facts={"rung": "galactica-1.3b", "vocab_size": int(model.vocab_size)},
+        facts={
+            "rung": "galactica-1.3b",
+            "vocab_size": int(model.vocab_size),
+            "scientific_role": "cpu test-stub metadata, not a GPU observation",
+        },
     )
     return G.GalacticaFitnessScorer(loaded, batch_size=batch_size)
 
@@ -427,6 +431,16 @@ def test_strict_loader_refuses_non_opt_and_vocabulary_mismatch(tmp_path, monkeyp
     )
     with pytest.raises(ValueError, match="vocabulary sizes disagree"):
         G.load_galactica("galactica-1.3b", device="cpu", dtype="float32")
+
+
+def test_scorer_facts_are_the_loaded_observation():
+    _tokenizer, model, _records = _residue_model(["MK"])
+    scorer = _scorer(model, batch_size=1)
+    assert scorer.facts is scorer.loaded.facts
+    marker = "cpu test-stub metadata, not a GPU observation"
+    scorer.loaded.facts["scientific_role"] = marker
+    assert scorer.facts["scientific_role"] is marker
+    assert "vocab_size" in scorer.facts
 
 
 def test_scorer_refuses_logits_that_do_not_match_the_loaded_vocabulary():

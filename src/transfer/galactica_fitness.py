@@ -285,6 +285,12 @@ class GalacticaFitnessScorer:
         self._cached_key: tuple[str, ...] | None = None
         self._cached_records: list[RenderedProtein] | None = None
 
+    @property
+    def facts(self) -> dict[str, Any]:
+        """Observed loader facts; not re-derived at scoring time."""
+
+        return self.loaded.facts
+
     def render(self, sequences: Sequence[str]) -> list[RenderedProtein]:
         """Every sequence rendered with the declared protein format and no context."""
 

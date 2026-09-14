@@ -156,7 +156,10 @@ class _LengthScorer:
         self.batch_size = 2
         self.scoring_stratum = STRATUM_N_TO_C
         self.score_description = "test"
-        self.facts = {"scientific_role": "injected test scorer", "context": context}
+        self.facts = {
+            "scientific_role": "cpu test-stub metadata, not a GPU observation",
+            "context": context,
+        }
 
     def token_lengths(self, sequences):
         key = tuple(sequences)
@@ -304,7 +307,11 @@ def _galactica_scorer(sequences: list[str], *, context: int = 64, batch_size: in
         tokenizer=tokenizer,
         tokenisation=resolve(tokenizer, "galactica"),
         context=context,
-        facts={"rung": "galactica-1.3b", "vocab_size": vocab, "scientific_role": "test"},
+        facts={
+            "rung": "galactica-1.3b",
+            "vocab_size": vocab,
+            "scientific_role": "cpu test-stub metadata, not a GPU observation",
+        },
     )
     return G.GalacticaFitnessScorer(loaded, batch_size=batch_size)
 
@@ -321,7 +328,10 @@ def _rita_scorer(*, context: int = 64, batch_size: int = 2):
         context=context,
         scoring_stratum=STRATUM_N_TO_C,
         score_description="raw sequence with tokenizer-native terminal EOS",
-        facts={"scientific_role": "test rita"},
+        facts={
+            "scientific_role": "cpu test-stub metadata, not a GPU observation",
+            "rung": "rita-xl",
+        },
     )
 
     def token_lengths(sequences):
@@ -509,6 +519,87 @@ def test_probe_writes_no_pass_file_when_author_ce_fails(tmp_path, monkeypatch):
     assert not (out / "interface_check.json").exists()
 
 
+def test_probe_refuses_missing_or_empty_facts_without_writing(tmp_path):
+    gym = tmp_path / "gym"
+    _write_assay_csv(gym, "assay_a")
+    digest = _digest_from_csv(gym, "assay_a", seed=EXT.VARIANT_SEED)
+    lookup_path = tmp_path / "lookup.json"
+    lookup_path.write_text(
+        json.dumps({"assays": [_lookup_row("assay_a", index=0, digest=digest)]}),
+        encoding="utf-8",
+    )
+    catalog_rows = [("assay_a", "MKT", "q00000", 0)]
+    wildtypes_path = _write_wildtypes(tmp_path / "wildtypes.json", catalog_rows)
+    fasta_path = _write_wildtypes_fasta(tmp_path / "wildtypes.faa", catalog_rows)
+    probe_kwargs = dict(
+        arm="galactica-1.3b",
+        lookup_path=lookup_path,
+        proteingym_dir=gym,
+        wildtypes_path=wildtypes_path,
+        wildtypes_fasta_path=fasta_path,
+        dtype="bfloat16",
+        batch_size=2,
+        device="cpu",
+    )
+
+    class _MissingFacts:
+        scoring_stratum = STRATUM_N_TO_C
+        score_description = "test"
+
+        def release(self) -> None:
+            return None
+
+    missing_out = tmp_path / "missing"
+    missing_out.mkdir()
+    with pytest.raises(ValueError, match="facts"):
+        EXT.run_probe(out=missing_out, scorer=_MissingFacts(), **probe_kwargs)
+    assert not (missing_out / "interface_check.json").exists()
+
+    empty = _galactica_scorer(["MKT", AA20])
+    empty.loaded.facts.clear()
+    empty_out = tmp_path / "empty"
+    empty_out.mkdir()
+    with pytest.raises(ValueError, match="facts"):
+        EXT.run_probe(out=empty_out, scorer=empty, **probe_kwargs)
+    assert not (empty_out / "interface_check.json").exists()
+
+
+def test_probe_records_nonempty_loaded_facts(tmp_path):
+    gym = tmp_path / "gym"
+    _write_assay_csv(gym, "assay_a")
+    digest = _digest_from_csv(gym, "assay_a", seed=EXT.VARIANT_SEED)
+    lookup_path = tmp_path / "lookup.json"
+    lookup_path.write_text(
+        json.dumps({"assays": [_lookup_row("assay_a", index=0, digest=digest)]}),
+        encoding="utf-8",
+    )
+    catalog_rows = [("assay_a", "MKT", "q00000", 0)]
+    wildtypes_path = _write_wildtypes(tmp_path / "wildtypes.json", catalog_rows)
+    fasta_path = _write_wildtypes_fasta(tmp_path / "wildtypes.faa", catalog_rows)
+    scorer = _galactica_scorer(["MKT", AA20])
+    out = tmp_path / "out"
+    out.mkdir()
+    payload = EXT.run_probe(
+        arm="galactica-1.3b",
+        lookup_path=lookup_path,
+        proteingym_dir=gym,
+        wildtypes_path=wildtypes_path,
+        wildtypes_fasta_path=fasta_path,
+        out=out,
+        dtype="bfloat16",
+        batch_size=2,
+        device="cpu",
+        scorer=scorer,
+    )
+    assert payload["facts"] == dict(scorer.facts)
+    assert payload["facts"]
+    saved = json.loads((out / "interface_check.json").read_text(encoding="utf-8"))
+    assert saved["facts"] == payload["facts"]
+    assert saved["facts"]["scientific_role"] == (
+        "cpu test-stub metadata, not a GPU observation"
+    )
+
+
 def _score_payload(
     arm: str,
     rhos: dict[str, float],
@@ -563,6 +654,10 @@ def _probe_payload(
     return {
         "arm": arm,
         "probe_passed": True,
+        "facts": {
+            "scientific_role": "cpu test-stub metadata, not a GPU observation",
+            "rung": arm,
+        },
         "settings": {
             "dtype": dtype,
             "scoring_stratum": STRATUM_N_TO_C,
@@ -641,6 +736,40 @@ def _write_group_inputs(tmp_path: Path, *, rita: bool = False):
         probes[name] = probe_path
         scores[name] = score_path
     return lookup_path, probes, scores, rhos
+
+
+def test_analyse_refuses_missing_or_empty_probe_facts(tmp_path):
+    lookup_path, probes, scores, _ = _write_group_inputs(tmp_path)
+    missing_out = tmp_path / "missing"
+    missing_out.mkdir()
+    missing = json.loads(probes["galactica-125m"].read_text(encoding="utf-8"))
+    missing.pop("facts", None)
+    probes["galactica-125m"].write_text(json.dumps(missing), encoding="utf-8")
+    with pytest.raises(ValueError, match="facts"):
+        EXT.run_analyse(
+            lookup_path=lookup_path,
+            probes=probes,
+            scores=scores,
+            out=missing_out,
+        )
+    assert not (missing_out / "native_dms_comparison.json").exists()
+
+    empty_root = tmp_path / "empty_case"
+    empty_root.mkdir()
+    lookup_path, probes, scores, _ = _write_group_inputs(empty_root)
+    empty_out = empty_root / "out"
+    empty_out.mkdir()
+    empty = json.loads(probes["galactica-125m"].read_text(encoding="utf-8"))
+    empty["facts"] = {}
+    probes["galactica-125m"].write_text(json.dumps(empty), encoding="utf-8")
+    with pytest.raises(ValueError, match="facts"):
+        EXT.run_analyse(
+            lookup_path=lookup_path,
+            probes=probes,
+            scores=scores,
+            out=empty_out,
+        )
+    assert not (empty_out / "native_dms_comparison.json").exists()
 
 
 def test_analyse_refuses_missing_named_input_and_partial_galactica(tmp_path):
