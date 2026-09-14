@@ -80,6 +80,9 @@ Measurements, by the stage whose transfer they probe:
                          the substitution-matrix floor it has to be read against
 ``galactica_fitness``    external baseline: native ProteinGym scoring door for
                          Galactica checkpoints; not a dual-mode fitness verdict
+``precision_policy``     external baseline: shared FP32 matmul and TF32 policy
+                         for Galactica native DMS protocol v2; not a capability
+                         verdict
 ``rita_fitness``         external baseline: native ProteinGym scoring door for
                          RITA; not a qualified information arm or retrieval bound
 ``homology``             control: is a measured mechanism memorisation?
@@ -166,6 +169,7 @@ __all__ = [
     "path_patching",
     "pathways",
     "prediction_addressed",
+    "precision_policy",
     "probes",
     "profiles",
     "progen3",

@@ -91,6 +91,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.transfer import profiles as P  # noqa: E402
+from src.transfer.precision_policy import (  # noqa: E402
+    GALACTICA_FP32_V2,
+    NATIVE_DMS_V1,
+)
 from src.transfer.arms import (  # noqa: E402
     MODEL_ROOT,
     PANEL,
@@ -911,18 +915,95 @@ def _difficulty_covariates(assay: Any) -> dict[str, float]:
 # ------------------------------------------------------------------- stage: score
 
 
-def stage_score(args: argparse.Namespace) -> dict[str, Any]:
-    """The one stage that needs a GPU: each arm's own zero-shot fitness score."""
+def _requested_protocol_id(args: argparse.Namespace) -> str:
+    """Missing ``protocol_id`` is the frozen v1 default, not an implicit v2."""
 
-    catalogue = _read(args.out / "wildtypes.json")
-    results: dict[str, Any] = {}
-    for arm in args.arms:
-        if arm not in SCOREABLE_ARMS:
-            raise KeyError(
-                f"unknown arm {arm!r}; arms are {sorted(SCOREABLE_ARMS)}"
-            )
-        print(f"[score] {arm}")
+    return str(getattr(args, "protocol_id", NATIVE_DMS_V1))
+
+
+def _require_protocol(args: argparse.Namespace) -> str:
+    """Refuse illegal v2 uses without changing v1 sampling, arms, or dtypes."""
+
+    protocol = _requested_protocol_id(args)
+    if protocol == NATIVE_DMS_V1:
+        return protocol
+    if protocol != GALACTICA_FP32_V2:
+        raise ValueError(
+            f"unknown scoring protocol {protocol!r}; expected {NATIVE_DMS_V1!r} or "
+            f"{GALACTICA_FP32_V2!r}"
+        )
+    stages = getattr(args, "stages", None)
+    if stages is not None and list(stages) != ["score"]:
+        raise ValueError(
+            f"{GALACTICA_FP32_V2} is a score-only protocol; --stages must be exactly score"
+        )
+    if getattr(args, "dtype", None) != "float32":
+        raise ValueError(
+            f"{GALACTICA_FP32_V2} requires --dtype float32, got {getattr(args, 'dtype', None)!r}"
+        )
+    arms = list(args.arms)
+    if not arms:
+        raise ValueError(f"{GALACTICA_FP32_V2} requires at least one explicit Galactica arm")
+    illegal = [arm for arm in arms if arm not in GALACTICA_CORPUS]
+    if illegal:
+        raise ValueError(
+            f"{GALACTICA_FP32_V2} admits only explicit Galactica arms, not {illegal!r}"
+        )
+    return protocol
+
+
+def _attach_galactica_fp32_v2_settings(
+    payload: dict[str, Any], precision: Any, policy_module: Any
+) -> None:
+    """Record the shared context's requested/observed policy, not an echoed request."""
+
+    if not isinstance(precision, dict):
+        raise ValueError(
+            f"{GALACTICA_FP32_V2} requires the shared fp32 context to yield a mapping "
+            f"of requested and observed policy, got {type(precision)!r}"
+        )
+    requested = precision["requested"]
+    observed = precision["observed"]
+    policy_module.require_observed_policy(observed)
+    payload["settings"]["protocol_id"] = policy_module.GALACTICA_FP32_V2
+    payload["settings"]["precision_policy"] = {
+        "requested": requested,
+        "observed": observed,
+    }
+    payload["loader"]["precision_policy_source"] = str(
+        Path(policy_module.__file__).resolve()
+    )
+
+
+def _require_fp32_v2_observed_dtype(arm: str, loader_record: dict[str, Any]) -> None:
+    facts = loader_record.get("checkpoint_facts")
+    observed = facts.get("dtype_observed") if isinstance(facts, dict) else None
+    if observed != ["float32"]:
+        raise ValueError(
+            f"{arm}: {GALACTICA_FP32_V2} requires checkpoint_facts['dtype_observed'] "
+            f"== ['float32'], got {observed!r}"
+        )
+
+
+def _score_one_arm(
+    arm: str,
+    args: argparse.Namespace,
+    catalogue: dict[str, Any],
+    *,
+    protocol_id: str,
+) -> dict[str, Any]:
+    """Load, score the original assay order, build one payload, then release."""
+
+    if arm not in SCOREABLE_ARMS:
+        raise KeyError(
+            f"unknown arm {arm!r}; arms are {sorted(SCOREABLE_ARMS)}"
+        )
+    print(f"[score] {arm}")
+    scorer = None
+    try:
         scorer, context, loader_record = _load_scorer(arm, args)
+        if protocol_id == GALACTICA_FP32_V2:
+            _require_fp32_v2_observed_dtype(arm, loader_record)
         rows: list[dict[str, Any]] = []
         skipped: list[dict[str, Any]] = []
         for index, name in enumerate(args.assays):
@@ -986,9 +1067,34 @@ def stage_score(args: argparse.Namespace) -> dict[str, Any]:
         fingerprints = _native_extension_input_fingerprints(arm, args)
         if fingerprints is not None:
             payload["input_fingerprints"] = fingerprints
-        write_json(args.out / f"model_{arm}.json", payload)
+        return payload
+    finally:
+        if scorer is not None:
+            scorer.release()
+
+
+def stage_score(args: argparse.Namespace) -> dict[str, Any]:
+    """The one stage that needs a GPU: each arm's own zero-shot fitness score."""
+
+    catalogue = _read(args.out / "wildtypes.json")
+    protocol = _require_protocol(args)
+    results: dict[str, Any] = {}
+    for arm in args.arms:
+        if protocol == GALACTICA_FP32_V2:
+            import torch
+
+            from src.transfer import precision_policy as PP
+
+            with PP.fp32_matmul_context(torch) as precision:
+                payload = _score_one_arm(
+                    arm, args, catalogue, protocol_id=protocol
+                )
+                _attach_galactica_fp32_v2_settings(payload, precision, PP)
+            write_json(args.out / f"model_{arm}.json", payload)
+        else:
+            payload = _score_one_arm(arm, args, catalogue, protocol_id=protocol)
+            write_json(args.out / f"model_{arm}.json", payload)
         results[arm] = payload
-        scorer.release()
     return results
 
 
@@ -1784,6 +1890,15 @@ def main() -> None:
     parser.add_argument(
         "--dtype", default="bfloat16", choices=("bfloat16", "float16", "float32")
     )
+    parser.add_argument(
+        "--protocol",
+        dest="protocol_id",
+        default=NATIVE_DMS_V1,
+        choices=(NATIVE_DMS_V1, GALACTICA_FP32_V2),
+        help="native-dms-v1 is the existing default and adds no precision policy. "
+        "galactica-fp32-v2 is opt-in, score-only, Galactica float32 only; it does "
+        "not widen the default --arms list",
+    )
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--progen3-checkpoint", type=Path, default=None)
     parser.add_argument(
@@ -1797,6 +1912,7 @@ def main() -> None:
     )
     args = parser.parse_args()
     _require_joint_qualification_dir(args)
+    _require_protocol(args)
 
     if args.assays is None:
         args.assays = list(available_assays(args.proteingym_dir))

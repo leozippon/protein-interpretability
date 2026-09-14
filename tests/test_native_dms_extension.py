@@ -6,10 +6,12 @@ tables. Analyse uses synthetic LOOKUP and stage-20-shaped score payloads.
 
 from __future__ import annotations
 
+import copy
 import csv
 import importlib.util
 import json
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -27,6 +29,11 @@ from src.transfer.fitness import load_assay, wildtype_of  # noqa: E402
 from src.transfer.io import sha256_file  # noqa: E402
 from src.transfer.joint_modes import resolve  # noqa: E402
 from src.transfer.rita_fitness import NATIVE_EOS_ID, NATIVE_PAD_ID, VOCAB_SIZE  # noqa: E402
+from src.transfer.precision_policy import (  # noqa: E402
+    GALACTICA_FP32_V2,
+    NATIVE_DMS_V1,
+    fp32_matmul_context,
+)
 from src.transfer.scale_comparison import STRATUM_N_TO_C  # noqa: E402
 from tests.test_joint_mode_qualification import galactica_stub  # noqa: E402
 
@@ -1223,3 +1230,588 @@ def test_probe_refuses_when_no_assay_is_eligible(tmp_path):
             arm="galactica-1.3b",
             batch_size=16,
         )
+
+
+def _fp32_scorer(sequences: list[str], *, context: int = 64, batch_size: int = 2):
+    scorer = _galactica_scorer(sequences, context=context, batch_size=batch_size)
+    scorer.loaded.model.eval()
+    scorer.loaded.facts["dtype_observed"] = ["float32"]
+    scorer.loaded.facts["dtype_requested"] = "float32"
+    scorer.loaded.facts["scientific_role"] = (
+        "cpu test-stub metadata, not a GPU observation"
+    )
+    return scorer
+
+
+def _v2_probe_paths(tmp_path: Path):
+    gym = tmp_path / "gym"
+    _write_assay_csv(gym, "assay_a")
+    digest = _digest_from_csv(gym, "assay_a", seed=EXT.VARIANT_SEED)
+    lookup_path = tmp_path / "lookup.json"
+    lookup_path.write_text(
+        json.dumps({"assays": [_lookup_row("assay_a", index=0, digest=digest)]}),
+        encoding="utf-8",
+    )
+    catalog_rows = [("assay_a", "MKT", "q00000", 0)]
+    wildtypes_path = _write_wildtypes(tmp_path / "wildtypes.json", catalog_rows)
+    fasta_path = _write_wildtypes_fasta(tmp_path / "wildtypes.faa", catalog_rows)
+    return {
+        "lookup_path": lookup_path,
+        "proteingym_dir": gym,
+        "wildtypes_path": wildtypes_path,
+        "wildtypes_fasta_path": fasta_path,
+        "dtype": "float32",
+        "batch_size": 2,
+        "device": "cpu",
+        "protocol_id": GALACTICA_FP32_V2,
+    }
+
+
+def test_default_v1_still_refuses_galactica_float32():
+    assert EXT.required_dtype("galactica-1.3b", NATIVE_DMS_V1) == "bfloat16"
+    with pytest.raises(ValueError, match="bfloat16"):
+        EXT.load_native_scorer(
+            "galactica-1.3b",
+            device="cpu",
+            dtype="float32",
+            batch_size=1,
+            protocol_id=NATIVE_DMS_V1,
+        )
+    with pytest.raises(ValueError, match="bfloat16"):
+        EXT._require_dtype("galactica-1.3b", "float32")
+    assert EXT.required_dtype("galactica-30b", GALACTICA_FP32_V2) == "float32"
+    with pytest.raises(ValueError, match="only Galactica"):
+        EXT.required_dtype("rita-xl", GALACTICA_FP32_V2)
+    with pytest.raises(ValueError, match="unknown native DMS protocol"):
+        EXT.required_dtype("galactica-1.3b", "not-a-protocol")
+    assert EXT.REQUIRED_DTYPE["galactica-1.3b"] == "bfloat16"
+
+
+def test_v2_probe_loads_once_at_float32_without_promotion(tmp_path, monkeypatch):
+    calls: list[tuple[str, str]] = []
+
+    def fake_load(name, device, dtype):
+        calls.append((name, dtype))
+        loaded = _fp32_scorer(["MKT", AA20]).loaded
+        loaded.name = name
+        loaded.facts["rung"] = name
+        return loaded
+
+    monkeypatch.setattr(EXT.G, "load_galactica", fake_load)
+    out = tmp_path / "out"
+    out.mkdir()
+    payload = EXT.run_probe(
+        arm="galactica-1.3b",
+        out=out,
+        scorer=None,
+        **_v2_probe_paths(tmp_path),
+    )
+    assert calls == [("galactica-1.3b", "float32")]
+    assert payload["probe_passed"] is True
+    assert payload["status"] == "passed"
+    assert payload["protocol_id"] == GALACTICA_FP32_V2
+    assert payload["settings"]["protocol_id"] == GALACTICA_FP32_V2
+    assert payload["fp32_geometry_gate"]["passed"] is True
+    assert payload["fp32_geometry_gate"]["n_comparisons"] == 45
+    assert (out / EXT.V2_OUTCOME_NAME).is_file()
+    assert not (out / "interface_check.json").exists()
+    assert payload["facts"]["scientific_role"] == (
+        "cpu test-stub metadata, not a GPU observation"
+    )
+
+
+def test_v2_probe_keeps_all_repeats_and_refuses_a_width_contrast(tmp_path):
+    scorer = _fp32_scorer(["MKT", AA20])
+    out = tmp_path / "pass"
+    out.mkdir()
+    payload = EXT.run_probe(
+        arm="galactica-1.3b",
+        out=out,
+        scorer=scorer,
+        **_v2_probe_paths(tmp_path / "inputs"),
+    )
+    assert payload["fp32_geometry"]["incomplete"] is False
+    assert len(payload["fp32_geometry"]["repetitions"]) == 3
+    names = [
+        contrast["left_case"] + "-vs-" + contrast["right_case"]
+        for contrast in payload["fp32_geometry_gate"]["comparisons"]
+        if contrast["repetition"] == 0
+    ]
+    assert "duplicate_short_padded-vs-duplicate_short" in names
+
+    from tests.test_galactica_numerics_diagnostic import _ready_scorer
+
+    wide = _ready_scorer(dtype=torch.float32)
+    wide.loaded.model.eval()
+    wide.loaded.facts["dtype_observed"] = ["float32"]
+    wide.loaded.facts["scientific_role"] = (
+        "cpu test-stub metadata, not a GPU observation"
+    )
+    fail_out = tmp_path / "fail"
+    fail_out.mkdir()
+    with pytest.raises(ValueError, match="nats/target exceeds"):
+        EXT.run_probe(
+            arm="galactica-30b",
+            out=fail_out,
+            scorer=wide,
+            **_v2_probe_paths(tmp_path / "fail_inputs"),
+        )
+    failed = json.loads((fail_out / EXT.V2_OUTCOME_NAME).read_text(encoding="utf-8"))
+    assert failed["probe_passed"] is False
+    assert failed["status"] == "failed"
+    assert failed["fp32_geometry"]["repetitions"]
+    assert not (fail_out / "interface_check.json").exists()
+
+
+def test_v1_failure_still_writes_no_file(tmp_path, monkeypatch):
+    paths = _v2_probe_paths(tmp_path)
+    paths["dtype"] = "bfloat16"
+    paths["protocol_id"] = NATIVE_DMS_V1
+    scorer = _galactica_scorer(["MKT", AA20])
+    monkeypatch.setattr(
+        EXT, "check_author_alignment", lambda *a, **k: (_ for _ in ()).throw(
+            RuntimeError("author shifted CE disagrees")
+        )
+    )
+    out = tmp_path / "v1"
+    out.mkdir()
+    with pytest.raises(RuntimeError, match="author shifted CE"):
+        EXT.run_probe(arm="galactica-1.3b", out=out, scorer=scorer, **paths)
+    assert not (out / "interface_check.json").exists()
+    assert not (out / EXT.V2_OUTCOME_NAME).exists()
+
+
+def test_v2_cli_nonzero_on_geometry_failure(tmp_path, monkeypatch):
+    from tests.test_galactica_numerics_diagnostic import _ready_scorer
+
+    wide = _ready_scorer(dtype=torch.float32)
+    wide.loaded.model.eval()
+    wide.loaded.facts["dtype_observed"] = ["float32"]
+    wide.loaded.facts["scientific_role"] = (
+        "cpu test-stub metadata, not a GPU observation"
+    )
+
+    def fake_load(name, device, dtype):
+        assert dtype == "float32"
+        wide.loaded.name = name
+        return wide.loaded
+
+    monkeypatch.setattr(EXT.G, "load_galactica", fake_load)
+    paths = _v2_probe_paths(tmp_path / "cli")
+    out = tmp_path / "cli_out"
+    argv = [
+        "probe",
+        "--out",
+        str(out),
+        "--lookup",
+        str(paths["lookup_path"]),
+        "--proteingym-dir",
+        str(paths["proteingym_dir"]),
+        "--wildtypes",
+        str(paths["wildtypes_path"]),
+        "--wildtypes-fasta",
+        str(paths["wildtypes_fasta_path"]),
+        "--arm",
+        "galactica-30b",
+        "--dtype",
+        "float32",
+        "--protocol",
+        GALACTICA_FP32_V2,
+        "--batch-size",
+        "2",
+        "--device",
+        "cpu",
+    ]
+    with pytest.raises(SystemExit) as raised:
+        EXT.main(argv)
+    assert raised.value.code == 1
+    assert (out / EXT.V2_OUTCOME_NAME).is_file()
+    assert not (out / "interface_check.json").exists()
+
+
+def _v2_score_from_probe(arm: str, probe: dict, rhos: dict[str, float]) -> dict:
+    return {
+        "arm": arm,
+        "assays": [
+            {
+                "assay": row["assay"],
+                "wildtype_id": row["wildtype_id"],
+                "mutant_digest": row["mutant_digest"],
+                "n_variants": row["n_variants"],
+                "csv_sha256": row["csv_sha256"],
+                "spearman": rhos[row["assay"]],
+            }
+            for row in probe["cohort"]["assays"]
+            if row["assay"] in probe["cohort"]["analysis_assays"]
+        ],
+        "skipped": [
+            {"assay": name}
+            for name in probe["cohort"]["context_excluded_assays"]
+        ],
+        "settings": {
+            "dtype": "float32",
+            "protocol_id": GALACTICA_FP32_V2,
+            "scoring_stratum": STRATUM_N_TO_C,
+            "seed": EXT.VARIANT_SEED,
+            "variants": EXT.VARIANT_CAP,
+            "batch_size": probe["settings"]["batch_size"],
+            "precision_policy": probe["precision_policy"],
+        },
+        "loader": {"checkpoint_facts": {"dtype_observed": ["float32"]}},
+        "input_fingerprints": {
+            "wildtypes_sha256": probe["fingerprints"]["wildtypes_sha256"]
+        },
+    }
+
+
+def test_v2_analyse_refuses_v1_diagnostic_and_partial_ladder(tmp_path):
+    lookup_path, probes, scores, _ = _write_group_inputs(tmp_path)
+    with pytest.raises(ValueError, match="v2 analyse refuses protocol"):
+        EXT.run_analyse(
+            lookup_path=lookup_path,
+            probes=probes,
+            scores=scores,
+            out=tmp_path / "v1",
+            protocol_id=GALACTICA_FP32_V2,
+        )
+    diagnostic = json.loads(probes["galactica-125m"].read_text(encoding="utf-8"))
+    diagnostic["kind"] = "numerical_diagnostic_not_interface_gate_or_dms_score"
+    diagnostic["no_interface_admission"] = True
+    diagnostic["protocol_id"] = GALACTICA_FP32_V2
+    diagnostic["settings"]["protocol_id"] = GALACTICA_FP32_V2
+    probes["galactica-125m"].write_text(json.dumps(diagnostic), encoding="utf-8")
+    with pytest.raises(ValueError, match="diagnostic"):
+        EXT.run_analyse(
+            lookup_path=lookup_path,
+            probes=probes,
+            scores=scores,
+            out=tmp_path / "diag",
+            protocol_id=GALACTICA_FP32_V2,
+        )
+    partial_root = tmp_path / "partial"
+    partial_root.mkdir()
+    lookup_path, probes, scores, _ = _write_group_inputs(partial_root)
+    subset = {name: probes[name] for name in list(EXT.GALACTICA_GROUP)[:3]}
+    subset_scores = {name: scores[name] for name in subset}
+    with pytest.raises(ValueError, match="Partial ladders"):
+        EXT.run_analyse(
+            lookup_path=lookup_path,
+            probes=subset,
+            scores=subset_scores,
+            out=tmp_path / "partial_out",
+            protocol_id=GALACTICA_FP32_V2,
+        )
+
+
+def test_v2_analyse_reuses_family_statistics_on_passing_probes(tmp_path):
+    shared = _v2_probe_paths(tmp_path / "shared")
+    probe_root = tmp_path / "probes"
+    probe_root.mkdir()
+    first = None
+    probe_paths = {}
+    score_paths = {}
+    rhos = {"assay_a": 0.4}
+    for arm in EXT.GALACTICA_GROUP:
+        out = probe_root / arm
+        out.mkdir()
+        payload = EXT.run_probe(
+            arm=arm,
+            out=out,
+            scorer=_fp32_scorer(["MKT", AA20]),
+            **shared,
+        )
+        if first is None:
+            first = payload
+        probe_path = tmp_path / f"probe_{arm}.json"
+        score_path = tmp_path / f"score_{arm}.json"
+        probe_path.write_text(json.dumps(payload), encoding="utf-8")
+        score_path.write_text(
+            json.dumps(_v2_score_from_probe(arm, payload, rhos)),
+            encoding="utf-8",
+        )
+        probe_paths[arm] = probe_path
+        score_paths[arm] = score_path
+    assert first is not None
+    lookup_path = shared["lookup_path"]
+    out = tmp_path / "analysis"
+    out.mkdir()
+    payload = EXT.run_analyse(
+        lookup_path=lookup_path,
+        probes=probe_paths,
+        scores=score_paths,
+        out=out,
+        protocol_id=GALACTICA_FP32_V2,
+    )
+    assert payload["status"] == "completed analysis"
+    assert payload["protocol_id"] == GALACTICA_FP32_V2
+    assert payload["groups"]["galactica"]["n_assays"] == 1
+    missing_policy = json.loads(probe_paths["galactica-30b"].read_text(encoding="utf-8"))
+    missing_policy.pop("precision_policy")
+    probe_paths["galactica-30b"].write_text(json.dumps(missing_policy), encoding="utf-8")
+    with pytest.raises(ValueError, match="precision_policy"):
+        EXT.run_analyse(
+            lookup_path=lookup_path,
+            probes=probe_paths,
+            scores=score_paths,
+            out=tmp_path / "missing_policy",
+            protocol_id=GALACTICA_FP32_V2,
+        )
+
+
+def _collected_fp32_geometry(scorer=None):
+    diagnostic = EXT._numerics_diagnostic()
+    if scorer is None:
+        scorer = _fp32_scorer(["MKT", AA20])
+    scorer.loaded.model.eval()
+    record = {
+        "phase": "fp32_checkpoint",
+        "incomplete": True,
+        "in_progress": None,
+        "repetitions": [],
+    }
+    with fp32_matmul_context(scorer.torch):
+        diagnostic.run_phase(scorer, record=record)
+    return record, diagnostic
+
+
+def test_dtype_observed_accepts_only_the_loader_float32_list():
+    assert EXT._dtype_observed_is_float32(["float32"]) is True
+    assert EXT._dtype_observed_is_float32("float32") is False
+    assert EXT._dtype_observed_is_float32(("float32",)) is False
+    assert EXT._dtype_observed_is_float32(["bfloat16"]) is False
+
+
+def test_protocol_of_v2_requires_both_ids_and_v1_missing_ids_stay_compatible():
+    assert EXT._protocol_of({}, where="x") == NATIVE_DMS_V1
+    assert EXT._protocol_of({"settings": {}}, where="x") == NATIVE_DMS_V1
+    with pytest.raises(ValueError, match="same protocol_id"):
+        EXT._protocol_of({"protocol_id": GALACTICA_FP32_V2}, where="x")
+    with pytest.raises(ValueError, match="same protocol_id"):
+        EXT._protocol_of({"settings": {"protocol_id": GALACTICA_FP32_V2}}, where="x")
+    assert (
+        EXT._protocol_of(
+            {
+                "protocol_id": GALACTICA_FP32_V2,
+                "settings": {"protocol_id": GALACTICA_FP32_V2},
+            },
+            where="x",
+        )
+        == GALACTICA_FP32_V2
+    )
+
+
+def test_fp32_geometry_gate_accepts_a_complete_eval_phase():
+    record, diagnostic = _collected_fp32_geometry()
+    gate = EXT.evaluate_fp32_geometry_gates(record, diagnostic=diagnostic)
+    assert gate["passed"] is True
+    assert gate["n_comparisons"] == 45
+    assert record["model_training"] is False
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "training_true",
+        "bf16_observed_parameters",
+        "tf32_enabled",
+        "duplicate_repeat_index",
+        "unfinished_marker",
+        "native_loss_nan",
+        "missing_public_row",
+    ],
+)
+def test_fp32_geometry_gate_refuses_malformed_records(kind):
+    record, diagnostic = _collected_fp32_geometry()
+    EXT.evaluate_fp32_geometry_gates(record, diagnostic=diagnostic)
+    mutated = copy.deepcopy(record)
+    if kind == "training_true":
+        mutated["model_training"] = True
+    elif kind == "bf16_observed_parameters":
+        mutated["observed_float_dtypes"]["parameter_float_dtypes"] = ["bfloat16"]
+    elif kind == "tf32_enabled":
+        mutated["matmul_policy"]["cuda_matmul_allow_tf32"] = True
+    elif kind == "duplicate_repeat_index":
+        mutated["repetitions"][1]["repetition"] = 0
+    elif kind == "unfinished_marker":
+        mutated["in_progress"] = {"repetition": 0, "case": "single_short"}
+    elif kind == "native_loss_nan":
+        mutated["repetitions"][0]["cases"]["single_short"]["native_loss"] = float("nan")
+    else:
+        public = mutated["repetitions"][0]["cases"]["duplicate_short"]["public_scorer"]
+        public["abs_nats_per_residue_target"] = public["abs_nats_per_residue_target"][:1]
+    with pytest.raises(ValueError):
+        EXT.evaluate_fp32_geometry_gates(mutated, diagnostic=diagnostic)
+
+
+def _read_v2_outcome(out: Path) -> dict:
+    return json.loads((out / EXT.V2_OUTCOME_NAME).read_text(encoding="utf-8"))
+
+
+def test_v2_probe_refuses_training_mode_and_keeps_facts(tmp_path):
+    scorer = _fp32_scorer(["MKT", AA20])
+    scorer.loaded.model.train()
+    out = tmp_path / "train"
+    out.mkdir()
+    with pytest.raises(ValueError, match="model_training"):
+        EXT.run_probe(
+            arm="galactica-1.3b",
+            out=out,
+            scorer=scorer,
+            **_v2_probe_paths(tmp_path / "train_in"),
+        )
+    failed = _read_v2_outcome(out)
+    assert failed["probe_passed"] is False
+    assert failed["facts"]
+    assert failed["runtime"]
+    assert failed["fp32_geometry"]["model_training"] is True
+    assert failed["failure"]["phase"] == "geometry"
+
+
+def test_v2_probe_refuses_bf16_observed_facts(tmp_path):
+    scorer = _fp32_scorer(["MKT", AA20])
+    scorer.loaded.facts["dtype_observed"] = ["bfloat16"]
+    out = tmp_path / "bf16"
+    out.mkdir()
+    with pytest.raises(ValueError, match="dtype_observed"):
+        EXT.run_probe(
+            arm="galactica-1.3b",
+            out=out,
+            scorer=scorer,
+            **_v2_probe_paths(tmp_path / "bf16_in"),
+        )
+    failed = _read_v2_outcome(out)
+    assert failed["probe_passed"] is False
+    assert failed["facts"]["dtype_observed"] == ["bfloat16"]
+    assert failed["runtime"]
+    assert failed["failure"]["phase"] == "load"
+
+
+def test_v2_probe_longest_failure_keeps_obtained_prefix(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        EXT,
+        "check_longest_eligible_batch",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("CPU-only injected longest failure")
+        ),
+    )
+    out = tmp_path / "longest"
+    out.mkdir()
+    with pytest.raises(RuntimeError, match="longest failure"):
+        EXT.run_probe(
+            arm="galactica-1.3b",
+            out=out,
+            scorer=_fp32_scorer(["MKT", AA20]),
+            **_v2_probe_paths(tmp_path / "longest_in"),
+        )
+    failed = _read_v2_outcome(out)
+    assert failed["probe_passed"] is False
+    assert failed["failure"]["phase"] == "longest_eligible_batch"
+    for key in (
+        "settings",
+        "facts",
+        "runtime",
+        "code_sources",
+        "fingerprints",
+        "fp32_geometry",
+        "synthetic_check",
+        "cohort",
+    ):
+        assert failed.get(key), key
+    assert "longest_eligible_batch" not in failed
+
+
+def test_v2_probe_release_failure_calls_once_and_keeps_prefix(tmp_path, monkeypatch):
+    scorer = _fp32_scorer(["MKT", AA20])
+    calls: list[int] = []
+
+    def boom():
+        calls.append(1)
+        raise RuntimeError("CPU-only injected release failure")
+
+    scorer.release = boom
+
+    def fake_load(arm, **kwargs):
+        return scorer
+
+    monkeypatch.setattr(EXT, "load_native_scorer", fake_load)
+    out = tmp_path / "release"
+    out.mkdir()
+    with pytest.raises(RuntimeError, match="release failure"):
+        EXT.run_probe(
+            arm="galactica-1.3b",
+            out=out,
+            scorer=None,
+            **_v2_probe_paths(tmp_path / "release_in"),
+        )
+    assert calls == [1]
+    failed = _read_v2_outcome(out)
+    assert failed["probe_passed"] is False
+    assert failed["cleanup"]
+    assert failed["facts"]
+    assert failed["cohort"]
+    assert failed["longest_eligible_batch"]
+
+
+@pytest.mark.parametrize("restore_failure", [False, True])
+def test_v2_refusal_failure_keeps_alignment_and_original_error(
+    tmp_path, monkeypatch, restore_failure
+):
+    def refuse(*args, **kwargs):
+        raise ValueError("CPU-only injected refusal failure")
+
+    monkeypatch.setattr(EXT, "check_refusals", refuse)
+    if restore_failure:
+        real = EXT.P.fp32_matmul_context
+
+        @contextmanager
+        def broken_restore(torch_mod):
+            with real(torch_mod) as policy:
+                try:
+                    yield policy
+                finally:
+                    raise RuntimeError("CPU-only injected restore failure")
+
+        monkeypatch.setattr(EXT.P, "fp32_matmul_context", broken_restore)
+    out = tmp_path / "out"
+    error = RuntimeError if restore_failure else ValueError
+    with pytest.raises(error, match="injected .* failure"):
+        EXT.run_probe(
+            arm="galactica-1.3b", out=out, scorer=_fp32_scorer(["MKT", AA20]),
+            **_v2_probe_paths(tmp_path / "inputs"),
+        )
+    failed = _read_v2_outcome(out)
+    assert failed["probe_passed"] is False
+    assert failed["synthetic_check"]["native_api_loss_present"] is True
+    assert "refusals" not in failed["synthetic_check"]
+    assert failed["failure"]["phase"] == "refusals"
+    if restore_failure:
+        assert failed["failure"]["prior_error"] == {
+            "exception_type": "ValueError",
+            "message": "CPU-only injected refusal failure",
+        }
+
+
+def test_v2_probe_restore_failure_keeps_prefix(tmp_path, monkeypatch):
+    real = EXT.P.fp32_matmul_context
+
+    @contextmanager
+    def restore_fails(torch_mod):
+        with real(torch_mod) as policy:
+            yield policy
+        raise RuntimeError("CPU-only injected restore failure")
+
+    monkeypatch.setattr(EXT.P, "fp32_matmul_context", restore_fails)
+    out = tmp_path / "restore"
+    out.mkdir()
+    with pytest.raises(RuntimeError, match="restore failure"):
+        EXT.run_probe(
+            arm="galactica-1.3b",
+            out=out,
+            scorer=_fp32_scorer(["MKT", AA20]),
+            **_v2_probe_paths(tmp_path / "restore_in"),
+        )
+    failed = _read_v2_outcome(out)
+    assert failed["probe_passed"] is False
+    assert failed["failure"]["phase"] == "restore"
+    assert failed["facts"]
+    assert failed["longest_eligible_batch"]

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import math
 import sys
@@ -28,6 +29,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.transfer import galactica_fitness as G  # noqa: E402
+from src.transfer import precision_policy as P  # noqa: E402
 from src.transfer import rita_fitness as RITA  # noqa: E402
 from src.transfer import scale_comparison as C  # noqa: E402
 from src.transfer.arms import AA20, STAGED_ARMS  # noqa: E402
@@ -82,6 +84,8 @@ REQUIRED_DTYPE = {
     **{name: "bfloat16" for name in GALACTICA_GROUP},
     RITA.RITA_ARM: RITA.INFERENCE_DTYPE,
 }
+V2_OUTCOME_NAME = "galactica_fp32_v2_outcome.json"
+_DIAGNOSTIC_MODULE = None
 
 
 def mutant_digest(mutants: Sequence[str]) -> str:
@@ -177,20 +181,44 @@ def _arm_family(arm: str) -> str:
     )
 
 
+def required_dtype(arm: str, protocol_id: str = P.NATIVE_DMS_V1) -> str:
+    """Declared scoring dtype for one arm under one protocol. Does not mutate REQUIRED_DTYPE."""
+
+    if protocol_id == P.NATIVE_DMS_V1:
+        _arm_family(arm)
+        if arm not in REQUIRED_DTYPE:
+            raise KeyError(arm)
+        return REQUIRED_DTYPE[arm]
+    if protocol_id == P.GALACTICA_FP32_V2:
+        if arm not in GALACTICA_GROUP:
+            raise ValueError(
+                f"{P.GALACTICA_FP32_V2} accepts only Galactica rungs, got {arm!r}"
+            )
+        return "float32"
+    raise ValueError(f"unknown native DMS protocol {protocol_id!r}")
+
+
 def _require_dtype(arm: str, dtype: str) -> str:
-    expected = REQUIRED_DTYPE[arm]
+    expected = required_dtype(arm, P.NATIVE_DMS_V1)
     if dtype != expected:
         raise ValueError(f"{arm} scoring dtype must be {expected!r}; got {dtype!r}")
     return dtype
 
 
 def load_native_scorer(
-    arm: str, *, device: str, dtype: str, batch_size: int
+    arm: str,
+    *,
+    device: str,
+    dtype: str,
+    batch_size: int,
+    protocol_id: str = P.NATIVE_DMS_V1,
 ) -> Any:
     """Public scorers only. Does not copy stage-20 scoring or invent a pad token."""
 
     family = _arm_family(arm)
-    _require_dtype(arm, dtype)
+    expected = required_dtype(arm, protocol_id)
+    if dtype != expected:
+        raise ValueError(f"{arm} scoring dtype must be {expected!r}; got {dtype!r}")
     if family == "galactica":
         loaded = G.load_galactica(arm, device=device, dtype=dtype)
         return G.GalacticaFitnessScorer(loaded, batch_size=batch_size)
@@ -799,6 +827,284 @@ def _require_recorded_facts(value: Any, *, where: str) -> dict[str, Any]:
     return dict(value)
 
 
+def _numerics_diagnostic() -> Any:
+    """Import the frozen diagnostic collector without copying its arithmetic."""
+
+    global _DIAGNOSTIC_MODULE
+    if _DIAGNOSTIC_MODULE is not None:
+        return _DIAGNOSTIC_MODULE
+    path = Path(__file__).with_name("diagnose_galactica_numerics.py")
+    spec = importlib.util.spec_from_file_location("diagnose_galactica_numerics", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load {path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    _DIAGNOSTIC_MODULE = module
+    return module
+
+
+def _dtype_observed_is_float32(value: Any) -> bool:
+    return isinstance(value, list) and value == ["float32"]
+
+
+def _nonneg_finite(value: Any, *, what: str) -> float:
+    number = _finite(value, what=what)
+    if number < 0:
+        raise ValueError(f"{what} is negative: {number!r}")
+    return number
+
+
+def _expected_residue_targets(sequence: str, *, diagnostic: Any) -> int:
+    if sequence == diagnostic.SHORT_SEQUENCE:
+        return int(diagnostic.SHORT_TARGETS)
+    if sequence == diagnostic.LONG_SEQUENCE:
+        return int(diagnostic.LONG_TARGETS)
+    raise ValueError(f"fp32_geometry sequence {sequence!r} is not MKT or AA20")
+
+
+def evaluate_fp32_geometry_gates(record: Mapping[str, Any], *, diagnostic: Any) -> dict[str, Any]:
+    """Gate the frozen 15 comparisons × 3 repeats. Does not reimplement per-target CE."""
+
+    if not isinstance(record, Mapping):
+        raise ValueError("fp32_geometry record must be a mapping")
+    if record.get("phase") != "fp32_checkpoint":
+        raise ValueError(
+            f"fp32_geometry phase must be 'fp32_checkpoint', got {record.get('phase')!r}"
+        )
+    if record.get("incomplete") is not False:
+        raise ValueError("fp32_geometry is incomplete; missing case/repeat is refused")
+    if record.get("in_progress") is not None:
+        raise ValueError(
+            f"fp32_geometry in_progress must be None, got {record.get('in_progress')!r}"
+        )
+    if record.get("model_training") is not False:
+        raise ValueError(
+            f"fp32_geometry model_training must be False, got {record.get('model_training')!r}"
+        )
+    observed = record.get("observed_float_dtypes")
+    if not isinstance(observed, Mapping):
+        raise ValueError("fp32_geometry observed_float_dtypes must be a mapping")
+    parameters = observed.get("parameter_float_dtypes")
+    if not isinstance(parameters, list) or parameters != ["float32"]:
+        raise ValueError(
+            "fp32_geometry parameter_float_dtypes must be ['float32'], "
+            f"got {parameters!r}"
+        )
+    buffers = observed.get("buffer_float_dtypes")
+    if buffers not in ([], ["float32"]):
+        raise ValueError(
+            "fp32_geometry buffer_float_dtypes must be [] or ['float32'], "
+            f"got {buffers!r}"
+        )
+    policy = record.get("matmul_policy")
+    if not isinstance(policy, Mapping):
+        raise ValueError("fp32_geometry matmul_policy must be a mapping")
+    P.require_observed_policy(policy)
+    repetitions = record.get("repetitions")
+    if not isinstance(repetitions, list) or len(repetitions) != diagnostic.REPETITIONS:
+        raise ValueError(
+            f"fp32_geometry must have {diagnostic.REPETITIONS} repetitions, "
+            f"got {0 if not isinstance(repetitions, list) else len(repetitions)}"
+        )
+    expected_names = [case["name"] for case in diagnostic.CASES]
+    for index, block in enumerate(repetitions):
+        if not isinstance(block, Mapping):
+            raise ValueError(f"fp32_geometry repetition {index} is not a mapping")
+        if block.get("repetition") != index:
+            raise ValueError(
+                f"fp32_geometry repetition indices must be 0,1,2 in order, "
+                f"got {block.get('repetition')!r} at position {index}"
+            )
+        cases = block.get("cases")
+        if not isinstance(cases, Mapping):
+            raise ValueError(f"fp32_geometry repetition {index} is missing cases")
+        if set(cases) != set(expected_names) or len(cases) != len(expected_names):
+            raise ValueError(
+                f"fp32_geometry repetition {index} case keys must be exactly the "
+                f"seven frozen cases, got {sorted(cases)}"
+            )
+        for case in diagnostic.CASES:
+            name = case["name"]
+            observation = cases[name]
+            if not isinstance(observation, Mapping):
+                raise ValueError(f"fp32_geometry case {name!r} is not a mapping")
+            if observation.get("case") != name:
+                raise ValueError(
+                    f"{name}: case id {observation.get('case')!r} disagrees with key"
+                )
+            if observation.get("repetition") != index:
+                raise ValueError(
+                    f"{name}: repetition {observation.get('repetition')!r} != {index}"
+                )
+            if observation.get("width") != case["width"]:
+                raise ValueError(
+                    f"{name}: width {observation.get('width')!r} != {case['width']}"
+                )
+            if observation.get("forced_width") != case["forced_width"]:
+                raise ValueError(
+                    f"{name}: forced_width {observation.get('forced_width')!r} != "
+                    f"{case['forced_width']}"
+                )
+            rows = observation.get("rows")
+            expected_sequences = list(case["sequences"])
+            if not isinstance(rows, list) or len(rows) != len(expected_sequences):
+                raise ValueError(
+                    f"{name}: expected {len(expected_sequences)} rows, "
+                    f"got {0 if not isinstance(rows, list) else len(rows)}"
+                )
+            for row, sequence in zip(rows, expected_sequences):
+                if not isinstance(row, Mapping):
+                    raise ValueError(f"{name}: a row is not a mapping")
+                if row.get("sequence") != sequence:
+                    raise ValueError(
+                        f"{name}: row sequence {row.get('sequence')!r} != {sequence!r}"
+                    )
+                targets = _expected_residue_targets(sequence, diagnostic=diagnostic)
+                if row.get("n_residue_targets") != targets:
+                    raise ValueError(
+                        f"{name}: n_residue_targets {row.get('n_residue_targets')!r} "
+                        f"!= {targets}"
+                    )
+                probs = row.get("per_target_log_prob")
+                if not isinstance(probs, list) or len(probs) != targets:
+                    raise ValueError(
+                        f"{name}: per_target_log_prob length must be {targets}"
+                    )
+                for position, value in enumerate(probs):
+                    _finite(value, what=f"{name} per_target_log_prob[{position}]")
+                total = row.get("total_log_likelihood")
+                if total is None:
+                    raise ValueError(f"{name}: total_log_likelihood is missing")
+                _finite(total, what=f"{name} total_log_likelihood")
+            native_loss = observation.get("native_loss")
+            if native_loss is None:
+                raise ValueError(f"{name}: native_loss is missing")
+            _finite(native_loss, what=f"{name} native_loss")
+            native_vs_raw = observation.get("native_vs_independent_nats_per_target")
+            if native_vs_raw is None:
+                raise ValueError(f"{name}: native-vs-independent is missing")
+            native_vs = _nonneg_finite(
+                native_vs_raw,
+                what=f"{name} native-vs-independent",
+            )
+            if native_vs > FP32_PER_TARGET_ABS:
+                raise ValueError(
+                    f"{name}: native-vs-independent {native_vs} nats/target exceeds "
+                    f"{FP32_PER_TARGET_ABS}"
+                )
+            public = observation.get("public_scorer")
+            if not isinstance(public, Mapping):
+                raise ValueError(f"{name}: public_scorer record is missing")
+            if case["public_scorer"]:
+                if public.get("called") is not True:
+                    raise ValueError(f"{name}: public scorer was not called")
+                deltas = public.get("abs_nats_per_residue_target")
+                if not isinstance(deltas, list) or len(deltas) != len(rows):
+                    raise ValueError(
+                        f"{name}: public-vs-independent deltas must cover {len(rows)} "
+                        f"rows, got {deltas!r}"
+                    )
+                for public_index, value in enumerate(deltas):
+                    delta = _nonneg_finite(
+                        value, what=f"{name} public-vs-independent[{public_index}]"
+                    )
+                    if delta > FP32_PER_TARGET_ABS:
+                        raise ValueError(
+                            f"{name}: public-vs-independent {delta} nats/target exceeds "
+                            f"{FP32_PER_TARGET_ABS}"
+                        )
+            elif public.get("called") is not False:
+                raise ValueError(
+                    f"{name}: forced-width has no public API; public scorer must not run"
+                )
+    contrasts = diagnostic._comparisons(repetitions)
+    expected = len(diagnostic.COMPARISONS) * diagnostic.REPETITIONS
+    if len(contrasts) != expected:
+        raise ValueError(
+            f"fp32_geometry expected {expected} comparison rows, got {len(contrasts)}"
+        )
+    for left_case, left_row, right_case, right_row, targets in diagnostic.COMPARISONS:
+        matching = [
+            row
+            for row in contrasts
+            if row["left_case"] == left_case
+            and row["left_row"] == left_row
+            and row["right_case"] == right_case
+            and row["right_row"] == right_row
+        ]
+        if len(matching) != diagnostic.REPETITIONS:
+            raise ValueError(
+                f"fp32_geometry missing comparison {left_case}[{left_row}] vs "
+                f"{right_case}[{right_row}]"
+            )
+        for row in matching:
+            delta = _nonneg_finite(
+                row["abs_nats_per_residue_target"],
+                what=(
+                    f"{left_case}[{left_row}] vs {right_case}[{right_row}] "
+                    f"repeat {row['repetition']}"
+                ),
+            )
+            if int(row["n_residue_targets"]) != int(targets):
+                raise ValueError(
+                    f"{left_case}[{left_row}] vs {right_case}[{right_row}]: "
+                    f"target count {row['n_residue_targets']} != {targets}"
+                )
+            if delta > FP32_PER_TARGET_ABS:
+                raise ValueError(
+                    f"{left_case}[{left_row}] vs {right_case}[{right_row}] "
+                    f"repeat {row['repetition']}: {delta} nats/target exceeds "
+                    f"{FP32_PER_TARGET_ABS}"
+                )
+    return {
+        "passed": True,
+        "n_comparisons": expected,
+        "n_cases": len(diagnostic.CASES),
+        "n_repetitions": diagnostic.REPETITIONS,
+        "abs_ceiling": FP32_PER_TARGET_ABS,
+        "comparisons": contrasts,
+    }
+
+
+def _protocol_of(payload: Mapping[str, Any], *, where: str) -> str:
+    settings = payload.get("settings")
+    root = payload.get("protocol_id")
+    nested = None
+    if isinstance(settings, Mapping):
+        nested = settings.get("protocol_id")
+    if root is None and nested is None:
+        return P.NATIVE_DMS_V1
+    if root == P.GALACTICA_FP32_V2 or nested == P.GALACTICA_FP32_V2:
+        if root != P.GALACTICA_FP32_V2 or nested != P.GALACTICA_FP32_V2:
+            raise ValueError(
+                f"{where}: {P.GALACTICA_FP32_V2} requires the same protocol_id on "
+                f"the payload and settings; got {root!r}/{nested!r}"
+            )
+        return P.GALACTICA_FP32_V2
+    if root is None:
+        root = nested
+    if nested is None:
+        nested = root
+    if root != nested:
+        raise ValueError(
+            f"{where}: protocol_id {root!r} disagrees with settings.protocol_id {nested!r}"
+        )
+    return str(root)
+
+
+def _require_v2_precision_policy(value: Any, *, where: str) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{where}: precision_policy must be a mapping")
+    requested = value.get("requested")
+    observed = value.get("observed")
+    if not isinstance(requested, Mapping) or not isinstance(observed, Mapping):
+        raise ValueError(f"{where}: precision_policy needs requested and observed mappings")
+    P.require_observed_policy(requested)
+    P.require_observed_policy(observed)
+    return {"requested": dict(requested), "observed": dict(observed)}
+
+
 def run_probe(
     *,
     arm: str,
@@ -811,11 +1117,29 @@ def run_probe(
     batch_size: int,
     device: str = "cuda",
     scorer: Any | None = None,
+    protocol_id: str = P.NATIVE_DMS_V1,
 ) -> dict[str, Any]:
     """Synthetic interface check and LOOKUP-queue freeze. Not a DMS score."""
 
+    if protocol_id == P.GALACTICA_FP32_V2:
+        return _run_probe_v2(
+            arm=arm,
+            lookup_path=lookup_path,
+            proteingym_dir=proteingym_dir,
+            wildtypes_path=wildtypes_path,
+            wildtypes_fasta_path=wildtypes_fasta_path,
+            out=out,
+            dtype=dtype,
+            batch_size=batch_size,
+            device=device,
+            scorer=scorer,
+        )
+    if protocol_id != P.NATIVE_DMS_V1:
+        raise ValueError(f"unknown native DMS protocol {protocol_id!r}")
     _arm_family(arm)
-    _require_dtype(arm, dtype)
+    expected = required_dtype(arm, protocol_id)
+    if dtype != expected:
+        raise ValueError(f"{arm} scoring dtype must be {expected!r}; got {dtype!r}")
     lookup = _read_json(lookup_path)
     wildtypes = _read_json(wildtypes_path)
     frozen = freeze_lookup_cohort(
@@ -828,7 +1152,11 @@ def run_probe(
     owned = scorer is None
     if scorer is None:
         scorer = load_native_scorer(
-            arm, device=device, dtype=dtype, batch_size=batch_size
+            arm,
+            device=device,
+            dtype=dtype,
+            batch_size=batch_size,
+            protocol_id=protocol_id,
         )
     assert scorer is not None
     try:
@@ -902,6 +1230,226 @@ def run_probe(
             scorer.release()
 
 
+def _run_probe_v2(
+    *,
+    arm: str,
+    lookup_path: Path,
+    proteingym_dir: Path,
+    wildtypes_path: Path,
+    wildtypes_fasta_path: Path,
+    out: Path,
+    dtype: str,
+    batch_size: int,
+    device: str,
+    scorer: Any | None,
+) -> dict[str, Any]:
+    """Direct float32 Galactica probe. Writes a flat v2 outcome, never v1 interface_check."""
+
+    Path(out).mkdir(parents=True, exist_ok=True)
+    settings: dict[str, Any] = {
+        "dtype": dtype,
+        "batch_size": int(batch_size),
+        "protocol_id": P.GALACTICA_FP32_V2,
+        "variant_seed": VARIANT_SEED,
+        "variant_cap": VARIANT_CAP,
+        "variant_draw": (
+            "seeded permutation of eligible rows, seed=20260807+original LOOKUP index"
+        ),
+    }
+    payload: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "protocol_id": P.GALACTICA_FP32_V2,
+        "status": "failed",
+        "probe_passed": False,
+        "phase": "probe",
+        "kind": "galactica_fp32_v2_probe_not_v1_interface_gate",
+        "arm": arm,
+        "group": "galactica",
+        "created_utc": _utc_now(),
+        "settings": settings,
+        "no_new_model_fitness_scores": True,
+        "blosum62_is_not_a_dms_gate": True,
+        "failure": None,
+    }
+    step = "input"
+    owned = scorer is None
+    local = scorer
+    release_attempted = False
+    geometry_record: dict[str, Any] | None = None
+    body_error: BaseException | None = None
+
+    def release_owned() -> None:
+        nonlocal release_attempted, owned
+        if release_attempted or not owned or local is None or not hasattr(local, "release"):
+            return
+        release_attempted = True
+        local.release()
+        owned = False
+
+    try:
+        expected = required_dtype(arm, P.GALACTICA_FP32_V2)
+        if dtype != expected:
+            raise ValueError(f"{arm} scoring dtype must be {expected!r}; got {dtype!r}")
+        diagnostic = _numerics_diagnostic()
+        lookup = _read_json(lookup_path)
+        wildtypes = _read_json(wildtypes_path)
+        frozen = freeze_lookup_cohort(
+            lookup,
+            proteingym_dir=proteingym_dir,
+            wildtypes=wildtypes,
+            wildtypes_path=wildtypes_path,
+            wildtypes_fasta_path=wildtypes_fasta_path,
+        )
+        payload["fingerprints"] = {
+            "lookup_sha256": sha256_file(lookup_path),
+            "wildtypes_sha256": frozen["wildtypes_sha256"],
+            "wildtypes_fasta_sha256": frozen["wildtypes_fasta_sha256"],
+        }
+        step = "load"
+        payload["runtime"] = _runtime_record()
+        sources = _code_sources()
+        sources["precision_policy"] = str(Path(P.__file__).resolve())
+        sources["diagnose_galactica_numerics"] = str(
+            Path(__file__).with_name("diagnose_galactica_numerics.py").resolve()
+        )
+        payload["code_sources"] = sources
+        if local is None:
+            torch_mod = __import__("torch")
+        else:
+            torch_mod = local.torch
+        with P.fp32_matmul_context(torch_mod) as live_policy:
+            try:
+                policy = {
+                    "requested": dict(live_policy["requested"]),
+                    "observed": dict(live_policy["observed"]),
+                }
+                payload["precision_policy"] = policy
+                settings["precision_policy"] = {
+                    "requested": dict(live_policy["requested"]),
+                    "observed": dict(live_policy["observed"]),
+                }
+                if local is None:
+                    local = load_native_scorer(
+                        arm,
+                        device=device,
+                        dtype=dtype,
+                        batch_size=batch_size,
+                        protocol_id=P.GALACTICA_FP32_V2,
+                    )
+                facts = _require_recorded_facts(
+                    getattr(local, "facts", None), where=f"{arm} probe"
+                )
+                payload["facts"] = facts
+                payload["scientific_role"] = facts.get("scientific_role") or G.GALACTICA_CORPUS[
+                    arm
+                ]["note"]
+                if not _dtype_observed_is_float32(facts.get("dtype_observed")):
+                    raise ValueError(
+                        f"{arm}: galactica-fp32-v2 requires facts.dtype_observed=['float32'], "
+                        f"got {facts.get('dtype_observed')!r}"
+                    )
+                settings["scoring_stratum"] = local.scoring_stratum
+                settings["score"] = local.score_description
+                step = "geometry"
+                payload["natural_geometry"] = diagnostic.require_natural_geometry(local)
+                geometry_record = {
+                    "phase": "fp32_checkpoint",
+                    "incomplete": True,
+                    "in_progress": None,
+                    "repetitions": [],
+                }
+                payload["fp32_geometry"] = geometry_record
+                diagnostic.run_phase(local, record=geometry_record)
+                payload["fp32_geometry_gate"] = evaluate_fp32_geometry_gates(
+                    geometry_record, diagnostic=diagnostic
+                )
+                step = "alignment"
+                alignment = check_author_alignment(
+                    local, GALACTICA_SYNTHETIC, arm=arm, dtype="float32"
+                )
+                payload["synthetic_check"] = alignment
+                step = "refusals"
+                payload["synthetic_check"]["refusals"] = check_refusals(local)
+                step = "cohort"
+                cohort = attach_token_lengths(frozen, local)
+                payload["fingerprints"]["csv_sha256"] = cohort["csv_sha256"]
+                payload["cohort"] = {
+                    "declared_assays": cohort["declared_assays"],
+                    "declared_clusters": cohort["declared_clusters"],
+                    "analysis_assays": cohort["analysis_assays"],
+                    "analysis_clusters": cohort["analysis_clusters"],
+                    "context": cohort["context"],
+                    "context_excluded_assays": cohort["context_excluded_assays"],
+                    "assays": cohort["assays"],
+                    "lookup_order": cohort["lookup_order"],
+                }
+                payload["skipped"] = cohort["skipped"]
+                step = "longest_eligible_batch"
+                payload["longest_eligible_batch"] = check_longest_eligible_batch(
+                    local, cohort, arm=arm, batch_size=int(batch_size)
+                )
+                step = "restore"
+            except Exception as exc:
+                body_error = exc
+            finally:
+                try:
+                    release_owned()
+                except Exception as release_exc:
+                    payload["cleanup"] = [
+                        {
+                            "where": "release",
+                            "exception_type": type(release_exc).__name__,
+                            "message": str(release_exc),
+                        }
+                    ]
+                    if body_error is None:
+                        body_error = release_exc
+            if body_error is not None:
+                raise body_error
+        step = "write"
+        payload["status"] = "passed"
+        payload["probe_passed"] = True
+        payload["created_utc"] = _utc_now()
+        write_json(Path(out) / V2_OUTCOME_NAME, payload)
+        return payload
+    except Exception as exc:
+        payload["status"] = "failed"
+        payload["probe_passed"] = False
+        in_progress = None
+        if isinstance(geometry_record, Mapping):
+            in_progress = geometry_record.get("in_progress")
+            payload["fp32_geometry"] = geometry_record
+        payload["failure"] = {
+            "phase": step,
+            "exception_type": type(exc).__name__,
+            "message": str(exc),
+            "in_progress": in_progress,
+        }
+        if body_error is not None and body_error is not exc:
+            payload["failure"]["prior_error"] = {
+                "exception_type": type(body_error).__name__,
+                "message": str(body_error),
+            }
+        payload["created_utc"] = _utc_now()
+        if not release_attempted:
+            try:
+                release_owned()
+            except Exception as release_exc:
+                payload.setdefault("cleanup", []).append(
+                    {
+                        "where": "release",
+                        "exception_type": type(release_exc).__name__,
+                        "message": str(release_exc),
+                    }
+                )
+        if step != "write":
+            try:
+                write_json(Path(out) / V2_OUTCOME_NAME, payload)
+            except Exception as write_exc:
+                raise write_exc from exc
+        raise
+
+
 def _require_maps(
     probes: Mapping[str, Path], scores: Mapping[str, Path]
 ) -> tuple[dict[str, Path], dict[str, Path]]:
@@ -952,8 +1500,66 @@ def _require_present(payload: Mapping[str, Any], key: str, *, where: str) -> Any
 
 
 def _verify_probe_against_score(
-    name: str, probe: Mapping[str, Any], score: Mapping[str, Any]
+    name: str,
+    probe: Mapping[str, Any],
+    score: Mapping[str, Any],
+    *,
+    protocol_id: str = P.NATIVE_DMS_V1,
 ) -> None:
+    if probe.get("kind") == "numerical_diagnostic_not_interface_gate_or_dms_score":
+        raise ValueError(f"{name}: a numerical diagnostic is not a probe")
+    if probe.get("no_interface_admission") == True:
+        raise ValueError(f"{name}: diagnostic artefacts are not admitted as probes")
+    probe_protocol = _protocol_of(probe, where=f"{name} probe")
+    score_protocol = score.get("settings", {}).get("protocol_id") if isinstance(
+        score.get("settings"), Mapping
+    ) else None
+    if score_protocol is None:
+        score_protocol = P.NATIVE_DMS_V1
+    if protocol_id == P.NATIVE_DMS_V1:
+        if probe_protocol != P.NATIVE_DMS_V1 or score_protocol != P.NATIVE_DMS_V1:
+            raise ValueError(
+                f"{name}: v1 analyse refuses protocol {probe_protocol!r}/{score_protocol!r}"
+            )
+    elif protocol_id == P.GALACTICA_FP32_V2:
+        if probe_protocol != P.GALACTICA_FP32_V2 or score_protocol != P.GALACTICA_FP32_V2:
+            raise ValueError(
+                f"{name}: v2 analyse refuses protocol {probe_protocol!r}/{score_protocol!r}"
+            )
+        _require_v2_precision_policy(
+            probe.get("precision_policy"), where=f"{name} probe"
+        )
+        score_settings_early = _require_mapping(score, "settings", where=f"{name} score")
+        _require_v2_precision_policy(
+            score_settings_early.get("precision_policy"),
+            where=f"{name} score settings",
+        )
+        probe_facts = _require_recorded_facts(probe.get("facts"), where=f"{name} probe")
+        if not _dtype_observed_is_float32(probe_facts.get("dtype_observed")):
+            raise ValueError(
+                f"{name}: probe facts.dtype_observed must be float32, "
+                f"got {probe_facts.get('dtype_observed')!r}"
+            )
+        loader = _require_mapping(score, "loader", where=f"{name} score")
+        checkpoint_facts = _require_mapping(
+            loader, "checkpoint_facts", where=f"{name} score.loader"
+        )
+        if not _dtype_observed_is_float32(checkpoint_facts.get("dtype_observed")):
+            raise ValueError(
+                f"{name}: score.loader.checkpoint_facts.dtype_observed must be float32, "
+                f"got {checkpoint_facts.get('dtype_observed')!r}"
+            )
+        evaluate_fp32_geometry_gates(
+            _require_mapping(probe, "fp32_geometry", where=f"{name} probe"),
+            diagnostic=_numerics_diagnostic(),
+        )
+        gate = _require_mapping(
+            probe, "fp32_geometry_gate", where=f"{name} probe"
+        )
+        if gate.get("passed") != True:
+            raise ValueError(f"{name}: fp32_geometry_gate did not pass")
+    else:
+        raise ValueError(f"unknown native DMS protocol {protocol_id!r}")
     if probe.get("probe_passed") != True:
         raise ValueError(f"{name}: probe did not pass; analyse refuses it")
     if probe.get("arm") != name:
@@ -962,14 +1568,14 @@ def _verify_probe_against_score(
         raise ValueError(f"{name}: score arm is {score.get('arm')!r}")
     settings = _require_mapping(score, "settings", where=f"{name} score")
     probe_settings = _require_mapping(probe, "settings", where=f"{name} probe")
-    required_dtype = REQUIRED_DTYPE[name]
+    expected_dtype = required_dtype(name, protocol_id)
     score_dtype = _require_present(settings, "dtype", where=f"{name} score settings")
     probe_dtype = _require_present(
         probe_settings, "dtype", where=f"{name} probe settings"
     )
-    if score_dtype != required_dtype or probe_dtype != required_dtype:
+    if score_dtype != expected_dtype or probe_dtype != expected_dtype:
         raise ValueError(
-            f"{name}: dtype must be {required_dtype!r}; score has {score_dtype!r}, "
+            f"{name}: dtype must be {expected_dtype!r}; score has {score_dtype!r}, "
             f"probe has {probe_dtype!r}"
         )
     score_stratum = _require_present(
@@ -1147,6 +1753,7 @@ def _group_payload(
     seed: int,
     pairs: Sequence[tuple[str, str]],
     label: str,
+    protocol_id: str = P.NATIVE_DMS_V1,
 ) -> dict[str, Any]:
     models = {name: scores[name] for name in names}
     require_uniform_dtype(models, rungs=names, label=label)
@@ -1166,7 +1773,9 @@ def _group_payload(
             )
     _require_shared_probe_identity(names, probes)
     for name in names:
-        _verify_probe_against_score(name, probes[name], scores[name])
+        _verify_probe_against_score(
+            name, probes[name], scores[name], protocol_id=protocol_id
+        )
     census = _probe_census(first, label=label)
     alignment = align_dms(
         models,
@@ -1260,7 +1869,10 @@ def run_analyse(
     probes: Mapping[str, Path],
     scores: Mapping[str, Path],
     out: Path,
+    protocol_id: str = P.NATIVE_DMS_V1,
 ) -> dict[str, Any]:
+    if protocol_id not in (P.NATIVE_DMS_V1, P.GALACTICA_FP32_V2):
+        raise ValueError(f"unknown native DMS protocol {protocol_id!r}")
     probe_paths, score_paths = _require_maps(probes, scores)
     lookup = _read_json(lookup_path)
     loaded_probes = {name: _read_json(path) for name, path in probe_paths.items()}
@@ -1280,6 +1892,15 @@ def run_analyse(
             )
     groups: dict[str, Any] = {}
     names = set(probe_paths)
+    if protocol_id == P.GALACTICA_FP32_V2:
+        if RITA.RITA_ARM in names:
+            raise ValueError(
+                f"{P.GALACTICA_FP32_V2} analyses Galactica only; RITA stays on {P.NATIVE_DMS_V1}"
+            )
+        if set(names) != set(GALACTICA_GROUP):
+            raise ValueError(
+                f"{P.GALACTICA_FP32_V2} requires the complete Galactica ladder, got {sorted(names)}"
+            )
     if set(GALACTICA_GROUP) <= names:
         groups["galactica"] = _group_payload(
             GALACTICA_GROUP,
@@ -1289,12 +1910,13 @@ def run_analyse(
             seed=BOOTSTRAP_SEED,
             pairs=GALACTICA_PAIRS,
             label="native_dms_extension_predata_galactica",
+            protocol_id=protocol_id,
         )
         groups["galactica"]["reference_pair_note"] = (
             "galactica-125m → galactica-1.3b is a small-scale dual-mode-unidentified "
             "reference pair, not a qualified ladder step and not a parameter-count effect"
         )
-    if RITA.RITA_ARM in names:
+    if protocol_id == P.NATIVE_DMS_V1 and RITA.RITA_ARM in names:
         groups[RITA.RITA_ARM] = _group_payload(
             RITA_GROUP,
             loaded_probes,
@@ -1303,12 +1925,17 @@ def run_analyse(
             seed=BOOTSTRAP_SEED + RITA_SEED_OFFSET,
             pairs=(),
             label="native_dms_extension_predata_rita",
+            protocol_id=protocol_id,
         )
     if not groups:
         raise ValueError("analyse was given no complete Galactica or RITA group")
     payload = {
         "schema_version": SCHEMA_VERSION,
-        "status": STATUS,
+        "status": (
+            "completed analysis"
+            if protocol_id == P.GALACTICA_FP32_V2
+            else STATUS
+        ),
         "phase": "analyse",
         "created_utc": _utc_now(),
         "bootstrap": {
@@ -1333,6 +1960,8 @@ def run_analyse(
         "no_parameter_count_causal_claim": True,
         "descriptive_not_causal": True,
     }
+    if protocol_id == P.GALACTICA_FP32_V2:
+        payload["protocol_id"] = protocol_id
     write_json(Path(out) / "native_dms_comparison.json", payload)
     return payload
 
@@ -1357,6 +1986,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--arm")
     parser.add_argument("--dtype")
+    parser.add_argument(
+        "--protocol",
+        dest="protocol_id",
+        default=P.NATIVE_DMS_V1,
+        help="native-dms-v1 (default) or galactica-fp32-v2",
+    )
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--device", default="cuda")
     parser.add_argument(
@@ -1387,23 +2022,36 @@ def main(argv: Sequence[str] | None = None) -> dict[str, Any]:
         if args.wildtypes_fasta is None:
             raise ValueError("probe requires --wildtypes-fasta")
         proteingym = Path(args.proteingym_dir) if args.proteingym_dir else PROTEINGYM_ROOT
-        return run_probe(
-            arm=args.arm,
-            lookup_path=lookup,
-            proteingym_dir=proteingym,
-            wildtypes_path=Path(args.wildtypes),
-            wildtypes_fasta_path=Path(args.wildtypes_fasta),
-            out=out,
-            dtype=args.dtype,
-            batch_size=int(args.batch_size),
-            device=str(args.device),
-        )
+        try:
+            payload = run_probe(
+                arm=args.arm,
+                lookup_path=lookup,
+                proteingym_dir=proteingym,
+                wildtypes_path=Path(args.wildtypes),
+                wildtypes_fasta_path=Path(args.wildtypes_fasta),
+                out=out,
+                dtype=args.dtype,
+                batch_size=int(args.batch_size),
+                device=str(args.device),
+                protocol_id=str(args.protocol_id),
+            )
+        except Exception:
+            if str(args.protocol_id) == P.GALACTICA_FP32_V2:
+                raise SystemExit(1)
+            raise
+        if str(args.protocol_id) == P.GALACTICA_FP32_V2 and payload.get("probe_passed") != True:
+            raise SystemExit(1)
+        return payload
     probes = dict(_parse_named_path(value) for value in args.probe)
     scores = dict(_parse_named_path(value) for value in args.score)
     if not probes or not scores:
         raise ValueError("analyse requires --probe NAME=PATH and --score NAME=PATH")
     return run_analyse(
-        lookup_path=lookup, probes=probes, scores=scores, out=out
+        lookup_path=lookup,
+        probes=probes,
+        scores=scores,
+        out=out,
+        protocol_id=str(args.protocol_id),
     )
 
 
