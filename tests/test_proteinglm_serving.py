@@ -40,6 +40,7 @@ from src.transfer.arms import (  # noqa: E402
     load_arm,
     load_arm_spec,
     rendering_marker_ids,
+    symbols_per_token,
     tokenize_batch,
 )
 from src.transfer.budget import scored_tokens  # noqa: E402
@@ -249,6 +250,36 @@ def test_budget_encode_rejects_illegal_short_wrong_prefix_and_over_window():
     rendered = pglm.render_budget_sequence("ACDE")
     with pytest.raises(ValueError, match="max_len"):
         pglm.encode_budget_text(tokenizer, rendered, max_len=6)
+
+
+def _tokenizer_only_arm() -> Arm:
+    return Arm(
+        spec=STAGED_ARMS[NAME],
+        model=torch.nn.Identity(),
+        tokenizer=_tokenizer(),
+        device="cpu",
+        dtype="float32",
+        attn_implementation=None,
+    )
+
+
+def test_symbols_per_token_counts_prefix_plus_l_and_refuses_tail_eos():
+    arm = _tokenizer_only_arm()
+    residues = "ACDE"
+    rendered = pglm.render_budget_sequence(residues)
+    ids = pglm.encode_budget_text(arm.tokenizer, rendered, max_len=32)
+    assert len(ids) == len(residues) + pglm.PREFIX_LENGTH
+    assert ids[:3] == list(pglm.PREFIX_IDS)
+    assert ids[-1] != arm.tokenizer.eos_token_id
+    ratio = symbols_per_token(arm, [rendered], 32)
+    assert ratio == pytest.approx(len(residues) / (len(residues) + pglm.PREFIX_LENGTH))
+
+
+def test_symbols_per_token_refuses_silent_truncation():
+    arm = _tokenizer_only_arm()
+    rendered = pglm.render_budget_sequence("ACDE")
+    with pytest.raises(ValueError, match="max_len"):
+        symbols_per_token(arm, [rendered], 6)
 
 
 def test_target_rule_and_mask_keep_residues_2_to_L_not_four_dropped_columns():

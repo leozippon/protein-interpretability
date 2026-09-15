@@ -3102,11 +3102,18 @@ def symbols_per_token(arm: Arm, texts: list[str], max_len: int) -> float:
 
     Protein arms count residues; the text arm counts characters. Counting before
     truncation inflates the ratio for long sequences, so both are counted after.
+    ProteinGLM budget serving encodes through :func:`proteinglm.encode_budget_text`
+    so the continuation is not silently truncated and does not grow a tail EOS.
     """
     tokens = 0
     symbols = 0
     for text in texts:
-        ids = arm.tokenizer(text, return_tensors=None)["input_ids"][:max_len]
+        if arm.spec.input_format == INPUT_FORMAT_GMASK_SOP_EOS:
+            ids = _proteinglm.encode_budget_text(
+                arm.tokenizer, text, max_len=max_len
+            )
+        else:
+            ids = arm.tokenizer(text, return_tensors=None)["input_ids"][:max_len]
         decoded = arm.tokenizer.decode(ids)
         tokens += len(ids)
         symbols += (
