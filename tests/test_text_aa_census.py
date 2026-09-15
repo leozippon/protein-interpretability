@@ -28,6 +28,7 @@ from src.transfer.text_aa_cohort import (  # noqa: E402
     UNIMPLEMENTED_PHASES,
     census_one_model,
     load_text_aa_boundary_table,
+    source_fingerprints,
     support_sets,
     text_aa_model_names,
 )
@@ -830,3 +831,73 @@ def test_encode_fail_then_later_legal_max_and_digest(gpt2_tokenizer):
     assert left["assays"][0]["encoded_ids_digest"] != right["assays"][0][
         "encoded_ids_digest"
     ]
+
+
+def test_source_fingerprints_include_amino_acids_alphabet():
+    fingerprints = source_fingerprints()
+    assert fingerprints["src/transfer/amino_acids.py"]
+    assert fingerprints["boundaries"] == fingerprints[
+        "src/transfer/text_aa_boundaries.json"
+    ]
+
+
+def test_none_documented_context_means_no_hard_context(
+    gpt2_tokenizer, bygpt5_tokenizer
+):
+    table = load_text_aa_boundary_table()
+    request = _toy_request("AAA", ["KKK"])
+    with pytest.raises(ValueError, match="documented context None disagrees"):
+        census_one_model(
+            "gpt2",
+            tokenizer=gpt2_tokenizer,
+            boundary=resolve_text_aa_boundary("gpt2", table),
+            hard_context=1024,
+            request=request,
+            documented_context=None,
+        )
+    payload = census_one_model(
+        "bygpt5-small-en",
+        tokenizer=bygpt5_tokenizer,
+        boundary=resolve_text_aa_boundary("bygpt5-small-en", table),
+        hard_context=None,
+        request=request,
+        documented_context=None,
+    )
+    assert payload["hard_context"] is None
+    assert payload["documented_context"] is None
+    assert payload["window_rule"] == "max_legal_request_input"
+
+
+def test_over_window_counts_as_encoded_not_encode_fail(gpt2_tokenizer):
+    table = load_text_aa_boundary_table()
+    boundary = resolve_text_aa_boundary("gpt2", table)
+    wt = "AAA"
+    long_mut = "W" * 40
+    short_mut = "GGG"
+    wt_n = len(encode_text_aa(gpt2_tokenizer, wt, boundary))
+    long_n = len(encode_text_aa(gpt2_tokenizer, long_mut, boundary))
+    short_n = len(encode_text_aa(gpt2_tokenizer, short_mut, boundary))
+    assert long_n > wt_n + 1
+    assert short_n <= wt_n + 1
+    payload = census_one_model(
+        "gpt2",
+        tokenizer=gpt2_tokenizer,
+        boundary=boundary,
+        hard_context=wt_n + 1,
+        request=_toy_request(wt, [long_mut, short_mut]),
+        documented_context=wt_n + 1,
+    )
+    row = payload["assays"][0]
+    assert row["admitted"] is False
+    assert row["exclude_reason"] == EXCEEDS_HARD_CONTEXT
+    assert row["n_encode_ok"] == 3
+    assert row["n_encode_fail"] == 0
+    assert row["n_exceeds_hard_context"] == 1
+    assert row["n_eligible_sequences"] == 2
+    assert row["n_failed"] == 1
+    assert payload["n_encode_ok"] == 3
+    assert payload["n_encode_fail"] == 0
+    assert payload["n_exceeds_hard_context"] == 1
+    assert payload["n_sequences"] == payload["n_encode_ok"] + payload["n_encode_fail"]
+    assert payload["n_encode_ok"] == sum(item["n_encode_ok"] for item in payload["assays"])
+    assert row["n_input_tokens_max_legal"] == max(wt_n, short_n)

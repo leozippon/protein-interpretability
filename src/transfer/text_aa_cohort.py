@@ -49,6 +49,7 @@ _SOURCE_RELATIVE = (
     "src/transfer/text_aa_cohort.py",
     "src/transfer/text_aa_boundaries.json",
     "scripts/transfer/text_aa_dms.py",
+    "src/transfer/amino_acids.py",
 )
 
 __all__ = [
@@ -212,7 +213,7 @@ def census_one_model(
 ) -> dict[str, Any]:
     """Encode every frozen WT and selected mutant. Do not resample or drop variants."""
 
-    if documented_context is not None and hard_context != documented_context:
+    if hard_context != documented_context:
         raise ValueError(
             f"{name}: documented context {documented_context} disagrees with "
             f"config hard_context {hard_context}"
@@ -240,6 +241,8 @@ def census_one_model(
         stream = hashlib.sha256()
         encode_fail = False
         over_window = False
+        n_row_encode_fail = 0
+        n_row_over = 0
         wt_n_input: int | None = None
         for role, mutant_index, sequence in items:
             n_sequences += 1
@@ -253,6 +256,7 @@ def census_one_model(
                 ids = encode_text_aa(tokenizer, sequence, boundary)
             except TextAAEncodingError as exc:
                 n_encode_fail += 1
+                n_row_encode_fail += 1
                 encode_fail = True
                 reason = ENCODE_FAIL
                 _update_stream(stream, reason.encode("ascii"), type(exc).__name__.encode("ascii"))
@@ -275,6 +279,7 @@ def census_one_model(
                 wt_n_input = width
             if hard_context is not None and width > hard_context:
                 n_over += 1
+                n_row_over += 1
                 over_window = True
                 failures.append(
                     {
@@ -321,10 +326,13 @@ def census_one_model(
                 "csv_sha256": assay["csv_sha256"],
                 "seed": int(assay["seed"]),
                 "wildtype_id": assay.get("wildtype_id"),
-                "n_residues_wt": len(str(assay["wildtype_sequence"])),
+                "n_residues_wt": len(assay["wildtype_sequence"]),
                 "n_input_tokens_wt": wt_n_input,
                 "n_input_tokens_max_legal": (max(n_input_ok) if n_input_ok else None),
-                "n_encode_ok": len(items) - len(failures),
+                "n_encode_ok": len(items) - n_row_encode_fail,
+                "n_encode_fail": n_row_encode_fail,
+                "n_exceeds_hard_context": n_row_over,
+                "n_eligible_sequences": len(n_input_ok),
                 "n_failed": len(failures),
                 "admitted": admitted,
                 "exclude_reason": exclude_reason,
@@ -358,6 +366,17 @@ def census_one_model(
             }
     if probe is None:
         raise ValueError(f"{name}: no legal sequence fits application_window {application_window}")
+    if n_encode_ok + n_encode_fail != n_sequences:
+        raise RuntimeError(
+            f"{name}: n_encode_ok {n_encode_ok} + n_encode_fail {n_encode_fail} "
+            f"!= n_sequences {n_sequences}"
+        )
+    if n_encode_ok != sum(int(row["n_encode_ok"]) for row in assay_rows):
+        raise RuntimeError(f"{name}: model n_encode_ok disagrees with assay rows")
+    if n_encode_fail != sum(int(row["n_encode_fail"]) for row in assay_rows):
+        raise RuntimeError(f"{name}: model n_encode_fail disagrees with assay rows")
+    if n_over != sum(int(row["n_exceeds_hard_context"]) for row in assay_rows):
+        raise RuntimeError(f"{name}: model n_exceeds_hard_context disagrees with assay rows")
     payload = {
         "name": name,
         "protocol_id": TEXT_AA_FP32_V1,
