@@ -2746,3 +2746,7 @@ The user approved adding three candidate generative models to the “主要模�
 ## 2026-09-15 — Hold new candidate-model downloads to a working mirror
 
 After the documentation inventory, the user required a strict hf-mirror endpoint and suspended new ProtGPT3-1.3B and Qwen3-8B-Base downloads; neither was fetched or synced. Existing ProteinGLM-7B-CLM files were verified offline and left unmodified; a 1 MiB H200 push probe succeeded and was deleted. ProteinGLM-7B-CLM was then synced to `/gpfs/jiaotongdamoxing/zhk_zip/models/proteinglm-7b-clm` and re-verified remotely; file completeness is not experiment admission. Provenance is in “Candidate-model file verification under a mirror-only hold” in the experiment log.
+
+## 2026-09-15 — Authorize an additional H200 relay pubkey
+
+Appended one ed25519 pubkey to `h200relay` on aliyun-relay (`121.41.5.179`) via `admcubequant`. Fingerprint `SHA256:TfBG0/ADz6bAWnpTfZvisuAPfVmrD90ynf6YIYGnJdg`. The new line copies the existing forwarding restriction `restrict,port-forwarding,permitopen="127.0.0.1:2223"`. A second run was a no-op with unchanged file SHA-256. SSH was not restarted. Login with the new private key was not tested, and end-to-end H200 access was not verified.
