@@ -99,20 +99,14 @@ Use each entry point's `--help` for its current interface. Keep validation outpu
 
 ## Launch On H200
 
-Pods are disposable and have no repository default. Query status, select a running pod in the current shell, inspect its actual GPUs, and preview the campaign:
+Pods are disposable and have no repository default. Select a running pod in the current shell using the H200 access instructions in `AGENTS.md`, inspect its GPUs there, then preview the campaign:
 
 ```bash
-~/hangzhou-compute/h200 status
-~/hangzhou-compute/h200 kubectl get pods -o wide
 export H200_POD=<running-pod-name>
-~/hangzhou-compute/h200 exec -- nvidia-smi
 bash scripts/transfer/run_transfer_h200.sh --dry-run
 ```
 
-`h200 status` is an end-to-end probe across several SSH and Kubernetes
-boundaries and normally takes 40–50 seconds. Give it a caller-side timeout of at
-least 90 seconds. A timeout before the terminal `Health=` line is inconclusive,
-not evidence that the cluster is unhealthy.
+The health probe is an end-to-end check across several SSH and Kubernetes boundaries and normally takes 40–50 seconds. Give the health probe a caller-side timeout of at least 90 seconds. A timeout before the terminal `Health=` line is inconclusive, not evidence that the cluster is unhealthy. That `Health=` line is the authority for the probe's verdict.
 
 The status commands naturally display current pod names. Never persist a pod name in repository files, manifests, or durable logs.
 
@@ -282,7 +276,7 @@ Run each entry point with `--help` for its input paths. These figures use Matplo
 2. Confirm required models, datasets, tools, and environment variables.
 3. Run `nvidia-smi` and `free -h` on the execution host.
 4. Validate the changed stage on Compute with a small realistic cohort.
-5. Query H200 status and set `H200_POD` only in the current shell.
+5. Select a pod per `AGENTS.md` and set `H200_POD` only in the current shell.
 6. Review `run_transfer_h200.sh --dry-run`, including resolved arms, stages, paths, GPUs, and extra arguments.
 7. Launch through the controller and retain its run manifest.
 8. After completion, verify item checksums and record the experiment in `docs/EXPERIMENT_LOG.md`.

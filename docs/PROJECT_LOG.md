@@ -2,7 +2,7 @@
 
 > **Redaction, 2026-08-18.** Historical pod names in this file were replaced with `<pod-name-redacted>` under the repository guardrail that no pod name is persisted in a repository file. Only the name was removed; no other text was altered, and every surrounding fact is unchanged. The pods named were disposable and long gone, and the currently selected pod never appeared here. The two receipts under `evidence/` were deliberately **not** redacted: their SHA-256 digests are recorded in this log as verification anchors, and altering a receipt would invalidate the thing it exists to prove.
 
-Last updated: 2026-08-25 CST
+Chronological record; dates belong to entries. This file is not given a separately maintained last-updated stamp.
 
 Append-only. Historical entries record the paths and framings that existed when they were written and are not normalized to the current layout.
 
@@ -2716,3 +2716,15 @@ Package exports for the sequence extractor and QueryPrefix train-state are integ
 ## 2026-09-13 — Stop at dummy recovery controller; native GPU remains unrun
 
 The queue-compatible recovery stage now has an accepted CPU dummy path for process sequencing and expected fault 75. The living plan records that this is not native BF16 capture or a GPU cell. Remaining dispatch prerequisites are a committed manifest, standard freeze, and a fresh owner-only H200 gate. No new GPU cell started.
+
+## 2026-09-15 — Consolidate the completed Direction-1 publication queue (recovered 2026-09-05)
+
+Deleted the completed `docs/D1_PUBLICATION_TODO.md` after a repository-wide reference check found no remaining consumers. Scientific findings stay in the audit, experiment chronology, and the 2026-09-05 entries above; this record keeps only operational facts that were unique to that queue.
+
+The reference-support/sequential-schedule snapshot is `20260904234251_e2f89ea14a76` (`6c21e19`). R233 structure used the newer schedule with the original inference snapshot. Remote project root: `/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer`, using `runtimes/ct-20260905/bin/python` rather than the pod default.
+
+The temporary allocation labeled `research-campaign=d1-generation-20260905` was released at 2026-09-05 08:03 UTC after all four assigned GPUs were idle; the original single-GPU allocation and other users' workloads were left alone. No pod name is recorded.
+
+One bounded independent scientific review required three corrections, all integrated: report observed natural/shuffle confidence-event counts; describe the two conditional contrasts as one multiplicity family; restore the missing PDFBench author.
+
+Author approval and an actual data-access/deposit arrangement remain separate submission requirements, as already recorded in the 2026-09-05 local-review entries.
