@@ -53,6 +53,19 @@ from sklearn.model_selection import GroupKFold, StratifiedGroupKFold
 MINIMUM_FINITE_DRAW_FRACTION = 0.95
 
 
+#: Smallest number of bootstrap draws that may fall in a requested percentile
+#: tail before the endpoint is an estimate rather than an order statistic of
+#: the extreme draws. Ten is the point at which the Monte-Carlo spread of the
+#: bound across seeds drops below the smallest effect the PAA census publishes;
+#: :func:`prediction_addressed.cluster_bootstrap` and
+#: :func:`information_bootstrap._validate_draw_request` both honour it.
+#:
+#: Declared here rather than in ``prediction_addressed`` because that module
+#: pulls in ``torch`` and the information bootstrap is arithmetic over count
+#: vectors that must stay importable, and testable, without a GPU stack.
+MINIMUM_DRAWS_IN_TAIL = 10.0
+
+
 #: Smallest number of resampling units at which a percentile bootstrap interval
 #: may be published. One declaration, imported by every module that resamples --
 #: which is not the same thing as one *honoured* by every module that resamples,

@@ -4,14 +4,14 @@ This package supports one question: when circuit-level interpretability methods
 are moved from text decoders to protein decoders, where does the performance go,
 and why. It is organised around the four stages such a method depends on.
 
-**Both lists below are exhaustive, and keeping them so is the point of having
-them.** Every module in this package appears in exactly one of them and in
-``__all__``, and a new module is not finished until it has a line here. The lists
-had drifted seventeen modules behind by 2026-08-19, when three new ones were
-added and would have read as "the new surface" while ``crosscoder`` and
+**The lists below, and ``__all__``, are a selective public surface, not an
+inventory of every module in this package.** A name is added here when it is
+part of that surface, not merely because a file exists. The lists had drifted
+seventeen modules behind by 2026-08-19, when three new ones were added and
+would have read as "the new surface" while ``crosscoder`` and
 ``differential_reliance`` -- which carry the whole D3.h line -- were still
-absent. A curated list that looks complete is worse than either an exhaustive one
-or none at all, so this one is exhaustive by rule rather than by habit.
+absent. A curated list that looks exhaustive is worse than a selective one that
+says so, so this one is selective by rule rather than by habit.
 
 Declarations -- what is measured, on what, and how it is scored. Each of these
 is the *only* copy of the decision it carries, which is Appendix B rule 12:

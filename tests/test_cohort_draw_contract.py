@@ -172,6 +172,98 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "order of their eval bearing-group count, which is a deterministic "
         "quantity of the cohort it was handed"
     ),
+    "48_latent_bridge.py": (
+        "consumes the SHA-frozen stage-34 Swiss-Prot queue "
+        "34_sequence_description_cohort.py wrote and constructs no FASTA cohort: "
+        "run_prepare calls latent_bridge.prepare_cohort, which re-reads that "
+        "stage's records.jsonl and cohort.json, pins both by SHA-256, and keeps "
+        "stage 34's own train/val/test split. A cohort of its own would be a "
+        "second definition of what 'held out' means on a protein corpus, which "
+        "is L30's defect. --seed is used only by cap_split, which hashes already-"
+        "admitted accessions into a deterministic prefix of each split when a "
+        "cap is set; it does not sample a corpus and does not restore a draw. "
+        "Later substages read the prepared payload and the donor cache that "
+        "prepare wrote. Rule 1's hazard is absent for the records -- there is "
+        "no independent FASTA sample, so there is no draw to seed and no skip "
+        "offset to be sensitive to -- and a second cohort draw is a second run "
+        "of stage 34 followed by a second run of this one"
+    ),
+    "49_classifier_handoff.py": (
+        "consumes the prepared payload and pretrained donor cache "
+        "48_latent_bridge.py already wrote and constructs nothing: run_interface "
+        "loads those two artefacts, bounds the cache to the prepared train "
+        "records, and never opens a FASTA. Its units are stage 48's records in "
+        "stage 34's splits, and a cohort of its own would be a second definition "
+        "of which proteins the handoff is read on -- which is L30's defect. "
+        "--seeds initialise classifier heads; they do not draw a corpus. Rule 1's "
+        "hazard is absent for the records -- there is no independent FASTA "
+        "sample -- and a second cohort draw is a second run of stages 34 and 48 "
+        "followed by a second run of this one"
+    ),
+    "analyze_generation_biology.py": (
+        "reads frozen generation jsonl (attempts, subset, predictions) from disk "
+        "and writes a report; it loads no model and constructs no FASTA cohort"
+    ),
+    "annotate_generation_evidence.py": (
+        "annotates generation attempts that already exist (hmmscan/DIAMOND or an "
+        "R227 recovery table); any FASTA it reads is that generation fasta, not a "
+        "corpus draw"
+    ),
+    "build_generation_workflow.py": (
+        "renders a frozen study-design figure; it loads no corpus and draws no "
+        "records"
+    ),
+    "diagnose_galactica_numerics.py": (
+        "packs two hard-coded synthetic sequences (MKT and AA20) to record "
+        "Galactica-30B BF16 width and precision; it is not an interface gate, not "
+        "a DMS score, and not a corpus draw"
+    ),
+    "generate_progen3_evidence.py": (
+        "runs native ProGen3 generation from a local checkpoint onto a frozen "
+        "output root; it emits sequences rather than sampling a FASTA corpus"
+    ),
+    "join_native_generation_annotations.py": (
+        "joins a frozen attempt ledger to a first-annotation jsonl by attempt id "
+        "and sequence SHA-256; it constructs nothing"
+    ),
+    "native_dms_extension.py": (
+        "a pre-data ProteinGym helper: probe replays the LOOKUP queue through "
+        "fitness.load_assay and analyse consumes later stage-20 score files. Its "
+        "units are DMS variants, not corpus sequences, so the FASTA constructors "
+        "do not apply"
+    ),
+    "native_query_prefix_recovery.py": (
+        "a CPU controller plus dummy workers over a four-record fixture; it does "
+        "not load a pretrained corpus and does not call the cohort constructors"
+    ),
+    "plot_generation_manuscript.py": (
+        "plots the retained full-attempt class panel from frozen attempts jsonl; "
+        "it loads no corpus"
+    ),
+    "plot_generation_structure_examples.py": (
+        "renders hash-selected ESMFold cartoons from pinned PDBs; selection never "
+        "reruns the scientific draw"
+    ),
+    "plot_generation_structure_manuscript.py": (
+        "publication figures from completed frozen analyses; it loads no corpus"
+    ),
+    "plot_generation_supplement.py": (
+        "supplementary measurement checks from retained inputs; it loads no corpus"
+    ),
+    "prepare_generation_evidence.py": (
+        "assembles the frozen EXP-R2-232 ledger from existing conditioned-"
+        "generation results and the class queue; it constructs no new cohort"
+    ),
+    "run_structure_evidence.py": (
+        "folds a frozen generation/control JSONL shard with offline ESMFold; "
+        "structure_evidence.load_cohort re-reads that shard and selects nothing "
+        "from a FASTA corpus"
+    ),
+    "val_readout_diagnostic.py": (
+        "a read-only val diagnostic of existing stage-48/49 bridges and the "
+        "prepared payload they already consumed; it loads no FASTA and scores no "
+        "test split"
+    ),
     "40_catalytic_contradiction.py": (
         "consumes the frozen pseudokinase contradiction set that "
         "ops/build_pseudokinase_contradiction_set.py wrote and constructs nothing. Its "

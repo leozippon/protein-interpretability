@@ -75,17 +75,10 @@ from .pathways import (
 from .scoring import target_rule
 from .statistics import (
     MINIMUM_BOOTSTRAP_UNITS,
+    MINIMUM_DRAWS_IN_TAIL,
     bootstrap_unit_floor,
     depth_controlled_rank_correlation,
 )
-
-#: Minimum bootstrap draws that must fall below the requested lower percentile
-#: for the resulting bound to be an estimate rather than an order statistic of
-#: the extreme draws.  Ten is the point at which the Monte-Carlo spread of the
-#: bound across seeds drops below the smallest effect this census publishes; the
-#: guard using it is in :func:`cluster_bootstrap`, with the measurement that
-#: motivated it.
-MINIMUM_DRAWS_IN_TAIL = 10.0
 
 #: Distance bins, in tokens, used both to draw decoys and to coarsen the
 #: matching covariate.  Doubling bins because dependency distance is read on a

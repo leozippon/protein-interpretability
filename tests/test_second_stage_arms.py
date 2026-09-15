@@ -365,12 +365,24 @@ def test_cohort_power_refuses_a_second_stage_arm_that_declares_no_budget():
         stage.validate_arms(["proteinglm-7b-clm"], args)
 
 
-def test_the_fitness_stages_still_refuse_every_second_stage_arm():
-    """Stages 20 and 29 are frozen on the first round and gained no door."""
+def test_rita_xl_is_scoreable_without_widening_default_fitness_doors():
+    """RITA is an explicit stage-20 scoring door; the default run and stage 29 are not.
+
+    ``docs/PROTEINGYM_EXTENSION_PROTOCOL.md`` admits ``rita-xl`` as an independent
+    single point once its interface gate passes. That puts it in
+    ``SCOREABLE_ARMS`` via ``RITA_CORPUS``, not in ``ARM_CORPUS``, so default
+    ``--arms=ARM_CORPUS`` stays the frozen three-arm run. Qwen and ProteinGLM
+    remain out of this round. Stage 29 gained no door. ``load_arm`` without an
+    opt-in still raises KeyError; that panel door is asserted above.
+    """
 
     retrieval = _load_stage("20_retrieval_bound.py")
-    assert set(retrieval.SCOREABLE_ARMS).isdisjoint(STAGED_SECOND_STAGE_ARMS)
-    for name in STAGED_SECOND_STAGE_ARMS:
+    refused = ("qwen2.5-7b", "qwen2.5-32b", "proteinglm-7b-clm")
+    assert "rita-xl" in retrieval.SCOREABLE_ARMS
+    assert "rita-xl" not in retrieval.ARM_CORPUS
+    for name in refused:
+        assert name not in retrieval.SCOREABLE_ARMS, name
+        assert name not in retrieval.ARM_CORPUS, name
         with pytest.raises(KeyError):
             retrieval.corpus_record(name)
     designed = _load_stage("29_designed_referent.py")

@@ -60,8 +60,9 @@ def off_condition_reasons(report: dict[str, Any], census: dict[str, Any]) -> lis
 
     The single copy of the predicate. Its *values* were already single-sourced
     through ``DECLARED_CONDITION``; the predicate itself -- including the layout
-    guard clause, which is not a settings key and so is easy to omit -- was
-    written out here and again in ``paa_failure_audit.py`` (Appendix B rule 12).
+    guard clause, which is not a settings key and so is easy to omit -- lives
+    here. ``paa_failure_audit.py`` imports it through ``_panel_reader()`` rather
+    than restating it (Appendix B rule 12).
     """
 
     settings = report.get("settings", {})

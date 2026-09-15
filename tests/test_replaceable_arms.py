@@ -798,10 +798,6 @@ class HeldOutStream(unittest.TestCase):
         self.assertNotEqual(first, other)
 
 
-if __name__ == "__main__":  # pragma: no cover
-    unittest.main()
-
-
 class HeldOutOffsetClearsWholeBlocks(unittest.TestCase):
     """The stage must not choose an offset that lands mid-block.
 
@@ -825,3 +821,7 @@ class HeldOutOffsetClearsWholeBlocks(unittest.TestCase):
         block, consumed, evaluation = STAGE17.SHUFFLE_BLOCK, 20_000 * 16, 256
         self.assertNotEqual((consumed + evaluation) % block, 0)
         self.assertEqual(-(-consumed // block) * block, 327_680)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    unittest.main()

@@ -41,6 +41,7 @@ from src.transfer import (  # noqa: E402
     induction_robustness,
     information_bootstrap,
     joint_lens,
+    latent_bridge,
     path_patching,
     pathways,
     prediction_addressed,
@@ -2180,6 +2181,32 @@ def _information_arm(groups: int) -> information_bootstrap.ArmStatistics:
     )
 
 
+def _paired_family_bootstrap_floor(n: int) -> dict[str, object]:
+    """Map ``paired_family_bootstrap``'s live schema onto the C7 floor contract.
+
+    The implementation already applies ``bootstrap_unit_floor`` and withholds the
+    interval below it, but it publishes that as ``available`` / ``reason`` rather
+    than ``degenerate`` / ``degenerate_reason``. This adapter does not change that
+    schema; ``tests/test_latent_bridge.py`` already pins it.
+    """
+
+    rows = [
+        {
+            "accession": f"a{index}",
+            "family_group": f"F{index}",
+            "correct": index % 2,
+        }
+        for index in range(n)
+    ]
+    result = latent_bridge.paired_family_bootstrap(
+        rows, rows, n_resamples=200, seed=0
+    )
+    return {
+        "degenerate": not result["available"],
+        "degenerate_reason": result["reason"],
+    }
+
+
 #: Every resampler in ``src.transfer`` that reaches the shared unit floor, with a
 #: call one unit below the floor and one exactly on it.  ``raises`` is required
 #: of the functions whose unit count is a configuration choice, or whose return
@@ -2392,6 +2419,13 @@ FLOOR_RESPECTING_RESAMPLERS: dict[str, dict[str, object]] = {
             resamples=200,
             seed=0,
         ),
+    },
+    # The unit is a stage-34 family_group. The live return uses available/reason
+    # and nulls interval below the floor; the adapter above maps that onto the
+    # contract's degenerate keys without listing this resampler as a gap.
+    "latent_bridge.paired_family_bootstrap": {
+        "refusal": "degenerate",
+        "below": _paired_family_bootstrap_floor,
     },
 }
 

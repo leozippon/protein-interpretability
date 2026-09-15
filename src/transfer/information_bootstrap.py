@@ -130,18 +130,11 @@ from typing import Any
 import numpy as np
 from scipy import sparse, stats
 
-from .statistics import MINIMUM_BOOTSTRAP_UNITS
+from .statistics import MINIMUM_BOOTSTRAP_UNITS, MINIMUM_DRAWS_IN_TAIL
 
 SCHEMA_VERSION = "r2_transfer_information_bootstrap_v2"
 
 LN2 = math.log(2.0)
-
-#: Draws a percentile tail must contain before its endpoint is an estimate
-#: rather than an order statistic of the extreme draws. This restates
-#: ``prediction_addressed.MINIMUM_DRAWS_IN_TAIL``, which is not imported because
-#: that module pulls in ``torch`` and this one is arithmetic over count vectors
-#: that must stay importable, and testable, without a GPU stack.
-MINIMUM_DRAWS_IN_TAIL = 10.0
 
 #: Largest ``g = (z * SE(I) / I)^2`` at which a ratio with ``I`` in the
 #: denominator may be published.

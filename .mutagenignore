@@ -17,6 +17,10 @@ wandb/
 mlruns/
 next_phase_artifacts/
 
+# Unpublished paper drafts and generated PDFs stay local until released
+manuscript/
+*.pdf
+
 # Downloaded third-party payloads; metadata under external_resources remains synchronized
 external_resources/baselines/
 external_resources/ec_metrics/
