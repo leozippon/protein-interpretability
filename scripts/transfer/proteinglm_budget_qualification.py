@@ -12,9 +12,11 @@ from __future__ import annotations
 import argparse
 import gc
 import hashlib
+import json
 import sys
 import time
-from dataclasses import dataclass, replace
+from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
@@ -261,7 +263,10 @@ def require_declared_7b_shape(arm: Arm) -> None:
         )
 
 
+@contextmanager
 def inference_precision(arm: Arm) -> Iterator[dict[str, Any]]:
+    """inference_mode + no autocast around the shared fp32_matmul_context."""
+
     device_type = "cuda" if str(arm.device).startswith("cuda") else "cpu"
     with torch.inference_mode():
         with torch.autocast(device_type=device_type, enabled=False):
@@ -275,17 +280,22 @@ def public_scored_tokens(
     *,
     max_len: int,
     batch_size: int,
-    counter: dict[str, int] | None = None,
+    call_log: list[dict[str, Any]] | None = None,
 ):
-    result = scored_tokens(
+    recorded = {
+        "n_strings": len(list(strings)),
+        "strings": list(strings),
+        "max_len": int(max_len),
+        "batch_size": int(batch_size),
+    }
+    if call_log is not None:
+        call_log.append(recorded)
+    return scored_tokens(
         arm,
         list(strings),
         max_len=max_len,
         batch_size=batch_size,
     )
-    if counter is not None:
-        counter["n"] = int(counter.get("n", 0)) + 1
-    return result
 
 
 def independent_shifted_ce(
@@ -430,17 +440,21 @@ def score_numeric_cases(arm: Arm) -> dict[str, Any]:
     if len(rendered) != len(cases):
         raise ValueError("rendering the numeric cases returned the wrong count")
     alphabet = scoring_target_alphabet(arm.spec, getattr(arm.model, "config", None))
-    numeric_calls = {"n": 0}
+    production_calls: list[dict[str, Any]] = []
     with inference_precision(arm) as policy:
         scored = public_scored_tokens(
             arm,
             rendered,
             max_len=MAX_LEN,
             batch_size=1,
-            counter=numeric_calls,
+            call_log=production_calls,
         )
-        if numeric_calls["n"] != 1:
+        if len(production_calls) != 1:
             raise ValueError("numeric cases must use one public scored_tokens call")
+        if production_calls[0]["batch_size"] != 1 or production_calls[0]["max_len"] != MAX_LEN:
+            raise ValueError("numeric production must be batch_size=1 and max_len=1024")
+        if production_calls[0]["strings"] != list(rendered):
+            raise ValueError("numeric production strings must be the four rendered cases")
         records = []
         live_widths = []
         for index, case in enumerate(cases):
@@ -465,6 +479,15 @@ def score_numeric_cases(arm: Arm) -> dict[str, Any]:
     return {
         "cases": records,
         "numeric_public_call_count": 1,
+        "production_calls": [
+            {
+                "n_strings": item["n_strings"],
+                "max_len": item["max_len"],
+                "batch_size": item["batch_size"],
+                "string_sha256": [sha256_text(text) for text in item["strings"]],
+            }
+            for item in production_calls
+        ],
         "independent_ce_max_abs": max(float(record["max_abs"]) for record in records),
         "live_logits_width": int(live_widths[0]),
         "head_declared_width": {
@@ -497,8 +520,9 @@ def run_resource_gate(
     require_eval_fp32(arm)
     rendered = pglm.render_budget_sequence(longest_sequence)
     inputs = [rendered, rendered, rendered]
-    counter = {"n": 0}
+    production_calls: list[dict[str, Any]] = []
     cuda_block: dict[str, Any] | None = None
+    started = 0.0
     if record_cuda:
         require_cuda_device(arm.device)
         if not torch.cuda.is_available():
@@ -518,32 +542,36 @@ def run_resource_gate(
             inputs,
             max_len=MAX_LEN,
             batch_size=1,
-            counter=counter,
+            call_log=production_calls,
         )
-    if record_cuda:
-        torch.cuda.synchronize(torch.device(arm.device))
-        assert cuda_block is not None
-        cuda_block["duration_s"] = float(time.perf_counter() - started)
-        cuda_block["peak_allocated_bytes"] = int(
-            torch.cuda.max_memory_allocated(torch.device(arm.device))
-        )
-        cuda_block["peak_reserved_bytes"] = int(
-            torch.cuda.max_memory_reserved(torch.device(arm.device))
-        )
-    if counter["n"] != 1:
-        raise ValueError(
-            "resource gate must be one public scored_tokens call, "
-            f"got {counter['n']}"
-        )
-    n_targets = int(scored.target_ids.size)
-    if n_targets != RESOURCE_N_TARGETS:
-        raise ValueError(
-            f"resource gate kept {n_targets} targets, expected {RESOURCE_N_TARGETS}"
-        )
-    if not np.isfinite(scored.nll_nats).all():
-        raise FloatingPointError("resource gate produced non-finite NLL")
-    ids, mask = tokenize_batch(arm, [rendered], MAX_LEN)
-    reference = independent_shifted_ce(arm, ids, mask)
+        if record_cuda:
+            torch.cuda.synchronize(torch.device(arm.device))
+            assert cuda_block is not None
+            cuda_block["duration_s"] = float(time.perf_counter() - started)
+            cuda_block["peak_allocated_bytes"] = int(
+                torch.cuda.max_memory_allocated(torch.device(arm.device))
+            )
+            cuda_block["peak_reserved_bytes"] = int(
+                torch.cuda.max_memory_reserved(torch.device(arm.device))
+            )
+        if len(production_calls) != 1:
+            raise ValueError(
+                "resource gate must be one public scored_tokens call, "
+                f"got {len(production_calls)}"
+            )
+        if production_calls[0]["strings"] != inputs:
+            raise ValueError("resource gate strings must be [longest, longest, longest]")
+        if production_calls[0]["batch_size"] != 1 or production_calls[0]["max_len"] != MAX_LEN:
+            raise ValueError("resource gate must be batch_size=1 and max_len=1024")
+        n_targets = int(scored.target_ids.size)
+        if n_targets != RESOURCE_N_TARGETS:
+            raise ValueError(
+                f"resource gate kept {n_targets} targets, expected {RESOURCE_N_TARGETS}"
+            )
+        if not np.isfinite(scored.nll_nats).all():
+            raise FloatingPointError("resource gate produced non-finite NLL")
+        ids, mask = tokenize_batch(arm, [rendered], MAX_LEN)
+        reference = independent_shifted_ce(arm, ids, mask)
     per_sequence = []
     for index in range(RESOURCE_N_SEQUENCES):
         selected = scored.sequence_index == index
@@ -578,6 +606,15 @@ def run_resource_gate(
         "matmul_policy": policy,
         "independent_ce_max_abs": max(item["max_abs"] for item in per_sequence),
         "cuda_memory": cuda_block,
+        "production_calls": [
+            {
+                "n_strings": item["n_strings"],
+                "max_len": item["max_len"],
+                "batch_size": item["batch_size"],
+                "string_sha256": [sha256_text(text) for text in item["strings"]],
+            }
+            for item in production_calls
+        ],
         "not_all_qualification_public_calls": (
             "this count is the resource-gate public scored_tokens call only"
         ),
@@ -693,7 +730,7 @@ def existing_qualified(path: Path) -> bool:
     if not path.is_file():
         return False
     try:
-        payload = __import__("json").loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
     return payload.get("status") == STATUS_QUALIFIED
@@ -755,15 +792,7 @@ def run_qualification(
         extras["numeric"] = {
             "independent_ce_max_abs": numeric["independent_ce_max_abs"],
             "n_cases": len(numeric["cases"]),
-        }
-        del numeric
-        gc.collect()
-        if str(device).startswith("cuda") and torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        numeric = score_numeric_cases(loaded_arm)
-        extras["numeric"] = {
-            "independent_ce_max_abs": numeric["independent_ce_max_abs"],
-            "n_cases": len(numeric["cases"]),
+            "numeric_public_call_count": numeric["numeric_public_call_count"],
         }
         gc.collect()
         if str(device).startswith("cuda") and torch.cuda.is_available():
