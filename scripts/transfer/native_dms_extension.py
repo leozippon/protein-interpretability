@@ -1941,11 +1941,7 @@ def run_analyse(
         raise ValueError("analyse was given no complete Galactica or RITA group")
     payload = {
         "schema_version": SCHEMA_VERSION,
-        "status": (
-            "completed analysis"
-            if protocol_id == P.GALACTICA_FP32_V2
-            else STATUS
-        ),
+        "status": "completed analysis",
         "phase": "analyse",
         "created_utc": _utc_now(),
         "bootstrap": {
