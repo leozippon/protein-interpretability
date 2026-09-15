@@ -177,6 +177,13 @@ CAPABILITIES = frozenset({"budget", "lens", "pathway", "circuits", "relational"}
 #: differences a downstream fit has to be able to separate.
 _ROTARY_DECODERS = frozenset({"llama", "qwen2"})
 
+#: Causal-LM classes that this Transformers build already ships. ``load_arm_spec``
+#: must not take ``trust_remote_code`` as a serving path for them: the class is
+#: here, and remote code would be a workaround rather than a load. They are also
+#: not members of :data:`_ROTARY_DECODERS`: sharing rotary embeddings does not
+#: grant a decomposition, a lens, or an attention-intervention contract.
+_BUILTIN_CAUSAL_LM_ARCHITECTURES = frozenset({"qwen3", "mixtral"})
+
 #: Where each architecture keeps a block's attention submodule, as the path from
 #: the block down to it. Declared per architecture rather than found by trying
 #: attribute names in turn: a panel member whose attention cannot be named is a
@@ -633,9 +640,11 @@ del _name, _dir, _n_layer, _d_model
 # and corpus contrast these arms exist to draw with a training-objective
 # contrast that no ``ArmSpec`` field records, and it would do so on the very
 # axis the budget stage measures: post-training moves a model's cross-entropy on
-# raw web text, which is the denominator of the convergence axis. No Qwen3 base
-# checkpoint is staged on this host, so the Qwen3 generation cannot currently be
-# admitted without that confound.
+# raw web text, which is the denominator of the convergence axis. Those
+# post-trained Qwen3 rungs remain excluded from :data:`PANEL`. The pretrained
+# Qwen3-8B-Base checkpoint is declared as a budget-only candidate arm, not a
+# panel member: candidate serving is not panel admission and is not a widening
+# of :data:`TEXT_ARCHITECTURE_CONTRAST`.
 
 #: What a rotary decoder may enter. ``budget`` needs only a forward pass and a
 #: tokenizer. ``lens`` is granted on the same footing as the ByGPT5 rungs: the
@@ -1139,6 +1148,77 @@ STAGED_ARMS["rita-xl"] = ArmSpec(
     scoring_target_alphabet_size=26,
 )
 
+# ---------------------------------------------- budget-only candidate serving
+#
+# Two public checkpoints staged for the shared measurement premises' budget /
+# loglikelihood path, and for that path only. They are a **third** staged door,
+# not a widening of :data:`STAGED_SCALE_ARMS` or :data:`STAGED_SECOND_STAGE_ARMS`,
+# not members of :data:`PANEL` or :data:`CAMPAIGN_PANEL`, and not an experiment
+# admission. :func:`load_arm` still refuses both by name. Stage 01 reaches them
+# only through ``--allow-candidate-arms``.
+#
+# ``capabilities`` is ``{budget}`` and nothing else. Both architectures are
+# rotary, and that is not a grant: they are absent from :data:`_ROTARY_DECODERS`,
+# :data:`_DECOMPOSABLE` and :data:`_ATTENTION_PATH`, so a lens, a pathway split
+# or an attention intervention raises rather than silently resolving through the
+# Qwen2/Llama walk. QK-Norm, GQA and Mixtral routing are separate qualifications.
+#
+# Builtin classes only: ``qwen3`` and ``mixtral`` load with
+# ``trust_remote_code=False``. Missing local directories fail closed through
+# :func:`require_input_path`; the Hub is not a fallback.
+
+# Qwen3-8B-Base, the pretrained (not Instruct) 8B dense decoder. 36 blocks of
+# width 4096, GQA 32/8, QK-Norm, RoPE, SwiGLU, vocab_size 151936. Tokenizer is
+# Qwen2TokenizerFast: ``bos_token`` is None, ``add_bos_token`` is not set, pad
+# and eos are both ``<|endoftext|>`` at 151643, and a raw document is encoded
+# without a BOS prefix. ``config.pad_token_id`` is unset; the tokenizer already
+# declares the pad, so :func:`load_arm_spec`'s eos-copy is not the source of it.
+# Context ceiling 32768 must be capped at the evaluation window, as with the
+# Qwen2.5 rungs. Path is ``TEXT_MODEL_BASE / "Qwen3-8B-Base"``, which is not
+# the Instruct sibling ``Qwen3-8B``.
+STAGED_ARMS["qwen3-8b-base"] = ArmSpec(
+    name="qwen3-8b-base",
+    path=TEXT_MODEL_BASE / "Qwen3-8B-Base",
+    path_variable="TRANSFER_TEXT_MODEL_BASE_DIR",
+    modality="text",
+    n_layer=36,
+    d_model=4096,
+    tokenisation="bpe",
+    input_format="raw",
+    evaluation_cohort_source="openwebtext",
+    architecture="qwen3",
+    pretraining_corpus=PRETRAINING_UNDECLARED,
+    capabilities=frozenset({"budget"}),
+    scoring_target_alphabet_size=151936,
+)
+
+# ProtGPT3-1.3B, a Mixtral-style protein decoder MoE: 17 blocks of width 1024,
+# 8 experts top-2, GQA 16/4, vocab_size 31. Tokenizer is LlamaTokenizerFast over
+# a WordLevel character split. Measured, not assumed from the vocabulary size:
+# each of :data:`AA20` encodes as exactly one id and single-token decode returns
+# that residue; a full-string decode inserts spaces (``"A C D E"``) which do not
+# enter the AA20 per-symbol count, so reported units stay nats/token. ``add_bos_token``
+# is False and the post-processor is Sequence-only, so a raw residue string is
+# not prefixed with ``<|bos|>``. Pad/bos/eos are ids 0/1/2. Non-alphabet symbols
+# such as ``J`` map to ``[UNK]`` id 3, which is inside the 31-wide head;
+# tokenizer.unk_token ``<unk>`` is id 33 and is **outside** that head, and AA20
+# strings do not emit it. Weight licence is unknown: that is a disclosure, not
+# a loader error, and it is not experiment admission.
+STAGED_ARMS["protgpt3-1.3b"] = ArmSpec(
+    name="protgpt3-1.3b",
+    path=MODEL_ROOT / "ProtGPT3-1.3B",
+    path_variable="TRANSFER_MODEL_BASE_DIR",
+    modality="protein",
+    n_layer=17,
+    d_model=1024,
+    tokenisation="residue",
+    input_format="raw",
+    evaluation_cohort_source="swissprot",
+    architecture="mixtral",
+    pretraining_corpus=PRETRAINING_UNDECLARED,
+    capabilities=frozenset({"budget"}),
+    scoring_target_alphabet_size=31,
+)
 
 
 def _check_staged_arms() -> None:
@@ -1367,25 +1447,39 @@ STAGED_SECOND_STAGE_ARMS = (
     "rita-xl",
 )
 
+#: Budget-only candidate checkpoints. A **third** door, separate from
+#: :data:`STAGED_SCALE_ARMS` (EXP-R2-224) and :data:`STAGED_SECOND_STAGE_ARMS`
+#: (EXP-R2-225). Stage 01 admits these names only with ``--allow-candidate-arms``;
+#: that flag admits only this tuple. Membership is not panel admission, not a
+#: capability beyond ``budget``, and not an experiment ADMITTED digest.
+STAGED_CANDIDATE_ARMS = (
+    "qwen3-8b-base",
+    "protgpt3-1.3b",
+)
+
 
 def _check_second_stage_arms() -> None:
-    """The two staged doors name real staged checkpoints and never each other.
+    """The staged doors name real staged checkpoints and never each other.
 
-    Checked at import for the reason every other declaration here is: the whole
-    value of two separate opt-ins is that EXP-R2-224's first round cannot be
-    widened by an edit to EXP-R2-225's list, and an overlap would widen it
-    silently. A name in neither dictionary would be a door onto nothing, which
-    fails at whichever call site resolves it first rather than here.
+    Three doors, checked at import: scale, second-stage, and candidate. The
+    whole value of separate opt-ins is that EXP-R2-224's first round cannot be
+    widened by an edit to a later list, and an overlap would widen it silently.
+    A name behind no door would be unreachable by omission.
     """
 
-    unknown = [name for name in STAGED_SECOND_STAGE_ARMS if name not in STAGED_ARMS]
-    if unknown:
-        raise AssertionError(
-            f"STAGED_SECOND_STAGE_ARMS names {unknown}, which are not declared in "
-            "STAGED_ARMS"
-        )
-    if len(set(STAGED_SECOND_STAGE_ARMS)) != len(STAGED_SECOND_STAGE_ARMS):
-        raise AssertionError("STAGED_SECOND_STAGE_ARMS repeats an arm")
+    doors = (
+        ("STAGED_SCALE_ARMS", STAGED_SCALE_ARMS),
+        ("STAGED_SECOND_STAGE_ARMS", STAGED_SECOND_STAGE_ARMS),
+        ("STAGED_CANDIDATE_ARMS", STAGED_CANDIDATE_ARMS),
+    )
+    for label, names in doors:
+        unknown = [name for name in names if name not in STAGED_ARMS]
+        if unknown:
+            raise AssertionError(
+                f"{label} names {unknown}, which are not declared in STAGED_ARMS"
+            )
+        if len(set(names)) != len(names):
+            raise AssertionError(f"{label} repeats an arm")
     both = sorted(set(STAGED_SECOND_STAGE_ARMS) & set(STAGED_SCALE_ARMS))
     if both:
         raise AssertionError(
@@ -1393,11 +1487,26 @@ def _check_second_stage_arms() -> None:
             "EXP-R2-225's second stage are separate opt-ins and an arm in both "
             "would widen the first round without an edit to it"
         )
-    undecided = sorted(
-        name
-        for name in STAGED_ARMS
-        if name not in STAGED_SECOND_STAGE_ARMS and name not in STAGED_SCALE_ARMS
+    candidate_scale = sorted(set(STAGED_CANDIDATE_ARMS) & set(STAGED_SCALE_ARMS))
+    if candidate_scale:
+        raise AssertionError(
+            f"{candidate_scale} are in both STAGED_CANDIDATE_ARMS and "
+            "STAGED_SCALE_ARMS; the candidate door is not a widening of the "
+            "first round"
+        )
+    candidate_second = sorted(
+        set(STAGED_CANDIDATE_ARMS) & set(STAGED_SECOND_STAGE_ARMS)
     )
+    if candidate_second:
+        raise AssertionError(
+            f"{candidate_second} are in both STAGED_CANDIDATE_ARMS and "
+            "STAGED_SECOND_STAGE_ARMS; the candidate door is not a widening of "
+            "the second stage"
+        )
+    covered = (
+        set(STAGED_SCALE_ARMS) | set(STAGED_SECOND_STAGE_ARMS) | set(STAGED_CANDIDATE_ARMS)
+    )
+    undecided = sorted(name for name in STAGED_ARMS if name not in covered)
     if undecided:
         raise AssertionError(
             f"staged checkpoints {undecided} are behind neither opt-in door; a "
@@ -2082,8 +2191,9 @@ def load_arm_spec(
     if dtype not in _DTYPES:
         raise ValueError(f"unsupported inference dtype {dtype!r}")
     path = str(require_input_path(spec.path, _MODEL_PATH_VARIABLES))
+    trust_remote_code = spec.architecture not in _BUILTIN_CAUSAL_LM_ARCHITECTURES
 
-    config = AutoConfig.from_pretrained(path, trust_remote_code=True)
+    config = AutoConfig.from_pretrained(path, trust_remote_code=trust_remote_code)
     n_layer, d_model = config_shape(config)
     if (n_layer, d_model) != (spec.n_layer, spec.d_model):
         raise ValueError(
@@ -2103,7 +2213,7 @@ def load_arm_spec(
         # deprecated, but it is the only spelling both versions honour, and the
         # observed-dtype check below is what actually enforces the outcome.
         "torch_dtype": _DTYPES[dtype],
-        "trust_remote_code": True,
+        "trust_remote_code": trust_remote_code,
         "device_map": {"": device},
         **extra,
     }
@@ -2124,7 +2234,9 @@ def load_arm_spec(
     if observed != [dtype]:
         raise ValueError(f"{name}: declared dtype {dtype}, observed {observed}")
 
-    tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(
+        path, trust_remote_code=trust_remote_code
+    )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     if tokenizer.pad_token is None:

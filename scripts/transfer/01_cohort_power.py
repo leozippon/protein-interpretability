@@ -67,6 +67,7 @@ from src.transfer.arms import (  # noqa: E402
     PROTEIN_SCALE_LADDER,
     REPO,
     STAGED_ARMS,
+    STAGED_CANDIDATE_ARMS,
     STAGED_SCALE_ARMS,
     STAGED_SECOND_STAGE_ARMS,
     Cohort,
@@ -294,21 +295,25 @@ def validate_arms(names: list[str], args: argparse.Namespace) -> None:
     scored on an unconditioned prompt, which is separately measured at 1.73 nats
     of conditioning leak (EXP-R2-034).
 
-    Staged checkpoints are not panel members, and reach this stage through two
+    Staged checkpoints are not panel members, and reach this stage through three
     separate doors that never admit each other's arms. Without
     ``--allow-staged-scale-arms`` the EXP-R2-224 ProGen2 rungs
     (:data:`STAGED_SCALE_ARMS`) are unknown arms, exactly as before; without
     ``--allow-second-stage-arms`` the EXP-R2-225 checkpoints
-    (:data:`STAGED_SECOND_STAGE_ARMS`) are too. Either flag admits only its own
-    tuple, and both resolve through :func:`src.transfer.arms.arm_spec` rather
-    than through :func:`panel_contract.arm_can_run`.
+    (:data:`STAGED_SECOND_STAGE_ARMS`) are too; without ``--allow-candidate-arms``
+    the budget-only candidates (:data:`STAGED_CANDIDATE_ARMS`) are too. Each flag
+    admits only its own tuple, and all three resolve through
+    :func:`src.transfer.arms.arm_spec` rather than through
+    :func:`panel_contract.arm_can_run`.
     """
 
     allow_staged = bool(getattr(args, "allow_staged_scale_arms", False))
     allow_second_stage = bool(getattr(args, "allow_second_stage_arms", False))
+    allow_candidate = bool(getattr(args, "allow_candidate_arms", False))
     unknown = []
     staged = []
     second_stage = []
+    candidate = []
     panel_names = []
     for name in names:
         if name in PANEL:
@@ -320,21 +325,26 @@ def validate_arms(names: list[str], args: argparse.Namespace) -> None:
         if allow_second_stage and name in STAGED_SECOND_STAGE_ARMS:
             second_stage.append(name)
             continue
+        if allow_candidate and name in STAGED_CANDIDATE_ARMS:
+            candidate.append(name)
+            continue
         unknown.append(name)
     if unknown:
         raise ValueError(f"unknown arms {unknown}; panel is {sorted(PANEL)}")
     specs = {name: arm_spec(name) for name in names}
-    # A second-stage checkpoint that cannot honour ``budget`` cannot produce this
+    # A staged opt-in checkpoint that cannot honour ``budget`` cannot produce this
     # stage's estimand at all, and the refusal is answerable from its declaration
     # alone. Raising here rather than inside the scoring loop is what keeps a
     # multi-billion-parameter load off the card for a run that was never going to
     # return a number.
     without_budget = [
-        name for name in second_stage if "budget" not in specs[name].capabilities
+        name
+        for name in (*second_stage, *candidate)
+        if "budget" not in specs[name].capabilities
     ]
     if without_budget:
         raise ValueError(
-            f"second-stage arms {without_budget} declare no 'budget' capability, "
+            f"opt-in staged arms {without_budget} declare no 'budget' capability, "
             "so context information is not defined on them. Their declaration in "
             "src.transfer.arms carries the reason; it is not discharged by naming "
             "them here"
@@ -386,7 +396,9 @@ def _cohort_power_stage_contract(names: list[str]) -> dict[str, Any]:
     staged = [
         name
         for name in names
-        if name in STAGED_SCALE_ARMS or name in STAGED_SECOND_STAGE_ARMS
+        if name in STAGED_SCALE_ARMS
+        or name in STAGED_SECOND_STAGE_ARMS
+        or name in STAGED_CANDIDATE_ARMS
     ]
     if not panel_names and staged:
         return {
@@ -427,6 +439,36 @@ def _second_stage_record(names: list[str], allow_second_stage: bool) -> dict[str
             "these checkpoints remain outside PANEL and CAMPAIGN_PANEL; this "
             "artefact is an opt-in second-stage qualification, not panel "
             "admission and not a capability claim"
+        ),
+    }
+
+
+def _candidate_record(names: list[str], allow_candidate: bool) -> dict[str, Any] | None:
+    """What a budget-only candidate run declares about the arms it measured.
+
+    Separate from the two older staged doors: this is not EXP-R2-224, not
+    EXP-R2-225, not panel admission, and not an experiment ADMITTED digest.
+    An implemented interface is not a passed 8-block identification interval.
+    """
+
+    candidate = [name for name in names if name in STAGED_CANDIDATE_ARMS]
+    if not candidate:
+        return None
+    return {
+        "not_panel_admission": True,
+        "not_experiment_admitted": True,
+        "allow_candidate_arms": bool(allow_candidate),
+        "scope": "budget_loglikelihood_candidate_checkpoints",
+        "allowed_candidate_arms": list(STAGED_CANDIDATE_ARMS),
+        "measured_candidate_arms": candidate,
+        "scoring_target_alphabet": {
+            name: scoring_target_alphabet(arm_spec(name)) for name in candidate
+        },
+        "reason": (
+            "these checkpoints remain outside PANEL and CAMPAIGN_PANEL; this "
+            "artefact is an opt-in candidate budget qualification, not panel "
+            "admission, not a capability beyond budget, and not an experiment "
+            "ADMITTED digest"
         ),
     }
 
@@ -578,6 +620,16 @@ def main() -> None:
         "the other's arms, and neither is panel admission. An arm whose "
         "declaration carries no 'budget' capability is refused here rather than "
         "after it is loaded",
+    )
+    parser.add_argument(
+        "--allow-candidate-arms",
+        action="store_true",
+        help="opt in to the budget-only candidate checkpoints "
+        "(STAGED_CANDIDATE_ARMS: qwen3-8b-base, protgpt3-1.3b). A third door, "
+        "not --allow-second-stage-arms and not --allow-staged-scale-arms: each "
+        "flag admits only its own tuple. Not panel admission and not an "
+        "experiment ADMITTED digest. An arm whose declaration carries no "
+        "'budget' capability is refused here rather than after it is loaded",
     )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--dtype", default="bfloat16")
@@ -934,6 +986,11 @@ def main() -> None:
     if second_stage is not None:
         payload["not_panel_admission"] = True
         payload["second_stage"] = second_stage
+    candidate = _candidate_record(names, bool(args.allow_candidate_arms))
+    if candidate is not None:
+        payload["not_panel_admission"] = True
+        payload["not_experiment_admitted"] = True
+        payload["candidate"] = candidate
     write_json(destination, payload)
     print(f"wrote {destination}")
     if sufficient_statistics is not None:

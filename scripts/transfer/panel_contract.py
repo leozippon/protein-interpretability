@@ -301,6 +301,22 @@ STAGED_BUT_NOT_ADMITTED: dict[str, str] = {
         "declare is not an id its 26-symbol vocabulary contains. Every batch is "
         "refused"
     ),
+    # ---- budget-only candidates. Staged for the shared measurement premises'
+    # loglikelihood path; not campaign panel members and not experiment admission.
+    "qwen3-8b-base": (
+        "36 blocks of width 4096 over a vocab_size of 151936, Qwen3 dense "
+        "pretrained Base -- not the Instruct sibling Qwen3-8B. Out of the panel "
+        "because candidate serving is a third opt-in door, not a campaign "
+        "obligation: only budget is granted, QK-Norm/GQA/rotary intervention "
+        "families are not, and an implemented interface is not an 8-block "
+        "identification interval or an ADMITTED digest"
+    ),
+    "protgpt3-1.3b": (
+        "17 blocks of width 1024 Mixtral-style MoE over a vocab_size of 31. Out "
+        "of the panel because candidate serving is not panel admission: only "
+        "budget is granted, the weight licence is unknown, and a residue-level "
+        "tokenizer with a 31-wide head is not a ProteinGym scoring protocol"
+    ),
 }
 
 
@@ -1282,6 +1298,8 @@ STAGED_OUTPUT_LOGIT_WIDTH: dict[str, int] = {
     "qwen2.5-32b": 152064,
     "proteinglm-7b-clm": 128,
     "rita-xl": 26,
+    "qwen3-8b-base": 151936,
+    "protgpt3-1.3b": 31,
 }
 
 
