@@ -39,6 +39,7 @@ from src.transfer.arms import (  # noqa: E402
     PANEL,
     PROTEIN_SCALE_LADDER,
     STAGED_ARMS,
+    STAGED_CANDIDATE_ARMS,
     STAGED_SCALE_ARMS,
     STAGED_SECOND_STAGE_ARMS,
     Arm,
@@ -103,9 +104,13 @@ def test_the_first_round_door_is_unchanged_and_the_two_doors_are_disjoint():
         "progen2-xlarge",
     )
     assert set(STAGED_SCALE_ARMS).isdisjoint(STAGED_SECOND_STAGE_ARMS)
+    assert set(STAGED_CANDIDATE_ARMS).isdisjoint(STAGED_SCALE_ARMS)
+    assert set(STAGED_CANDIDATE_ARMS).isdisjoint(STAGED_SECOND_STAGE_ARMS)
     # And no staged checkpoint is behind neither door, which is what the
-    # import-time check refuses.
-    assert set(STAGED_ARMS) == set(STAGED_SCALE_ARMS) | set(STAGED_SECOND_STAGE_ARMS)
+    # import-time check refuses. Three doors, not two.
+    assert set(STAGED_ARMS) == (
+        set(STAGED_SCALE_ARMS) | set(STAGED_SECOND_STAGE_ARMS) | set(STAGED_CANDIDATE_ARMS)
+    )
 
 
 def test_an_overlapping_or_unknown_second_stage_door_is_refused_at_import():

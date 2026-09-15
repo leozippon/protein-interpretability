@@ -18,6 +18,8 @@ The active campaign has 15 arms:
 
 `gpt2`, `gpt2-medium`, `gpt2-large`, `gpt2-xl`, `dialogpt-small`, `qwen2.5-0.5b`, `llama-3.2-3b`, `protgpt2`, `zymctrl`, `progen2-base`, `progen2-medium`, `progen2-small`, `bygpt5-medium-en`, `bygpt5-small-en`, `bygpt5-base-en`.
 
+Two further checkpoints, `qwen3-8b-base` and `protgpt3-1.3b`, are declared as budget-only candidates. They are not campaign panel members. `01_cohort_power.py` admits them only with `--allow-candidate-arms`, which is a third door from `--allow-staged-scale-arms` and `--allow-second-stage-arms`. An implemented loglikelihood interface is not an 8-block identification interval and not an experiment ADMITTED digest.
+
 The contract declares 13 stages in this order:
 
 | Order | Stage | Entry point | Scope | Contract-eligible arms |
