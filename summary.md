@@ -1,6 +1,6 @@
 # InterpretabilityTransfer 研究方向与当前结论
 
-**更新日期：** 2026-09-05
+**更新日期：** 2026-09-15
 
 本项目比较纯文本、纯蛋白质和语言–蛋白质联合生成模型，研究它们能做什么、能力如何实现，以及学到了什么。方向一的生成补充实验已经全部完成：改变请求的蛋白类别会改变生成序列的家族特征；保留长度和氨基酸组成、只打乱顺序后，三种模型的结构预测置信度都下降。因此，当前有证据支持模型学到了可用于生成的生物信息。
 
@@ -15,13 +15,18 @@
 | GPT-2 | 纯文本基础对照和规模阶梯 | 50,257 词表 BPE | 12–48 层，宽 768–1,600，约 1.24 亿–15.6 亿参数 | WebText |
 | DialoGPT-small | 文本语料对照 | 与 GPT-2 相同的 50,257 词表 BPE | 与 GPT-2 small 相同的 12 层、宽 768 | Reddit 对话 |
 | Qwen2.5 0.5B/7B/32B、Llama-3.2-3B | 非 GPT-2 文本架构对照，兼纯文本规模阶梯 | 151,936 / 128,256 词表 | Qwen 依次为 24 层宽 896、28 层宽 3,584、64 层宽 5,120；Llama 为 28 层、宽 3,072 | 多语言、代码和数学混合 / 网络文本与蒸馏数据 |
+| [Qwen3-8B-Base](https://hf-mirror.com/Qwen/Qwen3-8B-Base) | 纯文本预训练基座候选，用于检验现有文本侧发现是否依赖 Qwen2.5 这一代 | 151,936 词表；具体基本单位尚待核验 | 稠密 Qwen3 自回归 Transformer：36 层、宽 4,096，GQA 32 查询/8 KV，QK-Norm、RoPE、SwiGLU；约 82 亿参数 | 预训练基座；具体语料混合未确认 |
 | ByGPT5 small/base/medium | 字节级文本对照和规模阶梯 | 384 符号字节词表，英文约一字符一 token | T5 式仅解码器；4–12 层，宽 1,472–1,536 | 仓库未确认训练语料 |
 | ProtGPT2 | 多残基蛋白对照 | 50,257 词表，多残基 BPE；原生 FASTA 输入 | GPT-2 36 层、宽 1,280、20 个头，约 7.74 亿参数 | UniRef50 |
 | ZymCTRL | 带 EC 条件的逐残基蛋白模型 | 458 词表，基本单位为单残基 | GPT-2 36 层、宽 1,280 | EC 标注的 UniProt 蛋白 |
 | ProGen2 | 逐残基蛋白谱系和规模对照 | 32 词表，单残基 token，带生成方向标记 | 12–32 层，宽 1,024–4,096，约 1.51 亿–64.4 亿参数 | 多数规模使用 UniRef90 与 BFD30；base 的具体训练混合未确认 |
 | ProGen3 112M/3B | 稀疏 MoE 蛋白对照，兼蛋白规模阶梯 | 134 词表；更精确的基本单位未确认 | 10 层、宽 384 / 24 层、宽 1,280；112M 每层 8 个专家、每 token 选择 2 个 | 112M 的模型卡未声明预训练语料；3B 声明 Profluent Protein Atlas v1 |
+| [ProteinGLM-7B-CLM](https://hf-mirror.com/proteinglm/proteinglm-7b-clm) | 纯蛋白因果生成候选，补充稠密 GLM 谱系参照 | 128 词表；具体基本单位尚待核验 | 稠密自定义 GLM 因果解码器：36 层、宽 4,096、32 头 MHA，一维 RoPE、GEGLU；非 MoE | 蛋白 CLM 预训练，许可 CC-BY-NC-4.0；不可与 100B 旗舰或 MLM 版本混同；具体训练混合尚待核验 |
+| [ProtGPT3-1.3B](https://hf-mirror.com/AI4PD/ProtGPT3-1.3B) | 蛋白自回归 MoE 候选，作为 ProGen3 之外的另一谱系参照 | 31 词表；具体基本单位尚待核验 | Mixtral 式仅解码器 MoE：17 层、宽 1,024，8 专家、每 token 选 2，GQA 16 查询/4 KV，RoPE、SwiGLU | 蛋白序列因果预训练基础版；不混用 DPO 或 MSA 版本；具体语料混合尚待核验 |
 | Galactica 125M/1.3B/6.7B/30B、InstructProtein | 语言–蛋白联合模型对照，兼联合规模阶梯 | 文本词表与原生蛋白表示 | 同为 OPT 形状：1.3B 与 InstructProtein 是 24 层、宽 2,048，6.7B 是 32 层、宽 4,096，30B 是 48 层、宽 7,168 | 科学语料，其中蛋白低于 1% / UniRef100 继续预训练与指令微调 |
 | Llama-2 → ProLLaMA | 同一谱系的文本、蛋白和训练阶段对照 | 共享 32k SentencePiece；蛋白约 1.53 residues/token | 32 层、宽 4,096、32 个头 | Llama-2 → UniRef50 继续预训练 → 蛋白指令微调 |
+
+新增的 Qwen3-8B-Base、ProteinGLM-7B-CLM 和 ProtGPT3-1.3B 只是候选与研究对照，不替换既有匹配对照，也不晋升为已完成结果。进入实验前须核许可、原生接口/数值正确性和干预资格；ProteinGLM-7B-CLM 仍受既有接口限制，ProtGPT3-1.3B 的权重许可尚未核清。模型资料及后续获准的权重访问统一使用 `HF_ENDPOINT=https://hf-mirror.com`。
 
 本文把围绕同一科学问题的重复抽样、参数扫描和修复运行合并为一个实验族，只列能够产生独立结论、使旧结论撤回、改变归因，或决定路线是否继续的实验。表中的“数据”是评测集或实验队列，不一定是模型的完整训练语料；训练语料或样本量无法准确确认时不作猜测。示例只解释记录格式，不代表真实数据内容。详细证据、限制和撤回以 [`docs/INTERPRETABILITY_TRANSFER_AUDIT.md`](docs/INTERPRETABILITY_TRANSFER_AUDIT.md) 为准，最新但尚未晋升的记录见 [`docs/EXPERIMENT_LOG.md`](docs/EXPERIMENT_LOG.md)。
 

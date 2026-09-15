@@ -2738,3 +2738,7 @@ Pushed on `main`: `4190caf` guidelines and completed-documentation consolidation
 The former standalone dispatch/status notes now live in the read path; historical entries that recorded the old status documents are unchanged.
 
 CPU validation of the cleaned working tree is recorded in “Repository cleanup validation” in the experiment log.
+
+## 2026-09-15 — Add three candidate generative models
+
+The user approved adding three candidate generative models to the “主要模型” table in `summary.md`: Qwen3-8B-Base, ProteinGLM-7B-CLM, and ProtGPT3-1.3B. This is a documentation-only inventory update using `HF_ENDPOINT=https://hf-mirror.com`; no weights were downloaded and no model was run. Existing matched controls are unchanged. See `summary.md` 主要模型.
