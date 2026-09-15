@@ -2760,3 +2760,7 @@ After the documented mirror-only hold, the user authorized this Pi session's exi
 ## 2026-09-15 — Complete the main model inventory for full coverage
 
 The overview table in `summary.md` now names the checkpoints actually in use or explicitly requested for this round: 33 in total (13 text, 12 protein, 8 joint). Listing a family is not the same as having run every checkpoint on every experiment. Shared measurement premises and Direction 1 still need per-checkpoint coverage; those supplementary runs have not been executed.
+
+## 2026-09-15 — Freeze first-wave v2 identity and merge candidate serving
+
+Tracked the five-slot first-wave v2 manifest, froze pin `5015fd4` as run `20260915134508_95c515bf6881`, and launched that snapshot copy on H200. Then merged the budget-only candidate door and neutralized the staged-only cohort_power note. Provenance is in “First-wave v2 freeze identity and candidate-door merge” in the experiment log.
