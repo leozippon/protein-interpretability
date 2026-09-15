@@ -14,6 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import torch
 from transformers import AutoTokenizer
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +25,7 @@ from src.transfer import arms as A  # noqa: E402
 from src.transfer import proteinglm as pglm  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
     STAGED_ARMS,
+    Arm,
     ArmSpec,
     load_arm_spec,
     require_declared_shape,
@@ -212,3 +214,78 @@ def test_require_declared_shape_is_the_shared_helper():
     require_declared_shape(spec, SimpleNamespace(num_layers=36, hidden_size=4096))
     with pytest.raises(ValueError, match="declared 36L/4096d, loaded 2L/32d"):
         require_declared_shape(spec, SimpleNamespace(num_layers=2, hidden_size=32))
+
+
+def test_arm_constructor_omitting_serving_provenance_stays_none():
+    arm = Arm(
+        spec=STAGED_ARMS[NAME],
+        model=SimpleNamespace(config=SimpleNamespace(vocab_size=128)),
+        tokenizer=object(),
+        device="cpu",
+        dtype="float32",
+    )
+    assert arm.serving_provenance is None
+
+
+def test_serving_provenance_is_this_load_payload_not_a_later_reread(
+    tmp_path, monkeypatch
+):
+    source = _require_source()
+    dest = _materialize_tiny_checkpoint(tmp_path / "tiny-prov", source)
+    spec = replace(STAGED_ARMS[NAME], path=dest, n_layer=2, d_model=32)
+    unique_derived = {"package_name": "injected-this-call", "token": "not-from-disk"}
+    unique_max_length = {"note": "injected-max-length", "seq_length": 1024}
+    original = A._proteinglm.load_pretrained
+
+    def wrapped(*args, **kwargs):
+        loaded = original(*args, **kwargs)
+        loaded["derived"] = unique_derived
+        loaded["max_length"] = unique_max_length
+        return loaded
+
+    monkeypatch.setattr(A._proteinglm, "load_pretrained", wrapped)
+    arm = load_arm_spec(spec, device="cpu", dtype="float32")
+    assert arm.serving_provenance is not None
+    assert arm.serving_provenance["derived"] is unique_derived
+    assert arm.serving_provenance["max_length"] is unique_max_length
+    reread = pglm.derive_serving_package(dest).record()
+    assert reread["package_name"] != unique_derived["package_name"]
+
+
+def test_non_proteinglm_arm_has_no_serving_provenance(tmp_path, monkeypatch):
+    spec = ArmSpec(
+        name="progen2-medium",
+        path=tmp_path,
+        path_variable="TRANSFER_MODEL_BASE_DIR",
+        modality="protein",
+        n_layer=27,
+        d_model=1536,
+        tokenisation="residue",
+        input_format="n_to_c_control",
+        evaluation_cohort_source="swissprot",
+        architecture="progen",
+        pretraining_corpus="uniref90_bfd30",
+    )
+
+    class Cfg:
+        n_layer = 27
+        n_embd = 1536
+        _attn_implementation = None
+
+    class Dummy(torch.nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.weight = torch.nn.Parameter(torch.ones(2, dtype=torch.float32))
+            self.config = Cfg()
+
+    class Tok:
+        pad_token = None
+        eos_token = "</s>"
+
+    monkeypatch.setattr(A.AutoConfig, "from_pretrained", lambda *_a, **_k: Cfg())
+    monkeypatch.setattr(
+        A.AutoModelForCausalLM, "from_pretrained", lambda *_a, **_k: Dummy()
+    )
+    monkeypatch.setattr(A.AutoTokenizer, "from_pretrained", lambda *_a, **_k: Tok())
+    arm = load_arm_spec(spec, device="cpu", dtype="float32")
+    assert arm.serving_provenance is None

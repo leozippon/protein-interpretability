@@ -1638,6 +1638,12 @@ class Arm:
     to state "this checkpoint loaded strictly and cleanly" reads the counts the
     check actually returned, instead of asserting a fact it cannot see from an
     already-constructed arm.
+
+    ``serving_provenance`` is optional load-time evidence for a path that derives
+    source before serving. ProteinGLM fills it from this call's ``derived`` and
+    ``max_length`` payload; every other architecture leaves it ``None``. It is
+    not a scientific PASS, not a registry, and not a later re-derivation from
+    disk.
     """
 
     spec: ArmSpec
@@ -1648,6 +1654,7 @@ class Arm:
     attn_implementation: str | None = None
     target_token_shuffle: TargetTokenShuffle | None = None
     strict_load: dict[str, int] | None = None
+    serving_provenance: dict[str, Any] | None = None
 
     @property
     def name(self) -> str:
@@ -2218,6 +2225,10 @@ def load_arm_spec(
             dtype=dtype,
             attn_implementation=None,
             strict_load=loaded["strict_load"],
+            serving_provenance={
+                "derived": loaded["derived"],
+                "max_length": loaded["max_length"],
+            },
         )
     path = str(require_input_path(spec.path, _MODEL_PATH_VARIABLES))
     trust_remote_code = spec.architecture not in _BUILTIN_CAUSAL_LM_ARCHITECTURES
