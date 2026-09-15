@@ -2089,6 +2089,25 @@ def config_shape(config: Any) -> tuple[int, int]:
     )
 
 
+def require_declared_shape(spec: ArmSpec, config: Any) -> tuple[int, int]:
+    """Refuse a config whose depth/width is not the arm's declaration.
+
+    This is the check that keeps a mis-labelled checkpoint from producing a
+    plausible-looking number. The ordinary loader runs it on the config before
+    any weights load. The ProteinGLM path cannot share that AutoConfig pre-load,
+    so it runs the same function on the config that was actually loaded, and
+    also on the directory config before weights when that file is present.
+    ProteinGLM is not exempt.
+    """
+
+    n_layer, d_model = config_shape(config)
+    if (n_layer, d_model) != (spec.n_layer, spec.d_model):
+        raise ValueError(
+            f"{spec.name}: declared {spec.n_layer}L/{spec.d_model}d, loaded {n_layer}L/{d_model}d"
+        )
+    return n_layer, d_model
+
+
 #: Config attributes that declare the position budget, in the order consulted.
 #: Four spellings among the checkpoints this module reaches: ``n_positions``
 #: (GPT-2, ProGen2), ``max_position_embeddings`` (Llama, Qwen2, OPT, ProGen3),
@@ -2179,12 +2198,18 @@ def load_arm_spec(
             raise ValueError(
                 f"ProteinGLM budget serving is FP32-only; refused dtype {dtype!r}"
             )
+        path = require_input_path(spec.path, _MODEL_PATH_VARIABLES)
+        serving_config = _proteinglm.load_serving_config(path)
+        require_declared_shape(spec, serving_config)
+        _proteinglm.require_serving_config(serving_config)
         loaded = _proteinglm.load_pretrained(
-            require_input_path(spec.path, _MODEL_PATH_VARIABLES),
+            path,
             device=device,
             dtype=dtype,
             strict=strict,
         )
+        require_declared_shape(spec, loaded["config"])
+        require_declared_shape(spec, loaded["model"].config)
         return Arm(
             spec=spec,
             model=loaded["model"],
@@ -2198,11 +2223,7 @@ def load_arm_spec(
     trust_remote_code = spec.architecture not in _BUILTIN_CAUSAL_LM_ARCHITECTURES
 
     config = AutoConfig.from_pretrained(path, trust_remote_code=trust_remote_code)
-    n_layer, d_model = config_shape(config)
-    if (n_layer, d_model) != (spec.n_layer, spec.d_model):
-        raise ValueError(
-            f"{name}: declared {spec.n_layer}L/{spec.d_model}d, loaded {n_layer}L/{d_model}d"
-        )
+    require_declared_shape(spec, config)
 
     extra: dict[str, object] = {}
     if attn_implementation is not None:

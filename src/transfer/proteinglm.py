@@ -237,6 +237,54 @@ def load_derived_classes(source_dir: Path) -> tuple[Any, Any, DerivedPackage]:
     return config_cls, model_cls, package
 
 
+def load_serving_config(source_dir: Path) -> Any:
+    """Read ProteinGLMConfig from a checkpoint directory without loading weights."""
+
+    source_dir = source_dir.resolve()
+    config_cls, _, _ = load_derived_classes(source_dir)
+    return config_cls.from_pretrained(str(source_dir), local_files_only=True)
+
+
+def require_serving_config(config: Any) -> None:
+    """Refuse a config that is not the served causal 1024-window ProteinGLM contract.
+
+    ``tiny_config`` may use a shorter window for CPU tests. Production
+    :func:`load_pretrained` always goes through this check, so a metadata file
+    that still claims causal 1024 cannot run some other layout.
+    """
+
+    def _as_int(value: Any) -> Any:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return value
+
+    observed = {
+        "is_causal": getattr(config, "is_causal", None),
+        "rotary_embedding_2d": getattr(config, "rotary_embedding_2d", None),
+        "seq_length": _as_int(getattr(config, "seq_length", None)),
+        "quantization_bit": _as_int(getattr(config, "quantization_bit", None)),
+        "moe": getattr(config, "moe", None),
+    }
+    expected = {
+        "is_causal": True,
+        "rotary_embedding_2d": False,
+        "seq_length": CONTEXT_LENGTH,
+        "quantization_bit": 0,
+        "moe": False,
+    }
+    mismatches = [name for name, want in expected.items() if observed[name] != want]
+    if mismatches:
+        detail = ", ".join(
+            f"{name}={observed[name]!r} (required {expected[name]!r})"
+            for name in mismatches
+        )
+        raise ValueError(
+            "ProteinGLM serving requires is_causal=True, rotary_embedding_2d=False, "
+            f"seq_length={CONTEXT_LENGTH}, quantization_bit=0, moe=False; got {detail}"
+        )
+
+
 def max_length_compatibility(config: Any) -> dict[str, Any]:
     """Record whether ``max_length`` already exists; never overwrite it.
 
@@ -348,6 +396,7 @@ def load_pretrained(
     source_dir = source_dir.resolve()
     config_cls, model_cls, package = load_derived_classes(source_dir)
     config = config_cls.from_pretrained(str(source_dir), local_files_only=True)
+    require_serving_config(config)
     max_length_note = max_length_compatibility(config)
     load_kwargs: dict[str, Any] = {
         "config": config,
