@@ -19460,3 +19460,20 @@ Acceptance SHA256 f6d154c2046fb88c9b39d5417f4ef234e023940375fd80b323bddebe64f75b
 Parent task `bc0aa7d3f` completed0. Three controller tests passed: sequential dummy worker exits [0,75,0], occupied claim directory refused with exit 2, and a dummy interrupted worker took os._exit(75) after a nonzero finite in-flight gradient and fault_ready.json. Installed CT Pyright basic/strict each analyzed the two intended relative files with 0 errors / 0 warnings. No pretrained weights were loaded. CUDA remained hidden. Native 4 donor / 29 receiver / 27 adapter-backward calls were not executed.
 
 Acceptance `native_query_recovery_stage_parent_checks_01/parent_acceptance.json` SHA25623a077af24da6acb145ed7f3f8d7bae50b2ffdb809bb0d917fa7fc5601d6c066, status `dummy_cpu_controller_accepted_not_native_or_gpu`. Stage SHA256a7b1293b2c5047dcff620b695658b1b8c1ad031e4da235dad4bfaacef25a0c54. Controller resources at04:48:46.104510–04:49:29.178819UTC were MemAvailable253183078400→253733597184bytes and disk594623623168→594623582208bytes; children used AS16GiB. This does not admit freeze, H200 dispatch, native 7B capture, or scientific QA.
+
+## 2026-09-15 — Repository cleanup validation
+
+This is repository maintenance, not a new scientific experiment, and no EXP-R2 identifier is assigned. This entry is the single source for the cleanup's CPU validation.
+
+CPU offline command: `CUDA_VISIBLE_DEVICES='' HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 /home/lzp/miniconda3/envs/ct/bin/python -m pytest -q -p no:cacheprovider --tb=short`.
+
+Baseline before cleanup: 2578 passed, 58 skipped, 3 failed (stale non-drawing stage/helper inventory; a blanket second-stage exclusion versus the approved explicit RITA native-DMS scoring; missing floor-respecting latent-bridge resampler registration).
+Final suite: 2595 passed, 58 skipped, 249 subtests passed in 735.81s, with one existing `ConstantInputWarning` in a constant-correlation test.
+547 frozen input files were unchanged during the run.
+Direct unittest `tests/test_replaceable_arms.py`: 61 tests OK.
+Scoped Pyright CLI on `tests/test_amino_acids.py`, `tests/test_shared_bootstrap_constants.py`, and `src/transfer/amino_acids.py`: 0 errors. Session LSP still reports import findings inconsistent with those CLI and runtime checks, together with existing SciPy/torch typing diagnostics; this is not a claim that the repository is type-clean.
+All 234 evidence files remained byte-identical to the initial baseline.
+
+Resource check before final validation, 2026-09-15 07:23 UTC: `/Data` 95% used with 554G available, 265Gi RAM available. Existing L20 workloads were left untouched. Tests were CPU-only and offline; no H200 allocation or scientific GPU run was launched.
+
+These full-suite numbers describe the cleaned working tree, including pre-existing user edits left unstaged. They do not attest a published-commit-only tree. The original user edits were not mixed into the cleanup commits.

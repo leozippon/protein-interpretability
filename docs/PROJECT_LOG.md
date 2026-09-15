@@ -2728,3 +2728,13 @@ The temporary allocation labeled `research-campaign=d1-generation-20260905` was 
 One bounded independent scientific review required three corrections, all integrated: report observed natural/shuffle confidence-event counts; describe the two conditional contrasts as one multiplicity family; restore the missing PDFBench author.
 
 Author approval and an actual data-access/deposit arrangement remain separate submission requirements, as already recorded in the 2026-09-05 local-review entries.
+
+## 2026-09-15 — Complete repository cleanup
+
+Completed the repository cleanup: merged redundant documentation, renamed the duplicated early experiment ids to P0-025–032 and consolidated redundant log entries, centralized amino-acid and BLOSUM62 constants, and repaired stale test inventories.
+
+Pushed on `main`: `4190caf` guidelines and completed-documentation consolidation; `c44b9f0` amino-acid and BLOSUM62 constant centralization; `cc004dc` experiment-id disambiguation and redundant log consolidation; `66f4c4a` redundant helpers and validation-inventory refresh.
+
+The former standalone dispatch/status notes now live in the read path; historical entries that recorded the old status documents are unchanged.
+
+CPU validation of the cleaned working tree is recorded in “Repository cleanup validation” in the experiment log.
