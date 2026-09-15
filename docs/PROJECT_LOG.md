@@ -2742,3 +2742,7 @@ CPU validation of the cleaned working tree is recorded in “Repository cleanup 
 ## 2026-09-15 — Add three candidate generative models
 
 The user approved adding three candidate generative models to the “主要模型” table in `summary.md`: Qwen3-8B-Base, ProteinGLM-7B-CLM, and ProtGPT3-1.3B. This is a documentation-only inventory update using `HF_ENDPOINT=https://hf-mirror.com`; no weights were downloaded and no model was run. Existing matched controls are unchanged. See `summary.md` 主要模型.
+
+## 2026-09-15 — Hold new candidate-model downloads to a working mirror
+
+After the documentation inventory, the user required a strict hf-mirror endpoint and suspended new ProtGPT3-1.3B and Qwen3-8B-Base downloads; neither was fetched or synced. Existing ProteinGLM-7B-CLM files were verified offline and left unmodified; a 1 MiB H200 push probe succeeded and was deleted. The ProteinGLM synchronization worker has started; remote verification and publication are still pending. Provenance is in “Candidate-model file verification under a mirror-only hold” in the experiment log.

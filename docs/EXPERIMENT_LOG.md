@@ -19477,3 +19477,15 @@ All 234 evidence files remained byte-identical to the initial baseline.
 Resource check before final validation, 2026-09-15 07:23 UTC: `/Data` 95% used with 554G available, 265Gi RAM available. Existing L20 workloads were left untouched. Tests were CPU-only and offline; no H200 allocation or scientific GPU run was launched.
 
 These full-suite numbers describe the cleaned working tree, including pre-existing user edits left unstaged. They do not attest a published-commit-only tree. The original user edits were not mixed into the cleanup commits.
+
+## 2026-09-15 — Candidate-model file verification under a mirror-only hold
+
+This is file-preparation provenance, not a scientific experiment, and no EXP-R2 identifier is assigned.
+
+The user first authorized downloading and H200-syncing three candidate checkpoints, then required a strict `hf-mirror.com` endpoint with no origin fallback or redirect adaptation. New downloads of ProtGPT3-1.3B (`8bdbca30ef91fc2fd208a1f55ccee7a0990c2dab`) and Qwen3-8B-Base (`49e3418fbbbca6ecbdf9608b4d22e5a407081db4`) are therefore suspended; preflight found neither checkpoint in the checked locations, and neither was downloaded or synced in this task. Pinned hf-mirror API and config paths return HTTP 308 to huggingface.co and omit `X-Repo-Commit`; ct `hf_hub_download` raised `LocalEntryNotFoundError` (`FileMetadataError`). No automated mirror retries or model runs were started. ProtGPT3 weight license remains unknown.
+
+ProteinGLM-7B-CLM already existed at `/Data/public/models_R2/proteinglm-7b-clm` revision `c358c5685d2816d9c15cd0a75c73d19b6dbe81de` and was not re-downloaded or overwritten. Offline verification finished 2026-09-15T12:01:06Z: 18 files, 29,002,751,087 bytes, all sizes matching; every LFS SHA-256 and remaining Git blob SHA-1 matched the earlier cached upstream metadata; per-file SHA-256 was recorded and the six-shard index is complete. Task `b22dc5daa` completed with exit 0 in 85.365 s. No new origin request followed that cached metadata. The card is CC-BY-NC-4.0. File verification is not interface qualification or experiment admission.
+
+A 1 MiB official outer `h200 push` probe matched remote size and SHA-256, then deleted its own local and remote probe files. At that check Health=ok, with about 320.69 GiB free on the Windows transfer host, 441G on master `/tmp`, and 37.4T on Pod GPFS. Probe push took 90.534 s and is handshake-dominated, so it is not a weight-throughput estimate. The ProteinGLM synchronization worker was subsequently started as task `b71b732a3`, using a separate incoming directory and requiring remote size/SHA-256 verification before publication. Remote verification and publication remain pending; the intended final destination `/gpfs/jiaotongdamoxing/zhk_zip/models/proteinglm-7b-clm` is not yet claimed complete. Evidence remains under ignored `logs/model_staging_20260915/`.
+
+The focused CPU-only log-numbering and audit-invariant suite passed 155 tests in 19.00 s on the working tree, including its pre-existing user edits. The new appendices preserve the prior log text, and the other 545 tracked files match the task baseline.
