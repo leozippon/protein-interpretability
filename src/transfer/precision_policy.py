@@ -1,8 +1,12 @@
-"""Shared FP32 matmul / TF32 policy for Galactica native DMS protocol v2.
+"""Shared FP32 matmul / TF32 policy and protocol identifiers.
 
 This module is the only copy of the requested execution policy. It does not
 load weights, score ProteinGym assays, or mint a capability verdict. Protocol
-identifiers live here so the probe helper and stage 20 cannot drift.
+identifiers live here so probe helpers and scoring doors cannot drift.
+
+``NATIVE_DMS_V1`` and ``GALACTICA_FP32_V2`` keep their existing meanings and
+numeric behaviour. ``TEXT_AA_FP32_V1`` identifies the text-AA string-control
+core; the stage-20 CLI parser does not accept that id yet.
 """
 
 from __future__ import annotations
@@ -12,6 +16,13 @@ from typing import Any, Iterator, Mapping
 
 NATIVE_DMS_V1 = "native-dms-v1"
 GALACTICA_FP32_V2 = "galactica-fp32-v2"
+TEXT_AA_FP32_V1 = "text-aa-fp32-v1"
+
+#: Per-target absolute ceiling for independent shifted-CE versus a public
+#: FP32 scorer, in nats. The native DMS CLI helper still has its own copy of
+#: this number so that helper's behaviour is unchanged; the text-AA core reads
+#: this module instead of importing that script.
+FP32_PER_TARGET_ABS = 1e-4
 
 _POLICY_KEYS = (
     "cuda_matmul_allow_tf32",
