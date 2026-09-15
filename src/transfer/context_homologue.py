@@ -141,6 +141,7 @@ from typing import Any
 
 import numpy as np
 
+from .amino_acids import AA20
 from .arms import Arm, Cohort, PANEL, config_context_length
 from .statistics import MINIMUM_BOOTSTRAP_UNITS, bootstrap_unit_floor
 
@@ -1501,7 +1502,7 @@ def _choose_text_filler(
 # ------------------------------------------------------------- the arm's plan
 
 #: Residue alphabet the protein composition match is computed over.
-COMPOSITION_ALPHABET = "ACDEFGHIKLMNPQRSTVWY"
+COMPOSITION_ALPHABET = AA20
 
 
 def pool_token_lengths(

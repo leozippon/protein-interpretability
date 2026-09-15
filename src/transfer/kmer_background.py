@@ -84,13 +84,14 @@ from typing import Any, Sequence
 
 import numpy as np
 
+from .amino_acids import AA20
 from .io import sha256_file, write_json
 
 #: The canonical amino-acid alphabet, in the order that fixes each k-mer's index.
 #: A k-mer's index is its base-20 value under this ordering, most significant
 #: symbol first, so index and alphabet cannot drift apart without the tests
 #: noticing.
-ALPHABET: str = "ACDEFGHIKLMNPQRSTVWY"
+ALPHABET: str = AA20
 
 #: Every byte that is not a canonical residue maps here, including the header
 #: marker, newlines, whitespace, lowercase and the non-canonical residue codes.

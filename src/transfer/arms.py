@@ -26,6 +26,7 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
 import os
 
+from .amino_acids import AA20 as AA20
 from .scoring import TargetTokenShuffle, target_rule
 
 
@@ -95,8 +96,6 @@ UNIREF50_FASTA = env_path(
 #: three applies depends on the arm, and an operator needs the candidate list
 #: rather than the one this module happened to resolve.
 _MODEL_PATH_VARIABLES = "TRANSFER_MODEL_BASE_DIR, TRANSFER_TEXT_MODEL_DIR or TRANSFER_TEXT_MODEL_BASE_DIR"
-
-AA20 = "ACDEFGHIKLMNPQRSTVWY"
 
 _DTYPES = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}
 

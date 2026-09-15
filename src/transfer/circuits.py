@@ -50,9 +50,11 @@ from typing import Any
 import numpy as np
 import torch
 
+from .amino_acids import AA20 as AA20
+from .amino_acids import BLOSUM62_ORDER as BLOSUM62_ORDER
+from .amino_acids import blosum62_ncbi_rows
 from .statistics import MINIMUM_BOOTSTRAP_UNITS
 from .arms import (
-    AA20,
     Arm,
     ArmSpec,
     CONDITIONING_START,
@@ -168,38 +170,13 @@ INDUCTION_THRESHOLDS: tuple[float, ...] = (0.05, 0.10, 0.20, 0.30)
 
 # ------------------------------------------------------------------- BLOSUM62
 
-#: Published row and column order of the BLOSUM62 half-bit substitution matrix.
-BLOSUM62_ORDER = "ARNDCQEGHILKMFPSTWYV"
-
-#: BLOSUM62 as distributed by NCBI, restricted to the twenty standard residues.
-#: Transcribed rather than loaded from a library because the substitution
-#: tolerance of the approximate-repeat probe is defined by these numbers and must
-#: not depend on which optional package happens to be installed on a host.
-#: :func:`_build_blosum62` re-derives symmetry and a set of published entries at
-#: import, so a transcription slip fails immediately instead of quietly changing
-#: which substitutions the probe accepts.
-BLOSUM62_ROWS: tuple[str, ...] = (
-    "  4 -1 -2 -2  0 -1 -1  0 -2 -1 -1 -1 -1 -2 -1  1  0 -3 -2  0",
-    " -1  5  0 -2 -3  1  0 -2  0 -3 -2  2 -1 -3 -2 -1 -1 -3 -2 -3",
-    " -2  0  6  1 -3  0  0  0  1 -3 -3  0 -2 -3 -2  1  0 -4 -2 -3",
-    " -2 -2  1  6 -3  0  2 -1 -1 -3 -4 -1 -3 -3 -1  0 -1 -4 -3 -3",
-    "  0 -3 -3 -3  9 -3 -4 -3 -3 -1 -1 -3 -1 -2 -3 -1 -1 -2 -2 -1",
-    " -1  1  0  0 -3  5  2 -2  0 -3 -2  1  0 -3 -1  0 -1 -2 -1 -2",
-    " -1  0  0  2 -4  2  5 -2  0 -3 -3  1 -2 -3 -1  0 -1 -3 -2 -2",
-    "  0 -2  0 -1 -3 -2 -2  6 -2 -4 -4 -2 -3 -3 -2  0 -2 -2 -3 -3",
-    " -2  0  1 -1 -3  0  0 -2  8 -3 -3 -1 -2 -1 -2 -1 -2 -2  2 -3",
-    " -1 -3 -3 -3 -1 -3 -3 -4 -3  4  2 -3  1  0 -3 -2 -1 -3 -1  3",
-    " -1 -2 -3 -4 -1 -2 -3 -4 -3  2  4 -2  2  0 -3 -2 -1 -2 -1  1",
-    " -1  2  0 -1 -3  1  1 -2 -1 -3 -2  5 -1 -3 -1  0 -1 -3 -2 -2",
-    " -1 -1 -2 -3 -1  0 -2 -3 -2  1  2 -1  5  0 -2 -1 -1 -1 -1  1",
-    " -2 -3 -3 -3 -2 -3 -3 -3 -1  0  0 -3  0  6 -4 -2 -2  1  3 -1",
-    " -1 -2 -2 -1 -3 -1 -1 -2 -2 -3 -3 -1 -2 -4  7 -1 -1 -4 -3 -2",
-    "  1 -1  1  0 -1  0  0  0 -1 -2 -2  0 -1 -2 -1  4  1 -3 -2 -2",
-    "  0 -1  0 -1 -1 -1 -1 -2 -2 -1 -1 -1 -1 -2 -1  1  5 -2 -2  0",
-    " -3 -3 -4 -4 -2 -2 -3 -2 -2 -3 -2 -3 -1  1 -4 -3 -2 11  2 -3",
-    " -2 -2 -2 -3 -2 -1 -2 -3  2 -1 -1 -2 -1  3 -3 -2 -2  2  7 -1",
-    "  0 -3 -3 -3 -1 -2 -2 -3 -3  3  1 -2  1 -1 -2 -2  0 -3 -1  4",
-)
+#: NCBI-style width-3 transcription of :data:`~.amino_acids.BLOSUM62_ROWS`.
+#: The numeric matrix is declared once in :mod:`.amino_acids`; this adapter keeps
+#: the historical ``tuple[str, ...]`` public type. :func:`_build_blosum62`
+#: re-derives symmetry and a set of published entries at import, so a
+#: transcription slip fails immediately instead of quietly changing which
+#: substitutions the probe accepts.
+BLOSUM62_ROWS: tuple[str, ...] = blosum62_ncbi_rows()
 
 #: A handful of published BLOSUM62 entries, checked at import.  These are the
 #: values that carry the biology of the criterion: the two extreme diagonals, the

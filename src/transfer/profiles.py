@@ -66,14 +66,11 @@ from typing import Any
 import numpy as np
 from scipy import stats
 
+from .amino_acids import AA20 as AA20
 from .homology import Hit
 from .statistics import MINIMUM_BOOTSTRAP_UNITS, bootstrap_unit_floor, make_group_splits
 
 SCHEMA_VERSION = "r2_transfer_retrieval_bound_v1"
-
-#: The twenty residues a profile column is defined over, in the order the
-#: frequency matrix's second axis uses.
-AA20 = "ACDEFGHIKLMNPQRSTVWY"
 
 #: Column code for "this corpus sequence has no residue aligned to this query
 #: position". One past the alphabet, so a gap can never compare equal to a
