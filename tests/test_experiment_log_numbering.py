@@ -242,5 +242,149 @@ class ExperimentIdsAreMonotonic(unittest.TestCase):
         self.assertEqual(offenders, [], "entry dates go backwards: " + "; ".join(offenders))
 
 
+P0_HEADING = re.compile(
+    r"^##\s+(\d{4}-\d{2}-\d{2})\s+—\s+P0-(02[5-9]|03[0-2])\b", re.M
+)
+P0_DATES = {
+    25: "2026-07-17",
+    26: "2026-07-17",
+    27: "2026-07-17",
+    28: "2026-07-18",
+    29: "2026-07-20",
+    30: "2026-07-21",
+    31: "2026-07-22",
+    32: "2026-07-27",
+}
+TRANSFER_025_032_DATES = {
+    25: "2026-07-24",
+    26: "2026-07-27",
+    27: "2026-07-28",
+    28: "2026-07-28",
+    29: "2026-07-28",
+    30: "2026-07-28",
+    31: "2026-07-28",
+    32: "2026-07-28",
+}
+
+
+class P0AndTransferIdsDoNotCollide(unittest.TestCase):
+    def setUp(self):
+        self.text = EXPERIMENT_LOG.read_text(encoding="utf-8")
+
+    def test_p0_025_through_032_head_entries_under_their_original_dates(self):
+        found = {(int(m.group(2)), m.group(1)) for m in P0_HEADING.finditer(self.text)}
+        expected = {(n, d) for n, d in P0_DATES.items()}
+        self.assertEqual(found, expected)
+
+    def test_transfer_025_through_032_remain_exp_r2_headings(self):
+        by_id: dict[int, list[str]] = {}
+        for date, identifier in heading_ids():
+            by_id.setdefault(identifier, []).append(date)
+        for n, date in TRANSFER_025_032_DATES.items():
+            self.assertIn(
+                date,
+                by_id.get(n, []),
+                f"transfer EXP-R2-{n:03d} on {date} is missing from EXP-R2 headings",
+            )
+
+    def test_p0_headings_are_invisible_to_the_exp_r2_sequence(self):
+        p0_ids = {int(m.group(2)) for m in P0_HEADING.finditer(self.text)}
+        exp_first = {}
+        for date, identifier in heading_ids():
+            exp_first.setdefault(identifier, date)
+        for n in p0_ids:
+            self.assertNotEqual(
+                exp_first.get(n),
+                P0_DATES[n],
+                f"P0-{n:03d} leaked into the EXP-R2 heading sequence",
+            )
+
+    def test_the_old_name_mapping_is_present(self):
+        self.assertIn("## Identifier mapping", self.text)
+        self.assertIn("| P0-025 | EXP-R2-025 |", self.text)
+        self.assertIn("| TR-025 / EXP-R2-025 | EXP-R2-025 |", self.text)
+        self.assertIn("`EXP-R2-067`", self.text)
+        self.assertIsNone(
+            re.search(r"^##\s+\d{4}-\d{2}-\d{2}\s+—\s+EXP-R2-067\b", self.text, re.M),
+            "EXP-R2-067 must not gain a fabricated results heading",
+        )
+
+
+class R232R233ChildrenStayUnderSharedParents(unittest.TestCase):
+    """R232 scientific freeze/results must not sit under an R233-only parent."""
+
+    RESERVED_232 = "## 2026-09-05 — EXP-R2-232 reserved"
+    RESERVED_233 = "## 2026-09-05 — EXP-R2-233 reserved"
+    PROTOCOL = (
+        "## 2026-09-05 — EXP-R2-232/233: protocol freezes, "
+        "resource qualification and dispatch"
+    )
+    RESULTS = "## 2026-09-05 — EXP-R2-232/233: results and evidence retention"
+
+    def setUp(self):
+        self.lines = EXPERIMENT_LOG.read_text(encoding="utf-8").splitlines()
+        self.children: dict[str, list[str]] = {}
+        parent = None
+        for line in self.lines:
+            if line.startswith("## "):
+                parent = line
+                self.children.setdefault(parent, [])
+            elif line.startswith("### ") and parent is not None:
+                self.children[parent].append(line)
+
+    def test_the_four_parents_exist_and_r233_has_no_exclusive_results_heading(self):
+        text = "\n".join(self.lines)
+        for heading in (
+            self.RESERVED_232,
+            self.RESERVED_233,
+            self.PROTOCOL,
+            self.RESULTS,
+        ):
+            self.assertIn(heading, text)
+        self.assertNotIn(
+            "## 2026-09-05 — EXP-R2-233 results",
+            text,
+        )
+        self.assertNotIn(
+            "## 2026-09-05 — EXP-R2-232 results:",
+            text,
+        )
+
+    def test_r232_scientific_headings_are_not_filed_under_r233_reserved(self):
+        under_233 = "\n".join(self.children.get(self.RESERVED_233, []))
+        self.assertNotIn("EXP-R2-232 frozen:", under_233)
+        self.assertNotIn("EXP-R2-232 control-only", under_233)
+        self.assertNotIn("EXP-R2-232 complete structural", under_233)
+        self.assertNotIn("EXP-R2-232 fresh reference", under_233)
+        self.assertEqual(self.children.get(self.RESERVED_232, []), [])
+        self.assertEqual(self.children.get(self.RESERVED_233, []), [])
+
+    def test_original_experiment_numbers_remain_on_the_scientific_children(self):
+        protocol = "\n".join(self.children[self.PROTOCOL])
+        results = "\n".join(self.children[self.RESULTS])
+        self.assertIn(
+            "### EXP-R2-232 frozen: full attempt ledger, 116 control-only "
+            "pilot rows and 2,320 main structural rows",
+            protocol,
+        )
+        self.assertIn(
+            "### EXP-R2-232 control-only pilot complete and calibration attained",
+            results,
+        )
+        self.assertIn(
+            "### EXP-R2-233 native generation complete; annotation and "
+            "structural outcomes pending",
+            results,
+        )
+        self.assertIn(
+            "### EXP-R2-232 complete structural main analysis",
+            results,
+        )
+        self.assertIn(
+            "### EXP-R2-232 fresh reference completion and final evidence reconciliation",
+            results,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

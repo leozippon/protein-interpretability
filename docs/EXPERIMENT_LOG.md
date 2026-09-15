@@ -4,6 +4,33 @@
 
 > This append-only file records experiment chronology. Historical terminology and superseded hypotheses remain as provenance. Current citable findings, retractions, evidence boundaries, and the scientific plan are authoritative in `INTERPRETABILITY_TRANSFER_AUDIT.md`; `RESEARCH_PLAN.md` maps admitted work to executable comparisons and stages. No historical wording in this log overrides those documents.
 
+## Identifier mapping
+
+This log used `EXP-R2-025` through `EXP-R2-032` twice. The July 17–27 npj-revision series is now headed `P0-025` through `P0-032` with the original dates below. The July 24–28 transfer series retains `EXP-R2-025` through `EXP-R2-032`. Frozen evidence strings and hashes are unchanged. Later citations of those eight transfer ids may use `TR-025` through `TR-032`.
+
+| Current id | Former heading | Date and context |
+|---|---|---|
+| P0-025 | EXP-R2-025 | 2026-07-17, npj assessment response and confirmatory infrastructure |
+| P0-026 | EXP-R2-026 | 2026-07-17 CST, BF16 production restart and upstream-revision audit |
+| P0-027 | EXP-R2-027 | 2026-07-17 CST, pretrained P0-7 adjudicator and revision verification |
+| P0-028 | EXP-R2-028 | 2026-07-18 CST, H200 progress, receipt validation and bounded storage cleanup |
+| P0-029 | EXP-R2-029 | 2026-07-20 CST, BF16 prerequisite completion, validation-only screening launch and bounded cleanup |
+| P0-030 | EXP-R2-030 | 2026-07-21 CST, screening OOM diagnosis, ineligible-lineage cleanup and memory-safe restart |
+| P0-031 | EXP-R2-031 | 2026-07-22 CST, terminal r3 screening, calibrated panel selection, cleanup and full launch |
+| P0-032 | EXP-R2-032 | 2026-07-27 CST, P0-2 closure and prospective P0-2b behavioural-fidelity qualification |
+| TR-025 / EXP-R2-025 | EXP-R2-025 | 2026-07-24, text-vs-protein interpretability transfer screen (TG-01..07) |
+| TR-026 / EXP-R2-026 | EXP-R2-026 | 2026-07-27, TG-08/TG-09/TG-10 follow-up to the P0-2b null result |
+| TR-027 / EXP-R2-027 | EXP-R2-027 | 2026-07-28, estimand power and pathway budget under cohort parity |
+| TR-028 / EXP-R2-028 | EXP-R2-028 | 2026-07-28, ProtGPT2 input-rendering defect; shared-cohort design manufactured the modality gap |
+| TR-029 / EXP-R2-029 | EXP-R2-029 | 2026-07-28, circuit primitives (induction heads, DLA, activation patching) |
+| TR-030 / EXP-R2-030 | EXP-R2-030 | 2026-07-28, the apparent modality gap is absorbed by tokenisation |
+| TR-031 / EXP-R2-031 | EXP-R2-031 | 2026-07-28, lens family; output-interface rank; unigram estimator defect |
+| TR-032 / EXP-R2-032 | EXP-R2-032 | 2026-07-28, induction dissociation survives; DLA/ablation divergence explained |
+
+**Unlogged identifier.** `EXP-R2-067` is referenced by comments in committed code (`src/transfer/probes.py`, `scripts/transfer/08_lens_family.py`, `13_induction_probe_bootstrap.py`, `h200_worker.sh`, `tg05_relational_channel.py`) but has no independent results entry in this log. No experiment is assigned here and no result is invented. EXP-R2-068 was taken to avoid colliding with that unlogged identifier.
+
+Ids from EXP-R2-033 onward are unique in this log.
+
 ## EXP-R2-001: Baseline CLT Training on H200 (2026-04-02)
 
 **Goal**: Train windowed CLTs on 3 protein generators to establish baselines and identify training issues before scaling to d_clt=16384.
@@ -650,7 +677,7 @@ The July assessment identified a gap in this chronological log: the central 13--
 | 2026-05-17 | CLT feature patches | All nine model--triplet gates failed for the tested sites and strengths. | `results/circuit_analysis/attention_sink_causal_ablation_20260517/` |
 | 2026-05-18 | Single-head, top-8 and top-32 head-set ablations | Every strict/exploratory gate failed; these are bounded negatives, not proof of no mechanism. | `results/circuit_analysis/attention_*ablation*20260518/` |
 
-## EXP-R2-025: npj assessment response and confirmatory infrastructure (2026-07-17)
+## 2026-07-17 — P0-025: npj assessment response and confirmatory infrastructure
 
 **Question:** What revisions and new experiments are required by `docs/npj_ai_manuscript_assessment.md`, and can the submission-critical pipelines be corrected, frozen and safely started without overstating their current evidential status?
 
@@ -919,7 +946,7 @@ pytest -q tests
 
 Focused Ruff, `py_compile` and strict JSON parsing also passed. These are contract and CPU-fixture results only. No pretrained-model P0-5 measurement, production P0-8 cache or scientific gate was run or upgraded.
 
-## EXP-R2-026: BF16 production restart and upstream-revision audit (2026-07-17 CST)
+## 2026-07-17 — P0-026: BF16 production restart and upstream-revision audit
 
 ### Model-tree provenance recovery
 
@@ -1004,7 +1031,7 @@ The standardized receipt fields are declared dtype, observed parameter dtypes, v
 
 The integrated focused suite passed 73 tests plus 2 subtests; the complete R2 suite passed 182 tests plus 6 subtests. Ruff, byte compilation, strict JSON and stale-schema/float16-production scans passed. This was CPU fake-model and adversarial contract validation only; it did not run a pretrained model, alter an H200 job or pass a scientific gate.
 
-## EXP-R2-027: Pretrained P0-7 adjudicator and revision verification (2026-07-17 CST)
+## 2026-07-17 — P0-027: Pretrained P0-7 adjudicator and revision verification
 
 **Purpose.** Complete the remaining inference-free P0-7 analysis contract and verify the revised code, processed package, figures, manuscript and live H200 lineage without crediting unrun scientific gates.
 
@@ -1030,7 +1057,7 @@ The r8 ProtGPT2 exact-cache PID remained alive in GPFS-heavy extraction with 173
 
 `build_source_data.py --verify-only` verified 65 manifest rows, 68 checksums and 1,649,686 package bytes. The source manifest, checksum file and historical panel/table map SHA-256 values were `02a840cf0eda5c2b89fd6000b7377013d2218e53593c7385b9fcd11341356a05`, `7e099126c7991c6704c30e140c090f643c55079148fc030fc81ab5d3ea7522e8` and `86ce0d9f0bd0dbf79d8a78f270b6d7aaae1c789fd7e8030583e4e4ba574fb8d4`. All six figures regenerated. Tectonic rebuilt the 23-page main PDF and 12-page supplementary PDF with underfull-box warnings only; their SHA-256 values are `6edd0f206aceaaa32f63e5c142f063cad83133dfb90b766926d4189c4e396e7f` and `47e0933fac9452a5eae747cb72ec0f87273b6edfeef5d0c75c06a447d837ce53`. Strict parsing passed for 58 current configuration, environment, source-data and provenance JSON files.
 
-## EXP-R2-028: H200 progress, receipt validation and bounded storage cleanup (2026-07-18 CST)
+## 2026-07-18 — P0-028: H200 progress, receipt validation and bounded storage cleanup
 
 **Purpose.** Track the active revision queues from their canonical GPFS lineage, validate the first production completion receipt and relieve storage pressure without touching any active, resumable or scientifically eligible artifact.
 
@@ -1067,7 +1094,7 @@ Total apparent payload removed was 743,059,375,694 bytes (692.03 GiB): 630,138,9
 
 Protected roots were unchanged: `dictionaries_topk_bf16_r2`, `p0_2_exact_cache_bf16_r3`, its live `.zymctrl.tmp-17403`, current r7/r8 code trees and archives, cohorts, environment receipts, launchers and canonical logs. All four launcher PIDs and runner PID 17403 remained alive after cleanup, and all active GPU allocations were unchanged. This is operational progress and storage maintenance only; it does not pass the held-out P0-2 quality gate or any downstream biological or causal gate.
 
-## EXP-R2-029: BF16 prerequisite completion, validation-only screening launch and bounded cleanup (2026-07-20 CST)
+## 2026-07-20 — P0-029: BF16 prerequisite completion, validation-only screening launch and bounded cleanup
 
 **Purpose.** Verify the terminal state of both H200 prerequisite queues, start the next frozen P0-2 stage only from receipt-verified exact caches, and remove redundant storage without touching any final, trajectory, cache or active screening artifact.
 
@@ -1134,15 +1161,15 @@ Total removal was 395,430,148,930 apparent bytes (368.27 GiB) across 58 files. A
 
 The online TopK panel is preliminary diagnostic evidence, cache completion is prerequisite completion, and the running screenings are validation-only and P0-2-ineligible. No held-out P0-2 gate or downstream biological/causal gate has passed. No H200 issue currently requires user intervention.
 
-## EXP-R2-030: Screening OOM diagnosis, ineligible-lineage cleanup and memory-safe restart (2026-07-21 CST)
+## 2026-07-21 — P0-030: Screening OOM diagnosis, ineligible-lineage cleanup and memory-safe restart
 
 **Purpose.** Inspect the terminal state of the validation-only screening queues, diagnose their failure without opening test rows, preserve compact failure evidence, correct candidate-local accelerator-memory lifecycle, and restart the unchanged frozen screening panel only after a repeated full-width preflight.
 
 ### Corrected terminal audit of the r1 screening lineage
 
-The four launch observations in EXP-R2-029 remain accurate for their stated 18:15--18:18 CST health window. The later terminal audit found that all four r1 queues had subsequently failed. Each active invocation completed candidates `000`--`002` and raised a CUDA out-of-memory error while constructing or training candidate `003`. Thus 12 of the 45 planned candidate fits had produced validation diagnostics, 33 had not run, and the queued ProGen2-medium and ZymCTRL ReLU/L1 invocations had never started. None of the four roots contained `results.json` or `run_manifest.json`, while their `run_state.json` files still reported `in_progress` after the processes had exited.
+The four launch observations in P0-029 remain accurate for their stated 18:15--18:18 CST health window. The later terminal audit found that all four r1 queues had subsequently failed. Each active invocation completed candidates `000`--`002` and raised a CUDA out-of-memory error while constructing or training candidate `003`. Thus 12 of the 45 planned candidate fits had produced validation diagnostics, 33 had not run, and the queued ProGen2-medium and ZymCTRL ReLU/L1 invocations had never started. None of the four roots contained `results.json` or `run_manifest.json`, while their `run_state.json` files still reported `in_progress` after the processes had exited.
 
-The failed lineage retained the EXP-R2-029 archive, profile and launcher SHA-256 values `76ba445cbdb418602df3b0088ac41f88e84935e06614cff0a6ff3a3c99ca3811`, `eb33d6e8fdf551b60b95238766fcf97e3e2fe5a91f0f5882dd9212d129572db2` and `caf40fb83c63f5af7ebde4f7b4b459aa76ec9ac53a648a3992d7efe4df7f5c9c`. The exact queue-log and residual run-state hashes were:
+The failed lineage retained the P0-029 archive, profile and launcher SHA-256 values `76ba445cbdb418602df3b0088ac41f88e84935e06614cff0a6ff3a3c99ca3811`, `eb33d6e8fdf551b60b95238766fcf97e3e2fe5a91f0f5882dd9212d129572db2` and `caf40fb83c63f5af7ebde4f7b4b459aa76ec9ac53a648a3992d7efe4df7f5c9c`. The exact queue-log and residual run-state hashes were:
 
 | GPU / started invocation | Queue-log SHA-256 | `run_state.json` SHA-256 |
 |---|---|---|
@@ -1218,7 +1245,7 @@ The durable receipt binds dictionary-module SHA-256 `347a095c2e18a429e09011f84a4
 
 The 216-test plus 6-subtest result above remains the lifecycle-only snapshot. After the gate and receipt closure, the final integrated pre-documentation suite passed 223 tests plus 6 subtests in 36.28 seconds; focused gate/mask verification passed 16 tests. Ruff check and format, AST syntax, shell syntax and strict JSON validation passed. These are adjudication-contract and mask prerequisite facts only: they perform no held-out test-set evaluation, do not pass P0-2 and do not authorize any full run before its terminal screening outcome is validated.
 
-## EXP-R2-031: Terminal r3 screening, calibrated panel selection, cleanup and full launch (2026-07-22 CST)
+## 2026-07-22 — P0-031: Terminal r3 screening, calibrated panel selection, cleanup and full launch
 
 **Purpose.** Close the receipt-bound, validation-only r3 screening phase; apply its frozen calibrated sparsity rule without accessing test rows; retain only the selected or compact evidence; and launch precisely the authorized full exact-cache panel.
 
@@ -1270,7 +1297,7 @@ Consequence for the live panel: P0-2 is currently adjudicated on frozen FVU/dead
 
 Limitations: small matched dictionary budget; single seed; CA-trace P-SEA secondary structure rather than DSSP; local human-biased AlphaFold subset; ProtGPT2's loss-recovered denominator on the TG-07 cohort is ~1 nat so its exact negative value is unstable; ZymCTRL TG-02/TG-06 windows exclude its EC tag.
 
-## EXP-R2-032: P0-2 closure and prospective P0-2b behavioural-fidelity qualification (2026-07-27 CST)
+## 2026-07-27 — P0-032: P0-2 closure and prospective P0-2b behavioural-fidelity qualification
 
 **Purpose.** Close the original frozen P0-2 gate without retroactive changes, then test whether its 27 completed checkpoints preserve next-token behaviour well enough to enter the revised downstream programme proposed in `check.md`.
 
@@ -1709,6 +1736,8 @@ Threat tested: the protein decoders were pretrained on UniRef50 and the natural-
 
 Search. DIAMOND v2.1.24 (tarball sha256 verified against the staged `.sha256`; binary sha256 `5d04a9ec...`), `blastp --very-sensitive --evalue 1e-3 --max-target-seqs 100` against the FULL local UniRef50 snapshot: 60,315,044 sequences / 17,282,055,793 letters indexed from 60,315,044 FASTA records, coverage 1.000000. No subset, so the "a partial database only underestimates homology" caveat does not apply here. Identity is `100 * nident / qlen` (percent of the QUERY identically matched), not `pident`. Strata fixed before any result: <30 / 30-70 / 70-95 / >=95.
 
+**Coordinator correction, same day.** A partial DIAMOND database would not have been conservative. A found hit is always real, so high-identity strata stay pure and a memorisation gradient found there is trustworthy, but a miss contaminates the low strata and pushes the reading toward "general mechanism" — anti-conservative for clearing the finding, which is the direction of interest. Moot here because the search covered the full local snapshot, but the reasoning is recorded in the module docstring.
+
 Achieved bins, records (distinct sequences). Exact criterion, n=48: 0 (0), 8 (4), 11 (11), 29 (22) -- the <30 bin is empty, which is structural: Swiss-Prot entries belong to UniRef50 clusters whose representative is >=50 per cent identical, and observed minimum identity was 62.1. Approximate criterion, n=817: 4 (4), 136 (106), 207 (179), 470 (420); minimum identity 25.2, so the <30 bin exists only under the approximate probe. The cohort itself contains byte-identical duplicate records (one per protein x EC pair; one group of 7 and one of 5), so every interval resamples distinct sequences and the headline per-stratum numbers use one probe per distinct sequence; duplicate-weighted values are reported alongside.
 
 Result. The head count -- the quantity the finding claims -- shows no homology gradient. ProGen2-medium 5/3/4/4 of 432 across the four bins with overlapping intervals; ZymCTRL 0/0/0/0 of 720; ProtGPT2 8/11/13/13 of 720, the only arm whose head-count intervals separate and its <30 bin has n=4. The synthetic probe, which appears in no corpus and cannot be memorised, recruits AS MANY OR MORE heads than any natural stratum (ProGen2-medium 6 of 432 against 3-5; ProtGPT2 13 of 720 against 8-13) and largely THE SAME heads: head-set Jaccard against the synthetic control is 1.00 for ProtGPT2's 70-95 and >=95 strata and 0.83 for ProGen2-medium's <30 stratum.
@@ -1720,18 +1749,6 @@ Internal falsification of the strong memorisation account: ZymCTRL was pretraine
 Reading against the three interpretations fixed in the module docstring before the search was run: the head-count finding is consistent with a GENERAL MECHANISM and survives; the peak-strength statistic is INTERMEDIATE and mostly a repeat-length artefact, which is an independent reason not to quote it, matching EXP-R2-039's own note that it is design-dependent.
 
 Limitations, none of them removable here. GPT-2's training corpus is not public -- OpenWebText is a reconstruction of WebText, not WebText -- so this control cannot run symmetrically on the text arm and supports no matched cross-modal claim. The local UniRef50 snapshot is newer than ProtGPT2's 2021_04 training release, which biases measured identity upward. UniRef50 is ProtGPT2's corpus but only a proxy for ProGen2 (UniRef90 + BFD) and for ZymCTRL (BRENDA/UniProt). The <30 bin is empty under the exact criterion and has n=4 under the approximate one. Validation scale on one L20 GPU, peak 2.4 GiB, single seed.
-
-## 2026-07-28 — EXP-R2-050 addendum: coordinator reading of the homology control
-
-Two conclusions, split by statistic, plus one correction to the brief I issued.
-
-Correction: I told the agent a partial DIAMOND database would be conservative. That is wrong. A found hit is always real, so high-identity strata stay pure and a memorisation gradient found there is trustworthy, but a miss contaminates the low strata and pushes the reading toward "general mechanism" — anti-conservative for clearing the finding, which is the direction of interest. Moot in the event, since the search covered the full local UniRef50 snapshot (60,315,044 sequences, 17.3 billion letters, coverage 1.000000), but the reasoning is now recorded in the module docstring.
-
-Head count supports a general mechanism. No consistent gradient across identity strata (ProGen2-medium 5/3/4/4 heads above 0.10, ZymCTRL 0/0/0/0), and the synthetic probe — constructed rather than drawn from any corpus, so unmemorisable — recruits as many or more heads than any natural stratum, and largely the same heads: head-set Jaccard against synthetic is 1.00 for ProtGPT2's 70-95 and 95+ strata and 0.83 for ProGen2-medium's sub-30 stratum. ProtGPT2's 8 to 13 does separate but that bin has n=4 and synthetic also gives 13. Internal falsification: ZymCTRL was pretrained on EC-labelled Swiss-Prot, this cohort's own source, so it has the greatest memorisation opportunity of any arm and shows the least induction of any arm.
-
-Peak strength does not survive. The pre-stated interval rule returned consistent_with_memorisation for ZymCTRL and ProGen2-medium at n=817 (indeterminate for ProtGPT2), recorded unretuned. Mean repeat length rises across the same bins (24.3 to 36.6 symbols) and drives prefix matching by itself; a post hoc binless partial Spearman gives length given identity +0.611/+0.649 against identity given length +0.150/+0.179, so length is about four times the identity term, with a small but non-zero residual identity association. This converges with EXP-R2-049, which narrowed the same claim on entirely different grounds (ProtGPT2's peak being under half gpt2-large's inside the matched pair). Two independent lines now agree: report head count, do not report peak sharpness.
-
-Cohort defect found and fixed: the repeat cohort contained byte-identical duplicate records, one per protein-by-EC pair in groups of 7 and 5. Treating them as independent would have narrowed every interval. Headline numbers now use one probe per distinct sequence, with duplicate-weighted values retained alongside.
 
 ## 2026-07-28 — EXP-R2-051: staging complete; code freeze found incomplete
 
@@ -1793,23 +1810,7 @@ python scripts/transfer/11_induction_path_patching.py \
 
 **Limitations**: validation scale (44-record repeat cohorts, 48 cases, one seed); cases drawn from only 8-17 distinct records per arm at `--cases-per-probe 6`; the sender node is the head at the read-out position only, so attention mediation sourced at other positions is out of scope; the ratio floor withholds 26 of 50 gpt2-large heads from the fraction mean, and the floor ladder in each artefact shows gpt2-large's fraction moving 0.234 -> 0.574 across floors while ProtGPT2's sits at 0.559 throughout. Full scale belongs on H200.
 
-## 2026-07-28 — EXP-R2-053 addendum: coordinator reading of the path-patching result
-
-The mediation hypothesis is not confirmed, and one of the two surviving findings is downgraded as a result.
-
-Matched pair, mediated fraction: exact criterion gpt2-large 0.539 against ProtGPT2 0.559, difference +0.020 with CI [-0.121, +0.166] including zero; approximate criterion the difference reverses to -0.980, CI [-1.279, -0.660]. Neither shows a larger mediated share in the protein arm of the controlled pair.
-
-What is supported instead: ProtGPT2's induction heads are stronger on both paths, direct +0.020 and mediated +0.034 with both CIs excluding zero. Its heads do more, in the same proportions. That is consistent with the original ablation observation without supporting the mechanism proposed for it.
-
-Consequence. EXP-R2-032 described "attention's contribution is more indirect in protein decoders" as supported by three converging measurements: the ablation-minus-DLA gap, the copy-rank dissociation and the activation-patching shortfall. Path patching is the instrument built to test that claim directly, and in the controlled comparison it disagrees. The convergence was of three indirect proxies, none of which isolated the mediated path. The ablation-versus-DLA gap remains real and unexplained; the claim that the share of attention's effect running through later MLPs is larger in protein decoders does not survive.
-
-ProGen2-medium does show the predicted pattern (0.864 against 0.539, CI excluding zero, mediation concentrated in L25-L26 of 27) but is cross-tokenisation and directional only, and ZymCTRL goes the opposite way at 0.126. Two cross-tokenisation arms disagreeing with each other is the signature of a tokenisation and coverage confound.
-
-The exact row is the one to read: the exact-versus-approximate divergence is carried by the case set rather than the sender set (top-4 ProtGPT2 senders identical under both criteria, gpt2-large stable at 0.506-0.551 across all four cells of the 2x2 cross), and mean corruption effect falls 19.6 to 5.0 logits for ProtGPT2 and 20.0 to 13.7 for gpt2-large, tracking the coverage collapse. The matched pair is well matched on exact cases (19.99 against 19.58 logits) and is not on approximate ones.
-
-Caveats keeping the null soft: the ratio floor withholds 26 of 50 gpt2-large heads, and across floors 0.001 to 0.05 gpt2-large moves 0.234 to 0.574 while ProtGPT2 sits at 0.559 throughout, so gpt2-large's fraction is floor-sensitive and ProtGPT2's is not; and effect-weighted aggregates do favour the protein arm (0.581 against 0.360) but weight by effect size, which is the finding rather than independent support. Per-head totals are 1-6 per cent of the clean/corrupt gap.
-
-All eight structural invariants passed exactly, including head-write linearity at 2.4e-6. ZymCTRL is a clean negative: mean corruption effect 0.47 logits with 54 per cent of cases eligible, against 20 logits and 100 per cent for gpt2-large.
+**Coordinator reading, same day.** The mediation hypothesis is not confirmed, and one of the two surviving findings is downgraded as a result. Path patching was the instrument built to test EXP-R2-032's claim that attention's contribution is more indirect in protein decoders, and in the controlled comparison it disagrees. The exact row is the one to read. Caveats keeping the null soft: gpt2-large's fraction is floor-sensitive (0.234 to 0.574) while ProtGPT2's is not; effect-weighted aggregates favour the protein arm (0.581 against 0.360) but weight by effect size, which is the finding rather than independent support; per-head totals are 1-6 per cent of the clean/corrupt gap.
 
 ## 2026-07-28 — EXP-R2-054: full nine-stage campaign completes; text side found to be n=1
 
@@ -2858,7 +2859,7 @@ The 241 retired tests are named by group in the archive README. The one test *re
 
 1. **Scale-adjusted induction shortfall.** The **2.34x** shortfall against the GPT-2 scale-ladder prediction remains descriptive because the artifact reports no inferential test for that adjusted statistic. The artifact-backed **p = 0.0286** is detached from it: `results/transfer_20260728/induction_robustness/induction_robustness_synthetic_repeat.json::model_level_tests.fraction_above_threshold` defines that p-value as the one-sided exact permutation test over four text and three protein model-level `fraction_above_0.10` values, where it is the minimum attainable p under complete separation.
 
-2. **P0-2b interpretation.** The matched-panel or cross-domain reading is inconclusive because P0-2b had no matched text dictionary, and the original ProtGPT2 and ZymCTRL recovered ratios were denominator-invalid. The ProGen2-medium result remains a valid within-arm negative under the original estimand and frozen 0.80 gate: `evidence/p0_2b_fidelity_20260727/p0_2b_fidelity_panel.json` records all nine ProGen2-medium runs as failures with valid recovered ratios, and the original EXP-R2-032 entry records best bootstrap upper bounds of 0.411 loss recovered and 0.282 KL recovered. The current attainability result is EXP-R2-060, `results/transfer_20260729_instrument/estimand_power/recommendation.json`: `mlp_single@d0.50@cohort_mean` is unattainable on gpt2-large and ZymCTRL, attainable on ProtGPT2 and both ProGen2 arms, 52 of 76 alternatives are attainable on gpt2-large, and 50 are powered panel-wide. The older 32-of-48 result is retained only as historical TR-027 / EXP-R2-027 (2026-07-28).
+2. **P0-2b interpretation.** The matched-panel or cross-domain reading is inconclusive because P0-2b had no matched text dictionary, and the original ProtGPT2 and ZymCTRL recovered ratios were denominator-invalid. The ProGen2-medium result remains a valid within-arm negative under the original estimand and frozen 0.80 gate: `evidence/p0_2b_fidelity_20260727/p0_2b_fidelity_panel.json` records all nine ProGen2-medium runs as failures with valid recovered ratios, and the original P0-032 entry records best bootstrap upper bounds of 0.411 loss recovered and 0.282 KL recovered. The current attainability result is EXP-R2-060, `results/transfer_20260729_instrument/estimand_power/recommendation.json`: `mlp_single@d0.50@cohort_mean` is unattainable on gpt2-large and ZymCTRL, attainable on ProtGPT2 and both ProGen2 arms, 52 of 76 alternatives are attainable on gpt2-large, and 50 are powered panel-wide. The older 32-of-48 result is retained only as historical TR-027 / EXP-R2-027 (2026-07-28).
 
 3. **Copy-suppression census scope.** EXP-R2-059 establishes only that `paa_specific` fails as a cheap ranking screen for copy-suppression on GPT-2-large. The selected heads and measured effects are retained in `results/transfer_20260728/paa_gate/selected_heads.json`, `results/transfer_20260728/paa_gate/causal.json` and their matrix sidecars; the EXP-R2-059 entry reports the resulting Spearman −0.062 (p = 0.71) over 40 tested heads and 5/56 heads above the control band. No protein arm was scored. This does not establish a general limitation of head-prevalence censuses, another proxy, or an exhaustive causal effect-size census.
 
@@ -2868,13 +2869,13 @@ The 241 retired tests are named by group in the archive README. The one test *re
 
 6. **Checkpoint verification wording.** EXP-R2-058's general prose and addendum 4 assert full source-to-GPFS SHA-256 verification, including Qwen2.5-0.5B, but the contemporaneous Qwen extraction record and validation table preserve only exact byte-size checks for its seven files. No retained digest manifest supplies the claimed Qwen hashes. The canonical wording is therefore evidence-based: all eleven checkpoints were staged and load-checked; ten have retained full SHA-256 verification statements tied to named weight files, while Qwen2.5-0.5B has byte-size-only retained evidence.
 
-7. **Stable aliases.** The append-only log reused EXP-R2-025 through EXP-R2-032. Historical ids remain unchanged; the canonical audit now uses `TR-025` for EXP-R2-025 (2026-07-24), `TR-026` for EXP-R2-026 (2026-07-27), and `TR-027` through `TR-032` for the corresponding 2026-07-28 transfer entries. EXP-R2-060 through EXP-R2-066 are explicitly indexed because they carry the current instrument, retraction, qualification, homology and stage-contract evidence.
+7. **Stable aliases.** The July 17–27 npj-revision series is now headed `P0-025` through `P0-032`; the July 24–28 transfer series retains `EXP-R2-025` through `EXP-R2-032` and may be cited as `TR-025` through `TR-032`. The concentrated old-name mapping is at the start of this log. EXP-R2-060 through EXP-R2-066 are explicitly indexed because they carry the current instrument, retraction, qualification, homology and stage-contract evidence.
 
 ---
 
 ## 2026-07-30 — EXP-R2-068: repository-wide audit; the campaign channel could not report failure; plan items B3 and B6 run
 
-**Note on the identifier.** `EXP-R2-067` is referenced by comments in committed code (`src/transfer/probes.py`, `scripts/transfer/08_lens_family.py`, `13_induction_probe_bootstrap.py`, `h200_worker.sh`, `tg05_relational_channel.py`) but has no entry in this log. That work is in `HEAD` and unlogged; this entry does not claim it. This session takes **068** to avoid the collision that renumbered EXP-R2-050.
+**Note on the identifier.** `EXP-R2-067` has no independent results entry; the concentrated mapping at the start of this log records the code comments that cite it. This entry does not claim that work. This session takes **068** to avoid the collision that renumbered EXP-R2-050.
 
 **Scope.** Full audit of the live code under the five Development Principles, then the two plan items the audit's Phase B could reach. Four regions were audited in parallel by Opus sub-agents — the H200 controller and worker, `src/transfer`, `scripts/transfer`, `scripts/transfer_gap` — and every finding acted on was verified independently before any change. Two reported findings were **overstated and were corrected rather than acted on**: the plug-in measurability gate is a bad library default, not a corrupted campaign number, because `01_cohort_power.py` recomputes the verdict from the held-out estimator; and the FASTA chunk-boundary off-by-one is real but did not fire on the corpus in use, verified from the shipped artefact (`source_fasta_records == indexed_sequences == 60315044`, coverage 1.0), so EXP-R2-064 stands.
 
@@ -3089,8 +3090,6 @@ Both run detached on B and survive the session ending. Nothing needs doing until
 
 - **EXP-R2-070, far-band five-window queue.** 31 jobs, four GPU lanes, driver `logs/drivers/farband_queue.sh`, progress in `logs/farband_queue.log`, per-job logs `logs/farband_g<gpu>_<arm>_s<skip>.log`. Observed per-job times: ProGen2-small 7 min, text arms 35 min and up. Expected drain **≈20:30–21:00 +08:00**. Results land in the pod at `results/farband_20260730/skip<N>/<arm>/circuit_primitives/`.
 - **D2.b′, exhaustive per-head causal census.** Chained behind it on `logs/drivers/d2bprime_queue.sh`, which polls for the far-band driver to exit; log `logs/d2bprime_queue.log`, per-arm `logs/d2bprime_<arm>.log`. Four arms in parallel, one GPU each, roughly 4 h. Expected completion **≈00:30–01:00 +08:00 on 2026-07-31**. Results at `results/d2bprime_20260730/<arm>/induction_path_patching/`.
-
-**[SUPERSEDED — the far-band queue landed at 20:37 and its analysis is the thirteenth addendum below. D2.b′ was restarted at 21:01 and is expected ≈01:00–01:30 on 2026-07-31; on waking, read its four artefacts at `results/d2bprime_20260730/<arm>/induction_path_patching/`, primary statistic the rank correlation over all heads with the swept top-k Jaccard beside it. The ZymCTRL 816-token far-band job still needs a re-run after a transport failure.]**
 
 **On waking, in order.** Confirm both drivers exited and the pod GPUs are idle (Appendix B rule 19). Pull the far-band artefacts and run the paired per-window comparison: for each arm and each threshold on the ladder, the sign of `f_arm − f_gpt2-large` across all five windows, plus the between-window spread. That is the test EXP-R2-069 could not perform at K=2 — it decides whether ProGen2-medium's margin over the text control is a shift or noise, and whether ProtGPT2's crossing is systematic. Then check ProGen2-small's far-band case count against the ≥30 gate it failed at 23, and whether ZymCTRL entered at all at the 816-token window. Only then read D2.b′: the primary is the rank correlation over all heads, with the swept top-k Jaccard beside it, and the question is whether the causal ranking surfaces heads the prefix-matching census scored below threshold.
 
@@ -9210,21 +9209,13 @@ Spread across everything the environment can change is **0.0010**; the nearest s
 
 **If it passes**, the first follow-up is the disjoint cohort: 16,475 records of the 64–246 band lie past the held-out offset and are never seen in training, which would remove the contamination bias. It is not the default, because a tail-drawn cohort is a file-order region of a family-grouped corpus (rule 1) and would give the two protein arms different cohort protocols (rule 21). It is the right check on a pass and unnecessary on a failure.
 
-> **Correction, same day, to the disjoint-cohort follow-up above — found by a dispatch failure rather than by review.** `s15_zymctrl_linear_skip` was dispatched with `--cohort-skip 180480` and **DIED AT DISPATCH**: `57096 eligible records cannot supply 128 after a skip of 180480`. The number 180,480 is a position in the **32–1014 training stream**; `--cohort-skip` is an offset into the **64–246 eligible list**, which holds 57,096 records. Two different index spaces, and the guard in `arms.selected_positions` caught it before a GPU was touched.
+> **Corrected 2026-08-09, before any transcoder result existed.** Three corrections to the pre-registration above. The decision rule itself is unchanged.
 >
-> **The deeper point is that the flag cannot do this job at all.** Under a seed, `selected_positions` permutes the whole eligible list and returns `order[skip : skip + n]` — so `--cohort-skip` yields a *different random sample spread over the entire corpus*, disjoint from the first draw but **not** disjoint from the training stream. No value of that flag produces a training-disjoint cohort under a seeded draw.
+> **`--cohort-skip` indexes two different spaces, and a seeded skip is not a training split.** `s15_zymctrl_linear_skip` was dispatched with `--cohort-skip 180480` and died at dispatch: `57096 eligible records cannot supply 128 after a skip of 180480`. 180,480 is a position in the 243,741-record **32–1014 training stream**; `--cohort-skip` indexes the **64–246 eligible list** (57,096 records). The guard in `arms.selected_positions` caught it before a GPU was touched. Under a seed, `selected_positions` permutes the whole eligible list and returns `order[skip : skip + n]`, so skip yields a different random sample of the same corpus, disjoint from the previous draw but **not** from the training stream. Of the 57,096 records in the 64–246 band, **42,250 sit inside the first 180,480 training-stream records and 14,846 sit past it** (not the 16,475 quoted above). `--cohort-draw-seed 0 --cohort-skip 42250` would reach that tail as a file-order draw, which is the Appendix B rule 1 hazard. A seeded, training-disjoint draw does not exist in this code. The contaminated cohort stays the only protocol-comparable one, and it biases toward the arm passing.
 >
-> **What actually reaches the untouched tail.** Of the 57,096 records in the 64–246 band, **42,250 sit inside the first 180,480 records of the training stream and 14,846 sit past it** (not the 16,475 quoted above, which counted from a slightly different offset). So `--cohort-draw-seed 0 --cohort-skip 42250` is a genuinely training-disjoint draw with 14,846 records available for the 128 + 256 needed — but it is a **file-order** draw, which is the Appendix B rule 1 hazard, and it is therefore not comparable with the seeded draws every other arm uses. A seeded draw restricted to the corpus tail does not exist in the code and would need a new cohort constructor. **Recorded as a limitation rather than worked around:** at present the contaminated cohort is the only protocol-comparable one, and it biases toward the protein arm passing, which is the conservative direction.
-
-> **Corrected 2026-08-09, before any transcoder result existed.** Three corrections to the pre-registration above. The decision rule itself is unchanged; what changes is one follow-up that turns out not to be executable, and one figure that was a hand count rather than a measurement.
+> **The 76.6% contamination figure above is a projection and is not yet a measurement.** It came from a hand count that could not be reproduced: the artefacts report **57,096** eligible records in the 64–246 band under the code's own eligibility rule, against 44,165 from an independent parse, and the two derived offsets disagree. The code's figure is authoritative because it is what the draw indexes. Contamination will be measured by intersecting the drawn cohort against the training stream, as EXP-R2-147 did, and not carried forward as a projection. Nothing in the decision rule depends on its exact value — only on its direction, which is unchanged.
 >
-> **The disjoint-cohort follow-up cannot be run with the flags that exist.** The rule above says that if ZymCTRL passes, the first follow-up is a cohort drawn past the training stream. `--cohort-skip` cannot express that. Under a seed, `protein_cohort` counts the whole corpus first and takes a window of a seeded permutation, so `skip` yields "a genuinely disjoint second sample **of the same corpus**" — disjoint from the *previous draw*, not from the *training stream*. Only `--cohort-draw-seed 0` with a skip would reach the corpus tail, and that is a file-order draw, which is the hazard Appendix B rule 1 exists for and which that same function's docstring records as having moved a headline figure by 1.01 nats. **A seeded, training-disjoint draw does not exist in this code and needs its own cohort constructor.** Recorded as a limitation rather than approximated: the contaminated cohort stays the only protocol-comparable one, and it biases toward the arm passing, which is the conservative direction for a failure result.
->
-> **An attempt to run it died at dispatch, and the guard is why nothing was measured.** `s15_zymctrl_linear_skip` was dispatched with `--cohort-skip 180480`, an offset in the 243,741-record *training band*, while `--cohort-skip` indexes the 57,096-record *eligible cohort list*. `arms.selected_positions` raised before a GPU was touched: `57096 eligible records cannot supply 128 after a skip of 180480`. Nothing was scheduled on that card and no number was produced — which is the Failure Principle working, and is recorded here rather than quietly relaunched.
->
-> **The 76.6% contamination figure above is a projection and is not yet a measurement.** It came from a hand count of the corpus that I could not reproduce: the artefacts report **57,096** eligible records in the 64–246 band under the code's own eligibility rule, against 44,165 from an independent parse here, and the two derived offsets disagree accordingly. The code's figure is the authoritative one because it is what the draw actually indexes, and it is recorded in every artefact's `sampling` block. **Contamination will be measured by intersecting the drawn cohort against the training stream, as EXP-R2-147 did, and not carried forward as a projection.** Nothing in the decision rule depends on its exact value — only on its direction, which is unchanged.
->
-> **The free linear baseline, both cohorts, ADMITTED.** n=128 recovers **−0.0096 [−0.0162, −0.0029]** (clean 0.8364 → ablated 3.0282, denominator 2.1919); n=512 recovers **+0.0107 [+0.0078, +0.0136]** (clean 0.8913 → ablated 3.0198, denominator 2.1285). The intervals do not overlap and the sign changes between them, so the point estimate is not distinguishable from the mean-ablation floor and its sign is a property of the draw. For scale, gpt2-large moved 0.0067 between the same two cohort sizes and ProtGPT2 0.0302, against ZymCTRL's 0.0203 across a sign change — small in absolute terms on every arm, but large relative to a value this close to zero. A third draw at `--cohort-skip 512`, disjoint from both under the same seeded permutation, is running to see whether the sign is stable. **This is the free baseline, not the deliverable**; the transcoder recovery is what EXP-R2-149's rule is written against, and it is still training.
+> **The free linear baseline, both cohorts, ADMITTED.** n=128 recovers **−0.0096 [−0.0162, −0.0029]** (clean 0.8364 → ablated 3.0282, denominator 2.1919); n=512 recovers **+0.0107 [+0.0078, +0.0136]** (clean 0.8913 → ablated 3.0198, denominator 2.1285). The intervals do not overlap and the sign changes between them, so the point estimate is not distinguishable from the mean-ablation floor and its sign is a property of the draw. For scale, gpt2-large moved 0.0067 between the same two cohort sizes and ProtGPT2 0.0302, against ZymCTRL's 0.0203 across a sign change. A third draw at `--cohort-skip 512` is running. **This is the free baseline, not the deliverable**; the transcoder recovery is what EXP-R2-149's rule is written against, and it is still training.
 
 ## 2026-08-09 — EXP-R2-149: the replacement failure is not multi-residue BPE tokenisation
 
@@ -11254,18 +11245,6 @@ Two further matched constructions were built afterwards, labelled post-hoc, sele
 
 ---
 
-## 2026-08-13 — EXP-R2-194 PAUSED before dispatch: the cluster errored, and a fail-closed check that tests reachability does not test health
-
-**No scoring run exists and none was dispatched.** EXP-R2-194's three cells were armed on a dispatcher that waited for the relay and refused to launch unless all four cards read under 1000 MiB in-pod. It was disarmed on instruction before the relay returned, and the record is checkable: no `r194` controller log, no `r194` dispatch record, no `r194` results directory, and the dispatcher's own log carries one line — that it was armed and waiting.
-
-**The defect in that fail-closed condition is worth recording, because it is a class of error and not an incident.** The check tested two things, relay reachability and card occupancy, and **neither distinguishes a healthy idle cluster from an errored one**. An errored cluster reports idle cards; a repaired relay in front of a broken cluster satisfies both conditions at once. So the guard would have dispatched a three-cell 7B scoring pass into a cluster that could not complete it, and a campaign that fails halfway is worse than one that never starts — it leaves partial artefacts that a later reader must be told to distrust. The generalisation: **an occupancy check is a courtesy to other campaigns, not a health gate**, and the two must not be conflated because one is cheap to write and the other is not.
-
-**The pre-declaration is untouched and the delay costs the result nothing.** Criteria A and B for the dictionaries, and the four outcomes of the recovery comparison — ADAPTATION, RECIPE, NON-REPRODUCTION, OTHER — are frozen in the commit that precedes any recovery number. When the cluster is repaired the pass runs against exactly those criteria, on the same snapshot pinned at `04fdfa5`, whose stage-15 code was verified byte-identical to the pin that produced EXP-R2-182 and EXP-R2-186 to 188. That is the whole point of committing a rule before the hardware that would test it.
-
-**What is still outstanding, so a later reader does not mistake the pause for a result.** Two of EXP-R2-191's four cells remain unread on B — the protein records were stranded by a transport failure and their **Criterion B2 is the number that decides whether a protein feature diff is a statement about two models or about two fitted bases**. A read-only JSON recovery remains on a five-minute retry; it dispatches nothing and either works or does not. The two within-checkpoint matched certificates and the entire recovery comparison are pending. **Nothing was substituted for them**: reproducing three 7B-backbone scoring passes on a 46 GB card would be a different experiment wearing the same name, and the L20 was not used.
-
----
-
 ## 2026-08-13 — EXP-R2-195 pre-declared: does the SIGN of full-stack replacement recovery depend on dictionary width? A 2x-to-12x expansion sweep on `gpt2`, frozen before any dictionary is trained
 
 Frozen before the first training step. The anchor run described below is a validation of the scoring harness against an artefact that already exists; no dictionary of this sweep exists yet and no width has been scored.
@@ -11583,6 +11562,8 @@ Frozen before training. **This is one cell and not a point on either sweep's cur
 
 ## 2026-08-14 — EXP-R2-194 read: OUTCOME **RECIPE**. The pre-adaptation checkpoint recovers negative too, so the joint-checkpoint reading of EXP-R2-182 must be withdrawn rather than qualified — and the depth curve's non-monotonicity dissociates from the sign
 
+**Earlier pause, 2026-08-13.** No scoring run existed then and none was dispatched. The dispatcher was armed, then disarmed before the relay returned: no `r194` controller log, no `r194` dispatch record, no `r194` results directory. Occupancy is not health: a fail-closed check of relay reachability and card occupancy does not distinguish a healthy idle cluster from an errored one, and the two must not be conflated. The pre-declaration was untouched; this reading is the result of that frozen comparison, not a substitute run.
+
 Three cells scored on the snapshot pinned at `04fdfa5`, all ADMITTED on verified digests. Before dispatch the code identity was re-verified on both axes: the commit-to-commit diff of `15_replacement_faithfulness.py`, `replaceable.py` and `transcoders.py` between EXP-R2-188's pin and this one is empty, and the files *on GPFS* hash identically to commit `04fdfa5`'s blobs. The comparison to the earlier results is therefore legitimate rather than approximate.
 
 ### The verdict, on the criterion frozen in EXP-R2-194's pre-declaration
@@ -11723,24 +11704,6 @@ One cell, one checkpoint, one mode, one seed. Protein mode only, so nothing here
 > **The joint reading, fixed now.** *Both clear* — the recipe yields a spanning basis on protein activations on both checkpoints and a matched pair can be built; the three conditions above still stand and the diff is still not admissible. *Neither clears* — the revival budget is not what holds the basis down on either checkpoint, and the live candidate moves to `k` or width; a null on both sides is much stronger than a null on one. *Base clears, adapted does not* — the adaptation is what makes the basis unspannable at this budget, which is a **localisation to the adapted weights** and the most informative asymmetry available here. *Adapted clears, base does not* — the reverse, and it would be surprising, since the base cell starts with more live latents (2,188 against 1,634); it would be reported as measured and not explained. **A differential response short of clearing is also read**: if one side moves and the other does not, that is a statement about the adaptation that a single cell cannot make, and it is the reason this pair is worth running even if neither clears.
 >
 > **The lever finding is larger than the cell it unblocks, and is recorded as a defect rather than as a setting.** `auxk` is not a hyperparameter that happened to be low: it is a **declared constant carrying the reference rule's value at one backbone width, applied unchanged at a backbone ten times wider**. The file's own docstring states the rule the constant was meant to instantiate — `min(d_model // 2, n_dead)` — and on this checkpoint the constant reaches **2.93%** of the dead population per layer per step where the rule it encodes would reach **31.2%**. That is the Single-Source Principle's failure one level up: the constant and the rule that defines it are two sources for one fact, and the derived one silently won at every width but the one it was derived at. It is the same shape as the defect this file already records — a literal 128 shadowing `TranscoderConfig`'s 192 at every invocation — and it is recorded here as a defect in its own right, independent of whether these two cells clear anything. **No code change is made**: the default stays 192 while other campaigns are training against it, and whether it should change is a separate decision that these cells inform rather than settle.
-
----
-
-## 2026-08-14 — EXP-R2-201 dispatch record
-
-Both cells launched on the snapshot pinned at `04fdfa5`, the code state that trained the cells they are read against, one card each with cards 2 and 3 left to the concurrent sweeps. Health gate before dispatch: `Health=ok`, `PodGPFS=read-write`, four card rows, CUDA allocate-and-compute liveness on every card. **The pre-declared specification check passes on the adapted cell in-pod — the near-duplicate screen reports `kept 961 of 1024, max containment 1.0000` over 229,376 screened records, reproducing EXP-R2-191's protein draw exactly**, so the held-out population is the same one. Verified started by reading in-pod stdout rather than a launcher exit status, which does not cross that boundary.
-
-> **Second amendment, pre-declared at step 6,000 of 36,978 and before either endpoint exists. Two things are fixed here: a third statistic, and the disposition of the lever finding.**
->
-> **(a) The base-minus-adapted separation is declared as a statistic now, so that it is not a post-hoc observation later.** Let **Δ = live latents per layer (base) − live latents per layer (adapted)**, measured at the token budget, at each `auxk` setting. At `auxk` 192 the endpoint value is **Δ = 2,188 − 1,634 = 554**, and its mid-training trajectory is 0, 593, 387, 338, 377 at steps 2,000 to 12,000 — so it is established early and roughly flat rather than accumulating. At `auxk` 2,048 it reads **410** at step 6,000 against 387 at the same step under `auxk` 192.
->
-> *What it would license.* If Δ at the endpoint is close under both budgets, the separation is **invariant to the revival mechanism**, which makes it a property of the two checkpoints' activations rather than of how the dictionary revives dead latents — and it would survive whatever the B2 gate does, since it does not depend on either side clearing. *What bounds it, and this is not a footnote:* the **base side is a single cell at each setting**, so nothing here prices base-side seed variability. The only replicate evidence available anywhere is the adapted side's three-seed spread of 26 latents per layer at `auxk` 192, and that is **not** a valid interval for Δ, which is a difference of two independently-trained dictionaries. A change in Δ smaller than 26 is therefore not resolvable with what exists; a larger one is reported as measured and **cannot be attributed** without base-side replicates that this campaign does not have.
->
-> **(b) The interim mechanism reading, stated as mechanism rather than as endpoint.** At step 6,000, matched step for matched step, the live basis reads 2,850 against 2,848 on the base side and 2,440 against 2,461 on the adapted side — **+2 and −21 latents per layer for a 10.7x revival budget**, against a three-seed spread of 26. This is worth saying before the endpoint only because the lever is **already at full leverage**: with 5,400–5,750 dead latents per layer at that step, `auxk` 192 reaches 3.3% of them and 2,048 reaches 36%, so the budget difference is an order of magnitude and already in force. That is a mechanism engaged and a trajectory unmoved, not an effect awaiting time. **It is not the verdict**, which remains the final live/layer at the token budget as declared, and both cells run to that budget.
->
-> **(c) The disposition of the lever finding, fixed by the coordinator before the reading rather than after it.** If the verdict is NO EFFECT on either or both sides, the defect is still repaired — but **the repair is to replace the literal with the rule, not to change the value**. The defect is that a constant and the rule defining it are two sources for one fact; the symptom is that the derived value silently wins at every width but its own. Deriving it removes the second source, and at the width it was derived at it evaluates to exactly what it does today, so no existing dictionary on that backbone moves. What does move is any future run at a different width, and that must be recorded at the point of change together with the fact that **on the one statistic this experiment measured, the difference made none** — so the change is made on Single-Source grounds and **carries no claim of measured benefit**. A CLEARS or MOVED-SHORT verdict yields the same repair with a stronger argument and the measured consequence recorded beside it. In neither case does the default change while any campaign is training against it.
->
-> **Two things a reading of this pair may not do**, restated because both are easy: a cleared gate does not make the protein feature diff admissible — three conditions stand, one of them a statistic deliberately not yet written — and an unmoved basis does not show that protein activations cannot be spanned by any recipe. One lever at one setting on two checkpoints bounds neither.
 
 ---
 
@@ -11963,23 +11926,6 @@ Forward-pass only. Four cells, four cards, concurrent: dispatch 10:38–10:39, a
 
 ---
 
-## 2026-08-14 — EXP-R2-201 status: both cells COMPLETED on 2026-08-14 and their artefacts were never pulled. Recorded here so the run is not lost; the verdict entry is owed by that experiment's owner
-
-Found while checking for a prior run before dispatching EXP-R2-202, as that entry's design required. **Both cells reached their full token budget and wrote complete artefacts**; what failed was the *local driver*, not the measurement. `logs/external_baseline/r201_auxk2048.out` and `..._base.out` each end in `LAUNCHED` followed by a termination message, so the two controllers died shortly after dispatch and never polled, verified or pulled — the in-pod work continued under `setsid nohup` and finished normally, which is exactly the separation that launcher is built to give.
-
-On GPFS under run `20260812215507_0f81e190ba55`, both cells wrote a 46 KB record beside an 8.59 GB dictionary, and both logs end in `[done]` at **34,001,183 scored tokens** over 36,978 steps, matching the declared budget. Re-reading those records against the bands EXP-R2-201 fixed in advance:
-
-| cell | live latents/layer | pre-declared baseline | movement | held-out NMSE sum | dead |
-|---|---:|---|---:|---:|---:|
-| `stage1/protein`, `auxk` 2,048 | **1,586.2** | band 1,627–1,653 | −41 to −67 | 5.4522 | 80.6% |
-| `base/protein`, `auxk` 2,048 | **2,146.2** | single cell at 2,188 | −42 | 3.7264 | 73.8% |
-
-Both movements are inside the pre-declared **NO EFFECT** window of ±100, and both are *downward*, so a 10.7x revival budget did not move the live basis on either checkpoint. The pre-declared third statistic also holds: **Δ = 2,146.2 − 1,586.2 = 560** against **554** at `auxk` 192, a change of 6 against a resolution floor of 26, so the base-minus-adapted separation is **invariant to the revival mechanism** exactly as that amendment said it would license. The step-6,000 interim reading — a mechanism at full leverage and a trajectory unmoved — is confirmed at the endpoint rather than reversed by it.
-
-**This is a status record and not that experiment's verdict entry.** Its pre-declaration fixes what NO EFFECT licenses, what it does not, and the disposition of the `auxk` mis-scaling defect (repair the Single-Source violation, do not change the value, claim no measured benefit), and issuing that reading belongs to whoever owns the entry. What is recorded here is only that the cells completed, where they are, and that the numbers exist — because a finished six-hour pair whose controller died is otherwise indistinguishable on B from one that never ran.
-
----
-
 ## 2026-08-14 — EXP-R2-203 read: **the pre-registered refusal condition fires on D3.h-B2.** Both text controls fail it per layer, so the gate that blocks R2.4's protein side is void on its own control, exactly as B1 is
 
 Read on the rule frozen above, before any of the four per-layer vectors except the eight disclosed there. Nothing was retrained; every number below comes from checkpoints written on 2026-08-13 and from one forward-pass census over the cohorts those checkpoints were already scored on.
@@ -12154,30 +12100,6 @@ One seed per cell, so nothing here prices dictionary-seed variability; the adapt
 
 ---
 
-## 2026-08-14 — EXP-R2-204 dispatch record
-
-Four cells launched on one snapshot, frozen once and reused by all four, pinned at commit `bd6ff99`. That commit carries `17_train_transcoder.py`, `src/transfer/transcoders.py`, `near_duplicates.py`, `replaceable.py`, `joint_modes.py`, `21_joint_mode_qualification.py` and both H200 drivers **byte-identical to `04fdfa5`** — checked with `git diff 04fdfa5 bd6ff99` over those paths, which returns empty — so these cells run the same trainer that produced every cell they are read against. **An explicit commit and not `HEAD`, deliberately**: another agent had `17_train_transcoder.py` and `transcoders.py` staged for commit at dispatch time, and `--pin HEAD` resolved at four different instants would have been four different code states. This is the hazard the driver's header records from 2026-08-12, met before it could fire.
-
-Health gate before dispatch: `Health=ok`, `PodGPFS=read-write`, four card rows, all four cards at **0 MiB and 0% with no processes**. Both concurrent agents' forward-pass jobs had cleared. **One hardware observation, recorded rather than acted on:** card 2 reports `ecc.errors.uncorrected.volatile.total = 1` where cards 0, 1 and 3 report 0, with no pending retired pages. One volatile uncorrectable error is not a reason to refuse a card that the cluster still schedules, but it is a reason not to put a decisive cell on it, so **card 2 carries `r204_k64_base`** — the secondary lever — and the two width cells that decide the frozen question sit on cards 0 and 1.
-
-**The pre-declared specification check passes in all four cells, read from in-pod stdout rather than from a launcher exit status.** Every cell reports `screening 1024 candidates against the 229376 training records` and `kept 961 of 1024, max containment 1.0000`, reproducing EXP-R2-191, EXP-R2-201 and EXP-R2-202 exactly. So all six cells of the width comparison are scored on one held-out population, and the four new cells train on the same stream in the same order as the two they are ratioed against.
-
-**The memory arithmetic is confirmed against the running jobs and not only against the formula.** Cell `r204_d16384_base` prints `[model] PLT 4295.6M parameters 32 decoder(s)` — the predicted 4,295,622,656 to the printed precision. Steady-state device memory measured once training was under way: **118,471 MiB on each width card and 70,477 MiB on each `k` card, of 143,771 MiB**, all four at 99–100% utilisation. So the width cells run with **25.3 GB of headroom**, which is more than the pre-registration's worst case predicted and confirms that the 4x-expansion configuration fits. The pre-registered rule stands unchanged: a cell that dies of CUDA OOM is reported as a failed cell and is not re-run smaller under this name.
-
-Expected wall clock, from the 5.95 h precedent at 8,192: 9–12 h for the width cells, ~6 h for the `k` cells. Artefacts will be written to `results/external_baseline/20260814112509_9fa75fa8a3b3/r204_{d16384,k64}_{base,stage1}/` on GPFS. **The 16,384-wide dictionary is a 17.2 GB file, and the launcher's pull of an 8.59 GB directory already failed twice in EXP-R2-191 on chunk-size mismatch**; if it fails again the JSON record is recovered from GPFS under digest, the dictionary stays where every downstream stage reads dictionaries from anyway, and the incident is reported rather than described as a completion.
-
-### An operational hazard this campaign hit, recorded where the next campaign operator will look
-
-**A watcher held open by the agent harness is not a trigger you can rely on for a multi-hour run: it is killed after roughly an hour, and it dies with an empty output file and no signal.** Three of this campaign's watchers were armed that way — a four-cell completion watcher and a card-release trigger among them — and the completion watcher was found dead with nothing in it. **The failure mode is the dangerous one: silence.** A dead watcher and a run that has simply not finished yet produce exactly the same observation, so the operator waits, and the wait costs whatever the trigger was guarding. Here it would have been the card-release trigger for a follow-on arm, which converts directly into idle GPU hours on a cluster whose allocation is already at 16/16.
-
-**The distinction that makes this actionable, established by the same campaign rather than assumed.** The four `run_external_baseline_h200.sh` controllers of this run were started as ordinary `nohup`-detached shell processes and were **still alive at six hours**, polling and then pulling their artefacts exactly as designed. What died were the watchers the *agent harness* was supervising. So the rule is not "backgrounded shell is unreliable" — the committed launcher's own detachment is fine and is what the controllers depend on — it is that **a process whose lifetime the harness owns must not be the only thing holding a trigger**. Detach long-lived work the way the launcher does, and keep the harness-supervised watchers as reporting conveniences rather than as the mechanism of record.
-
-Three rules follow, and this campaign now runs under all three. *Hang long-campaign triggers on the session-persistent watcher path, not on backgrounded shell.* *Give the watcher a side effect you can check locally* — this one appends a line to `logs/external_baseline/r204_memory_profile.csv` on every poll, so its liveness is a file timestamp on the workstation rather than a pod round trip, and "armed" and "alive" stop being the same claim. *Do not let one watcher hold every trigger.* A single consolidated watcher is a single point of failure for the whole campaign; a second, cheaper watcher on a different interval that checks the first one's timestamp and independently re-checks the one time-critical trigger costs almost nothing and removes the correlated failure.
-
-**And the standing rule underneath them: a trigger time that passes without a signal is a reason to check the run directly, never a reason to keep waiting.** Launching on schedule matters more than detecting the moment elegantly.
-
----
-
 ## 2026-08-14 — EXP-R2-202 corrections: a mislabelled column, a threshold that was unreachable by construction, and two follow-ups the coordinator asked for. Rule C survives all three; one of its supporting arguments does not survive unqualified
 
 Four corrections and two new measurements, raised by the coordinator against the EXP-R2-202 read above. Nothing here changes which rule fired.
@@ -12271,7 +12193,11 @@ Unchanged: Rule C fires; B2 as written could not have been a statement about dic
 
 ## 2026-08-14 — EXP-R2-201 read: **NO EFFECT on both cells.** A 10.7x revival budget does not move the protein live basis, and the per-layer reading puts the whole of the mean's movement in one degenerate layer
 
-Filed on the coordinator's reassignment, the status entry above having recorded that both cells completed and that no verdict had been issued. **Read from the artefacts and not from that entry's prose.** Both JSON records were pulled from GPFS over the exec channel and verified by digest against the pod-side files — `9b0368b3…` (`base/protein`) and `d4f27bbc…` (`stage1/protein`) — and the per-layer basis was read separately out of each checkpoint's own `silent_steps` buffer.
+**Dispatch and completion.** Both cells launched on the snapshot pinned at `04fdfa5`, one card each. The near-duplicate screen reports `kept 961 of 1024, max containment 1.0000` over 229,376 screened records, reproducing EXP-R2-191's protein draw. Controllers died shortly after dispatch (`logs/external_baseline/r201_auxk2048.out` and `..._base.out` each end in `LAUNCHED` followed by a termination message) and never polled, verified or pulled; in-pod work continued under `setsid nohup` and finished normally under run `20260812215507_0f81e190ba55`. **Read from the artefacts, not from the completion note.**
+
+**Second amendment, pre-declared at step 6,000 of 36,978 and before either endpoint existed.** Δ = live latents per layer (base) − live latents per layer (adapted) was declared as a statistic then, so it would not be a post-hoc observation later. At `auxk` 192 the endpoint value was **Δ = 2,188 − 1,634 = 554**, and its mid-training trajectory was 0, 593, 387, 338, 377 at steps 2,000 to 12,000. At `auxk` 2,048 it read **410** at step 6,000 against 387 at the same step under `auxk` 192. At that step, matched step for matched step, the live basis read 2,850 against 2,848 on the base side and 2,440 against 2,461 on the adapted side — **+2 and −21 latents per layer for a 10.7x revival budget**, against a three-seed spread of 26, with 5,400–5,750 dead latents per layer so `auxk` 192 reached 3.3% of them and 2,048 reached 36%. The disposition of the lever finding was also fixed then: if NO EFFECT, repair the Single-Source violation by replacing the literal with the rule, not by changing the value, and claim no measured benefit.
+
+Both JSON records were pulled from GPFS over the exec channel and verified by digest against the pod-side files — `9b0368b3…` (`base/protein`) and `d4f27bbc…` (`stage1/protein`) — and the per-layer basis was read separately out of each checkpoint's own `silent_steps` buffer.
 
 ### The void conditions first, because no verdict is admitted without them
 
@@ -12675,50 +12601,9 @@ R1 runs on **four cards together** rather than split across pairs — the Crossc
 
 ---
 
-## 2026-08-15 — EXP-R2-206 dispatch record, both primary cells, and a defect in the registered dispatch block that would have killed them at launch
-
-The two primary Crosscoder cells are running. Card 0 carries the text cell, card 1 the protein cell; cards 2 and 3 were left untouched under EXP-R2-204's text control and were confirmed at 100% before and after. Run id `20260815005332_376ec28db1f6`, one snapshot frozen once and reused by both cells, dispatched through `scripts/transfer/run_external_baseline_h200.sh` one invocation per cell.
-
-**The pin is `96b3bd9`, not the entry's `--pin HEAD`.** The registered block was written before `caccfc2` (each site's effective dimension carried beside its reconstruction number) and `56af68f` (the cross-role and cross-site NMSE prohibition), both of which bear on the readout these cells produce. `HEAD` is a moving reference in a tree several agents commit into, and the point of pinning is that it is not. Both amendment commits are verified ancestors of the pin, and `git diff 96b3bd9 -- scripts/transfer src` is empty, so the pinned commit and the tree carry identical code; only this document differs.
-
-### The defect in the registered block
-
-EXP-R2-206's dispatch block passes `--base "$TRANSFER_MODEL_BASE_DIR/Llama-2-7b-hf"` in double quotes. `TRANSFER_MODEL_BASE_DIR` is exported by `scripts/transfer/h200_env.sh`, which is sourced **inside the pod** by the driver; nothing on the workstation defines it. Written that way the workstation shell expands it to the empty string, the cell launches with `--base /Llama-2-7b-hf`, and the stage dies at dispatch on a checkpoint directory that does not exist. `--adapted` carries the same defect.
-
-**Corrected by substituting the absolute GPFS model path**, which is what EXP-R2-204's own `.dispatch` records did and what removes the question rather than deferring it: the driver interpolates the stage arguments into a double-quoted `bash -lc` string that crosses `kubectl exec`, so a deferred `$VAR` would have to survive that transport intact to be correct, and an absolute path does not have to survive anything. The `.dispatch` records were read before either cell was treated as launched and both show `--base /gpfs/.../models/Llama-2-7b-hf --adapted /gpfs/.../models/ProLLaMA_Stage_1`; the in-pod `[paths]` lines quoted below show the stage resolving exactly those two directories. This is a correction to the registered block, not a change of measurement: no parameter the entry pre-registered was altered.
-
-### Verified before dispatch
-
-Cards 0 and 1 idle at 4 MiB and 0%; both checkpoint directories present on GPFS; both complete argument lists dry-parsed against `32_crosscoder.py`'s own `build_parser()` on the workstation, returning `layers=(0, 27, 28, 29, 30, 31)`, `admissible=(27, 28)`, both `r99` vectors of length six in `--layers` order, and `pairings=['true', 'shuffled']`. A dry parse is what distinguishes a flag the stage rejects from one it silently defaults.
-
-### Verified after dispatch, from in-pod stdout rather than from the launcher's exit status
-
-Both drivers printed `LAUNCHED` and cleared the 45-second dispatch-failure gate. The stage's own stdout then reported, per cell:
-
-* Loader self-check, identical on both: `32L x 4096d`, vocabulary digest `fe56f82cb036..`, tensor `block_output` — the pre-registered `comparability` triple.
-* Parameter line, identical on both: `2 Crosscoder(s), 6 site(s) x 805.4M parameters each, admissible [27, 28]` — two pairings fitted in one pass, six sites, a diff licensed at two.
-* Text screen: 1,024 candidates against **106,496** training records on characters, **kept 1,024 of 1,024, max containment 0.4346**, cohort band `[800, None]`.
-* Protein screen: 1,024 candidates against **229,376** training records on residues, **kept 961 of 1,024, max containment 1.0000**, cohort band `[32, 1019]`.
-
-Every one of those figures is the value EXP-R2-206 pre-registered, including the two held-out offsets that the entry warned are set by declared `--steps` rather than realised steps. The remaining specification checks — realised steps, sequences and scored tokens, `matched_training` between the two mode cells, distinct `weights_sha256` with `self_pair` false — are endpoint quantities and are not yet readable.
-
-Utilisation seven minutes in: card 0 at **77,703 MiB, 99%** against a pre-declared 77,159 MiB, card 1 at **61,797 MiB, 100%** against a pre-declared 66,502 MiB. The text cell landed within 0.7% of its arithmetic and the protein cell below it, which is the direction the entry expected from a realised worst case.
-
-### Operational deviation, declared
-
-The first freeze aborted at the cluster health probe, which did not reach its `Health=` line inside the default 120-second caller-side bound. That is inconclusive and nothing was transferred; it was re-run at `H200_STATUS_TIMEOUT_SECONDS=300` and passed. The bound is caller-side only and no code, parameter or gate was bypassed — the probe still had to state `Health=ok` before the snapshot moved.
-
-`scripts/transfer/h200_campaign_queue.sh` was deliberately **not** used. It has never run in a pod, and a campaign whose cells were verified against a pre-registration is not where an unexercised launcher should make its debut.
-
-### Where the results will be
-
-On GPFS under `results/external_baseline/20260815005332_376ec28db1f6/r206_cc_{text,protein}_d8192`, pulled by each driver on completion into `results/transfer/external_baseline/20260815005332_376ec28db1f6/<label>` and admitted only on a matching sha256 digest. Expected wall clock ≈4.7 h from 01:23 and 01:24 local, so ≈06:05 local.
-
-**Not done here and still owed before either artefact is read**: the workstation synthetic instrument check that C1 and C2 are read from. EXP-R2-205 demonstrated both, but the entry requires the check at the campaign's own settings before a cell's artefact is opened, and this dispatch did not run it.
-
----
-
 ## 2026-08-15 — EXP-R2-206 read: C1 and C2 pass, and the Crosscoder campaign is void on its own C3 at every admissible site
+
+**Dispatch facts.** Both primary cells ran on pin `96b3bd9`, not `--pin HEAD`, run id `20260815005332_376ec28db1f6`. The registered dispatch block passed `--base "$TRANSFER_MODEL_BASE_DIR/Llama-2-7b-hf"` in double quotes; that variable is defined only inside the pod, so the workstation shell would have expanded it to the empty string and launched `--base /Llama-2-7b-hf`. Corrected by substituting the absolute GPFS model path. Loader self-check: `32L x 4096d`, vocabulary digest `fe56f82cb036..`, tensor `block_output`. Text screen kept 1,024 of 1,024 at max containment 0.4346 over 106,496 records; protein screen kept 961 of 1,024 at 1.0000 over 229,376.
 
 The owed workstation instrument check was run before either cell's artefact was opened, as the pre-registration requires. It could not be run as written, and the reason is a defect in the stage rather than in the check.
 
@@ -12805,28 +12690,9 @@ The entry predicted that layers 27 and 28 separate cleanly in both modes while 0
 
 ---
 
-## 2026-08-15 — EXP-R2-207 dispatch record: R1's four cells on four cards, pinned to the trainer EXP-R2-204 actually ran
-
-All four H200 cards had been idle since roughly 06:05 local. R1 is four cells and the allocation is four cards, so it went out whole, one card each, ahead of any analysis.
-
-Frozen once at **`bd6ff99`** — the commit EXP-R2-191 and EXP-R2-204 ran, not HEAD, whose trainer has moved several hundred lines and would make these replicates a different measurement from the baselines they exist to be compared against. Run id `20260815084249_9fa75fa8a3b3`. **The snapshot's code hash `9fa75fa8a3b3` is identical to EXP-R2-204's run `20260814112509_9fa75fa8a3b3`**, which is the check that the pin did what it claims: the same twelve hex digits mean the same code, independently of what the working tree has done since.
-
-| label | card | checkpoint | seed |
-|---|---:|---|---:|
-| `r207_r1_base_s20260815` | 0 | `Llama-2-7b-hf` | 20260815 |
-| `r207_r1_stage1_s20260815` | 1 | `ProLLaMA_Stage_1` | 20260815 |
-| `r207_r1_base_s20260816` | 2 | `Llama-2-7b-hf` | 20260816 |
-| `r207_r1_stage1_s20260816` | 3 | `ProLLaMA_Stage_1` | 20260816 |
-
-Every other argument is EXP-R2-204's `.dispatch` record verbatim at `--d-hidden 8192`: `--architecture plt --rendering prollama --mode protein --k 32 --auxk 192 --batch-size 4 --train-tokens 34000000 --steps 56000 --max-tokens 1024 --eval-sequences 256 --eval-every 2000 --learning-rate 2e-4 --weight-decay 1e-5 --grad-clip 1.0 --corpus-seed 20260812`. `--corpus-seed` is held at 20260812 and only `--seed` varies, as the seed design requires. The three explicit optimiser arguments are the trainer's defaults at this commit, so these cells are argument-identical to `r24_plt_{base,stage1}_protein` except for `--seed`, which is what `compare_matched_training` must return as `disagreements` exactly `["seed"]` at endpoint.
-
-**Model paths were passed as absolute GPFS paths, not as `$TRANSFER_MODEL_BASE_DIR/...`.** That variable is defined only inside the pod; written in double quotes on the workstation it expands to the empty string, which is the defect EXP-R2-206's dispatch record caught before launch. Each cell went out as its own backgrounded command with `H200_POD` exported in the same shell, never as one `&&` list, which is the other way this dispatch shape has lost cells.
-
-**Verified as launched from the pod, not from the launcher's exit status.** Each of the four `.dispatch` records shows the absolute `--joint-checkpoint` path and its own seed; in-pod stdout shows `[loader] .../Llama-2-7b-hf` and `.../ProLLaMA_Stage_1` resolving on `cuda:0` through `cuda:3`, the PLT self-check passing, and the protein screen keeping **961 of 1,024 at maximum containment 1.0000 over 229,376 records** — the pre-registered stream. `nvidia-smi` in the pod reads four cards at 86,445 MiB and 99–100%. Expected ≈5.95 h from 08:48 local.
-
----
-
 ## 2026-08-15 — EXP-R2-204 read: the text control lands and `R` is readable on both checkpoints
+
+**Dispatch facts, 2026-08-14.** Four protein cells launched on pin `bd6ff99`, byte-identical to `04fdfa5` on the trainer paths; an explicit commit rather than `HEAD`. Run `20260814112509_9fa75fa8a3b3`. Card 2 reported `ecc.errors.uncorrected.volatile.total = 1` where cards 0, 1 and 3 reported 0, so it carried `r204_k64_base` and the two width cells sat on cards 0 and 1. Steady-state device memory: **118,471 MiB on each width card and 70,477 MiB on each `k` card, of 143,771 MiB**. A watcher held open by the agent harness was killed after roughly an hour with an empty output file and no signal; the four `nohup`-detached controllers were still alive at six hours. Watcher liveness was a timestamp on `logs/external_baseline/r204_memory_profile.csv`. The pre-declared screen kept 961 of 1,024 at max containment 1.0000 over 229,376 records in all four cells.
 
 The two hand-launched text-control cells completed. With them the campaign's verdict statistic can be computed as registered: `R = (protein f16/f8) ÷ (text f16/f8)`, matched by checkpoint, on **endpoint** live-latent counts per layer.
 
@@ -13055,6 +12921,8 @@ R2 is the campaign's own cost model at text 8,192, ≈4.9 h from 07:55 local, so
 ---
 
 ## 2026-08-17 — EXP-R2-207 R1 read: `R` has an interval, it separates from 1 on both checkpoints, and only the protein half of it is priced
+
+**Dispatch facts, 2026-08-15.** R1's four cells launched on pin **`bd6ff99`**, the commit EXP-R2-191 and EXP-R2-204 ran. Run id `20260815084249_9fa75fa8a3b3`. **The snapshot's code hash `9fa75fa8a3b3` is identical to EXP-R2-204's run `20260814112509_9fa75fa8a3b3`.** Model paths were absolute GPFS paths, not `$TRANSFER_MODEL_BASE_DIR/...`. Seeds 20260815 and 20260816, corpus-seed held at 20260812.
 
 R1's four cells completed on 2026-08-15 at 14:44–14:45 local and were admitted on matching digests. With the seed-20260812 baselines they give **three seeds per protein cell**, which is what EXP-R2-204's `R` was registered as lacking.
 
@@ -13644,33 +13512,6 @@ The two `f16` numerators remain single dictionaries at seed 20260812, **by decis
 
 ---
 
-## 2026-08-17 — EXP-R2-209 round A read (interim): the two requirements cross without overlapping, and no usable λ has appeared
-
-Both round A cells are admitted and valid — text stream 11,367 steps / 34,002,081 scored tokens, screen 1,024 of 1,024 at 0.4346 over 106,496, held-out offset 106,496. Round B's two cells are still running, so this is an interim reading of a four-cell round; the stop rule is not executed until all four are in.
-
-| λ | `active_fraction` | live 27 | live 28 | polarised 27 | polarised 28 | FITS | POLARISES | USABLE |
-|---:|---:|---:|---:|---:|---:|---|---|---|
-| 3e-5 *(protein, EXP-R2-208)* | 3.894e-03 | 1,601 | 1,306 | 0.001 | 0.002 | yes | no | no |
-| **3e-4** | **3.905e-03** | **1,646** | **1,440** | **0.048** | **0.058** | **yes** | **no** | **no** |
-| **1e-3** | 3.418e-03 | **709** | **629** | **0.295** | **0.300** | **no** | **yes** | **no** |
-| 3e-3 *(EXP-R2-206)* | 4.390e-04 | 310 | 197 | 0.106 | 0.208 | no | yes | no |
-
-**The transition is sharp and the two requirements pass each other without meeting.** Across a factor of 3.3 in λ, live latents fall from 1,646 to 709 while polarisation rises from 0.048 to 0.30. At 3e-4 the dictionary fits about as well as it can — `active_fraction` 3.905e-03 against the 3.906e-03 that `k`/`d_hidden` implies, so essentially every TopK selection survives the ReLU — and polarises at **less than half the 0.10 floor**. At 1e-3 polarisation is comfortable at 0.30 and the live basis has collapsed below the 1,000 bar.
-
-**λ = 3e-4 is nonetheless the most informative cell of the campaign so far**, because it is the first Crosscoder on this lineage that both fits *and* shows non-trivial polarisation: 0.048 and 0.058 are 25x to 30x λ = 3e-5's 0.001 and 0.002. The mechanism is real and dose-dependent; what is in doubt is whether it reaches a usable level before the basis collapses.
-
-**C3 fails at every measured λ** and is not the gate here: +0.158 and +0.115 at 3e-4, +0.027 and −0.018 at 1e-3.
-
-**No Crosscoder re-run is dispatched.** The condition for it was a usable λ, and none exists among the measured points. Round B's λ = 1e-4 lies on the fitting side of the crossing and cannot supply one; the formal verdict waits for it and for the protein cell, as registered.
-
-**And no λ is proposed by interpolation.** The pre-registration forbids exactly this: *"the bracket is not subdivided, no fifth cell is dispatched, and no λ is proposed from an interpolation between two failures."* The gap between 3e-4 and 1e-3 is where a usable value would have to live, and pointing at it after seeing these numbers is the tuned-value failure the rule exists to prevent.
-
-### One reader defect found and fixed before any of this was read
-
-The endpoint reader hardcoded the **protein** stream in its void check, having been built and validated on protein cells only. The first text cell it saw was reported **VOID** on a perfectly valid stream. It is now mode-aware and re-validated against the protein cells whose verdicts are already recorded, which reproduce unchanged. Same defect class as the records-pull loop: validated on one case, used on another.
-
----
-
 ## 2026-08-17 — EXP-R2-209 amendment: the pre-registered negative overshoots what four λ can support, and the evidence governs
 
 Written before round B completes the round, so the sentence the stop rule will licence is fixed before the data that licences it is in — which is the only order in which fixing it is not motivated reasoning.
@@ -13957,7 +13798,7 @@ Approved at 32,768, two sites, after the λ = 0 replicates land. Manifest writte
 
 ## 2026-08-17 — EXP-R2-209 STOP: all four cells in, none usable, and the sweep ends as registered
 
-The fourth cell landed and was admitted. **The stop rule fires**: no cell both fits and polarises, the bracket is not subdivided, no fifth cell is dispatched, and no λ is proposed from an interpolation between failures.
+The fourth cell landed and was admitted. **The stop rule fires**: no cell both fits and polarises, the bracket is not subdivided, no fifth cell is dispatched, and no λ is proposed from an interpolation between failures. Round A's interim reading already showed the two requirements crossing without overlapping; this entry is that finding with all four cells in. **Reader defect found before the interim numbers were read:** the endpoint reader hardcoded the protein stream in its void check, so the first text cell was reported VOID on a valid stream. It is now mode-aware and re-validated against the protein cells, which reproduce unchanged.
 
 | mode | λ | live 27 / 28 | `active_fraction` | polarised 27 / 28 | C3 gap 27 / 28 | FITS | POLARISES |
 |---|---:|---:|---:|---:|---:|---|---|
@@ -13966,7 +13807,7 @@ The fourth cell landed and was admitted. **The stop rule fires**: no cell both f
 | text | 1e-3 | 709 / 629 | 3.418e-03 | 0.295 / 0.300 | +0.027 / −0.018 | no | yes |
 | **protein** | **3e-4** | **555 / 453** | 3.824e-03 | **0.086 / 0.119** | **+0.391 / +0.353** | no | no |
 
-**The finding, in the amended form.** At the λ measured, no configuration both fits and polarises. **Fitting and exclusivity trade off against each other and cross without a measured overlap** — in text, across a factor of 3.3 in λ, live falls 1,646 → 709 while polarisation rises 0.048 → 0.30. The band between 3e-4 and 1e-3 is unprobed and nothing here says whether a usable value lies in it.
+**The finding, in the amended form.** At the λ measured, no configuration both fits and polarises. **Fitting and exclusivity trade off against each other and cross without a measured overlap** — in text, across a factor of 3.3 in λ, live falls 1,646 → 709 while polarisation rises 0.048 → 0.30. At 3e-4 the dictionary fits about as well as it can (`active_fraction` 3.905e-03 against 3.906e-03) and polarises at less than half the 0.10 floor, 25x to 30x λ = 3e-5; it is the most informative cell of the campaign even though it is not usable. The band between 3e-4 and 1e-3 is unprobed and nothing here says whether a usable value lies in it.
 
 ### The protein cell is the most interesting of the four and does not change the verdict
 
@@ -18969,17 +18810,19 @@ D3.j-C is a candidate likelihood-sensitivity result against the specified descri
 
 **Documentation validation:** `PYTHONDONTWRITEBYTECODE=1 /Data/lzp/miniconda3/envs/ct/bin/python -m pytest -q -p no:cacheprovider tests/test_experiment_log_numbering.py tests/test_mode_subspace_gate_retirement.py::test_the_low_signal_evidence_states_the_limitation_catalogue_correctly tests/test_h200_orchestration.py::ExternalBaselineDispatchTests::test_every_external_baseline_stage_appears_in_the_research_plan` — **14 passed in 4.98 s**. `git diff --check` passed. The checks cover experiment numbering, the retained low-signal limitation statement and stage coverage in the research plan; they do not validate new model behavior. No tests or frozen evidence were rewritten to obtain a pass.
 
-## 2026-09-05 — EXP-R2-232 reserved: generated-output biological evidence and structural calibration
+## 2026-09-05 — EXP-R2-232 reserved
 
 The user authorized completing a bounded Direction-1 computational evidence package with additional H200 resources. This identifier is reserved for the saved-output accounting and new structure-prediction campaign; no structural outcome is reported by this reservation. The protocol will be frozen in `docs/D1_GENERATION_BIOLOGY_PREREGISTRATION.md` before generated-sequence structural endpoints are inspected. Existing R227 generation is historical; its new descriptive accounting is post-hoc, while the new structural predictions can have prospectively declared endpoints. All 12,800 original requested/mismatched attempts remain accountable; the original 14 ZymCTRL and 15 ProLLaMA evaluable classes define the primary class panel. Original exclusions and verdicts remain unchanged.
 
 The bounded design under preparation uses control-only calibration, fixed score-independent length-stratified sampling, uncut sequences within the predictor's declared support, natural controls and paired composition-shuffled references. It will distinguish computational structural plausibility from actual expression, folding or function. Controls calibrate evidence strength, not a universal demand to beat every biological profile. Physical health/allocation checks, predictor staging and launch are managed by the root coordinator; actual resource receipts, frozen hashes, commands and terminal outcomes will be recorded as they occur. This reservation itself launches no GPU job and stores no transient access identifiers.
 
-## 2026-09-05 — EXP-R2-233 reserved: one newer model's native generation task
+## 2026-09-05 — EXP-R2-233 reserved
 
 Reserved for one bounded ProGen3 native-generation supplement after the biological evaluation pipeline is calibrated. The exact native task, sampling budget and evaluator support must be frozen before new output outcomes are read; public API availability is not yet a successful local generation measurement. No result, launch, functional validation or complete model matrix is implied. EXP-R2-232 and EXP-R2-233 are the next identifiers after EXP-R2-231; subsequent entries will use these identifiers for their actual configuration and outcomes.
 
-## 2026-09-05 — EXP-R2-232 frozen: full attempt ledger, 116 control-only pilot rows and 2,320 main structural rows
+## 2026-09-05 — EXP-R2-232/233: protocol freezes, resource qualification and dispatch
+
+### EXP-R2-232 frozen: full attempt ledger, 116 control-only pilot rows and 2,320 main structural rows
 
 The root accepted the finite protocol before generated-sequence structural outcomes existed. `evidence/generation_evidence_20260905/protocol_freeze.json` records the dated immutable protocol, cohort and input hashes; EXP-R2-233 will receive a separate pre-output specification rather than altering this freeze. The protocol is `docs/D1_GENERATION_BIOLOGY_PREREGISTRATION.md`. The producer retained 16,400 ledger rows: 12,800 original conditioned generation attempts, 400 unconditioned floors and 3,200 natural references. The unchanged primary panel has 11,600 generation attempts across 29 eligible model/classes.
 
@@ -18991,7 +18834,7 @@ The root's current status probe reached terminal `Health=ok`, with 12/16 H200s a
 
 Local validation comprised the structure runner's six targeted invariant checks and one tiny **randomly initialized** 20-residue ESMFold-architecture interface smoke (0.522 s, 12,008,960 bytes reported peak allocation), which establishes no biological result. The analysis and experiment-numbering tests passed **19/19 in 0.19 s** via `PYTHONDONTWRITEBYTECODE=1 /Data/lzp/miniconda3/envs/ct/bin/python -m pytest -q -p no:cacheprovider tests/test_generation_biology_analysis.py tests/test_experiment_log_numbering.py`. The saved-output ledger was reconstructed over 98 accounting cells; it is post-hoc accounting, not new generation. Analysis refuses incomplete/nonterminal predictions, sequence/hash or CA metric inconsistencies and incorrect sampling weights, preserves unknown outcomes and known profile marginals, and retains pair-level statistics. Actual predictor calibration, main outcomes and EXP-R2-233 generation remain pending.
 
-## 2026-09-05 — EXP-R2-233 frozen separately; EXP-R2-232 reference metadata recovered without changing its cohort
+### EXP-R2-233 frozen separately; EXP-R2-232 reference metadata recovered without changing its cohort
 
 `docs/D1_PROGEN3_GENERATION_PREREGISTRATION.md` is the standalone EXP-R2-233 specification, SHA-256 `f4944c0a48ab61285c2731fb6eb92e932d602c0f167433c080bdc7809cbe4826`, with receipt `evidence/generation_evidence_20260905/progen3_protocol_freeze.json`. The EXP-R2-232 protocol remains byte-identical at `e9fcbb83a39caf745e4783565cd03fca26f4049b0e0df937b53b493129c16f8e`. The newer branch fixes ProGen3-3B native N-to-C unconditional direction `1`, 800 attempts in batches of eight, batch seed `20260905 + batch_index`, temperature .85, top-p .95, explicit top-k 50, repetition penalty 1 and native 400-content-token budget (402 effective Hugging Face positions). It preserves raw attempts, official compiler results/failures and the declared leading-AA20 representation. A confident truncated/failed-compiler prefix is not a complete valid native output. Its 128 score-independent structural inputs plus paired shuffles use a fixed-task sequence-group bootstrap, not fictitious independent protein classes.
 
@@ -19001,7 +18844,7 @@ For EXP-R2-232, retained DIAMOND query coordinates allow recovery of query-span 
 
 The analysis writes reconstructable JSON and CSV tables, a report and four standalone PNG/PDF/SVG figures. A synthetic eight-class end-to-end rendering check produced all 17 expected files in a temporary directory; this is software validation, not a biological result. Structural calibration and the scientific batches remain pending. All results, including negative and uncalibrated outcomes, will be reported on the frozen support.
 
-## 2026-09-05 — EXP-R2-232 runtime qualified and the reported faulty H200 identified
+### EXP-R2-232 runtime qualified and the reported faulty H200 identified
 
 The official ESMFold weight SHA matches the frozen protocol. A full-model local L20 interface check on a 76-residue ubiquitin sequence outside the scientific cohort used chunk 128 and four trunk passes, took 1.469 s for prediction/save and reported 8,493,276,672 bytes peak allocation. Mean CA-pLDDT was 90.4769 and pTM 0.828829; NPZ residue confidence and PDB B factors agree. These are interface-validation outputs, not a new functional result or a substitute for the frozen control-only pilot. A real resume preserved raw result bytes and skipped both model loading and folding. The two unused ESM contact-head regression keys were the only missing keys; mismatch, unexpected and error lists were empty. The receipt is `logs/structure_evidence_smoke/validation_receipt.json`.
 
@@ -19009,25 +18852,27 @@ The root verified the staged portable runtime on H200: Python 3.11.14, PyTorch 2
 
 The combined focused cohort, structure, native-generation, analysis, experiment-numbering and relevant document-invariant checks passed **39/39 in 5.36 s**. Analysis Ruff and `git diff --check` pass. The scientific input and protocol hashes remain frozen; no generated structural endpoint is interpreted in this runtime-validation entry. Dispatch and calibration results are recorded separately.
 
-## 2026-09-05 — EXP-R2-232/233 code pinned before execution
+### EXP-R2-232/233 code pinned before execution
 
 The root committed the new implementation, tests, protocols, provenance and healthy-device queue manifests at `1b9a368e6cdd9f69eb99d0c52bf6534c6564d1fe`. The focused 39-test and lint checks pass; living-document changes and unrelated user edits remain outside that commit. Controller freeze is underway for run `20260904232436_00129607e3c7`; its timestamp uses the controller host's UTC−7 convention, while the actual execution date is 2026-09-05. The three newly screened healthy devices, physical CUDA indices 0/1/3, also pass finite CUDA checks. The queue uses these three hash shards; a shard count changes scheduling rather than the frozen scientific population.
 
 **Implementation-only change after the EXP-R2-233 specification receipt, before scientific execution:** the native-generation module's hash recorded in the preliminary source receipt (`6347316…`) differs from the final committed module (`b726732…`) because explicit raw-continuation length and budget-censor fields were added. Sampling, native task, weights and statistical endpoints were not changed. The immutable receipt is retained unchanged; the actual commit and dispatch manifests pin the code used for science, as the protocol requires. This is not an outcome-driven protocol amendment or a claim that the preliminary and final source hashes match.
 
-## 2026-09-05 — EXP-R2-233 dispatched after the actual 3B gate; EXP-R2-232 pilot still awaits verified assets
+### EXP-R2-233 dispatched after the actual 3B gate; EXP-R2-232 pilot still awaits verified assets
 
 The pinned controller run `20260904232436_00129607e3c7` completed its freeze. EXP-R2-233 scientific generation began at **2026-09-05 06:30:56 UTC** (14:30:56 Asia/Shanghai), with one running cell, zero failures and the first eight of 800 attempts persisted at the initial observation. That partial count is queue progress, not a scientific conclusion. The actual ProGen3-3B gate passed before those attempts: mean NLL 1.50514817237854 on eight qualification sequences, inside the declared [1.2045, 1.8045] band; cached/full maximum logit difference exactly 0.0; both 24-token native interface smokes passed. These checks establish the model-specific interface, not generated biological validity. The full source/checkpoint/runtime pin and gate receipt is `logs/npj_ai_review/r233_h200_run_manifest.json`, run digest `bc2054337376d98a1b889521e7725bf52e2820c1be52829e31f2ed77072a2d2f`.
 
 At that observation, EXP-R2-232's three-GPU control-only pilot had **not** been dispatched. Its bounded asset-readiness chain waits for the complete archive, verifies the archive and extracted official weight digests, then performs the dry run and actual pilot dispatch; staging activity is not a running scientific pilot. The command receipt is `logs/d1_generation_biology/esmfold_stage_and_pilot_dispatch.log`. All remote scientific input hashes already match the frozen cohort. Parallel native generation does not waive the shared structural-calibration requirement before interpreting EXP-R2-233 structural evidence.
 
-## 2026-09-05 — EXP-R2-232 reference-only completion decision before new search outputs
+### EXP-R2-232 reference-only completion decision before new search outputs
 
 The root authorized a fresh reference-only search of the fixed 16,400-row ledger because the full existing UniRef50 database is already being staged for EXP-R2-233. This completes recoverable query/target-coverage accounting without resampling, cropping, repeating profile annotation or changing a primary endpoint. The original ledger, identities, recovered metadata and frozen protocol remain unchanged. The new sidecar must retain the original fields and separately record fresh identity, query coverage and target coverage from the same newly selected hit, with source/runtime/database/alignment hashes and an explicit old-versus-new comparison. Search settings remain DIAMOND `--very-sensitive`, E-value 1e-3, at most five hits and masking zero; eight CPU threads are allowed alongside the independent structural jobs. Reference similarity to this corpus does not certify disjointness from model training. This is a pre-output computational-completion decision, not a reported search result.
 
 Nine existing built annotation assets were packed locally with source-stat stability checks: Pfam HMM and its four indexes, hmmscan, DIAMOND, UniRef50 database and metadata. The archive is 14,069,321,768 bytes, SHA-256 `1e9cb3d30bc524ad9bafc1876da29fcdcf6c54664b92460a203246ecf319ed51`; preparation used four CPU threads and 133.75 s. Independent database inspection reports 60,315,044 sequences and 17,282,055,793 letters. The receipt is `logs/npj_ai_review/r233_annotation_assets_receipt.json`. No remote dependency installation or new biological conclusion is implied by asset staging. The reference-only implementation passed thirteen focused tests and Ruff before any fresh search outcome existed; the root will pin that implementation separately from the original scientific inference snapshot.
 
-## 2026-09-05 — EXP-R2-232 control-only pilot complete and calibration attained
+## 2026-09-05 — EXP-R2-232/233: results and evidence retention
+
+### EXP-R2-232 control-only pilot complete and calibration attained
 
 After archive and official weight hashes passed, the three healthy-device pilot cells were dispatched at approximately 06:48 UTC. All three reached terminal exit code zero, with zero failures and no missing records. The original frozen index-only runner merged the outputs and rechecked every retained PDB/NPZ digest. The local metrics archive and extracted index were independently checked: 116 exact frozen input IDs, every row `ok`, all 58 natural/shuffle pairs complete. Index SHA-256 is `aea77d8a0829a08b2240a500afed3ea80ab89bb5231bcd658b39cf3a54e774af`; retrieval provenance and three worker manifests are adjacent to `results/transfer/generation_evidence/structure/20260904232436_00129607e3c7/pilot/predictions.jsonl`.
 
@@ -19043,7 +18888,7 @@ The root received the actual calibration verdict before main dispatch. The froze
 
 The root independently checked the completed calibration JSON (`526d2712a1b9b37bb3f08e42a2a1e182e4d815ba715fbfba92cd73904f737dd9`) and dispatched the main queue at approximately **07:04 UTC**, using the original scientific snapshot and healthy physical devices 0/1/3. Dispatch receipt: `logs/d1_generation_biology/r232_main_dispatch.log`. Dispatch does not establish completion or a generated-sequence result. The manuscript's pilot paragraph now reports the verified control-only counts and intervals; main and native-generation result sections remain explicitly pending.
 
-## 2026-09-05 — EXP-R2-233 native generation complete; annotation and structural outcomes pending
+### EXP-R2-233 native generation complete; annotation and structural outcomes pending
 
 The original frozen native-generation run completed all 100 batches and 800 attempts. The full raw batches, final ledger and sampling manifest were retrieved and checked for exact agreement. Local `results/transfer/progen3_generation_evidence/attempts.jsonl` has SHA-256 `5b123bb08243c713958d1aa895c06eb019be3397bfebc1bd4c4e39c562442886`; its fixed 256-row `main_subset.jsonl` has SHA-256 `8b96368e67b9406ffe361d1bcc7e4719195ccbf6b8c05436a1b3e1c40aba2bc8`. Run/source/gate provenance and the completion receipt are `logs/npj_ai_review/r233_generation_completion_receipt.json` and the retained run manifest. The source/runtime/model task and decoding settings remain those frozen before generation.
 
@@ -19051,11 +18896,11 @@ All 800 declared residue representations are exact-unique, occupy 800 near-dupli
 
 The nine annotation assets now pass their full source/archive/manifest hash checks. EXP-R2-233 annotation and EXP-R2-232's fresh reference-only CPU work were dispatched with eight threads each; actual process state and terminal results will be recorded separately. This entry reports no profile, reference-distance or generated-structure outcome. The manuscript now uses the verified attempt/compiler census and retains pending marks for those biological computational endpoints.
 
-## 2026-09-05 — EXP-R2-232 pilot raw-output retention verified
+### EXP-R2-232 pilot raw-output retention verified
 
 All 116 pilot prediction objects, including full PDB, NPZ and result JSON, are now retained locally beside the verified metrics under `results/transfer/generation_evidence/structure/20260904232436_00129607e3c7/pilot/objects/`. The compressed raw archive is 81,639,825 bytes, SHA-256 `8cc1b1e66f9cc826eaa933d043b5fa17c55489b7d9ce04fed0660e9857124956`; per-file digests were checked after extraction and the retrieval receipt was updated. This adds replayable raw retention without repeating inference or changing any analysis value. Measured H200 examples were 0.655 s and 8.51 GB allocated peak for a 69-residue sequence, and 33.26 s and 16.04 GB for a 954-residue sequence. The three main shards were observed computing on healthy physical devices 0/1/3 with no queue failures; their completed outcomes remain a separate later receipt.
 
-## 2026-09-05 — EXP-R2-233 sequence oracles completed and independently reconstructed
+### EXP-R2-233 sequence oracles completed and independently reconstructed
 
 The existing eight-thread CPU annotation job reached `CPU_ANNOTATION_EXIT=0` at 07:34:58 UTC with mandatory pre/post resource receipts; it was not restarted. All 800 frozen eligible inputs were scanned against the staged Pfam gathering thresholds and the full 60,315,044-record UniRef50 DIAMOND database. The full annotation directory, four raw Pfam FASTA/table pairs, DIAMOND query FASTA/table, configuration and terminal manifest were transferred with SHA-256 verification to `results/transfer/progen3_generation_evidence/annotations/`. The 528,783-byte transport archive has SHA-256 `b494b71333c95483d1ab62034bead72acf92074263f8c0356c3e4a45f5af0550`; the terminal annotation manifest has SHA-256 `c30be61196eeeda9f7f89d49646abce504e83997a7353fd6debd59410d83f9a0` and the 800-row sidecar has SHA-256 `53e74dd4def477bdce5e75b9cb3986ec1b7f50562a1fc025d55a1f66b8f798e2`.
 
@@ -19065,7 +18910,7 @@ Pfam recognizes at least one family in **496/800 (62.0%)** attempts. DIAMOND rep
 
 The separate EXP-R2-232 reference-only task was still actively computing at its later observation, using the existing eight-thread DIAMOND process. Its terminal result is not included in this entry.
 
-## 2026-09-05 — EXP-R2-232 complete structural main analysis
+### EXP-R2-232 complete structural main analysis
 
 All three main shards reached terminal exit zero by 07:39:19 UTC, with zero failures and no missing queue records. The original frozen index-only evaluator rechecked every raw PDB/NPZ digest and merged 2,320/2,320 `ok` source rows (2,315 unique sequences), preserving the exact frozen row order and metadata. The locally verified index SHA-256 is `09f983659274f53a29754daff4a09f2ea82ae262a911c559ecc4c0605335ec74`. Predictions, worker receipts, retrieval hashes and summary are under `results/transfer/generation_evidence/structure/20260904232436_00129607e3c7/main/`.
 
@@ -19079,7 +18924,7 @@ All 1,160 pairs are complete. ZymCTRL's requested-minus-own-shuffle CA-pLDDT con
 
 Equal-class requested mean CA confidence is 85.99605 for ZymCTRL and 44.38780 for ProLLaMA. The fixed confidence-event all-attempt estimates are 0.863625 and 0.013637; ProLLaMA's one unsupported requested sequence gives a support-only upper estimate of 0.013970. These ranges are not sampling confidence intervals or exact structural censuses. Profile-calibrated joint estimates retain unsampled target-stratum uncertainty rather than silently counting such products as negative; complete cell and pair statistics remain in the JSON/CSV. The result supports different degrees of predictor-recognized sequence-order information at the declared operating points, not actual folding/function or a common-task model ranking. No sample or cutoff was changed after these outcomes. Fresh reference-only completion remains a separate provenance channel.
 
-## 2026-09-05 — EXP-R2-233 annotation and complete structural analysis
+### EXP-R2-233 annotation and complete structural analysis
 
 The native annotation completed with all 800 IDs. Independent reconstruction from 2,725 raw HSPs and four Pfam shards passes: **496/800 any-profile matches; 569 reference-aligned outputs and 231 no-hit outputs**. Among 501 compiled outputs, the corresponding counts are 340 and 366; among 299 censored continuations, 156 and 203. Neither target-profile nor target-class assignment is defined. The sidecar SHA-256 is `53e74dd4def477bdce5e75b9cb3986ec1b7f50562a1fc025d55a1f66b8f798e2`, annotation manifest `c30be61196eeeda9f7f89d49646abce504e83997a7353fd6debd59410d83f9a0`, independent validation `e03a04ecd8ebaf58de6314179ab425853340cbe91cf68c9a63413fcbfda4b39a`. All fourteen retrieved files pass size/digest checks. Native query coverage is paired with identity from the same hit; target coverage was not retained and remains unknown without another search.
 
@@ -19093,7 +18938,7 @@ PYTHONDONTWRITEBYTECODE=1 /Data/lzp/miniconda3/envs/ct/bin/python scripts/transf
 
 The frozen primary estimate is **+38.38843 CA-pLDDT**, 95% weighted sequence-group bootstrap CI **[34.53168, 42.27394]**, using 128 sampled groups and the shared natural calibration. Mean confidence is 72.37623 and the fixed confidence-event all-attempt point estimate is 0.430702. Analysis SHA-256 is `03db77c151aee80ab81062a11b8772379087c126d60f7eac8824a8b0abfecc97`. This primary includes the declared residue representations of 89 compiled outputs and 39 censored continuations. Descriptive compiler/censor stratification is reported separately; a confident prefix is not a complete native product. The positive conditional-on-task interval is not generalization across protein classes or biochemical validation. No decoding or sample expansion was triggered.
 
-## 2026-09-05 — EXP-R2-232 / EXP-R2-233 structure completion and full raw retention
+### EXP-R2-232 / EXP-R2-233 structure completion and full raw retention
 
 The three EXP-R2-232 main H200 workers completed by 07:38:00 UTC; the three sequential EXP-R2-233 workers completed by 07:37:38 UTC. Their finished manifests agree on the original frozen evaluator signature `79a7f4e20c275e1070670db2d4b159048bb397bc1a93ae121ae4bcbc04a94d2b` and the original cohort hashes. Main contains **2,320/2,320 terminal `ok` rows and 2,315 unique prediction objects**; EXP-R2-233 contains **256/256 terminal `ok` rows and 256 unique objects**. There are no pending, failed, excluded or missing evaluation rows. Exact duplicate main sequences share inference while all original metadata and sample rows remain accountable. Main physical devices 0/1/3 were checked in the current additional allocation; the previously identified faulty device 2 stayed excluded. No campaign was restarted and no cohort was resampled.
 
@@ -19101,7 +18946,7 @@ The original frozen `packages/20260904232436_00129607e3c7/scripts/transfer/run_s
 
 Raw archives preserve every prediction PDB, NPZ and result receipt. Main archive is **1,006,596,899 bytes**, SHA-256 `4bb8dffd23286c4e39e66446ea5085ca1272d514ebd5b402b969f399e4464c05`; EXP-R2-233 archive is **121,267,006 bytes**, SHA-256 `7b8c5698c14975835e575b0169a28f9b64efdb24e0cdd9feb92aa609d11ddfb6`. Both transfers exited successfully. After transfer controllers finished, the final local check at 07:51 UTC verified archive hashes, exact object-directory coverage, and every declared PDB/NPZ hash after extraction. The prior 116-object pilot archive remains intact. Archives are under `results/transfer/generation_evidence/retention/20260904232436_00129607e3c7/`; complete prediction objects, worker manifests and `retrieval_receipt.json` are under the corresponding `structure/20260904232436_00129607e3c7/{pilot,main,r233}/` directories. No raw output was discarded.
 
-## 2026-09-05 — EXP-R2-232 fresh reference completion and final evidence reconciliation
+### EXP-R2-232 fresh reference completion and final evidence reconciliation
 
 The reference-only completion has been retrieved and independently reconstructed from the complete raw alignment table: 16,400 exact ledger IDs, 16,393 nonempty queries and 50,680 HSPs. Gapped alignment reconstruction verifies identity and query/target coverage from each same selected hit. The final sidecar is `results/transfer/generation_evidence/reference_fresh/reference_fresh_annotations.jsonl`, SHA-256 `64e4c96fba15105ed7f588765cbaa8f6a07b2ee3879cbd7e8f4e4788fdf79961`; its manifest is `ba40055480931599bd576ab6b2ce4cd1ff866194ecab257fe2dc58c035ac592a`. All three original reference fields and every sequence hash are preserved. The fresh source module matches its separately frozen `6c21e19` snapshot; original inference remains at `1b9a368`.
 
@@ -19111,7 +18956,7 @@ The publication reference figures join the sidecar read-only to complete structu
 
 Final raw retention at 08:00 UTC covers all 2,692 source rows and 2,687 phase prediction objects: pilot 116, main 2,315, native 256. Every retained PDB/NPZ digest was checked locally. The exact phase archive paths and hashes are in `results/transfer/generation_evidence/retention/20260904232436_00129607e3c7/retention_inventory.json`; the independently assembled `retention/*-structure-raw.tar.gz` variants recorded above have their own distinct valid archive hashes. Archive checks must use the corresponding path, not substitute one packaging digest for another. Scientific index hashes never changed. All scientific GPU inference, annotation/search and raw-output transfer in EXP-R2-232/233 are complete; manuscript and data-delivery assembly continue without expanding the model or decoding panel.
 
-## 2026-09-05 — EXP-R2-232/233 local reproduction and delivery verification
+### EXP-R2-232/233 local reproduction and delivery verification
 
 The real native first-annotation join reproduced all 800 canonical derived records byte-for-byte, SHA-256 `539561bb2f639058fa12f4e4a311da9cd5850f029c092ecc05a7d710841d6b64`. The six publication/join/workflow scripts pass syntax and Ruff checks; no model inference was repeated. The minimum-data ZIP contains 164 data files; ZIP integrity and every archived member digest passed, with archive SHA-256 `26b70d07bf125aafda4dec67b05c9b035b9937f8414d63858e5c8683586b48cc`. It preserves the complete conditional ledger, frozen cohorts, canonical analyses, native attempts and all 100 raw native batches. This is a local evidence package, not a public deposit.
 

@@ -2120,7 +2120,7 @@ reopened without a claim that depends on it.
 
 Within that scope, "stands" means the result was defensible when this index was written; "retracted" means withdrawn on evidence; "superseded" means replaced by a better-controlled measurement. Current status for anything cited outside this appendix is §1's, not this column's.
 
-**Stable aliases for reused transfer-series ids.** The append-only log reused EXP-R2-025 through EXP-R2-032. This audit therefore uses `TR-025` = EXP-R2-025 (2026-07-24), `TR-026` = EXP-R2-026 (2026-07-27), and `TR-027` through `TR-032` = EXP-R2-027 through EXP-R2-032 (2026-07-28). These aliases do not renumber or rewrite history.
+**Stable aliases for reused transfer-series ids.** The July 17–27 npj-revision series is now headed `P0-025` through `P0-032` in `docs/EXPERIMENT_LOG.md`; the July 24–28 transfer series retains `EXP-R2-025` through `EXP-R2-032`. This audit uses `TR-025` = EXP-R2-025 (2026-07-24), `TR-026` = EXP-R2-026 (2026-07-27), and `TR-027` through `TR-032` = EXP-R2-027 through EXP-R2-032 (2026-07-28). The concentrated old-name mapping is at the start of the experiment log. Frozen evidence strings and hashes are unchanged.
 
 ### A.1 Part 1 — differences
 
@@ -2182,7 +2182,7 @@ EXP-R2-035 (results-wipe diagnosis), EXP-R2-037 (H200 migration), EXP-R2-041/042
 
 ### A.4 Provenance hazard
 
-**Experiment ids EXP-R2-025 through EXP-R2-032 are each used twice** in `EXPERIMENT_LOG.md` — once by the July 17–27 npj-revision series and once by the July 24–28 transfer series. Historical entries remain unchanged. Current transfer-series citations must use the `TR-025` through `TR-032` aliases defined above or include both date and original id. Ids from EXP-R2-033 onward are unique.
+**The July 17–27 npj-revision series is now headed `P0-025` through `P0-032`**; the July 24–28 transfer series retains `EXP-R2-025` through `EXP-R2-032`. Current transfer-series citations must use the `TR-025` through `TR-032` aliases defined above or include both date and original id. See the concentrated mapping at the start of `docs/EXPERIMENT_LOG.md`. Ids from EXP-R2-033 onward are unique.
 
 ---
 
