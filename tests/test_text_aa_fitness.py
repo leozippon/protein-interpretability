@@ -573,6 +573,8 @@ def test_three_item_lifetime_releases_prior_logits(gpt2_tokenizer):
     original = model.forward
 
     def wrapped(*args, **kwargs):
+        if refs:
+            assert refs[-1]() is None
         outputs = original(*args, **kwargs)
         refs.append(weakref.ref(outputs.logits))
         return outputs

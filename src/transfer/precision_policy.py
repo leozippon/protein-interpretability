@@ -19,9 +19,8 @@ GALACTICA_FP32_V2 = "galactica-fp32-v2"
 TEXT_AA_FP32_V1 = "text-aa-fp32-v1"
 
 #: Per-target absolute ceiling for independent shifted-CE versus a public
-#: FP32 scorer, in nats. The native DMS CLI helper still has its own copy of
-#: this number so that helper's behaviour is unchanged; the text-AA core reads
-#: this module instead of importing that script.
+#: FP32 scorer, in nats. Native DMS re-exports this same constant; the numeric
+#: ceiling is not moved.
 FP32_PER_TARGET_ABS = 1e-4
 
 _POLICY_KEYS = (
