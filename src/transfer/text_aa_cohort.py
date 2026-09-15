@@ -183,7 +183,7 @@ def _require_sequence_str(value: Any, *, what: str) -> str:
 
 
 def _request_items(assay: Mapping[str, Any], mutants: Sequence[str]) -> list[tuple[str, int | None, str]]:
-    items = [
+    items: list[tuple[str, int | None, str]] = [
         (
             "wildtype",
             None,

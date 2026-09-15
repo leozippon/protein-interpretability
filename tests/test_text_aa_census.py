@@ -26,6 +26,7 @@ from src.transfer.text_aa_cohort import (  # noqa: E402
     ENCODE_FAIL,
     EXCEEDS_HARD_CONTEXT,
     UNIMPLEMENTED_PHASES,
+    _request_items,
     census_one_model,
     load_text_aa_boundary_table,
     source_fingerprints,
@@ -789,6 +790,15 @@ def test_non_string_request_is_schema_failure_not_exclusion(gpt2_tokenizer):
             request=request,
             documented_context=1024,
         )
+
+
+def test_request_items_keep_none_wildtype_and_int_mutant_indices():
+    items = _request_items({"wildtype_sequence": "AAA"}, ["KKK", "WWW"])
+    assert items[0] == ("wildtype", None, "AAA")
+    assert items[1] == ("mutant", 0, "KKK")
+    assert items[2] == ("mutant", 1, "WWW")
+    assert items[1][1] is not None and type(items[1][1]) is int
+    assert items[2][1] is not None and type(items[2][1]) is int
 
 
 def test_encode_fail_then_later_legal_max_and_digest(gpt2_tokenizer):
