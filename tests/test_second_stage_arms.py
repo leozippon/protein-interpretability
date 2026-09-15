@@ -61,7 +61,10 @@ from src.transfer.circuits import _CIRCUIT_ARCHITECTURES  # noqa: E402
 #: architecture itself is served by the lens family --
 #: ``tests/test_opt_architecture.py`` is where what it may and may not enter is
 #: pinned.
-UNIMPLEMENTED_ARCHITECTURES = frozenset({"rita", "proteinglm"})
+# Architectures that still honour no measurement family. ProteinGLM now serves
+# budget continuation but remains absent from lens/circuit/pathway tables.
+UNIMPLEMENTED_ARCHITECTURES = frozenset({"rita"})
+BUDGET_ONLY_UNIMPLEMENTED_ARCHITECTURES = frozenset({"proteinglm"})
 
 
 def _load_stage(filename: str):
@@ -155,9 +158,9 @@ def test_the_joint_wave_is_not_declared_as_an_arm():
 
 
 def test_the_new_architectures_are_in_none_of_the_tables_that_implement_a_family():
-    """The premise the empty capability sets rest on, asserted not assumed."""
+    """Rita still honours nothing; ProteinGLM budget does not grant a family."""
 
-    for architecture in UNIMPLEMENTED_ARCHITECTURES:
+    for architecture in UNIMPLEMENTED_ARCHITECTURES | BUDGET_ONLY_UNIMPLEMENTED_ARCHITECTURES:
         assert architecture not in A._ATTENTION_PATH, architecture
         assert architecture not in A._DECOMPOSABLE, architecture
         assert architecture not in _CIRCUIT_ARCHITECTURES, architecture
@@ -171,6 +174,10 @@ def test_no_second_stage_arm_declares_a_capability_it_cannot_honour():
             # Nothing implements these, so the honest set is empty and the
             # refusal carries the reason recorded beside the declaration.
             assert spec.capabilities == frozenset(), name
+            continue
+        if spec.architecture in BUDGET_ONLY_UNIMPLEMENTED_ARCHITECTURES:
+            assert spec.capabilities == frozenset({"budget"}), name
+            assert spec.input_format == A.INPUT_FORMAT_GMASK_SOP_EOS, name
             continue
         assert spec.architecture == "qwen2", name
         # The rotary grant is the panel's own, not a wider one invented here.
@@ -199,30 +206,26 @@ def test_an_empty_capability_set_refuses_every_family_by_name():
         arm.blocks()
 
 
-def test_an_undeclared_rendering_cannot_be_rendered():
-    """This module serves ProteinGLM no rendering, so no cohort renders for it.
-
-    Its native convention has since been evidenced -- a ``<gmask><sop><eos>``
-    prefix, identified against a shuffled and an unprefixed control -- and the
-    field is still the sentinel, because no branch of ``Cohort.input_strings``
-    emits that prefix. The sentinel is what keeps "this repository renders
-    nothing here" from being mistaken for a supported format name.
-    """
+def test_protein_glm_renders_the_native_continuation_prefix():
+    """ProteinGLM now emits ``<gmask><sop><eos>`` plus AA20, with no tail EOS."""
 
     spec = STAGED_ARMS["proteinglm-7b-clm"]
-    assert spec.input_format == A.INPUT_FORMAT_UNDECLARED
+    assert spec.input_format == A.INPUT_FORMAT_GMASK_SOP_EOS
     arm = Arm(
         spec=spec,
         model=SimpleNamespace(config=SimpleNamespace(vocab_size=128)),
         tokenizer=object(),
         device="cpu",
-        dtype="float16",
+        dtype="float32",
     )
     cohort = A.Cohort(
         name="stub", kind="protein", records=["MKT"], min_symbols=0, max_symbols=8
     )
-    with pytest.raises(ValueError, match="unsupported input format"):
-        cohort.input_strings(arm)
+    assert cohort.input_strings(arm) == ["<gmask><sop><eos>MKT"]
+    with pytest.raises(ValueError, match="AA20"):
+        A.Cohort(
+            name="stub", kind="protein", records=["MX"], min_symbols=0, max_symbols=8
+        ).input_strings(arm)
 
 
 # ------------------------------------------------------ declared against on disk
@@ -366,8 +369,7 @@ def test_cohort_power_refuses_a_second_stage_arm_that_declares_no_budget():
     )
     with pytest.raises(ValueError, match="no 'budget' capability"):
         stage.validate_arms(["rita-xl"], args)
-    with pytest.raises(ValueError, match="no 'budget' capability"):
-        stage.validate_arms(["proteinglm-7b-clm"], args)
+    stage.validate_arms(["proteinglm-7b-clm"], args)
 
 
 def test_rita_xl_is_scoreable_without_widening_default_fitness_doors():

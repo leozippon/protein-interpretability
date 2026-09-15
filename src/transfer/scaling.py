@@ -265,7 +265,8 @@ WEIGHT_SUFFIXES = (".safetensors", ".bin", ".pt")
 #: tokenizer, and its columns were never meaningfully trained.
 LOGIT_WIDTH_PADDING = 64
 
-#: Input formats ``arms.Cohort.input_strings`` can render.
+#: Input formats a scale-ladder member may carry. ProteinGLM's continuation
+#: format is served by ``Cohort.input_strings`` but is not a ladder/circuits format.
 INPUT_FORMATS = ("raw", "fasta_wrapped", "n_to_c_control", "ec_conditioned")
 
 #: Input formats ``src.transfer.circuits`` can score, mirroring the branches in
