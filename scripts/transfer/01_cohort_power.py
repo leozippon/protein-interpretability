@@ -407,7 +407,7 @@ def _cohort_power_stage_contract(names: list[str]) -> dict[str, Any]:
             "measured": [],
             "measured_staged_arms": staged,
             "note": (
-                "staged scale qualification; panel_contract was not asked to "
+                "staged opt-in qualification; panel_contract was not asked to "
                 "admit these arms and this is not an empty campaign-panel run"
             ),
         }

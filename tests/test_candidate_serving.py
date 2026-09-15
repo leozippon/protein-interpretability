@@ -227,6 +227,10 @@ def test_cohort_power_candidate_opt_in_admits_only_its_tuple():
     contract = stage._cohort_power_stage_contract([QWEN3])
     assert contract["not_panel_admission"] is True
     assert contract["measured"] == []
+    assert contract["measured_staged_arms"] == [QWEN3]
+    assert contract["note"].startswith("staged opt-in qualification")
+    assert "scale qualification" not in contract["note"]
+    assert "exp_r2_224" not in contract["note"]
 
 
 def test_candidates_are_not_on_the_fitness_or_designed_referent_doors():

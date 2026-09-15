@@ -197,6 +197,7 @@ def test_cohort_power_staged_only_contract_is_not_an_empty_panel_run():
     contract = stage._cohort_power_stage_contract(["progen2-large", "progen2-xlarge"])
     assert contract["not_panel_admission"] is True
     assert contract["measured_staged_arms"] == ["progen2-large", "progen2-xlarge"]
+    assert contract["note"].startswith("staged opt-in qualification")
     assert "eligible_for_this_stage" not in contract.get("arm_selection", {})
     mixed = stage._cohort_power_stage_contract(["progen2-medium", "progen2-large"])
     assert mixed["arm_selection"]["measured"] == ["progen2-medium"]
