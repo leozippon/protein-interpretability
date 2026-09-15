@@ -376,12 +376,75 @@ if list(RITA_CORPUS) != [RITA.RITA_ARM]:
         "way into a scored run"
     )
 
+#: Native-protein ProteinGym rungs that already have an :class:`ArmSpec` and
+#: ``n_to_c_control`` scoring, but were omitted from :data:`ARM_CORPUS`.
+#: In a table of its own so a later campaign cannot silently widen the frozen
+#: three-arm default. They are in ``--arms`` *choices* only.
+#:
+#: ``progen2-small`` declares the same UniRef90+BFD30 mixture as medium, so
+#: LOOKUP is the same incomplete-search lower bound. Context is the loaded
+#: checkpoint's ``n_positions`` (1024 on the released config), which is not
+#: the medium 201/163 analysis set: a later score run must write its own
+#: pre-score census from this scorer's ``token_lengths``. Wiring this door
+#: is not that census, not numerical qualification, and not a ρ.
+#:
+#: ``progen2-base`` declares ``progen2_base_mixture``. That mixture is not
+#: identified here as UniRef90+BFD30 or as the staged UniRef50 snapshot, so
+#: LOOKUP is not a retrieval bound. Context is the loaded checkpoint's
+#: ``n_positions`` (2048 on the released config); it must not inherit the
+#: medium 1024-token skip list or 201/163 counts.
+NATIVE_PROTEIN_GAP_CORPUS: dict[str, dict[str, str]] = {
+    "progen2-small": {
+        "declared": arm_spec("progen2-small").pretraining_corpus,
+        "identification": "lower bound on support",
+        "note": UNIREF90_BFD30_INCOMPLETE_SEARCH,
+    },
+    "progen2-base": {
+        "declared": arm_spec("progen2-base").pretraining_corpus,
+        "identification": (
+            "external UniRef50 profile baseline, not a retrieval bound"
+        ),
+        "note": (
+            "the panel declaration for this rung is progen2_base_mixture, a "
+            "label that is not independently identified here as UniRef90+BFD30 "
+            "or as the staged UniRef50 snapshot. LOOKUP is an external UniRef50 "
+            "profile channel and MODEL - LOOKUP is a capability comparison "
+            "against it, not a retrieval exclusion, not a lower bound on "
+            "retrieval, and not an upper bound on retrieval. Neither "
+            "containment direction is evidenced, so the residual bias is not "
+            "signed. This door does not mint a fitness PASS from a checkpoint "
+            "name, a new ProteinGym cohort, or a copy of the progen2-medium "
+            "1024-token analysis set"
+        ),
+    },
+}
+
+if sorted(NATIVE_PROTEIN_GAP_CORPUS) != ["progen2-base", "progen2-small"]:
+    raise AssertionError(
+        "the native protein gap door is exactly progen2-small and "
+        "progen2-base; a third name here would be an undeclared scoring door"
+    )
+for _gap_arm in NATIVE_PROTEIN_GAP_CORPUS:
+    _gap_spec = arm_spec(_gap_arm)
+    if _gap_spec.input_format != "n_to_c_control":
+        raise AssertionError(
+            f"{_gap_arm}: native protein gap scoring is n_to_c_control, not "
+            f"{_gap_spec.input_format!r}"
+        )
+    if _gap_arm in ARM_CORPUS:
+        raise AssertionError(
+            f"{_gap_arm} belongs in NATIVE_PROTEIN_GAP_CORPUS, not ARM_CORPUS; "
+            "the default --arms list must stay the frozen three-arm run"
+        )
+
 
 def corpus_record(arm: str) -> dict[str, str]:
     """Corpus identification for a default arm or an explicitly named rung."""
 
     if arm in ARM_CORPUS:
         return ARM_CORPUS[arm]
+    if arm in NATIVE_PROTEIN_GAP_CORPUS:
+        return NATIVE_PROTEIN_GAP_CORPUS[arm]
     if arm in SECOND_STAGE_PROTEIN_CORPUS:
         return SECOND_STAGE_PROTEIN_CORPUS[arm]
     if arm in JOINT_LINEAGE_CORPUS:
@@ -410,6 +473,7 @@ SCOREABLE_ARMS = tuple(
         | set(JOINT_LINEAGE_CORPUS)
         | set(GALACTICA_CORPUS)
         | set(RITA_CORPUS)
+        | set(NATIVE_PROTEIN_GAP_CORPUS)
     )
 )
 
@@ -1804,7 +1868,7 @@ def _require_joint_qualification_dir(args: argparse.Namespace) -> None:
         )
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--stages", nargs="+", default=list(STAGES), choices=STAGES)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
@@ -1820,6 +1884,9 @@ def main() -> None:
         nargs="+",
         default=sorted(ARM_CORPUS),
         choices=sorted(SCOREABLE_ARMS),
+        help="default is the frozen ARM_CORPUS three-arm run; progen2-small and "
+        "progen2-base are explicit native-protein choices and do not widen that "
+        "default, mint a cohort, or copy the medium 1024-token analysis set",
     )
     parser.add_argument("--variants", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=20260807)
@@ -1910,6 +1977,11 @@ def main() -> None:
         "without one: that campaign's rule is that a rung is scored only after "
         "every qualification clause holds, and an unqualified rung is not scored",
     )
+    return parser
+
+
+def main() -> None:
+    parser = build_parser()
     args = parser.parse_args()
     _require_joint_qualification_dir(args)
     _require_protocol(args)
