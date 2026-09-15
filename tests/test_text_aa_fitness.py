@@ -38,6 +38,7 @@ from src.transfer.scale_comparison import STRATUM_N_TO_C  # noqa: E402
 from src.transfer.text_aa_fitness import (  # noqa: E402
     TEXT_AA_FP32_V1,
     TextAABoundary,
+    TextAAEncodingError,
     TextAAFitnessScorer,
     encode_text_aa,
     load_text_aa_scorer,
@@ -351,8 +352,93 @@ def test_resolve_boundary_inheritance_and_refuse_remote_code_on_builtins():
 def test_illegal_empty_and_non_aa20_are_refused_before_unk(gpt2_tokenizer):
     boundary = _gpt2_boundary()
     for illegal in ("", "MKTZ", "MKTJ", "mkt", "MKT A", "MKT\n", "MKT\t"):
-        with pytest.raises(ValueError):
+        with pytest.raises(TextAAEncodingError):
             encode_text_aa(gpt2_tokenizer, illegal, boundary)
+    with pytest.raises(TypeError, match="sequence must be a str"):
+        encode_text_aa(gpt2_tokenizer, 123, boundary)  # type: ignore[arg-type]
+
+
+class _CallBoom:
+    def __init__(self, inner, *, error):
+        self._inner = inner
+        self._error = error
+        self.all_special_ids = getattr(inner, "all_special_ids", [])
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def __call__(self, sequence, add_special_tokens=False):
+        raise self._error
+
+    def decode(self, ids, skip_special_tokens=False):
+        return self._inner.decode(ids, skip_special_tokens=skip_special_tokens)
+
+
+class _DecodeBoom:
+    def __init__(self, inner, *, error):
+        self._inner = inner
+        self._error = error
+        self.all_special_ids = getattr(inner, "all_special_ids", [])
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def __call__(self, sequence, add_special_tokens=False):
+        return self._inner(sequence, add_special_tokens=add_special_tokens)
+
+    def decode(self, ids, skip_special_tokens=False):
+        raise self._error
+
+
+class _MemoryIds:
+    def __iter__(self):
+        raise MemoryError("synthetic ids conversion")
+
+
+class _BadOutput:
+    def __init__(self, payload):
+        self._payload = payload
+        self.all_special_ids = []
+
+    def __call__(self, sequence, add_special_tokens=False):
+        return self._payload
+
+    def decode(self, ids, skip_special_tokens=False):
+        return "AAA"
+
+
+@pytest.mark.parametrize(
+    ("factory", "error"),
+    [
+        (lambda tok: _CallBoom(tok, error=ValueError("internal call")), ValueError),
+        (lambda tok: _CallBoom(tok, error=TypeError("internal call")), TypeError),
+        (lambda tok: _DecodeBoom(tok, error=ValueError("internal decode")), ValueError),
+        (lambda tok: _DecodeBoom(tok, error=TypeError("internal decode")), TypeError),
+    ],
+)
+def test_tokenizer_internal_errors_are_not_encoding_errors(gpt2_tokenizer, factory, error):
+    boundary = _gpt2_boundary()
+    with pytest.raises(error) as caught:
+        encode_text_aa(factory(gpt2_tokenizer), "AAA", boundary)
+    assert not isinstance(caught.value, TextAAEncodingError)
+
+
+def test_ids_conversion_memoryerror_is_not_wrapped(gpt2_tokenizer):
+    boundary = _gpt2_boundary()
+    tokenizer = _BadOutput({"input_ids": _MemoryIds()})
+    tokenizer.all_special_ids = getattr(gpt2_tokenizer, "all_special_ids", [])
+    with pytest.raises(MemoryError, match="synthetic ids conversion"):
+        encode_text_aa(tokenizer, "AAA", boundary)
+
+
+def test_missing_or_malformed_input_ids_are_fatal_tool_errors():
+    boundary = _gpt2_boundary()
+    with pytest.raises(ValueError, match="input_ids") as missing:
+        encode_text_aa(_BadOutput({}), "AAA", boundary)
+    assert not isinstance(missing.value, TextAAEncodingError)
+    with pytest.raises(ValueError, match="batched tokenizer output") as batched:
+        encode_text_aa(_BadOutput({"input_ids": [[1, 2]]}), "AAA", boundary)
+    assert not isinstance(batched.value, TextAAEncodingError)
 
 
 def test_gpt2_encode_prepends_boundary_keeps_first_target_and_omits_eos(
