@@ -32,6 +32,7 @@ from src.transfer.text_aa_cohort import (  # noqa: E402
     text_aa_model_names,
 )
 from src.transfer.text_aa_fitness import (  # noqa: E402
+    TextAAEncodingError,
     encode_text_aa,
     load_text_aa_scorer,
     load_text_aa_tokenizer,
@@ -612,3 +613,220 @@ def test_old_default_doors_are_unchanged():
     native = _load_native()
     with pytest.raises(ValueError, match="unknown native DMS protocol"):
         native.required_dtype("gpt2", TEXT_AA_FP32_V1)
+
+
+def _toy_request(wt: str, mutants: list[str], *, assay: str = "toy") -> dict:
+    return {
+        "assays": [
+            {
+                "assay": assay,
+                "index": 0,
+                "cluster": 0,
+                "n_variants": len(mutants),
+                "mutant_digest": "d",
+                "csv_sha256": "c",
+                "seed": 20260807,
+                "wildtype_id": "q00000",
+                "wildtype_sequence": wt,
+            }
+        ],
+        "sequences": {assay: mutants},
+        "declared_assays": 1,
+    }
+
+
+class _CallBoomTokenizer:
+    def __init__(self, inner, *, boom_on: str, error: Exception):
+        self._inner = inner
+        self._boom_on = boom_on
+        self._error = error
+        self.all_special_ids = getattr(inner, "all_special_ids", [])
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def __call__(self, sequence, add_special_tokens=False):
+        if sequence == self._boom_on:
+            raise self._error
+        return self._inner(sequence, add_special_tokens=add_special_tokens)
+
+    def decode(self, ids, skip_special_tokens=False):
+        return self._inner.decode(ids, skip_special_tokens=skip_special_tokens)
+
+
+class _DecodeBoomTokenizer:
+    def __init__(self, inner, *, error: Exception):
+        self._inner = inner
+        self._error = error
+        self.all_special_ids = getattr(inner, "all_special_ids", [])
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def __call__(self, sequence, add_special_tokens=False):
+        return self._inner(sequence, add_special_tokens=add_special_tokens)
+
+    def decode(self, ids, skip_special_tokens=False):
+        raise self._error
+
+
+class _MemoryIds:
+    def __iter__(self):
+        raise MemoryError("synthetic ids conversion")
+
+
+class _OutputTokenizer:
+    def __init__(self, inner, *, boom_on: str, payload):
+        self._inner = inner
+        self._boom_on = boom_on
+        self._payload = payload
+        self.all_special_ids = getattr(inner, "all_special_ids", [])
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def __call__(self, sequence, add_special_tokens=False):
+        if sequence == self._boom_on:
+            return self._payload
+        return self._inner(sequence, add_special_tokens=add_special_tokens)
+
+    def decode(self, ids, skip_special_tokens=False):
+        return self._inner.decode(ids, skip_special_tokens=skip_special_tokens)
+
+
+@pytest.mark.parametrize(
+    ("factory", "error"),
+    [
+        (
+            lambda tok: _CallBoomTokenizer(
+                tok, boom_on="WWW", error=ValueError("internal call")
+            ),
+            ValueError,
+        ),
+        (
+            lambda tok: _CallBoomTokenizer(
+                tok, boom_on="WWW", error=TypeError("internal call")
+            ),
+            TypeError,
+        ),
+        (
+            lambda tok: _DecodeBoomTokenizer(tok, error=ValueError("internal decode")),
+            ValueError,
+        ),
+        (
+            lambda tok: _DecodeBoomTokenizer(tok, error=TypeError("internal decode")),
+            TypeError,
+        ),
+    ],
+)
+def test_tokenizer_internal_errors_fail_census_immediately(
+    gpt2_tokenizer, factory, error
+):
+    table = load_text_aa_boundary_table()
+    boundary = resolve_text_aa_boundary("gpt2", table)
+    with pytest.raises(error) as caught:
+        census_one_model(
+            "gpt2",
+            tokenizer=factory(gpt2_tokenizer),
+            boundary=boundary,
+            hard_context=1024,
+            request=_toy_request("AAA", ["WWW", "KKK"]),
+            documented_context=1024,
+        )
+    assert not isinstance(caught.value, TextAAEncodingError)
+
+
+def test_ids_memoryerror_and_missing_input_ids_fail_census(gpt2_tokenizer):
+    table = load_text_aa_boundary_table()
+    boundary = resolve_text_aa_boundary("gpt2", table)
+    request = _toy_request("AAA", ["WWW", "KKK"])
+    with pytest.raises(MemoryError, match="synthetic ids conversion"):
+        census_one_model(
+            "gpt2",
+            tokenizer=_OutputTokenizer(
+                gpt2_tokenizer, boom_on="WWW", payload={"input_ids": _MemoryIds()}
+            ),
+            boundary=boundary,
+            hard_context=1024,
+            request=request,
+            documented_context=1024,
+        )
+    with pytest.raises(ValueError, match="input_ids") as missing:
+        census_one_model(
+            "gpt2",
+            tokenizer=_OutputTokenizer(gpt2_tokenizer, boom_on="WWW", payload={}),
+            boundary=boundary,
+            hard_context=1024,
+            request=request,
+            documented_context=1024,
+        )
+    assert not isinstance(missing.value, TextAAEncodingError)
+    with pytest.raises(ValueError, match="batched tokenizer output"):
+        census_one_model(
+            "gpt2",
+            tokenizer=_OutputTokenizer(
+                gpt2_tokenizer, boom_on="WWW", payload={"input_ids": [[1, 2]]}
+            ),
+            boundary=boundary,
+            hard_context=1024,
+            request=request,
+            documented_context=1024,
+        )
+
+
+def test_non_string_request_is_schema_failure_not_exclusion(gpt2_tokenizer):
+    table = load_text_aa_boundary_table()
+    boundary = resolve_text_aa_boundary("gpt2", table)
+    request = _toy_request("AAA", ["KKK"])
+    request["sequences"]["toy"] = [123]
+    with pytest.raises(TypeError, match="mutant 0 must be a str"):
+        census_one_model(
+            "gpt2",
+            tokenizer=gpt2_tokenizer,
+            boundary=boundary,
+            hard_context=1024,
+            request=request,
+            documented_context=1024,
+        )
+
+
+def test_encode_fail_then_later_legal_max_and_digest(gpt2_tokenizer):
+    table = load_text_aa_boundary_table()
+    boundary = resolve_text_aa_boundary("gpt2", table)
+    payload = census_one_model(
+        "gpt2",
+        tokenizer=gpt2_tokenizer,
+        boundary=boundary,
+        hard_context=1024,
+        request=_toy_request("AAA", ["AAZ", "W" * 16]),
+        documented_context=1024,
+    )
+    row = payload["assays"][0]
+    later_ids = encode_text_aa(gpt2_tokenizer, "W" * 16, boundary)
+    assert row["admitted"] is False
+    assert row["exclude_reason"] == ENCODE_FAIL
+    assert row["failed_sequences"][0]["error_class"] == "TextAAEncodingError"
+    assert all(item.get("mutant_index") != 1 for item in row["failed_sequences"])
+    assert row["n_input_tokens_max_legal"] == len(later_ids)
+    assert payload["longest_probe_identity"]["mutant_index"] == 1
+    assert payload["longest_probe_identity"]["n_input_tokens"] == len(later_ids)
+    assert payload["native_fixed"] == []
+    left = census_one_model(
+        "gpt2",
+        tokenizer=gpt2_tokenizer,
+        boundary=boundary,
+        hard_context=1024,
+        request=_toy_request("AAA", ["AAZ", "W" * 8]),
+        documented_context=1024,
+    )
+    right = census_one_model(
+        "gpt2",
+        tokenizer=gpt2_tokenizer,
+        boundary=boundary,
+        hard_context=1024,
+        request=_toy_request("AAA", ["AAZ", "M" * 8]),
+        documented_context=1024,
+    )
+    assert left["assays"][0]["encoded_ids_digest"] != right["assays"][0][
+        "encoded_ids_digest"
+    ]

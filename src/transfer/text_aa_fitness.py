@@ -56,6 +56,7 @@ __all__ = [
     "HARD_CONTEXT_ATTRIBUTES",
     "TEXT_AA_FP32_V1",
     "TextAABoundary",
+    "TextAAEncodingError",
     "TextAAFitnessScorer",
     "TextAATokenizerBundle",
     "encode_text_aa",
@@ -85,6 +86,16 @@ _BYGPT5_LOCAL_FILES = (
     "tokenization_bygpt5.py",
 )
 _PRODUCTION_BATCH_SIZE = 1
+
+
+class TextAAEncodingError(ValueError):
+    """Declared sequence restriction. Census may exclude the whole assay.
+
+    Empty strings, characters outside AA20, empty targets, UNK or special
+    target ids, and failed strict round-trips use this type. Tokenizer
+    internals, schema, configuration, memory, and unknown backend failures
+    must not be converted to it.
+    """
 
 
 def _as_int(value: Any, *, what: str) -> int:
@@ -253,10 +264,10 @@ def _require_aa20(sequence: str) -> str:
     if not isinstance(sequence, str):
         raise TypeError(f"sequence must be a str, got {type(sequence)!r}")
     if sequence == "":
-        raise ValueError("empty amino-acid string is refused")
+        raise TextAAEncodingError("empty amino-acid string is refused")
     illegal = sorted({character for character in sequence if character not in AA20})
     if illegal:
-        raise ValueError(
+        raise TextAAEncodingError(
             "characters outside AA20 are refused before tokenisation "
             f"(including Z/J/whitespace): {illegal!r}"
         )
@@ -288,12 +299,11 @@ def encode_text_aa(
 
     sequence = _require_aa20(sequence)
     encoded = tokenizer(sequence, add_special_tokens=False)
-    try:
-        target_ids = _as_id_list(encoded["input_ids"], what="target ids")
-    except Exception as exc:
-        raise ValueError("tokenizer did not return input_ids") from exc
+    if not isinstance(encoded, Mapping) or "input_ids" not in encoded:
+        raise ValueError("tokenizer did not return input_ids")
+    target_ids = _as_id_list(encoded["input_ids"], what="target ids")
     if not target_ids:
-        raise ValueError("tokenizer produced no target tokens")
+        raise TextAAEncodingError("tokenizer produced no target tokens")
     forbidden = _special_ids(tokenizer)
     forbidden.add(int(boundary.conditioning_id))
     if boundary.unk_token_id is not None:
@@ -301,19 +311,19 @@ def encode_text_aa(
     forbidden.update(boundary.forbid_token_ids)
     hits = [token_id for token_id in target_ids if token_id in forbidden]
     if hits:
-        raise ValueError(
+        raise TextAAEncodingError(
             "target ids contain UNK, special, conditioning, or forbidden ids: "
             f"{hits!r}"
         )
     decoded = tokenizer.decode(target_ids, skip_special_tokens=False)
     if decoded != sequence:
-        raise ValueError(
+        raise TextAAEncodingError(
             "decode(target_ids, skip_special_tokens=False) must equal the raw "
             f"AA20 string; got {decoded!r}"
         )
     prefix = int(boundary.conditioning_id)
     if prefix in target_ids:
-        raise ValueError("conditioning id must not appear in target ids")
+        raise TextAAEncodingError("conditioning id must not appear in target ids")
     return [prefix, *target_ids]
 
 

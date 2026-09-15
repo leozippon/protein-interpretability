@@ -17,6 +17,7 @@ from .arms import arm_spec, require_input_path
 from .io import sha256_file
 from .precision_policy import TEXT_AA_FP32_V1
 from .text_aa_fitness import (
+    TextAAEncodingError,
     encode_text_aa,
     load_text_aa_tokenizer,
     resolve_text_aa_boundary,
@@ -59,6 +60,7 @@ __all__ = [
     "RESEARCH_ROLE",
     "TEXT_AA_SEED_OFFSET",
     "UNIMPLEMENTED_PHASES",
+    "TextAAEncodingError",
     "census_models",
     "census_one_model",
     "load_text_aa_boundary_table",
@@ -173,10 +175,28 @@ def _update_stream(digest: Any, *parts: bytes) -> None:
         digest.update(part)
 
 
+def _require_sequence_str(value: Any, *, what: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"{what} must be a str, got {type(value).__name__}")
+    return value
+
+
 def _request_items(assay: Mapping[str, Any], mutants: Sequence[str]) -> list[tuple[str, int | None, str]]:
-    items = [("wildtype", None, str(assay["wildtype_sequence"]))]
+    items = [
+        (
+            "wildtype",
+            None,
+            _require_sequence_str(assay["wildtype_sequence"], what="wildtype_sequence"),
+        )
+    ]
     for index, sequence in enumerate(mutants):
-        items.append(("mutant", int(index), str(sequence)))
+        items.append(
+            (
+                "mutant",
+                int(index),
+                _require_sequence_str(sequence, what=f"mutant {index}"),
+            )
+        )
     return items
 
 
@@ -231,7 +251,7 @@ def census_one_model(
             )
             try:
                 ids = encode_text_aa(tokenizer, sequence, boundary)
-            except (TypeError, ValueError) as exc:
+            except TextAAEncodingError as exc:
                 n_encode_fail += 1
                 encode_fail = True
                 reason = ENCODE_FAIL
