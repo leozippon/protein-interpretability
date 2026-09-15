@@ -2768,3 +2768,11 @@ Tracked the five-slot first-wave v2 manifest, froze pin `5015fd4` as run `202609
 ## 2026-09-15 — Recover Galactica fullscore B and merge ProteinGLM serving
 
 Reused the existing Galactica FP32 v2 fullscore B freeze without relaunch; variant-index check passed on the full LOOKUP 217. Merged inference-only ProteinGLM budget serving and the symbols_per_token encoding follow-up. Not Wave B and not 7B admission. Provenance is in “Recover Galactica fullscore B and merge ProteinGLM budget serving” in the experiment log.
+
+## 2026-09-15 — Merge tokenizer-only text-AA census
+
+Merged the tokenizer-only 13-text ProteinGym census and a request-item type annotation. No freeze, launch, or census run: the official queue is still GPU-only and the allocation’s card is busy. Provenance is in “Merge tokenizer-only text-AA census; freeze held” in the experiment log.
+
+## 2026-09-15 — Record Galactica-125M fullscore content gate
+
+Logged the independent 125M single-cell scientific content gate on the existing Galactica FP32 v2 fullscore recovery. Not Wave B and not whole-group admission. Provenance is in “Galactica-125M fullscore single-cell content gate” in the experiment log.
