@@ -61,6 +61,11 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
+from .proteinglm import INPUT_FORMAT as PROTEINGLM_INPUT_FORMAT
+from .proteinglm import PREFIX_IDS as PROTEINGLM_PREFIX_IDS
+from .proteinglm import PREFIX_LENGTH as PROTEINGLM_PREFIX_LENGTH
+from .proteinglm import TARGET_RULE as PROTEINGLM_TARGET_RULE
+
 
 # ------------------------------------------------------------------ depth grid
 
@@ -110,7 +115,11 @@ def source_layers_for_target(
 #:     ``all_valid`` intersected with the span strictly between the conditioning
 #:     prompt's ``<start>`` and its ``<end>``, so neither the prompt nor the
 #:     terminator is scored as cohort content.
-TARGET_RULES = ("all_valid", "between_boundaries")
+#: ``residues_2_to_L``
+#:     ProteinGLM continuation: drop prediction columns ``q < 3`` (the three
+#:     prefix tokens predicting through AA1) and keep AA2..AAL. That is three
+#:     dropped columns, not four.
+TARGET_RULES = ("all_valid", "between_boundaries", PROTEINGLM_TARGET_RULE)
 
 #: Input formats whose rendering prepends a conditioning prompt that is *not*
 #: cohort content. Derived from ``ArmSpec.input_format`` rather than from an arm
@@ -127,6 +136,8 @@ def target_rule(input_format: str, *, ec_conditioning: str = "native") -> str:
     prices the tag at 1.73 nats), which is a separate fact from how it is scored.
     """
 
+    if input_format == PROTEINGLM_INPUT_FORMAT:
+        return PROTEINGLM_TARGET_RULE
     if input_format in CONDITIONED_INPUT_FORMATS and ec_conditioning != "unconditioned":
         return "between_boundaries"
     return "all_valid"
@@ -155,6 +166,26 @@ def sequence_target_mask(
     ):
         raise ValueError("invalid token or attention-mask shape")
     valid = attention_mask[:, 1:].bool() & attention_mask[:, :-1].bool()
+    if rule == PROTEINGLM_TARGET_RULE:
+        if start_token_id is not None or end_token_id is not None:
+            raise ValueError(
+                "boundary token ids were supplied under the ProteinGLM residue "
+                "rule, which locates content from a fixed prefix rather than EC "
+                "boundaries"
+            )
+        if input_ids.shape[1] < PROTEINGLM_PREFIX_LENGTH + 2:
+            raise ValueError(
+                "ProteinGLM budget scoring needs the native prefix and two residues"
+            )
+        prefix = input_ids[:, :PROTEINGLM_PREFIX_LENGTH]
+        expected = input_ids.new_tensor(PROTEINGLM_PREFIX_IDS)
+        if not bool((prefix == expected).all()):
+            raise ValueError(
+                "ProteinGLM budget batch does not start with <gmask><sop><eos> ids"
+            )
+        keep = valid.clone()
+        keep[:, :PROTEINGLM_PREFIX_LENGTH] = False
+        return keep
     if rule == "all_valid":
         if start_token_id is not None or end_token_id is not None:
             raise ValueError(

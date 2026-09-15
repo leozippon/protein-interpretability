@@ -27,6 +27,7 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 import os
 
 from .amino_acids import AA20 as AA20
+from . import proteinglm as _proteinglm
 from .scoring import TargetTokenShuffle, target_rule
 
 
@@ -117,6 +118,10 @@ PRETRAINING_UNDECLARED = "undeclared"
 #: checkpoint declared this way is loadable and shape-checkable and cannot be
 #: scored until its rendering is evidenced and declared.
 INPUT_FORMAT_UNDECLARED = "undeclared_native_rendering"
+
+#: ProteinGLM continuation rendering. Single source:
+#: :data:`src.transfer.proteinglm.INPUT_FORMAT`. Not ``raw`` and not EC-conditioned.
+INPUT_FORMAT_GMASK_SOP_EOS = _proteinglm.INPUT_FORMAT
 
 #: How a cohort's records were drawn from their corpus. ``seeded_permutation``
 #: is the only mode Appendix B rule 1 of the transfer audit permits for a
@@ -909,14 +914,12 @@ STAGED_ARMS: dict[str, ArmSpec] = {
 # own verification and is not taken here.
 #
 # Interface: ``budget`` needs only a forward pass and a tokenizer, so it is the
-# one family an undeclared architecture could still honour -- and both of these
-# checkpoints cannot, for reasons measured on this host and recorded beside each.
-# ``rita-xl`` ships an empty ``special_tokens_map.json``, declares no pad token
+# one family an undeclared architecture could still honour. ``rita-xl`` still
+# cannot: it ships an empty ``special_tokens_map.json``, declares no pad token
 # and names an out-of-vocabulary end-of-sequence id, so :func:`tokenize_batch`
-# refuses every batch; ``proteinglm-7b-clm`` serves no rendering here and its
-# modeling code does not import in this environment. An empty set is the honest
-# declaration for both, and it is a refusal carrying a reason rather than a field
-# nobody filled in.
+# refuses every batch. ``proteinglm-7b-clm`` now serves the continuation
+# rendering through :mod:`src.transfer.proteinglm` and may declare ``budget``;
+# that is an implementation door, not 7B numerical qualification.
 
 # **Galactica is deliberately NOT declared here, at either rung.** EXP-R2-225's
 # joint 1.3->6.7->30B trajectory is a wave of this campaign, and the two upper
@@ -1012,31 +1015,24 @@ del _name, _dir, _layers, _width
 # stored in a half precision, so a caller that wants half precision asks for it
 # and the loader's observed-dtype check enforces the answer.
 #
-# **Its native rendering IS now evidenced, and the field is still the sentinel.**
-# The two statements are not in tension, and keeping them apart is the point of
-# the sentinel: :data:`INPUT_FORMAT_UNDECLARED` says this repository serves no
-# rendering for this checkpoint, not that nobody knows what one would be. What is
-# measured -- on the real weights, not read off the card -- is that the native
-# rendering is the card's own generation prompt used as a prefix:
+# **Native rendering is served as** :data:`INPUT_FORMAT_GMASK_SOP_EOS`.
+# What was measured on the real 7B weights -- not read off the card -- is that
+# the native rendering is the card's own generation prompt used as a prefix:
 # ``<gmask><sop><eos>`` at ids ``[29, 32, 34]``, followed by the residue run,
 # scored over residues 2..L. It reads **1.1277 nats/residue** against **2.8974**
 # for the same residues shuffled and **16.9930** for a bare residue string with
-# no prefix, so the convention is identified by a control that makes the wrong
-# one measurably worse rather than by assertion. Two independent corroborations:
-# the only special-token embedding rows with a trained norm are ``<gmask>``
-# 1.4439, ``<sop>`` 1.2600 and ``<eos>`` 1.6526 against ~1.057 for every other
-# special and all 92 unused rows, which also settles that the terminator is
-# ``<eos>`` (34) and not ``<eop>`` (33) -- ``P(<eop>)`` after the final residue is
-# 0.00000 and that row was never trained; and the head is tied, the output layer
-# being bit-identical to the input embedding. Total mass on all untrained ids is
+# no prefix. Those 7B numbers remain a future reproduction target for a
+# qualified 7B cell; they are not claimed by the tiny serving tests. Two
+# independent corroborations recorded with that probe: the only special-token
+# embedding rows with a trained norm are ``<gmask>`` 1.4439, ``<sop>`` 1.2600
+# and ``<eos>`` 1.6526 against ~1.057 for every other special and all 92 unused
+# rows, which also settles that the terminator is ``<eos>`` (34) and not
+# ``<eop>`` (33); and the head is tied. Total mass on all untrained ids is
 # 5.4e-08, so the uncropped 128-wide logits are safe to score.
 #
-# The field stays :data:`INPUT_FORMAT_UNDECLARED` because *serving* that
-# rendering is a separate piece of work: no branch of :meth:`Cohort.input_strings`
-# emits that prefix, and no scored-position rule for it is declared. Declaring a
-# format name this module cannot render would turn a refusal that names its
-# reason into one that looks like a supported path. It is a pending
-# implementation now, not an unknown convention.
+# The served estimand is continuation NLL (prefix plus residues 2..L, no tail
+# EOS). It is not a full protein CLM over 1..L plus EOS, and it is not
+# ProteinGym admission.
 #
 # **What the tokenizer does, corrected.** This declaration previously recorded
 # that ``ProteinGLMTokenizer`` splits on whitespace so an unspaced residue string
@@ -1048,37 +1044,23 @@ del _name, _dir, _layers, _width
 # ids with zero ``<unk>`` and an exact round trip. Its ``pad_token_id`` is 0, so
 # unlike ``rita-xl`` it can build batches. The tokenizer is not a blocker.
 #
-# **The blocker is a spurious import, and it is narrow.**
+# **The original AutoModel path is still unloadable.**
 # ``modeling_proteinglm.py`` line 15 reads ``import torch, deepspeed``, and
 # Transformers' AST-based ``check_imports`` fires on the presence of that name
-# before the module body runs, so ``AutoModelForCausalLM.from_pretrained`` raises
-# before a parameter is read and this checkpoint is **unloadable on this host as
-# staged**. The name is only used at lines 41-42, inside ``get_checkpoint_fn()``,
-# which is reachable only from a training path guarded three times over by
-# ``gradient_checkpointing``, ``self.training`` and ``torch.is_grad_enabled()``.
-# It is therefore dead on the inference path, and a derived-at-load-time patch is
-# the follow-up that would make this arm loadable. The checkpoint is
-# cc-by-nc-4.0 and must not be vendored to achieve that.
+# before the module body runs. The name is only used inside ``get_checkpoint_fn()``,
+# reachable only from a training path guarded by ``gradient_checkpointing``,
+# ``self.training`` and ``torch.is_grad_enabled()``. Serving copies those three
+# Python files into a derived package, drops the top-level alias, and makes
+# ``get_checkpoint_fn`` raise rather than substituting ``torch.checkpoint``.
+# The checkpoint is cc-by-nc-4.0 and is not vendored.
 #
-# **And a hazard that must gate any capability grant, whatever the loader does.**
-# This model returns ``hidden_states`` as ``[seq, batch, hidden]`` while
-# returning logits as ``[batch, seq, vocab]`` -- measured at 37 hidden states of
-# shape (88, 1, 4096) beside logits of (1, 88, 128). Every other arm here is
-# batch-first throughout, so a lens, probe or patching read that assumes the
-# panel's axis order would be silently wrong on this one. Two further interface
-# facts compose with it: ``output_attentions`` is dead, the modeling file setting
-# ``all_self_attentions = None`` unconditionally, and ``attn_implementation`` is
-# inert because the string appears nowhere in that file -- its only switch is
-# ``config.use_pytorch_sdpa`` -- so :func:`load_arm_spec`'s attention read-back
-# would vouch for a contract nothing enforces and
-# :meth:`Arm.require_eager_attention` would pass on a model that never honoured
-# the request. So ``lens``, ``circuits``, ``pathway`` and ``relational`` must not
-# be granted to ``proteinglm`` on the strength of a loader alone; ``budget`` may
-# become honest once one exists, and that is the follow-up's call.
-#
-# The capability set is therefore empty, and it is a refusal with a reason:
-# :meth:`Arm.require` raises on every family, and every renderer here raises on
-# the input format.
+# **Logits are batch-first; hidden states are not.** Budget scoring reads
+# ``logits`` of shape ``[batch, seq, vocab]`` and does not add an axis adapter.
+# Hidden states remain ``[seq, batch, hidden]``. ``output_attentions`` is dead
+# and ``attn_implementation`` is inert -- the only switch is
+# ``config.use_pytorch_sdpa``. ``lens``, ``circuits``, ``pathway`` and
+# ``relational`` stay unggranted. ``capabilities={'budget'}`` means the
+# continuation path is implemented, not that the 7B checkpoint is qualified.
 STAGED_ARMS["proteinglm-7b-clm"] = ArmSpec(
     name="proteinglm-7b-clm",
     path=MODEL_ROOT / "proteinglm-7b-clm",
@@ -1087,14 +1069,14 @@ STAGED_ARMS["proteinglm-7b-clm"] = ArmSpec(
     n_layer=36,
     d_model=4096,
     tokenisation="residue",
-    input_format=INPUT_FORMAT_UNDECLARED,
+    input_format=INPUT_FORMAT_GMASK_SOP_EOS,
     evaluation_cohort_source="swissprot",
     architecture="proteinglm",
     # Card citations Chen et al. (arXiv:2401.06199) and Cheng et al.
     # (arXiv:2411.02142): UniRef50/S + UniRef90 + ColabFoldDB. The staged
     # UniRef50 snapshot is not identified as that mix.
     pretraining_corpus="uniref50s_uniref90_colabfolddb",
-    capabilities=frozenset(),
+    capabilities=frozenset({"budget"}),
     # ``padded_vocab_size`` and ``vocab_size`` both read 128 and the head is
     # built at that width; the tokenizer's own file lists 128 symbols.
     scoring_target_alphabet_size=128,
@@ -1431,15 +1413,11 @@ STAGED_SCALE_ARMS = tuple(name for name in PROTEIN_SCALE_LADDER if name in STAGE
 #:
 #: Membership here is staging and nothing else. It does not qualify a
 #: checkpoint, does not admit one to :data:`PANEL`, and above all does not grant
-#: a capability: each arm's ``capabilities`` is what that arm was measured to
-#: honour, and today only the two Qwen rungs honour anything. The other two
-#: declare an empty set -- ``rita-xl`` because its tokenizer declares no pad
-#: token and names an end-of-sequence id its own vocabulary does not contain, so
-#: no batch can be built, and ``proteinglm-7b-clm`` because this module renders
-#: nothing for it and its modeling code does not import in this environment.
-#: They are in this tuple anyway, and that is the point: a stage then
-#: refuses them with their own recorded reason instead of with "unknown arm",
-#: which is the difference between a decision and an omission.
+#: a capability beyond what the arm's ``capabilities`` field already states.
+#: The two Qwen rungs keep the rotary family; ``rita-xl`` still declares an empty
+#: set because no pad token can be established; ``proteinglm-7b-clm`` now declares
+#: ``budget`` for the continuation serving path. That is not 7B qualification and
+#: not an interpretability-family grant.
 STAGED_SECOND_STAGE_ARMS = (
     "qwen2.5-7b",
     "qwen2.5-32b",
@@ -2190,6 +2168,32 @@ def load_arm_spec(
     name = spec.name
     if dtype not in _DTYPES:
         raise ValueError(f"unsupported inference dtype {dtype!r}")
+    if spec.architecture == "proteinglm":
+        if attn_implementation is not None:
+            raise ValueError(
+                f"{name}: attn_implementation is inert on ProteinGLM; refusing "
+                f"{attn_implementation!r} rather than recording a contract the "
+                "checkpoint does not honour"
+            )
+        if dtype != "float32":
+            raise ValueError(
+                f"ProteinGLM budget serving is FP32-only; refused dtype {dtype!r}"
+            )
+        loaded = _proteinglm.load_pretrained(
+            require_input_path(spec.path, _MODEL_PATH_VARIABLES),
+            device=device,
+            dtype=dtype,
+            strict=strict,
+        )
+        return Arm(
+            spec=spec,
+            model=loaded["model"],
+            tokenizer=loaded["tokenizer"],
+            device=device,
+            dtype=dtype,
+            attn_implementation=None,
+            strict_load=loaded["strict_load"],
+        )
     path = str(require_input_path(spec.path, _MODEL_PATH_VARIABLES))
     trust_remote_code = spec.architecture not in _BUILTIN_CAUSAL_LM_ARCHITECTURES
 
@@ -2473,6 +2477,8 @@ class Cohort:
                 f"{ec}<sep>{CONDITIONING_START}{seq}{CONDITIONING_END}"
                 for ec, seq in zip(labels, self.records)
             ]
+        if fmt == INPUT_FORMAT_GMASK_SOP_EOS:
+            return [_proteinglm.render_budget_sequence(sequence) for sequence in self.records]
         raise ValueError(f"unsupported input format {fmt!r}")
 
 
@@ -2591,6 +2597,8 @@ def rendering_marker_ids(arm: Arm) -> tuple[int, ...]:
             "its EC digits carry no marker id, so a set of ids cannot describe the "
             "span that is not content. Use conditioning_boundary_ids"
         )
+    if fmt == INPUT_FORMAT_GMASK_SOP_EOS:
+        return _proteinglm.PREFIX_IDS
     raise ValueError(f"unsupported input format {fmt!r}")
 
 
@@ -3030,7 +3038,13 @@ def tokenize_batch(
         raise ValueError(f"{arm.name}: cannot tokenise an empty batch")
     if max_len < 1:
         raise ValueError("max_len must be positive")
-    rows = [arm.tokenizer(t, return_tensors=None)["input_ids"][:max_len] for t in texts]
+    if arm.spec.input_format == INPUT_FORMAT_GMASK_SOP_EOS:
+        rows = [
+            _proteinglm.encode_budget_text(arm.tokenizer, text, max_len=max_len)
+            for text in texts
+        ]
+    else:
+        rows = [arm.tokenizer(t, return_tensors=None)["input_ids"][:max_len] for t in texts]
     empty = [index for index, row in enumerate(rows) if not row]
     if empty:
         # A zero-token row would contribute a fully masked line to the batch and

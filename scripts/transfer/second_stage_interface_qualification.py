@@ -239,16 +239,14 @@ REQUIRED_LIVE_WIDTH: dict[str, LiveWidth] = {
 #: costs nothing and cannot be confused with a check that ran and failed.
 DECLARED_UNAVAILABLE: dict[str, str] = {
     "proteinglm-7b-clm": (
-        "unloadable on this host as staged and unrenderable in this repository, "
-        "two independent facts. modeling_proteinglm.py line 15 reads "
+        "7B numerical qualification has not run. The original AutoModelForCausalLM "
+        "path remains unloadable: modeling_proteinglm.py line 15 reads "
         "'import torch, deepspeed' and Transformers' AST-based import check "
-        "raises ImportError before the module body runs, although the name is "
-        "used only inside a training-only checkpointing helper that is dead on "
-        "the inference path. Separately, its ArmSpec declares "
-        "input_format=undeclared_native_rendering because no branch of "
-        "Cohort.input_strings emits the <gmask><sop><eos> prefix its native "
-        "convention needs, so even a loadable checkpoint has no rendering here. "
-        "Reported unavailable; no other model is moved into its slot"
+        "raises ImportError before the module body runs. A derived inference-only "
+        "copy now serves budget continuation (gmask_sop_eos, residues 2..L); that "
+        "is an implementation door, not this stage's 7B interface qualification. "
+        "Reported unavailable for 7B qualification; no other model is moved into "
+        "its slot"
     ),
 }
 
