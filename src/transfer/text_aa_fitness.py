@@ -22,7 +22,8 @@ Usage (core only; not a legal ProteinGym run until a later stage is wired)::
 ``application_window_tokens`` is the declared scoring envelope, not
 ``config.max_length`` and not a stage-01 budget. ByGPT5 has T5 relative
 position bias and no absolute position table, so it has no hard context from
-embeddings; a window is still required. This module does not freeze that
+embeddings; a window is still required. Tokenizer loading is shared with the
+census path and does not load weights. This module does not freeze that
 window, run a census, or admit an experiment.
 """
 
@@ -56,8 +57,10 @@ __all__ = [
     "TEXT_AA_FP32_V1",
     "TextAABoundary",
     "TextAAFitnessScorer",
+    "TextAATokenizerBundle",
     "encode_text_aa",
     "load_text_aa_scorer",
+    "load_text_aa_tokenizer",
     "read_hard_context",
     "resolve_text_aa_boundary",
 ]
@@ -203,6 +206,20 @@ class TextAABoundary:
             forbid_token_ids=forbid,
             trust_remote_code=trust,
         )
+
+
+@dataclass(frozen=True)
+class TextAATokenizerBundle:
+    """Tokenizer, config, and hard context for one text-AA checkpoint.
+
+    Census uses this bundle and never constructs a scorer. Scoring still requires
+    a separate float32 weight load.
+    """
+
+    tokenizer: Any
+    config: Any
+    boundary: TextAABoundary
+    hard_context: int | None
 
 
 def resolve_text_aa_boundary(name: str, table: Mapping[str, Any]) -> TextAABoundary:
@@ -533,25 +550,21 @@ def _relative_position_facts(config: Any, *, model_type: str) -> dict[str, Any]:
     }
 
 
-def load_text_aa_scorer(
+def load_text_aa_tokenizer(
     checkpoint: Path | str,
     *,
     boundary: TextAABoundary | Mapping[str, Any],
-    application_window_tokens: int,
-    device: str = "cpu",
     name: str | None = None,
-) -> TextAAFitnessScorer:
-    """Load one local checkpoint in float32 and bind a text-AA boundary.
+) -> TextAATokenizerBundle:
+    """Load tokenizer and config only. Weights are not read.
 
-    Built-in GPT-2 / Qwen / Llama classes are loaded with
-    ``trust_remote_code=False``. ByGPT5 is the only remote-code path, and only
-    the already-vendored local ``configuration_bygpt5`` /
-    ``modeling_bygpt5`` / ``tokenization_bygpt5`` files are accepted. Weights
-    are not downloaded and the checkpoint directory is not modified.
+    Built-in GPT-2 / Qwen / Llama classes use ``trust_remote_code=False``.
+    ByGPT5 is the only remote-code path, and only the already-vendored local
+    ``configuration_bygpt5`` / ``modeling_bygpt5`` / ``tokenization_bygpt5``
+    files are accepted. The checkpoint directory is not modified.
     """
 
-    import torch
-    from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
+    from transformers import AutoConfig, AutoTokenizer
 
     resolved = require_input_path(Path(checkpoint).resolve(), CHECKPOINT_VARIABLE)
     label = name or resolved.name
@@ -559,7 +572,6 @@ def load_text_aa_scorer(
         spec = boundary
     else:
         spec = TextAABoundary.from_mapping(boundary, name=label)
-    window = _require_application_window(application_window_tokens)
     trust = bool(spec.trust_remote_code)
     if trust and spec.model_type != BYGPT5_MODEL_TYPE:
         raise ValueError("trust_remote_code is only allowed for ByGPT5")
@@ -585,12 +597,6 @@ def load_text_aa_scorer(
         )
 
     hard_context = read_hard_context(config)
-    if hard_context is not None and window > hard_context:
-        raise ValueError(
-            f"{label}: application_window_tokens {window} exceeds hard context "
-            f"{hard_context}"
-        )
-
     tokenizer = AutoTokenizer.from_pretrained(
         str(resolved),
         local_files_only=True,
@@ -630,6 +636,50 @@ def load_text_aa_scorer(
             f"{label}: Qwen text-AA conditioning is the EOS document separator; "
             "tokenizer BOS must be absent"
         )
+    return TextAATokenizerBundle(
+        tokenizer=tokenizer,
+        config=config,
+        boundary=spec,
+        hard_context=hard_context,
+    )
+
+
+def load_text_aa_scorer(
+    checkpoint: Path | str,
+    *,
+    boundary: TextAABoundary | Mapping[str, Any],
+    application_window_tokens: int,
+    device: str = "cpu",
+    name: str | None = None,
+) -> TextAAFitnessScorer:
+    """Load one local checkpoint in float32 and bind a text-AA boundary.
+
+    Built-in GPT-2 / Qwen / Llama classes are loaded with
+    ``trust_remote_code=False``. ByGPT5 is the only remote-code path, and only
+    the already-vendored local ``configuration_bygpt5`` /
+    ``modeling_bygpt5`` / ``tokenization_bygpt5`` files are accepted. Weights
+    are not downloaded and the checkpoint directory is not modified.
+    """
+
+    import torch
+    from transformers import AutoModelForCausalLM
+
+    resolved = require_input_path(Path(checkpoint).resolve(), CHECKPOINT_VARIABLE)
+    label = name or resolved.name
+    bundle = load_text_aa_tokenizer(resolved, boundary=boundary, name=label)
+    spec = bundle.boundary
+    config = bundle.config
+    tokenizer = bundle.tokenizer
+    hard_context = bundle.hard_context
+    window = _require_application_window(application_window_tokens)
+    if hard_context is not None and window > hard_context:
+        raise ValueError(
+            f"{label}: application_window_tokens {window} exceeds hard context "
+            f"{hard_context}"
+        )
+    trust = bool(spec.trust_remote_code)
+    model_type = str(getattr(config, "model_type", "") or "")
+    tokenizer_class = type(tokenizer).__name__
 
     loaded = AutoModelForCausalLM.from_pretrained(
         str(resolved),
