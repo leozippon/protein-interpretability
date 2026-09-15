@@ -7,8 +7,10 @@ from types import SimpleNamespace
 import pytest
 
 from src.transfer.precision_policy import (
+    FP32_PER_TARGET_ABS,
     GALACTICA_FP32_V2,
     NATIVE_DMS_V1,
+    TEXT_AA_FP32_V1,
     fp32_matmul_context,
     requested_fp32_matmul_policy,
     require_observed_policy,
@@ -62,6 +64,8 @@ def _fake_torch(*, cuda: bool = True, cudnn: bool = True, precision: str = "high
 def test_requested_policy_is_tf32_off_and_highest():
     assert NATIVE_DMS_V1 == "native-dms-v1"
     assert GALACTICA_FP32_V2 == "galactica-fp32-v2"
+    assert TEXT_AA_FP32_V1 == "text-aa-fp32-v1"
+    assert FP32_PER_TARGET_ABS == 1e-4
     requested = requested_fp32_matmul_policy()
     require_observed_policy(requested)
     assert requested == {
