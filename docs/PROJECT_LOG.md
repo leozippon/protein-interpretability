@@ -2764,3 +2764,7 @@ The overview table in `summary.md` now names the checkpoints actually in use or 
 ## 2026-09-15 — Freeze first-wave v2 identity and merge candidate serving
 
 Tracked the five-slot first-wave v2 manifest, froze pin `5015fd4` as run `20260915134508_95c515bf6881`, and launched that snapshot copy on H200. Then merged the budget-only candidate door and neutralized the staged-only cohort_power note. Provenance is in “First-wave v2 freeze identity and candidate-door merge” in the experiment log.
+
+## 2026-09-15 — Recover Galactica fullscore B and merge ProteinGLM serving
+
+Reused the existing Galactica FP32 v2 fullscore B freeze without relaunch; variant-index check passed on the full LOOKUP 217. Merged inference-only ProteinGLM budget serving and the symbols_per_token encoding follow-up. Not Wave B and not 7B admission. Provenance is in “Recover Galactica fullscore B and merge ProteinGLM budget serving” in the experiment log.
