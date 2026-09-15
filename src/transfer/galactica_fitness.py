@@ -360,6 +360,9 @@ class GalacticaFitnessScorer:
                 totals[start : start + len(chunk)] = (
                     (token * keep).sum(1).double().cpu().numpy()
                 )
+                # Drop this batch's tensors so they cannot survive into the next
+                # forward (the next logits/logp RHS is evaluated before rebinding).
+                del logits, logp, token, keep
         if not np.all(np.isfinite(totals)):
             raise RuntimeError(
                 f"{self.name}: a scored sequence returned a non-finite total"

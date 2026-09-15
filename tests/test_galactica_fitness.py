@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import weakref
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -217,6 +219,31 @@ def _reference_logits(model: _RuleLogits, ids: list[int]) -> torch.Tensor:
     return model(torch.tensor([ids]), use_cache=False).logits[0]
 
 
+def _previous_batch_alive(scorer: G.GalacticaFitnessScorer, sequences: list[str]):
+    """CPU lifetime of full-vocab logits/logp at each later forward; not GPU qualification."""
+    refs: dict[str, weakref.ReferenceType[torch.Tensor]] = {}
+    entries: list[dict[str, bool]] = []
+    model = scorer.loaded.model
+    inner = model.forward
+    orig_softmax = torch.log_softmax
+
+    def forward(input_ids, attention_mask=None, use_cache=None):
+        entries.append({key: ref() is not None for key, ref in refs.items()})
+        output = inner(input_ids, attention_mask=attention_mask, use_cache=use_cache)
+        refs["logits"] = weakref.ref(output.logits)
+        return output
+
+    def softmax(*args, **kwargs):
+        values = orig_softmax(*args, **kwargs)
+        refs["logp"] = weakref.ref(values)
+        return values
+
+    with patch.object(model, "forward", forward), patch.object(torch, "log_softmax", softmax):
+        totals = scorer.log_likelihood(sequences)
+    after = {key: ref() is not None for key, ref in refs.items()}
+    return entries, after, totals
+
+
 # ------------------------------------------------------------- declarations
 
 
@@ -283,6 +310,35 @@ def test_declared_galactica_tokenisation_scores_residues_and_excludes_boundaries
     with_end = _predecessor_residue_sum(ids, end_keep, logits)
     assert abs(with_end - expected) > 1.0
     accounting = scorer.residue_accounting()
+    assert accounting["residues_per_scored_token"] == pytest.approx(1.0)
+
+
+def test_previous_batch_full_vocab_outputs_die_before_the_next_forward():
+    sequences = ["MK", "MKT", "MKTAA", "MKTA", "M"]
+    _tokenizer, model, records = _residue_model(sequences)
+    batch_size = 2
+    assert len(sequences) == 2 * batch_size + 1
+    scorer = _scorer(model, batch_size=batch_size)
+    entries, after, totals = _previous_batch_alive(scorer, sequences)
+    assert entries[0] == {}
+    assert entries[1:] == [{"logits": False, "logp": False}] * 2
+    assert after == {"logits": False, "logp": False}
+
+    expected = np.array(
+        [
+            _predecessor_residue_sum(
+                list(record.token_ids),
+                record.scored_positions,
+                _reference_logits(model, list(record.token_ids)),
+            )
+            for record in records
+        ]
+    )
+    assert totals == pytest.approx(expected)
+    accounting = scorer.residue_accounting()
+    residues = sum(record.n_residues for record in records)
+    scored = sum(record.n_scored_tokens for record in records)
+    assert accounting["residues"] == residues == accounting["scored_tokens"] == scored
     assert accounting["residues_per_scored_token"] == pytest.approx(1.0)
 
 

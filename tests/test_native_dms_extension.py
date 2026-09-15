@@ -1178,6 +1178,8 @@ def test_longest_eligible_batch_matches_max_tokens_and_omits_loglik(tmp_path):
     assert longest["token_length"] == assay_row["max_tokens"]
     assert longest["expected_max_tokens"] == assay_row["max_tokens"]
     assert longest["batch_size"] == 2
+    assert longest["n_batches"] == 1
+    assert longest["n_sequences"] == longest["finite_output_count"] == 2
     assert longest["all_finite"] is True
     assert longest["log_likelihood_retained"] is False
     assert longest["cuda_memory_measured"] is False
@@ -1187,6 +1189,54 @@ def test_longest_eligible_batch_matches_max_tokens_and_omits_loglik(tmp_path):
     saved = json.loads((out / "interface_check.json").read_text(encoding="utf-8"))
     assert "log_likelihood" not in saved["longest_eligible_batch"]
     assert saved["no_new_model_fitness_scores"] is True
+
+
+@pytest.mark.parametrize("failure", [None, "short", "nonfinite"])
+def test_longest_consecutive_batches_share_one_call_and_restore_batch_size(
+    monkeypatch, failure
+):
+    scorer = _fp32_scorer(["MKT", AA20], batch_size=5)
+    cohort = {
+        "analysis_assays": ["assay_a"],
+        "context": scorer.context,
+        "assays": [{
+            "assay": "assay_a", "wildtype_id": "q00000",
+            "wildtype_sequence": "MKT",
+            "max_tokens": scorer.token_lengths(["MKT"])[0],
+        }],
+    }
+    calls = []
+    real_likelihood = scorer.log_likelihood
+
+    def checked_likelihood(sequences):
+        calls.append((len(sequences), scorer.batch_size))
+        values = real_likelihood(sequences)
+        if failure == "short":
+            return values[:2]
+        if failure == "nonfinite":
+            values[-1] = float("nan")
+        return values
+
+    monkeypatch.setattr(scorer, "log_likelihood", checked_likelihood)
+    if failure is None:
+        result = EXT.check_longest_eligible_batch(
+            scorer, cohort, arm=scorer.name, batch_size=2, n_batches=3
+        )
+        assert result["n_batches"] == 3
+        assert result["n_sequences"] == result["finite_output_count"] == 6
+        assert result["all_finite"] is True
+        assert result["cuda_memory_measured"] is False
+        assert result["cuda_peak_allocated_bytes"] is None
+        assert result["log_likelihood_retained"] is False
+    else:
+        match = "shape" if failure == "short" else "non-finite"
+        with pytest.raises(RuntimeError, match=match):
+            EXT.check_longest_eligible_batch(
+                scorer, cohort, arm=scorer.name, batch_size=2, n_batches=3
+            )
+    assert calls == [(6, 2)]
+    assert scorer.batch_size == 5
+    assert scorer.residues == scorer.scored_tokens == 18
 
 
 def test_probe_refuses_when_no_assay_is_eligible(tmp_path):
@@ -1311,6 +1361,10 @@ def test_v2_probe_loads_once_at_float32_without_promotion(tmp_path, monkeypatch)
     assert payload["status"] == "passed"
     assert payload["protocol_id"] == GALACTICA_FP32_V2
     assert payload["settings"]["protocol_id"] == GALACTICA_FP32_V2
+    assert payload["settings"]["longest_resource_batches"] == 3
+    assert payload["longest_eligible_batch"]["n_batches"] == 3
+    assert payload["longest_eligible_batch"]["n_sequences"] == 6
+    assert payload["longest_eligible_batch"]["finite_output_count"] == 6
     assert payload["fp32_geometry_gate"]["passed"] is True
     assert payload["fp32_geometry_gate"]["n_comparisons"] == 45
     assert (out / EXT.V2_OUTCOME_NAME).is_file()

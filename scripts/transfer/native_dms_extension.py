@@ -85,6 +85,7 @@ REQUIRED_DTYPE = {
     RITA.RITA_ARM: RITA.INFERENCE_DTYPE,
 }
 V2_OUTCOME_NAME = "galactica_fp32_v2_outcome.json"
+FP32_RESOURCE_BATCHES = 3
 _DIAGNOSTIC_MODULE = None
 
 
@@ -705,12 +706,14 @@ def check_longest_eligible_batch(
     *,
     arm: str,
     batch_size: int,
+    n_batches: int = 1,
 ) -> dict[str, Any]:
-    """One configured-batch forward at the longest eligible wild-type length.
+    """One public scorer call spanning consecutive longest-shape batches.
 
     The sequences are an AA20 tiling truncated to that wild type's residue
     count. They are not DMS variants, carry no fitness labels, and their
-    log-likelihoods are not retained as scores.
+    log-likelihoods are not retained as scores. Multiple batches must share
+    one call so that cross-batch tensor lifetimes are exercised.
     """
 
     analysis = [str(name) for name in (cohort.get("analysis_assays") or [])]
@@ -747,12 +750,15 @@ def check_longest_eligible_batch(
     configured = int(batch_size)
     if configured < 1:
         raise ValueError("batch size must be positive")
-    batch = [synthetic] * configured
+    if type(n_batches) is not int or n_batches < 1:
+        raise ValueError("n_batches must be a positive integer")
+    n_sequences = configured * n_batches
+    batch = [synthetic] * n_sequences
     batch_lengths = [int(value) for value in scorer.token_lengths(batch)]
-    if batch_lengths != [expected] * configured:
+    if batch_lengths != [expected] * n_sequences:
         raise RuntimeError(
             f"{arm}: longest-shape batch token lengths {batch_lengths} != "
-            f"{expected} x {configured}"
+            f"{expected} x {n_sequences}"
         )
     torch = getattr(scorer, "torch", None)
     if torch is None:
@@ -773,16 +779,15 @@ def check_longest_eligible_batch(
         elapsed = time.perf_counter() - started
     finally:
         scorer.batch_size = original_bs
-    if totals.shape != (configured,):
+    if totals.shape != (n_sequences,):
         raise RuntimeError(
             f"{arm}: longest-shape log_likelihood shape {totals.shape} != "
-            f"({configured},)"
+            f"({n_sequences},)"
         )
     if not np.all(np.isfinite(totals)):
         raise RuntimeError(
             f"{arm}: longest-shape batch produced a non-finite log-likelihood"
         )
-    del totals
     record: dict[str, Any] = {
         "kind": "synthetic_longest_eligible_shape_not_dms_score",
         "not_a_dms_variant": True,
@@ -791,6 +796,9 @@ def check_longest_eligible_batch(
         "n_residues": n_residues,
         "synthetic_sequence": synthetic,
         "batch_size": configured,
+        "n_batches": n_batches,
+        "n_sequences": n_sequences,
+        "finite_output_count": int(totals.size),
         "token_length": expected,
         "expected_max_tokens": expected,
         "context": context,
@@ -800,6 +808,7 @@ def check_longest_eligible_batch(
         "log_likelihood_retained": False,
         "cuda_memory_measured": measured_cuda,
     }
+    del totals
     if measured_cuda:
         record["cuda_peak_allocated_bytes"] = int(
             torch.cuda.max_memory_allocated(cuda_device)
@@ -1250,6 +1259,7 @@ def _run_probe_v2(
         "dtype": dtype,
         "batch_size": int(batch_size),
         "protocol_id": P.GALACTICA_FP32_V2,
+        "longest_resource_batches": FP32_RESOURCE_BATCHES,
         "variant_seed": VARIANT_SEED,
         "variant_cap": VARIANT_CAP,
         "variant_draw": (
@@ -1386,7 +1396,8 @@ def _run_probe_v2(
                 payload["skipped"] = cohort["skipped"]
                 step = "longest_eligible_batch"
                 payload["longest_eligible_batch"] = check_longest_eligible_batch(
-                    local, cohort, arm=arm, batch_size=int(batch_size)
+                    local, cohort, arm=arm, batch_size=int(batch_size),
+                    n_batches=FP32_RESOURCE_BATCHES,
                 )
                 step = "restore"
             except Exception as exc:
