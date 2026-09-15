@@ -2756,3 +2756,7 @@ The added 156-byte last line was withdrawn at 2026-09-15T16:32:59.824183+00:00. 
 ## 2026-09-15 — Stage ProtGPT3 and Qwen3-8B-Base after Pi XRay authorization
 
 After the documented mirror-only hold, the user authorized this Pi session's existing XRay proxy to the official Hugging Face endpoint without changing the default mirror or system proxy. Pinned ProtGPT3-1.3B and Qwen3-8B-Base checkpoints were then downloaded, hash-verified, and serially synced on the in-use H200 path; file completeness is not experiment admission. Provenance is in “Dual-end candidate-model file verification after Pi XRay authorization” in the experiment log.
+
+## 2026-09-15 — Complete the main model inventory for full coverage
+
+The overview table in `summary.md` now names the checkpoints actually in use or explicitly requested for this round: 33 in total (13 text, 12 protein, 8 joint). Listing a family is not the same as having run every checkpoint on every experiment. Shared measurement premises and Direction 1 still need per-checkpoint coverage; those supplementary runs have not been executed.

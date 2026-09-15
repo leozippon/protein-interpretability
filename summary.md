@@ -10,23 +10,28 @@
 
 ## 主要模型
 
+本表按谱系列出实际使用或本次指定的 checkpoint。同一谱系的笼统覆盖不等于每个尺寸都已跑过同一实验；列入本表也不等于接口、数值或实验已经准入。
+
 | 模型谱系 | 模态与比较作用 | Tokenizer / 基本单位 | 关键架构 | 训练数据或阶段 |
 | --- | --- | --- | --- | --- |
-| GPT-2 | 纯文本基础对照和规模阶梯 | 50,257 词表 BPE | 12–48 层，宽 768–1,600，约 1.24 亿–15.6 亿参数 | WebText |
+| GPT-2 | 纯文本基础对照和规模阶梯 | 50,257 词表 BPE | gpt2：12 层、宽 768，约 1.24 亿；gpt2-medium：24 层、宽 1,024，约 3.55 亿；gpt2-large：36 层、宽 1,280，约 7.74 亿；gpt2-xl：48 层、宽 1,600，约 15.6 亿 | WebText |
 | DialoGPT-small | 文本语料对照 | 与 GPT-2 相同的 50,257 词表 BPE | 与 GPT-2 small 相同的 12 层、宽 768 | Reddit 对话 |
-| Qwen2.5 0.5B/7B/32B、Llama-3.2-3B | 非 GPT-2 文本架构对照，兼纯文本规模阶梯 | 151,936 / 128,256 词表 | Qwen 依次为 24 层宽 896、28 层宽 3,584、64 层宽 5,120；Llama 为 28 层、宽 3,072 | 多语言、代码和数学混合 / 网络文本与蒸馏数据 |
-| [Qwen3-8B-Base](https://hf-mirror.com/Qwen/Qwen3-8B-Base) | 纯文本预训练基座候选，用于检验现有文本侧发现是否依赖 Qwen2.5 这一代 | 151,936 词表；具体基本单位尚待核验 | 稠密 Qwen3 自回归 Transformer：36 层、宽 4,096，GQA 32 查询/8 KV，QK-Norm、RoPE、SwiGLU；约 82 亿参数 | 预训练基座；具体语料混合未确认 |
-| ByGPT5 small/base/medium | 字节级文本对照和规模阶梯 | 384 符号字节词表，英文约一字符一 token | T5 式仅解码器；4–12 层，宽 1,472–1,536 | 仓库未确认训练语料 |
+| Qwen2.5 0.5B/7B/32B | 非 GPT-2 文本架构对照，兼纯文本规模阶梯 | 0.5B 词表 151,936；7B/32B 配置词表 152,064 | 稠密 Qwen2：0.5B 24 层宽 896；7B 28 层宽 3,584；32B 64 层宽 5,120 | 多语言、代码和数学混合 |
+| Llama-3.2-3B | 非 GPT-2 文本架构对照 | 128,256 词表 | 28 层、宽 3,072 | 网络文本与蒸馏数据 |
+| [Qwen3-8B-Base](https://hf-mirror.com/Qwen/Qwen3-8B-Base) | 纯文本预训练基座候选，用于检验现有文本侧发现是否依赖 Qwen2.5 这一代 | 151,936 词表；具体基本单位尚待核验 | 稠密 Qwen3 自回归 Transformer：36 层、宽 4,096，GQA 32 查询/8 KV，QK-Norm、RoPE、SwiGLU；约 82 亿参数 | 预训练基座，卡面 Apache-2.0；具体语料混合未确认 |
+| ByGPT5 small/base/medium | 字节级文本对照和规模阶梯 | 384 符号字节词表，英文约一字符一 token | T5 式仅解码器：small 4 层宽 1,472；base 6 层宽 1,536；medium 12 层宽 1,536 | 仓库未确认训练语料 |
 | ProtGPT2 | 多残基蛋白对照 | 50,257 词表，多残基 BPE；原生 FASTA 输入 | GPT-2 36 层、宽 1,280、20 个头，约 7.74 亿参数 | UniRef50 |
 | ZymCTRL | 带 EC 条件的逐残基蛋白模型 | 458 词表，基本单位为单残基 | GPT-2 36 层、宽 1,280 | EC 标注的 UniProt 蛋白 |
-| ProGen2 | 逐残基蛋白谱系和规模对照 | 32 词表，单残基 token，带生成方向标记 | 12–32 层，宽 1,024–4,096，约 1.51 亿–64.4 亿参数 | 多数规模使用 UniRef90 与 BFD30；base 的具体训练混合未确认 |
-| ProGen3 112M/3B | 稀疏 MoE 蛋白对照，兼蛋白规模阶梯 | 134 词表；更精确的基本单位未确认 | 10 层、宽 384 / 24 层、宽 1,280；112M 每层 8 个专家、每 token 选择 2 个 | 112M 的模型卡未声明预训练语料；3B 声明 Profluent Protein Atlas v1 |
-| [ProteinGLM-7B-CLM](https://hf-mirror.com/proteinglm/proteinglm-7b-clm) | 纯蛋白因果生成候选，补充稠密 GLM 谱系参照 | 128 词表；具体基本单位尚待核验 | 稠密自定义 GLM 因果解码器：36 层、宽 4,096、32 头 MHA，一维 RoPE、GEGLU；非 MoE | 蛋白 CLM 预训练，许可 CC-BY-NC-4.0；不可与 100B 旗舰或 MLM 版本混同；具体训练混合尚待核验 |
-| [ProtGPT3-1.3B](https://hf-mirror.com/AI4PD/ProtGPT3-1.3B) | 蛋白自回归 MoE 候选，作为 ProGen3 之外的另一谱系参照 | 31 词表；具体基本单位尚待核验 | Mixtral 式仅解码器 MoE：17 层、宽 1,024，8 专家、每 token 选 2，GQA 16 查询/4 KV，RoPE、SwiGLU | 蛋白序列因果预训练基础版；不混用 DPO 或 MSA 版本；具体语料混合尚待核验 |
-| Galactica 125M/1.3B/6.7B/30B、InstructProtein | 语言–蛋白联合模型对照，兼联合规模阶梯 | 文本词表与原生蛋白表示 | 同为 OPT 形状：1.3B 与 InstructProtein 是 24 层、宽 2,048，6.7B 是 32 层、宽 4,096，30B 是 48 层、宽 7,168 | 科学语料，其中蛋白低于 1% / UniRef100 继续预训练与指令微调 |
-| Llama-2 → ProLLaMA | 同一谱系的文本、蛋白和训练阶段对照 | 共享 32k SentencePiece；蛋白约 1.53 residues/token | 32 层、宽 4,096、32 个头 | Llama-2 → UniRef50 继续预训练 → 蛋白指令微调 |
+| ProGen2 | 逐残基蛋白谱系和规模对照 | 32 词表，单残基 token，带生成方向标记 | small：12 层宽 1,024，约 1.51 亿；base/medium：27 层宽 1,536，约 7.65 亿；large：32 层宽 2,560，约 27.8 亿；xlarge：32 层宽 4,096，约 64.4 亿 | small/medium/large/xlarge 使用 UniRef90 与 BFD30；base 的具体训练混合未确认 |
+| RITA-xl | 纯蛋白自回归模型，ProteinGym 独立单点对照 | 单残基 token，26 维输出词表 | 24 层、宽 2,048、32 个头，约 12 亿参数；上下文 1,024 tokens | UniRef100 |
+| ProGen3 112M/3B | 稀疏 MoE 蛋白对照，兼蛋白规模阶梯 | 134 词表；更精确的基本单位未确认 | 112M：10 层、宽 384；3B：24 层、宽 1,280；两档均为每层 8 专家、每 token 选 2 | 112M 的模型卡未声明预训练语料；3B 声明 Profluent Protein Atlas v1 |
+| [ProteinGLM-7B-CLM](https://hf-mirror.com/proteinglm/proteinglm-7b-clm) | 纯蛋白因果生成候选，补充稠密 GLM 谱系参照 | 128 词表；仓库已测 tokenizer 按单残基切分，但仓库尚未支持它的原生输入格式 | 稠密自定义 GLM 因果解码器：36 层、宽 4,096、32 头 MHA，一维 RoPE、GEGLU；非 MoE | 蛋白 CLM 预训练，许可 CC-BY-NC-4.0；不可与 100B 旗舰或 MLM 版本混同；这份 7B 权重对应的具体训练混合尚未独立核实 |
+| [ProtGPT3-1.3B](https://hf-mirror.com/AI4PD/ProtGPT3-1.3B) | 蛋白自回归 MoE 候选，作为 ProGen3 之外的另一谱系参照 | 31 词表；具体基本单位尚待核验 | Mixtral 式仅解码器 MoE：17 层、宽 1,024，8 专家、每 token 选 2，GQA 16 查询/4 KV，RoPE、SwiGLU；约 13.3 亿总参数，active 未声明 | 蛋白序列因果预训练基础版；不混用 DPO 或 MSA 版本；具体语料混合尚待核验；权重许可尚未核清 |
+| Galactica 125M/1.3B/6.7B/30B | 语言–蛋白联合模型对照，兼联合规模阶梯 | 50,000 词表文本 BPE；蛋白为同一词表中的单字母残基，另加 `[START_AMINO]` / `[END_AMINO]` 与残基分隔标记 | 同为 OPT 形状解码器：125M 12 层宽 768，约 1.25 亿；1.3B 24 层宽 2,048；6.7B 32 层宽 4,096；30B 48 层宽 7,168 | 科学语料，其中蛋白低于 1% |
+| InstructProtein | 语言–蛋白联合对照，但不是 Galactica 的规模阶梯 | 文本词表加专用残基 token（`<protein>`、`</protein>` 与 `ƤA..ƤY`） | OPT 形状：24 层、宽 2,048，与 Galactica 1.3B 同形状 | UniRef100 继续预训练与指令微调 |
+| Llama-2 → ProLLaMA | 同一谱系的文本、蛋白和训练阶段对照 | 共享 32k SentencePiece；蛋白约 1.53 residues/token | Llama-2-7B、ProLLaMA Stage 1、Stage 2 三个 checkpoint 共享 32 层、宽 4,096、32 个头 | Llama-2 → UniRef50 继续预训练 → 蛋白指令微调 |
 
-新增的 Qwen3-8B-Base、ProteinGLM-7B-CLM 和 ProtGPT3-1.3B 只是候选与研究对照，不替换既有匹配对照，也不晋升为已完成结果。进入实验前须核许可、原生接口/数值正确性和干预资格；ProteinGLM-7B-CLM 仍受既有接口限制，ProtGPT3-1.3B 的权重许可尚未核清。模型资料及后续获准的权重访问统一使用 `HF_ENDPOINT=https://hf-mirror.com`。
+Qwen3-8B-Base、ProteinGLM-7B-CLM 和 ProtGPT3-1.3B 是新增候选，不替换既有匹配对照，也不晋升为已完成结果。三者固定版本的权重文件已在本地与 H200 对齐，但这只说明文件齐备，不是接口、数值正确性或实验准入。进入实验前仍须核许可、原生接口/数值正确性和干预资格；ProteinGLM-7B-CLM 仍受既有接口限制，ProtGPT3-1.3B 的权重许可尚未核清。默认使用镜像；本次镜像失败后，经用户明确授权通过当前 Pi XRay 访问官方源，未改默认配置。
 
 本文把围绕同一科学问题的重复抽样、参数扫描和修复运行合并为一个实验族，只列能够产生独立结论、使旧结论撤回、改变归因，或决定路线是否继续的实验。表中的“数据”是评测集或实验队列，不一定是模型的完整训练语料；训练语料或样本量无法准确确认时不作猜测。示例只解释记录格式，不代表真实数据内容。详细证据、限制和撤回以 [`docs/INTERPRETABILITY_TRANSFER_AUDIT.md`](docs/INTERPRETABILITY_TRANSFER_AUDIT.md) 为准，最新但尚未晋升的记录见 [`docs/EXPERIMENT_LOG.md`](docs/EXPERIMENT_LOG.md)。
 
