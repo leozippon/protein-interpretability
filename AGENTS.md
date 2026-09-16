@@ -2,11 +2,11 @@
 
 ## Research Objective
 
-Study the mechanistic differences among pure-text, pure-protein, and joint language–protein generative models; determine when interpretability methods measure these systems faithfully; and develop causally validated interpretability methods to test whether protein-generative models have learned biological knowledge and, only after those methods prove reliable, use them to discover new biological knowledge. Follow three directions in order:
+Study what pure-text, pure-protein, and joint language–protein generative models can do, how their capabilities are implemented, and what they have learned. Follow three directions in order:
 
-1. **Compare model families from first principles.** Characterize differences in tokenization, training corpora, and model architecture among pure-text, pure-protein, and joint language–protein generative models. Use matched checkpoint lineages and same-checkpoint text/protein modes where they improve identification.
-2. **Use and audit interpretability methods.** Apply interpretability methods as controlled measurement tools to explain how those foundations affect model behavior, representations, and causal computation, while testing whether each method remains faithful across model families. Attribute limitations to the method itself or to transfer; for transfer-specific limitations, localize the responsible model, training data or stage, modality, or evaluation interface.
-3. **Develop and validate methods for biological knowledge.** Propose and validate interpretability methods that determine whether protein-generative models have learned biological knowledge rather than merely reproduced corpus statistics or surface correlations. Only after a method passes causal, retrieval-aware, and independent biological validation may it be used to formulate and test hypotheses that could reveal new biological knowledge.
+1. **Establish capabilities.** Determine what pure-text, pure-protein, and joint language–protein models can do, and compare their capabilities on analogous tasks.
+2. **Explain capabilities with existing methods.** Apply existing interpretability methods across model families to study how these capabilities arise, are represented, and are computed.
+3. **Develop methods to identify what models have learned.** If existing methods are insufficient, create new interpretability methods to determine the nature of learned capabilities and use them to investigate biological knowledge.
 
 
 ## Canonical Documents
@@ -22,36 +22,36 @@ Study the mechanistic differences among pure-text, pure-protein, and joint langu
 
 ## Environment
 
-- Bash runs on the B workstation. Use the validated `ct` environment for Python and GPU tools; conda is not initialized in non-interactive shells.
-- Validated workstation runtime: Python 3.11.14, PyTorch 2.9.1+cu128, Transformers 4.57.3, nnsight 0.5.15, and wandb 0.24.0. `requirements.txt` declares the active transfer package's direct Python dependencies; CUDA runtimes remain host-provisioned.
-- LaTeX: `source ~/miniconda3/etc/profile.d/conda.sh && conda activate latex && tectonic main.tex`.
+- Use the validated `ct` environment for Python and GPU tools; conda is not initialized in non-interactive shells.
+- Validated Compute runtime: Python 3.11.14, PyTorch 2.9.1+cu128, Transformers 4.57.3, nnsight 0.5.15, and wandb 0.24.0. `requirements.txt` declares the active transfer package's direct Python dependencies; CUDA runtimes remain host-provisioned.
+- LaTeX at ~/.conda/envs/latex.
 
 
 ## Compute
 
-- **Local B workstation:** 8 NVIDIA L20 GPUs, 46068 MiB reported each. Reserve it for basic correctness verification and interface checks.
+- **Compute:** 8 NVIDIA L20 GPUs, 46068 MiB reported each. Reserve it for basic correctness verification and interface checks.
 - **Remote H200 cluster:** 16 GPUs in total. A selected pod exposes only its current allocation; each H200 reports 143771 MiB in-pod. Run all substantive computation here with `scripts/transfer/run_transfer_h200.sh`, and keep the allocation busy rather than idle.
 
 
 ### H200 Access
 
-The cluster is offline and reached through `~/hangzhou-remote`. Check health, inspect disposable pods, and select one only for the current shell:
+The cluster is offline and reached through `~/hangzhou-compute`. Check health, inspect disposable pods, and select one only for the current shell:
 
 ```bash
-~/hangzhou-remote/ssh_tunnel/h200_status.sh
-~/hangzhou-remote/ssh_tunnel/h200_kubectl.sh get pods -o wide
+~/hangzhou-compute/ssh_tunnel/h200_status.sh
+~/hangzhou-compute/ssh_tunnel/h200_kubectl.sh get pods -o wide
 export H200_POD=<running-pod-name>
-~/hangzhou-remote/ssh_tunnel/h200_pod_exec.sh -- nvidia-smi
+~/hangzhou-compute/ssh_tunnel/h200_pod_exec.sh -- nvidia-smi
 ```
 
 The end-to-end status probe normally takes 40–50 seconds because it crosses several SSH and Kubernetes boundaries. Give `h200_status.sh` a caller-side timeout of at least 90 seconds. A timeout before its terminal `Health=` line is inconclusive, not a failed cluster-health result.
 
-Cluster allocation is not GPU utilization: `16/16` means all GPUs are assigned to pods, not necessarily computing. Inspect `nvidia-smi` inside the selected pod. Do not install dependencies in a pod or read the mode-600 `~/hangzhou-remote/config.sh`. Stage code and dependencies from B; the external README is authoritative for access, transfer, and recovery.
+Cluster allocation is not GPU utilization: `16/16` means all GPUs are assigned to pods, not necessarily computing. Inspect `nvidia-smi` inside the selected pod. Do not install dependencies in a pod or read the mode-600 `~/hangzhou-compute/config.sh`. Stage code and dependencies from Compute; the external README is authoritative for access, transfer, and recovery.
 
 
 ## Network And Downloads
 
-B has no direct route to `huggingface.co`. Create the ignored local environment file from the placeholder, then use the mirror:
+Compute has no direct route to `huggingface.co`. Create the ignored local environment file from the placeholder, then use the mirror:
 
 ```bash
 cp .env.local.example .env.local
@@ -77,8 +77,8 @@ Record each experiment's date, configuration or command, and result in `docs/EXP
 
 *Unless the task is very simple, start multi-agent collaboration.*
 
-- Your role centers on abstract design, global coordination, final acceptance, and Git management. Direct, exhaustive reading and modification are required only when necessary.
-- You should intentionally minimize your context footprint to preserve coherent end-to-end reasoning and architectural judgment; delegate first-line evidence gathering instead of performing it directly.
+- Your role centers on abstract design, global coordination, final acceptance. Direct, exhaustive reading and modification are required only when necessary.
+- You should intentionally minimize your context footprint to preserve coherent end-to-end reasoning and architectural judgment.
 - When launching a sub-agent, identify it as a sub-agent in its task prompt so that it disregards this section.
 - Keep delegation one level deep. Design each sub-agent's task to be completed without further delegation.
 - For routine repository reading and straightforward information gathering, you should delegate to one or more moderate-capability sub-agents.
@@ -110,7 +110,7 @@ When these principles conflict, preserve explicit requirements, correctness, and
 
 ## Operational Guardrails
 
-- Keep the repository organized, clean, and tidy. Keep session-scoped scratch files and artifacts outside the working tree, or remove them before finishing.
+- Keep the repository organized, clean, and tidy.
 - Read enough relevant code and supporting documentation to form a sound design before writing or modifying code.
 - Maintain independent judgment. When a request conflicts with evidence, a documented requirement, a safety constraint, or a higher-priority instruction, raise the conflict promptly.
 - Before removing shared code, persisted data, a public interface, or an operational entry point, check where it is used.
