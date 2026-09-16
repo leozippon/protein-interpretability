@@ -2776,3 +2776,11 @@ Merged the tokenizer-only 13-text ProteinGym census and a request-item type anno
 ## 2026-09-15 — Record Galactica-125M fullscore content gate
 
 Logged the independent 125M single-cell scientific content gate on the existing Galactica FP32 v2 fullscore recovery. Not Wave B and not whole-group admission. Provenance is in “Galactica-125M fullscore single-cell content gate” in the experiment log.
+
+## 2026-09-16 — Merge ProteinGLM derived-budget qualification
+
+Merged the accepted isolated ProteinGLM derived-budget qualification controller onto `main` as `6ff85ca` without a 7B run. Provenance is in “Merge ProteinGLM derived-budget qualification entry” in the experiment log.
+
+## 2026-09-16 — Record Galactica-1.3B fullscore content gate
+
+Logged the independent 1.3B single-cell scientific content gate on the existing Galactica FP32 v2 fullscore recovery. Not Wave B and not whole-group admission. Provenance is in “Galactica-1.3B fullscore single-cell content gate” in the experiment log.
