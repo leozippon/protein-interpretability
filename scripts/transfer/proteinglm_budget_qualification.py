@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import gc
 import hashlib
+import math
 import os
 import sys
 import time
@@ -533,6 +534,8 @@ def capture_cuda_end_state(device: torch.device, started: float) -> dict[str, An
 def cuda_end_state_is_complete(cuda_memory: Mapping[str, Any] | None) -> bool:
     if not isinstance(cuda_memory, Mapping):
         return False
+    if cuda_memory.get("synchronize") != "ok":
+        return False
     required = (
         "baseline_allocated_bytes",
         "baseline_reserved_bytes",
@@ -543,7 +546,9 @@ def cuda_end_state_is_complete(cuda_memory: Mapping[str, Any] | None) -> bool:
     )
     for key in required:
         value = cuda_memory.get(key)
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
+        if isinstance(value, bool) or type(value) not in (int, float):
+            return False
+        if not math.isfinite(float(value)):
             return False
     return True
 
@@ -565,6 +570,7 @@ def run_resource_gate(
     progress["max_len"] = MAX_LEN
     progress["resource_public_call_attempted"] = 0
     progress["resource_public_call_completed"] = 0
+    progress["terminal_public_call_capture_count"] = 0
     progress.pop("resource_public_call_count", None)
     progress.pop("finite", None)
 
@@ -595,36 +601,23 @@ def run_resource_gate(
         progress["phase"] = "cuda_reset"
         torch.cuda.synchronize(cuda_device)
         torch.cuda.reset_peak_memory_stats(cuda_device)
-        cuda_block = {
-            "baseline_allocated_bytes": int(torch.cuda.memory_allocated(cuda_device)),
-            "baseline_reserved_bytes": int(torch.cuda.memory_reserved(cuda_device)),
-            "total_memory_bytes": int(
-                torch.cuda.get_device_properties(cuda_device).total_memory
-            ),
-        }
+        cuda_block = {}
         progress["cuda_memory"] = cuda_block
+        cuda_block["baseline_allocated_bytes"] = int(torch.cuda.memory_allocated(cuda_device))
+        cuda_block["baseline_reserved_bytes"] = int(torch.cuda.memory_reserved(cuda_device))
+        cuda_block["total_memory_bytes"] = int(
+            torch.cuda.get_device_properties(cuda_device).total_memory
+        )
         started = time.perf_counter()
 
-    def collect_end_state() -> None:
-        if not record_cuda or started is None or cuda_device is None or cuda_block is None:
-            return
+    with inference_precision(arm) as policy:
+        progress["matmul_policy"] = {
+            "requested": dict(policy["requested"]),
+            "observed": dict(policy["observed"]),
+        }
+        progress["phase"] = "public_scored_tokens"
+        progress["resource_public_call_attempted"] = 1
         try:
-            readings = capture_cuda_end_state(cuda_device, started)
-        except Exception as telemetry_exc:
-            progress["telemetry_error"] = sanitize_error(telemetry_exc)
-            return
-        for key, value in readings.items():
-            cuda_block.setdefault(key, value)
-        progress["cuda_memory"] = cuda_block
-
-    progress["phase"] = "public_scored_tokens"
-    progress["resource_public_call_attempted"] = 1
-    try:
-        with inference_precision(arm) as policy:
-            progress["matmul_policy"] = {
-                "requested": dict(policy["requested"]),
-                "observed": dict(policy["observed"]),
-            }
             scored = public_scored_tokens(
                 arm,
                 inputs,
@@ -633,26 +626,37 @@ def run_resource_gate(
                 call_log=production_calls,
             )
             progress["resource_public_call_completed"] = 1
-            collect_end_state()
-            if len(production_calls) != 1:
-                raise ValueError(
-                    "resource gate must be one public scored_tokens call, "
-                    f"got {len(production_calls)}"
-                )
-            if production_calls[0]["strings"] != inputs:
-                raise ValueError("resource gate strings must be [longest, longest, longest]")
-            if production_calls[0]["batch_size"] != 1 or production_calls[0]["max_len"] != MAX_LEN:
-                raise ValueError("resource gate must be batch_size=1 and max_len=1024")
-            n_targets = int(scored.target_ids.size)
-            if n_targets != RESOURCE_N_TARGETS:
-                raise ValueError(
-                    f"resource gate kept {n_targets} targets, expected {RESOURCE_N_TARGETS}"
-                )
-            if not np.isfinite(scored.nll_nats).all():
-                raise FloatingPointError("resource gate produced non-finite NLL")
-            progress["phase"] = "independent_reference"
-            ids, mask = tokenize_batch(arm, [rendered], MAX_LEN)
-            reference = independent_shifted_ce(arm, ids, mask)
+        finally:
+            if record_cuda and started is not None and cuda_device is not None and cuda_block is not None:
+                progress["terminal_public_call_capture_count"] = 1
+                try:
+                    cuda_block.update(capture_cuda_end_state(cuda_device, started))
+                except Exception as telemetry_exc:
+                    progress["telemetry_error"] = sanitize_error(telemetry_exc)
+        if record_cuda and not cuda_end_state_is_complete(cuda_block):
+            raise ValueError(
+                "qualified resource facts require complete CUDA telemetry; "
+                "synchronize must be ok and required readings finite"
+            )
+        if len(production_calls) != 1:
+            raise ValueError(
+                "resource gate must be one public scored_tokens call, "
+                f"got {len(production_calls)}"
+            )
+        if production_calls[0]["strings"] != inputs:
+            raise ValueError("resource gate strings must be [longest, longest, longest]")
+        if production_calls[0]["batch_size"] != 1 or production_calls[0]["max_len"] != MAX_LEN:
+            raise ValueError("resource gate must be batch_size=1 and max_len=1024")
+        n_targets = int(scored.target_ids.size)
+        if n_targets != RESOURCE_N_TARGETS:
+            raise ValueError(
+                f"resource gate kept {n_targets} targets, expected {RESOURCE_N_TARGETS}"
+            )
+        if not np.isfinite(scored.nll_nats).all():
+            raise FloatingPointError("resource gate produced non-finite NLL")
+        progress["phase"] = "independent_reference"
+        ids, mask = tokenize_batch(arm, [rendered], MAX_LEN)
+        reference = independent_shifted_ce(arm, ids, mask)
         per_sequence = []
         for index in range(RESOURCE_N_SEQUENCES):
             selected = scored.sequence_index == index
@@ -677,50 +681,40 @@ def run_resource_gate(
                     "max_abs": max_abs,
                 }
             )
-        if record_cuda and not cuda_end_state_is_complete(cuda_block):
-            raise ValueError(
-                "qualified resource facts require complete CUDA telemetry; "
-                "unknown readings cannot mint a pass"
-            )
-        payload: dict[str, Any] = {
-            "resource_public_call_count": 1,
-            "n_sequences": RESOURCE_N_SEQUENCES,
-            "n_targets": n_targets,
-            "batch_size": 1,
-            "max_len": MAX_LEN,
-            "longest_L": LONGEST_RESIDUES,
-            "finite": True,
-            "per_sequence": per_sequence,
-            "matmul_policy": policy,
-            "independent_ce_max_abs": max(item["max_abs"] for item in per_sequence),
-            "cuda_memory": cuda_block,
-            "production_calls": [
-                {
-                    "n_strings": item["n_strings"],
-                    "max_len": item["max_len"],
-                    "batch_size": item["batch_size"],
-                    "string_sha256": [sha256_text(text) for text in item["strings"]],
-                }
-                for item in production_calls
-            ],
-            "not_all_qualification_public_calls": (
-                "this count is the resource-gate public scored_tokens call only"
-            ),
-            "expected_n_sequences": RESOURCE_N_SEQUENCES,
-            "expected_n_targets": RESOURCE_N_TARGETS,
-            "input_identity": progress["input_identity"],
-            "resource_public_call_attempted": 1,
-            "resource_public_call_completed": 1,
-            "phase": "complete",
-        }
-        progress.update(payload)
-        return payload
-    except Exception:
-        collect_end_state()
-        progress.pop("resource_public_call_count", None)
-        if progress.get("finite") is True:
-            progress.pop("finite", None)
-        raise
+    payload: dict[str, Any] = {
+        "resource_public_call_count": 1,
+        "n_sequences": RESOURCE_N_SEQUENCES,
+        "n_targets": n_targets,
+        "batch_size": 1,
+        "max_len": MAX_LEN,
+        "longest_L": LONGEST_RESIDUES,
+        "finite": True,
+        "per_sequence": per_sequence,
+        "matmul_policy": policy,
+        "independent_ce_max_abs": max(item["max_abs"] for item in per_sequence),
+        "cuda_memory": cuda_block,
+        "production_calls": [
+            {
+                "n_strings": item["n_strings"],
+                "max_len": item["max_len"],
+                "batch_size": item["batch_size"],
+                "string_sha256": [sha256_text(text) for text in item["strings"]],
+            }
+            for item in production_calls
+        ],
+        "not_all_qualification_public_calls": (
+            "this count is the resource-gate public scored_tokens call only"
+        ),
+        "expected_n_sequences": RESOURCE_N_SEQUENCES,
+        "expected_n_targets": RESOURCE_N_TARGETS,
+        "input_identity": progress["input_identity"],
+        "resource_public_call_attempted": 1,
+        "resource_public_call_completed": 1,
+        "terminal_public_call_capture_count": progress["terminal_public_call_capture_count"],
+        "phase": "complete",
+    }
+    progress.update(payload)
+    return payload
 
 
 def envelope(

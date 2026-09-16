@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import json
 import sys
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 
@@ -502,3 +503,140 @@ def test_qualification_oom_keeps_numeric_and_does_not_hide_cause(monkeypatch, tm
     peak = resource["cuda_memory"]["peak_allocated_bytes"]
     assert peak["status"] == "unknown"
     assert peak["error"]["class"] == "RuntimeError"
+
+
+def _a4_numeric_only_complete(cuda_memory: dict) -> bool:
+    """a4 helper: six numeric fields only. Documents the ignored-sync defect."""
+    required = (
+        "baseline_allocated_bytes",
+        "baseline_reserved_bytes",
+        "total_memory_bytes",
+        "duration_s",
+        "peak_allocated_bytes",
+        "peak_reserved_bytes",
+    )
+    for key in required:
+        value = cuda_memory.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return False
+    return True
+
+
+def test_a4_complete_helper_ignored_unknown_synchronize():
+    payload = {
+        "synchronize": {"status": "unknown", "error": {"class": "RuntimeError", "message": "x"}},
+        "baseline_allocated_bytes": 1,
+        "baseline_reserved_bytes": 2,
+        "total_memory_bytes": 3,
+        "duration_s": 0.1,
+        "peak_allocated_bytes": 4,
+        "peak_reserved_bytes": 5,
+    }
+    assert _a4_numeric_only_complete(payload) is True
+    assert Q.cuda_end_state_is_complete(payload) is False
+
+
+def test_terminal_synchronize_failure_cannot_qualify(monkeypatch):
+    arm = _tiny_arm()
+    progress: dict = {}
+    syncs = {"n": 0}
+
+    def sync(device=None):
+        syncs["n"] += 1
+        if syncs["n"] > 1:
+            raise RuntimeError("injected terminal synchronize failure")
+
+    monkeypatch.setattr(Q, "require_cuda_device", lambda device: None)
+    _install_fake_cuda(monkeypatch, peak_allocated="ok")
+    monkeypatch.setattr(Q.torch.cuda, "synchronize", sync)
+    with pytest.raises(ValueError, match="synchronize must be ok"):
+        Q.run_resource_gate(
+            arm,
+            Q.longest_legal_sequence(),
+            record_cuda=True,
+            progress=progress,
+        )
+    cuda_memory = progress["cuda_memory"]
+    assert cuda_memory["synchronize"]["status"] == "unknown"
+    assert cuda_memory["baseline_allocated_bytes"] == 111
+    assert isinstance(cuda_memory["duration_s"], float)
+    assert cuda_memory["peak_allocated_bytes"] == 333
+    assert Q.cuda_end_state_is_complete(cuda_memory) is False
+    assert progress.get("resource_public_call_count") != 1
+    assert progress.get("finite") is not True
+    assert progress["resource_public_call_completed"] == 1
+    assert progress["terminal_public_call_capture_count"] == 1
+
+
+def test_reference_failure_does_not_recapture(monkeypatch):
+    arm = _tiny_arm()
+    progress: dict = {}
+    captures = {"n": 0}
+    real_capture = Q.capture_cuda_end_state
+
+    def counting_capture(device, started):
+        captures["n"] += 1
+        return real_capture(device, started)
+
+    def boom_reference(*args, **kwargs):
+        raise RuntimeError("injected independent reference failure")
+
+    monkeypatch.setattr(Q, "require_cuda_device", lambda device: None)
+    monkeypatch.setattr(Q, "capture_cuda_end_state", counting_capture)
+    monkeypatch.setattr(Q, "independent_shifted_ce", boom_reference)
+    _install_fake_cuda(monkeypatch, peak_allocated="ok")
+    with pytest.raises(RuntimeError, match="injected independent reference failure"):
+        Q.run_resource_gate(
+            arm,
+            Q.longest_legal_sequence(),
+            record_cuda=True,
+            progress=progress,
+        )
+    assert captures["n"] == 1
+    assert progress["terminal_public_call_capture_count"] == 1
+    assert progress["resource_public_call_completed"] == 1
+    assert progress.get("resource_public_call_count") != 1
+
+
+def test_precision_enter_failure_does_not_count_public_call(monkeypatch):
+    arm = _tiny_arm()
+    progress: dict = {}
+    public = {"n": 0}
+    captures = {"n": 0}
+    real_public = Q.public_scored_tokens
+    real_capture = Q.capture_cuda_end_state
+
+    def counting_public(*args, **kwargs):
+        public["n"] += 1
+        return real_public(*args, **kwargs)
+
+    def counting_capture(*args, **kwargs):
+        captures["n"] += 1
+        return real_capture(*args, **kwargs)
+
+    def boom_precision(arm):
+        @contextmanager
+        def inner():
+            raise RuntimeError("injected precision enter failure")
+            yield {}
+
+        return inner()
+
+    monkeypatch.setattr(Q, "require_cuda_device", lambda device: None)
+    monkeypatch.setattr(Q, "inference_precision", boom_precision)
+    monkeypatch.setattr(Q, "public_scored_tokens", counting_public)
+    monkeypatch.setattr(Q, "capture_cuda_end_state", counting_capture)
+    _install_fake_cuda(monkeypatch, peak_allocated="ok")
+    with pytest.raises(RuntimeError, match="injected precision enter failure"):
+        Q.run_resource_gate(
+            arm,
+            Q.longest_legal_sequence(),
+            record_cuda=True,
+            progress=progress,
+        )
+    assert progress["resource_public_call_attempted"] == 0
+    assert progress["resource_public_call_completed"] == 0
+    assert progress["terminal_public_call_capture_count"] == 0
+    assert public["n"] == 0
+    assert captures["n"] == 0
+    assert progress["cuda_memory"]["baseline_allocated_bytes"] == 111
