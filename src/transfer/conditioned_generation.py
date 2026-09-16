@@ -44,11 +44,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import unicodedata
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 import numpy as np
 
@@ -57,7 +56,6 @@ from .arms import (
     CONDITIONING_END,
     CONDITIONING_START,
     N_TO_C_MARKER,
-    MODEL_ROOT,
     REPO,
     SWISSPROT_FASTA,
     UNIREF50_FASTA,

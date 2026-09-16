@@ -145,9 +145,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
-import re
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -157,15 +155,14 @@ from sklearn.metrics import roc_auc_score
 
 from src.transfer.alphabet_chemistry import (
     CEILING_ADEQUACY_FLOOR,
-    FRAGMENT_ORDERS,
-    MINIMUM_SYMBOL_TOKEN_COVERAGE,
     OrderedFragmentCounts,
     PRE_REGISTERED_FRAGMENT_ORDER,
-    admit_arm,
 )
 from src.transfer.arms import AA20
 from src.transfer.statistics import (
-    MINIMUM_BOOTSTRAP_UNITS,
+    # re-exported: scripts/transfer/40_catalytic_contradiction.py reads it as
+    # cx.MINIMUM_BOOTSTRAP_UNITS, so the name is used through this module.
+    MINIMUM_BOOTSTRAP_UNITS,  # noqa: F401
     bootstrap_unit_floor,
     paired_group_bootstrap,
 )

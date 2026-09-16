@@ -135,7 +135,6 @@ import math
 import re
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -143,7 +142,7 @@ import numpy as np
 
 from .amino_acids import AA20
 from .arms import Arm, Cohort, PANEL, config_context_length
-from .statistics import MINIMUM_BOOTSTRAP_UNITS, bootstrap_unit_floor
+from .statistics import bootstrap_unit_floor
 
 SCHEMA_VERSION = "r2_context_homologue_v1"
 PRE_REGISTRATION = "EXP-R2-228"
