@@ -2416,6 +2416,312 @@ class CampaignQueueCardVisibilityTests(unittest.TestCase):
         self.assertIn("cuda:3 cell", result.stdout)
 
 
+DUMMY_QUEUE_STAGE = '''#!/usr/bin/env python3
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--device", required=True)
+parser.add_argument("--out", required=True)
+parser.add_argument("--mode", default="ok")
+parser.add_argument("--marker", default="")
+parser.add_argument("--expect-name", default="score.json")
+args = parser.parse_args()
+if args.marker:
+    Path(args.marker).parent.mkdir(parents=True, exist_ok=True)
+    with Path(args.marker).open("a", encoding="utf-8") as handle:
+        handle.write(args.device + "\\n")
+if args.mode == "nonzero":
+    sys.exit(2)
+out = Path(args.out)
+out.mkdir(parents=True, exist_ok=True)
+if args.mode == "silent":
+    (out / "ran.txt").write_text("ran\\n", encoding="utf-8")
+    sys.exit(0)
+payload = {
+    "device": args.device,
+    "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", "<unset>"),
+}
+(out / args.expect_name).write_text(json.dumps(payload) + "\\n", encoding="utf-8")
+'''
+
+
+class CampaignQueueCpuResourceTests(unittest.TestCase):
+    """Explicit cpu rows are a resource type, not a GPU fallback."""
+
+    def fixture(self, root: Path) -> tuple[Path, Path]:
+        snapshot = root / "packages" / "run"
+        stage_dir = snapshot / "scripts" / "transfer"
+        stage_dir.mkdir(parents=True)
+        (stage_dir / "h200_env.sh").write_text(
+            "export TRANSFER_PYTHON=%s\n"
+            "export TRANSFER_PROGEN3_DIR=%s\n"
+            "export TRANSFER_PROGEN3_SRC=%s\n"
+            "export TRANSFER_MODEL_BASE_DIR=%s\n"
+            "export TRANSFER_KMER_BACKGROUND_DIR=%s\n"
+            "export TRANSFER_HIGH_ORDER_BACKGROUND_DIR=%s\n"
+            % (
+                sys.executable,
+                root / "progen3",
+                root / "progen3_src",
+                root / "models",
+                root / "kmer",
+                root / "high",
+            ),
+            encoding="utf-8",
+        )
+        (stage_dir / "dummy_stage.py").write_text(DUMMY_QUEUE_STAGE, encoding="utf-8")
+        return snapshot, root / "campaign.tsv"
+
+    def write_manifest(self, path: Path, rows: list[str]) -> None:
+        path.write_text(
+            "# slot\tkey\tgpu\tstage\tlabel\tenv\texpect\targs\n" + "\n".join(rows) + "\n",
+            encoding="utf-8",
+        )
+
+    def nvidia_env(self, root: Path, *, indices: int = 1, memory: int = 0,
+                   fail: bool = False) -> dict[str, str]:
+        stub_dir = root / "bin"
+        stub_dir.mkdir(exist_ok=True)
+        stub = stub_dir / "nvidia-smi"
+        if fail:
+            stub.write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
+        else:
+            stub.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'args=" $* "\n'
+                'if [[ "$args" == *"--query-gpu=index,memory.used"* ]]; then\n'
+                f"  for i in $(seq 0 {indices - 1}); do printf '%s, {memory}\\n' \"$i\"; done\n"
+                "  exit 0\n"
+                "fi\n"
+                'if [[ "$args" == *"--query-gpu=index,utilization"* ]]; then\n'
+                "  printf 'index, utilization.gpu [%%], memory.used [MiB], memory.total [MiB]\\n'\n"
+                f"  for i in $(seq 0 {indices - 1}); do printf '%s, 0 %%, {memory} MiB, 143771 MiB\\n' \"$i\"; done\n"
+                "  exit 0\n"
+                "fi\n"
+                'if [[ "$args" == *"--query-gpu=index"* ]]; then\n'
+                f"  for i in $(seq 0 {indices - 1}); do printf '%s\\n' \"$i\"; done\n"
+                "  exit 0\n"
+                "fi\n"
+                "exit 1\n",
+                encoding="utf-8",
+            )
+        stub.chmod(0o755)
+        return {**os.environ, "PATH": f"{stub_dir}{os.pathsep}{os.environ['PATH']}"}
+
+    def run_queue(self, root: Path, snapshot: Path, manifest: Path, env: dict[str, str],
+                  *, dry_run: bool = False) -> subprocess.CompletedProcess[str]:
+        command = ["bash", str(QUEUE), "--manifest", str(manifest),
+                   "--snapshot", f"key={snapshot}"]
+        if dry_run:
+            command.append("--dry-run")
+        merged = {
+            **env,
+            "POLL_SECONDS": "1",
+            "SLOT_SETTLE_SECONDS": "0",
+            "BUSY_MIB": "1000",
+            "CUDA_VISIBLE_DEVICES": "",
+        }
+        return subprocess.run(
+            command, capture_output=True, text=True, timeout=60, env=merged,
+        )
+
+    def status_path(self, root: Path) -> Path:
+        return root / "logs" / "external_baseline" / "campaign.status.tsv"
+
+    def status_row(self, root: Path, label: str) -> dict[str, str]:
+        lines = self.status_path(root).read_text(encoding="utf-8").splitlines()
+        header = None
+        for line in lines:
+            if line.startswith("slot\t"):
+                header = line.split("\t")
+                continue
+            if header is None or line.startswith("#"):
+                continue
+            values = line.split("\t")
+            row = dict(zip(header, values))
+            if row.get("label") == label:
+                return row
+        raise AssertionError(f"no status row for {label}")
+
+    def test_cpu_only_injects_device_cpu_and_clears_visible_devices(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            snapshot, manifest = self.fixture(root)
+            marker = root / "launches.txt"
+            self.write_manifest(manifest, [
+                "1\tkey\tcpu\tdummy_stage.py\tcpu_cell\t"
+                "CUDA_VISIBLE_DEVICES=0\tscore.json\t"
+                f"--mode ok --marker {marker} --expect-name score.json",
+            ])
+            result = self.run_queue(root, snapshot, manifest, self.nvidia_env(root, fail=True))
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            artefact = root / "results" / "external_baseline" / "run" / "cpu_cell" / "score.json"
+            payload = json.loads(artefact.read_text(encoding="utf-8"))
+            self.assertEqual(payload["device"], "cpu")
+            self.assertEqual(payload["cuda_visible_devices"], "")
+            self.assertEqual(self.status_row(root, "cpu_cell")["state"], "exited-ok")
+            self.assertEqual(self.status_row(root, "cpu_cell")["gpu"], "cpu")
+            self.assertEqual(marker.read_text(encoding="utf-8"), "cpu\n")
+
+    def test_cpu_only_runs_when_nvidia_smi_fails_and_records_host_telemetry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            snapshot, manifest = self.fixture(root)
+            self.write_manifest(manifest, [
+                "1\tkey\tcpu\tdummy_stage.py\tcpu_cell\t-\tscore.json\t--mode ok",
+            ])
+            result = self.run_queue(root, snapshot, manifest, self.nvidia_env(root, fail=True))
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(self.status_row(root, "cpu_cell")["state"], "exited-ok")
+            pre = (root / "logs" / "external_baseline" / "campaign.host_pre.txt").read_text(
+                encoding="utf-8",
+            )
+            self.assertIn("nvidia-smi FAILED", pre)
+            self.assertIn("--- free -h ---", pre)
+
+    def test_gpu_only_manifest_still_requires_nvidia_smi(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            snapshot, manifest = self.fixture(root)
+            self.write_manifest(manifest, [
+                "1\tkey\t0\tdummy_stage.py\tgpu_cell\t-\tscore.json\t--mode ok",
+            ])
+            result = self.run_queue(
+                root, snapshot, manifest, self.nvidia_env(root, fail=True), dry_run=True,
+            )
+            self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertFalse(self.status_path(root).exists())
+
+    def test_mixed_slot_and_busy_gpu_do_not_demote_to_cpu(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            snapshot, manifest = self.fixture(root)
+            marker = root / "launches.txt"
+            self.write_manifest(manifest, [
+                f"1\tkey\tcpu\tdummy_stage.py\tcpu_cell\t-\tscore.json\t--mode ok --marker {marker}",
+                f"1\tkey\t0\tdummy_stage.py\tgpu_cell\t-\tscore.json\t--mode ok --marker {marker}",
+            ])
+            idle = self.run_queue(
+                root, snapshot, manifest, self.nvidia_env(root, indices=1, memory=0),
+            )
+            self.assertEqual(idle.returncode, 0, idle.stdout + idle.stderr)
+            self.assertEqual(self.status_row(root, "cpu_cell")["state"], "exited-ok")
+            self.assertEqual(self.status_row(root, "gpu_cell")["state"], "exited-ok")
+            gpu_payload = json.loads(
+                (root / "results" / "external_baseline" / "run" / "gpu_cell" / "score.json")
+                .read_text(encoding="utf-8")
+            )
+            self.assertEqual(gpu_payload["device"], "cuda:0")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            snapshot, manifest = self.fixture(root)
+            marker = root / "launches.txt"
+            self.write_manifest(manifest, [
+                f"1\tkey\tcpu\tdummy_stage.py\tcpu_cell\t-\tscore.json\t--mode ok --marker {marker}",
+                f"1\tkey\t0\tdummy_stage.py\tgpu_cell\t-\tscore.json\t--mode ok --marker {marker}",
+            ])
+            busy = self.run_queue(
+                root, snapshot, manifest, self.nvidia_env(root, indices=1, memory=5000),
+            )
+            self.assertEqual(busy.returncode, 1, busy.stdout + busy.stderr)
+            self.assertEqual(self.status_row(root, "cpu_cell")["state"], "exited-ok")
+            self.assertEqual(self.status_row(root, "gpu_cell")["state"], "refused-busy-gpu")
+            self.assertFalse(
+                (root / "results" / "external_baseline" / "run" / "gpu_cell").exists()
+            )
+            self.assertEqual(marker.read_text(encoding="utf-8"), "cpu\n")
+
+    def test_out_of_range_gpu_is_still_refused_in_a_mixed_manifest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            snapshot, manifest = self.fixture(root)
+            self.write_manifest(manifest, [
+                "1\tkey\tcpu\tdummy_stage.py\tcpu_cell\t-\tscore.json\t--mode ok",
+                "1\tkey\t3\tdummy_stage.py\tgpu_cell\t-\tscore.json\t--mode ok",
+            ])
+            result = self.run_queue(
+                root, snapshot, manifest, self.nvidia_env(root, indices=1, memory=0),
+                dry_run=True,
+            )
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn("cell 'gpu_cell' names cuda:3", result.stderr)
+            self.assertNotIn("--- slot", result.stdout)
+
+    def test_two_cpu_rows_in_one_slot_collide(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            snapshot, manifest = self.fixture(root)
+            self.write_manifest(manifest, [
+                "1\tkey\tcpu\tdummy_stage.py\ta\t-\tscore.json\t--mode ok",
+                "1\tkey\tcpu\tdummy_stage.py\tb\t-\tscore.json\t--mode ok",
+            ])
+            result = self.run_queue(
+                root, snapshot, manifest, self.nvidia_env(root, fail=True), dry_run=True,
+            )
+            self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+            self.assertIn("both on cpu", result.stderr)
+
+    def test_rejected_gpu_tokens_and_equals_form_args(self):
+        cases = (
+            ("CPU", "literal cpu"),
+            ("-", "literal cpu"),
+            ("cuda:0", "literal cpu"),
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            snapshot, manifest = self.fixture(root)
+            for token, needle in cases:
+                with self.subTest(token=token):
+                    self.write_manifest(manifest, [
+                        f"1\tkey\t{token}\tdummy_stage.py\tcell\t-\tscore.json\t--mode ok",
+                    ])
+                    result = self.run_queue(
+                        root, snapshot, manifest, self.nvidia_env(root, fail=True), dry_run=True,
+                    )
+                    self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                    self.assertIn(needle, result.stderr)
+            for args in ("--device=cpu", "--out=/tmp/x", "--foo --device=cuda:0"):
+                with self.subTest(args=args):
+                    self.write_manifest(manifest, [
+                        f"1\tkey\tcpu\tdummy_stage.py\tcell\t-\tscore.json\t{args}",
+                    ])
+                    result = self.run_queue(
+                        root, snapshot, manifest, self.nvidia_env(root, fail=True), dry_run=True,
+                    )
+                    self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                    self.assertIn("must not appear in args", result.stderr)
+
+    def test_nonzero_missing_artifact_and_skip_complete(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            snapshot, manifest = self.fixture(root)
+            marker = root / "launches.txt"
+            self.write_manifest(manifest, [
+                f"1\tkey\tcpu\tdummy_stage.py\tok_cell\t-\tscore.json\t--mode ok --marker {marker}",
+                f"2\tkey\tcpu\tdummy_stage.py\tfail_cell\t-\tscore.json\t--mode nonzero --marker {marker}",
+                f"3\tkey\tcpu\tdummy_stage.py\tsilent_cell\t-\tscore.json\t--mode silent --marker {marker}",
+            ])
+            first = self.run_queue(root, snapshot, manifest, self.nvidia_env(root, fail=True))
+            self.assertEqual(first.returncode, 1, first.stdout + first.stderr)
+            self.assertEqual(self.status_row(root, "ok_cell")["state"], "exited-ok")
+            self.assertEqual(self.status_row(root, "fail_cell")["state"], "exited-nonzero")
+            self.assertEqual(self.status_row(root, "fail_cell")["exit"], "2")
+            self.assertEqual(self.status_row(root, "silent_cell")["state"], "exited-ok-no-artifact")
+            self.assertEqual(marker.read_text(encoding="utf-8"), "cpu\ncpu\ncpu\n")
+            second = self.run_queue(root, snapshot, manifest, self.nvidia_env(root, fail=True))
+            self.assertEqual(second.returncode, 1, second.stdout + second.stderr)
+            self.assertEqual(self.status_row(root, "ok_cell")["state"], "skipped-complete")
+            self.assertEqual(self.status_row(root, "fail_cell")["state"], "exited-nonzero")
+            self.assertEqual(self.status_row(root, "silent_cell")["state"], "exited-ok-no-artifact")
+            self.assertEqual(marker.read_text(encoding="utf-8"), "cpu\ncpu\ncpu\ncpu\ncpu\n")
+
+
 class HostSnapshotAndTimeoutTests(unittest.TestCase):
     def test_resource_snapshot_trap_writes_post_state(self):
         with tempfile.TemporaryDirectory() as tmp:

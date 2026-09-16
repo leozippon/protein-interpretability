@@ -36,6 +36,14 @@ set -euo pipefail
 #
 # What remains unexercised is not a path but a scale: the largest campaign run
 # here is four cells in two slots on two cards.
+#
+# CPU-ONLY ROWS (2026-09-15). The 2026-08-17 FULLY VALIDATED claim above is the
+# GPU path only: integer gpu values, cuda:N injection, nvidia-smi visibility
+# and idle-card gates. This delivery adds the literal gpu-column token `cpu` as
+# an explicit CPU resource. Local real-shell fixtures have exercised parse,
+# launch, wait(2) exit codes, status transitions, busy-GPU refusal of GPU rows,
+# and skip-complete. It has NOT been run in an H200 pod. Do not treat the local
+# CPU tests as in-pod validation.
 # ############################################################################
 #
 # An IN-POD sequential campaign runner: one dispatch, a whole campaign.
@@ -129,10 +137,17 @@ set -euo pipefail
 #   slot   integer. Cells sharing a slot run concurrently; slot N+1 starts only
 #          when every cell of slot N has exited. Ascending numeric order.
 #   key    which --snapshot this cell's code comes from.
-#   gpu    card index. Unique within a slot, and below the number of cards the
-#          host exposes -- two cells on one card, or a card this allocation
+#   gpu    card index, or the literal token `cpu`. Integer values keep every
+#          previous rule: unique within a slot, and below the number of cards
+#          the host exposes -- two cells on one card, or a card this allocation
 #          does not have, is refused at parse time rather than discovered at
-#          OOM or at the stage's own death.
+#          OOM or at the stage's own death. `cpu` is an explicit CPU resource,
+#          not a fictitious card and not a fallback from a busy or missing GPU.
+#          It is the only non-integer token accepted; `CPU`, `-`, empty, and
+#          `cuda:N` are refused at parse time. At most one `cpu` row per slot;
+#          a cpu row may share a slot with a different integer GPU. CPU-only
+#          manifests do not require nvidia-smi. Mixed manifests still apply the
+#          GPU gates to GPU rows and never demote an invalid or busy GPU to cpu.
 #   stage  file name under <snapshot>/scripts/transfer/.
 #   env    space-separated KEY=VALUE applied after h200_env.sh (so a cell can
 #          override it), or `-` for none.
@@ -140,9 +155,14 @@ set -euo pipefail
 #          no directory, glob, regex, or traversal. Unrelated JSON in the
 #          output directory is not completion.
 #   args   the stage's arguments, whitespace separated. NO argument may contain
-#          whitespace. `--device` and `--out` must NOT appear: this runner
-#          injects both, and a second spelling of either is a second
-#          declaration of where the run went.
+#          whitespace. `--device` and `--out` must NOT appear, including the
+#          `--device=` / `--out=` spellings: this runner injects both, and a
+#          second spelling of either is a second declaration of where the run
+#          went.
+#
+# Minimal cpu row, not a dispatchable campaign:
+#
+#   1<TAB>cc<TAB>cpu<TAB>text_aa_dms.py<TAB>text_aa_census<TAB>-<TAB>text_aa_census.json<TAB>census --lookup <path>
 #
 # Four literal tokens in `args` are substituted in-pod after h200_env.sh is
 # sourced: ${TRANSFER_MODEL_BASE_DIR}, ${TRANSFER_KMER_BACKGROUND_DIR},
@@ -186,7 +206,11 @@ set -euo pipefail
 # Its limits, stated because they are real:
 #   * The test cannot tell a finished cell from one still running under an
 #     ORPHANED earlier runner. The lock below catches the common case and the
-#     per-cell idle-card check catches the rest; neither is a proof.
+#     per-cell idle-card check catches the rest on GPU rows; neither is a proof.
+#     CPU rows have no idle-card bumper. After an abnormal interrupt, reconcile
+#     the status file, any live process, and the output directory before a
+#     manual re-dispatch. A missing lock PID is not by itself a licence to run
+#     the same cpu cell again. There is no new automatic retry.
 #
 # ---------------------------------------------------------------- Reuse
 #
@@ -207,7 +231,7 @@ set -euo pipefail
 #     --device cuda:${GPU} --out '${OUT_DIR}' ${STAGE_ARGS[*]-} \
 #     > '${POD_LOG}' 2>&1 < /dev/null &
 #
-# Three deliberate differences, each with its reason:
+# Four deliberate differences, each with its reason:
 #   1. No `setsid nohup` per cell. A cell must be a child this runner can wait
 #      on -- that is what makes the round barrier a barrier and what makes the
 #      exit code real. Detachment moves up one level: the RUNNER is what gets
@@ -218,8 +242,14 @@ set -euo pipefail
 #      still sourced per cell, in a subshell, so two snapshots with different
 #      environment files do not leak into each other.
 #   3. The idle-card threshold reused from the driver's poll loop is applied
-#      BEFORE launch as well as after: `$2>1000` MiB on
-#      `nvidia-smi --query-gpu=index,memory.used`.
+#      BEFORE launch as well as after, and only to integer gpu rows: `$2>1000`
+#      MiB on `nvidia-smi --query-gpu=index,memory.used`. A cpu row skips this
+#      gate. A busy or missing GPU is never rewritten as cpu.
+#   4. `--device` is `cuda:${GPU}` for an integer gpu value and `cpu` for the
+#      literal cpu token. After h200_env.sh and the cell's env overrides, a cpu
+#      cell exports CUDA_VISIBLE_DEVICES to the empty string so a parent or
+#      C_ENV value cannot leave a GPU visible. Integer GPU rows do not change
+#      visibility or mapping.
 #
 # ------------------------------------------------------------- First run
 #
@@ -308,6 +338,14 @@ done
 now_utc() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 log() { printf '[campaign-queue] %s %s\n' "$(now_utc)" "$*"; }
 
+# One rendering for dry-run, launch, collision messages, and logs.
+device_spec() {
+  case "$1" in
+    cpu) printf '%s' "cpu" ;;
+    *) printf 'cuda:%s' "$1" ;;
+  esac
+}
+
 # ------------------------------------------------------------------ snapshots
 #
 # Every snapshot is checked here rather than at first use, so a mistyped path
@@ -345,7 +383,12 @@ while IFS=$'\t' read -r slot key gpu stage label cellenv expect args || [ -n "${
       echo "manifest line ${line_no}: expected 8 tab-separated fields including expect" >&2; exit 2; }
   done
   case "${slot}" in *[!0-9]*) echo "manifest line ${line_no}: slot must be an integer, got '${slot}'" >&2; exit 2 ;; esac
-  case "${gpu}" in *[!0-9]*) echo "manifest line ${line_no}: gpu must be an integer, got '${gpu}'" >&2; exit 2 ;; esac
+  case "${gpu}" in
+    cpu) ;;
+    *[!0-9]*)
+      echo "manifest line ${line_no}: gpu must be an integer or the literal cpu, got '${gpu}'" >&2
+      exit 2 ;;
+  esac
   [ -n "${SNAPSHOT_FOR[$key]+set}" ] || {
     echo "manifest line ${line_no}: no --snapshot was given for key '${key}'" >&2; exit 2; }
   snapshot="${SNAPSHOT_FOR[$key]}"
@@ -354,7 +397,7 @@ while IFS=$'\t' read -r slot key gpu stage label cellenv expect args || [ -n "${
     echo "(a cell must run the code its own snapshot was frozen with)" >&2
     exit 2; }
   case " ${args} " in
-    *" --device "*|*" --out "*)
+    *" --device "*|*" --device="*|*" --out "*|*" --out="*)
       echo "manifest line ${line_no}: --device and --out are injected by this runner and must not appear in args" >&2
       exit 2 ;;
   esac
@@ -382,7 +425,7 @@ for ((i = 0; i < N; i++)); do
     [ "${C_LABEL[$i]}" != "${C_LABEL[$j]}" ] || {
       echo "duplicate label '${C_LABEL[$i]}': two cells would share one results directory" >&2; exit 2; }
     if [ "${C_SLOT[$i]}" = "${C_SLOT[$j]}" ] && [ "${C_GPU[$i]}" = "${C_GPU[$j]}" ]; then
-      echo "slot ${C_SLOT[$i]} puts '${C_LABEL[$i]}' and '${C_LABEL[$j]}' both on cuda:${C_GPU[$i]}" >&2
+      echo "slot ${C_SLOT[$i]} puts '${C_LABEL[$i]}' and '${C_LABEL[$j]}' both on $(device_spec "${C_GPU[$i]}")" >&2
       exit 2
     fi
   done
@@ -395,18 +438,27 @@ done
 # manifest defect that then surfaces as `exited-nonzero` once the stage has
 # already started. h200_worker.sh's verify_gpus refuses `gpu >= visible_count`
 # for its own --gpus list; this is that rule applied one round earlier and to
-# every cell at once, before --dry-run prints, so that a dry run carries it too.
-# A dry run on the workstation reads the workstation's cards, so it is the
-# IN-POD dry run (step 3 of "First run") that checks a manifest against the
-# allocation it will actually run on.
-command -v nvidia-smi >/dev/null 2>&1 || {
-  echo "nvidia-smi not found on PATH; cannot check this manifest's card indices" >&2; exit 2; }
-VISIBLE_GPUS="$(nvidia-smi --query-gpu=index --format=csv,noheader | wc -l)"
+# every integer-gpu cell at once, before --dry-run prints, so that a dry run
+# carries it too. CPU-only manifests skip both nvidia-smi and the index check.
+# Mixed manifests still apply this gate to GPU rows. A dry run on the
+# workstation reads the workstation's cards, so it is the IN-POD dry run
+# (step 3 of "First run") that checks a GPU manifest against the allocation it
+# will actually run on.
+NEEDS_GPU=0
 for ((i = 0; i < N; i++)); do
-  [ "${C_GPU[$i]}" -lt "${VISIBLE_GPUS}" ] || {
-    echo "cell '${C_LABEL[$i]}' names cuda:${C_GPU[$i]}; this host exposes ${VISIBLE_GPUS} GPU(s) (0..$((VISIBLE_GPUS - 1)))" >&2
-    exit 2; }
+  [ "${C_GPU[$i]}" = "cpu" ] || NEEDS_GPU=1
 done
+if [ "${NEEDS_GPU}" -eq 1 ]; then
+  command -v nvidia-smi >/dev/null 2>&1 || {
+    echo "nvidia-smi not found on PATH; cannot check this manifest's card indices" >&2; exit 2; }
+  VISIBLE_GPUS="$(nvidia-smi --query-gpu=index --format=csv,noheader | wc -l)"
+  for ((i = 0; i < N; i++)); do
+    [ "${C_GPU[$i]}" = "cpu" ] && continue
+    [ "${C_GPU[$i]}" -lt "${VISIBLE_GPUS}" ] || {
+      echo "cell '${C_LABEL[$i]}' names cuda:${C_GPU[$i]}; this host exposes ${VISIBLE_GPUS} GPU(s) (0..$((VISIBLE_GPUS - 1)))" >&2
+      exit 2; }
+  done
+fi
 
 SLOTS="$(printf '%s\n' "${C_SLOT[@]}" | sort -n -u)"
 
@@ -420,13 +472,13 @@ if [ "${DRY_RUN}" -eq 1 ]; then
     echo "--- slot ${slot}"
     for ((i = 0; i < N; i++)); do
       [ "${C_SLOT[$i]}" = "${slot}" ] || continue
-      printf '  cuda:%s %s\n' "${C_GPU[$i]}" "${C_LABEL[$i]}"
+      printf '  %s %s\n' "$(device_spec "${C_GPU[$i]}")" "${C_LABEL[$i]}"
       printf '    out    %s\n' "${C_OUT[$i]}"
       printf '    log    %s\n' "${C_LOG[$i]}"
       printf '    expect %s\n' "${C_EXPECT[$i]}"
       printf '    env    %s\n' "${C_ENV[$i]}"
-      printf '    cmd  ${TRANSFER_PYTHON} %s/scripts/transfer/%s --device cuda:%s --out %s %s\n' \
-        "${SNAPSHOT_FOR[${C_KEY[$i]}]}" "${C_STAGE[$i]}" "${C_GPU[$i]}" "${C_OUT[$i]}" "${C_ARGS[$i]}"
+      printf '    cmd  ${TRANSFER_PYTHON} %s/scripts/transfer/%s --device %s --out %s %s\n' \
+        "${SNAPSHOT_FOR[${C_KEY[$i]}]}" "${C_STAGE[$i]}" "$(device_spec "${C_GPU[$i]}")" "${C_OUT[$i]}" "${C_ARGS[$i]}"
     done
   done
   exit 0
@@ -536,7 +588,8 @@ cell_complete_artifact() {
 }
 
 # Busy means the same thing it means in the driver's poll loop: more than
-# BUSY_MIB of device memory in use on that card.
+# BUSY_MIB of device memory in use on that card. Callers must not pass cpu;
+# a missing nvidia-smi row is "not busy" and would launch onto nothing.
 gpu_is_busy() {
   local index="$1" used
   used="$(nvidia-smi --query-gpu=index,memory.used --format=csv,noheader,nounits 2>/dev/null \
@@ -565,6 +618,9 @@ launch_cell() {
       read -r -a cell_env <<< "${C_ENV[$i]}"
       export "${cell_env[@]}"
     fi
+    if [ "${C_GPU[$i]}" = "cpu" ]; then
+      export CUDA_VISIBLE_DEVICES=""
+    fi
     # These are literal substitutions, never eval. Resource roots stay in
     # h200_env.sh, while the run directory is derived from this cell's output.
     local expanded="${C_ARGS[$i]//'${TRANSFER_MODEL_BASE_DIR}'/${TRANSFER_MODEL_BASE_DIR}}"
@@ -575,7 +631,7 @@ launch_cell() {
     read -r -a argv <<< "${expanded}"
     cd "${snapshot}"
     exec "${TRANSFER_PYTHON}" "${snapshot}/scripts/transfer/${C_STAGE[$i]}" \
-      --device "cuda:${C_GPU[$i]}" --out "${out_dir}" "${argv[@]}"
+      --device "$(device_spec "${C_GPU[$i]}")" --out "${out_dir}" "${argv[@]}"
   ) > "${pod_log}" 2>&1 < /dev/null &
   C_PID[$i]=$!
 }
@@ -595,7 +651,7 @@ for slot in ${SLOTS}; do
       log "slot ${slot} ${C_LABEL[$i]}: already complete at ${art}; skipping"
       continue
     fi
-    if gpu_is_busy "${C_GPU[$i]}"; then
+    if [ "${C_GPU[$i]}" != "cpu" ] && gpu_is_busy "${C_GPU[$i]}"; then
       C_STATE[$i]="refused-busy-gpu"; C_EXIT[$i]="-"
       overall=1
       log "slot ${slot} ${C_LABEL[$i]}: cuda:${C_GPU[$i]} is not idle; REFUSED (not launched)"
@@ -604,7 +660,7 @@ for slot in ${SLOTS}; do
     C_START[$i]="$(now_utc)"; C_STATE[$i]="running"
     launch_cell "${i}"
     running+=("${i}")
-    log "slot ${slot} ${C_LABEL[$i]}: launched on cuda:${C_GPU[$i]} as pid ${C_PID[$i]}"
+    log "slot ${slot} ${C_LABEL[$i]}: launched on $(device_spec "${C_GPU[$i]}") as pid ${C_PID[$i]}"
   done
   write_status
 
