@@ -98,6 +98,7 @@ The executable registered panel is declared only by `scripts/transfer/panel_cont
 | Entry point | Role |
 |---|---|
 | `01_cohort_power.py` | Context-information qualification |
+| `01_joint_context_information.py` | EXP-R2-240's external campaign entry point for that same estimand on a joint checkpoint reached by path: stage 01's cohort construction (8 blocks × 200 records, 4,000-record held-out unigram) driven through stage 21's native rendering, so a joint checkpoint's mode is read under the 01 design instead of re-reading stage 21's 64/128-record cells. Not in the registered panel or `STAGE_CONTRACTS`; a joint checkpoint is still not an arm |
 | `02_pathway_budget.py` | MLP and attention pathway contribution |
 | `03_estimand_power.py` | Attainability and power qualification |
 | `04_circuit_primitives.py` | Circuit census, attribution, and patching primitives |

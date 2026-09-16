@@ -25,13 +25,13 @@
 | ProGen2 | 逐残基蛋白谱系和规模对照 | 32 词表，单残基 token，带生成方向标记 | small：12 层宽 1,024，约 1.51 亿；base/medium：27 层宽 1,536，约 7.65 亿；large：32 层宽 2,560，约 27.8 亿；xlarge：32 层宽 4,096，约 64.4 亿 | small/medium/large/xlarge 使用 UniRef90 与 BFD30；base 的具体训练混合未确认 |
 | RITA-xl | 纯蛋白自回归模型，ProteinGym 独立单点对照 | 单残基 token，26 维输出词表 | 24 层、宽 2,048、32 个头，约 12 亿参数；上下文 1,024 tokens | UniRef100 |
 | ProGen3 112M/3B | 稀疏 MoE 蛋白对照，兼蛋白规模阶梯 | 134 词表；更精确的基本单位未确认 | 112M：10 层、宽 384；3B：24 层、宽 1,280；两档均为每层 8 专家、每 token 选 2 | 112M 的模型卡未声明预训练语料；3B 声明 Profluent Protein Atlas v1 |
-| [ProteinGLM-7B-CLM](https://hf-mirror.com/proteinglm/proteinglm-7b-clm) | 纯蛋白因果生成候选，补充稠密 GLM 谱系参照 | 128 词表；仓库已测 tokenizer 按单残基切分，但仓库尚未支持它的原生输入格式 | 稠密自定义 GLM 因果解码器：36 层、宽 4,096、32 头 MHA，一维 RoPE、GEGLU；非 MoE | 蛋白 CLM 预训练，许可 CC-BY-NC-4.0；不可与 100B 旗舰或 MLM 版本混同；这份 7B 权重对应的具体训练混合尚未独立核实 |
+| [ProteinGLM-7B-CLM](https://hf-mirror.com/proteinglm/proteinglm-7b-clm) | 纯蛋白因果生成候选，补充稠密 GLM 谱系参照 | 128 词表；仓库已测 tokenizer 按单残基切分；原生输入格式已在仓库内支持并核对，为 `<gmask><sop><eos>` 前缀、计分位置为残基 2..L | 稠密自定义 GLM 因果解码器：36 层、宽 4,096、32 头 MHA，一维 RoPE、GEGLU；非 MoE | 蛋白 CLM 预训练，许可 CC-BY-NC-4.0；不可与 100B 旗舰或 MLM 版本混同；这份 7B 权重对应的具体训练混合尚未独立核实 |
 | [ProtGPT3-1.3B](https://hf-mirror.com/AI4PD/ProtGPT3-1.3B) | 蛋白自回归 MoE 候选，作为 ProGen3 之外的另一谱系参照 | 31 词表；具体基本单位尚待核验 | Mixtral 式仅解码器 MoE：17 层、宽 1,024，8 专家、每 token 选 2，GQA 16 查询/4 KV，RoPE、SwiGLU；约 13.3 亿总参数，active 未声明 | 蛋白序列因果预训练基础版；不混用 DPO 或 MSA 版本；具体语料混合尚待核验 |
 | Galactica 125M/1.3B/6.7B/30B | 语言–蛋白联合模型对照，兼联合规模阶梯 | 50,000 词表文本 BPE；蛋白为同一词表中的单字母残基，另加 `[START_AMINO]` / `[END_AMINO]` 与残基分隔标记 | 同为 OPT 形状解码器：125M 12 层宽 768，约 1.25 亿；1.3B 24 层宽 2,048；6.7B 32 层宽 4,096；30B 48 层宽 7,168 | 科学语料，其中蛋白低于 1% |
 | InstructProtein | 语言–蛋白联合对照，但不是 Galactica 的规模阶梯 | 文本词表加专用残基 token（`<protein>`、`</protein>` 与 `ƤA..ƤY`） | OPT 形状：24 层、宽 2,048，与 Galactica 1.3B 同形状 | UniRef100 继续预训练与指令微调 |
 | Llama-2 → ProLLaMA | 同一谱系的文本、蛋白和训练阶段对照 | 共享 32k SentencePiece；蛋白约 1.53 residues/token | Llama-2-7B、ProLLaMA Stage 1、Stage 2 三个 checkpoint 共享 32 层、宽 4,096、32 个头 | Llama-2 → UniRef50 继续预训练 → 蛋白指令微调 |
 
-Qwen3-8B-Base、ProteinGLM-7B-CLM 和 ProtGPT3-1.3B 是新增候选，不替换既有匹配对照，也不作为已完成结果。已能下载并用于本项目的非营利学术科研；文件齐备仍不等于接口和数值已经跑通。ProteinGLM-7B-CLM 的原生输入格式仓库尚未支持。默认使用镜像；镜像失败时经明确授权从官方源取得，未改变默认配置。
+Qwen3-8B-Base、ProteinGLM-7B-CLM 和 ProtGPT3-1.3B 是新增候选，不替换既有匹配对照，也不作为已完成结果。已能下载并用于本项目的非营利学术科研；文件齐备仍不等于接口和数值已经跑通。ProteinGLM-7B-CLM 的原生输入格式已在仓库内支持并核对，为 `<gmask><sop><eos>` 前缀、计分位置为残基 2..L、需 float32；剩余限制是模型自身的 1,024 token 序列长度预算会拒绝更长的窗口。默认使用镜像；镜像失败时经明确授权从官方源取得，未改变默认配置。
 
 本文把围绕同一科学问题的重复抽样、参数扫描和修复运行合并为一个实验族，只列能够产生独立结论、使旧结论撤回、改变归因，或决定路线是否继续的实验。表中的“数据”是评测集或实验样本，不一定是模型的完整训练语料；训练语料或样本量无法准确确认时不作猜测。示例只解释记录格式，不代表真实数据内容。详细证据、限制和撤回以 [`docs/INTERPRETABILITY_TRANSFER_AUDIT.md`](docs/INTERPRETABILITY_TRANSFER_AUDIT.md) 为准，最新但尚未纳入正式结论的记录见 [`docs/EXPERIMENT_LOG.md`](docs/EXPERIMENT_LOG.md)。
 
@@ -96,7 +96,7 @@ EXP-R2-232/233 已完成结构与原生生成终态，补充回答“生成了�
 
 ### 尚未完成的能力评测
 
-EXP-R2-225 后续扩展仍无完成结果：ProteinGLM-7B-CLM 的接口当前不可用；已合并的派生预算资格代码不是 7B 运行，不能把服务代码写成已完成接口。RITA_xl 已有独立原生计分记录，但不是该后续扩展，尚未写入审计已完成表，因此不进入上表。Galactica 原生 ProteinGym 计分（FP32 v2）正在运行：125M 与 1.3B 的单模型内容资格已通过（213 assays / 171 families），6.7B、30B 与组分析尚未构成完整阶梯，不能对尺寸排名。ProGen3 的 MegaScale 行仍缺双向稳定性评分、逐 checkpoint 的语料识别记录和评分分层标注。它们不进入上面的已完成结论。进行中的原生计分不替代方向二、三的下一步。
+EXP-R2-225 后续扩展仍无完成结果：ProteinGLM-7B-CLM 在该扩展中的 7B 接口资格仍未运行；已合并的派生预算资格代码不是 7B 运行，不能把服务代码写成已完成接口。RITA_xl 已有独立原生计分记录，但不是该后续扩展，尚未写入审计已完成表，因此不进入上表。Galactica 原生 ProteinGym 计分（FP32 v2）正在运行：125M 与 1.3B 的单模型内容资格已通过（213 assays / 171 families），6.7B、30B 与组分析尚未构成完整阶梯，不能对尺寸排名。ProGen3 的 MegaScale 行仍缺双向稳定性评分、逐 checkpoint 的语料识别记录和评分分层标注。它们不进入上面的已完成结论。进行中的原生计分不替代方向二、三的下一步。
 
 ## 方向二：用现有方法解释能力如何形成、表示和计算
 
