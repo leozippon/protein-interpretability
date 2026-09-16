@@ -24,6 +24,7 @@ from src.transfer import proteinglm as pglm  # noqa: E402
 from src.transfer.amino_acids import AA20  # noqa: E402
 from src.transfer.arms import STAGED_ARMS, Arm  # noqa: E402
 from src.transfer.budget import ScoredTokens  # noqa: E402
+from src.transfer.io import write_json as real_write_json  # noqa: E402
 from src.transfer.precision_policy import FP32_PER_TARGET_ABS  # noqa: E402
 
 NAME = "proteinglm-7b-clm"
@@ -314,23 +315,76 @@ def test_tiny_numeric_success_cannot_mint_7b_verdict():
         )
 
 
-def test_failed_artefact_is_kept_and_qualified_is_not_overwritten(tmp_path):
-    failed = Q.build_failed_payload(
+def _failed_payload() -> dict:
+    return Q.build_failed_payload(
         device="cpu",
         dtype="float32",
         error=ValueError("diagnostic"),
         loaded=False,
     )
-    path = Q.write_artefact(tmp_path, failed)
-    assert path.is_file()
-    assert json.loads(path.read_text(encoding="utf-8"))["status"] == Q.STATUS_FAILED
-    qualified = dict(failed)
-    qualified["status"] = Q.STATUS_QUALIFIED
-    # A later success may replace a failed file.
-    # A completed qualified file may not be replaced.
-    qualified["experiment_admitted"] = False
-    qualified["not_panel_admission"] = True
-    # Direct write of a fake qualified payload should succeed over failed.
-    Q.write_artefact(tmp_path, qualified)
-    with pytest.raises(FileExistsError, match="completed artefact"):
-        Q.write_artefact(tmp_path, failed)
+
+
+def test_existing_artefact_entries_keep_bytes_and_skip_loader(tmp_path, monkeypatch):
+    def explode(**kwargs):
+        raise AssertionError("existing artefact must not load a checkpoint")
+
+    monkeypatch.setattr(Q, "load_published_arm", explode)
+    kinds = {
+        "failed": None,
+        "qualified": (
+            b'{"status": "derived-budget-interface-qualified", '
+            b'"experiment_admitted": false}\n'
+        ),
+        "corrupt": b"{not-json",
+    }
+    for kind, blob in kinds.items():
+        directory = tmp_path / kind
+        directory.mkdir()
+        path = directory / Q.ARTEFACT_NAME
+        if kind == "failed":
+            Q.write_artefact(directory, _failed_payload())
+        else:
+            path.write_bytes(blob)
+        before = path.read_bytes()
+        with pytest.raises(FileExistsError, match="fresh --out"):
+            Q.run_qualification(
+                arm=NAME, device="cuda:0", dtype="float32", out=directory
+            )
+        assert path.read_bytes() == before
+
+
+def test_late_publication_collision_does_not_overwrite(tmp_path, monkeypatch):
+    dest = tmp_path / Q.ARTEFACT_NAME
+    sneaked = b"preexisting-canonical-entry"
+    real_link = Q.os.link
+
+    def collide(source, target):
+        Path(target).write_bytes(sneaked)
+        return real_link(source, target)
+
+    monkeypatch.setattr(Q.os, "link", collide)
+    with pytest.raises(FileExistsError):
+        Q.write_artefact(tmp_path, _failed_payload())
+    assert dest.read_bytes() == sneaked
+    leftovers = [path.name for path in tmp_path.iterdir() if path.name != Q.ARTEFACT_NAME]
+    assert leftovers == []
+
+
+def test_write_failure_leaves_no_canonical_or_temp(tmp_path, monkeypatch):
+    def boom_json(path, value):
+        raise OSError("injected write failure")
+
+    monkeypatch.setattr(Q, "write_json", boom_json)
+    with pytest.raises(OSError, match="injected write failure"):
+        Q.write_artefact(tmp_path, _failed_payload())
+    assert list(tmp_path.iterdir()) == []
+
+    monkeypatch.setattr(Q, "write_json", real_write_json)
+
+    def boom_link(source, target):
+        raise OSError("injected link failure")
+
+    monkeypatch.setattr(Q.os, "link", boom_link)
+    with pytest.raises(OSError, match="injected link failure"):
+        Q.write_artefact(tmp_path, _failed_payload())
+    assert list(tmp_path.iterdir()) == []

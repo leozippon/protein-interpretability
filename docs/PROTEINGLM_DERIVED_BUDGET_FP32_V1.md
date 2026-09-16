@@ -56,6 +56,6 @@ Runtime in the artefact is a whitelist: Python, torch, transformers, CUDA versio
 
 Source identity hashes the controller, encoder, production scorer, and load/render modules actually used, plus the Arm's `derived` / `strict_load` records. It does not guess a neighbouring Git HEAD.
 
-A completed qualified artefact is not overwritten. After valid CLI arguments, a failure writes a sanitised `failed` JSON, exits non-zero, and keeps diagnostics including OOM. It does not delete that evidence or leave a half-success file.
+Any existing canonical artefact path is left unread and unreplaced, whether it is `failed`, `derived-budget-interface-qualified`, corrupt JSON, or any other directory entry. Publication writes a complete sibling temporary through shared `write_json`, then `os.link`s it into place; `os.link` does not replace. A collision or write error must not leave a half-written canonical file. Retry with a fresh `--out` or a new label; this controller does not back up, clear, or overwrite old records. After valid CLI arguments on a new output directory, a failure writes a sanitised `failed` JSON, exits non-zero, and does not mint a qualified status. The 7B checkpoint has not been run under this protocol.
 
 Training, generate, and cache reuse are unsupported. Gradient checkpointing raises; ordinary `.train()` without checkpointing may still forward. JIT import flags from derived modeling remain a process-wide side effect; a published cell should be independent.

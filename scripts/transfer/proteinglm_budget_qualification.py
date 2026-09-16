@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 import gc
 import hashlib
-import json
+import os
 import sys
 import time
 from contextlib import contextmanager
@@ -726,14 +726,47 @@ def build_failed_payload(
     return payload
 
 
-def existing_qualified(path: Path) -> bool:
-    if not path.is_file():
-        return False
+def artefact_path(directory: Path) -> Path:
+    return Path(directory) / ARTEFACT_NAME
+
+
+def artefact_entry_exists(path: Path) -> bool:
+    """True for any directory entry, including a dangling symlink. Status is not read."""
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        os.lstat(path)
+    except FileNotFoundError:
         return False
-    return payload.get("status") == STATUS_QUALIFIED
+    return True
+
+
+def refuse_existing_artefact(path: Path) -> None:
+    destination = Path(path)
+    if artefact_entry_exists(destination):
+        raise FileExistsError(
+            f"refusing to replace existing artefact {destination}; use a fresh --out"
+        )
+
+
+def publish_artefact(destination: Path, payload: Mapping[str, Any]) -> Path:
+    """Write a complete sibling via shared write_json, then os.link without replace."""
+    destination = Path(destination)
+    refuse_existing_artefact(destination)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(
+        f".{destination.name}.publish-{os.getpid()}-{time.time_ns()}"
+    )
+    try:
+        write_json(temporary, dict(payload))
+        os.link(temporary, destination)
+        directory = os.open(destination.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+    return destination
 
 
 def write_artefact(directory: Path, payload: Mapping[str, Any]) -> Path:
@@ -744,15 +777,7 @@ def write_artefact(directory: Path, payload: Mapping[str, Any]) -> Path:
         raise ValueError("experiment_admitted must be false")
     if payload.get("not_panel_admission") is not True:
         raise ValueError("not_panel_admission must be true")
-    destination = Path(directory) / ARTEFACT_NAME
-    if existing_qualified(destination) and status != STATUS_QUALIFIED:
-        raise FileExistsError(
-            f"refusing to overwrite completed artefact {destination} with a failed payload"
-        )
-    if existing_qualified(destination) and status == STATUS_QUALIFIED:
-        raise FileExistsError(f"refusing to overwrite completed artefact {destination}")
-    write_json(destination, dict(payload))
-    return destination
+    return publish_artefact(artefact_path(directory), payload)
 
 
 def load_published_arm(*, device: str, dtype: str) -> Arm:
@@ -778,9 +803,8 @@ def run_qualification(
     require_arm_name(arm)
     require_dtype(dtype)
     destination_dir = Path(out)
-    destination = destination_dir / ARTEFACT_NAME
-    if existing_qualified(destination):
-        raise FileExistsError(f"refusing to overwrite completed artefact {destination}")
+    destination = artefact_path(destination_dir)
+    refuse_existing_artefact(destination)
     destination_dir.mkdir(parents=True, exist_ok=True)
     loaded_arm: Arm | None = None
     extras: dict[str, Any] = {}
@@ -820,7 +844,10 @@ def run_qualification(
             loaded=loaded_arm is not None,
             extras=extras or None,
         )
-        path = write_artefact(destination_dir, payload)
+        try:
+            path = write_artefact(destination_dir, payload)
+        except FileExistsError:
+            raise
         raise QualificationFailed(path, payload) from exc
 
 
