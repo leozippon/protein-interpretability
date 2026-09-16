@@ -1,0 +1,117 @@
+# ProteinGym substitution-fitness re-run for what the EXP-R2-240 non-text gap
+# campaign left open: one score cell to re-run after a code fix, plus the
+# MODEL−LOOKUP analysis two of that campaign's scored cells still owe.
+#
+# The campaign on freeze 20260916101650_39982a07f55e ran
+# 2026-09-16T17:21:47Z–17:40:18Z and ended INCOMPLETE: exited-ok=4,
+# exited-nonzero=2, `# NO-RECORD 0`. This manifest carries exactly what that
+# outcome leaves to run, and nothing else.
+#
+# pgym_instructprotein: RE-RUN. It failed with `ValueError: instructprotein:
+# tokenizer, config, input and output vocabulary sizes disagree: 50287, 50304,
+# 50304, 50304`. That was a real defect: the guard conflated the model's own
+# self-consistency with `len(tokenizer) <= input_vocab`, two invariants a
+# padded embedding satisfies only one of. Commit 42f84ab splits the guard into
+# those two invariants, makes the renderer assert that no emitted id reaches
+# `len(tokenizer)`, and records the padded tail as a measured fact. The cell's
+# definition is unchanged by that fix, so the arguments below are the failed
+# cell's own, kept byte-identical to
+# campaign_proteingym_nontxt_gap.tsv's row and to its `expect` basename.
+#
+# pgym_proteinglm-7b-clm: NOT re-run, by user decision. It failed with
+# `ValueError: ProteinGLM budget prefix+L exceeds seq_length 1024`. That is
+# recorded as an explicit refusal under this project's fail-fast rule: no
+# truncation, subset or windowing is implemented or dispatched for it, and it
+# is dropped from this manifest rather than retried.
+#
+# pgym_zymctrl: NOT re-run. It exited 0 and scored 0 of 217 assays
+# (`assays: []`, `skipped[217]`, every skip the wild type's absence from the
+# EC-labelled evaluation corpus). That is a corpus-driven total refusal and a
+# measurement outcome, not a defect, so it owes no cell and prompts no change.
+#
+# The 13 pure-text text-AA columns are out of scope by user decision. None of
+# them is in this manifest.
+#
+# ------------------------------------------------------------------ analyse
+#
+# pgym_progen2-small (201 assays, 16 skipped) and pgym_progen2-base (213
+# assays, 4 skipped) both exited 0 under the previous freeze and no analyse
+# was ever run against either payload, so neither has a MODEL−LOOKUP. That
+# analysis is owed and is the second cell here.
+#
+# Which analyse, and the evidence for it — it is stage 20's OWN `analyse`, not
+# the native helper and not the scale ladder:
+#
+#   * `native_dms_extension.py` cannot serve these arms. `_arm_family` returns
+#     only "galactica" or "rita" and raises `KeyError` for `progen2-small`, so
+#     the previous campaign's CPU row could name `--probe rita-xl=` and nothing
+#     else. The supplement protocol states the same boundary ("不经
+#     native_dms_extension.py，那个 helper 的家族表只有 Galactica/RITA").
+#   * `42_scale_capability.py`, which produced the
+#     progen2-medium/large/xlarge MODEL−LOOKUP numbers, is fixed at those exact
+#     three rungs (`SCALE_RUNGS`) and requires a stage-29 directory plus a full
+#     stage-41 report, so it cannot take small or base at all.
+#   * the EXP-R2-226 lineage arms are the closest precedent for a stage-20
+#     panel/corpus arm: their MODEL−LOOKUP lives in
+#     results/transfer/r226_lineage/retrieval_bound/retrieval_bound.json,
+#     written by this stage's own `analyse` over a directory holding
+#     `model_<arm>.json` beside `lookup.json`, `profiles.json` and
+#     `wildtypes.json`. No campaign manifest has ever carried a stage-20
+#     `analyse` cell; campaign_r226_lineage.tsv and
+#     campaign_r228_context_homologue.tsv both record that this stage's analyse
+#     "runs on the workstation over the pulled artefacts". Doing it in-pod is
+#     what this cell adds, and `analyse` loads no model, so a cpu row is the
+#     right resource.
+#
+# `analyse` reads all five of its inputs from its own `--out` and has no path
+# flags, so they are staged into the cell directory before dispatch — the same
+# practice the EXP-R2-224 and EXP-R2-225 dispatches record for `wildtypes.json`
+# and `cohort.json`. The five, with their frozen digests:
+#
+#   wildtypes.json           45503 B  e080a37758e29c664d71e2a080f990f0bc0e8efdffbae7678b4a8b6271045faa
+#   lookup.json             335133 B  the frozen LOOKUP channel, 217 assays / 174 families
+#   profiles.json            73862 B  the frozen UniRef50 profiles, 187 wild types
+#   model_progen2-small.json 53958 B  from the previous run's pgym_progen2-small cell
+#   model_progen2-base.json  54113 B  from the previous run's pgym_progen2-base cell
+#
+# The two payloads are copied in-pod from
+# results/external_baseline/20260916101650_39982a07f55e/<cell>/ and verified
+# against the SHA-256 sidecars the queue wrote beside them. `wildtypes.json`,
+# `lookup.json` and `profiles.json` are the frozen stage-20 input set; the
+# first two are already on GPFS, `profiles.json` is staged from the
+# repository's own copy.
+#
+# Both arms are analysed in ONE invocation and ONE artefact. That is the
+# project's own convention for a group analysis (EXP-R2-225's Galactica group
+# analyse is one cell over four rungs) and it is also the smallest complete
+# solution: the shared 217-assay control block is computed once, from one
+# `lookup.json` and one seed, so the two MODEL−LOOKUP numbers come out of one
+# frozen invocation rather than two that must agree with each other.
+#
+# Assay coverage is NOT intersected. `stage_analyse` loops per arm over that
+# arm's own `model["assays"]` and looks each one up in the frozen catalogue,
+# raising if LOOKUP does not carry it or if the mutant digest differs; it
+# never forms a common assay set across arms. So the 201-assay arm and the
+# 213-assay arm are each read on their own support, and each payload's
+# `skipped` list is carried into its own `assays_skipped`. The per-arm
+# `mean_spearman.lookup` therefore differ, which is the visible signature of
+# per-arm support rather than a silently narrowed one. The one whole-benchmark
+# statement in the file, `blosum62_reproduces_frozen`, is withheld unless the
+# support is all 217 assays, which neither arm reaches.
+#
+# ------------------------------------------------------------------ cells
+#
+# Two cells. The score cell keeps the failed cell's own frozen definition on
+# gpu 0; the analyse cell is cpu, and its inputs as described above. `--seed
+# 20260807` and `--bootstrap 2000` are each stage's own default and are stated
+# because the frozen `lookup.json` and both score payloads were produced at
+# that seed.
+#
+# score cells read wildtypes.json from their own --out; dispatch stages the
+# frozen catalogue and, for the analyse cell, the frozen input set into each
+# cell directory before the queue starts. Neither staged input is any cell's
+# `expect` basename.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	nontxt	0	20_retrieval_bound.py	pgym_instructprotein	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	model_instructprotein.json	--stages score --arms instructprotein --dtype bfloat16 --variants 1000 --seed 20260807 --batch-size 16 --proteingym-dir /gpfs/jiaotongdamoxing/zhk_zip/data/proteingym/DMS_ProteinGym_substitutions
+2	nontxt	cpu	20_retrieval_bound.py	pgym_progen2_small_base_analyse	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	retrieval_bound.json	--stages analyse --arms progen2-small progen2-base --bootstrap 2000 --seed 20260807 --proteingym-dir /gpfs/jiaotongdamoxing/zhk_zip/data/proteingym/DMS_ProteinGym_substitutions
