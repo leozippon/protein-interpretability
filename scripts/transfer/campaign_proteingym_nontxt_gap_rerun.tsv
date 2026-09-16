@@ -18,11 +18,20 @@
 # cell's own, kept byte-identical to
 # campaign_proteingym_nontxt_gap.tsv's row and to its `expect` basename.
 #
-# pgym_proteinglm-7b-clm: NOT re-run, by user decision. It failed with
-# `ValueError: ProteinGLM budget prefix+L exceeds seq_length 1024`. That is
-# recorded as an explicit refusal under this project's fail-fast rule: no
-# truncation, subset or windowing is implemented or dispatched for it, and it
-# is dropped from this manifest rather than retried.
+# pgym_proteinglm-7b-clm: NOT re-run HERE, and that earlier decision has since
+# been SUPERSEDED. It failed with `ValueError: ProteinGLM budget prefix+L
+# exceeds seq_length 1024`, and this manifest first recorded it as an explicit
+# refusal under the fail-fast rule -- no truncation, subset or windowing.
+# That was wrong in one respect: the protocol already declares the rule the cell
+# should follow (docs/PROTEINGYM_EXTENSION_PROTOCOL.md: an assay is excluded
+# when the maximum rendered length exceeds that checkpoint's context, and
+# truncation is refused), so the failure was in the length probe, which lost the
+# whole arm rather than the 16 assays its 1024 window excludes. Commit 86bad4e
+# makes that probe total without moving any scoring-path refusal, and commit
+# 4e9f578 dispatched it. The cell is therefore not part of this manifest, but it
+# is no longer a refusal: the superseding definition is
+# scripts/transfer/campaign_proteingym_proteinglm_rerun.tsv, and its outcome is
+# the one to read.
 #
 # pgym_zymctrl: NOT re-run. It exited 0 and scored 0 of 217 assays
 # (`assays: []`, `skipped[217]`, every skip the wild type's absence from the
