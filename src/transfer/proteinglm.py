@@ -339,12 +339,59 @@ def encode_budget_text(tokenizer: Any, text: str, *, max_len: int) -> list[int]:
     return ids
 
 
-def render_budget_sequence(sequence: str) -> str:
+def _budget_residue_length(sequence: str) -> int:
+    """The AA20 and two-residue gates, declared once for both budget paths.
+
+    These two checks are about what the sequence *is*, not about whether it fits,
+    so they belong to the render and the length probe alike and are stated once
+    rather than twice (rule 12). The serving-window check deliberately is not
+    here: it is a scoring-path refusal and stays in
+    :func:`render_budget_sequence` and :func:`encode_budget_text`.
+    """
+
     if any(character not in AA20 for character in sequence):
         raise ValueError("ProteinGLM budget residues must be AA20 with no extra symbols")
     if len(sequence) < 2:
         raise ValueError("ProteinGLM budget scoring needs at least two residues")
-    if PREFIX_LENGTH + len(sequence) > CONTEXT_LENGTH:
+    return len(sequence)
+
+
+def budget_token_length(sequence: str) -> int:
+    """Rendered token length of one budget continuation. **A length probe.**
+
+    This is not a scoring path and it does not refuse an over-context sequence.
+    Stage 20 asks every scorer for ``token_lengths`` before it scores an assay and
+    turns a maximum above that arm's context into a recorded skip --
+    "the rendered variant exceeds this arm's context; truncating would score a
+    sequence that may not contain the mutated position"
+    (``20_retrieval_bound.py``'s ``_score_one_arm``). A probe that
+    raises instead of returning converts an assay-level exclusion into a failure
+    of the whole arm, which is exactly what EXP-R2-240's `pgym_proteinglm-7b-clm`
+    cell recorded: it died in ``token_lengths``, through
+    :func:`render_budget_sequence`, without ever reaching that branch.
+
+    **The refusal is not moved, only the measurement is made total.** Every path
+    that actually scores a sequence still goes through
+    :func:`render_budget_sequence` or :func:`encode_budget_text`, both of which
+    raise when ``PREFIX_LENGTH + L > CONTEXT_LENGTH``; and
+    :func:`encode_budget_text` additionally requires the tokenizer to return
+    exactly ``PREFIX_LENGTH + L`` ids, so this arithmetic cannot drift from the
+    encoding it measures without that check firing at score time. The boundary is
+    the same on both paths: 1021 residues render to 1024 tokens and score, 1022
+    render to 1025 and are excluded.
+
+    Illegal or too-short input still raises here, because it is a defect in the
+    sequence rather than a statement about the window (Failure Principle).
+    """
+
+    return PREFIX_LENGTH + _budget_residue_length(sequence)
+
+
+def render_budget_sequence(sequence: str) -> str:
+    """Prefix one continuation; refuses anything outside the serving window."""
+
+    length = _budget_residue_length(sequence)
+    if PREFIX_LENGTH + length > CONTEXT_LENGTH:
         raise ValueError(
             f"ProteinGLM budget prefix+L exceeds seq_length {CONTEXT_LENGTH}"
         )

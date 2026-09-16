@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -124,7 +125,6 @@ def test_zymctrl_skips_missing_ec_and_refuses_unconditioned_render():
         device="cpu",
         model=SimpleNamespace(config=SimpleNamespace(n_positions=1024)),
     )
-    args = argparse.Namespace(device="cpu", dtype="bfloat16", batch_size=1)
     scorer = object.__new__(stage._ZymCTRLScorer)
     scorer.torch = torch
     scorer.name = "zymctrl"
@@ -218,6 +218,139 @@ def test_instructprotein_scorer_uses_declared_residue_tokens_only():
     accounting = scorer.residue_accounting()
     assert accounting["residues"] == 4
     assert accounting["scored_tokens"] == 4
+
+
+def _proteinglm_stage_scorer(stage, monkeypatch, *, log_likelihood_calls):
+    """The real ``_ProteinGLMScorer`` with no weights and no tokenizer load.
+
+    Only ``load_arm_spec`` is replaced, so ``__init__``'s own dtype, arm and
+    serving-window checks still run against a config that declares the real
+    1024. ``log_likelihood`` is replaced because a forward needs the 7B weights;
+    ``token_lengths`` is the method under test and is left exactly as delivered.
+    """
+
+    config = SimpleNamespace(seq_length=stage.PGLM.CONTEXT_LENGTH)
+    fake_arm = SimpleNamespace(
+        model=SimpleNamespace(config=config), tokenizer=None, device="cpu"
+    )
+    monkeypatch.setattr(stage, "load_arm_spec", lambda *a, **k: fake_arm)
+
+    args = argparse.Namespace(dtype="float32", device="cpu", batch_size=16)
+    scorer = stage._ProteinGLMScorer("proteinglm-7b-clm", args)
+
+    def fake_log_likelihood(sequences):
+        log_likelihood_calls.append(list(sequences))
+        return np.linspace(-1.0, -0.5, len(sequences))
+
+    scorer.log_likelihood = fake_log_likelihood
+    return scorer
+
+
+def _install_gap_scorer(stage, monkeypatch, scorer):
+    def fake_load(arm, args):
+        assert arm == "proteinglm-7b-clm"
+        return (
+            scorer,
+            scorer.context,
+            {
+                "checkpoint": "cpu-test-stub",
+                "context": scorer.context,
+                "input_format": INPUT_FORMAT_GMASK_SOP_EOS,
+            },
+        )
+
+    monkeypatch.setattr(stage, "_load_scorer", fake_load)
+
+
+def _install_two_assays(stage, monkeypatch, *, inside, over):
+    """One assay inside the 1024 window and one past it, in the drawn order."""
+
+    def fake_load_assay(name, *, n, seed, directory=None):
+        sequence = inside if name == "assay_inside" else over
+        return SimpleNamespace(
+            name=name,
+            mutants=["M1A", "M3T"],
+            sequences=[sequence, "A" + sequence[1:]],
+            scores=np.array([0.2, 0.8], dtype=np.float64),
+            wildtype=sequence,
+        )
+
+    monkeypatch.setattr(stage, "load_assay", fake_load_assay)
+
+
+def test_proteinglm_over_context_assay_is_skipped_not_a_crash(monkeypatch, tmp_path):
+    """EXP-R2-240's `pgym_proteinglm-7b-clm` cell died in the length probe.
+
+    ``_ProteinGLMScorer.token_lengths`` rendered through
+    ``render_budget_sequence``, which refuses an over-context sequence, so the arm
+    could never reach stage 20's own exclusion branch and lost every assay rather
+    than the 16 the 1024 window excludes. The probe must therefore be total over
+    the rendered length while the scoring path keeps refusing.
+    """
+
+    stage = _stage()
+    pglm = stage.PGLM
+    assert pglm.CONTEXT_LENGTH == 1024
+    assert pglm.PREFIX_LENGTH == 3
+    inside = "A" * 1021
+    over = "A" * 1154
+    assert pglm.budget_token_length(inside) == 1024
+    assert pglm.budget_token_length(over) == 1157
+
+    calls: list[list[str]] = []
+    scorer = _proteinglm_stage_scorer(stage, monkeypatch, log_likelihood_calls=calls)
+
+    # The probe returns; it does not raise. This is the line that used to kill the arm.
+    assert scorer.token_lengths([inside, over]) == [1024, 1157]
+    # The scoring path still refuses the same sequence, both directly and through
+    # the render that `log_likelihood` calls first.
+    with pytest.raises(ValueError, match="seq_length"):
+        pglm.render_budget_sequence(over)
+    with pytest.raises(ValueError, match="seq_length"):
+        scorer._render([over])
+    # Illegal input is still a defect on both paths rather than a window statement.
+    with pytest.raises(ValueError, match="AA20"):
+        pglm.budget_token_length("AX")
+    with pytest.raises(ValueError, match="two residues"):
+        pglm.budget_token_length("A")
+
+    _install_gap_scorer(stage, monkeypatch, scorer)
+    _install_two_assays(stage, monkeypatch, inside=inside, over=over)
+
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "wildtypes.json").write_text(
+        json.dumps(
+            {"assay_to_wildtype": {"assay_inside": "q00000", "assay_over": "q00001"}}
+        ),
+        encoding="utf-8",
+    )
+    args = SimpleNamespace(
+        arms=["proteinglm-7b-clm"],
+        assays=["assay_inside", "assay_over"],
+        variants=1000,
+        seed=20260807,
+        batch_size=16,
+        dtype="float32",
+        device="cpu",
+        proteingym_dir=tmp_path,
+        out=out,
+    )
+
+    payload = stage.stage_score(args)["proteinglm-7b-clm"]
+
+    assert [row["assay"] for row in payload["assays"]] == ["assay_inside"]
+    assert payload["assays"][0]["max_tokens"] == 1024
+    skipped = payload["skipped"]
+    assert [item["assay"] for item in skipped] == ["assay_over"]
+    assert skipped[0]["max_tokens"] == 1157
+    assert skipped[0]["context"] == 1024
+    assert skipped[0]["reason"] == (
+        "the rendered variant exceeds this arm's context; truncating would score a "
+        "sequence that may not contain the mutated position"
+    )
+    # The excluded assay was never sent to the model.
+    assert [len(batch) for batch in calls] == [2]
 
 
 def test_load_scorer_routes_new_doors(monkeypatch):

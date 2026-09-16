@@ -1655,10 +1655,17 @@ class _ProteinGLMScorer:
         return [PGLM.render_budget_sequence(sequence) for sequence in sequences]
 
     def token_lengths(self, sequences: list[str]) -> list[int]:
-        return [
-            len(PGLM.encode_budget_text(self.arm.tokenizer, text, max_len=self.context))
-            for text in self._render(sequences)
-        ]
+        """Length probe only: an over-context sequence is measured, never refused.
+
+        Stage 20's own branch converts a maximum above this arm's context into a
+        recorded skip carrying the shared context reason, which is the assay-level
+        exclusion ProGen2-small, ZymCTRL and RITA-xl all take on this queue. This
+        method used to render through :func:`PGLM.render_budget_sequence` and take
+        that function's refusal, so `pgym_proteinglm-7b-clm` could not reach the
+        branch at all and the arm failed instead of excluding 16 assays. The
+        refusal stays on the scoring path, in `log_likelihood`'s own render.
+        """
+        return [PGLM.budget_token_length(sequence) for sequence in sequences]
 
     def log_likelihood(self, sequences: list[str]) -> np.ndarray:
         torch = self.torch
