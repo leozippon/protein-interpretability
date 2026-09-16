@@ -294,6 +294,47 @@ class ScoredTokens:
 
 
 @torch.no_grad()
+def _scored_tokens_rita(
+    arm: Arm, input_strings: Sequence[str], *, max_len: int
+) -> ScoredTokens:
+    """Left-to-right NLL on native residue ids plus tokenizer EOS, one record at a time.
+
+    Does not assign ``tokenizer.pad_token`` and does not pass an attention mask.
+    Variable-length records are not stacked: padding would require an attention
+    mask the author forward does not take as a scoring contract.
+    """
+
+    from .rita_fitness import native_encode_for_budget
+
+    target_blocks: list[np.ndarray] = []
+    nll_blocks: list[np.ndarray] = []
+    index_blocks: list[np.ndarray] = []
+    for index, text in enumerate(input_strings):
+        ids = native_encode_for_budget(arm.tokenizer, text)
+        if len(ids) > max_len:
+            raise ValueError(
+                f"{arm.name}: native encoding is {len(ids)} tokens and max_len is {max_len}"
+            )
+        if len(ids) < 2:
+            raise ValueError(f"{arm.name}: native encoding produced no scored target")
+        tensor = torch.tensor([ids], dtype=torch.long, device=arm.device)
+        logits = arm.model(input_ids=tensor).logits
+        logprobs = F.log_softmax(logits[:, :-1].float(), dim=-1)
+        target = tensor[:, 1:]
+        nll = -logprobs.gather(-1, target.unsqueeze(-1)).squeeze(-1)[0]
+        if not bool(torch.isfinite(nll).all()):
+            raise FloatingPointError(f"{arm.name}: non-finite clean NLL")
+        target_blocks.append(target[0].detach().cpu().numpy().astype(np.int64))
+        nll_blocks.append(nll.detach().cpu().numpy().astype(np.float64))
+        index_blocks.append(np.full(target.shape[1], index, dtype=np.int64))
+    return ScoredTokens(
+        target_ids=np.concatenate(target_blocks),
+        nll_nats=np.concatenate(nll_blocks),
+        sequence_index=np.concatenate(index_blocks),
+    )
+
+
+@torch.no_grad()
 def scored_tokens(
     arm: Arm,
     input_strings: Sequence[str],
@@ -309,6 +350,18 @@ def scored_tokens(
         raise ValueError("max_len must admit at least one next-token target")
     if batch_size < 1:
         raise ValueError("batch_size must be positive")
+    if arm.spec.architecture == "progen3":
+        from .progen3 import n_to_c_scored_arrays, require_progen3_handle
+
+        pg = require_progen3_handle(arm)
+        target_ids, nll_nats, sequence_index = n_to_c_scored_arrays(
+            pg, list(input_strings), max_len=max_len, batch_size=batch_size
+        )
+        return ScoredTokens(
+            target_ids=target_ids, nll_nats=nll_nats, sequence_index=sequence_index
+        )
+    if arm.spec.architecture == "rita":
+        return _scored_tokens_rita(arm, input_strings, max_len=max_len)
 
     rule = target_rule(arm.spec.input_format)
     start_id, end_id = conditioning_boundary_ids(arm)
@@ -556,10 +609,13 @@ def record_statistics(arm: Arm, scored: ScoredTokens) -> RecordStatistics:
     Requires the ``budget`` capability for the reason :func:`arm_power` states:
     the vocabulary recorded here is the scoring-target alphabet, resolved by
     :func:`src.transfer.arms.scoring_target_alphabet` rather than by reading
-    ``config.vocab_size`` directly.
+    ``config.vocab_size`` directly. RITA-xl is the exception: it declares the
+    alphabet and is scored through native encoding, but its capability set stays
+    empty so lens/pathway grants are not implied.
     """
 
-    arm.require("budget")
+    if arm.spec.architecture != "rita":
+        arm.require("budget")
     alphabet = scoring_target_alphabet(arm.spec, getattr(arm.model, "config", None))
     require_scoring_target_ids(scored.target_ids, alphabet, arm=arm.name)
     order = np.argsort(scored.sequence_index, kind="mergesort")
@@ -1188,7 +1244,8 @@ def arm_power_with_records(
     # the call rather than duplicating either declaration.
     from .pathways import UNIGRAM_ESTIMATORS, unigram_baseline
 
-    arm.require("budget")
+    if arm.spec.architecture != "rita":
+        arm.require("budget")
     if unigram_estimator not in UNIGRAM_ESTIMATORS:
         raise ValueError(
             f"unknown unigram estimator {unigram_estimator!r}; known {UNIGRAM_ESTIMATORS}"

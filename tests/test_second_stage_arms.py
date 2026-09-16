@@ -358,7 +358,7 @@ def test_cohort_power_admits_a_second_stage_arm_that_can_honour_the_estimand():
 
 
 def test_cohort_power_refuses_a_second_stage_arm_that_declares_no_budget():
-    """An arm that cannot produce the estimand is refused before it is loaded."""
+    """RITA is scored natively despite an empty capability set; ProteinGLM has budget."""
 
     stage = _load_stage("01_cohort_power.py")
     args = argparse.Namespace(
@@ -366,9 +366,10 @@ def test_cohort_power_refuses_a_second_stage_arm_that_declares_no_budget():
         with_ec=False,
         allow_staged_scale_arms=False,
         allow_second_stage_arms=True,
+        skip_truncation=True,
+        dtype="float32",
     )
-    with pytest.raises(ValueError, match="no 'budget' capability"):
-        stage.validate_arms(["rita-xl"], args)
+    stage.validate_arms(["rita-xl"], args)
     stage.validate_arms(["proteinglm-7b-clm"], args)
 
 
@@ -378,15 +379,18 @@ def test_rita_xl_is_scoreable_without_widening_default_fitness_doors():
     ``docs/PROTEINGYM_EXTENSION_PROTOCOL.md`` admits ``rita-xl`` as an independent
     single point once its interface gate passes. That puts it in
     ``SCOREABLE_ARMS`` via ``RITA_CORPUS``, not in ``ARM_CORPUS``, so default
-    ``--arms=ARM_CORPUS`` stays the frozen three-arm run. Qwen and ProteinGLM
-    remain out of this round. Stage 29 gained no door. ``load_arm`` without an
-    opt-in still raises KeyError; that panel door is asserted above.
+    ``--arms=ARM_CORPUS`` stays the frozen three-arm run. Qwen remains out of
+    this door. ProteinGLM is an explicit ProteinGym choice, not the default run.
+    Stage 29 gained no door. ``load_arm`` without an opt-in still raises KeyError;
+    that panel door is asserted above.
     """
 
     retrieval = _load_stage("20_retrieval_bound.py")
-    refused = ("qwen2.5-7b", "qwen2.5-32b", "proteinglm-7b-clm")
+    refused = ("qwen2.5-7b", "qwen2.5-32b")
     assert "rita-xl" in retrieval.SCOREABLE_ARMS
     assert "rita-xl" not in retrieval.ARM_CORPUS
+    assert "proteinglm-7b-clm" in retrieval.SCOREABLE_ARMS
+    assert "proteinglm-7b-clm" not in retrieval.ARM_CORPUS
     for name in refused:
         assert name not in retrieval.SCOREABLE_ARMS, name
         assert name not in retrieval.ARM_CORPUS, name

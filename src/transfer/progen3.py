@@ -67,12 +67,14 @@ import sys
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from collections.abc import Sequence
 from typing import Any, Callable, Iterator
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 
-from .arms import REPO
+from .arms import MODEL_ROOT, REPO
 
 #: The released ProGen3-112M checkpoint directory.
 PROGEN3_CHECKPOINT = Path(
@@ -842,3 +844,149 @@ def ablated(pg: ProGen3, component: Component) -> Iterator[None]:
         yield
     finally:
         handle.remove()
+
+
+# ----------------------------------------------------- stage-01 N-to-C budget
+
+#: Directory of the 3B rung. The 112M stays on :data:`PROGEN3_CHECKPOINT` so a
+#: host that only relocates ``TRANSFER_PROGEN3_DIR`` keeps F10's dispatch.
+PROGEN3_3B_CHECKPOINT = MODEL_ROOT / "progen3-3b"
+
+PROGEN3_DTYPES = {"bfloat16": torch.bfloat16, "float16": torch.float16}
+
+
+def require_progen3_handle(arm: Any) -> ProGen3:
+    """The packed-weight handle a budget score must use, or a loud refusal.
+
+    Hugging Face eager MoE on these releases leaves every expert and router
+    random and still runs. A generic ``model(input_ids=...)`` call is that
+    failure mode, so the serving handle has to be present and has to be the
+    object :func:`load_progen3` returned.
+    """
+
+    handle = (getattr(arm, "serving_provenance", None) or {}).get("progen3")
+    if not isinstance(handle, ProGen3):
+        raise ValueError(
+            f"{getattr(arm, 'name', arm)}: architecture progen3 must be scored "
+            "through src.transfer.progen3.load_progen3; the HF eager path loads "
+            "random experts and is not this estimand"
+        )
+    return handle
+
+
+def n_to_c_target_rows(
+    pg: ProGen3, sequences: Sequence[str], *, max_len: int
+) -> list[np.ndarray]:
+    """Per-record N-to-C target ids from the native preparer, no forward pass."""
+
+    if max_len < 2:
+        raise ValueError("max_len must admit at least one next-token target")
+    if not sequences:
+        raise ValueError("ProGen3 N-to-C scoring needs at least one sequence")
+    rows: list[np.ndarray] = []
+    for sequence in sequences:
+        batch = pg.batch([sequence], reverse=False)
+        width = int(batch["input_ids"].shape[-1])
+        if width > max_len:
+            raise ValueError(
+                f"ProGen3 native rendering is {width} tokens and max_len is {max_len}"
+            )
+        labels = batch["labels"][0]
+        targets = labels[1:]
+        mask = labels[1:] != pg.config.pad_token_id
+        ids = targets[mask].detach().cpu().numpy().astype(np.int64)
+        if ids.size < 1:
+            raise ValueError("a ProGen3 record produced no scored N-to-C targets")
+        rows.append(ids)
+    return rows
+
+
+@torch.no_grad()
+def n_to_c_scored_arrays(
+    pg: ProGen3,
+    sequences: Sequence[str],
+    *,
+    max_len: int,
+    batch_size: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """``(target_ids, nll_nats, sequence_index)`` for left-to-right scoring only.
+
+    Bidirectional mean NLL is a different estimand (stage 20 DMS). Context
+    information here is stage 01's left-to-right next-token NLL against a
+    held-out unigram of the same N-to-C targets.
+    """
+
+    if batch_size < 1:
+        raise ValueError("batch_size must be positive")
+    target_blocks: list[np.ndarray] = []
+    nll_blocks: list[np.ndarray] = []
+    index_blocks: list[np.ndarray] = []
+    for start in range(0, len(sequences), batch_size):
+        chunk = list(sequences[start : start + batch_size])
+        batch = pg.batch(chunk, reverse=False)
+        width = int(batch["input_ids"].shape[-1])
+        if width > max_len:
+            raise ValueError(
+                f"ProGen3 native rendering is {width} tokens and max_len is {max_len}"
+            )
+        logits, targets, mask = scored_logits(pg, batch)
+        nll = token_nll(logits, targets)
+        keep = mask.bool()
+        if not bool(torch.isfinite(nll[keep]).all()):
+            raise FloatingPointError("ProGen3: non-finite N-to-C NLL")
+        row = torch.arange(targets.shape[0], device=targets.device).unsqueeze(1).expand_as(
+            targets
+        )
+        target_blocks.append(targets[keep].detach().cpu().numpy().astype(np.int64))
+        nll_blocks.append(nll[keep].detach().float().cpu().numpy().astype(np.float64))
+        index_blocks.append(
+            (row[keep] + start).detach().cpu().numpy().astype(np.int64)
+        )
+    return (
+        np.concatenate(target_blocks),
+        np.concatenate(nll_blocks),
+        np.concatenate(index_blocks),
+    )
+
+
+def load_progen3_as_arm(
+    name: str,
+    *,
+    device: str = "cuda:0",
+    dtype: str = "bfloat16",
+    check: bool = True,
+) -> Any:
+    """Load one ProGen3 rung as an :class:`~src.transfer.arms.Arm` for budget scoring.
+
+    Not :func:`src.transfer.arms.load_arm_spec`: that path is AutoModel and would
+    score random experts. The self-check runs before the arm is returned.
+    """
+
+    from .arms import Arm, arm_spec
+
+    spec = arm_spec(name)
+    if spec.architecture != "progen3":
+        raise ValueError(f"{name}: load_progen3_as_arm is for architecture progen3")
+    torch_dtype = PROGEN3_DTYPES.get(dtype)
+    if torch_dtype is None:
+        raise ValueError(
+            f"ProGen3 cannot run in {dtype}: supported {sorted(PROGEN3_DTYPES)}"
+        )
+    pg = load_progen3(spec.path, device=device, dtype=torch_dtype)
+    record = self_check(pg) if check else None
+    return Arm(
+        spec=spec,
+        model=pg.model,
+        tokenizer=pg.tokenizer,
+        device=str(pg.device),
+        dtype=dtype,
+        serving_provenance={
+            "progen3": pg,
+            "self_check": record,
+            "scoring_directions": ("n_to_c",),
+            "not_bidirectional": (
+                "stage 01 context information is left-to-right next-token NLL; "
+                "the bidirectional mean used by stage 20 is a different estimand"
+            ),
+        },
+    )

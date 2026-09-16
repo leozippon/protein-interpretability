@@ -2717,6 +2717,199 @@ Package exports for the sequence extractor and QueryPrefix train-state are integ
 
 The queue-compatible recovery stage now has an accepted CPU dummy path for process sequencing and expected fault 75. The living plan records that this is not native BF16 capture or a GPU cell. Remaining dispatch prerequisites are a committed manifest, standard freeze, and a fresh owner-only H200 gate. No new GPU cell started.
 
+
+## 2026-09-13 — Start the first native 0/75/0 recovery cell
+
+After dummy-controller acceptance, parent committed the extractor, train-state, recovery stage and fixture, froze a pinned snapshot, rechecked the owned idle H200, and dispatched one native cell under 1800s/60s containment. No other owner allocation was used. Outcome is pending; this log line is not acceptance of native capture, replay, or QA capability.
+
+
+## 2026-09-13 — Accept native process recovery with recorded gaps
+
+The first owned-H200 native query-prefix cell finished with real exits 0/75/0, the frozen call budget, CUDA RNG sentinel replay, and a closed supervisor receipt. Parent does not treat that as loss/state replay acceptance or QA capability, because those comparisons were not serialized. The living plan records this limited engineering result. Scientific cohort admission remains blocked on full closure/homology/roles/support.
+
+
+## 2026-09-13 — Start a fail-fast real-universe metadata closure
+
+Parent verified the accepted census artifacts on disk and launched one CPU attempt under 1800s/60s and child AS 16GiB. Known accounting identities were copied into Limits; the other work fields are finite refuse-if-exceeded ceilings, not RAM predictions. No task labels are read. Timeout, budget refusal or address-space failure means isolation cannot finish under the current 16GiB rule, not that a cohort exists.
+
+
+## 2026-09-13 — Real closure hit the 1800s bound after work-cap corrections
+
+Attempts 01–03 refused on mis-set work fields (buckets, feature characters, verification charge). Attempt 04 with 1e12 exploratory work ceilings ran the full 1800s and was terminated with SIGTERM (supervisor exit 124). No partition was published. Host MemAvailable fell about 16GiB over that half hour, consistent with the child 16GiB address-space cap being in use, not proof of a leak. Parent launched one instrumented 3600s retry with the same 16GiB cap and heartbeat logging. No question labels are read.
+
+
+## 2026-09-13 — Correct exact-string versus 100% alignment wording
+
+Current documents had called 370/2,048 (18.1%) held-out records byte-identical. A CPU replay of the existing EXP-R2-203 pool, split and hits reproduced 370 at 100% alignment identity and found 350/2,048 (17.1%) complete-string matches, with 20 unequal-length 100% cases. `summary.md` and L30 were corrected; D3.g now points to L30; this log and the experiment log record the check. No model, DIAMOND, GPU or network run.
+
+
+## 2026-09-13 — Start the native Galactica ProteinGym extension
+
+The user authorized explicit MODEL−LOOKUP and MODEL−BLOSUM62 overview reporting and supplementary H200 experiments, including temporary additional allocation followed by release with one project H200 retained. The selected primary extension is Galactica-1.3B/6.7B/30B, with 125M as an explicitly unqualified small-scale reference; RITA-xl is conditional on a defensible native scoring interface. This is a new extension, not a retroactive expansion of EXP-R2-225. Qwen ProteinGym scoring and a new ProteinGLM loader are outside this implementation scope.
+
+The cluster health probe returned `Health=ok` in 43 seconds. The identifiable project allocation had one idle H200 with no compute process and zero uncorrected volatile ECC; other allocations were left untouched. All eight local L20s had substantial existing memory allocations and will not be used for model smoke tests. Two subsequent access reads failed because the shared local `/tmp` had exhausted all 1,048,576 inodes, not because of a failed cluster-health result. The task's 400-file baseline was copied to its task-local directory on `/Data`, verified file-by-file by SHA-256, and replaced at the original temporary path with a symlink; unrelated temporary files were not removed. Subsequent access uses a task-local `TMPDIR`, and Kubernetes resource-template inspection succeeded. Remote Python and staged-model verification remain pending.
+
+Native Galactica scorer implementation and CPU contract tests have started; no new model fitness score, formal supplementary run, or temporary H200 allocation is claimed by this entry.
+
+
+## 2026-09-13 — Draft longest-shape batch gate for the native DMS probe
+
+The pre-data helper now runs one configured-batch AA20-tiled forward at the longest eligible wild-type residue length after `token_lengths`. Default batch size is 16; CUDA OOM may be reduced along 16→8→4→2→1 only by re-running the complete probe before any new DMS ρ. CPU stubs record CUDA memory as unmeasured. An empty eligible set refuses and writes no passing probe. Galactica rungs may differ in batch size; scientific inputs, support, and dtype stay shared. This is still a draft: not frozen, no real weights, no GPU probe, and no new fitness scores.
+
+The earliest helper 12-pass missed differentiable parameters; that count is not a final pass. Prior native 23-pass and helper 23-pass were different selections and are not added together. Joint CPU selection on 2026-09-13: 63 passed in 5.09s. Pyright on the helper and its tests: 0 errors. Commands and stdout: `logs/native_dms_extension/`.
+
+## 2026-09-14 — Accept and push the frozen native DMS preparation
+
+The ten-file native scoring/protocol commit `32debe7` was fast-forward pushed to `origin/main`, without staging the seven pre-existing modified documents. The official H200 freeze had succeeded; its lost child-task notification was recovered from preserved terminal output without repeating the freeze. Long operational commands now run as parent-owned background tasks so their terminal events return to the coordinating session.
+
+The pinned snapshot's original LOOKUP, wild-type catalog, FASTA, and protocol bytes were verified on H200, and both frozen CLIs passed their real remote `--help`/import checks without dependency installation. Exact commands, hashes, resource evidence, and the distinction from a real-model pass are recorded in the experiment log entry “Accept frozen native ProteinGym inputs and H200 CLI imports.” No temporary GPU was allocated and no new model fitness score exists at this handoff. Next: native model probes, then frozen-support scoring and paired two-baseline analysis.
+
+## 2026-09-14 — Record incomplete 125M probe and require loader facts
+
+On old pin `32debe7` and old run `20260913131730_d91171619815`, a real Galactica-125M BF16 batch-16 probe passed numeric and resource checks (213 assays / 171 clusters; longest 2018 tokens; peak allocated 16,424,467,968 bytes) but recorded `facts={}`. That is not a final complete interface PASS: no DMS ρ, not admitted to analysis, old artifact unchanged. Root cause: the scorer did not expose `loaded.facts`, and the helper treated an empty mapping as success. Commit `e8d9f2b429f012b50cfa3b90ab6d0604dd7367fe` was fast-forward pushed to `origin/main` (four files only: shared facts accessor; probe/analyse refuse empty observed metadata; tests). Scoring, thresholds, and protocol unchanged. Directed CPU: 67 passed in 7.83s; ct Pyright on those four files 0/0/0 — not the full suite and not a new H200 probe. No GPU allocation was created or released; other tasks were not touched. Snapshot refresh and a new probe have not run; this entry records no new run ID. Commands and hashes: experiment-log entry “Incomplete Galactica-125M native probe: numeric and resource checks passed, facts empty.”
+
+## 2026-09-14 — Refresh the native DMS snapshot after the facts repair
+
+Parent-owned task `b4895fa97` completed the official freeze and acceptance of commit `e8d9f2b` as run `20260913193000_6612da48b3bb`. The old receipt and incomplete probe were preserved; original inputs and protocol were reused with matching hashes. The new snapshot's repaired sources and both real CLI imports passed verification. No model, new fitness score, dependency installation, or allocation change occurred. Exact command, hashes, fresh resource checks, and receipt locations are in the experiment-log entry “Accept the loader-facts repair snapshot.” Next is new-pin native probing, then full-queue scoring and paired analysis.
+
+## 2026-09-14 — Accept the first complete new-pin native probe
+
+Galactica-125M passed its real new-pin native-interface probe with observed nonempty loader facts, the frozen numeric checks, and the longest-shape batch-16 resource check. Its eligible support is 213 assays / 171 clusters. The old incomplete artifact remains unchanged. The parent is proceeding through the other three Galactica rungs and RITA as separate sequential probes, stopping on failure; no formal DMS score or temporary allocation is claimed. Exact command, artifact hash, metadata, and numeric/resource evidence are in the experiment-log entry “Accept the repaired Galactica-125M native probe.”
+
+## 2026-09-14 — Continue native probes and stop on missing 30B output
+
+Galactica-1.3B and 6.7B passed their real BF16 batch-16 probes; parent verification found exactly the same full cohort and fingerprints as 125M. The sequential queue stopped when the 30B wrapper returned `ABSENT` without its expected artifact. RITA has not started. This is not yet classified as OOM or a numerical failure, and no duplicate model, automatic smaller batch, or formal score was launched. Read-only incident evidence is required next; detailed observations and artifact hashes are in the experiment-log entry “Accept 1.3B and 6.7B probes; investigate the 30B missing artifact.”
+
+## 2026-09-14 — Identify the 30B gate failure and continue the independent RITA probe
+
+One-time remote evidence confirmed that 30B exited on a batch/single difference of 0.0266441345 nats/target, exceeding the frozen 0.02 BF16 tolerance, not on CUDA OOM. No passing artifact was written; the old process is no longer active. The threshold, dtype, and batch have not been changed, and no formal four-rung score was started. After verifying the resource was free, the parent launched the separately specified RITA FP32 probe. Exact evidence and the boundary on unestablished deeper numerical causes are in the experiment-log entry “Identify the 30B frozen numerical-gate failure.”
+
+## 2026-09-14 — Accept RITA's interface and proceed with authorized synthetic diagnosis
+
+RITA-xl passed the original FP32 batch-16 native-interface probe, with actual eligible support of 201 assays / 163 clusters. Parent acceptance preserves an explicit metadata-label limitation: `storage_torch_dtype` comes from the loaded config, not weight-file storage; observed inference dtypes and numerical checks are independently verified. No DMS score was produced. The user selected limited synthetic diagnosis of 30B's batch/width/precision discrepancy rather than changing the frozen gate. Development and operational preparation use `xai/grok-4.6 high`; the original protocol, failed 30B record and accepted probes remain untouched. Detailed evidence and the no-admission/no-DMS boundary are in the experiment-log entry “Accept the RITA native probe and authorize bounded 30B diagnostics.”
+
+## 2026-09-14 — Accept and push the bounded numerical diagnostic
+
+The independent diagnostic script, CPU tests and short protocol were committed and fast-forward pushed as `8ad9a2f`, without staging the seven existing modified documents. Parent acceptance verified 54 targeted CPU tests, failure-path evidence, committed bytes and the remote ref. The diagnostic preserves all completed observations, restores backend settings after conversion failure, and refuses missing required metadata rather than reporting completion. It does not repair or qualify the old 30B probe.
+
+The parent has launched independent snapshot preparation for this new pin after 25 metadata checks of the preparation entry. This launch performs resource checks, freezing and CLI import only; no new snapshot outcome or model run is reported yet. The old native DMS receipt and protocol are preserved. Commands, evidence paths and hashes are in the experiment-log entry “Accept bounded diagnostic code and start its independent snapshot preparation.”
+
+## 2026-09-14 — Accept the independent diagnostic freeze
+
+The parent verified successful preparation of pin `8ad9a2f` as independent run `20260913235056_0bafd78e5dc6`: fresh resource gate, pinned source hashes, real frozen CLI import, and a separate diagnostic receipt all passed. The original native DMS receipt and protocol remained unchanged; no model or new score was produced and no allocation changed. The execution launcher still needs final local acceptance before the authorized synthetic run. Detailed observations and hashes are in the experiment-log entry “Accept the independent numerical-diagnostic snapshot.”
+
+## 2026-09-14 — Launch the authorized synthetic diagnosis
+
+The parent accepted the standalone execution launcher after 27 metadata checks, actual frozen-receipt binding and failure-boundary review, then launched task `b91aa533a` for the fixed Galactica-30B synthetic recipe. A fresh resource gate precedes the model run. The old BF16 probe and its 0.02 ceiling are untouched; no result, DMS score or interface admission is inferred from startup. Exact command and local acceptance evidence are in the experiment-log entry “Launch the fixed synthetic 30B numerical diagnosis.”
+
+## 2026-09-14 — Accept the bounded numerical findings without reopening the old gate
+
+The fixed diagnostic completed, and parent replay accepted all 42 case observations, 66 rows and 606 residue targets. The old BF16 discrepancy was reproduced exactly in every repeat and localized to the long sequence in mixed packing. FP32 execution of the same BF16-loaded weights reduced shape sensitivity substantially, but a supplementary width contrast remained 1.13805e-4; this is not universal numerical invariance or direct-FP32 checkpoint qualification. Metadata and resource evidence were independently checked. The old protocol, failed probe and both freeze receipts remain unchanged, with no DMS score or retroactive admission. A one-time post-run resource check is in progress; a new scientific protocol still requires a decision. Detailed values, hashes, replay command and limitations are in the experiment-log entry “Accept the bounded diagnosis: reproduce BF16 packing sensitivity.”
+
+## 2026-09-14 — Retain one H200 and proceed to a separate FP32 protocol
+
+The post-diagnostic read-only check verified one idle project H200 with ECC 0; no allocation was changed or process terminated. The user selected a separately frozen direct-FP32 validation route for all four Galactica checkpoints, with no tolerance relaxation or retroactive old PASS. Implementation planning is underway; no new direct-FP32 probe or DMS score exists yet. The completed diagnostic and original protocol remain preserved. Detailed resource evidence and the authorization boundary are in the experiment-log entry “Close diagnostic resources and authorize separate direct-FP32 validation.”
+
+## 2026-09-14 — Accept the separate FP32 implementation before freezing
+
+Parent acceptance completed the shared probe/scoring precision context and the explicit v2 record contracts, including failure-evidence preservation. The fixed numerical limits, original BF16 failure and old snapshots remain unchanged. CPU acceptance is complete; focused code delivery, the independent snapshot and real FP32 qualification are still separate next steps. Exact tests, parent replay (including its corrected dtype-field check), type-baseline limitations and byte-preservation evidence are recorded in “Accept the independent FP32 implementation and CPU record contracts” in the experiment log. No new model fitness score is implied.
+
+## 2026-09-14 — Push the independent FP32 protocol
+
+Commit `75a807bd` delivers the eight accepted FP32 protocol/code/test files to canonical `main` by a verified non-force push. Existing modified documents were left unstaged and legacy evidence preserved. Operational-launcher acceptance remains in progress before the independent snapshot; the parent identified a freeze retry-safety gap without executing any remote work. Evidence and the exact delivery boundary are in the experiment-log entry “Deliver the FP32 protocol without model admission.”
+
+## 2026-09-14 — Complete FP32 operational acceptance
+
+The parent accepted the bounded operational checks after closing uncertain-freeze repeat dispatch and early-failure artifact collection. The official wrapper preserves a nonzero result while collecting existing failure evidence through its single verified pull. Scientific code and old evidence are unchanged; a focused wrapper/test delivery must precede the independent snapshot. Exact checks and limitations are in “Accept failure-evidence collection before the FP32 snapshot” in the experiment log.
+
+## 2026-09-14 — Launch the new FP32 snapshot from verified code
+
+The two-file collection fix is on canonical `main` as `1a91d0a`; parent verification preserved the previously accepted scientific code and old evidence. The independently pinned freeze-only operation has now started, with its own receipt and fresh resource/input/source/CLI checks. Completion is not yet established and no model qualification or score is requested. The exact command and task identity are in “Start the independently pinned FP32 snapshot” in the experiment log.
+
+## 2026-09-14 — Preserve the uncertain freeze attempt
+
+The fresh resource gate passed, but the official freeze returned 255 and no independent prepared receipt was published. The parent is investigating the existing attempt read-only; the no-redispatch guard remains set and both old receipts are preserved. This is not model or numerical evidence. Exact timing, code hash and failure receipt are in “Stop an uncertain FP32 freeze without redispatch” in the experiment log.
+
+## 2026-09-14 — Narrow the read-only snapshot inspection
+
+The first remote inspection remained inconclusive after a nonzero command exit, despite successful health/owner selection. A smaller single-line listing with sanitized error capture is now running. No snapshot absence, freeze success or model result has been inferred, and redispatch remains prohibited. The exact evidence and command are in “Inspect the uncertain snapshot without modifying it” in the experiment log.
+
+## 2026-09-14 — Resume only the recovered snapshot identity
+
+Read-only evidence recovered one existing FP32 snapshot and verified all its code bytes, while showing that invocation and freeze resource metadata were missing. The parent is now using the official controller's explicit `RUN_ID` reuse path to complete that same identity, not minting a replacement run. The original failure remains preserved; neither prepared-snapshot success nor model qualification is yet claimed. Commands, checks and evidence are recorded in “Recover the existing FP32 identity and complete its metadata” in the experiment log.
+
+## 2026-09-14 — Finish snapshot recovery and begin independent model qualification
+
+The recovered FP32 snapshot is now prepared and parent-accepted: the same run was reused, source/input/CLI checks passed, and the original failed attempt and old evidence were preserved. The parent has started the 30B direct-FP32 full probe; no result is yet available. A separate local-only task prepares RITA's independent v1 score entry without relaxing the Galactica group requirement. Exact identity, checksums and commands are in “Accept the recovered FP32 snapshot and start the 30B probe” in the experiment log.
+
+## 2026-09-14 — Admit RITA-only requests in the local v1 score entry
+
+The parent accepted the bounded RITA-only operational change with unchanged Galactica group requirements, independent support/manifest selection, and preservation of the original full scoring order. CPU and actual-probe metadata checks passed; no scoring occurred and no frozen scientific source was changed. Exact checks and accepted file hashes are in “Accept the independent RITA v1 score entry without scoring” in the experiment log.
+
+## 2026-09-14 — Pass the separate 30B FP32 qualification and continue the ladder
+
+The 30B direct-FP32 full probe passed and the parent replay verified its raw recorded comparisons, interface evidence and batch-16 longest-shape resource check. This does not revise the failed BF16 protocol and provides no DMS result. The remaining three new FP32 probes are running sequentially with stop-on-error acceptance; an explicit four-probe v2 score-entry branch is being prepared locally. Detailed numbers, artifact hashes, commands and the limited scheduling estimate are in “Admit 30B under the separate direct-FP32 protocol” in the experiment log.
+
+## 2026-09-14 — Accept the protocol-selecting score entry
+
+The parent accepted the explicit FP32 scoring branch with mandatory four-probe and execution-receipt admission, unchanged v1/RITA behavior, and an independent FP32 manifest. This was local implementation acceptance only: the remaining real probe queue is still pending and no model fitness scores were produced. Evidence and accepted file hashes are in “Accept explicit FP32 score admission without dispatching scores” in the experiment log.
+
+## 2026-09-14 — Complete four-rung qualification and launch full scoring
+
+All four real direct-FP32 probes and their parent replays passed, and the parent confirmed identical cohort/fingerprint objects and common 213-assay/171-cluster support. The full 30B DMS scoring task is now launched with the original 217-item order and explicit 48-hour stage timeout. The original BF16 failure remains intact; this launch is not a fitness result. The complete group binding, numerical summaries and command are in “Admit the complete FP32 group and start full 30B DMS scoring” in the experiment log.
+
+## 2026-09-14 — Stop on the missing full-score artifact
+
+The first complete 30B scoring attempt ended early with a missing expected artifact and nonzero wrapper status, not the configured 48-hour timeout. The parent preserved the failure and began one read-only incident inspection; no retry or changed scientific gate is authorized by the missing file alone. The four earlier qualification outcomes remain recorded, but there is no accepted complete fitness result. Exact observations and the pending inspection command are in “Preserve the interrupted full 30B score and inspect read-only” in the experiment log.
+
+## 2026-09-14 — Localize the scoring interruption and run independent RITA
+
+The retained traceback establishes CUDA OOM, and the read-only resource check confirms that the failed 30B process has exited. A bounded independent review is checking cross-batch tensor lifetime against the single-batch resource probe; protected source and prior outcomes are not being changed. The separately qualified RITA-only scoring task is launched while this issue is reviewed. Measurements, hashes and boundaries are recorded in “Confirm CUDA OOM and keep RITA independent” in the experiment log.
+
+## 2026-09-14 — Correct RITA's parent preflight before the first real dispatch
+
+The first submitted RITA task never reached the score entry: a parent assertion incorrectly required an exit-code field absent from the successful legacy receipt. The failure was preserved, the actual v1 schema and prior evidence revalidated without modifying them, and the accepted score entry was then invoked directly. This is an operational correction, not a model failure or a retry of a remote score. Details are in “Correct a parent-only RITA receipt-schema error before dispatch” in the experiment log.
+
+## 2026-09-14 — Confirm the cross-batch lifetime defect without changing protected code
+
+An independent read-only review and parent CPU replay confirmed that previous full-vocabulary score tensors survive into the next forward. This exposes a resource-coverage gap in the single-batch probe, but does not establish the sole GPU OOM cause. The minimal lifetime repair and consecutive-batch validation require an authorized new source revision; old protected code and evidence remain unchanged. Reproduction details and hashes are in “Reproduce avoidable cross-batch tensor lifetime on CPU” in the experiment log.
+
+## 2026-09-14 — Authorize the source revision while preserving old evidence
+
+The user authorized the minimal lifetime fix, consecutive-batch validation and a new frozen identity. The parent archived the original scorer against its Git version before edits and retained the original guard unchanged. That guard now describes historical source bytes, not the revised working-tree source; archive verification keeps this distinction explicit. Implementation and bounded CPU validation are in progress, with no repaired-GPU qualification yet. See the separate memory-revision specification and “Authorize a preserved-history memory revision” in the experiment log.
+
+## 2026-09-15 — Accept RITA's complete independent fitness artifact
+
+The RITA-only v1 score completed and passed parent byte, manifest, order, input and support checks: 201 assays/163 clusters from the original 217-item declaration. This is now an accepted complete model-score result; paired baseline statistics remain to be computed. A one-shot post-score resource check is pending. Evidence and timestamps are in “Accept the complete independent RITA DMS score” in the experiment log; Galactica's separate lifetime repair and requalification are not pre-empted by this result.
+
+## 2026-09-15 — Make the lifetime regression portable and bind revised operations
+
+The parent reviewed the minimal lifetime change and removed an ignored-archive dependency from its tracked regression. Resource-contract CPU tests passed; final joint validation is pending. Original operation versions were archived before adding explicit revised-receipt selection and three-batch admission. These implementation steps do not establish repaired H200 qualification. Commands, validation boundaries and the recovered CPU terminal status are in “Review the lifetime fix and recover the resource-test terminal result” in the experiment log.
+
+## 2026-09-15 — Preserve the project allocation after RITA
+
+A completed read-only post-score check found the original project H200 idle with ECC0 and passing storage checks. No allocation was released or added, and no process was terminated. The timestamped observation is recorded in “Confirm idle resources after RITA scoring” in the experiment log; future dispatch still requires a fresh gate.
+
+## 2026-09-15 — Accept and stage the bounded memory revision
+
+The final 106-test CPU suite, four-file ct type check and old-versus-fixed lifetime witness passed. The parent reviewed and staged only the five source/test/specification files; an ordinary commit/push with exact-parent remote verification is pending. Existing document changes remain unstaged. This accepts the implementation on CPU, not its revised H200 qualification; detailed checks and the separate lens-cache limitation are recorded in the experiment log.
+
+## 2026-09-15 — Validate revised operational boundaries
+
+The new prepare/probe/score adaptation is undergoing one read-only review and parent CPU checks. The parent replay entry now selects the same explicit receipt and resource requirement, while preserving old-source evidence through the archive. No new GPU probe or qualification has been claimed; the experiment log records the implementation-only checks and pending results.
+
+## 2026-09-15 — Push the focused lifetime/resource revision
+
+Commit `c6af52f237356e6f960f1bbc42372cf9aa608102` (`Release Galactica batch tensors before the next forward`) contains only the five accepted source/test/specification files and is verified on remote `main`. The ordinary push preserved the unrelated document changes unstaged. The new source commit does not establish a new frozen H200 identity or qualification; operational review and CPU admission checks remain pending.
+
+## 2026-09-15 — Close the one-shot operational source review
+
+The read-only review found no material production-path defect and separately recorded coverage gaps and an existing metadata-type limitation. Parent CPU admission remains pending; the review is not a qualification result. The report and boundaries are recorded in the experiment log.
+
+## 2026-09-15 — Add the omitted RITA model-table entry
+
+Added RITA-xl to the “主要模型” table in `summary.md`, using the staged model card, configuration and observed interface: a UniRef100-trained autoregressive protein model with about 1.2B parameters, 24 layers, width2048, 32 heads, a 1024-token context and 26-way output vocabulary. It is identified as the independent ProteinGym single-checkpoint control, not a latest-generation representative. This corrects a model-inventory omission only; no experiment status, result or model scope was changed.
+
 ## 2026-09-15 — Consolidate the completed Direction-1 publication queue (recovered 2026-09-05)
 
 Deleted the completed `docs/D1_PUBLICATION_TODO.md` after a repository-wide reference check found no remaining consumers. Scientific findings stay in the audit, experiment chronology, and the 2026-09-05 entries above; this record keeps only operational facts that were unique to that queue.
@@ -2784,3 +2977,35 @@ Merged the accepted isolated ProteinGLM derived-budget qualification controller 
 ## 2026-09-16 — Record Galactica-1.3B fullscore content gate
 
 Logged the independent 1.3B single-cell scientific content gate on the existing Galactica FP32 v2 fullscore recovery. Not Wave B and not whole-group admission. Provenance is in “Galactica-1.3B fullscore single-cell content gate” in the experiment log.
+
+## 2026-09-16 — Sync summary and audit programme status
+
+Aligned `summary.md` with the audit as the claim register: dated 2026-09-16; recorded EXP-R2-234–239 as a closed exploratory family; moved Galactica native ProteinGym scoring to in-flight incomplete status; kept ProteinGLM Wave B unavailable and ProGen3 MegaScale incomplete; left the independent RITA-xl score unpromoted. Audit §0 gained a matching in-flight note. No experiment identifiers, frozen protocols, or logs were rewritten.
+
+## 2026-09-16 — Deduplicate library hashing and load guards
+
+Merged duplicate file hashing onto `src.transfer.io`, one Kish helper, one `require_roles`, and AA20 from `amino_acids`. `joint_lineage.load_rung` now uses the shared strict-load unpack so missing loading-info keys fail fast. Removed the empty untracked `ops/tmp_scan/`. Did not rewrite H200 orchestration, campaign TSVs, frozen protocols, or experiment-log history.
+
+## 2026-09-16 — Extra context-information campaign glue (EXP-R2-240)
+
+Added a ProGen3 N-to-C door on stage 01, native RITA scoring without inventing a pad token, and `01_joint_context_information.py` for Galactica/InstructProtein/ProLLaMA/Llama-2 at the 01 8×200 design. Manifest ready; not dispatched (busy 1-GPU allocation, uncommitted freeze). Provenance in EXP-R2-240.
+
+## 2026-09-16 — Dispatch extra context-information campaign (EXP-R2-240)
+
+Opened a new 4-GPU zhk-zip allocation, froze the uncommitted working tree as `20260916034042_b1cd841c08ef`, and detached the 192-cell extra-model context-information queue (48 slots × 4 GPUs). The existing 1-GPU Galactica-30B ProteinGym job was left running. Stage 41 not started. Summary §共同测量前提 extra-model row is 正在运行; original 15-arm / Qwen2.5 numbers unchanged. Provenance in EXP-R2-240.
+
+## 2026-09-16 — Start EXP-R2-240 extra context-information queue
+
+Detached the 192-cell queue on the existing 4-GPU freeze `20260916033459_68af0c6949cd` (48 slots × 4 cards). Slot 1 is four different first blocks, not four Galactica-30B blocks. The 1-GPU ProteinGym fullscore job was left running. Summary extra-model row remains 正在运行. No pod names recorded.
+
+## 2026-09-16 — Non-text ProteinGym scoring glue, not dispatched
+
+Wired remaining non-text main-table protein arms onto stage 20 / native DMS analyse / joint protein rendering. Candidate TSV ready. Did not freeze or occupy GPUs; EXP-R2-240 and Galactica-30B ProteinGym fullscore untouched. Summary ProteinGym row updated; existing numbers unchanged. Provenance in the experiment log entry of the same title.
+
+## 2026-09-16 — Finish EXP-R2-240 identification and dispatch ProteinGym supplement
+
+Stage 01 on freeze `20260916033459_68af0c6949cd` reached 192/192 exited-ok. Stage 41 ran on the new sidecars only. Summary §共同测量前提 keeps one 上下文信息资格门 family; original 15-model / Qwen2.5 numbers unchanged. ProtGPT3-1.3B, Galactica-125M protein, and InstructProtein text did not identify. ProteinGym supplement froze as `20260916101650_39982a07f55e` and dispatched on the freed 4-GPU allocation (ProGen2-small/base, ZymCTRL, ProteinGLM-7B-CLM, InstructProtein protein, RITA-xl re-admission). The 1-GPU Galactica-30B fullscore job was left running. No pod names recorded.
+
+## 2026-09-16 — Combined EXP-R2-240 stage 41 report
+
+CPU-only 41 over all 192 new sidecars on freeze `20260916033459_68af0c6949cd` finished exit 0 (17:13:06Z–17:23:07Z). Combined displacement-corrected identification table written beside the 01 artefacts. Summary 上下文信息资格门 envelopes now match that combined report; original 15-model / Qwen2.5 numbers unchanged. ProteinGym supplement was already on freeze `20260916101650_39982a07f55e` and was not relaunched; ProteinGLM-7B-CLM scoring failed the 1024-token budget. The 1-GPU Galactica-30B fullscore job was left running. No pod names recorded.

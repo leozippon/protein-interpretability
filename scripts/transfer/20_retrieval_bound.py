@@ -95,17 +95,22 @@ from src.transfer.precision_policy import (  # noqa: E402
     GALACTICA_FP32_V2,
     NATIVE_DMS_V1,
 )
+from src.transfer.amino_acids import AA20  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
+    INPUT_FORMAT_GMASK_SOP_EOS,
     MODEL_ROOT,
     PANEL,
     REPO,
     STAGED_ARMS,
     STAGED_SCALE_ARMS,
     UNIREF90_BFD30_INCOMPLETE_SEARCH,
+    ZYMCTRL_FASTA,
     Cohort,
     arm_spec,
+    conditioning_boundary_ids,
     config_context_length,
     env_path,
+    iter_fasta,
     load_arm,
     load_arm_spec,
     require_input_path,
@@ -131,8 +136,11 @@ from src.transfer.homology import (  # noqa: E402
 )
 from src.transfer.io import sha256_file, write_json  # noqa: E402
 from src.transfer import galactica_fitness as G  # noqa: E402
+from src.transfer import instructprotein_fitness as IP  # noqa: E402
 from src.transfer import joint_lineage as L  # noqa: E402
+from src.transfer import proteinglm as PGLM  # noqa: E402
 from src.transfer import rita_fitness as RITA  # noqa: E402
+from src.transfer.scoring import sequence_target_mask, target_rule  # noqa: E402
 from src.transfer.scale_comparison import (  # noqa: E402
     STRATUM_BIDIRECTIONAL,
     STRATUM_N_TO_C,
@@ -437,6 +445,94 @@ for _gap_arm in NATIVE_PROTEIN_GAP_CORPUS:
             "the default --arms list must stay the frozen three-arm run"
         )
 
+#: ZymCTRL ProteinGym scoring. EC-conditioned native format only. An assay
+#: whose wild type is absent from the EC-labelled Swiss-Prot evaluation corpus
+#: is skipped; an EC is never invented and the unconditioned prompt is refused.
+#: LOOKUP remains the staged UniRef50 profile, not a retrieval bound.
+ZYMCTRL_CORPUS: dict[str, dict[str, str]] = {
+    "zymctrl": {
+        "declared": arm_spec("zymctrl").pretraining_corpus,
+        "identification": (
+            "external UniRef50 profile baseline, not a retrieval bound"
+        ),
+        "note": (
+            "ZymCTRL is pretrained on EC-annotated UniProt. The staged UniRef50 "
+            "snapshot is not that set, so LOOKUP is an external unconditioned "
+            "profile channel. MODEL−LOOKUP is a capability comparison against "
+            "it, not a retrieval exclusion. Scoring uses the native "
+            "EC<sep><start>...<end> rendering with the wild type's EC from the "
+            "evaluation corpus; missing or conflicting EC labels skip or refuse "
+            "rather than invent a class. The EC tag is not a scored target"
+        ),
+    },
+}
+
+if list(ZYMCTRL_CORPUS) != ["zymctrl"]:
+    raise AssertionError("the ZymCTRL scoring door is exactly zymctrl")
+if arm_spec("zymctrl").input_format != "ec_conditioned":
+    raise AssertionError("zymctrl ProteinGym scoring is ec_conditioned")
+if "zymctrl" in ARM_CORPUS:
+    raise AssertionError("zymctrl must not widen the frozen three-arm default")
+
+#: ProteinGLM-7B-CLM ProteinGym scoring. Continuation estimand: native
+#: ``<gmask><sop><eos>`` prefix, residues 2..L, float32. Not a full CLM over
+#: 1..L plus EOS. LOOKUP is an external UniRef50 profile, not a retrieval bound.
+PROTEINGLM_CORPUS: dict[str, dict[str, str]] = {
+    "proteinglm-7b-clm": {
+        "declared": arm_spec("proteinglm-7b-clm").pretraining_corpus,
+        "identification": (
+            "external UniRef50 profile baseline, not a retrieval bound"
+        ),
+        "note": (
+            "the card cites UniRef50/S + UniRef90 + ColabFoldDB. The staged "
+            "UniRef50 snapshot is NOT identified as that mix, so LOOKUP is an "
+            "external profile channel and MODEL−LOOKUP is a capability "
+            "comparison against it, not a retrieval exclusion. Scoring is the "
+            "served continuation (prefix plus residues 2..L, no tail EOS), not "
+            "a full-protein CLM. This door does not mint a fitness PASS from a "
+            "checkpoint name"
+        ),
+    },
+}
+
+if list(PROTEINGLM_CORPUS) != ["proteinglm-7b-clm"]:
+    raise AssertionError("the ProteinGLM scoring door is exactly proteinglm-7b-clm")
+if arm_spec("proteinglm-7b-clm").input_format != INPUT_FORMAT_GMASK_SOP_EOS:
+    raise AssertionError("proteinglm-7b-clm ProteinGym scoring is gmask_sop_eos")
+
+#: ProtGPT3-1.3B ProteinGym scoring. Raw residue string, Mixtral decoder.
+#: Corpus undeclared; LOOKUP is an external UniRef50 profile.
+PROTGPT3_CORPUS: dict[str, dict[str, str]] = {
+    "protgpt3-1.3b": {
+        "declared": arm_spec("protgpt3-1.3b").pretraining_corpus,
+        "identification": (
+            "external UniRef50 profile baseline, not a retrieval bound"
+        ),
+        "note": (
+            "the released card does not identify a training corpus, so no "
+            "corpus can be attributed. UniRef50 is searched because it is what "
+            "this repository stages. Neither containment direction is evidenced, "
+            "so the residual bias is not signed. Scoring is the raw residue "
+            "string the tokenizer encodes without a BOS prefix. This door does "
+            "not mint a fitness PASS from a checkpoint name"
+        ),
+    },
+}
+
+if list(PROTGPT3_CORPUS) != ["protgpt3-1.3b"]:
+    raise AssertionError("the ProtGPT3 scoring door is exactly protgpt3-1.3b")
+if arm_spec("protgpt3-1.3b").input_format != "raw":
+    raise AssertionError("protgpt3-1.3b ProteinGym scoring is raw")
+
+#: InstructProtein protein-mode ProteinGym scoring. Joint rendering, not an
+#: ArmSpec. Text mode is not this door.
+INSTRUCTPROTEIN_CORPUS = IP.INSTRUCTPROTEIN_CORPUS
+
+if list(INSTRUCTPROTEIN_CORPUS) != [IP.INSTRUCTPROTEIN_ARM]:
+    raise AssertionError(
+        "the InstructProtein scoring door must declare exactly instructprotein"
+    )
+
 
 def corpus_record(arm: str) -> dict[str, str]:
     """Corpus identification for a default arm or an explicitly named rung."""
@@ -453,6 +549,14 @@ def corpus_record(arm: str) -> dict[str, str]:
         return GALACTICA_CORPUS[arm]
     if arm in RITA_CORPUS:
         return RITA_CORPUS[arm]
+    if arm in ZYMCTRL_CORPUS:
+        return ZYMCTRL_CORPUS[arm]
+    if arm in PROTEINGLM_CORPUS:
+        return PROTEINGLM_CORPUS[arm]
+    if arm in PROTGPT3_CORPUS:
+        return PROTGPT3_CORPUS[arm]
+    if arm in INSTRUCTPROTEIN_CORPUS:
+        return INSTRUCTPROTEIN_CORPUS[arm]
     if arm in STAGED_SCALE_ARMS:
         spec = arm_spec(arm)
         return {
@@ -474,6 +578,10 @@ SCOREABLE_ARMS = tuple(
         | set(GALACTICA_CORPUS)
         | set(RITA_CORPUS)
         | set(NATIVE_PROTEIN_GAP_CORPUS)
+        | set(ZYMCTRL_CORPUS)
+        | set(PROTEINGLM_CORPUS)
+        | set(PROTGPT3_CORPUS)
+        | set(INSTRUCTPROTEIN_CORPUS)
     )
 )
 
@@ -1077,6 +1185,18 @@ def _score_one_arm(
                 seed=args.seed + index,
                 directory=args.proteingym_dir,
             )
+            bind = getattr(scorer, "bind_wildtype", None)
+            if bind is not None:
+                skip_reason = bind(assay.wildtype)
+                if skip_reason:
+                    skipped.append(
+                        {
+                            "assay": name,
+                            "reason": skip_reason,
+                        }
+                    )
+                    print(f"  {name:44s} SKIPPED ({skip_reason})")
+                    continue
             tokens = scorer.token_lengths(assay.sequences)
             if context is not None and max(tokens) > context:
                 skipped.append(
@@ -1179,6 +1299,17 @@ class _ArmScorer:
         self.name = arm_name
         self.batch_size = args.batch_size
         spec = arm_spec(arm_name)
+        fmt = spec.input_format
+        if fmt == "ec_conditioned":
+            raise ValueError(
+                f"{arm_name}: EC-conditioned ProteinGym scoring is the ZymCTRL "
+                "door; _ArmScorer would invent an EC or score the tag as content"
+            )
+        if fmt == INPUT_FORMAT_GMASK_SOP_EOS:
+            raise ValueError(
+                f"{arm_name}: ProteinGLM ProteinGym scoring is residues 2..L; "
+                "_ArmScorer would score the prefix and residue 1"
+            )
         self.arm = (
             load_arm(arm_name, device=args.device, dtype=args.dtype)
             if arm_name in PANEL
@@ -1340,6 +1471,220 @@ class _JointRungScorer:
         self.scorer.release()
 
 
+def ec_labels_by_sequence(path: Path | None = None) -> dict[str, str]:
+    """Exact wild-type sequence → EC from the ZymCTRL evaluation FASTA.
+
+    Conflicting ECs for one sequence are a hard error. A missing sequence is
+    not filled in here; the scorer skips that assay rather than inventing a class.
+    """
+
+    fasta = Path(path) if path is not None else ZYMCTRL_FASTA
+    mapping: dict[str, str] = {}
+    for header, body in iter_fasta(fasta):
+        if "|" not in header:
+            raise ValueError(
+                f"{fasta}: header {header!r} has no accession|EC form"
+            )
+        _, ec = header.split("|", 1)
+        ec = ec.strip()
+        if not ec:
+            raise ValueError(f"{fasta}: header {header!r} has an empty EC")
+        previous = mapping.get(body)
+        if previous is not None and previous != ec:
+            raise ValueError(
+                f"{fasta}: one sequence maps to both {previous!r} and {ec!r}; "
+                "choosing either would invent a class"
+            )
+        mapping[body] = ec
+    if not mapping:
+        raise RuntimeError(f"{fasta}: no EC-labelled records")
+    return mapping
+
+
+class _ZymCTRLScorer:
+    """EC-conditioned N-to-C sum over the residue span, never the tag."""
+
+    score_description = (
+        "summed log-likelihood of the residue span in the native "
+        "EC<sep><start>...<end> rendering; the EC tag is not a scored target"
+    )
+    scoring_stratum = STRATUM_N_TO_C
+
+    def __init__(
+        self,
+        arm_name: str,
+        args: argparse.Namespace,
+        *,
+        ec_by_sequence: dict[str, str] | None = None,
+    ) -> None:
+        import torch
+
+        if arm_name != "zymctrl":
+            raise ValueError(f"ZymCTRL scoring is zymctrl, not {arm_name!r}")
+        spec = arm_spec(arm_name)
+        if spec.input_format != "ec_conditioned":
+            raise ValueError(
+                f"{arm_name}: expected ec_conditioned, got {spec.input_format!r}"
+            )
+        self.torch = torch
+        self.name = arm_name
+        self.batch_size = args.batch_size
+        self.arm = load_arm(arm_name, device=args.device, dtype=args.dtype)
+        self.context = config_context_length(self.arm.model.config)
+        self.start_id, self.end_id = conditioning_boundary_ids(self.arm)
+        if self.start_id is None or self.end_id is None:
+            raise ValueError(
+                f"{arm_name}: native EC scoring needs <start>/<end> token ids"
+            )
+        self._ec_by_sequence = (
+            ec_labels_by_sequence() if ec_by_sequence is None else dict(ec_by_sequence)
+        )
+        self._bound_ec: str | None = None
+
+    def bind_wildtype(self, wildtype: str) -> str | None:
+        illegal = sorted(set(wildtype) - set(AA20))
+        if illegal:
+            self._bound_ec = None
+            return (
+                "wild type is not AA20; inventing an EC would put a false fact "
+                "in the prompt"
+            )
+        ec = self._ec_by_sequence.get(wildtype)
+        if ec is None:
+            self._bound_ec = None
+            return (
+                "wild type is absent from the EC-labelled Swiss-Prot evaluation "
+                "corpus; scoring unconditioned is off-distribution and inventing "
+                "an EC is refused"
+            )
+        self._bound_ec = ec
+        return None
+
+    def _render(self, sequences: list[str]) -> list[str]:
+        if self._bound_ec is None:
+            raise ValueError(
+                f"{self.name}: bind a wild-type EC before rendering; the "
+                "unconditioned format is refused"
+            )
+        cohort = Cohort(
+            name="variants",
+            kind="protein",
+            records=list(sequences),
+            min_symbols=min(len(s) for s in sequences),
+            max_symbols=max(len(s) for s in sequences),
+            metadata={"ec_labels": [self._bound_ec] * len(sequences)},
+        )
+        return cohort.input_strings(self.arm)
+
+    def token_lengths(self, sequences: list[str]) -> list[int]:
+        return [
+            len(self.arm.tokenizer(text, return_tensors=None)["input_ids"])
+            for text in self._render(sequences)
+        ]
+
+    def log_likelihood(self, sequences: list[str]) -> np.ndarray:
+        torch = self.torch
+        texts = self._render(sequences)
+        totals = np.empty(len(texts), dtype=np.float64)
+        rule = target_rule("ec_conditioned")
+        with torch.no_grad():
+            for start in range(0, len(texts), self.batch_size):
+                chunk = texts[start : start + self.batch_size]
+                ids, mask = tokenize_batch(self.arm, chunk, self.context)
+                ids = ids.to(self.arm.device)
+                mask = mask.to(self.arm.device)
+                keep = sequence_target_mask(
+                    ids,
+                    mask,
+                    rule=rule,
+                    start_token_id=self.start_id,
+                    end_token_id=self.end_id,
+                )
+                logits = self.arm.model(input_ids=ids, attention_mask=mask).logits
+                logp = torch.log_softmax(logits[:, :-1].float(), dim=-1)
+                token = logp.gather(-1, ids[:, 1:].unsqueeze(-1)).squeeze(-1)
+                totals[start : start + len(chunk)] = (
+                    (token * keep).sum(1).double().cpu().numpy()
+                )
+        return totals
+
+    def release(self) -> None:
+        del self.arm
+        self.torch.cuda.empty_cache()
+
+
+class _ProteinGLMScorer:
+    """Continuation NLL: native prefix, residues 2..L, float32."""
+
+    score_description = (
+        "summed log-likelihood of residues 2..L under the native "
+        "<gmask><sop><eos> prefix; residue 1 and the prefix are not scored"
+    )
+    scoring_stratum = STRATUM_N_TO_C
+
+    def __init__(self, arm_name: str, args: argparse.Namespace) -> None:
+        import torch
+
+        if arm_name != "proteinglm-7b-clm":
+            raise ValueError(
+                f"ProteinGLM scoring is proteinglm-7b-clm, not {arm_name!r}"
+            )
+        if args.dtype != "float32":
+            raise ValueError(
+                f"ProteinGLM ProteinGym scoring is FP32-only; got {args.dtype!r}"
+            )
+        spec = arm_spec(arm_name)
+        if spec.input_format != INPUT_FORMAT_GMASK_SOP_EOS:
+            raise ValueError(
+                f"{arm_name}: expected {INPUT_FORMAT_GMASK_SOP_EOS!r}, got "
+                f"{spec.input_format!r}"
+            )
+        self.torch = torch
+        self.name = arm_name
+        self.batch_size = args.batch_size
+        self.arm = load_arm_spec(spec, device=args.device, dtype=args.dtype)
+        self.context = PGLM.CONTEXT_LENGTH
+        declared = config_context_length(self.arm.model.config)
+        if declared != self.context:
+            raise ValueError(
+                f"{arm_name}: serving window is {self.context}, config context "
+                f"is {declared}"
+            )
+
+    def _render(self, sequences: list[str]) -> list[str]:
+        return [PGLM.render_budget_sequence(sequence) for sequence in sequences]
+
+    def token_lengths(self, sequences: list[str]) -> list[int]:
+        return [
+            len(PGLM.encode_budget_text(self.arm.tokenizer, text, max_len=self.context))
+            for text in self._render(sequences)
+        ]
+
+    def log_likelihood(self, sequences: list[str]) -> np.ndarray:
+        torch = self.torch
+        texts = self._render(sequences)
+        totals = np.empty(len(texts), dtype=np.float64)
+        rule = target_rule(INPUT_FORMAT_GMASK_SOP_EOS)
+        with torch.no_grad():
+            for start in range(0, len(texts), self.batch_size):
+                chunk = texts[start : start + self.batch_size]
+                ids, mask = tokenize_batch(self.arm, chunk, self.context)
+                ids = ids.to(self.arm.device)
+                mask = mask.to(self.arm.device)
+                keep = sequence_target_mask(ids, mask, rule=rule)
+                logits = self.arm.model(input_ids=ids, attention_mask=mask).logits
+                logp = torch.log_softmax(logits[:, :-1].float(), dim=-1)
+                token = logp.gather(-1, ids[:, 1:].unsqueeze(-1)).squeeze(-1)
+                totals[start : start + len(chunk)] = (
+                    (token * keep).sum(1).double().cpu().numpy()
+                )
+        return totals
+
+    def release(self) -> None:
+        del self.arm
+        self.torch.cuda.empty_cache()
+
+
 def _load_scorer(arm: str, args: argparse.Namespace) -> tuple[Any, int | None, dict[str, Any]]:
     if arm in JOINT_LINEAGE_CORPUS:
         qualification = QUALIFICATION.read_verdict(
@@ -1396,6 +1741,34 @@ def _load_scorer(arm: str, args: argparse.Namespace) -> tuple[Any, int | None, d
             "input_format": "raw sequence with tokenizer-native terminal EOS",
             "checkpoint_facts": scorer.facts,
             "scientific_role": scorer.facts["scientific_role"],
+        }
+    if arm in INSTRUCTPROTEIN_CORPUS:
+        loaded = IP.load_instructprotein(arm, device=args.device, dtype=args.dtype)
+        scorer = IP.InstructProteinFitnessScorer(loaded, batch_size=args.batch_size)
+        return scorer, scorer.context, {
+            "checkpoint": loaded.facts["checkpoint"],
+            "context": scorer.context,
+            "input_format": (
+                f"{IP.RENDERING_FAMILY} declared protein rendering, no instruction context"
+            ),
+            "checkpoint_facts": loaded.facts,
+            "scientific_role": loaded.facts["scientific_role"],
+        }
+    if arm in ZYMCTRL_CORPUS:
+        scorer = _ZymCTRLScorer(arm, args)
+        return scorer, scorer.context, {
+            "checkpoint": str(arm_spec(arm).path),
+            "context": scorer.context,
+            "input_format": "ec_conditioned",
+            "ec_source": "exact wild-type match in the EC-labelled Swiss-Prot evaluation corpus",
+        }
+    if arm in PROTEINGLM_CORPUS:
+        scorer = _ProteinGLMScorer(arm, args)
+        return scorer, scorer.context, {
+            "checkpoint": str(arm_spec(arm).path),
+            "context": scorer.context,
+            "input_format": INPUT_FORMAT_GMASK_SOP_EOS,
+            "target_rule": PGLM.TARGET_RULE,
         }
     if arm in PROGEN3_CHECKPOINTS:
         scorer = _ProGen3Scorer(arm, args)
@@ -1884,9 +2257,9 @@ def build_parser() -> argparse.ArgumentParser:
         nargs="+",
         default=sorted(ARM_CORPUS),
         choices=sorted(SCOREABLE_ARMS),
-        help="default is the frozen ARM_CORPUS three-arm run; progen2-small and "
-        "progen2-base are explicit native-protein choices and do not widen that "
-        "default, mint a cohort, or copy the medium 1024-token analysis set",
+        help="default is the frozen ARM_CORPUS three-arm run; progen2-small/base, "
+        "zymctrl, proteinglm-7b-clm, protgpt3-1.3b and instructprotein are "
+        "explicit protein choices and do not widen that default",
     )
     parser.add_argument("--variants", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=20260807)

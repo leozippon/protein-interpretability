@@ -86,7 +86,7 @@ ESM2-3B 可作单独的 masked-encoder 工程参照，不能混称自回归 dono
 
 后续若采用持久化逐残基缓存，须使用新版本，记录序列身份、残基对齐、内容 mask、截断、层、dtype、模型／代码 pin 和顺序；当前未冻结全库填充缓存布局。旧 prepared／均值缓存／checkpoint schema 保持可读且不变；新消费者不得默默猜测旧缓存具有逐残基信息。
 冻结 donor 允许离线缓存，但冻结 receiver 仍需将梯度传回接口；不能用覆盖整条计算图的 `no_grad` 切断训练。
-原生采集、缓存与无缓存路径、单条与 padding batch、答案 token mask、生成位置与梯度路径仍需真实接口核验。QueryPrefix 更新／恢复状态机已通过合成 CPU 父验收，并完成包导出；独立探针拒绝损坏 checkpoint、对调的 AdamW 参数顺序、布尔 step 与空 CUDA RNG，且保留 Python Gaussian cache。这不是原生 7B 恢复或科学问答准入。包级 basic 为 0 错误／43 警告，strict 为 43 错误，全部来自 initializer 的声明式 ``__all__``，不称集成 strict 全绿。原生恢复 stage 的 dummy CPU 控制器已父验收：顺序 0/75/0、占用目录拒绝，以及 TinyAdapter 上带非零有限 in-flight 梯度的真实 exit 75。这不是 BF16 采集、4/29/27 原生调用预算、7B 恢复或 GPU cell。Dispatch 仍须提交 manifest、标准冻结和自有资源门控。
+原生采集、缓存与无缓存路径、单条与 padding batch、答案 token mask、生成位置与梯度路径仍需真实接口核验。QueryPrefix 更新／恢复状态机已通过合成 CPU 父验收，并完成包导出；独立探针拒绝损坏 checkpoint、对调的 AdamW 参数顺序、布尔 step 与空 CUDA RNG，且保留 Python Gaussian cache。这不是原生 7B 恢复或科学问答准入。包级 basic 为 0 错误／43 警告，strict 为 43 错误，全部来自 initializer 的声明式 ``__all__``，不称集成 strict 全绿。原生恢复 stage 的 dummy CPU 控制器已父验收：顺序 0/75/0、占用目录拒绝，以及 TinyAdapter 上带非零有限 in-flight 梯度的真实 exit 75。这不是 BF16 采集、4/29/27 原生调用预算、7B 恢复或 GPU cell。已在单张自有 H200 上完成一次 native impl 的 0/75/0：调用预算 4/29/27 对齐，resume 的 RNG sentinel 与连续轨迹第 3–4 窗一致，故障腿 in-flight 梯度有限非零，supervisor 正常关闭且结束后 GPU 空闲、ECC 为 0。连续 worker 退出 0，因此其内部 repeat-capture／K=0／probe-grad allclose 门控已通过，但未把最大误差、逐 update 损失或适配器指纹写入收据，故不验收损失／AdamW 状态重放，也不是科学 QA。
 
 ## 阶段 C：匹配监督的能力比较
 

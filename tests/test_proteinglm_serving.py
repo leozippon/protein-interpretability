@@ -135,7 +135,7 @@ def test_cohort_power_still_needs_the_second_stage_opt_in():
 def test_protein_gym_and_designed_referent_doors_are_unchanged():
     retrieval = _load_stage("20_retrieval_bound.py")
     designed = _load_stage("29_designed_referent.py")
-    assert NAME not in retrieval.SCOREABLE_ARMS
+    assert NAME in retrieval.SCOREABLE_ARMS
     assert NAME not in retrieval.ARM_CORPUS
     assert NAME not in designed.DEFAULT_ARMS
 

@@ -19461,6 +19461,468 @@ Parent task `bc0aa7d3f` completed0. Three controller tests passed: sequential du
 
 Acceptance `native_query_recovery_stage_parent_checks_01/parent_acceptance.json` SHA25623a077af24da6acb145ed7f3f8d7bae50b2ffdb809bb0d917fa7fc5601d6c066, status `dummy_cpu_controller_accepted_not_native_or_gpu`. Stage SHA256a7b1293b2c5047dcff620b695658b1b8c1ad031e4da235dad4bfaacef25a0c54. Controller resources at04:48:46.104510–04:49:29.178819UTC were MemAvailable253183078400→253733597184bytes and disk594623623168→594623582208bytes; children used AS16GiB. This does not admit freeze, H200 dispatch, native 7B capture, or scientific QA.
 
+
+## 2026-09-13 — Freeze and dispatch native query-prefix recovery on one owned H200
+
+Committed pin `44f0446b3b1e2c7100915f165424ef5750de6263` was pushed to main. Standard freeze-only produced run_id `20260913041509_122619e7a2c4` and snapshot `/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/packages/20260913041509_122619e7a2c4`. The snapshot fixture SHA256 matches the accepted tokenizer identity `9faa01d99d78d72761e802c28bbc7374e8b9b3cd8240586c487cb33cfdd0eeab`. Fresh in-pod nvidia-smi on the unique owned allocation showed UUID GPU-0878a44e-0c61-a0db-896f-bf42c32ea4ea, 143771 MiB, 0 used, 0 util, no compute apps; both uncorrected ECC columns were 0. The bad UUID was not selected.
+
+One native cell was started under the accepted process-group supervisor 1800s/60s, impl=native, device cuda:0, exclusive GPFS output `results/external_baseline/20260913041509_122619e7a2c4/qwen7b_query_prefix_recovery_01`. Donor and receiver paths are the previously accepted remote ProGen2-medium and versioned Qwen2.5-7B-Instruct inventories. This is not a scientific QA run and does not reuse the consumed M0 namespace. Result is pending the supervisor receipt and worker exits 0/75/0.
+
+
+## 2026-09-13 — Native 0/75/0 cell completed under 1800s supervisor
+
+Remote task `bf79554ab` returned REMOTE_EXIT 0. Parent copied the GPFS receipts locally to `native_query_recovery_parent_01/` without storing a pod name. The bound receipt SHA256137a0378c5dafaa35287344ee59a1bfef1db85eae5bd002db79ecd6de13d344a is closed/completed, supervisor==sid==pgid, direct exit 0, adopted empty, 1800s/60s. Controller report SHA256 of `report.json` is recorded in the parent acceptance; impl=native, exits [0,75,0], call totals donor 4 / receiver 29 / adapter-backward 27, initial QueryPrefix fingerprint 784b2e8a704bc0edf91a31fc45c4fd897e4b62e0737cde509aee7f98743924b9. Three workers each loaded ProGen2-medium plus Qwen2.5-7B-Instruct shards.
+
+Continuous windows were [2,0,3], [1,1,2], [3,0,3], [2,0,1]. Resume windows were the last two. Resume sentinels exactly matched continuous sentinels for updates 3 and 4, including nonzero CUDA draws. The interrupted worker wrote fault_ready.json with in_flight_grad_nonzero_finite true and grad_abs_sum 8280.037707747928, then exited 75. Update2 seal SHA256 6f0a40ff2b9312f4f6d0fbbb59d1348430cd83d1dfc6ec888f2db5e4e8e725d0. After the cell, the owned GPU still reported 143771 MiB, 0 used, 0 util, both uncorrected ECC columns 0, and no compute apps.
+
+Continuous exited 0 after internal same-geometry mean/query/K=0/probe-grad allclose gates; maximum differences were not written to the receipt. Loss, adapter bytes and AdamW state were not compared between continuous and resume. The controller report still carries stale dummy limitation strings. Parent acceptance SHA25653ffd1d41e8f0a1bc35db606209dc99e8bb65699f7a9ac7e156aa607c281d667, status `native_0_75_0_process_budget_and_sentinel_replay_accepted_not_loss_state_qa`. Not scientific QA, not a long-run fit claim, and not 14B/DDP.
+
+
+## 2026-09-13 — Wording correction: 100% alignment identity is not full-string identity on the EXP-R2-203 pool
+
+No new EXP number and no new model or DIAMOND run. This entry corrects the prose that called the regenerated record-level 370/2,048 (18.1%) figure byte-identical.
+
+**Source that is unchanged.** `results/transfer/pool_homology_leakage/pool_homology_leakage_swissprot.json` (SHA-256 `b96f9e5c0d18d4ed98934c63abc6a1cfcaa9534977b57d8eb73c25e391819252`); gzipped pool `swissprot_pool.fasta.gz` `19d30ad27fb72124347d971a951eea169e0185817e529f80f3f1a2e148895ebd`; gzipped hits `swissprot_hits.tsv.gz` `962f4a75e8d180055eb504cfd4016bbdd1653b9fbc1cf04334bb61ca71cdba07`. EXP-R2-203's table column `=100%` remains 370 (18.1%). The historical EXP-R2-175 published 847/356 figures remain non-bit-reproducible, as that entry already stated.
+
+**Replay.** Identity in `ops/measure_pool_homology_leakage.py::read_split` is `100 * nident / min(qlen, slen)`. Existing hits were re-read from the repository root; no DIAMOND index was built. Command and numeric gates below were executed once; stdout was `PASS 370 871 1051 133 90.85597503476816 350 20`.
+
+```bash
+CUDA_VISIBLE_DEVICES='' OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONDONTWRITEBYTECODE=1 \
+PYTHONPATH=/Data/lzp/InterpretabilityTransfer \
+/Data/lzp/miniconda3/envs/ct/bin/python - <<'PY'
+from pathlib import Path
+import gzip, json, numpy as np
+from src.transfer.io import sha256_file
+from src.transfer.relational import homology_disjoint_split
+art = Path("results/transfer/pool_homology_leakage")
+js, fa, hi = [art / n for n in (
+    "pool_homology_leakage_swissprot.json",
+    "swissprot_pool.fasta.gz",
+    "swissprot_hits.tsv.gz",
+)]
+payload = json.loads(js.read_text())
+assert sha256_file(fa) == payload["raw_output"]["pool.fasta"]["sha256"]
+assert sha256_file(hi) == payload["raw_output"]["hits.tsv"]["sha256"]
+seqs, cur, buf = {}, None, []
+with gzip.open(fa, "rt") as handle:
+    for line in handle:
+        if line.startswith(">"):
+            if cur is not None:
+                seqs[cur] = "".join(buf)
+            cur, buf = int(line[2:]), []
+        else:
+            buf.append(line.strip())
+    seqs[cur] = "".join(buf)
+n = len(seqs)
+seq = [seqs[i] for i in range(n)]
+mask = homology_disjoint_split(np.arange(n), train_fraction=0.8, seed=20260729, min_side=1)
+best = {i: 0.0 for i, keep in enumerate(mask) if not keep}
+with gzip.open(hi, "rt") as handle:
+    for line in handle:
+        q, s, nident, qlen, slen = line.split()
+        q, s = int(q[1:]), int(s[1:])
+        if q == s or q not in best or not mask[s]:
+            continue
+        ident = 100.0 * int(nident) / min(int(qlen), int(slen))
+        if ident > best[q]:
+            best[q] = ident
+vals = np.array(list(best.values()))
+held = [i for i, keep in enumerate(mask) if not keep]
+train = {seq[i] for i, keep in enumerate(mask) if keep}
+exact = sum(seq[i] in train for i in held)
+at100 = [i for i in held if best[i] >= 100]
+not_exact = sum(seq[i] not in train for i in at100)
+assert (int((vals >= 100).sum()), int((vals >= 95).sum()), int((vals >= 90).sum()),
+        int((vals == 0).sum()), exact, not_exact) == (370, 871, 1051, 133, 350, 20)
+assert abs(float(np.median(vals)) - 90.85597503476816) < 1e-12
+print("PASS", 370, 871, 1051, 133, float(np.median(vals)), exact, not_exact)
+PY
+```
+
+**Result.** Replay recovered `readings[0]` exactly: 370 at 100%, 871 at ≥95%, 1,051 at ≥90%, 133 with no detectable homologue, median 90.85597503476816. Full-string set equality against the training side is **350/2,048 (17.1%)**; **20** of the 370 100% records are not complete-string matches and differ in length. Example: held-out `r266` (270 residues) versus training `r4909` (273 residues). 350 is a 2026-09-13 string check, not a field in the original JSON.
+
+**Document correction.** `summary.md` now reports 350/17.1% 整串相同. Canonical L30 distinguishes the 370 alignment-100% count from the 350 exact-string count and changes "at most two fifths" to "about two fifths". D3.g no longer repeats the 370/18.1 wording and points to L30. Historical log rows that titled the 370 field `=100%` are left as written.
+
+
+## 2026-09-13 — Native DMS helper: longest eligible batch-shape gate (CPU only)
+
+No new EXP number, no weights, no GPU, no DMS ρ. `scripts/transfer/native_dms_extension.py` now requires a synthetic AA20-tiled batch at the longest eligible wild-type residue count after context exclusion. Default batch 16; operator-only 16→8→4→2→1 on explicit CUDA OOM before scoring. Empty eligible set is refusal. CPU memory fields are unmeasured. Protocol remains pre-data draft.
+
+Environment: Compute `ct`, Python 3.11.14, PyTorch 2.9.1+cu128, Transformers 4.57.3, `CUDA_VISIBLE_DEVICES=''`. Joint CPU selection (two scorer files, helper, stage-20 doors, four native-pad stubs, four joint render/span/predecessor tests) returned `63 passed in 5.09s`. Pyright on the helper and its tests: 0 errors / 0 warnings. Exact command and stdout: `logs/native_dms_extension/20260913_joint_cpu.cmd.txt` and `logs/native_dms_extension/20260913_joint_cpu.txt`. The earliest helper 12-pass is not a final pass; it missed differentiable parameters (`.numpy` `requires_grad`). Prior native 23-pass and helper 23-pass were different selections and are not summed.
+
+## 2026-09-14 — Accept frozen native ProteinGym inputs and H200 CLI imports
+
+Preparation only: no new EXP number, model forward, DMS ρ, or temporary GPU allocation. The protocol and ten code/test/document files were committed as `32debe7ee8af57e768638cda7cdd37769a05f66c` and fast-forward pushed to `origin/main`; the seven pre-existing modified documents were not staged. The preceding CPU tests remain CPU evidence, not a real-model interface pass.
+
+The official `bash scripts/transfer/run_transfer_h200.sh --freeze-only --pin 32debe7ee8af57e768638cda7cdd37769a05f66c` completed on September 13. Its preserved terminal output ends `freeze_ok`; the child-task completion notification had not been handed to the parent, so the snapshot was recovered from terminal evidence rather than frozen again. Run: `20260913131730_d91171619815`; code SHA-256: `d911716198153112adb05591a013ec0d0cc08559bfbc27d76230738d3cb65962`; snapshot: `/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/packages/20260913131730_d91171619815`.
+
+The parent then executed `TMPDIR=/Data/lzp/.cache/interpretability-transfer/dms-extension.2hoJJt/tmp PYTHONDONTWRITEBYTECODE=1 bash logs/native_dms_extension/prepare_h200_inputs.sh`. This reused the snapshot, verified or staged the original input bytes, and ran both frozen CLIs with `--help` under the snapshot's `h200_env.sh`. It completed with exit 0 at 2026-09-14 01:03:07 UTC. Both native-helper and stage-20 imports/help passed with `/opt/ac2/bin/python3`, the pinned snapshot as `TRANSFER_PACKAGE_ROOT`, and Hugging Face offline mode. No dependency was installed. Receipt: `logs/native_dms_extension/freeze.json`; terminal output: `.pi/tasks/session-1058299-1058299/b777c2af2.output`.
+
+Inputs are under `/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260913131730_d91171619815/native_dms_inputs`. Local and remote SHA-256 values agree:
+
+| File | SHA-256 |
+| --- | --- |
+| `lookup.json` | `1209b6c12d81c3d27020a3d87b00c253e4e70fc22f6bdaa150b8b0c9ef026ec3` |
+| `wildtypes.json` | `e080a37758e29c664d71e2a080f990f0bc0e8efdffbae7678b4a8b6271045faa` |
+| `wildtypes.faa` | `f4647ef0317278658f0a1ae9c8b8cdd9b3ce07aa19594a2cd57b4d3a621700a0` |
+| `PROTEINGYM_EXTENSION_PROTOCOL.md` | `9760e3ad730858f5a0e14eded49db5655288b73f10900facaae5f11f896cd989` |
+
+The three data files already present at that input destination were reused only after matching hashes; the protocol was pushed. The parent independently rehashed the local files and checked the protocol against the committed blob. This binds current inputs; it does not invent historical CSV-byte provenance. At the fresh resource gate (00:59:01 UTC), the selected project allocation exposed one H200, 143771 MiB total, 0 MiB used, 0% utilization, no compute application or unrelated CPU load, and zero uncorrected volatile ECC. Other allocations and local L20s were untouched. Real model loading, native-loss alignment, complete assay recovery, and the longest-batch resource gate remain the next step, before any new DMS ρ.
+
+## 2026-09-14 — Incomplete Galactica-125M native probe: numeric and resource checks passed, facts empty
+
+No new EXP number. Old pin `32debe7ee8af57e768638cda7cdd37769a05f66c`, old run `20260913131730_d91171619815`. This is **not** a final complete native-interface PASS, produces no DMS ρ, is not admitted to analysis, and does not rewrite the saved artifact.
+
+**Probe.** Parent-owned command:
+
+```bash
+export TMPDIR=/Data/lzp/.cache/interpretability-transfer/dms-extension.2hoJJt/tmp
+export PYTHONDONTWRITEBYTECODE=1
+/Data/lzp/miniconda3/envs/ct/bin/python \
+  logs/native_dms_extension/run_one_probe.py \
+  --arm galactica-125m --batch-size 16 \
+  --input-dir /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260913131730_d91171619815/native_dms_inputs \
+  --timeout-seconds 7200
+```
+
+Official wrapper: `--pin 32debe7ee8af57e768638cda7cdd37769a05f66c --run-id 20260913131730_d91171619815 --stage native_dms_extension.py --label native_probe_galactica_125m_b16`, positional `probe`, `--dtype bfloat16 --batch-size 16`. Receipt: `logs/native_dms_extension/native_probe_galactica_125m_b16.receipt.json` (`created_utc` 2026-09-14T01:38:55Z). Artifact: `results/transfer/native_dms_extension/20260913131730_d91171619815/probes/native_probe_galactica_125m_b16/interface_check.json` (`created_utc` 2026-09-14T01:35:16Z; SHA-256 `4628dfad154031848e43490a105de16d1fbd15c25552dcafcf89e71ddc9f270e`).
+
+**Observed.** Galactica-125M, bfloat16, batch 16. Native-loss and batch/single numeric checks passed. Declared 217 assays / 174 clusters; after context exclusion **213 assays / 171 clusters**. Longest eligible synthetic batch 2018 tokens; CUDA peak allocated **16,424,467,968 bytes**. `no_new_model_fitness_scores` is true. **`facts` is `{}`.**
+
+**Disposition.** Numeric and resource evidence is retained. Empty facts means this is not a final complete interface PASS. The old artifact is left unchanged. It is not a DMS ρ and is not used in analysis.
+
+**Cause.** `GalacticaFitnessScorer` did not expose `loaded.facts`; the helper treated a missing or empty mapping as success.
+
+**Code fix, not a new probe.** Commit `e8d9f2b429f012b50cfa3b90ab6d0604dd7367fe` was fast-forward pushed to `origin/main` (parent `32debe7`). Four files only: `src/transfer/galactica_fitness.py`, `scripts/transfer/native_dms_extension.py`, `tests/test_galactica_fitness.py`, `tests/test_native_dms_extension.py`. Shared facts accessor; probe and analyse refuse missing or empty observed loader facts. Scoring, thresholds, and protocol unchanged.
+
+**CPU check, not H200.** Exact command: `logs/native_dms_extension/20260914_provenance_cpu.cmd.txt`. Main command:
+
+```bash
+/Data/lzp/miniconda3/envs/ct/bin/python -m pytest -q -p no:cacheprovider \
+  tests/test_galactica_fitness.py \
+  tests/test_rita_fitness.py \
+  tests/test_native_dms_extension.py \
+  tests/test_second_stage_capability.py::test_stage_20_declares_the_progen3_rungs_without_widening_its_default_run \
+  tests/test_second_stage_capability.py::test_stage_20_labels_the_two_scoring_strata_it_can_produce \
+  tests/test_second_stage_capability.py::test_stage_20_still_refuses_an_arm_it_declares_nothing_for \
+  tests/test_second_stage_capability.py::test_stage_20_admits_rita_xl_without_widening_the_default_run \
+  tests/test_second_stage_capability.py::test_stage_20_routes_rita_xl_with_dtype_passed_through \
+  tests/test_second_stage_capability.py::test_stage_20_native_extension_arms_bind_csv_and_wildtypes_hashes \
+  tests/test_second_stage_capability.py::test_the_two_over_assumptions_are_refused_with_their_reasons \
+  tests/test_opt_architecture.py::test_a_config_declared_pad_token_is_adopted_only_after_the_vocabulary_confirms_it \
+  tests/test_opt_architecture.py::test_a_pad_id_the_vocabulary_cannot_name_stops_the_load \
+  tests/test_opt_architecture.py::test_a_config_that_declares_no_pad_id_leaves_the_tokenizer_alone \
+  tests/test_opt_architecture.py::test_a_pad_assignment_that_does_not_read_back_stops_the_load \
+  tests/test_joint_mode_qualification.py::PerResidueVerification::test_the_escaped_rendering_passes_and_is_one_token_per_residue \
+  tests/test_joint_mode_qualification.py::ScoredPositions::test_the_selector_returns_the_residues_and_excludes_both_delimiters \
+  tests/test_joint_mode_qualification.py::ScoredPositions::test_a_context_prefix_moves_the_span_rather_than_being_scored \
+  tests/test_joint_mode_qualification.py::ScoringPrimitive::test_a_target_is_read_from_the_logits_of_the_position_before_it
+```
+
+Stdout: `67 passed in 7.83s` (`logs/native_dms_extension/20260914_provenance_cpu.txt`). ct Pyright on the four files: 0 errors, 0 warnings, 0 informations (`logs/native_dms_extension/20260914_provenance_pyright.txt`). Directed selection, not the full suite, and not a new H200 probe.
+
+**Resources.** No GPU allocation was created or released. Other tasks were not touched.
+
+**Not done.** Snapshot refresh and a new probe have not run. This entry records no new run ID and no successful freeze of `e8d9f2b`.
+
+## 2026-09-14 — Accept the loader-facts repair snapshot
+
+Parent-owned command: `TMPDIR=/Data/lzp/.cache/interpretability-transfer/dms-extension.2hoJJt/tmp PYTHONDONTWRITEBYTECODE=1 /Data/lzp/miniconda3/envs/ct/bin/python logs/native_dms_extension/refresh_h200_snapshot.py --pin e8d9f2b429f012b50cfa3b90ab6d0604dd7367fe`. Task `b4895fa97` completed with exit 0; the new prepared receipt was published at 2026-09-14T02:34:49Z. This called the official freeze-only controller, not a model or fitness evaluation.
+
+Actual run ID: `20260913193000_6612da48b3bb`; code SHA-256: `6612da48b3bb2f5ecc494068fd02d57d9a1e39c27fad462fa6d03dd9188416e9`; snapshot: `/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/packages/20260913193000_6612da48b3bb`. The run ID is the controller's emitted identity, not a reconstructed UTC timestamp. The four original input files remain in the old run's input directory and were reused only after local/remote SHA-256 agreement. The protocol matches the new pinned Git blob and is unchanged. Both repaired source files in the new snapshot match their pinned Git blobs; both frozen CLI import/help checks returned 0 under `/opt/ac2/bin/python3`, with offline mode and the new snapshot root.
+
+The old prepared receipt was archived byte-for-byte at `logs/native_dms_extension/freeze_history/20260913131730_d91171619815/freeze.json` (SHA-256 `153f16392a53dff390e32fdd4f7e8f7588366e9ddc1c270bc4a655762d71a1c7`). Current receipt: `logs/native_dms_extension/freeze.json`; full refresh receipt: `logs/native_dms_extension/refresh_receipts/20260914T022833380756Z_e8d9f2b429f0.json`. Parent acceptance independently checked the archive, four local input hashes, pinned source/protocol blobs, and the published receipt's equality to the verified attempt record.
+
+Fresh resource gate at 02:29:56 UTC: one project-owned H200, 143771 MiB total, 0 MiB used, 0% utilization, ECC 0, no compute application or unrelated CPU load; local and remote disk/TMP byte, inode, and write-access checks passed. No allocation was created or released, dependency installed, or input overwritten. Before launch, parent-run metadata-only self-checks passed 17 cases for the probe launcher and 19 for the refresh launcher; targeted LSP reported zero errors for those two files. These checks and the new snapshot do not establish a new real-model interface PASS or any DMS ρ. The incomplete old 125M artifact remains unchanged; new-pin model probes are next.
+
+## 2026-09-14 — Accept the repaired Galactica-125M native probe
+
+Parent-owned task `bd67942d9` completed with exit 0. Command: `TMPDIR=/Data/lzp/.cache/interpretability-transfer/dms-extension.2hoJJt/tmp PYTHONDONTWRITEBYTECODE=1 /Data/lzp/miniconda3/envs/ct/bin/python logs/native_dms_extension/run_one_probe.py --arm galactica-125m --batch-size 16 --input-dir /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260913131730_d91171619815/native_dms_inputs --timeout-seconds 7200`. The launcher read new pin `e8d9f2b` and run `20260913193000_6612da48b3bb` from the prepared receipt and used the official external wrapper. Fresh gate: one idle project H200, 0 MiB used, 0% utilization, ECC 0, no compute application or unrelated CPU load; no allocation change.
+
+The new artifact, created at 2026-09-14T02:47:28Z, is `results/transfer/native_dms_extension/20260913193000_6612da48b3bb/probes/native_probe_galactica_125m_b16/interface_check.json`, SHA-256 `bab82ed3bbe822a1dda243b3979889109188da06f151bdd8ec4f4ab52b4e85e1`. Its nonempty loader facts are observed OPT configuration/parameters: 12 layers, width 768, input/output/tokenizer vocabulary 50000, pad 1, context 2048, requested and observed bfloat16, and zero missing/unexpected/mismatched/error loading diagnostics. Parent acceptance checked the actual facts, pinned source paths, frozen input fingerprints, settings, support, and artifact hash. The old artifact's original hash was independently rechecked unchanged.
+
+Scorer versus independent FP32 CE: maximum absolute difference 0 nats/target. Native API loss is present; its maximum reference difference is `3.109807553498641e-08` nats/target. Batch versus single: `0.001538848876953125`, below the frozen 0.02 tolerance. Illegal-AA and over-context inputs were refused. Complete queue recovery gives 217 declared assays / 174 clusters and 213 eligible assays / 171 clusters. The longest eligible AA20-tiled batch is 16 × 2018 tokens (2016 residues); all totals finite, peak allocated 16,424,467,968 bytes and reserved 17,473,470,464 bytes. The synchronized single-shape forward took about 0.0520 s, not a full-campaign throughput estimate.
+
+This is an accepted native-interface probe, not DMS ρ, dual-mode requalification, or a fitness capability verdict. Receipt: `logs/native_dms_extension/probe_receipts/20260913193000_6612da48b3bb/native_probe_galactica_125m_b16.receipt.json`. The remaining three Galactica rungs and RITA are next, at batch 16 with each arm's frozen dtype; the parent queues separate single-arm commands sequentially and stops on any failure, without automatic retry or batch reduction. No formal score has started.
+
+The ignored full-queue score launcher also passed eight metadata-only checks, a real local import of the native-helper score verifier, and targeted type checks after a local narrowing correction. CPU output: `logs/native_dms_extension/20260914_score_launcher_cpu.txt`. It requires all requested probes before scoring, preserves original LOOKUP order and seed indices, and does not certify any GPU score by itself.
+
+## 2026-09-14 — Accept 1.3B and 6.7B probes; investigate the 30B missing artifact
+
+Parent task `b3e6e7759` queued separate `run_one_probe.py` commands for `galactica-1.3b`, `galactica-6.7b`, `galactica-30b`, then `rita-xl`, with shell `set -euo pipefail`. Each specified `--batch-size 16 --timeout-seconds 7200` and the same prepared input directory as the preceding 125M command, under the task-local TMPDIR and `PYTHONDONTWRITEBYTECODE=1`. Each Galactica invocation used pinned commit `e8d9f2b`, run `20260913193000_6612da48b3bb`, and BF16. Its fresh resource gate found the project H200 idle, ECC 0, with no compute application or unrelated CPU load; no allocation changed.
+
+The 1.3B and 6.7B probes completed successfully and were independently accepted by the parent. Their complete cohort objects and input/CSV fingerprints exactly match 125M: 217 declared assays / 174 clusters, 213 eligible assays / 171 clusters, context 2048, longest synthetic batch 16 × 2018 tokens. Loader facts are nonempty, observed BF16, with zero strict-loading diagnostics; 1.3B has 24 layers/width 2048 and 6.7B has 32 layers/width 4096. Both refuse illegal-AA and over-context input. Scorer versus independent FP32 CE differs by 0 nats/target in both cases; native API loss is present.
+
+| Arm | Artifact created (UTC) | Batch/single maximum difference (nats/target; tolerance 0.02) | Native API/reference maximum difference | Peak allocated bytes | Longest-shape elapsed seconds |
+| --- | --- | --- | --- | --- | --- |
+| Galactica-1.3B | 03:03:03 | 0.012933731079101562 | 4.1464100713315216e-07 | 18,803,905,024 | 0.2083 |
+| Galactica-6.7B | 03:17:56 | 0.007142702738444011 | 3.2134678052819293e-07 | 29,488,214,528 | 0.7893 |
+
+Artifacts are under `results/transfer/native_dms_extension/20260913193000_6612da48b3bb/probes/`, labels `native_probe_galactica_1p3b_b16` and `native_probe_galactica_6p7b_b16`, each named `interface_check.json`. Their SHA-256 values are respectively `1076fedd499815e51d7beb947cf9774c266cdf20d07a30b75ea3f4222a622719` and `e89e670933256e769d17dd5d2c86c9537bb427c89b8f4c239bf2544910a251f9`. Parent acceptance record: `logs/native_dms_extension/probe_acceptance_20260913193000_6612da48b3bb_125m_to_6p7b.json`. These are interface/resource checks, not DMS scores or full-campaign throughput measurements.
+
+The 30B wrapper launched at 03:23:16 UTC but reported `ABSENT after 600s` and returned 4 at 03:35:27 UTC. The parent queue therefore stopped before RITA. Failure receipt: `logs/native_dms_extension/probe_receipts/20260913193000_6612da48b3bb/native_probe_galactica_30b_b16.receipt.json`. This establishes missing expected output at the wrapper check, not an identified CUDA OOM, numerical mismatch, or confirmed model-process termination. A one-time read-only incident collection is being prepared to inspect the remote log, host-post presence, and process/resource evidence. No automatic retry, batch reduction, threshold change, or formal DMS scoring has occurred.
+
+## 2026-09-14 — Identify the 30B frozen numerical-gate failure
+
+Parent task `bcadfca58` ran the one-time read-only command `TMPDIR=/Data/lzp/.cache/interpretability-transfer/dms-extension.2hoJJt/tmp PYTHONDONTWRITEBYTECODE=1 /Data/lzp/miniconda3/envs/ct/bin/python logs/native_dms_extension/read_failed_probe.py --arm galactica-30b --batch-size 16` and completed with exit 0. Sanitized evidence is under `logs/native_dms_extension/incidents/20260913193000_6612da48b3bb/native_probe_galactica_30b_b16/20260914T034519531281Z/`. The saved log tail SHA-256 is `584c5526fdb9e321653ddfbedbdd75173c75abdc76e813c9111ce0ab4e09028f`.
+
+The log shows all seven checkpoint shards loaded, then `check_author_alignment` raised: `batch vs single-sequence totals disagree at 0.026644134521484376 nats/target; tolerance is 0.02. The threshold is not moved to match the run`. This is an observed failure of the frozen BF16 numerical gate, not CUDA OOM. It occurred before complete assay-support recovery and the longest-shape resource check, so no successful 30B support manifest or resource batch is claimed. The helper did not publish a passing artifact.
+
+The remote host-post record exists with UTC 03:25:32; the one-time observation at 03:46:25 found no stage/wrapper process, no compute application or busy named CPU process, and one H200 with 0 MiB used, 0% utilization, ECC 0. Thus the original wrapper's missing artifact was not a still-running model at this observation. The host-post file is not an exit-code record; the traceback supplies the numerical failure reason. No process was killed, allocation changed, or batch reduced.
+
+The difference's deeper implementation/numerical cause is under a bounded read-only code check; no kernel-level explanation is established by this log alone. Under the unchanged protocol 30B is not admitted, and the complete four-rung Galactica score/analysis cannot proceed. RITA's interface is independent: after confirming the old process had ended, the parent launched its original FP32 batch-16 probe separately with the same pinned snapshot and input arguments (`--arm rita-xl`, task `b779d3678`). That probe has no reported outcome yet. No new DMS ρ exists.
+
+## 2026-09-14 — Accept the RITA native probe and authorize bounded 30B diagnostics
+
+Parent task `b779d3678` completed with exit 0. Command: `TMPDIR=/Data/lzp/.cache/interpretability-transfer/dms-extension.2hoJJt/tmp PYTHONDONTWRITEBYTECODE=1 /Data/lzp/miniconda3/envs/ct/bin/python logs/native_dms_extension/run_one_probe.py --arm rita-xl --batch-size 16 --input-dir /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260913131730_d91171619815/native_dms_inputs --timeout-seconds 7200`. The official wrapper used pin `e8d9f2b`, run `20260913193000_6612da48b3bb`, and FP32. Its fresh resource gate found one idle project H200, 0 MiB used, 0% utilization, ECC 0, and no compute application or unrelated CPU load. No allocation was changed.
+
+Artifact: `results/transfer/native_dms_extension/20260913193000_6612da48b3bb/probes/native_probe_rita_xl_b16/interface_check.json`, created 2026-09-14T03:52:23Z, SHA-256 `d574a969e188f8d7ad5bf1177ac388bac87d7ea8d3e1ed68c29caab5759c2ce6`. Parent acceptance verified its hash, pinned source paths, frozen input fingerprints, settings, nonempty facts, numerical checks and actual support. The loaded model has 24 layers/width 2048, input/output vocabulary 26, observed parameter and floating-buffer dtype FP32, zero strict-loading diagnostics, native EOS 2 and no pad used for scoring. The out-of-range config EOS 50256 is recorded but not used.
+
+On `MKT`/`MRT`, scorer/reference CE, batch/single and native API/reference maxima are each `3.178914388020833e-07` nats/target, below the frozen FP32 tolerance `1e-4`. Native loss is present; no-mask versus all-ones logits differ by 0. Illegal-AA and over-context inputs were refused. The declared queue is 217 assays / 174 clusters; actual eligible support is **201 assays / 163 clusters**, with 16 context exclusions recorded in the artifact. Longest eligible synthetic batch: 16 × 935 tokens, all totals finite, peak allocated 9,075,383,296 bytes, reserved 9,663,676,416 bytes, synchronized elapsed about 1.1055 s. This is a single-shape check, not a campaign throughput measurement.
+
+Metadata limitation: the artifact's field named `storage_torch_dtype` is read from the already-loaded model config (`rita_fitness.py`), not directly from checkpoint tensor storage. Its value `torch.float32` is not accepted as evidence of on-disk precision. Actual inference precision is separately observed from parameters/buffers. The original artifact is preserved; parent acceptance with this explicit labeling caveat is recorded in `logs/native_dms_extension/probe_acceptance_20260913193000_6612da48b3bb_rita_xl.json`. This does not alter the successful numerical/interface checks or invent storage provenance.
+
+The bounded code review of 30B confirmed that the reported difference uses the same synthetic sequences and true scored-residue counts; no specific padding, position, cache or normalization defect was demonstrated. The user explicitly selected a separate limited synthetic numerical diagnosis before deciding whether a new protocol is needed. That work may distinguish batch size, padded width and execution precision, but cannot change the old BF16 gate, issue 30B PASS, or produce DMS scores. RITA has passed its independent interface condition; it has no formal DMS ρ yet. The four-rung Galactica score/analysis remains blocked.
+
+## 2026-09-14 — Accept bounded diagnostic code and start its independent snapshot preparation
+
+The authorized synthetic recipe is now implemented in `scripts/transfer/diagnose_galactica_numerics.py`, with CPU contracts and `docs/PROTEINGYM_NUMERICAL_DIAGNOSTIC.md`. It fixes seven batch/width conditions, three repetitions, and two execution phases: BF16 loading, then the same BF16-rounded weights converted in place to FP32 execution. It consumes no DMS input and cannot issue interface admission. The production scorer, original probe and 0.02 ceiling were not changed.
+
+Parent CPU acceptance ran the three-file pytest selection recorded in `logs/native_dms_extension/diagnostic_cpu_acceptance.cmd.txt` under ct, offline, with CUDA disabled and one CPU thread: **54 passed in 5.08s**, output `diagnostic_cpu_acceptance.txt`. Earlier 49- and 51-pass development outputs are retained, not substituted for this final selection or added to its count. Explicit negative checks cover restoration after failed conversion, preservation of completed cases in a failed second phase, cleanup failures, and mandatory resource/metadata failures. Parent replay independently confirmed restoration from a non-default matmul policy and retention of the first two FP32 cases when the third failed; evidence is `diagnostic_parent_acceptance.json`. The diagnostic source's primary LSP check was clean; this is not a full-project type-clean claim or evidence of real H200 numerical stability.
+
+Only the script, its test and the short diagnostic protocol were committed as `8ad9a2ff5078ea1279d8ffe64884abdb5400a095` and fast-forward pushed to `origin/main`. The parent verified commit contents, working bytes against Git blobs, remote equality, an empty index and preservation of the seven existing unstaged documents before this log append. Receipts: `logs/native_dms_extension/diagnostic_push.json` and `diagnostic_commit_acceptance.json`.
+
+The independent preparation entry passed 25 metadata-only checks. The original `freeze.json` was verified unchanged before launch, SHA-256 `4e058291d1716e42993dab046eeefedee480bb1f40680386eee4d8b1703daf9d`; the original protocol SHA-256 remains `9760e3ad730858f5a0e14eded49db5655288b73f10900facaae5f11f896cd989`. Parent task `b5de961ec` now runs `TMPDIR=/Data/lzp/.cache/interpretability-transfer/dms-extension.2hoJJt/tmp PYTHONDONTWRITEBYTECODE=1 /Data/lzp/miniconda3/envs/ct/bin/python logs/native_dms_extension/prepare_diagnostic_snapshot.py --pin 8ad9a2ff5078ea1279d8ffe64884abdb5400a095`. Its scope is fresh resource checks, official freeze-only, source hashes and one frozen CLI import; it must publish a separate diagnostic receipt without changing the old receipt. No prepared result, new run identity, model diagnosis, DMS score or allocation change is claimed at this launch.
+
+## 2026-09-14 — Accept the independent numerical-diagnostic snapshot
+
+Parent task `b5de961ec` completed the preceding preparation command with exit 0. The separately published `logs/native_dms_extension/diagnostic_freeze.json` is `prepared`, created at 06:55:50 UTC, with pin `8ad9a2ff5078ea1279d8ffe64884abdb5400a095`, actual run `20260913235056_0bafd78e5dc6`, and code hash `0bafd78e5dc6126e9f8b426f5a10c15cde473f4262e45c11b8646c70c4db3575`. Snapshot: `/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/packages/20260913235056_0bafd78e5dc6`. The run identifier is the controller's actual output, not a reconstructed UTC timestamp.
+
+The fresh resource gate at 06:50:52 UTC found one project H200, 143771 MiB total, 0 MiB used, 0% utilization, ECC 0, no compute application and no unrelated CPU load. Local repository/task TMP and remote GPFS/TMP storage and inode checks passed. No allocation was created or removed. The frozen diagnostic's real `--help` import succeeded under `/opt/ac2/bin/python3`, with both offline flags and the new snapshot root; no dependency was installed and no model was instantiated.
+
+The remote diagnostic script and Galactica scorer hashes matched the new pinned Git blobs. The diagnostic protocol's local/Git SHA-256 is `11369247d3067454bb5ed834b1f2d5641f49b7f0696e4ecbf4fdd41ba6f7b65a`; it was not uploaded as a DMS input. Parent verification matched the published receipt to its finalized attempt, checked source/protocol hashes and identities, and reconfirmed the old `freeze.json` and protocol hashes unchanged. The diagnostic receipt SHA-256 is `2803c908fdf361e6a3472d763bd68225be33de7a86e2dc84cdc9d3a9df7c9574`; acceptance record: `logs/native_dms_extension/diagnostic_snapshot_acceptance.json`. The single-run execution launcher is still undergoing local failure-boundary checks. This snapshot acceptance is not an executed numerical diagnosis, interface PASS or DMS score.
+
+## 2026-09-14 — Launch the fixed synthetic 30B numerical diagnosis
+
+The parent accepted the single-run launcher after reading its actual implementation, running **27 metadata-only checks** and `--help`, confirming a clean primary LSP check, and verifying binding to the already-published diagnostic receipt. Complete diagnostic bytes cannot override a nonzero wrapper exit; failed/partial artifacts are retained, and operational exceptions cannot become success. The launcher permits neither a numerical tolerance nor an alternative batch/precision recipe. Evidence: `logs/native_dms_extension/20260914_numerical_diagnostic_launcher_final.txt` and `diagnostic_launcher_acceptance.json`; the latter records the exact wrapper command and launcher SHA-256. The original 21-check development output is preserved separately.
+
+Parent task `b91aa533a` starts `TMPDIR=/Data/lzp/.cache/interpretability-transfer/dms-extension.2hoJJt/tmp PYTHONDONTWRITEBYTECODE=1 /Data/lzp/miniconda3/envs/ct/bin/python logs/native_dms_extension/run_numerical_diagnostic.py`. It must pass a new resource gate before invoking the official wrapper on pin `8ad9a2f`, independent run `20260913235056_0bafd78e5dc6`, label `native_galactica_30b_numerics_v1`, with stage `diagnose_galactica_numerics.py --arm galactica-30b`; the wrapper supplies output/device and retrieves `galactica_numerics_diagnostic.json`. This is the authorized fixed seven-condition, three-repetition, two-phase synthetic run, not a probe retry or DMS scoring. No resource-gate outcome, numerical result, original 30B PASS or allocation change is claimed at this launch; the terminal artifact and receipt still require parent acceptance.
+
+## 2026-09-14 — Accept the bounded diagnosis: reproduce BF16 packing sensitivity
+
+Parent task `b91aa533a` completed with exit 0. Before dispatch, the fresh resource gate found one idle project H200 (143771 MiB total, 0 MiB used, utilization 0, ECC 0), no compute application or unrelated CPU load, and sufficient local/remote storage and inodes. The diagnostic artifact was created at 07:07:06 UTC; the wrapper returned after its normal wait and verified pull at 07:19:20 UTC. Artifact: `results/transfer/native_dms_extension/diagnostics/20260913235056_0bafd78e5dc6/native_galactica_30b_numerics_v1/galactica_numerics_diagnostic.json`, SHA-256 `394fdefcc0de0909aa79f7c90ebc04e45a1ca2b09f1886721d087cf2eccdbd1f`. Its bytes equal the official pulled copy. It records `complete`, no failure or cleanup error, `no_dms_scores=true` and `no_interface_admission=true`.
+
+Parent replay validated all **42 case observations, 66 sequence rows and 606 residue targets**, including token identities across cases, right-padding masks, scored positions, per-target totals, public/native comparison arithmetic, and all repeat-local and phase-wide contrast copies. Three within-run repeats have identical per-target values in every case; these are not independent proteins or a cross-device stability study. Replay command: `TMPDIR=/Data/lzp/.cache/interpretability-transfer/dms-extension.2hoJJt/tmp PYTHONDONTWRITEBYTECODE=1 /Data/lzp/miniconda3/envs/ct/bin/python logs/native_dms_extension/accept_diagnostic_observations.py`. Full deterministic replay: `diagnostic_observation_acceptance.json`; combined acceptance: `diagnostic_acceptance.json`, under the same log directory.
+
+The public scorer exactly reproduces the old BF16 maximum **0.026644134521484376 nats/residue target** on all three repeats, now localized to AA20 in the mixed-length batch versus alone. The corresponding MKT difference is 0.020359357198079426. After in-place FP32 promotion, the same public mixed-versus-single geometry has maximum **0.000052928924560546875**, on MKT; AA20 is 0.0000003814697265625. The original BF16 breach is therefore reproducible, not erased by the new diagnostic.
+
+Selected predeclared contrasts below use the independent per-target CE totals; their tiny reduction-rounding differences from the public scorer are retained rather than conflated. Values are absolute total differences divided by 3 or 20 residue targets; duplicate rows were kept separately and happen to agree here. Every displayed value recurs in all three repetitions.
+
+| Contrast | BF16 | Same BF16-loaded weights executed with FP32 parameters |
+| --- | ---: | ---: |
+| One MKT: natural width 5 versus right-padded width 22 | 0.020359357198079426 | 0.00004061063130696615 |
+| AA20: alone versus mixed-length batch | 0.02664405107498169 | 0.0000004291534423828125 |
+| AA20: alone versus either row of its duplicate batch | 0 | 0.0000004291534423828125 |
+| Two MKT copies: width 5 versus right-padded width 22, each row separately | 0.020198504130045574 | 0.00011380513509114583 |
+
+In BF16, MKT at width 22 is identical across the padded singleton, padded duplicate and mixed conditions; AA20 is identical alone and duplicated but differs in the mixed batch. Thus batch cardinality alone is insufficient to describe the pattern. The observations implicate packing/length/mask-related numerical sensitivity; they do not isolate a named kernel or establish a padding, position or normalization implementation defect. Width, mask layout and dispatch can co-vary. FP32 settings substantially reduce these differences, but the duplicate-short width contrast remains **1.13805e-4**, above the numerical scale of 1e-4. This is a supplementary diagnostic contrast, not a failed or passing new FP32 interface test, and not evidence that every shape is invariant.
+
+The independent metadata check and parent verification agree: one BF16 load of OPT (48 layers, width 7168, vocab/input/output/tokenizer 50000, four strict-loading diagnostics all zero), followed by the same module's `float()`, without another checkpoint load. Observed parameter dtypes are BF16 then FP32; both registered floating-buffer dtype sets are empty. Both phases are eval with configured attention implementation `sdpa`, CUDA matmul TF32 disabled and matmul precision `highest`; cuDNN TF32 is true initially and false in the FP32 phase. Runtime is Python 3.12.7+gc, PyTorch 2.7.1+cu128, Transformers 4.52.4, compiled CUDA 12.8. These are loaded-parameter/runtime observations, not on-disk tensor precision or a directly FP32-loaded checkpoint qualification.
+
+| Phase | Peak allocated bytes | Peak reserved bytes | Synchronized phase seconds |
+| --- | ---: | ---: | ---: |
+| BF16 | 60,014,818,816 | 62,115,545,088 | 1.40255 |
+| FP32 execution, including conversion | 120,335,767,552 | 121,926,320,128 | 6.71410 |
+
+These timings exclude initial checkpoint loading and are not DMS throughput estimates. The synthetic run does not establish the longest-assay batch memory bound or assay support for 30B. Across the recorded cases, public-versus-independent maximum differences are 2.03e-7 (BF16) and 7.95e-8 (FP32); native-loss/reference maxima are 4.77e-7 and 3.32e-7 nats/target. The old 0.02 gate, failed probe and both freeze receipts remain unchanged. There is no new DMS score and no retroactive 30B PASS. Any direct-FP32 or workload-restricted qualification requires a separately agreed and frozen protocol; the four-rung main analysis remains blocked pending that decision. No allocation was changed during diagnosis. Parent task `b4c46a061` performs a separate one-time read-only post-run resource check; its outcome is not inferred from the pre-run gate.
+
+## 2026-09-14 — Close diagnostic resources and authorize separate direct-FP32 validation
+
+The one-time post-run check `b4c46a061` completed with exit 0. At 07:37:40 UTC it independently verified one project H200 allocation, 143771 MiB total, 0 MiB used, utilization 0, ECC 0, no compute application and no unrelated CPU load. Command: `TMPDIR=/Data/lzp/.cache/interpretability-transfer/dms-extension.2hoJJt/tmp PYTHONDONTWRITEBYTECODE=1 /Data/lzp/miniconda3/envs/ct/bin/python logs/native_dms_extension/check_diagnostic_resources.py`. Receipt: `logs/native_dms_extension/diagnostic_post_resources.json`. This was read-only: no allocation change and no process termination. The existing project GPU is retained; no temporary allocation was created by this diagnostic.
+
+After receiving the numerical findings and limitations, the user explicitly selected a separate all-FP32 validation protocol for the four Galactica checkpoints. This authorizes protocol design and fresh direct-checkpoint FP32 interface/numerical/longest-batch validation, not retroactive admission or immediate scoring. The new design will retain the fixed width contrasts, use the existing FP32 1e-4 nats/target tolerance without relaxation, and keep sampling, support, direction and paired-baseline statistics unchanged. It is informed by the completed synthetic diagnostic but must be frozen before new DMS scores. The old BF16 contract and all prior evidence remain preserved; RITA remains an independent v1 single point. No new direct-FP32 probe has run at this decision.
+
+## 2026-09-14 — Accept the independent FP32 implementation and CPU record contracts
+
+The separate contract is now implemented in `docs/PROTEINGYM_GALACTICA_FP32_V2.md` and the shared native probe/analysis and stage-20 scoring paths. Explicit `galactica-fp32-v2` requests use direct checkpoint FP32 loading, disable both CUDA-matmul and cuDNN TF32, and set float32 matmul precision to `highest`; probe and actual scoring share that context. The default v1 scoring rules and all old evidence remain intact. The new contract retains all fixed geometry contrasts at 1e-4 nats per residue target; it is not a reclassification of the BF16 failure.
+
+The first core implementation passed 65 CPU tests but was not accepted as final: parent replay exposed insufficient record-state validation and delayed publication of already-observed failure evidence. The repaired gate checks the recorded phase, evaluation state, actual floating dtypes, precision policy, repetitions, case/row/target structure, finite loss and errors. Probe evidence now accumulates as it is obtained, including before a longest-batch failure; owned release is attempted once, and success is published only after cleanup and policy restoration. Parent checks also cover preservation of author-alignment evidence when refusal checks fail and preservation of the original error if restoration fails as well.
+
+Parent command `bash logs/native_dms_extension/fp32_joint_cpu.cmd.txt` ran in the validated ct environment with CUDA hidden, offline model flags, one CPU thread and the task-specific TMPDIR. Task `b9cbdbcd0` exited 0: **102 tests passed in 6.50s**, followed by independent record replay and the legacy-byte guard. `logs/native_dms_extension/fp32_parent_repair_acceptance.json` records rejection of nine malformed records and both incomplete v2 protocol markers; a synthetic longest-batch failure retains all seven checked evidence categories, records `longest_eligible_batch`, and remains nonpassing. These are CPU fixtures, not real checkpoint qualification. The saved initial BF16 mutation used an unused `parameter_dtypes` key, so that row alone did not demonstrate rejection or acceptance of an actual parameter dtype; the corrected replay and regression use the collector's real `parameter_float_dtypes` field. The original report is preserved with that limitation, rather than rewritten.
+
+Fresh ct Pyright 1.1.411 over the core, shared module, related tests and stage20 reported no findings in the core/shared/test files. Its task `b83edb233` exited 1 because current stage20 and its byte-identical `8ad9a2f` baseline copy each have the same six existing diagnostics; rule, message and source-line comparisons match. This is no-new-type-findings evidence, not a clean whole-project type check. Raw evidence is in `logs/native_dms_extension/fp32_joint_pyright.json`; stale session-LSP import findings were deferred for this session without adding source suppressions.
+
+Before this log append, the parent guard confirmed all 15 protected legacy files and all seven pre-existing modified documents were unchanged; the old 30B passing artifact remains absent. The two chronology logs are now intentionally appended, while the focused code delivery will leave all seven pre-existing documents unstaged. The next steps are a focused eight-file commit/push and an independent H200 snapshot. No new real direct-FP32 probe, model fitness score or allocation change has occurred at this acceptance.
+
+## 2026-09-14 — Deliver the FP32 protocol without model admission
+
+The parent delivered exactly the eight accepted protocol, implementation and test files as `75a807bdc234e76c1a244370d4690d46c64065e8` (`Add independent Galactica FP32 validation protocol`), directly after `8ad9a2f`. Task `b9e41ebcf` exited 0; the non-force push and remote `main` were verified, and a separate parent check matched every committed blob to the accepted bytes, confirmed an empty index, and preserved all 15 protected legacy files and the seven existing document modifications. Receipts: `logs/native_dms_extension/fp32_push.json` and `fp32_commit_acceptance.json`. The protocol wording now explicitly distinguishes 21 geometry-case observations (7×3) from 45 comparison rows (15×3); no numerical rule changed.
+
+The new ignored freeze/probe launchers are undergoing operational acceptance, not yet used on H200. A parent CPU fault injection found that an uncertain freeze-call failure was recorded with `do_not_refreeze=false` and allowed another simulated freeze dispatch. The original reproduction is preserved in `logs/native_dms_extension/fp32_prepare_uncertain_failure_repro.json`; this retry-safety gap must be fixed before freezing. No real freeze, new FP32 checkpoint qualification, DMS score or allocation change occurred in that test.
+
+## 2026-09-14 — Accept failure-evidence collection before the FP32 snapshot
+
+The independent operational review found one additional blocking path: the official external wrapper exited 6 on an early traceback before its only verified pull, even when the stage had already written its expected failed JSON. The wrapper now sends an existing expected artifact through the original JSON/digest/single-pull path, retains exit 6, and labels the result as retained failure evidence rather than successful `ADMITTED`. Missing artifacts still fail without a pull; invalid JSON and checksum mismatch remain nonzero. Normal successful collection is unchanged. The independent prepare entry now durably marks a possibly dispatched freeze and refuses another dispatch for an unresolved attempt; both ignored entries also bind the actual wrapper source to the pinned snapshot.
+
+Parent command `bash logs/native_dms_extension/fp32_operations_final_cpu.cmd.txt` completed as task `b47b2a3f1`, exit 0. The bounded shell-wrapper regression reported **14 tests and 2 subtests passed in 89.07s**; `bash -n` passed, prepare/probe metadata self-checks passed 30/32 cases, and `fp32_prepare_uncertain_failure_final.json` confirmed exactly one simulated freeze dispatch with repeat refusal and unchanged legacy receipts. The intentionally injected receipt-write failure was correctly nonpassing. These checks use local fixtures, not remote computation. Fresh ct Pyright reported no operational-file findings; current and baseline orchestration tests have the same 11 existing diagnostics, so its exit 1 is not a claim of project-wide type cleanliness.
+
+The final guard confirmed all 15 protected legacy files, the eight scientific FP32 files, and the absence of the old 30B passing artifact; `fp32_freeze.json` is still absent. Only the wrapper and its regression test will enter the next focused commit. The scientific protocol, numerical limits and old results are unchanged. No actual FP32 model qualification or DMS score has been produced.
+
+## 2026-09-14 — Start the independently pinned FP32 snapshot
+
+The wrapper/test fix was committed and non-force pushed as `1a91d0a0d555b072df6da18fc6d6c8bea5d25d54`, directly after `75a807bd`. Task `b9cc4e5a9` exited 0 and verified remote `main`; parent acceptance checked the exact two-file tree, accepted source hashes and empty index (`logs/native_dms_extension/fp32_wrapper_push.json`, `fp32_wrapper_commit_acceptance.json`). The eight scientific FP32 files and legacy evidence remain unchanged.
+
+The parent then started task `b49bf13b5`: `TMPDIR=/Data/lzp/.cache/interpretability-transfer/dms-extension.2hoJJt/tmp PYTHONDONTWRITEBYTECODE=1 /Data/lzp/miniconda3/envs/ct/bin/python logs/native_dms_extension/prepare_fp32_snapshot.py --pin 1a91d0a0d555b072df6da18fc6d6c8bea5d25d54`. It must perform a fresh health/ownership/idle/ECC/storage gate, official freeze-only, six source-hash checks (including the actual wrapper), reused-input byte checks and the two remote CLI import/help checks. It may publish only `fp32_freeze.json`, without rewriting either old receipt or uploading new inputs. This is a recorded start, not a successful freeze or qualification; no model loading or DMS scoring is requested.
+
+## 2026-09-14 — Stop an uncertain FP32 freeze without redispatch
+
+Task `b49bf13b5` ended with exit 2. The independent resource gate at 11:32:52 UTC passed: health `ok`, one owned project H200 (143771 MiB total, 0 used, utilization 0, ECC 0), no compute application or unrelated CPU load, and sufficient local/remote space and inodes. The subsequent official freeze-only command returned 255; its raw output was withheld, and this alone does not establish the remote snapshot's state or the cause of failure. At 11:36:28 UTC the attempt was recorded as failed in `logs/native_dms_extension/fp32_freeze_attempts/20260914T113130722943Z_1a91d0a0d555.json`, with `do_not_refreeze=true`, no published `fp32_freeze.json`, and both old receipts unchanged.
+
+The pinned local code hash is `0c8c5d7a3b0988242fb59590f522646a30d0ca1e034f3673aa40a7b2f63247f9`. The parent is locating the existing attempt's identity and transfer state read-only rather than dispatching another freeze. This is an operational uncertainty before model execution, not a failed FP32 numerical gate, OOM, or DMS result. No allocation change or new model score is reported.
+
+## 2026-09-14 — Inspect the uncertain snapshot without modifying it
+
+The local read-only search found no durable run identity or recoverable controller stdout for the failed freeze. The first bounded remote inspection (`babb1f454`, `logs/native_dms_extension/inspect_fp32_snapshot_once.py`) passed health/owner selection but its remote command returned 1; the task exited 2 at 11:58:09 UTC with `observation_complete=false`. Receipt: `logs/native_dms_extension/fp32_snapshot_inspection.json`. This did not establish absence or presence of the candidate snapshot.
+
+The parent then started a smaller single-line, read-only shell listing (`b0abd07ef`): `TMPDIR=/Data/lzp/.cache/interpretability-transfer/dms-extension.2hoJJt/tmp PYTHONDONTWRITEBYTECODE=1 /Data/lzp/miniconda3/envs/ct/bin/python logs/native_dms_extension/inspect_fp32_transport_once.py`. It checks the packages root and only directories with suffix `_0c8c5d7a3b09`, with explicit beginning/end sentinels and sanitized transport stderr. It does not repeat the failed multi-line inspection, change remote files, or release the no-refreeze guard. The listing result is not yet known; no model operation is requested.
+
+## 2026-09-14 — Recover the existing FP32 identity and complete its metadata
+
+The single-line listing `b0abd07ef` completed at 12:04:12 UTC with both sentinels, exit 0 and empty stderr. It found exactly one candidate, `20260914043257_0c8c5d7a3b09`. The subsequent bounded verification `bc989036b` completed at 12:10:04 UTC: `CODE_CONTENT_SHA256SUMS` matched the pinned full hash `0c8c5d7a3b0988242fb59590f522646a30d0ca1e034f3673aa40a7b2f63247f9`, and every listed code file passed verification. There were no invocation JSON files and no `host_state_freeze.txt`. Receipts: `fp32_transport_inspection.json` and `fp32_existing_snapshot_verification.json` under `logs/native_dms_extension/`. These observations recover the existing identity and establish code integrity, not a completed freeze or model qualification; they do not identify the cause of the original exit 255.
+
+The controller explicitly supports resumption through the `RUN_ID` environment variable: it requires the current code-hash suffix, verifies an existing tree and reuses it without re-pushing, then writes the invocation manifest and freeze resource record. The parent started `bb92a7cc4` with `TMPDIR=/Data/lzp/.cache/interpretability-transfer/dms-extension.2hoJJt/tmp PYTHONDONTWRITEBYTECODE=1 /Data/lzp/miniconda3/envs/ct/bin/python logs/native_dms_extension/complete_existing_fp32_snapshot.py --execute`. This entry binds the verified run and original failed-attempt SHA, requires a fresh idle-resource gate and an unchanged existing tree with metadata still absent, and invokes the official controller with the same `RUN_ID` and pin. It has no automatic repeat, model or score action. The original failed attempt and no-new-freeze guard are preserved. Source/input hashes and both frozen CLI imports must pass before an independent prepared receipt can be published.
+
+Before dispatch, the local plan resolved the exact same identity, four malformed recovery records were refused, ct Pyright reported 0 errors/0 warnings for the completion entry, and the 15 protected artifacts remained unchanged. The first small CPU harness omitted `ValueError` from its expected refusal classes; the validator had correctly rejected the wrong-run case. The corrected harness and this limitation are recorded in `fp32_existing_completion_cpu.json`. These are implementation checks only. The same-run completion result is still pending.
+
+## 2026-09-14 — Accept the recovered FP32 snapshot and start the 30B probe
+
+Task `bb92a7cc4` completed with exit 0. The official controller reused `20260914043257_0c8c5d7a3b09` without re-pushing code, and the independent `fp32_freeze.json` was published at 12:42:20 UTC. The fresh gate at 12:39:09 UTC recorded the original one project H200 idle, ECC 0, no compute application or unrelated CPU load, and sufficient storage/inodes. All six pinned source hashes, the three reused data inputs plus the historical v1 protocol, and both frozen native/stage20 CLI checks passed. The v2 document remains Git-bound rather than falsely described as uploaded. No model or DMS stage ran during this completion.
+
+The parent independently accepted the local receipt at 12:44:17 UTC (`logs/native_dms_extension/fp32_snapshot_acceptance.json`): pin `1a91d0a0d555b072df6da18fc6d6c8bea5d25d54`, full code hash `0c8c5d7a3b0988242fb59590f522646a30d0ca1e034f3673aa40a7b2f63247f9`, prepared-receipt SHA `72cc01c7ac088286c9e15f3518883c0e7748ba40802b45d8367f494ef1a8cf9c`, completion-receipt SHA `e039c21b8e2465192a56e7e95a003f9f3e07cadb565b2d23bc1df18ed4bdb122`. The original failed attempt and all 15 protected artifacts remain byte-identical; the old 30B BF16 passing artifact remains absent. This completes snapshot preparation only, not numerical or model qualification.
+
+The parent then launched `b21a81830`: `TMPDIR=/Data/lzp/.cache/interpretability-transfer/dms-extension.2hoJJt/tmp PYTHONDONTWRITEBYTECODE=1 /Data/lzp/miniconda3/envs/ct/bin/python logs/native_dms_extension/run_one_fp32_probe.py --arm galactica-30b`. It uses the accepted independent identity, its own fresh resource gate, direct checkpoint FP32 loading, batch 16, and the unchanged complete v2 numerical/interface/longest-batch protocol. No numerical outcome or DMS score is yet known. Separately, a developer is preparing only the bounded RITA-only v1 scoring-entry change locally; that work neither dispatches RITA nor changes the running FP32 probe or its frozen sources.
+
+## 2026-09-14 — Accept the independent RITA v1 score entry without scoring
+
+The local score launcher now admits exactly the RITA-only request when scoring RITA, while retaining the original complete four-Galactica group mode and rejecting partial Galactica sets. RITA-only uses its own full 217-assay LOOKUP order and 201-assay/163-cluster support, with a separate `rita_score_manifest.json`; it does not fabricate a Galactica probe or reinterpret the old 30B failure. Frozen seed/index, variant cap, FP32/batch 16, official wrapper/pull, resource gates and result verification are unchanged. This entry still uses the v1 snapshot, not the new FP32 snapshot.
+
+Parent validation at 12:58:14 UTC ran `bash logs/native_dms_extension/rita_score_parent_cpu.cmd.txt`: 14 metadata self-checks passed, the actual immutable RITA probe was admitted locally, all 160 request-set/target combinations matched the required admission rule, unknown arms were refused, the generated score command retained the full 217 order and frozen recipe, and ct Pyright reported 0 errors/0 warnings on the two changed local files. The 15 protected artifacts and the new FP32 receipt were unchanged. Evidence: `rita_score_parent_cpu.txt`, `rita_score_parent_pyright.json` and `rita_score_parent_acceptance.json` under `logs/native_dms_extension/`. Accepted SHA256: score launcher `b58e4d715808e326cff214465e118cc07367754188062360608c1e7450e2cd4f`; CPU admission script `44f43d9d7c6f48bd48a9abee411bc4aee0018fae2a4d4f33f89eab0dbd03fa2d`. No remote, model or score action was performed by this acceptance, and the independent 30B probe is still awaiting its terminal result.
+
+## 2026-09-14 — Admit 30B under the separate direct-FP32 protocol
+
+Task `b21a81830` completed with wrapper/launcher exit 0. The official pull and local copy of `galactica_fp32_v2_outcome.json` are byte-identical, SHA `7b8568fae3642b017319db6c98bc6baf8828627751aa626b2b44e9cf07c5e37f`. The parent replay at 13:07:11 UTC (`logs/native_dms_extension/accept_fp32_probe.py --arm galactica-30b`) independently re-ran the recorded v2 gate, matched it exactly to the saved gate, and checked the 21 case observations, 33 sequence rows, 303 real residue targets, masks, positions and per-target sums. All 45 fixed comparisons passed the unchanged `1e-4` ceiling; the maximum normalized total-LL difference was `6.198883056640625e-5` for padded duplicate-short versus natural-width duplicate-short. This ceiling concerns each comparison's absolute total difference divided by its residue-target count, not a separate bound on every position's log-probability difference.
+
+Observed parameters were float32 after direct checkpoint loading, floating buffers were empty, eval mode was used, CUDA/cuDNN TF32 were false and matmul precision was highest. The independent/native loss and public scorer checks and both refusal cases passed. The longest eligible synthetic shape, batch 16 × 2018 tokens (2016 residues), was finite and synchronized: peak allocated `139291843072` bytes, peak reserved `145921933312` bytes, elapsed `39.32401718944311` seconds. This is a resource-shape check, not a DMS score or campaign throughput measurement. New 30B FP32 support is 213 assays/171 clusters from the original 217/174 declaration, with the same four context exclusions recorded in the artifact. The old BF16 30B failure and all 15 protected artifacts remain unchanged. Parent receipt: `fp32_probe_acceptance/20260914043257_0c8c5d7a3b09/native_fp32_probe_galactica_30b_b16.json` under `logs/native_dms_extension/`.
+
+The parent started `bfc0c2b57`, a stop-on-error sequence of the same full `run_one_fp32_probe.py --arm ARM` and CPU `accept_fp32_probe.py --arm ARM` checks for 125M, 1.3B and 6.7B. Each real probe retains its own fresh resource gate; no old BF16 pass is reused. Their results are not yet known. A separate local-only developer task is adding an explicit v2 branch to the existing score entry, requiring all four new probe outcomes and successful execution receipts; it cannot dispatch scoring or change the frozen sources. The accepted RITA entry is preserved as `run_one_score_rita_accepted_baseline.py` before this addition.
+
+For scheduling only, scaling the one measured longest batch by the probe's `n_variants × max_tokens` proxy gives about 22.36 hours for 30B (22.56 hours after rounding each assay to full batches). `fp32_30b_scheduling_estimate.json` records 199527 selected variants and 66105892 proxy token units. This is neither measured DMS runtime nor a runtime bound: kernel shape, partial batches, WT handling, load, I/O and orchestration overhead are not validated by this estimate. A later full 30B score should request the already-supported 48-hour limit rather than rely on the 24-hour default; the cohort and scientific gates remain unchanged.
+
+## 2026-09-14 — Accept explicit FP32 score admission without dispatching scores
+
+The existing local score entry now selects the new identity only with explicit `--protocol galactica-fp32-v2`. It requires all four fresh Galactica probe payloads, raw v2 gate validation, common cohort/fingerprints and successful matching execution receipts, including wrapper exit 0 and artifact SHA. It passes the protocol and FP32 dtype to the already-frozen stage20 implementation and uses `fp32_score_manifest.json`. The v1 full-Galactica and independent RITA paths retain their previous commands and manifest content; no frozen scientific source changed.
+
+Parent acceptance at 13:28:29 UTC ran `bash logs/native_dms_extension/fp32_score_parent_cpu.cmd.txt`: the existing 14 checks and the new 26-case metadata check passed (the latter also exercises old paths); actual frozen RITA metadata and the final 30B FP32 payload/receipt were accepted locally. Parent checks additionally matched all 160 v1 request combinations and v1 manifest/command content to the preserved baseline, established a passing v2 metadata fixture before testing negative mutations, rejected eight isolated receipt mutations—including nonzero wrapper exit with all success booleans left true—and verified that score main refuses an incomplete real group before manifest publication or remote access. ct Pyright reported 0 errors/0 warnings on three files. The old protected artifacts, prepared FP32 receipt and final 30B artifact were unchanged.
+
+Evidence is in `fp32_score_parent_cpu.txt`, `fp32_score_parent_pyright.json` and `fp32_score_parent_acceptance.json` under `logs/native_dms_extension/`. Accepted SHA256: score entry `0224487002ec23746cd080fb44cb94f3f991982c630e9e663b506d6d7889e288`; v2 CPU check `d7c2b80456c1bdfc103bc469e6d2afe9609f3dd6ab7b3e0d207086de82964540`. The metadata fixtures do not establish admission of the other real rungs. Their stop-on-error probe queue is still awaiting terminal acceptance, and no score was dispatched by this work.
+
+## 2026-09-14 — Admit the complete FP32 group and start full 30B DMS scoring
+
+The remaining-probe queue `bfc0c2b57` completed with exit 0, including the parent's CPU replay after each real probe. At 13:52:36 UTC the parent verified all four official/local artifact copies, successful execution receipts, per-arm acceptance hashes, raw gate validation, and exact equality of the complete cohort and fingerprints. All four arms use float32/batch 16 and the original 217-assay order; their common eligible support is 213 assays/171 clusters. `logs/native_dms_extension/fp32_group_acceptance_before_score.json` binds the complete group to run `20260914043257_0c8c5d7a3b09` and pin `1a91d0a0d555b072df6da18fc6d6c8bea5d25d54`. This is the first complete four-rung qualification under the independent v2 protocol, not a revision of the old BF16 result or a DMS capability conclusion.
+
+| Arm | Maximum normalized comparison difference | Longest-batch seconds | Artifact SHA256 |
+|---|---:|---:|---|
+| 125M | `1.2159347534179688e-5` | `0.22375736758112907` | `6688f88fa94ddf83acf3b0cf7a33d158224c922a3dffbbcc3671bce666e150dd` |
+| 1.3B | `6.4373016357421875e-6` | `1.9575236812233925` | `fd22e8925a179980e9f03befa37a3b0f883719c6427d758907bc01b51510290a` |
+| 6.7B | `1.2556711832682291e-5` | `8.990886580199003` | `e9cd8d950f7d78c7a99e1b077e368d5baadf6195d84c5d3ace96d90ca90e29db` |
+| 30B | `6.198883056640625e-5` | `39.32401718944311` | `7b8568fae3642b017319db6c98bc6baf8828627751aa626b2b44e9cf07c5e37f` |
+
+The parent launched `b450d5ca7` for the complete 30B DMS score through `run_one_score.py --protocol galactica-fp32-v2 --arm galactica-30b --timeout-seconds 172800`, with all four verified `--probe NAME=PATH` inputs. The exact argv and group/entry hashes are written by the launch command to `logs/native_dms_extension/fp32_30b_score_request.json`. The launcher must pass a new resource gate, preserve the full original order/seed/cap, and use the official wrapper with one pull. Stage timeout is 48 hours; the background caller allows two additional hours for orchestration/collection. No batch retry, subset or new allocation was requested. The score task has started, but no model score or completed comparison is yet established.
+
+## 2026-09-14 — Preserve the interrupted full 30B score and inspect read-only
+
+The full score task `b450d5ca7` ended with wrapper/launcher exit 4. Its initial fresh gate passed (owned one H200 idle, ECC 0, no compute application, storage checks passed), and stage20 was dispatched at 13:55:19 UTC. At 16:41:26 UTC the wrapper reported `native_score_galactica_30b_b16 ABSENT after 8880s`; this is not expiration of the requested 172800-second stage timeout. The failure receipt under `logs/native_dms_extension/score_receipts/20260914043257_0c8c5d7a3b09/` records `ok=false`, `score_passed=false`, `wrapper_exit=4`. No complete model JSON or paired DMS comparison has been admitted. Missing expected output alone does not establish OOM, numerical failure, the exact remote exit, or whether the stage is still active; any partial log evidence must not be substituted for the full cohort result.
+
+The parent started one bounded read-only incident inspection, `b524b8f70`: `TMPDIR=/Data/lzp/.cache/interpretability-transfer/dms-extension.2hoJJt/tmp PYTHONDONTWRITEBYTECODE=1 /Data/lzp/miniconda3/envs/ct/bin/python logs/native_dms_extension/read_fp32_score_failure.py`. It uses fresh health/ownership selection without requiring GPU idleness, reads the final 120 application-log lines, selected host-post fields, artifact presence, GPU/ECC/apps, CPU load and counts for this stage, and sanitizes captured output before writing. Local Python and single-line shell syntax were checked without remote execution first. No retry, batch reduction, gate change, allocation change or process termination was requested. The incident result and cause remain pending.
+
+## 2026-09-14 — Confirm CUDA OOM and keep RITA independent
+
+The read-only inspection `b524b8f70` completed with exit 0 at 16:48:44 UTC. The application traceback explicitly reports `torch.OutOfMemoryError: CUDA out of memory` during OPT FFN activation, reached from stage20 line 1030 and `GalacticaFitnessScorer.log_likelihood` line 348. It attempted 3.19 GiB with only 2.93 GiB free; PyTorch allocated memory was 129.18 GiB and reserved-but-unallocated memory 7.03 GiB. These are the error's rounded measurements, not a separately measured peak or proof of fragmentation as the sole cause. The log contains early, rounded assay correlations through `BLAT_ECOLX_Stiffler_2015`, but no complete model JSON; those partial lines are not an admissible cohort result.
+
+At inspection the original project H200 had used/utilization/ECC 0, no compute applications, no score-stage/wrapper processes and no busy named CPU processes. The host-post file exists with timestamp 16:39:00 UTC; it does not supply a separately recorded stage exit code. The failure receipt remains unchanged, SHA `dc118a1434445b6870aa289fcf775de259c9f34853709a61e77e7b75ee7020e5`; sanitized application tail SHA `a759eb0cb491e5f8f135f5457acf6d66832a21a2c858b4711e879fb22d6c8fac`. Evidence is under `logs/native_dms_extension/score_incidents/20260914043257_0c8c5d7a3b09/native_score_galactica_30b_b16/`.
+
+The parent found that the current scorer leaves `logits` and `logp` bound across batch-loop iterations and requested one bounded independent CPU/read-only lifetime review. The prior longest-shape probe exercised one batch, not this full multi-batch execution. Contribution of retained tensors to the failure is being investigated; no sole-cause or repair-success claim is made. The scorer source is explicitly protected by the existing legacy guard, so no source edit, guard bypass or 30B retry has occurred.
+
+To keep independent work moving, the parent launched `be09e5e0c` for RITA-only v1 scoring through the accepted entry: `--protocol native-dms-v1 --arm rita-xl --timeout-seconds 86400 --probe rita-xl=<original accepted interface_check.json>`. `logs/native_dms_extension/rita_full_score_request.json` records exact argv and entry/probe-receipt hashes; the launcher must perform another fresh resource gate. Its original full 217-item order and independent 201-assay/163-cluster support are unchanged. This is not a Galactica retry or a RITA result, and no allocation change was requested.
+
+## 2026-09-14 — Correct a parent-only RITA receipt-schema error before dispatch
+
+Task `be09e5e0c` actually stopped locally with exit 1 and `KeyError: 'wrapper_exit'` at the parent's added preflight assertion. The original successful v1 probe receipt has `ok=true` and `probe_passed=true`, but no `wrapper_exit` field; the parent mistakenly applied a newer receipt expectation. The old producer checks nonzero wrapper exit at `run_one_probe.py:771–785`, returns failure there, and writes its successful v1 receipt at lines 807–854 without that field. This was not a RITA model or remote-stage failure. The preceding entry described the intended scoring launch: in fact `os.execv` had not been reached, the request file had not been published, and the local score/dispatch/manifest paths were absent.
+
+The parent preserved the failed task output and this distinction in `logs/native_dms_extension/rita_parent_preexec_failure.json`, re-ran the accepted real RITA metadata admission, checked the unchanged old success fields, matched official/native artifact bytes and the prior parent acceptance, and did not add or impute a missing exit field. It then wrote `rita_full_score_request.json` with the intended argv and bound hashes and submitted `b5cc43c36` directly: `/Data/lzp/miniconda3/envs/ct/bin/python logs/native_dms_extension/run_one_score.py --protocol native-dms-v1 --arm rita-xl --timeout-seconds 86400 --probe rita-xl=results/transfer/native_dms_extension/20260913193000_6612da48b3bb/probes/native_probe_rita_xl_b16/interface_check.json`. The stored request uses absolute spellings of the same entry/probe paths. This is the first invocation of the actual score entry for this RITA score, not a repeat of a remote run; fresh resource and collision gates remain mandatory. No complete RITA result is yet known.
+
+## 2026-09-14 — Reproduce avoidable cross-batch tensor lifetime on CPU
+
+The bounded independent audit confirmed that `GalacticaFitnessScorer.log_likelihood` retains the preceding batch's full-vocabulary `logits` and `logp` while evaluating the next `model(...)` call. Python evaluates the assignment's right-hand side before replacing the old binding, and `no_grad()` does not remove the live references. The current longest-shape resource check invokes exactly one configured batch, so it cannot observe this overlap.
+
+At 17:23:55 UTC the parent replayed the auditor's exact tiny real-torch CPU check against the unchanged current method, with no checkpoint or GPU. Command: `bash logs/native_dms_extension/galactica_batch_lifetime_audit_cpu.cmd.txt`. At the second forward, both weak references were live; after the method returned, both were dead. All four fixture totals were `-4.158883094787598`. This verifies an avoidable cross-batch peak-lifetime defect, not an accumulating leak after return or a reproduction of GPU OOM. The frozen assay order makes BRCA1 (1000 variants, 1865 tokens) the likely next assay after the last printed BLAT result, but the failed log does not identify its batch. At full batch16, two previous FP32/vocabulary50000 matrices of widths 1865 and 1864 would occupy about 11.11 GiB. That is a plausible material contribution, not proof of the sole OOM cause or guaranteed repair success.
+
+The proposed smallest fix releases batch-local `logits`, `logp`, `token` and `keep` after copying totals to CPU, retaining the same numerical operations and gate. It needs a regression that checks absence of previous large tensors at the next forward and score agreement with a reference, followed by real consecutive-longest-batch resource validation. No fix was applied: the scorer remains protected SHA `032425402d402965c8d6286f148bb4a318c290660eda2fec6d40d72584875b2c`, and all 15 legacy checks still pass. Parent evidence: `galactica_batch_lifetime_parent_acceptance.json`; CPU command SHA `89562aac7f34bb298a794276f0164f98958e9281dc535b45aafcf130d84dfe3f`; output SHA `386eff1b8e27ee1d478ec27325442c6a321e33ccb22323b7930c254cca064fdb`, all under `logs/native_dms_extension/`. A new authorized source revision/frozen identity must preserve the old source and evidence instead of silently bypassing their guard. The independent RITA score task remains pending terminal acceptance.
+
+## 2026-09-14 — Authorize a preserved-history memory revision
+
+The user explicitly selected repair and refreeze. Before edits, the parent verified all original protected bytes and copied the old scorer to `logs/native_dms_extension/legacy_sources/032425402d402965c8d6286f148bb4a318c290660eda2fec6d40d72584875b2c/src/transfer/galactica_fitness.py`, made that copy read-only, and matched it byte-for-byte to Git pin `1a91d0a0d555b072df6da18fc6d6c8bea5d25d54`. The authorization/source-archive record is `fp32_memory_revision_authorization.json` (SHA `f0ab7643ef05f8f2c327a9bb2af68758765d56878ca22fd035e6323e46ec03bb`). The original guard remains unchanged (SHA `a1484a96108f8c4cef80baec5517b8ef6cf2b0c4ccffc70471d780fa27090e2c`). Historical preservation now explicitly verifies the authorized old scorer archive and original Git version, not an assertion that the newly revised live scorer still has its old hash; the other protected paths and required artifact absence remain checked.
+
+A developer is implementing only the scorer lifetime fix and its CPU regression. The parent has added a candidate three-consecutive-batch resource check to the v2 producer, leaving v1's default single-batch call and stage20/scientific mathematics unchanged. The specification is separate: `docs/PROTEINGYM_GALACTICA_FP32_MEMORY_REVISION.md`; it does not replace the original v2 protocol. At batch16 the resource check requires one call spanning 48 sequences, not three separate calls. Tests cover the whole output count, final-output nonfiniteness, unchanged v1 single-batch coverage and restoration of configured batch size. `b2fdc095e` is running the bounded CPU suite from `fp32_memory_resource_cpu.cmd.txt`; no test or repaired-GPU PASS is yet claimed. The LSP attempt could not resolve ct's Torch/pytest correctly; a ct-targeted Pyright result remains pending. No new source commit, frozen identity, real requalification or 30B retry has been performed. RITA continues independently against its frozen v1 code.
+
+## 2026-09-15 — Accept the complete independent RITA DMS score
+
+Task `b5cc43c36` completed with exit 0. On 2026-09-14 the fresh owned-idle resource/storage gate passed, the frozen v1 stage20 score was dispatched at 17:19:25 UTC, and its model artifact was created at 18:21:58 UTC. The official wrapper completed its single pull and byte verification at 18:23:55 UTC; the successful execution receipt was written at 18:23:59 UTC. This is a complete new model-score artifact, not merely probe qualification or wrapper admission.
+
+Parent acceptance at 2026-09-15 01:38:52 UTC (`logs/native_dms_extension/accept_rita_full_score.py`) verified identical official/native copies of `model_rita-xl.json`, SHA `c932d3a3d9371ef5bb0a3bde4897b2804375583f06e79c2e9daa48277306e947`; the score receipt SHA is `7b3c9f6ed6d92608946fb27027c0651f97a30e66b65d2c74b4594bb1ed9bc559`. It reapplied the scientific probe-versus-score validator and matched the manifest to the actual submitted CLI spelling. An initial literal comparison differed only because the parent had supplied an absolute probe path while the submitted command used a relative path; both resolve to the same hash-verified file. No manifest or result was changed to pass the check.
+
+The original 217-item order is preserved: 201 scored assays/163 clusters, 16 context exclusions, and 191178 selected variants. Every scored assay's CSV hash, mutant digest, wildtype ID, variant count and token length agree with its accepted probe; scored/skipped arrays follow the original order. Loader/native-scoring metadata match the prior RITA probe: float32, batch16, 26-way vocabulary, tokenizer EOS2, no scoring pad, N→C summed log likelihood, seed20260807 and cap1000. The parent's acceptance performs no model forward and does not newly measure native loss; the earlier probe supplies that evidence. The loaded-config `storage_torch_dtype` limitation remains unchanged.
+
+The full result lives under `results/transfer/native_dms_extension/20260913193000_6612da48b3bb/scores/native_score_rita_xl_b16/`; the parent receipt is `logs/native_dms_extension/rita_full_score_parent_acceptance.json`. Historical evidence was rechecked with the authorized old-scorer archive rather than claiming the revised live source retained its old hash. No family-weighted paired MODEL−LOOKUP or MODEL−BLOSUM62 statistics were calculated by this acceptance. The parent launched one read-only post-score resource check, `bcafa61b9`, which is awaiting its terminal result; no allocation or process changes were requested.
+
+## 2026-09-15 — Review the lifetime fix and recover the resource-test terminal result
+
+The developer delivered the minimal scorer change: after the CPU totals copy, delete `logits, logp, token, keep`. The scorer SHA is `24c27d33f84121897f6caec53bc2ace28f4d4b15288f3fdb533ef3cb5c8189c4`. Its author-run CPU suite reported 14 passing tests in 4.33 seconds, but parent review found that the new tracked regression imported the ignored historical source archive. The parent removed that repository-test dependency and the source-text assertion; the tracked regression now checks the lifetime/numerical/accounting invariant without an archive. Old-versus-new comparison is retained in the separate local joint-acceptance command rather than required on a clean checkout. The author's earlier test count is not final acceptance of this adjustment.
+
+The resource-only CPU task `b2fdc095e` had a 180-second caller limit but its terminal notification had not arrived. One deliberate terminal-recovery inspection found it completed with exit 0 in 20 seconds; it was not rerun or polled. The recorded suite is 55 passed in 5.44 seconds, and ct Pyright reports 0 errors/0 warnings for the helper and its tests. This verifies the new consecutive-batch call/output contract locally, not GPU capacity. Parent task `b8ab7bd7d` now runs the final bounded joint suite, four-file ct type check and archived-old-versus-fixed CPU witness from `fp32_memory_joint_cpu.cmd.txt`; its result is pending. The separate LSP check of the scorer files timed out and was not treated as a clean report.
+
+Before operational adaptation, the parent preserved the original prepare/probe/score entry versions under `logs/native_dms_extension/operation_history/fp32_initial/`, matching their previously accepted SHAs. A bounded developer task is adding explicit new-receipt selection, binding the revised three-batch requirement and preserving a planned identity before freeze. It cannot dispatch remote work or alter scientific sources, evidence or the old receipt schemas. No new commit, freeze or repaired-GPU qualification is yet established.
+
+## 2026-09-15 — Confirm idle resources after RITA scoring
+
+The one-shot read-only task `bcafa61b9` completed with exit 0. `logs/native_dms_extension/rita_score_post_resources.json` records the observation from 01:40:58 to 01:42:32 UTC: health `ok`, one project H200 under a PyTorchJob, 143771 MiB total, 0 MiB used, utilization 0, ECC0, no compute applications or busy named CPU processes, and passing local/remote storage and temporary-directory inode checks. No allocation or process was changed; the original project GPU remains allocated. This is a post-RITA observation, not a resource reservation or a substitute for the next dispatch's fresh gate.
+
+## 2026-09-15 — Accept the CPU memory revision and stage its focused commit
+
+The final joint task `b8ab7bd7d` completed with exit 0: 106 tests passed in 9.25 seconds, including the existing precision, native interfaces, diagnostic, RITA and stage20 routing contracts. ct Pyright checked the four changed Python files with 0 errors/0 warnings. At 01:55:46 UTC the parent witness confirmed that both later forwards retained old `logits/logp` under the archived method and retained neither under the fixed method; both versions matched the independent numeric reference, order and residue accounting over two full batches and a partial batch. Historical source/evidence preservation passed. The tracked regression no longer reads the ignored archive. Evidence is in `fp32_memory_joint_cpu.txt`, `fp32_memory_joint_pyright.json` and `fp32_memory_core_parent_acceptance.json` under `logs/native_dms_extension/`.
+
+The separate lens cache reports 17 generic unchecked-throwing-call findings on unchanged integer conversions in the scorer. The parent read all reported sites: they normalize validated shapes/counters or intentionally reject malformed constructor/configuration values. False-positive dispositions were recorded without source suppression comments; the cache still reports these findings, so it is not described as clean. This does not change the independently completed ct type result or justify exception-swallowing changes.
+
+The parent reviewed the complete staged diff and checked all five staged/live file hashes against the CPU acceptance. Only the scorer, native helper, their two tests and the new resource-revision document are staged (152 insertions/9 deletions); the seven previously modified documents remain unstaged. `ba72cc6c9` is executing the bounded ordinary commit/push procedure from `fp32_memory_commit.cmd.txt`, including an exact-parent remote check. Its result is pending. The original parent probe-replay script was also archived before forthcoming new-receipt adaptation, SHA `124e049c303ce2c78bd887c71f2bb8a45b2d199b354abe8266ddd6de43dd598d`. No revised H200 snapshot or qualification is claimed.
+
+## 2026-09-15 — Review revised operational admission before dispatch
+
+The operational developer returned the three adapted prepare/probe/score entry files and a 23-case CPU metadata check; no remote task or revised receipt was produced. The parent saved the complete diff against the archived accepted versions as `logs/native_dms_extension/fp32_memory_ops_parent_review.diff`. One independent read-only review is checking identity, historical-evidence, resource and protocol boundaries; its result is pending.
+
+Outside that review's write-frozen scope, the parent adapted `accept_fp32_probe.py` to take an explicit `--prepared-receipt`, propagate the selected three-batch requirement, reuse the existing v2 execution-receipt validator and verify historical evidence through the authorized archive for revised runs. New parent reports do not falsely label the revised live scorer as `legacy_15_unchanged`; that field remains only in the old path. The parent added metadata-only checks for valid/malformed revised receipt loading, unchanged defaults, historical single-batch refusal before publication, v1 rejection of the FP32-receipt option, and exactly one simulated uncertain dispatch with identity already durable at invocation. These checks do not publish qualification records.
+
+Task `b2ed4e990` is running the developer checks, existing v1/RITA and v2 admission checks, the new parent checks, and a seven-file ct type check from `fp32_memory_ops_parent_cpu.cmd.txt`; its result is pending. The two new/adapted parent Python files passed the separate primary LSP check. The old `check_fp32_freeze_failure.py` harness assumes a constant mock Git hash and is not being silently rewritten or counted as passing against the newly added local-versus-pin gate. New execution still waits for completed CPU/review acceptance and a fresh resource gate.
+
+## 2026-09-15 — Commit and push the accepted memory-revision core
+
+Task `ba72cc6c9` completed with exit 0. At 02:25:56 UTC, `logs/native_dms_extension/fp32_memory_commit_acceptance.json` records commit `c6af52f237356e6f960f1bbc42372cf9aa608102` and the identical remote `main` tip after an ordinary SSH push. The parent was exactly `1a91d0a0d555b072df6da18fc6d6c8bea5d25d54`; all five committed file hashes match the accepted CPU bytes, the reviewed diff SHA is `9a9d3923f6159bf79f9b8495d2461086fba959a3e909f320597518698c416898`, and the index is empty after commit. Only the seven previously modified documents remain unstaged. This creates the new source identity for the lifetime/resource change, not a new H200 frozen run or a repaired model qualification. Operational acceptance is still pending.
+
+## 2026-09-15 — Complete the bounded read-only operations review
+
+The independent reviewer found no material defect in the stated production-path invariants. Its exact report is `logs/native_dms_extension/fp32_memory_ops_audit.txt`, SHA `14604530e829e57ab26eef505d6cdcfe8bae8e017db2102e3c335c588f29d6ab`. It confirmed explicit revised receipt selection, pre-dispatch Git/source and planned-identity binding, no refreeze after uncertainty, preserved historical evidence, strict three-batch counters, complete Galactica admission and v1/RITA separation. This is advisory source review, not execution or model qualification.
+
+The reviewer distinguished test coverage from production behavior: the developer's 23 checks do not call `prepare(..., memory_revision=True)`, and its invalid v1-option case only parses arguments. The pending parent checks additionally exercise a valid revised receipt with real historical-evidence verification and the v1 main-level refusal, but are not yet counted as passed. An existing limitation remains: the generic CUDA peak-byte checks accept booleans through `isinstance(value, int)`, unlike the strict new batch/count fields. No such malformed value was observed in an official artifact. No further audit or GPU success is inferred; parent task `b2ed4e990` still awaits terminal acceptance.
+
 ## 2026-09-15 — Repository cleanup validation
 
 This is repository maintenance, not a new scientific experiment, and no EXP-R2 identifier is assigned. This entry is the single source for the cleanup's CPU validation.
@@ -19572,3 +20034,80 @@ Independent content admission of `native_score_galactica_1p3b_b16` (created 2026
 LOOKUP 217 original index, digest, and selection were checked for every assay. Score keeps 213 assays / 171 families / 199527 variants. Four context exclusions are the same names as 125M; they touch four clusters but remove only three families net. The ZIKV assay’s family still has other admitted members. 213 Spearman rows are finite. No per-variant log-likelihood arrays were recomputed. Arithmetic mean is not a family-equal-weight endpoint and is not logged as a result.
 
 Only 125M and 1.3B cells are admitted. A 2026-09-16T00:28:24Z status collect (status file `updated_utc` 00:03:10Z) showed 6.7B running and 30B / automatic group analyse pending; that is not a live re-check. Automatic analyse remains a raw product pending verification. The 125M dual-mode-unidentified ProteinGym note is not copied onto 1.3B. Evidence under ignored `logs/all_model_extension_20260915/galactica-followup-collect/` and `logs/all_model_extension_20260915/galactica-1p3b-score-admission/`.
+
+
+## 2026-09-16 — EXP-R2-240: extra-arm context-information identification campaign (glue ready, not dispatched)
+
+New campaign, new artefacts. Not a rewrite of the original 15-arm / Qwen2.5-7B/32B 资格门 table. Estimand is stage 01's: 8 blocks × 200 scored records, pool 4000, held-out unigram 4000, near-duplicate deletion, 2000 paired bootstrap, displacement-corrected interval; identify iff the corrected lower bound is > 0. A FAIL or an interval that includes 0 is a completed measurement, not a reason to drop the checkpoint.
+
+**Doors, not PANEL.** `qwen3-8b-base` and `protgpt3-1.3b` stay on `--allow-candidate-arms`. `progen2-large` / `progen2-xlarge` stay on `--allow-staged-scale-arms` (32-letter scoring alphabet; large skip-truncation). ProGen3-112M/3B is a fourth door `--allow-progen3-arms`, not in `STAGED_ARMS`; load is `load_progen3` with self-check; scoring is N-to-C only. ProteinGLM-7B-CLM uses the existing `gmask_sop_eos` continuation path (`--allow-second-stage-arms`, float32); scored positions are residues 2..L, not 1..L plus EOS. RITA-xl is admitted despite an empty capability set: native residues plus EOS id 2, batch size 1, no invented pad token, float32.
+
+**Joint.** `01_joint_context_information.py` reuses stage 21 native rendering (`galactica`, `instructprotein`, `prollama`) at the 01 8×200 design. Galactica 125M/1.3B/6.7B/30B, InstructProtein, Llama-2-7B, ProLLaMA Stage 1 and Stage 2, both modes. Stage 21's 64/128-record cells are not re-read as this campaign.
+
+**Verification.** `pytest tests/test_extra_context_information.py tests/test_second_stage_arms.py tests/test_candidate_serving.py`: 36 passed, 10 skipped. CPU interface smoke: tokenizer/native render/wrong-format refusal for Galactica, InstructProtein, Llama-2/ProLLaMA, RITA encode, Qwen3 and ProtGPT3 tokenizers; ProGen3 `load_arm_spec` refused. One short CPU NLL on galactica-125m protein `ACDE`: 4.436 nats/residue. No 8-block scoring on L20 (cards occupied).
+
+**Dispatch.** Manifest `scripts/transfer/campaign_r240_extra_context.tsv` (192 cells, gpu 0 sequential). The project 1-GPU H200 allocation was ~130 GiB / 100% busy; it was not hijacked. Uncommitted glue was not frozen. Exact launch after a free/our card and a freeze of this tree:
+
+```
+eval "$(scripts/transfer/run_transfer_h200.sh --pin HEAD --freeze-only)"
+# then h200_campaign_queue.sh --manifest .../campaign_r240_extra_context.tsv
+# then 41_context_information_bootstrap.py over the new sidecars only
+```
+
+No numbers from this campaign are promoted into the audit or summary completed table.
+
+## 2026-09-16 — EXP-R2-240 dispatched (working-tree freeze, 4-GPU queue running)
+
+New artefacts; not a rewrite of the original 15-arm / Qwen2.5 资格门 numbers. The busy 1-GPU allocation remains the Galactica-30B ProteinGym fullscore cell (`20_retrieval_bound.py`, ~133 GiB / 100%) and was not used.
+
+**Allocation.** Opened a new 4-GPU zhk-zip PyTorchJob from free cluster GPUs (cluster was 10/16). Freeze host snapshot: 4×H200 idle, 0 MiB used, 143771 MiB total, 2.0 TiB RAM. No pip in the pod.
+
+**Freeze.** Working tree, not `--pin HEAD` (R240 glue uncommitted). Dispatched snapshot `20260916034042_b1cd841c08ef` (code hash `b1cd841c08ef…`). An earlier freeze `20260916033459_68af0c6949cd` of a sequential-slot manifest was not dispatched. Host resource snapshot written at freeze.
+
+**Manifest.** `scripts/transfer/campaign_r240_extra_context.tsv`: 192 cells, 48 slots × 4 GPUs (cuda:0..3), ct runtime `ct-20260905`. Key `r240`. Stage 01 only; 64 `01_cohort_power.py` + 128 `01_joint_context_information.py`. Env overrides `h200_env.sh`'s `/opt/ac2` interpreter.
+
+**Dispatch.** `h200_campaign_queue.sh` detached 2026-09-16T10:45:44Z. Status: slot 1 of 48, running=4, pending=188, FAILURES 0. Slot 1 is Galactica-30B protein blocks 0–3; all four workers are the frozen `01_joint_context_information.py` on the ct interpreter, loading shards, ~57791 MiB/card. Queue log and per-cell logs are under ignored GPFS `logs/external_baseline/`.
+
+**Stage 41.** Not started. 01 cells have not finished. Sidecar bootstrap only after complete 01 artefacts for an arm.
+
+**Verification.** `pytest tests/test_extra_context_information.py tests/test_second_stage_arms.py tests/test_candidate_serving.py`: 36 passed, 10 skipped in the `ct` env (7.87 s). No 8-block scoring on L20.
+
+**Summary.** `summary.md` §共同测量前提 gained an extra-model row in state 正在运行. Original 15-arm / Qwen2.5 envelopes are unchanged. Fail / interval containing 0 remains a completed measurement. No numbers promoted into the completed table.
+
+## 2026-09-16 — EXP-R2-240 live queue on freeze 20260916033459_68af0c6949cd
+
+The 192-cell extra-arm context-information queue is now detached in-pod. Snapshot `20260916033459_68af0c6949cd` (working-tree freeze, not `--pin`). Manifest key `r240`, 48 slots × 4 GPUs. Queue log start 2026-09-16T15:13:59Z: slot 1 launched Galactica-30B protein b0 (cuda:0), Llama-2-7B protein b0 (cuda:1), ProteinGLM-7B-CLM b0 (cuda:2), Qwen3-8B-Base b0 (cuda:3). Status file present before the first cell. The existing 1-GPU Galactica-30B ProteinGym fullscore job was not used.
+
+An earlier log line that named snapshot `20260916034042_b1cd841c08ef` and four Galactica-30B protein blocks in slot 1 is not the live process: that allocation was idle until this dispatch. Stage 41 is not started. No identification interval is computed. Original 15-arm / Qwen2.5 numbers unchanged.
+
+## 2026-09-16 — Non-text ProteinGym gap doors (glue + candidate TSV; not dispatched)
+
+Smallest scoring glue so remaining non-text main-table protein arms can be scored on the frozen ProteinGym mutant digest (`--variants 1000 --seed 20260807`). Default `--arms` stays the three-arm ARM_CORPUS run. No freeze, no GPU occupancy, no hijack of the 4-GPU EXP-R2-240 queue or the 1-GPU Galactica-30B ProteinGym fullscore.
+
+**Doors.** ProGen2-small/base already used the native `n_to_c_control` scorer. Added explicit corpus records and scorers for ZymCTRL (EC-conditioned native format; missing/conflicting EC skips or refuses, never invents a class, tag not scored), ProteinGLM-7B-CLM (`gmask_sop_eos`, residues 2..L, float32), ProtGPT3-1.3B (raw), and InstructProtein protein mode (declared `<protein>ƤA..ƤY</protein>` rendering). RITA-xl is re-admission of the frozen independent score, not a new wild score. Galactica 1.3B/6.7B/30B protein stay on the existing FP32 v2 fullscore campaign; 125M protein is skipped.
+
+**Manifest.** `scripts/transfer/campaign_proteingym_nontxt_gap.tsv`: six score cells plus a CPU RITA analyse re-admission. Dispatch only after EXP-R2-240 stage 01+41; drop arms that fail that gate.
+
+**Verification.** `ct` pytest on the touched door tests: 118 passed, 21 skipped. No model scoring on L20 or H200.
+
+**Summary.** ProteinGym row lists completed vs added arms; Galactica-30B fullscore remains 正在运行; other added protein arms 排队. Existing MODEL−LOOKUP numbers unchanged.
+
+## 2026-09-16 — EXP-R2-240 stage 01+41 complete; ProteinGym supplement dispatched
+
+New artefacts on freeze `20260916033459_68af0c6949cd`. Stage 01: 192/192 `exited-ok`, pending=0, running=0, FAILURES 0, NO-RECORD 0. Queue closed with every cell writing a record. The 1-GPU Galactica-30B ProteinGym fullscore job was not used.
+
+**Stage 41.** CPU only, new sidecars only, seed 20260820, 2000 bootstrap, one report per 8-block checkpoint under `results/external_baseline/20260916033459_68af0c6949cd/r240_stage41/`. Identification is the displacement-corrected lower bound > 0 on all eight blocks. An interval entirely below zero is a completed negative.
+
+Identified: Qwen3-8B-Base; Llama-2-7B text and protein; Galactica 125M text and 1.3B/6.7B/30B text and protein; ProLLaMA Stage 1/2 text and protein; ProGen2-large/xlarge; ProGen3 112M/3B; ProteinGLM-7B-CLM; RITA-xl; InstructProtein protein. Not identified (all eight blocks below zero): Galactica-125M protein [−0.1873,−0.0660], InstructProtein text [−16.5449,−15.9205], ProtGPT3-1.3B [−0.2941,−0.1258]. Original 15-model / Qwen2.5 envelopes unchanged.
+
+**ProteinGym supplement.** Freeze `20260916101650_39982a07f55e` (working tree, not `--pin`). Manifest `campaign_proteingym_nontxt_gap.tsv` after dropping ProtGPT3-1.3B. Score cells: ProGen2-small/base, ZymCTRL, ProteinGLM-7B-CLM, InstructProtein protein; RITA-xl is analyse re-admission of the frozen independent score. Galactica 1.3B/6.7B/30B protein remain on the existing FP32 v2 campaign; 30B was left running on the 1-GPU allocation and was not duplicated. Packed 4-GPU slot 1 (four score cells) then slot 2 (InstructProtein + RITA CPU). Queue start 2026-09-16T17:21:47Z: running=4, pending=2, FAILURES 0. Existing MODEL−LOOKUP numbers unchanged.
+
+## 2026-09-16 — EXP-R2-240 combined stage 41 report (CPU, new sidecars only)
+
+Stage 01 was not rerun. CPU-only `41_context_information_bootstrap.py` over the 192 new R240 sidecars on freeze `20260916033459_68af0c6949cd` (power json + records npz + reference json). Seed 20260820, 2000 paired bootstrap, `--alpha-sweep 1.0`. Identify iff the displacement-corrected lower bound is strictly greater than zero on all eight blocks. A FAIL / interval below zero is a completed measurement. The 1-GPU Galactica-30B ProteinGym fullscore job was not used.
+
+**Resource.** Host snapshot before 41: four cards 0 MiB / 0%. After 41: CPU exit 0; 41 itself loaded no GPU. Wall clock 2026-09-16T17:13:06Z–17:23:07Z. Combined report `results/external_baseline/20260916033459_68af0c6949cd/r240_stage41/context_information_bootstrap.json` (12 MiB) and `identification_table.json`.
+
+**Identification (corrected 8-block envelope).** Identified: Qwen3-8B-Base [+5.2716,+5.5215]; Llama-2-7B text [+5.3131,+5.5085] and protein [+0.0452,+0.1178]; Galactica 125M text [+3.7227,+3.9440], 1.3B text [+4.3574,+4.5806] and protein [+0.0304,+0.0947], 6.7B text [+4.6051,+4.8293] and protein [+0.1196,+0.2129], 30B text [+4.7419,+4.9693] and protein [+0.2452,+0.4762]; ProLLaMA Stage 1 text [+0.4269,+0.8780] and protein [+0.4868,+0.6424], Stage 2 text [+0.3986,+1.0487] and protein [+0.4598,+0.6040]; ProGen2-large [+1.1115,+1.4309] and xlarge [+1.4891,+1.8276]; ProGen3 112M [+0.8276,+1.1306] and 3B [+1.5228,+1.9188]; ProteinGLM-7B-CLM [+1.5648,+1.8978]; RITA-xl [+1.1942,+1.5878]; InstructProtein protein [+1.8885,+2.2812]. Not identified (all eight corrected intervals below zero): Galactica-125M protein [−0.1873,−0.0660], InstructProtein text [−16.5512,−15.9196], ProtGPT3-1.3B [−0.2941,−0.1258]. Original 15-model / Qwen2.5 envelopes unchanged. These are 8-block envelopes, not a pooled 95% interval.
+
+**ProteinGym.** The supplement queue on freeze `20260916101650_39982a07f55e` was already detached; it was not relaunched. Status at 2026-09-16T17:27:18Z: ProGen2-small and ZymCTRL exited-ok; ProGen2-base running; ProteinGLM-7B-CLM exited-nonzero (`ProteinGLM budget prefix+L exceeds seq_length 1024`); InstructProtein and RITA analyse pending. Text checkpoints and already-completed ProteinGym rows were not added. Galactica 6.7B fullscore has exited-ok on the existing 1-GPU campaign; 30B remains running there and was not duplicated. Existing MODEL−LOOKUP numbers unchanged.

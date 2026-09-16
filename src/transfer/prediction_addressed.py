@@ -198,9 +198,37 @@ def scored_target_records(
 
     if max_len < 2:
         raise ValueError("max_len must admit at least one next-token target")
-    arm.require("budget")
+    if arm.spec.architecture != "rita":
+        arm.require("budget")
     alphabet = scoring_target_alphabet(arm.spec, getattr(arm.model, "config", None))
     vocab = int(alphabet["size"])
+    if arm.spec.architecture == "rita":
+        from .rita_fitness import native_encode_for_budget
+
+        rows = []
+        for text in strings:
+            ids = native_encode_for_budget(arm.tokenizer, text)[:max_len]
+            array = np.asarray(ids[1:], dtype=np.int64) if len(ids) >= 2 else np.asarray([], dtype=np.int64)
+            require_scoring_target_ids(array, alphabet, arm=arm.name)
+            rows.append(array)
+        per_record = SparseCounts.from_records(rows)
+        counts = per_record.vocabulary_totals(vocab)
+        if counts.sum() < 1:
+            raise RuntimeError(f"{arm.name}: reference corpus yields no scored targets")
+        return counts, per_record
+    if arm.spec.architecture == "progen3":
+        from .progen3 import n_to_c_target_rows, require_progen3_handle
+
+        rows = n_to_c_target_rows(
+            require_progen3_handle(arm), list(strings), max_len=max_len
+        )
+        for array in rows:
+            require_scoring_target_ids(array, alphabet, arm=arm.name)
+        per_record = SparseCounts.from_records(rows)
+        counts = per_record.vocabulary_totals(vocab)
+        if counts.sum() < 1:
+            raise RuntimeError(f"{arm.name}: reference corpus yields no scored targets")
+        return counts, per_record
     conditioned = target_rule(arm.spec.input_format) == "between_boundaries"
     start_id, end_id = conditioning_boundary_ids(arm)
     records: list[np.ndarray] = []

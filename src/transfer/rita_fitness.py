@@ -147,6 +147,21 @@ def _native_special_ids(tokenizer: Any) -> tuple[int, int]:
     return NATIVE_EOS_ID, NATIVE_PAD_ID
 
 
+def native_encode_for_budget(tokenizer: Any, sequence: str) -> list[int]:
+    """Raw residues plus tokenizer-native EOS, without assigning a pad token."""
+
+    cache = getattr(tokenizer, "_rita_budget_native", None)
+    if cache is None:
+        eos_id, pad_id = _native_special_ids(tokenizer)
+        residue_ids = _verify_residue_tokenisation(tokenizer, eos_id=eos_id)
+        cache = (eos_id, pad_id, residue_ids)
+        tokenizer._rita_budget_native = cache
+    eos_id, _, residue_ids = cache
+    return _encode_native(
+        tokenizer, sequence, eos_id=eos_id, residue_ids=residue_ids
+    )
+
+
 def _encode_native(
     tokenizer: Any,
     sequence: str,

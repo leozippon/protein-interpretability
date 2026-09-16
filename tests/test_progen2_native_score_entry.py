@@ -57,7 +57,7 @@ def test_unknown_arm_is_still_refused_by_parser_and_corpus_record():
         parser.parse_args(["--arms", "not-a-registered-arm"])
     with pytest.raises(KeyError, match="unknown arm"):
         stage.corpus_record("not-a-registered-arm")
-    for name in ("qwen2.5-7b", "proteinglm-7b-clm"):
+    for name in ("qwen2.5-7b", "gpt2"):
         with pytest.raises(SystemExit):
             parser.parse_args(["--arms", name])
         with pytest.raises(KeyError):

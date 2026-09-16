@@ -1,0 +1,28 @@
+# ProteinGym substitution fitness for remaining non-text main-table protein
+# checkpoints that identified on EXP-R2-240 (displacement-corrected lower
+# bound > 0 on all eight blocks). Packed for the free 4-GPU allocation.
+# Do not use the busy 1-GPU Galactica-30B ProteinGym fullscore job.
+#
+# Already completed (do not rerun): ProtGPT2; ProGen2 medium/large/xlarge;
+# ProGen3 112M/3B; Llama-2-7B; ProLLaMA Stage 1/2.
+# Skip: all text models; Galactica-125M protein (unidentified on the 8x200
+# gate); InstructProtein text; ProtGPT3-1.3B (unidentified, interval below 0).
+#
+# Same mutant digest as existing ProteinGym: --variants 1000 --seed 20260807.
+# Family bootstrap / MODEL−LOOKUP stay stage-20 / native_dms analyse.
+# No cross-lineage ranking.
+#
+# Score cells read wildtypes.json from their own --out; dispatch copies the
+# frozen LOOKUP catalogue into each cell directory before the queue starts.
+#
+# RITA-xl: re-admit the frozen independent score; do not rescore.
+# Galactica 1.3B/6.7B/30B protein: reuse campaign_galactica_fp32_v2_fullscore.tsv
+# when admitted. 30B fullscore is already running. Do not duplicate.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	nontxt	0	20_retrieval_bound.py	pgym_progen2-small	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	model_progen2-small.json	--stages score --arms progen2-small --dtype bfloat16 --variants 1000 --seed 20260807 --batch-size 16 --proteingym-dir /gpfs/jiaotongdamoxing/zhk_zip/data/proteingym/DMS_ProteinGym_substitutions
+1	nontxt	1	20_retrieval_bound.py	pgym_progen2-base	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	model_progen2-base.json	--stages score --arms progen2-base --dtype bfloat16 --variants 1000 --seed 20260807 --batch-size 16 --proteingym-dir /gpfs/jiaotongdamoxing/zhk_zip/data/proteingym/DMS_ProteinGym_substitutions
+1	nontxt	2	20_retrieval_bound.py	pgym_zymctrl	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	model_zymctrl.json	--stages score --arms zymctrl --dtype bfloat16 --variants 1000 --seed 20260807 --batch-size 16 --proteingym-dir /gpfs/jiaotongdamoxing/zhk_zip/data/proteingym/DMS_ProteinGym_substitutions
+1	nontxt	3	20_retrieval_bound.py	pgym_proteinglm-7b-clm	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	model_proteinglm-7b-clm.json	--stages score --arms proteinglm-7b-clm --dtype float32 --variants 1000 --seed 20260807 --batch-size 16 --proteingym-dir /gpfs/jiaotongdamoxing/zhk_zip/data/proteingym/DMS_ProteinGym_substitutions
+2	nontxt	0	20_retrieval_bound.py	pgym_instructprotein	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	model_instructprotein.json	--stages score --arms instructprotein --dtype bfloat16 --variants 1000 --seed 20260807 --batch-size 16 --proteingym-dir /gpfs/jiaotongdamoxing/zhk_zip/data/proteingym/DMS_ProteinGym_substitutions
+2	nontxt	cpu	native_dms_extension.py	pgym_rita_xl_readmit	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	native_dms_comparison.json	analyse --lookup /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260913131730_d91171619815/native_dms_inputs/lookup.json --probe rita-xl=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260913193000_6612da48b3bb/native_probe_rita_xl_b16/interface_check.json --score rita-xl=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260913193000_6612da48b3bb/native_score_rita_xl_b16/model_rita-xl.json

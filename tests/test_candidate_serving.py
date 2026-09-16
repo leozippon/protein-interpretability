@@ -236,9 +236,11 @@ def test_cohort_power_candidate_opt_in_admits_only_its_tuple():
 def test_candidates_are_not_on_the_fitness_or_designed_referent_doors():
     retrieval = _load_stage("20_retrieval_bound.py")
     designed = _load_stage("29_designed_referent.py")
+    assert "qwen3-8b-base" not in retrieval.SCOREABLE_ARMS
+    assert "qwen3-8b-base" not in retrieval.ARM_CORPUS
+    assert "protgpt3-1.3b" in retrieval.SCOREABLE_ARMS
+    assert "protgpt3-1.3b" not in retrieval.ARM_CORPUS
     for name in STAGED_CANDIDATE_ARMS:
-        assert name not in retrieval.SCOREABLE_ARMS, name
-        assert name not in retrieval.ARM_CORPUS, name
         assert name not in designed.DEFAULT_ARMS, name
         assert name not in designed.STAGED_SCALE_ARMS, name
 

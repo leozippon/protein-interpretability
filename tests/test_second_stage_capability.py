@@ -679,10 +679,11 @@ def test_stage_20_still_refuses_an_arm_it_declares_nothing_for():
     # Galactica is a new stage-20 scoring door; the frozen EXP-R2-225
     # joint_galactica wave still has no DMS path (see
     # test_the_two_over_assumptions_are_refused_with_their_reasons).
-    for name in ("proteinglm-7b-clm", "qwen2.5-7b"):
-        with pytest.raises(KeyError):
-            stage.corpus_record(name)
-        assert name not in stage.SCOREABLE_ARMS
+    with pytest.raises(KeyError):
+        stage.corpus_record("qwen2.5-7b")
+    assert "qwen2.5-7b" not in stage.SCOREABLE_ARMS
+    assert "proteinglm-7b-clm" in stage.SCOREABLE_ARMS
+    assert "proteinglm-7b-clm" not in stage.ARM_CORPUS
 
 
 def test_stage_20_admits_rita_xl_without_widening_the_default_run():

@@ -65,9 +65,11 @@ from src.transfer.arms import (  # noqa: E402
     DEFAULT_CORPUS_DRAW_SEED,
     PANEL,
     PROTEIN_SCALE_LADDER,
+    PROGEN3_ARMS,
     REPO,
     STAGED_ARMS,
     STAGED_CANDIDATE_ARMS,
+    STAGED_PROGEN3_ARMS,
     STAGED_SCALE_ARMS,
     STAGED_SECOND_STAGE_ARMS,
     Cohort,
@@ -310,10 +312,12 @@ def validate_arms(names: list[str], args: argparse.Namespace) -> None:
     allow_staged = bool(getattr(args, "allow_staged_scale_arms", False))
     allow_second_stage = bool(getattr(args, "allow_second_stage_arms", False))
     allow_candidate = bool(getattr(args, "allow_candidate_arms", False))
+    allow_progen3 = bool(getattr(args, "allow_progen3_arms", False))
     unknown = []
     staged = []
     second_stage = []
     candidate = []
+    progen3 = []
     panel_names = []
     for name in names:
         if name in PANEL:
@@ -328,6 +332,9 @@ def validate_arms(names: list[str], args: argparse.Namespace) -> None:
         if allow_candidate and name in STAGED_CANDIDATE_ARMS:
             candidate.append(name)
             continue
+        if allow_progen3 and name in STAGED_PROGEN3_ARMS:
+            progen3.append(name)
+            continue
         unknown.append(name)
     if unknown:
         raise ValueError(f"unknown arms {unknown}; panel is {sorted(PANEL)}")
@@ -339,8 +346,8 @@ def validate_arms(names: list[str], args: argparse.Namespace) -> None:
     # return a number.
     without_budget = [
         name
-        for name in (*second_stage, *candidate)
-        if "budget" not in specs[name].capabilities
+        for name in (*second_stage, *candidate, *progen3)
+        if "budget" not in specs[name].capabilities and name != "rita-xl"
     ]
     if without_budget:
         raise ValueError(
@@ -355,6 +362,19 @@ def validate_arms(names: list[str], args: argparse.Namespace) -> None:
             f"arms {mismatched} do not match a {args.kind!r} cohort; "
             "a cross-modality cohort is not a measurement"
         )
+    if progen3 and not bool(getattr(args, "skip_truncation", False)):
+        raise ValueError(
+            f"ProGen3 arms {progen3} need --skip-truncation: truncation_curve "
+            "goes through tokenize_batch, which cannot carry sequence_ids"
+        )
+    rita = [name for name in names if name == "rita-xl"]
+    if rita and not bool(getattr(args, "skip_truncation", False)):
+        raise ValueError(
+            "rita-xl needs --skip-truncation: native encoding does not go through "
+            "tokenize_batch, and truncation_curve would"
+        )
+    if rita and str(getattr(args, "dtype", "")) != "float32":
+        raise ValueError("rita-xl scoring is float32 only; pass --dtype float32")
     refused = {
         name: verdict.reason
         for name in panel_names
@@ -381,7 +401,7 @@ def _arm_spec_record(name: str) -> dict[str, Any]:
         "input_format": spec.input_format,
         "source": spec.source,
     }
-    if name in STAGED_ARMS:
+    if name in STAGED_ARMS or name in PROGEN3_ARMS:
         alphabet = scoring_target_alphabet(spec)
         record["not_panel_admission"] = True
         record["scoring_target_alphabet_size"] = alphabet["size"]
@@ -399,6 +419,7 @@ def _cohort_power_stage_contract(names: list[str]) -> dict[str, Any]:
         if name in STAGED_SCALE_ARMS
         or name in STAGED_SECOND_STAGE_ARMS
         or name in STAGED_CANDIDATE_ARMS
+        or name in STAGED_PROGEN3_ARMS
     ]
     if not panel_names and staged:
         return {
@@ -469,6 +490,34 @@ def _candidate_record(names: list[str], allow_candidate: bool) -> dict[str, Any]
             "artefact is an opt-in candidate budget qualification, not panel "
             "admission, not a capability beyond budget, and not an experiment "
             "ADMITTED digest"
+        ),
+    }
+
+
+def _progen3_record(names: list[str], allow_progen3: bool) -> dict[str, Any] | None:
+    """Opt-in ProGen3 N-to-C context information; not bidirectional DMS."""
+
+    progen3 = [name for name in names if name in STAGED_PROGEN3_ARMS]
+    if not progen3:
+        return None
+    return {
+        "not_panel_admission": True,
+        "allow_progen3_arms": bool(allow_progen3),
+        "scope": "progen3_n_to_c_context_information",
+        "allowed_progen3_arms": list(STAGED_PROGEN3_ARMS),
+        "measured_progen3_arms": progen3,
+        "scoring_directions": ["n_to_c"],
+        "not_bidirectional": (
+            "left-to-right next-token NLL matching stage 01; the bidirectional "
+            "mean used by stage 20 is a different estimand"
+        ),
+        "scoring_target_alphabet": {
+            name: scoring_target_alphabet(arm_spec(name)) for name in progen3
+        },
+        "reason": (
+            "these checkpoints remain outside PANEL and CAMPAIGN_PANEL; packed "
+            "megablocks weights are converted by load_progen3. This artefact is "
+            "not panel admission"
         ),
     }
 
@@ -617,9 +666,9 @@ def main() -> None:
         help="opt in to the EXP-R2-225 second-stage checkpoints "
         "(STAGED_SECOND_STAGE_ARMS). A separate door from "
         "--allow-staged-scale-arms and not a widening of it: neither flag admits "
-        "the other's arms, and neither is panel admission. An arm whose "
-        "declaration carries no 'budget' capability is refused here rather than "
-        "after it is loaded",
+        "the other's arms, and neither is panel admission. rita-xl is scored "
+        "through native encoding despite an empty capability set; other arms "
+        "without 'budget' are still refused here rather than after they load",
     )
     parser.add_argument(
         "--allow-candidate-arms",
@@ -630,6 +679,15 @@ def main() -> None:
         "flag admits only its own tuple. Not panel admission and not an "
         "experiment ADMITTED digest. An arm whose declaration carries no "
         "'budget' capability is refused here rather than after it is loaded",
+    )
+    parser.add_argument(
+        "--allow-progen3-arms",
+        action="store_true",
+        help="opt in to ProGen3-112M/3B (STAGED_PROGEN3_ARMS). Packed megablocks "
+        "weights; load_progen3 converts them and self-checks. Not PANEL, not "
+        "STAGED_ARMS, and not a widening of the other doors. Requires "
+        "--skip-truncation. Scoring is N-to-C only, matching this stage's "
+        "estimand, not the bidirectional DMS convention",
     )
     parser.add_argument("--device", default="cuda:0")
     parser.add_argument("--dtype", default="bfloat16")
@@ -802,11 +860,14 @@ def main() -> None:
     arm_records: dict[str, RecordStatistics] = {}
     for name in names:
         spec = arm_spec(name)
-        arm = (
-            load_arm(name, device=args.device, dtype=args.dtype)
-            if name in PANEL
-            else load_arm_spec(spec, device=args.device, dtype=args.dtype)
-        )
+        if name in PANEL:
+            arm = load_arm(name, device=args.device, dtype=args.dtype)
+        elif name in PROGEN3_ARMS:
+            from src.transfer.progen3 import load_progen3_as_arm
+
+            arm = load_progen3_as_arm(name, device=args.device, dtype=args.dtype)
+        else:
+            arm = load_arm_spec(spec, device=args.device, dtype=args.dtype)
         reference_counts = None
         reference_record = None
         reference_per_record = None
@@ -991,6 +1052,10 @@ def main() -> None:
         payload["not_panel_admission"] = True
         payload["not_experiment_admitted"] = True
         payload["candidate"] = candidate
+    progen3 = _progen3_record(names, bool(args.allow_progen3_arms))
+    if progen3 is not None:
+        payload["not_panel_admission"] = True
+        payload["progen3"] = progen3
     write_json(destination, payload)
     print(f"wrote {destination}")
     if sufficient_statistics is not None:

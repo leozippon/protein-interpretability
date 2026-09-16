@@ -1239,9 +1239,12 @@ def arm_spec(name: str) -> ArmSpec:
         return PANEL[name]
     if name in STAGED_ARMS:
         return STAGED_ARMS[name]
+    if name in PROGEN3_ARMS:
+        return PROGEN3_ARMS[name]
     raise KeyError(
-        f"unknown arm {name!r}; the panel is {sorted(PANEL)} and the staged "
-        f"non-members are {sorted(STAGED_ARMS)}"
+        f"unknown arm {name!r}; the panel is {sorted(PANEL)}, the staged "
+        f"non-members are {sorted(STAGED_ARMS)}, and the ProGen3 door is "
+        f"{sorted(PROGEN3_ARMS)}"
     )
 
 
@@ -1434,6 +1437,71 @@ STAGED_CANDIDATE_ARMS = (
     "qwen3-8b-base",
     "protgpt3-1.3b",
 )
+
+#: ProGen3 rungs for the stage-01 context-information door. **Not** in
+#: :data:`STAGED_ARMS`: that table's keys are pinned to
+#: ``panel_contract.STAGED_BUT_NOT_ADMITTED``, and putting a joint-ineligible
+#: packed-MoE lineage there would either widen campaign membership or block the
+#: megablocks loader behind AutoModel. Stage 01 admits these names only with
+#: ``--allow-progen3-arms``. Membership is not panel admission. Hugging Face
+#: eager MoE is random experts; the loader is :func:`src.transfer.progen3.load_progen3`.
+PROGEN3_ARMS: dict[str, ArmSpec] = {
+    "progen3-112m": ArmSpec(
+        name="progen3-112m",
+        path=env_path("TRANSFER_PROGEN3_DIR", Path("/Data/public/progen3-112m")),
+        path_variable="TRANSFER_PROGEN3_DIR",
+        modality="protein",
+        n_layer=10,
+        d_model=384,
+        tokenisation="residue",
+        input_format="raw",
+        evaluation_cohort_source="swissprot",
+        architecture="progen3",
+        pretraining_corpus=PRETRAINING_UNDECLARED,
+        capabilities=frozenset({"budget"}),
+        scoring_target_alphabet_size=134,
+    ),
+    "progen3-3b": ArmSpec(
+        name="progen3-3b",
+        path=MODEL_ROOT / "progen3-3b",
+        path_variable="TRANSFER_MODEL_BASE_DIR",
+        modality="protein",
+        n_layer=24,
+        d_model=1280,
+        tokenisation="residue",
+        input_format="raw",
+        evaluation_cohort_source="swissprot",
+        architecture="progen3",
+        pretraining_corpus="profluent_protein_atlas_v1",
+        capabilities=frozenset({"budget"}),
+        scoring_target_alphabet_size=134,
+    ),
+}
+STAGED_PROGEN3_ARMS = tuple(PROGEN3_ARMS)
+
+
+def _check_progen3_arms() -> None:
+    """ProGen3 is a fourth door, not a silent widening of STAGED_ARMS."""
+
+    if list(STAGED_PROGEN3_ARMS) != list(PROGEN3_ARMS):
+        raise AssertionError("STAGED_PROGEN3_ARMS must be the keys of PROGEN3_ARMS")
+    overlap = sorted(set(PROGEN3_ARMS) & (set(PANEL) | set(STAGED_ARMS)))
+    if overlap:
+        raise AssertionError(
+            f"{overlap} cannot be both ProGen3 door members and PANEL/STAGED_ARMS"
+        )
+    for name, spec in PROGEN3_ARMS.items():
+        if spec.name != name:
+            raise AssertionError(f"progen3 arm {name!r} declares the name {spec.name!r}")
+        if spec.architecture != "progen3":
+            raise AssertionError(f"{name} must declare architecture progen3")
+        if spec.scoring_target_alphabet_size is None:
+            raise AssertionError(f"{name} must declare scoring_target_alphabet_size")
+        if "budget" not in spec.capabilities:
+            raise AssertionError(f"{name} must declare the budget capability")
+
+
+_check_progen3_arms()
 
 
 def _check_second_stage_arms() -> None:
@@ -2192,6 +2260,11 @@ def load_arm_spec(
     """
 
     name = spec.name
+    if spec.architecture == "progen3":
+        raise ValueError(
+            f"{name}: architecture progen3 cannot be loaded through load_arm_spec; "
+            "HF eager MoE leaves random experts. Use src.transfer.progen3.load_progen3"
+        )
     if dtype not in _DTYPES:
         raise ValueError(f"unsupported inference dtype {dtype!r}")
     if spec.architecture == "proteinglm":
@@ -3070,6 +3143,11 @@ def tokenize_batch(
         raise ValueError(f"{arm.name}: cannot tokenise an empty batch")
     if max_len < 1:
         raise ValueError("max_len must be positive")
+    if arm.spec.architecture == "progen3":
+        raise ValueError(
+            f"{arm.name}: ProGen3 must be tokenised by ProGen3BatchPreparer, not "
+            "tokenize_batch; a generic tokenizer call drops sequence_ids"
+        )
     if arm.spec.input_format == INPUT_FORMAT_GMASK_SOP_EOS:
         rows = [
             _proteinglm.encode_budget_text(arm.tokenizer, text, max_len=max_len)
@@ -3108,7 +3186,16 @@ def symbols_per_token(arm: Arm, texts: list[str], max_len: int) -> float:
     tokens = 0
     symbols = 0
     for text in texts:
-        if arm.spec.input_format == INPUT_FORMAT_GMASK_SOP_EOS:
+        if arm.spec.architecture == "rita":
+            from .rita_fitness import native_encode_for_budget
+
+            ids = native_encode_for_budget(arm.tokenizer, text)[:max_len]
+        elif arm.spec.architecture == "progen3":
+            from .progen3 import require_progen3_handle
+
+            batch = require_progen3_handle(arm).batch([text], reverse=False)
+            ids = batch["input_ids"][0].detach().cpu().tolist()[:max_len]
+        elif arm.spec.input_format == INPUT_FORMAT_GMASK_SOP_EOS:
             ids = _proteinglm.encode_budget_text(
                 arm.tokenizer, text, max_len=max_len
             )
