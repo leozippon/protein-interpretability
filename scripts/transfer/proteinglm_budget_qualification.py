@@ -506,12 +506,68 @@ def score_numeric_cases(arm: Arm) -> dict[str, Any]:
     }
 
 
+def capture_cuda_end_state(device: torch.device, started: float) -> dict[str, Any]:
+    """Bounded post-call CUDA telemetry. Failures are unknown, never invented zeros."""
+
+    readings: dict[str, Any] = {}
+    try:
+        torch.cuda.synchronize(device)
+        readings["synchronize"] = "ok"
+    except Exception as exc:
+        readings["synchronize"] = {"status": "unknown", "error": sanitize_error(exc)}
+    try:
+        readings["duration_s"] = float(time.perf_counter() - started)
+    except Exception as exc:
+        readings["duration_s"] = {"status": "unknown", "error": sanitize_error(exc)}
+    try:
+        readings["peak_allocated_bytes"] = int(torch.cuda.max_memory_allocated(device))
+    except Exception as exc:
+        readings["peak_allocated_bytes"] = {"status": "unknown", "error": sanitize_error(exc)}
+    try:
+        readings["peak_reserved_bytes"] = int(torch.cuda.max_memory_reserved(device))
+    except Exception as exc:
+        readings["peak_reserved_bytes"] = {"status": "unknown", "error": sanitize_error(exc)}
+    return readings
+
+
+def cuda_end_state_is_complete(cuda_memory: Mapping[str, Any] | None) -> bool:
+    if not isinstance(cuda_memory, Mapping):
+        return False
+    required = (
+        "baseline_allocated_bytes",
+        "baseline_reserved_bytes",
+        "total_memory_bytes",
+        "duration_s",
+        "peak_allocated_bytes",
+        "peak_reserved_bytes",
+    )
+    for key in required:
+        value = cuda_memory.get(key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return False
+    return True
+
+
 def run_resource_gate(
     arm: Arm,
     longest_sequence: str,
     *,
     record_cuda: bool,
+    progress: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if progress is None:
+        progress = {}
+    progress["phase"] = "validate_input"
+    progress["expected_n_sequences"] = RESOURCE_N_SEQUENCES
+    progress["expected_n_targets"] = RESOURCE_N_TARGETS
+    progress["longest_L"] = LONGEST_RESIDUES
+    progress["batch_size"] = 1
+    progress["max_len"] = MAX_LEN
+    progress["resource_public_call_attempted"] = 0
+    progress["resource_public_call_completed"] = 0
+    progress.pop("resource_public_call_count", None)
+    progress.pop("finite", None)
+
     if longest_sequence != longest_legal_sequence():
         raise ValueError(
             "resource gate requires the frozen 1021-residue longest legal input; "
@@ -520,106 +576,151 @@ def run_resource_gate(
     require_eval_fp32(arm)
     rendered = pglm.render_budget_sequence(longest_sequence)
     inputs = [rendered, rendered, rendered]
+    progress["input_identity"] = {
+        "n_strings": len(inputs),
+        "string_sha256": [sha256_text(text) for text in inputs],
+        "max_len": MAX_LEN,
+        "batch_size": 1,
+    }
     production_calls: list[dict[str, Any]] = []
     cuda_block: dict[str, Any] | None = None
-    started = 0.0
+    started: float | None = None
+    cuda_device: torch.device | None = None
+
     if record_cuda:
         require_cuda_device(arm.device)
         if not torch.cuda.is_available():
             raise RuntimeError("resource gate requires a live CUDA device")
-        device = torch.device(arm.device)
-        torch.cuda.synchronize(device)
-        torch.cuda.reset_peak_memory_stats(device)
+        cuda_device = torch.device(arm.device)
+        progress["phase"] = "cuda_reset"
+        torch.cuda.synchronize(cuda_device)
+        torch.cuda.reset_peak_memory_stats(cuda_device)
         cuda_block = {
-            "baseline_allocated_bytes": int(torch.cuda.memory_allocated(device)),
-            "baseline_reserved_bytes": int(torch.cuda.memory_reserved(device)),
-            "total_memory_bytes": int(torch.cuda.get_device_properties(device).total_memory),
+            "baseline_allocated_bytes": int(torch.cuda.memory_allocated(cuda_device)),
+            "baseline_reserved_bytes": int(torch.cuda.memory_reserved(cuda_device)),
+            "total_memory_bytes": int(
+                torch.cuda.get_device_properties(cuda_device).total_memory
+            ),
         }
+        progress["cuda_memory"] = cuda_block
         started = time.perf_counter()
-    with inference_precision(arm) as policy:
-        scored = public_scored_tokens(
-            arm,
-            inputs,
-            max_len=MAX_LEN,
-            batch_size=1,
-            call_log=production_calls,
-        )
-        if record_cuda:
-            torch.cuda.synchronize(torch.device(arm.device))
-            assert cuda_block is not None
-            cuda_block["duration_s"] = float(time.perf_counter() - started)
-            cuda_block["peak_allocated_bytes"] = int(
-                torch.cuda.max_memory_allocated(torch.device(arm.device))
-            )
-            cuda_block["peak_reserved_bytes"] = int(
-                torch.cuda.max_memory_reserved(torch.device(arm.device))
-            )
-        if len(production_calls) != 1:
-            raise ValueError(
-                "resource gate must be one public scored_tokens call, "
-                f"got {len(production_calls)}"
-            )
-        if production_calls[0]["strings"] != inputs:
-            raise ValueError("resource gate strings must be [longest, longest, longest]")
-        if production_calls[0]["batch_size"] != 1 or production_calls[0]["max_len"] != MAX_LEN:
-            raise ValueError("resource gate must be batch_size=1 and max_len=1024")
-        n_targets = int(scored.target_ids.size)
-        if n_targets != RESOURCE_N_TARGETS:
-            raise ValueError(
-                f"resource gate kept {n_targets} targets, expected {RESOURCE_N_TARGETS}"
-            )
-        if not np.isfinite(scored.nll_nats).all():
-            raise FloatingPointError("resource gate produced non-finite NLL")
-        ids, mask = tokenize_batch(arm, [rendered], MAX_LEN)
-        reference = independent_shifted_ce(arm, ids, mask)
-    per_sequence = []
-    for index in range(RESOURCE_N_SEQUENCES):
-        selected = scored.sequence_index == index
-        production_ids = scored.target_ids[selected]
-        production_nll = scored.nll_nats[selected]
-        if not np.array_equal(production_ids, reference.target_ids):
-            raise ValueError(f"resource sequence {index}: target ids differ from longest reference")
-        delta = np.abs(production_nll - reference.nll_nats)
-        max_abs = float(delta.max())
-        if max_abs > FP32_PER_TARGET_ABS:
-            raise ValueError(
-                f"resource sequence {index}: independent CE max abs {max_abs} "
-                f"exceeds {FP32_PER_TARGET_ABS}"
-            )
-        per_sequence.append(
-            {
-                "sequence_index": index,
-                "n_targets": int(production_ids.size),
-                "target_ids_sha256": sha256_int_row(production_ids.tolist()),
-                "max_abs": max_abs,
+
+    def collect_end_state() -> None:
+        if not record_cuda or started is None or cuda_device is None or cuda_block is None:
+            return
+        try:
+            readings = capture_cuda_end_state(cuda_device, started)
+        except Exception as telemetry_exc:
+            progress["telemetry_error"] = sanitize_error(telemetry_exc)
+            return
+        for key, value in readings.items():
+            cuda_block.setdefault(key, value)
+        progress["cuda_memory"] = cuda_block
+
+    progress["phase"] = "public_scored_tokens"
+    progress["resource_public_call_attempted"] = 1
+    try:
+        with inference_precision(arm) as policy:
+            progress["matmul_policy"] = {
+                "requested": dict(policy["requested"]),
+                "observed": dict(policy["observed"]),
             }
-        )
-    payload: dict[str, Any] = {
-        "resource_public_call_count": 1,
-        "n_sequences": RESOURCE_N_SEQUENCES,
-        "n_targets": n_targets,
-        "batch_size": 1,
-        "max_len": MAX_LEN,
-        "longest_L": LONGEST_RESIDUES,
-        "finite": True,
-        "per_sequence": per_sequence,
-        "matmul_policy": policy,
-        "independent_ce_max_abs": max(item["max_abs"] for item in per_sequence),
-        "cuda_memory": cuda_block,
-        "production_calls": [
-            {
-                "n_strings": item["n_strings"],
-                "max_len": item["max_len"],
-                "batch_size": item["batch_size"],
-                "string_sha256": [sha256_text(text) for text in item["strings"]],
-            }
-            for item in production_calls
-        ],
-        "not_all_qualification_public_calls": (
-            "this count is the resource-gate public scored_tokens call only"
-        ),
-    }
-    return payload
+            scored = public_scored_tokens(
+                arm,
+                inputs,
+                max_len=MAX_LEN,
+                batch_size=1,
+                call_log=production_calls,
+            )
+            progress["resource_public_call_completed"] = 1
+            collect_end_state()
+            if len(production_calls) != 1:
+                raise ValueError(
+                    "resource gate must be one public scored_tokens call, "
+                    f"got {len(production_calls)}"
+                )
+            if production_calls[0]["strings"] != inputs:
+                raise ValueError("resource gate strings must be [longest, longest, longest]")
+            if production_calls[0]["batch_size"] != 1 or production_calls[0]["max_len"] != MAX_LEN:
+                raise ValueError("resource gate must be batch_size=1 and max_len=1024")
+            n_targets = int(scored.target_ids.size)
+            if n_targets != RESOURCE_N_TARGETS:
+                raise ValueError(
+                    f"resource gate kept {n_targets} targets, expected {RESOURCE_N_TARGETS}"
+                )
+            if not np.isfinite(scored.nll_nats).all():
+                raise FloatingPointError("resource gate produced non-finite NLL")
+            progress["phase"] = "independent_reference"
+            ids, mask = tokenize_batch(arm, [rendered], MAX_LEN)
+            reference = independent_shifted_ce(arm, ids, mask)
+        per_sequence = []
+        for index in range(RESOURCE_N_SEQUENCES):
+            selected = scored.sequence_index == index
+            production_ids = scored.target_ids[selected]
+            production_nll = scored.nll_nats[selected]
+            if not np.array_equal(production_ids, reference.target_ids):
+                raise ValueError(
+                    f"resource sequence {index}: target ids differ from longest reference"
+                )
+            delta = np.abs(production_nll - reference.nll_nats)
+            max_abs = float(delta.max())
+            if max_abs > FP32_PER_TARGET_ABS:
+                raise ValueError(
+                    f"resource sequence {index}: independent CE max abs {max_abs} "
+                    f"exceeds {FP32_PER_TARGET_ABS}"
+                )
+            per_sequence.append(
+                {
+                    "sequence_index": index,
+                    "n_targets": int(production_ids.size),
+                    "target_ids_sha256": sha256_int_row(production_ids.tolist()),
+                    "max_abs": max_abs,
+                }
+            )
+        if record_cuda and not cuda_end_state_is_complete(cuda_block):
+            raise ValueError(
+                "qualified resource facts require complete CUDA telemetry; "
+                "unknown readings cannot mint a pass"
+            )
+        payload: dict[str, Any] = {
+            "resource_public_call_count": 1,
+            "n_sequences": RESOURCE_N_SEQUENCES,
+            "n_targets": n_targets,
+            "batch_size": 1,
+            "max_len": MAX_LEN,
+            "longest_L": LONGEST_RESIDUES,
+            "finite": True,
+            "per_sequence": per_sequence,
+            "matmul_policy": policy,
+            "independent_ce_max_abs": max(item["max_abs"] for item in per_sequence),
+            "cuda_memory": cuda_block,
+            "production_calls": [
+                {
+                    "n_strings": item["n_strings"],
+                    "max_len": item["max_len"],
+                    "batch_size": item["batch_size"],
+                    "string_sha256": [sha256_text(text) for text in item["strings"]],
+                }
+                for item in production_calls
+            ],
+            "not_all_qualification_public_calls": (
+                "this count is the resource-gate public scored_tokens call only"
+            ),
+            "expected_n_sequences": RESOURCE_N_SEQUENCES,
+            "expected_n_targets": RESOURCE_N_TARGETS,
+            "input_identity": progress["input_identity"],
+            "resource_public_call_attempted": 1,
+            "resource_public_call_completed": 1,
+            "phase": "complete",
+        }
+        progress.update(payload)
+        return payload
+    except Exception:
+        collect_end_state()
+        progress.pop("resource_public_call_count", None)
+        if progress.get("finite") is True:
+            progress.pop("finite", None)
+        raise
 
 
 def envelope(
@@ -667,6 +768,11 @@ def build_qualified_payload(
         raise ValueError("qualified artefact requires resource_public_call_count=1")
     if resource.get("cuda_memory") is None:
         raise ValueError("qualified artefact requires CUDA resource facts; CPU tests cannot mint them")
+    if not cuda_end_state_is_complete(resource.get("cuda_memory")):
+        raise ValueError(
+            "qualified artefact requires complete CUDA telemetry; "
+            "unknown readings cannot mint a pass"
+        )
     max_length = arm.serving_provenance["max_length"]
     payload = envelope(device=device, dtype=dtype, status=STATUS_QUALIFIED)
     payload.update(
@@ -808,16 +914,23 @@ def run_qualification(
     destination_dir.mkdir(parents=True, exist_ok=True)
     loaded_arm: Arm | None = None
     extras: dict[str, Any] = {}
+    resource_progress: dict[str, Any] = {}
+    extras["resource"] = resource_progress
     try:
         require_cuda_device(device)
         loader = load_fn or load_published_arm
         loaded_arm = loader(device=device, dtype=dtype)
+        if loaded_arm.strict_load is not None:
+            extras["strict_load"] = dict(loaded_arm.strict_load)
+        provenance = loaded_arm.serving_provenance
+        if isinstance(provenance, Mapping):
+            extras["serving_provenance"] = {
+                key: provenance[key]
+                for key in ("derived", "max_length")
+                if key in provenance
+            }
         numeric = score_numeric_cases(loaded_arm)
-        extras["numeric"] = {
-            "independent_ce_max_abs": numeric["independent_ce_max_abs"],
-            "n_cases": len(numeric["cases"]),
-            "numeric_public_call_count": numeric["numeric_public_call_count"],
-        }
+        extras["numeric"] = numeric
         gc.collect()
         if str(device).startswith("cuda") and torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -825,6 +938,7 @@ def run_qualification(
             loaded_arm,
             longest_legal_sequence(),
             record_cuda=True,
+            progress=resource_progress,
         )
         payload = build_qualified_payload(
             loaded_arm,

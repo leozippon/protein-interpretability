@@ -25,7 +25,10 @@ from src.transfer.amino_acids import AA20  # noqa: E402
 from src.transfer.arms import STAGED_ARMS, Arm  # noqa: E402
 from src.transfer.budget import ScoredTokens  # noqa: E402
 from src.transfer.io import write_json as real_write_json  # noqa: E402
-from src.transfer.precision_policy import FP32_PER_TARGET_ABS  # noqa: E402
+from src.transfer.precision_policy import (  # noqa: E402
+    FP32_PER_TARGET_ABS,
+    snapshot_matmul_policy,
+)
 
 NAME = "proteinglm-7b-clm"
 _FROZEN_SOURCE = Path("/Data/public/models_R2/proteinglm-7b-clm")
@@ -388,3 +391,114 @@ def test_write_failure_leaves_no_canonical_or_temp(tmp_path, monkeypatch):
     with pytest.raises(OSError, match="injected link failure"):
         Q.write_artefact(tmp_path, _failed_payload())
     assert list(tmp_path.iterdir()) == []
+
+
+class _FakeDeviceProps:
+    total_memory = 999
+
+
+def _install_fake_cuda(monkeypatch, *, peak_allocated="error"):
+    """Inject CUDA counters. Values are test fakes, not GPU measurements."""
+
+    monkeypatch.setattr(Q.torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(Q.torch.cuda, "synchronize", lambda device=None: None)
+    monkeypatch.setattr(Q.torch.cuda, "reset_peak_memory_stats", lambda device=None: None)
+    monkeypatch.setattr(Q.torch.cuda, "memory_allocated", lambda device=None: 111)
+    monkeypatch.setattr(Q.torch.cuda, "memory_reserved", lambda device=None: 222)
+    monkeypatch.setattr(
+        Q.torch.cuda, "get_device_properties", lambda device=None: _FakeDeviceProps()
+    )
+    monkeypatch.setattr(Q.torch.cuda, "empty_cache", lambda: None)
+    if peak_allocated == "error":
+
+        def boom_peak(device=None):
+            raise RuntimeError("injected telemetry failure")
+
+        monkeypatch.setattr(Q.torch.cuda, "max_memory_allocated", boom_peak)
+    else:
+        monkeypatch.setattr(Q.torch.cuda, "max_memory_allocated", lambda device=None: 333)
+    monkeypatch.setattr(Q.torch.cuda, "max_memory_reserved", lambda device=None: 444)
+
+
+def test_resource_oom_keeps_progress_and_primary_cause(monkeypatch):
+    arm = _tiny_arm()
+    progress: dict = {}
+    real = Q.scored_tokens
+
+    def oom_on_resource(loaded, strings, *, max_len, batch_size):
+        if len(list(strings)) == 3:
+            raise torch.cuda.OutOfMemoryError("CUDA out of memory: simulated")
+        return real(loaded, strings, max_len=max_len, batch_size=batch_size)
+
+    monkeypatch.setattr(Q, "scored_tokens", oom_on_resource)
+    monkeypatch.setattr(Q, "require_cuda_device", lambda device: None)
+    _install_fake_cuda(monkeypatch, peak_allocated="error")
+    before = snapshot_matmul_policy(torch)
+    with pytest.raises(torch.cuda.OutOfMemoryError, match="simulated"):
+        Q.run_resource_gate(
+            arm,
+            Q.longest_legal_sequence(),
+            record_cuda=True,
+            progress=progress,
+        )
+    after = snapshot_matmul_policy(torch)
+    assert after == before
+    assert progress["resource_public_call_attempted"] == 1
+    assert progress["resource_public_call_completed"] == 0
+    assert progress.get("resource_public_call_count") != 1
+    assert progress.get("finite") is not True
+    assert progress["expected_n_sequences"] == 3
+    assert progress["expected_n_targets"] == 3060
+    cuda_memory = progress["cuda_memory"]
+    assert cuda_memory["baseline_allocated_bytes"] == 111
+    assert cuda_memory["baseline_reserved_bytes"] == 222
+    assert cuda_memory["total_memory_bytes"] == 999
+    peak = cuda_memory["peak_allocated_bytes"]
+    assert peak["status"] == "unknown"
+    assert peak["error"]["class"] == "RuntimeError"
+    assert "injected telemetry failure" in peak["error"]["message"]
+
+
+def test_qualification_oom_keeps_numeric_and_does_not_hide_cause(monkeypatch, tmp_path):
+    arm = _tiny_arm()
+    real = Q.scored_tokens
+
+    def oom_on_resource(loaded, strings, *, max_len, batch_size):
+        if len(list(strings)) == 3:
+            raise torch.cuda.OutOfMemoryError("CUDA out of memory: simulated")
+        return real(loaded, strings, max_len=max_len, batch_size=batch_size)
+
+    def load_fn(*, device, dtype):
+        return arm
+
+    monkeypatch.setattr(Q, "scored_tokens", oom_on_resource)
+    monkeypatch.setattr(Q, "require_cuda_device", lambda device: None)
+    _install_fake_cuda(monkeypatch, peak_allocated="error")
+    before = snapshot_matmul_policy(torch)
+    with pytest.raises(Q.QualificationFailed) as caught:
+        Q.run_qualification(
+            arm=NAME,
+            device="cuda:0",
+            dtype="float32",
+            out=tmp_path,
+            load_fn=load_fn,
+        )
+    after = snapshot_matmul_policy(torch)
+    assert after == before
+    payload = json.loads(caught.value.path.read_text(encoding="utf-8"))
+    assert payload["status"] == Q.STATUS_FAILED
+    assert payload["error"]["class"] == "OutOfMemoryError"
+    assert "simulated" in payload["error"]["message"]
+    assert payload["error"]["class"] != "RuntimeError"
+    numeric = payload["partial"]["numeric"]
+    assert len(numeric["cases"]) == 4
+    assert numeric["numeric_public_call_count"] == 1
+    resource = payload["partial"]["resource"]
+    assert resource["resource_public_call_attempted"] == 1
+    assert resource["resource_public_call_completed"] == 0
+    assert resource.get("resource_public_call_count") != 1
+    assert resource.get("finite") is not True
+    assert resource["cuda_memory"]["baseline_allocated_bytes"] == 111
+    peak = resource["cuda_memory"]["peak_allocated_bytes"]
+    assert peak["status"] == "unknown"
+    assert peak["error"]["class"] == "RuntimeError"
