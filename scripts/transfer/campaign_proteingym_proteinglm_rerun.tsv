@@ -1,0 +1,72 @@
+# ProteinGym substitution-fitness re-run for pgym_proteinglm-7b-clm, the last
+# cell EXP-R2-240's non-text gap campaign left unrun.
+#
+# That cell failed on freeze 20260916101650_39982a07f55e after 30 s with
+# `ValueError: ProteinGLM budget prefix+L exceeds seq_length 1024`. The failure
+# was in the LENGTH PROBE, not in scoring: stage 20 asks every scorer for
+# `token_lengths` before it scores an assay, and records an assay whose maximum
+# exceeds that arm's context as a skip with the shared reason "the rendered
+# variant exceeds this arm's context; truncating would score a sequence that may
+# not contain the mutated position". `_ProteinGLMScorer.token_lengths` rendered
+# through `render_budget_sequence`, which refuses an over-context sequence, so
+# ProteinGLM could never reach that branch and lost the whole arm instead of the
+# assays its 1024 window excludes.
+#
+# Fix commit 86bad4e makes the probe total while leaving every scoring-path
+# refusal where it was: `proteinglm.budget_token_length` returns
+# `PREFIX_LENGTH + L` for any AA20 sequence of two or more residues, and
+# `render_budget_sequence` / `encode_budget_text` still raise above the window,
+# so an over-context sequence still cannot be scored. The residues 2..L estimand
+# is unchanged, and 1021 residues (1024 rendered tokens) is the largest wild type
+# this arm scores.
+#
+# THIS SUPERSEDES THE EARLIER BLANKET-REFUSAL PLAN. ProteinGLM is no longer
+# recorded as an explicit refusal, because the protocol already declares the
+# rule it should follow: docs/PROTEINGYM_EXTENSION_PROTOCOL.md, "After the
+# scorer loads, `token_lengths` is recorded on every drawn variant. An assay is
+# excluded only when the maximum rendered length exceeds that checkpoint's
+# context. Truncation is refused." ProteinGLM is now treated like every other
+# 1024-context arm on this queue. EXPECTED OUTCOME, declared before the run:
+# 201 assays scored over 163 families and 16 assays skipped on the context
+# reason, matching ProGen2-small, ZymCTRL and RITA-xl -- all of which take the
+# same 16-assay exclusion. 201 is what ProGen2-small and RITA-xl already record
+# on this queue. A different skip count is a finding, not an adjustment.
+#
+# The estimation arguments are the failed cell's own, unchanged:
+# `--stages score --arms proteinglm-7b-clm --dtype float32 --variants 1000
+# --seed 20260807 --batch-size 16`, and the same `--proteingym-dir`. float32 is
+# this arm's declared serving precision, not a choice made here.
+#
+# Two cells from the previous freeze are NOT part of this manifest and are not
+# re-run: pgym_zymctrl exited 0 with 0 of 217 assays scored (a corpus-driven
+# refusal, not a defect), and the 13 pure-text text-AA columns remain out of
+# scope by user decision.
+#
+# ------------------------------------------------------------- placement
+#
+# One cell on gpu 1, dispatched CONCURRENTLY with the re-run queue that is
+# already running on gpu 0 of the same allocation. That is deliberate and it is
+# read off h200_campaign_queue.sh's own behaviour rather than assumed:
+#
+#   * the mutual-exclusion lock is `${STATUS}.lock`, and STATUS defaults to
+#     `<project>/logs/external_baseline/<campaign>.status.tsv` with `<campaign>`
+#     taken from the manifest's basename -- so two different campaigns hold two
+#     different locks and cannot refuse or disturb each other;
+#   * GPU admission is per card: `gpu_is_busy <index>` reads that card's own
+#     `memory.used` from nvidia-smi and compares it with BUSY_MIB (1000 MiB). A
+#     cell is refused only if ITS card is busy, so the running campaign's ~25 GB
+#     on cuda:0 cannot block a cell on cuda:1, and this cell cannot disturb it;
+#   * status file, queue log and host resource snapshots are all named after the
+#     campaign, so the two runners share no mutable file.
+#
+# The alternative -- waiting for the other campaign to reach a terminal state --
+# would leave three of four cards idle for about an hour for no safety gained.
+# The 1-GPU allocation running Galactica-30B fullscore is a different pod and is
+# untouched either way.
+#
+# stage_score reads wildtypes.json from its own --out, which this runner
+# injects, so the frozen catalogue is staged into the cell directory before
+# dispatch and is not the cell's expect basename.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	glm	1	20_retrieval_bound.py	pgym_proteinglm-7b-clm	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	model_proteinglm-7b-clm.json	--stages score --arms proteinglm-7b-clm --dtype float32 --variants 1000 --seed 20260807 --batch-size 16 --proteingym-dir /gpfs/jiaotongdamoxing/zhk_zip/data/proteingym/DMS_ProteinGym_substitutions
