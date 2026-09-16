@@ -32,19 +32,12 @@ from src.transfer.residue_prefix import (
     ResidueBatch,
     ResidueProvenance,
     ResidueRecord,
+    _require_int,
     validate_residue_batch,
 )
 
 ID_BYTES = 8
 MASK_BYTES = 1
-
-
-def _require_int(value: object, *, name: str, minimum: int | None = None) -> int:
-    if type(value) is not int:
-        raise TypeError(f"{name} must be a non-boolean int")
-    if minimum is not None and value < minimum:
-        raise ValueError(f"{name} must be >= {minimum}")
-    return value
 
 
 def _explicit_device(device: object) -> torch.device:

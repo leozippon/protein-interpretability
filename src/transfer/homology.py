@@ -151,6 +151,7 @@ from .circuits import (
     natural_repeat_probes,
     summarise_head_matrix,
 )
+from .io import sha256_file
 from .statistics import (
     MINIMUM_BOOTSTRAP_UNITS,
     MINIMUM_FINITE_DRAW_FRACTION,
@@ -225,19 +226,6 @@ def _finite(value: float, label: str) -> float:
     if not math.isfinite(result):
         raise ValueError(f"{label} is not finite")
     return result
-
-
-def sha256_file(path: Path, *, chunk: int = 1 << 22) -> str:
-    """Streamed digest; the inputs here run to tens of gigabytes."""
-
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        while True:
-            block = handle.read(chunk)
-            if not block:
-                break
-            digest.update(block)
-    return digest.hexdigest()
 
 
 # ------------------------------------------------------------------ the tool

@@ -145,9 +145,9 @@ def test_protein_gym_and_designed_referent_doors_are_unchanged():
 
 def test_source_files_are_unmodified_and_derived_patches_are_exact():
     source = _require_source()
-    before = {name: pglm.sha256_file(source / name) for name in pglm.SOURCE_FILENAMES}
+    before = {name: (source / name).read_bytes() for name in pglm.SOURCE_FILENAMES}
     package = pglm.derive_serving_package(source)
-    after = {name: pglm.sha256_file(source / name) for name in pglm.SOURCE_FILENAMES}
+    after = {name: (source / name).read_bytes() for name in pglm.SOURCE_FILENAMES}
     assert before == after
     by_name = {item.name: item for item in package.files}
     assert by_name["configuration_proteinglm.py"].patch_kinds == ()
@@ -156,13 +156,13 @@ def test_source_files_are_unmodified_and_derived_patches_are_exact():
         pglm.PATCH_DROP_DEEPSPEED,
         pglm.PATCH_INFERENCE_CHECKPOINT,
     )
-    assert by_name["configuration_proteinglm.py"].source_sha256 == (
-        by_name["configuration_proteinglm.py"].derived_sha256
-    )
-    assert by_name["quantization.py"].source_sha256 == by_name["quantization.py"].derived_sha256
-    assert by_name["modeling_proteinglm.py"].source_sha256 != (
-        by_name["modeling_proteinglm.py"].derived_sha256
-    )
+    assert (package.path / "configuration_proteinglm.py").read_bytes() == before[
+        "configuration_proteinglm.py"
+    ]
+    assert (package.path / "quantization.py").read_bytes() == before["quantization.py"]
+    assert (package.path / "modeling_proteinglm.py").read_bytes() != before[
+        "modeling_proteinglm.py"
+    ]
     derived_modeling = (package.path / "modeling_proteinglm.py").read_text(encoding="utf-8")
     source_modeling = (source / "modeling_proteinglm.py").read_text(encoding="utf-8")
     assert "import torch, deepspeed" in source_modeling

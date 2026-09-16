@@ -704,7 +704,7 @@ def _prepare_arm(
         "n_records": int(arm.cohort.targets.n_records),
         "n_scored_tokens": int(total_tokens),
         "n_groups": n_cohort_groups,
-        "n_effective_groups": _kish(group_tokens),
+        "n_effective_groups": kish_effective_units(group_tokens),
         "largest_group_token_share": float(group_tokens.max() / total_tokens),
         "n_singleton_groups": int((records_per_group == 1).sum()),
         "top10_record_token_share": float(largest_records.sum() / total_tokens),
@@ -715,7 +715,7 @@ def _prepare_arm(
         "n_reference_records": int(arm.reference.targets.n_records),
         "n_reference_tokens": int(reference_group_tokens.sum()),
         "n_reference_groups": n_reference_groups,
-        "reference_n_effective_groups": _kish(reference_group_tokens),
+        "reference_n_effective_groups": kish_effective_units(reference_group_tokens),
         # The part of the baseline that resampling the reference cannot move.
         "cohort_token_share_unseen_in_reference": float(
             cohort_support_counts[reference_support_counts <= 0].sum() / total_tokens
@@ -741,11 +741,14 @@ def _prepare_arm(
     )
 
 
-def _kish(weights: np.ndarray) -> float:
-    """Token-weighted effective number of groups."""
+def kish_effective_units(weights: np.ndarray) -> float:
+    """Token-weighted Kish effective number of groups."""
 
-    total = float(weights.sum())
-    return float(total * total / float((weights.astype(np.float64) ** 2).sum()))
+    values = np.asarray(weights, dtype=np.float64)
+    total = float(values.sum())
+    if total <= 0.0:
+        return 0.0
+    return float(total * total / float((values * values).sum()))
 
 
 # --------------------------------------------------------------------------- #

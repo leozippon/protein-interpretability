@@ -21,6 +21,7 @@ from typing import Any, Sequence
 
 import numpy as np
 
+from .amino_acids import AA20
 from .arms import (
     config_context_length,
     config_shape,
@@ -49,7 +50,7 @@ NATIVE_EOS_ID = 2
 NATIVE_PAD_ID = 1
 VOCAB_SIZE = 26
 NATIVE_RESIDUE_IDS = frozenset(range(3, 23))
-CANONICAL_RESIDUES = frozenset("ACDEFGHIKLMNPQRSTVWY")
+CANONICAL_RESIDUES = frozenset(AA20)
 RITA_ARM = "rita-xl"
 RITA_CORPUS: dict[str, dict[str, str]] = {
     RITA_ARM: {

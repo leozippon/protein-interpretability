@@ -1,8 +1,7 @@
 """In-memory residue-batch handoff and learned-query soft-prefix compressor.
 
-This is an explicit CPU-side interface unit. It does not extract donor states,
-persist a cache, parse QA tasks, or run recoverable training. Callers supply
-already-captured residue tensors and bound provenance assertions.
+Callers supply already-captured residue tensors and bound provenance assertions.
+This module does not extract donor states, persist a cache, or run training.
 """
 
 from __future__ import annotations
@@ -25,27 +24,6 @@ HEX64_LEN = 64
 COMMIT_HEX_LEN = 40
 _HEX_RE = re.compile(r"[0-9a-f]+")
 CAPTURE_DTYPES = {"float32": torch.float32, "bfloat16": torch.bfloat16}
-PROVENANCE_NOTE = (
-    "ResidueProvenance fields are bound caller assertions about this in-memory "
-    "handoff. They do not qualify a file, checkpoint, tokenizer, or model load."
-)
-TOKEN_ID_NOTE = (
-    "Native token IDs are checked for consistency with the supplied record "
-    "metadata and provenance marker/pad IDs. This does not authenticate that "
-    "the IDs were obtained from a qualified tokenizer; extractor qualification "
-    "remains open."
-)
-LIMITATIONS = (
-    "Not a residue cache, save/load API, or live-extraction path.",
-    "Frozen dataclass fields do not make caller-owned tensors immutable or hash-sealed.",
-    "max_tensor_bytes is a per-batch input bound over hidden+ids+masks, not VRAM/activation cost.",
-    "No filesystem or host-resource checks in this library.",
-    "Contextual mean and the query resampler can both carry donor-encoded order; "
-    "the resampler adds no positions and does not locate residues on its own.",
-    "Learned queries are global latent slots, not a natural-language question encoder.",
-    PROVENANCE_NOTE,
-    TOKEN_ID_NOTE,
-)
 
 
 def _require_int(value: object, *, name: str, minimum: int | None = None) -> int:
@@ -299,7 +277,10 @@ def mean_from_residues(
     expected_provenance: ResidueProvenance,
     max_tensor_bytes: int,
 ) -> torch.Tensor:
-    """Masked mean over residue positions. Pooling is FP32, matching old extraction."""
+    """Masked mean over residue positions. Pooling is FP32, matching old extraction.
+
+    The mean can still carry donor-encoded order; it is not a position-free summary.
+    """
 
     validated = validate_residue_batch(
         batch,
@@ -313,10 +294,10 @@ def mean_from_residues(
 class QueryPrefix(nn.Module):
     """Single-block learned-query cross-attention resampler.
 
-    Learned queries are global latent slots. Marker and pad positions are
-    masked out of attention. Captured bfloat16 states are promoted to FP32
-    before the adapter; adapter weights stay FP32. No dropout, LoRA, or
-    question encoder. Train and eval paths are identical.
+    Learned queries are global latent slots, not a question encoder, and add no
+    positions. Marker and pad positions are masked out of attention. Captured
+    bfloat16 states are promoted to FP32; adapter weights stay FP32. Train and
+    eval paths are identical.
     """
 
     def __init__(

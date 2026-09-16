@@ -2,7 +2,7 @@
 
 This module accounts request encodings, application windows, and support sets.
 It does not load weights, score likelihoods, compute Spearman, or admit an
-experiment. Paths come from ``arm_spec``; the boundary table does not restated
+experiment. Paths come from ``arm_spec``; the boundary table does not restate
 checkpoint directories.
 """
 

@@ -526,12 +526,11 @@ class TextAAFitnessScorer:
         return total
 
     def release(self) -> None:
+        used_cuda = getattr(self.model.device, "type", None) == "cuda"
         del self.model
         del self.tokenizer
-        if hasattr(self.torch, "cuda"):
-            empty = getattr(self.torch.cuda, "empty_cache", None)
-            if callable(empty):
-                empty()
+        if used_cuda:
+            self.torch.cuda.empty_cache()
 
 
 def _relative_position_facts(config: Any, *, model_type: str) -> dict[str, Any]:

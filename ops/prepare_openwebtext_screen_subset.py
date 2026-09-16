@@ -32,14 +32,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()
-
-
 def write_json_atomic(path: Path, value: Any) -> None:
     temporary = path.with_name(f".{path.name}.tmp.{os.getpid()}")
     with temporary.open("w", encoding="utf-8") as handle:
@@ -148,10 +140,6 @@ def main() -> None:
     manifest_path = args.output_dir / "selection_manifest.jsonl"
     write_jsonl_atomic(manifest_path, selected)
 
-    source_hashes = {
-        path.name: sha256_file(path)
-        for path in parquet_paths
-    }
     summary = {
         "schema_version": 1,
         "source_dataset": "Skylion007/openwebtext",
@@ -167,7 +155,7 @@ def main() -> None:
                 "entirely in document_selection below, over the union of these "
                 "shards. Whichever shards source_dir holds is therefore part of "
                 "this artefact's provenance, which is why they are listed in "
-                "selected_shards and digested in source_sha256."
+                "selected_shards."
             ),
         },
         "document_selection": {
@@ -185,10 +173,8 @@ def main() -> None:
             "selected_documents": len(selected),
             "unselected_documents": len(records) - len(selected),
         },
-        "source_sha256": source_hashes,
         "selection_manifest": {
             "path": manifest_path.name,
-            "sha256": sha256_file(manifest_path),
         },
     }
     write_json_atomic(args.output_dir / "selection_summary.json", summary)

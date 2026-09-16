@@ -1,19 +1,14 @@
-"""Bounded QueryPrefix adapter update engine with sealed boundary checkpoints.
+"""Bounded QueryPrefix adapter update/resume with sealed boundary checkpoints.
 
-One small state object owns the adapter reference, its AdamW, committed
-progress, a private sampler, and boundary/failed status. It is not a
-Trainer, DataLoader, collator, scheduler, AMP/scaler, DDP wrapper, or
-command-line runner. Callbacks are trusted caller-owned inputs; this
-module does not parse QA, load data, or authenticate frozen endpoints.
-Host MemAvailable/disk gates and source authentication stay with the
-operator. Resume is same-device-scope only.
+Owns one adapter, its AdamW, sampler cursor, and boundary/failed status.
+Callbacks are trusted caller inputs. Resume is same-device-scope only.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 import hashlib
 import io
 import json
@@ -77,7 +72,7 @@ class QueryPrefixTrainStateError(ValueError):
         self.code = code
 
 
-def _fail(code: str) -> None:
+def _fail(code: str) -> NoReturn:
     raise QueryPrefixTrainStateError(code)
 
 
@@ -203,7 +198,6 @@ def _device_scope(adapter: nn.Module) -> dict[str, object]:
         _require(type(index) is int, "cuda_device_unindexed")
         return {"type": "cuda", "index": int(cast(int, index))}
     _fail("unsupported_device")
-    return {"type": "cpu", "index": None}
 
 
 def _trainable(adapter: nn.Module) -> list[torch.Tensor]:
@@ -375,7 +369,6 @@ def _as_int(value: object, code: str) -> int:
     if isinstance(value, np.integer):
         return int(value)  # pyright: ignore[reportUnknownArgumentType]
     _fail(code)
-    return 0
 
 
 def _require_cpu_tensor(
@@ -616,7 +609,6 @@ def _clone_state_tree(value: object) -> object:
             _require(math.isfinite(value), "nonfinite_state_number")
         return value
     _fail("unserializable_state")
-    return None
 
 
 def _move_state_tree(value: object, device: torch.device) -> object:

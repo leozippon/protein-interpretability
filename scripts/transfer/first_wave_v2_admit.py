@@ -9,7 +9,6 @@ resource gate.
 
 from __future__ import annotations
 
-import hashlib
 import re
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -53,14 +52,6 @@ TERMINAL_STATES = frozenset(
 
 class AdmissionError(ValueError):
     """A required identity, receipt, or content gate failed."""
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def require_manifest_under_snapshot(manifest: str, snapshot: str) -> None:

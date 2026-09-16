@@ -15,9 +15,11 @@ from typing import Any, Iterable
 
 import numpy as np
 
+from .amino_acids import AA20 as _AA20_ALPHABET
+
 SEED = 20260905
 RESAMPLES = 4000
-AA20 = frozenset("ACDEFGHIKLMNPQRSTVWY")
+AA20 = frozenset(_AA20_ALPHABET)
 TERMINAL = {"ok", "failed", "not_evaluable"}
 KEYS = ("arm", "class_key", "condition", "role")
 

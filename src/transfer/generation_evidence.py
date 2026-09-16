@@ -17,6 +17,7 @@ from typing import Any, Iterable, Mapping
 import numpy as np
 
 from . import conditioned_generation as cg
+from .amino_acids import AA20 as _AA20_ALPHABET
 from .concept_injection import parse_hmmscan_table
 from .io import _atomic_write, sha256_file
 
@@ -24,7 +25,7 @@ SCHEMA_VERSION = "generation_biological_evidence_v1"
 CAMPAIGN = "EXP-R2-232"
 ARMS = ("zymctrl", "prollama")
 FLOORS = ("progen2-medium", "protgpt2")
-AA20 = frozenset("ACDEFGHIKLMNPQRSTVWY")
+AA20 = frozenset(_AA20_ALPHABET)
 POLICY = {
     "campaign": CAMPAIGN,
     "seed": 20260905,

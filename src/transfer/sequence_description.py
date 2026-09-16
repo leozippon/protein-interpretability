@@ -90,6 +90,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 from xml.etree.ElementTree import iterparse
 
+from .amino_acids import AA20
 from .arms import REPO, env_path, require_input_path
 
 # ----------------------------------------------------------------- locations
@@ -156,7 +157,7 @@ VERBATIM_SHINGLE = 15
 #: ``O`` is excluded rather than substituted: an ambiguity code is a statement
 #: that the sequence is not known, and a cohort that silently maps it to a
 #: residue reports a sequence that was never observed.
-STANDARD_RESIDUES = frozenset("ACDEFGHIKLMNPQRSTVWY")
+STANDARD_RESIDUES = frozenset(AA20)
 
 #: Four-field EC numbers only. A partial number (``1.1.1.-``) names a subclass
 #: rather than an activity, and the ENZYME nomenclature file has no entry for it.

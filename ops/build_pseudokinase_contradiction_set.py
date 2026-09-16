@@ -206,7 +206,6 @@ the Swiss-Prot XML once, which is the dominant cost.
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import re
 import subprocess
@@ -746,14 +745,6 @@ RECORD_SCHEMA_VERSION = 1
 
 
 # --------------------------------------------------------------- utilities
-
-
-def sha256_of(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(block)
-    return digest.hexdigest()
 
 
 def load_gene_index(path: Path) -> dict[str, tuple[str, ...]]:
@@ -2066,14 +2057,12 @@ def main() -> None:
         "seed": args.seed,
         "inputs": {
             "swissprot_xml": str(args.xml),
-            "swissprot_xml_sha256": sha256_of(args.xml),
             "idmapping": str(args.idmapping),
             "pfam_a": str(args.pfam_a),
             "kinase_models": {model: model_meta[model] for model in KINASE_MODELS},
         },
         "output": {
             "records": str(out_path),
-            "records_sha256": sha256_of(out_path),
             "n_records": len(records),
         },
         "population": {

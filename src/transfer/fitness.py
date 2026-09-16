@@ -33,6 +33,7 @@ from pathlib import Path
 
 import numpy as np
 
+from .amino_acids import BLOSUM62_ORDER, BLOSUM62_ROWS
 from .probes import PROTEINGYM_ROOT
 
 #: The eight ProteinGym substitution assays ProGenMech evaluates on. Not taken
@@ -60,38 +61,12 @@ PROGENMECH_TRAIN_SEQUENCES = 256
 #: ``seed = 42 + fold`` for five folds (``discover_circuits.py:200-202``).
 PROGENMECH_FOLD_SEEDS: tuple[int, ...] = (42, 43, 44, 45, 46)
 
-_AA = "ARNDCQEGHILKMFPSTWYV"
-_BLOSUM62_ROWS = """
-4 -1 -2 -2 0 -1 -1 0 -2 -1 -1 -1 -1 -2 -1 1 0 -3 -2 0
--1 5 0 -2 -3 1 0 -2 0 -3 -2 2 -1 -3 -2 -1 -1 -3 -2 -3
--2 0 6 1 -3 0 0 0 1 -3 -3 0 -2 -3 -2 1 0 -4 -2 -3
--2 -2 1 6 -3 0 2 -1 -1 -3 -4 -1 -3 -3 -1 0 -1 -4 -3 -3
-0 -3 -3 -3 9 -3 -4 -3 -3 -1 -1 -3 -1 -2 -3 -1 -1 -2 -2 -1
--1 1 0 0 -3 5 2 -2 0 -3 -2 1 0 -3 -1 0 -1 -2 -1 -2
--1 0 0 2 -4 2 5 -2 0 -3 -3 1 -2 -3 -1 0 -1 -3 -2 -2
-0 -2 0 -1 -3 -2 -2 6 -2 -4 -4 -2 -3 -3 -2 0 -2 -2 -3 -3
--2 0 1 -1 -3 0 0 -2 8 -3 -3 -1 -2 -1 -2 -1 -2 -2 2 -3
--1 -3 -3 -3 -1 -3 -3 -4 -3 4 2 -3 1 0 -3 -2 -1 -3 -1 3
--1 -2 -3 -4 -1 -2 -3 -4 -3 2 4 -2 2 0 -3 -2 -1 -2 -1 1
--1 2 0 -1 -3 1 1 -2 -1 -3 -2 5 -1 -3 -1 0 -1 -3 -2 -2
--1 -1 -2 -3 -1 0 -2 -3 -2 1 2 -1 5 0 -2 -1 -1 -1 -1 1
--2 -3 -3 -3 -2 -3 -3 -3 -1 0 0 -3 0 6 -4 -2 -2 1 3 -1
--1 -2 -2 -1 -3 -1 -1 -2 -2 -3 -3 -1 -2 -4 7 -1 -1 -4 -3 -2
-1 -1 1 0 -1 0 0 0 -1 -2 -2 0 -1 -2 -1 4 1 -3 -2 -2
-0 -1 0 -1 -1 -1 -1 -2 -2 -1 -1 -1 -1 -2 -1 1 5 -2 -2 0
--3 -3 -4 -4 -2 -2 -3 -2 -2 -3 -2 -3 -1 1 -4 -3 -2 11 2 -3
--2 -2 -2 -3 -2 -1 -2 -3 2 -1 -1 -2 -1 3 -3 -2 -2 2 7 -1
-0 -3 -3 -3 -1 -2 -2 -3 -3 3 1 -2 1 -1 -2 -2 0 -3 -1 4
-"""
-
-#: BLOSUM62, as ``(wild_type, mutant) -> score``. Written out rather than pulled
-#: from Biopython because the ``ct`` environment does not carry it and a
-#: measurement dependency that has to be installed on the pod is not one this
-#: repository can take (the pods are offline).
+#: BLOSUM62, as ``(wild_type, mutant) -> score``. Pair scores come from the
+#: NCBI table in :mod:`.amino_acids`; this dict is the fitness-scoring presentation.
 BLOSUM62: dict[tuple[str, str], int] = {
-    (_AA[i], _AA[j]): int(value)
-    for i, row in enumerate(_BLOSUM62_ROWS.strip().splitlines())
-    for j, value in enumerate(row.split())
+    (left, right): score
+    for left, row in zip(BLOSUM62_ORDER, BLOSUM62_ROWS)
+    for right, score in zip(BLOSUM62_ORDER, row)
 }
 
 

@@ -319,7 +319,7 @@ def split_cache_features(
     return train_feat, val_feat, test_feat
 
 
-def _require_roles(records: Sequence[PreparedRecord], role: str, name: str) -> None:
+def require_roles(records: Sequence[PreparedRecord], role: str, name: str) -> None:
     if not records:
         raise ValueError(f"{name} is empty")
     if any(record.role != role for record in records):
@@ -352,8 +352,8 @@ def train_classifier_head(
 ) -> dict[str, Any]:
     """Fit one head on train/val only. There is no test argument."""
 
-    _require_roles(train_records, "train", "train_records")
-    _require_roles(val_records, "val", "val_records")
+    require_roles(train_records, "train", "train_records")
+    require_roles(val_records, "val", "val_records")
     if train_features.shape != (len(train_records), head.d_in):
         raise ValueError("train features do not match records/head width")
     if val_features.shape != (len(val_records), head.d_in):

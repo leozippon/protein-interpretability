@@ -8,7 +8,7 @@ alphabet without loading ``torch`` or :mod:`.arms`.
 
 The integer table is the scientific object. :func:`blosum62_ncbi_rows` is the
 lossless adapter onto the width-3 string transcription ``circuits`` historically
-stored. Fitness scoring keeps its own public type and is not sourced here.
+stored. Fitness scoring keeps a pair-dict public type built from this table.
 """
 
 from __future__ import annotations

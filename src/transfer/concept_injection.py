@@ -132,6 +132,7 @@ from scipy import stats
 from torch import nn
 
 from . import concept_alignment as ca
+from .amino_acids import AA20
 from .io import sha256_file
 from .replaceable import JointBlockLayout
 from .statistics import MINIMUM_BOOTSTRAP_UNITS, paired_group_bootstrap
@@ -2258,7 +2259,7 @@ def clean_availability(root: Path) -> dict[str, Any]:
 # ------------------------------------------------------------------ generation
 
 
-_RESIDUES = frozenset("ACDEFGHIKLMNPQRSTVWY")
+_RESIDUES = frozenset(AA20)
 
 
 def extract_generated_sequence(text: str, *, end_delimiter: str) -> str:

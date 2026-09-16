@@ -24,6 +24,7 @@ from src.transfer.classifier_handoff import (
     cell_relative_dir,
     classifier_direct_rows,
     predict_classes,
+    require_roles,
     split_cache_features,
 )
 from src.transfer.io import sha256_file, write_json
@@ -232,13 +233,6 @@ def require_finite_features(features: np.ndarray, name: str = "features") -> Non
         raise ValueError(f"{name} must be a nonempty 2-D array")
     if not np.isfinite(features).all():
         raise ValueError(f"non-finite {name}")
-
-
-def require_roles(records: Sequence[PreparedRecord], role: str, name: str) -> None:
-    if not records:
-        raise ValueError(f"{name} is empty")
-    if any(record.role != role for record in records):
-        raise ValueError(f"{name} contains a non-{role} record")
 
 
 def require_positive_limits(**limits: int) -> None:

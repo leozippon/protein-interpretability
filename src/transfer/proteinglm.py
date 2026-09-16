@@ -22,7 +22,6 @@ qualification are out of scope.
 
 from __future__ import annotations
 
-import hashlib
 import importlib.util
 import sys
 import tempfile
@@ -80,19 +79,9 @@ PATCH_INFERENCE_CHECKPOINT = "inference_only_checkpoint_fn"
 _DERIVED_PACKAGES: dict[str, "DerivedPackage"] = {}
 
 
-def sha256_bytes(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
-
-
-def sha256_file(path: Path) -> str:
-    return sha256_bytes(path.read_bytes())
-
-
 @dataclass(frozen=True)
 class DerivedFile:
     name: str
-    source_sha256: str
-    derived_sha256: str
     patch_kinds: tuple[str, ...]
 
 
@@ -113,8 +102,6 @@ class DerivedPackage:
             "files": [
                 {
                     "name": item.name,
-                    "source_sha256": item.source_sha256,
-                    "derived_sha256": item.derived_sha256,
                     "patch_kinds": list(item.patch_kinds),
                 }
                 for item in self.files
@@ -158,14 +145,11 @@ def derive_serving_package(source_dir: Path) -> DerivedPackage:
         payloads[name] = path.read_bytes()
     modeling_text = payloads[_MODELING].decode("utf-8")
     derived_modeling = patch_modeling_source(modeling_text).encode("utf-8")
-    identity = sha256_bytes(
-        b"".join(payloads[name] for name in SOURCE_FILENAMES) + derived_modeling
-    )
-    cached = _DERIVED_PACKAGES.get(identity)
+    key = str(source_dir)
+    cached = _DERIVED_PACKAGES.get(key)
     if cached is not None and cached.path.is_dir():
         return cached
-    dest = Path(tempfile.gettempdir()) / f"proteinglm_derived_{identity[:16]}"
-    dest.mkdir(parents=True, exist_ok=True)
+    dest = Path(tempfile.mkdtemp(prefix="proteinglm_derived_"))
     (dest / "__init__.py").write_text("# derived ProteinGLM inference package\n", encoding="utf-8")
     files: list[DerivedFile] = []
     for name in SOURCE_FILENAMES:
@@ -175,24 +159,15 @@ def derive_serving_package(source_dir: Path) -> DerivedPackage:
         else:
             data = payloads[name]
             kinds = ()
-        target = dest / name
-        if not target.is_file() or target.read_bytes() != data:
-            target.write_bytes(data)
-        files.append(
-            DerivedFile(
-                name=name,
-                source_sha256=sha256_bytes(payloads[name]),
-                derived_sha256=sha256_bytes(data),
-                patch_kinds=kinds,
-            )
-        )
+        (dest / name).write_bytes(data)
+        files.append(DerivedFile(name=name, patch_kinds=kinds))
     package = DerivedPackage(
         source_dir=source_dir,
         path=dest,
-        package_name=f"_proteinglm_derived_{identity[:16]}",
+        package_name=dest.name.replace("-", "_"),
         files=tuple(files),
     )
-    _DERIVED_PACKAGES[identity] = package
+    _DERIVED_PACKAGES[key] = package
     return package
 
 

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import gc
-import hashlib
 import math
 import os
 import sys
@@ -121,15 +120,6 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def sha256_text(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def sha256_int_row(values: Sequence[int]) -> str:
-    payload = ",".join(str(int(value)) for value in values)
-    return hashlib.sha256(payload.encode("ascii")).hexdigest()
-
-
 def longest_legal_sequence() -> str:
     n = LONGEST_RESIDUES
     return (AA20 * ((n + len(AA20) - 1) // len(AA20)))[:n]
@@ -137,8 +127,6 @@ def longest_legal_sequence() -> str:
 
 def case_specifications() -> tuple[NumericCase, ...]:
     avgfp = NumericCase("avgfp_n80", AVGFP_N80)
-    if sha256_text(avgfp.sequence) != AVGFP_N80_SHA256:
-        raise ValueError("avgfp_n80 literal does not match the frozen SHA-256")
     if len(avgfp.sequence) != 80:
         raise ValueError("avgfp_n80 must be 80 residues")
     longest = NumericCase("longest_legal_1021", longest_legal_sequence())
@@ -406,11 +394,9 @@ def _case_record(
     return {
         "name": case.name,
         "sequence": case.sequence,
-        "sequence_sha256": sha256_text(case.sequence),
         "L": case.n_residues,
         "n_targets": case.n_targets,
         "encoded_length": len(list(encoded_ids)),
-        "encoded_ids_sha256": sha256_int_row(encoded_ids),
         "target_positions": [int(value) for value in reference.target_positions.tolist()],
         "target_ids": [int(value) for value in production_ids.tolist()],
         "production_nll_nats": [float(value) for value in production_nll.tolist()],
@@ -485,7 +471,6 @@ def score_numeric_cases(arm: Arm) -> dict[str, Any]:
                 "n_strings": item["n_strings"],
                 "max_len": item["max_len"],
                 "batch_size": item["batch_size"],
-                "string_sha256": [sha256_text(text) for text in item["strings"]],
             }
             for item in production_calls
         ],
@@ -584,7 +569,6 @@ def run_resource_gate(
     inputs = [rendered, rendered, rendered]
     progress["input_identity"] = {
         "n_strings": len(inputs),
-        "string_sha256": [sha256_text(text) for text in inputs],
         "max_len": MAX_LEN,
         "batch_size": 1,
     }
@@ -677,7 +661,6 @@ def run_resource_gate(
                 {
                     "sequence_index": index,
                     "n_targets": int(production_ids.size),
-                    "target_ids_sha256": sha256_int_row(production_ids.tolist()),
                     "max_abs": max_abs,
                 }
             )
@@ -698,7 +681,6 @@ def run_resource_gate(
                 "n_strings": item["n_strings"],
                 "max_len": item["max_len"],
                 "batch_size": item["batch_size"],
-                "string_sha256": [sha256_text(text) for text in item["strings"]],
             }
             for item in production_calls
         ],

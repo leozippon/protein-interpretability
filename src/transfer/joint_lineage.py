@@ -60,7 +60,14 @@ from typing import Any, Iterable, Sequence
 
 import numpy as np
 
-from .arms import MODEL_ROOT, config_context_length, require_input_path
+from .arms import (
+    LOADING_INFO_KEYS,
+    MODEL_ROOT,
+    config_context_length,
+    require_clean_loading_info,
+    require_input_path,
+    unpack_pretrained_loading_info,
+)
 from .joint_modes import (
     JointTokenisation,
     RenderedProtein,
@@ -199,13 +206,6 @@ def rung(name: str) -> LineageRung:
 # ------------------------------------------------------------------ the load
 
 
-#: What a strict load has to produce. Every one of these must come back empty:
-#: a missing key is a tensor the checkpoint did not supply and Transformers
-#: initialised at random, which on a language-model head is precisely the state
-#: L24 refuses to let a run report a number from.
-STRICT_LOADING_KEYS = ("missing_keys", "unexpected_keys", "mismatched_keys", "error_msgs")
-
-
 @dataclass(frozen=True)
 class LoadedRung:
     """One rung on a card: its weights, its tokenizer, and its resolved rendering."""
@@ -247,7 +247,7 @@ def load_rung(name: str, *, device: str, dtype: str) -> LoadedRung:
     torch_dtype = getattr(torch, dtype, None)
     if not isinstance(torch_dtype, torch.dtype):
         raise ValueError(f"unsupported inference dtype {dtype!r}")
-    model, loading_info = AutoModelForCausalLM.from_pretrained(
+    loaded = AutoModelForCausalLM.from_pretrained(
         str(resolved),
         # ``torch_dtype`` rather than ``dtype`` for the reason
         # ``src.transfer.arms.load_arm`` records: it is the spelling both the
@@ -257,16 +257,10 @@ def load_rung(name: str, *, device: str, dtype: str) -> LoadedRung:
         device_map={"": device},
         output_loading_info=True,
     )
+    model, loading_info = unpack_pretrained_loading_info(loaded)
     model.eval()
-    diagnostics = {key: list(loading_info.get(key) or []) for key in STRICT_LOADING_KEYS}
-    non_empty = {key: value for key, value in diagnostics.items() if value}
-    if non_empty:
-        raise ValueError(
-            f"{name}: the load was not strict -- {non_empty}. A tensor the "
-            "checkpoint did not supply is initialised at random, and a number "
-            "read from a randomly initialised head is unavailable, never a pass "
-            "(L24)"
-        )
+    require_clean_loading_info(loading_info, arm=name)
+    diagnostics = {key: list(loading_info[key]) for key in LOADING_INFO_KEYS}
     observed = sorted(
         {
             str(parameter.dtype).removeprefix("torch.")

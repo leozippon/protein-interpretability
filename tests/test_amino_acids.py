@@ -89,6 +89,7 @@ def test_legacy_alphabet_aliases_keep_public_names() -> None:
 def test_legacy_blosum_public_names_keep_types() -> None:
     from src.transfer import alphabet_chemistry as ac
     from src.transfer import circuits
+    from src.transfer.fitness import BLOSUM62 as fitness_blosum
 
     assert ac.BLOSUM62_ROWS is BLOSUM62_ROWS
     assert ac.BLOSUM62_ORDER is BLOSUM62_ORDER
@@ -97,6 +98,12 @@ def test_legacy_blosum_public_names_keep_types() -> None:
     assert type(circuits.BLOSUM62_ROWS) is tuple
     assert type(circuits.BLOSUM62_ROWS[0]) is str
     assert circuits.BLOSUM62_ROWS == blosum62_ncbi_rows()
+    assert len(fitness_blosum) == 400
+    assert all(
+        fitness_blosum[(left, right)] == BLOSUM62_ROWS[i][j]
+        for i, left in enumerate(BLOSUM62_ORDER)
+        for j, right in enumerate(BLOSUM62_ORDER)
+    )
 
 
 def test_constants_module_does_not_import_torch_or_arms() -> None:

@@ -18,18 +18,8 @@ from typing import Any
 
 import numpy as np
 
-from .information_bootstrap import effective_unit_floor
+from .information_bootstrap import effective_unit_floor, kish_effective_units
 from .statistics import MINIMUM_BOOTSTRAP_UNITS, MINIMUM_FINITE_DRAW_FRACTION
-
-
-def kish_effective_units(weights: np.ndarray) -> float:
-    """Token-weighted Kish effective number of groups."""
-
-    values = np.asarray(weights, dtype=np.float64)
-    total = float(values.sum())
-    if total <= 0.0:
-        return 0.0
-    return float(total * total / float((values * values).sum()))
 
 
 def _pair_means(
