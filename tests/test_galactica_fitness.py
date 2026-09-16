@@ -170,7 +170,11 @@ def _prepared_tokenizer(vocab_size: int = 50000) -> _PadTokenizer:
 def _scorer(
     model: _RuleLogits, *, context: int = 64, batch_size: int = 2
 ) -> G.GalacticaFitnessScorer:
-    tokenizer = _prepared_tokenizer(int(model.vocab_size))
+    # The stub's declared size must cover its own vocabulary, because the renderer
+    # refuses an emitted id at or above len(tokenizer); the default is the released
+    # tokenizer's own 50000. `model.vocab_size` is the logit-table width these tests
+    # keep small, which is a different quantity.
+    tokenizer = _prepared_tokenizer()
     tokenisation = resolve(tokenizer, "galactica")
     loaded = G.LoadedGalactica(
         name="galactica-1.3b",

@@ -8,6 +8,15 @@ external profile baseline, not a retrieval bound.
 
 Padding uses the checkpoint config's own pad id, read back through the
 tokenizer. No pad token is invented.
+
+Embedding padding is a different quantity from a padding token. The released
+checkpoint's embedding and output head carry more rows than its tokenizer has
+tokens (50287 real tokens padded to 50304, a multiple of 128), which is the
+checkpoint's own shape and is recorded as a measured fact rather than refused.
+What is required is a row for every id the tokenizer can emit; the rendering
+refuses an id above ``len(tokenizer)`` in
+:meth:`src.transfer.joint_modes.JointTokenisation.render`, and that is what makes
+the tail safe.
 """
 
 from __future__ import annotations
@@ -153,11 +162,21 @@ def load_instructprotein(name: str, *, device: str, dtype: str) -> LoadedInstruc
         )
     input_vocab = int(model.get_input_embeddings().num_embeddings)
     output_vocab = int(model.get_output_embeddings().out_features)
-    if not input_vocab == output_vocab == int(config.vocab_size) == len(tokenizer):
+    config_vocab = int(config.vocab_size)
+    tokenizer_vocab = int(len(tokenizer))
+    if not input_vocab == output_vocab == config_vocab:
         raise ValueError(
-            f"{name}: tokenizer, config, input and output vocabulary sizes disagree: "
-            f"{len(tokenizer)}, {config.vocab_size}, {input_vocab}, {output_vocab}"
+            f"{name}: config, input and output vocabulary sizes disagree: "
+            f"{config_vocab}, {input_vocab}, {output_vocab}"
         )
+    if tokenizer_vocab > input_vocab:
+        raise ValueError(
+            f"{name}: the tokenizer carries {tokenizer_vocab} tokens but the config, "
+            f"input and output vocabularies are {input_vocab} rows, so ids "
+            f"{input_vocab}..{tokenizer_vocab - 1} have no embedding row to be fed "
+            "through or scored against"
+        )
+    padded_rows = input_vocab - tokenizer_vocab
     context = config_context_length(config)
     n_layers, d_model = config_shape(config)
     facts = {
@@ -172,7 +191,7 @@ def load_instructprotein(name: str, *, device: str, dtype: str) -> LoadedInstruc
         "architectures": list(getattr(config, "architectures", []) or []),
         "n_layers": int(n_layers),
         "d_model": int(d_model),
-        "vocab_size": int(config.vocab_size),
+        "vocab_size": config_vocab,
         "input_vocab_size": input_vocab,
         "output_vocab_size": output_vocab,
         "context": int(context),
@@ -181,7 +200,17 @@ def load_instructprotein(name: str, *, device: str, dtype: str) -> LoadedInstruc
         "dtype_observed": observed,
         "device": device,
         "tokenizer_class": type(tokenizer).__name__,
-        "tokenizer_vocab_size": int(len(tokenizer)),
+        "tokenizer_vocab_size": tokenizer_vocab,
+        "padded_embedding_rows": padded_rows,
+        "padded_embedding_note": (
+            f"the {padded_rows} embedding rows above this tokenizer's "
+            f"{tokenizer_vocab} tokens are padding the tokenizer can never emit, "
+            "so those ids are unreachable and no scored position can land on one. "
+            f"config.vocab_size {config_vocab} declares that padded width and the "
+            "input and output vocabularies agree with it, so the checkpoint is "
+            "internally consistent while its tokenizer is smaller than its "
+            "embedding"
+        ),
         "rendering": RENDERING_FAMILY,
         "joint_mode": "protein",
         "symbol_unit": RESIDUE_UNIT,

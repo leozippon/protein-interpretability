@@ -624,10 +624,27 @@ class JointTokenisation:
         warning field. The naive variant is deliberately not verified: it exists
         to be wrong, and its scored span uses the family's positional rule because
         the identity rule would select nothing in it.
+
+        Every id the tokenizer produced is checked against the tokenizer's own
+        declared size before the record is built. A checkpoint may carry more
+        embedding rows than its tokenizer has tokens -- InstructProtein pads
+        50287 real tokens to 50304, a multiple of 128 -- and a padded tail is
+        harmless only while nothing the tokenizer emits reaches it, which is the
+        invariant the fitness loaders' ``len(tokenizer) <= embedding rows``
+        comparison rests on.
         """
 
         text = self.declaration.render_protein(sequence, context=context, variant=variant)
         token_ids = tuple(encode(self.tokenizer, text))
+        size = int(len(self.tokenizer))
+        unrowed = sorted({value for value in token_ids if value >= size})
+        if unrowed:
+            raise ValueError(
+                f"{self.declaration.name}: this tokenizer declares {size} tokens "
+                f"but produced ids {unrowed}, which its own declared size does not "
+                "cover. An embedding padded above that size is safe only while "
+                "every emitted id has a row"
+            )
         rule = (
             self.declaration.scored_target_rule
             if variant == DECLARED
