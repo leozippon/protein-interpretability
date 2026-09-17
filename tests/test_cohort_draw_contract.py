@@ -45,6 +45,66 @@ CORPUS_CONSTRUCTORS = (
 #: reason, so that a stage which stops calling them is a visible change rather
 #: than a silently passing test.
 NON_DRAWING_STAGES: dict[str, str] = {
+    "01_joint_context_information.py": (
+        "DRAWS A COHORT and delegates the draw rather than constructing one, "
+        "exactly as 24_component_swap.py does: build_cohort(args) and "
+        "draw_records(args, ...) are 01_cohort_power.py's own cohort construction, "
+        "imported and called with this stage's namespace, and both read the seed "
+        "as args.cohort_draw_seed. This stage defines --cohort-draw-seed with the "
+        "imported DEFAULT_CORPUS_DRAW_SEED default and passes that namespace in, "
+        "so the same seeded permutation -- and the same --cohort-skip window of "
+        "it -- reaches arms.protein_cohort and arms.text_cohort through stage 01, "
+        "and the two windows the stage scores are the corpus-wide draw rule rather "
+        "than a head-of-file block. Every draw it makes is inside that helper and "
+        "is seeded by that one flag: the scored cohort (build_cohort), the "
+        "held-out unigram reference pool (draw_records at "
+        "--unigram-reference-size, then held_out_cohort, which also removes the "
+        "records the cohort already holds) and nothing else. The value reaches "
+        "both artefacts: Cohort.sampling in the frozen-cohort payload and "
+        "seeds.cohort_draw in the written sufficient statistics, so a reader can "
+        "tell a seeded draw from the file-order variant (--cohort-draw-seed 0) "
+        "without inferring it from the numbers. Rule 1 is answered at that one "
+        "call site rather than at a second copy of it, and a second cohort draw "
+        "here would make the joint arms' context information incomparable with "
+        "the cohorts every other stage-01 reader was scored on"
+    ),
+    "first_wave_v2_admit.py": (
+        "admission gates over artefacts that already exist, not a measurement: it "
+        "parses the frozen campaign_first_wave_v2 manifest and refuses one that is "
+        "not the snapshot copy, checks each cell's dispatch receipt and terminal "
+        "state against the manifest's identity, checks the pull log's ADMITTED line "
+        "and the ct runtime triple, and re-reads the written Rita and Galactica "
+        "score payloads against their pinned SHAs and declared assay and cluster "
+        "counts. It loads no corpus and no model. The one stochastic quantity it "
+        "names is the paired group bootstrap, and it verifies the payload's own "
+        "bootstrap.resamples and bootstrap.seed against the constants frozen here "
+        "rather than performing a draw: rule 1's hazard is absent for the records "
+        "-- there is no sample of a corpus, so there is no draw to seed and no skip "
+        "offset to be sensitive to -- and every record it reports on was drawn by "
+        "the run whose receipt it is checking"
+    ),
+    "proteinglm_budget_qualification.py": (
+        "scores a fixed, hard-coded set of numeric cases -- 'AC', the twenty "
+        "residues, an 80-residue AVGFP sequence and a 1021-residue repeat of the "
+        "alphabet -- through the 7B ProteinGLM continuation path at FP32, and asks "
+        "whether that path is usable and numerically stable. Its units are those "
+        "cases and the tokens of each, so there is no population to sample: rule "
+        "1's hazard is absent rather than answered, and a cohort here would make "
+        "an interface gate depend on a draw. It reads no corpus"
+    ),
+    "text_aa_dms.py": (
+        "a dedicated ProteinGym door for the 13 text amino-acid string controls, "
+        "and the phase it implements is the tokenizer-only census: it builds a "
+        "frozen request from the LOOKUP queue (--lookup, --wildtypes and "
+        "--wildtypes-fasta) and encodes that request's wild types and mutants "
+        "through text_aa_cohort.census_models on CPU, loading no weights. Its units "
+        "are DMS variants and the frozen request's own assays, not corpus records, "
+        "so the FASTA constructors do not apply and rule 1's hazard is absent for "
+        "the records: there is no Swiss-Prot or OpenWebText sample, no draw to seed "
+        "and no skip offset to be sensitive to. The three phases that would score "
+        "anything -- probe, score and analyse -- are declared in "
+        "UNIMPLEMENTED_PHASES and refused by name"
+    ),
     "05_relational_channel.py": (
         "draws AlphaFold structures under its own seeded permutation of the "
         "catalogue, not sequences from a FASTA corpus"
