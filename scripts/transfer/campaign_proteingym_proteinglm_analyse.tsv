@@ -1,0 +1,92 @@
+# ProteinGym MODEL−LOOKUP analysis for pgym_proteinglm-7b-clm: the one non-text
+# arm left with a fitness score and no analysis.
+#
+# WHERE THE GAP COMES FROM. pgym_proteinglm-7b-clm was re-run on freeze
+# 20260916125622_5b6e4cc879d9 as the single cell of
+# campaign_proteingym_proteinglm_rerun.tsv, and it is terminal there:
+# `exited-ok=1`, `FAILURES 0`, `NO-RECORD 0`, writing
+# results/external_baseline/20260916125622_5b6e4cc879d9/pgym_proteinglm-7b-clm/
+# model_proteinglm-7b-clm.json (54110 B, sha256 bdeaa28d…, matching the sidecar
+# the queue wrote beside it). That payload records 201 assays scored and 16
+# skipped, every skip on the shared context reason. No analyse cell was ever run
+# against it, so this arm has a MODEL−LOOKUP it owes and does not have. This
+# manifest carries exactly that one analysis and nothing else.
+#
+# THE 201-ASSAY SUPPORT IS A CONTEXT FACT, NOT A CORPUS GAP. ProteinGLM's staged
+# checkpoint declares seq_length 1024 -- read back from the loaded config into
+# the payload's own `loader.context`, and the released config.json's own
+# `seq_length` -- and its native rendering spends a 3-token `<gmask><sop><eos>`
+# prefix (src/transfer/proteinglm.py: PREFIX_IDS = (29, 32, 34), CONTEXT_LENGTH
+# = 1024), so 1021 residues, 1024 rendered tokens, is the largest wild type this
+# arm scores. The 16 assays it drops are exactly the 16 the other 1024-context
+# arms drop -- the same names progen2-small and zymctrl record -- and not the 4
+# that InstructProtein and progen2-base drop from their 2048-position windows:
+# A0A140D2T1_ZIKV_Sourisseau_2019 (3426 tokens),
+# BRCA2_HUMAN_Erwood_2022_HEK293T (3421), POLG_CXB3N_Mattenberger_2021 (2188)
+# and POLG_HCVJF_Qi_2014 (3036), the four present in both lists. The frozen
+# census is 217 assays; this arm's support is 201 and is read on its own
+# support, never intersected with another arm's.
+#
+# WHICH ANALYSE AND WHY -- NOT RESTATED HERE. The evidence is in
+# campaign_proteingym_nontxt_gap_rerun.tsv's header, whose second cell already
+# ran this same stage's own `analyse` over progen2-small/base: the native helper
+# cannot serve these arms (`_arm_family` knows only galactica/rita and raises
+# `KeyError`) and 42_scale_capability.py is fixed at three rungs. This cell is
+# that cell's invocation with one arm changed, on the ground that `analyse`
+# loads no model and treats every arm identically.
+#
+# `proteinglm-7b-clm` IS A `--arms` CHOICE FOR `analyse`. It enters
+# `SCOREABLE_ARMS` through `PROTEINGLM_CORPUS` rather than `STAGED_ARMS`, and
+# argparse's `--arms choices` is exactly `sorted(SCOREABLE_ARMS)`, so it parses;
+# `--stages analyse` needs nothing else of it. Checked locally both ways on this
+# checkout: `--stages analyse --arms proteinglm-7b-clm` is accepted, prints
+# `[paths] assays=217`, and proceeds past argument, arm, protocol and
+# joint-qualification validation, stopping only on the absent staged test
+# `--out/wildtypes.json`; while `--arms not-an-arm` exits 2 with `invalid
+# choice` listing proteinglm-7b-clm. `corpus_record` resolves the arm via
+# `PROTEINGLM_CORPUS` (an external UniRef50 profile baseline, not a retrieval
+# bound), which `_arm_analysis` calls.
+#
+# NO PROBE IS NEEDED. `interface_check.json` is an artefact of
+# native_dms_extension.py's family table only; this stage has no `--probe`
+# argument and its analyse path reads no probe.
+#
+# `analyse` has no path flags -- it reads its inputs from its own `--out`, as the
+# ProGen2 cell's header records -- so all four are staged into this cell's output
+# directory before dispatch:
+#
+#   wildtypes.json             45503 B  e080a37758e29c664d71e2a080f990f0bc0e8efdffbae7678b4a8b6271045faa
+#   lookup.json               335133 B  1209b6c12d81c3d27020a3d87b00c253e4e70fc22f6bdaa150b8b0c9ef026ec3
+#   profiles.json              73862 B  55bcbe12e3449b07602c3c0a3327ad8bc903fd7d864d379a1478b4cf96d37872
+#   model_proteinglm-7b-clm.json 54110 B  bdeaa28d0debc850f4442f212b474111828c25e988c147d7746369021f0a0b2f
+#
+# The first three are byte-identical to the frozen set the ProGen2 and
+# InstructProtein analyse cells read from
+# results/external_baseline/20260916123929_496a52beb8f2/pgym_progen2_small_base_analyse/
+# and .../20260916134115_c302bedf8655/pgym_instructprotein_analyse/;
+# lookup.json (217 assays / 174 families) and wildtypes.json (187 wild types /
+# 174 clusters) are also the plan-134 catalogue staged at
+# results/external_baseline/20260913131730_d91171619815/native_dms_inputs/ and
+# carry the same digests there. model_proteinglm-7b-clm.json is copied in-pod
+# from the cell that produced it and verified against that run's own SHA-256
+# sidecar. `--seed 20260807` and `--bootstrap 2000` are the stage's own defaults
+# and are stated because the frozen lookup.json and the score payload were
+# produced at that seed.
+#
+# blosum62_reproduces_frozen IS REPORTED, AND IT IS A WHOLE-BENCHMARK STATEMENT.
+# It is computed by `_channel_controls` over the frozen 217-assay LOOKUP channel,
+# not over this arm's support -- the `len(rows) == 217` guard reads lookup.json,
+# not the score payload -- so the withholding branch is unreachable whenever the
+# frozen lookup is staged and this cell reports `true` (BLOSUM62 mean +0.20982
+# against EXP-R2-134's frozen +0.2098). It says nothing about this arm's 201
+# assays. The arm-level numbers -- mean_spearman, the MODEL−BLOSUM62 interval,
+# the verdict and its equivalence bound -- are all read on 201 assays / 163
+# families, and the verdict's `frozen_reference` is explicitly the ProGen3-112M
+# 217-assay reference rather than this arm's own.
+#
+# One cell, on `cpu`. `analyse` loads no model, needs no card, and this pod is
+# otherwise free; a cpu row takes no GPU gate, so this cell cannot disturb any
+# concurrent run, and it does not touch the separate 1-GPU allocation at all.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	glm	cpu	20_retrieval_bound.py	pgym_proteinglm-7b-clm_analyse	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	retrieval_bound.json	--stages analyse --arms proteinglm-7b-clm --bootstrap 2000 --seed 20260807 --proteingym-dir /gpfs/jiaotongdamoxing/zhk_zip/data/proteingym/DMS_ProteinGym_substitutions
