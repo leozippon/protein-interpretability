@@ -1,0 +1,11 @@
+# RITA-xl ProteinGym pairing from the frozen snapshot copy.
+# Reuses the accepted independent score; does not rescore.
+# Launch only from the snapshot produced by run_transfer_h200.sh --pin.
+# Do not copy this TSV onto GPFS logs and start that copy.
+#
+# Score: 20260913193000_6612da48b3bb/native_score_rita_xl_b16/model_rita-xl.json
+# Probe: 20260913193000_6612da48b3bb/native_probe_rita_xl_b16/interface_check.json
+# LOOKUP: 20260913131730_d91171619815/native_dms_inputs/lookup.json
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	rita	cpu	native_dms_extension.py	rita_xl_independent_analyse	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	native_dms_comparison.json	analyse --lookup /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260913131730_d91171619815/native_dms_inputs/lookup.json --probe rita-xl=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260913193000_6612da48b3bb/native_probe_rita_xl_b16/interface_check.json --score rita-xl=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260913193000_6612da48b3bb/native_score_rita_xl_b16/model_rita-xl.json
