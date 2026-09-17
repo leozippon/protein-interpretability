@@ -18,7 +18,7 @@ H200_CLI="${H200_CLI:-${HANGZHOU_COMPUTE_ROOT}/h200}"
 
 F16_RUN_ID="20260826143603_cffa47b0ef19"
 F16_COHORT_DIGEST="33707cee59c523dec945f9cc6f815bf5e5a1610eeff6e40ca2f16ce3134a7532"
-S29_STATUS="${GPFS_PROJECT_ROOT}/logs/external_baseline/campaign_s29_galactica_instructprotein.status.tsv"
+S29_STATUS="${GPFS_PROJECT_ROOT}/logs/external_baseline/s29_galactica_instructprotein.status.tsv"
 S29_THIRTY="s29_galactica-30b"
 POLL_SECONDS="${POLL_SECONDS:-60}"
 MANIFEST_NAME="campaign_s46_homologue_expansion.tsv"
