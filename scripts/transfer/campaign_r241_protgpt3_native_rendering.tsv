@@ -1,0 +1,55 @@
+# EXP-R2-241 ProtGPT3-1.3B context-information qualification, re-measured under
+# the checkpoint's native rendering.
+#
+# WHY THIS RUN EXISTS. ProtGPT3-1.3B was scored as `raw` -- a bare residue string
+# -- and returned a displacement-corrected 8-block envelope of [-0.2941, -0.1258]
+# nats/token, i.e. below its held-out unigram baseline on all eight blocks. The
+# checkpoint's own card declares a different format: two "directional" tokens, "1"
+# for N-to-C and "2" for C-to-N, "which should be placed at the start of the
+# protein sequence (i.e., after the BOS token) to select the direction", loaded
+# with add_bos_token=True. The arm's `input_format` was `raw` on the reasoning
+# that the published tokenizer_config.json has add_bos_token False and a
+# Sequence-only post-processor -- which is what the tokenizer does unconfigured,
+# not what the model was trained on. `input_format` is now
+# `bos_direction_seq`; nothing else about the estimand, the cohort, the reference,
+# the dtype, the seed or the bootstrap changed.
+#
+# The format effect was measured first, on the gate's own block 0 (band 64-246,
+# n=200, digest 17f1ca32b288) with the gate's own held-out 3998-record reference:
+# raw 3.0495 nats/residue (context information -0.1767) against BOS+direction+seq
+# 1.7957 (context information +1.0825), BOS+seq 2.6929 (+0.1854), direction+seq
+# 1.8843 (+0.9940), and the reverse-direction control BOS+"2"+seq 2.8324
+# (+0.0458). After <|bos|> the model puts 0.499998 of its next-token mass on "1",
+# 0.499998 on "2" and ~0 on the rest of its 31-wide head.
+#
+# THIS MANIFEST IS A NEW MEASUREMENT, NOT A CORRECTION OF THE OLD ONE. New run-id,
+# new artefacts, new cohort-name, and the recorded [-0.2941, -0.1258] is left
+# exactly as it is until stage 41 has produced the corrected envelope. A FAIL or
+# an interval containing zero is a completed measurement and is reported as one.
+#
+# The draw is the eight frozen EXP-R2-216/224/240 blocks, unchanged: pool 4000,
+# --cohort-draw-seed 20260728, --cohort-skip 7000k for k = 0..7, band 64-246,
+# n 200, held-out unigram reference 4000, --seed 20260727. Cohort.digest hashes
+# records only and the records are the same ones, so each cell's expect basename
+# carries that block's existing digest: a cell that drew anything else writes a
+# differently named file and is reported no-artifact rather than silently paired
+# against a block it does not share.
+#
+# --allow-candidate-arms is this campaign's door and admits only
+# STAGED_CANDIDATE_ARMS. bfloat16 as before. --skip-truncation because the
+# truncation curve is not this measurement. The rendering adds two tokens per
+# record (BOS and the direction token); the longest record in the band is 246
+# residues, so 248 tokens, and no truncation reaches it.
+#
+# gpu and slot are packed for a 4-GPU allocation: four blocks share a slot on
+# cuda:0..3 and two slots finish the eight. TRANSFER_PYTHON is the GPFS ct
+# runtime (overrides h200_env.sh ac2).
+# slot	key	gpu	stage	label	env	expect	args
+1	r241	0	01_cohort_power.py	r241_protgpt3-1.3b_b0	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r241_protgpt3-1.3b_17f1ca32b288.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms protgpt3-1.3b --allow-candidate-arms --dtype bfloat16 --cohort-name swissprot_r241_protgpt3-1.3b --cohort-skip 0
+1	r241	1	01_cohort_power.py	r241_protgpt3-1.3b_b1	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r241_protgpt3-1.3b_ee0e4f711920.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms protgpt3-1.3b --allow-candidate-arms --dtype bfloat16 --cohort-name swissprot_r241_protgpt3-1.3b --cohort-skip 7000
+1	r241	2	01_cohort_power.py	r241_protgpt3-1.3b_b2	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r241_protgpt3-1.3b_41dc586d3f8b.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms protgpt3-1.3b --allow-candidate-arms --dtype bfloat16 --cohort-name swissprot_r241_protgpt3-1.3b --cohort-skip 14000
+1	r241	3	01_cohort_power.py	r241_protgpt3-1.3b_b3	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r241_protgpt3-1.3b_12c68b520c81.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms protgpt3-1.3b --allow-candidate-arms --dtype bfloat16 --cohort-name swissprot_r241_protgpt3-1.3b --cohort-skip 21000
+2	r241	0	01_cohort_power.py	r241_protgpt3-1.3b_b4	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r241_protgpt3-1.3b_890b6081c4d2.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms protgpt3-1.3b --allow-candidate-arms --dtype bfloat16 --cohort-name swissprot_r241_protgpt3-1.3b --cohort-skip 28000
+2	r241	1	01_cohort_power.py	r241_protgpt3-1.3b_b5	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r241_protgpt3-1.3b_16bfb97b3c00.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms protgpt3-1.3b --allow-candidate-arms --dtype bfloat16 --cohort-name swissprot_r241_protgpt3-1.3b --cohort-skip 35000
+2	r241	2	01_cohort_power.py	r241_protgpt3-1.3b_b6	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r241_protgpt3-1.3b_00fd8200e9cb.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms protgpt3-1.3b --allow-candidate-arms --dtype bfloat16 --cohort-name swissprot_r241_protgpt3-1.3b --cohort-skip 42000
+2	r241	3	01_cohort_power.py	r241_protgpt3-1.3b_b7	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r241_protgpt3-1.3b_13a1eb94a514.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms protgpt3-1.3b --allow-candidate-arms --dtype bfloat16 --cohort-name swissprot_r241_protgpt3-1.3b --cohort-skip 49000
