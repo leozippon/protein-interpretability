@@ -3,24 +3,44 @@
 
 A feasibility probe, not a campaign, and not a widening of EXP-R2-227. The
 checkpoint's native conditioning interface was established from primary sources
-before this script existed: the paper's Table 5 carries the forward instruction
-``Can you provide me with a protein belonging to the secretoglobin family?
-Output: Sure, here's a protein from the secretoglobin family: {protein}.`` and a
-domain form, and its Appendix A.4 applies the label-generic form
+before this script existed, and the first run was then re-run against the label
+form and the scaffold those sources actually specify.
 
-    Instruction: I would like a protein that is in {label}. Output: One of the protein that meets the demand is {protein}
+What the sources carry. The paper's Table 6, on the knowledge-instruction
+dataset, gives its *Family Generation* row as ``Instruction: Can you provide me
+with a protein belonging to the secretoglobin family? Output: Sure, here's a
+protein from the secretoglobin family: {protein}.``, and its Figure 10 renders
+four family-conditional de novo design prompts of the form ``Instruction: I would
+like a protein that is in metallothionein family. Output:`` followed by the
+design. The checkpoint's own repository is more precise than the paper about this
+direction: its released benchmark driver ``benchmarks/scripts/run_scope_fold_rank.py``
+instructs the released checkpoint with exactly
 
-to the Fold, Family and Superfamily label spaces. So a **family/domain name to
-protein sequence** condition exists in the released instruction data, and the
-question that follows is whether a request written in that form moves this
-checkpoint's generations.
+    Instruction: I would like a protein that is in {}.
+\n\nOutput: One of the protein that meets the demand is
+
+and its released toy instruction data (``dump/pretrain/raw/instructions.txt``)
+carries 1,008 records in that form, every one with a lower-case prose family name
+ending in the entry's own type noun (``family``, ``superfamily``, ``domain`` or
+``site``), every one followed by the span ``<protein>ƤM...``. The label is
+therefore a **prose family name** rather than an accession, and the template
+carries an **assistant prefix** that the first run supplied no part of. That is
+the request measured here.
 
 The checkpoint emits text positions badly (EXP-R2-151: 92.8% of its probability
 mass on the twenty residue tokens at every text position, a clean text NLL of
 19.08 against ln(50304) = 10.83). That is a readout failure at text positions.
 Here the instruction is **supplied by us and never sampled**: the prompt is the
-checkpoint's declared instruction scaffold, and only the protein span is
+checkpoint's own released instruction scaffold, and only the protein span is
 generated.
+
+One measurement is hard and one is soft. A hit at the release's gathering
+threshold is the hard one and is a strict bar, so the score stage reports a
+single secondary reading beside it: for every generation, its 5-mer Jaccard
+similarity to the staged members of the requested family against its similarity
+to the staged members of the mismatched family. It is labelled a soft read
+everywhere, it gates nothing, and what it can and cannot establish is written
+where it is reported.
 
 One class, one contrast, n = 200 per cell:
 
@@ -73,11 +93,13 @@ Re-run:
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Container, Mapping, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
@@ -95,6 +117,22 @@ from src.transfer.instructprotein_fitness import (  # noqa: E402
     load_instructprotein,
 )
 from src.transfer.io import write_json  # noqa: E402
+from src.transfer.near_duplicates import (  # noqa: E402
+    RESIDUE_SHINGLE,
+    shingles,
+)
+
+#: The staged InterPro release's own shapes, so one pass over it can read the
+#: entry, its type and name, and its member signatures.
+_INTERPRO_ENTRY = re.compile(r'<interpro id="(IPR\d+)"[^>]*\btype="([A-Za-z_]+)"')
+_INTERPRO_NAME = re.compile(r"<name>(.*?)</name>")
+_INTERPRO_MEMBER = re.compile(r'<db_xref[^>]*\bdb="([^"]+)"[^>]*\bdbkey="([^"]+)"')
+
+#: One released family instruction, up to the assistant prefix. The released file
+#: carries a literal backslash-n, which is why the newlines are escaped here.
+_RELEASED_FAMILY_INSTRUCTION = re.compile(
+    r"Instruction: I would like a protein that is in (.{0,200}?)\.\\n\\nOutput: "
+)
 
 PROBE = "instructprotein_family_generation_probe"
 
@@ -118,12 +156,55 @@ GENERATIONS_PER_CELL = 200
 #: more, and the scan is over the whole corpus either way.
 RESERVOIR = 200_000
 
-#: The paper's label-generic forward instruction, verbatim from Appendix A.4:
-#: ``Instruction: I would like a protein that is in {label}. Output: One of the
-#: protein that meets the demand is {protein}``. The declared rendering supplies
-#: the ``Instruction:``/``Output:`` scaffold around it, so only the sentence is
-#: spelled here; the label is the Pfam family's own released description.
-INSTRUCTION_TEMPLATE = "I would like a protein that is in {label}."
+#: The family-conditioned instruction sentence and the assistant prefix that
+#: follows it, verbatim from the released checkpoint repository: the instruction
+#: string of ``benchmarks/scripts/run_scope_fold_rank.py``, which is also the form
+#: of all 1,008 family records of ``dump/pretrain/raw/instructions.txt``. The
+#: blank line between the two is the released one and not the single newline of
+#: this repository's generic ``protein_context_template``, which this instruction
+#: therefore does not go through; the BOS prefix that declaration protects is
+#: still checked at the generate stage.
+FAMILY_INSTRUCTION_SENTENCE = "I would like a protein that is in {label}."
+ASSISTANT_PREFIX = "One of the protein that meets the demand is"
+FAMILY_INSTRUCTION_TEMPLATE = (
+    f"Instruction: {FAMILY_INSTRUCTION_SENTENCE}\n\nOutput: {ASSISTANT_PREFIX}"
+)
+
+#: The InterPro entry type to the noun the released instruction data puts after
+#: the entry's name. Measured against that data rather than chosen here: of its
+#: 479 family instructions carrying one label component, 468 (97.70%) are exactly
+#: ``tuned_label(entry name, entry type)``, so the label form is the release's own.
+LABEL_TYPE_NOUNS = {
+    "Family": "family",
+    "Homologous_superfamily": "superfamily",
+    "Domain": "domain",
+    "Repeat": "repeat",
+    "Active_site": "active site",
+    "Binding_site": "binding site",
+    "Conserved_site": "conserved site",
+}
+
+#: The staged InterPro release, the same file ``conditioned_generation`` already
+#: declares, so the label's naming channel is a staged input like the rest.
+INTERPRO_XML = cg.INTERPRO_XML
+
+#: The released toy instruction data, outside the repository and ignored by git,
+#: read where it is staged for the label-form measurement alone. Its absence is
+#: recorded rather than fatal: no class draw or rate depends on it.
+RELEASED_INSTRUCTIONS = (
+    REPO
+    / "external_resources/literature/repos/instructprotein/dump/pretrain/raw/instructions.txt"
+)
+
+#: The secondary read's shingle length, from ``near_duplicates`` rather than chosen
+#: here, because that module already declares the residue shingle at which this
+#: repository groups protein records.
+SOFT_READ_SHINGLE = RESIDUE_SHINGLE
+
+#: Staged members probed per side when the secondary read's instrument is priced.
+#: Both sides are probed at the same size, as the two scored pools are drawn to the
+#: same size, because a maximum over a larger set is larger.
+SOFT_READ_MEMBERS = 100
 
 #: The oracle's own thresholds, imported from the campaign rather than chosen
 #: here: Pfam-A at its curated per-family gathering thresholds.
@@ -162,19 +243,278 @@ def residue_run(generated_ids: Sequence[int], residue_letters: Mapping[int, str]
 def prompt_for(declaration: jm.JointRendering, label: str) -> str:
     """The string this checkpoint is fed to produce one sample.
 
-    The declared context template with the instruction in it, then the declared
-    protein start delimiter -- the same shape ``conditioned_generation.prompt_for``
-    gives ProLLaMA's conditioned arm, so the sampled span begins in the residue
-    subspace rather than at a delimiter the model would have to emit.
+    The released family rendering -- instruction sentence, blank line, ``Output:``,
+    assistant prefix -- then the declared protein start delimiter, so the sampled
+    span begins in the residue subspace rather than at a delimiter the model would
+    have to emit. The space before the delimiter is the released driver's
+    ``" ".join([instruction, sequence])``.
     """
 
-    instruction = INSTRUCTION_TEMPLATE.format(label=label)
-    if declaration.protein_context_template is None:
-        raise ValueError(f"{declaration.name} declares no context template")
+    if declaration.protein_start is None:
+        raise ValueError(f"{declaration.name} declares no protein start delimiter")
     return (
-        declaration.protein_context_template.format(context=instruction)
+        FAMILY_INSTRUCTION_TEMPLATE.format(label=label)
+        + " "
         + declaration.protein_start
     )
+
+
+def tuned_label(name: str, entry_type: str) -> str:
+    """The label string the released instruction data renders for one entry.
+
+    ``{entry name} {type noun}``, lower-cased, with the noun omitted when the name
+    already ends in it -- the rule measured to reproduce 468 of the 479
+    single-component family labels in that data. An entry type the released form
+    does not cover is refused rather than rendered with a noun nothing measured.
+    """
+
+    noun = LABEL_TYPE_NOUNS.get(entry_type)
+    if noun is None:
+        raise ValueError(
+            f"InterPro entry type {entry_type!r} is not one the released label form "
+            f"covers ({sorted(LABEL_TYPE_NOUNS)}), so the label for {name!r} is not "
+            "renderable in the form the checkpoint was tuned on"
+        )
+    text = name.strip()
+    if not text.lower().endswith(noun):
+        text = f"{text} {noun}"
+    return text.lower()
+
+
+def interpro_label_channel(
+    accessions: Sequence[str], *, path: Path = INTERPRO_XML
+) -> dict[str, Any]:
+    """The staged InterPro release, read once for the two label facts.
+
+    Returns the entry carrying each asked-for Pfam accession as a member
+    signature, and the set of label strings the whole release renders under
+    :func:`tuned_label`. The member list is what keeps this one source: the class
+    is a Pfam family, and the label naming it is the entry that declares that very
+    signature as a member, so the label and the oracle's family are not two
+    different objects with a resemblance between them.
+    """
+
+    wanted = {str(accession) for accession in accessions}
+    entries: dict[str, tuple[str, str, str]] = {}
+    labels: set[str] = set()
+    entry: str | None = None
+    entry_type = ""
+    name: str | None = None
+    count = 0
+    with gzip.open(Path(path), "rt", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            opening = _INTERPRO_ENTRY.search(line)
+            if opening:
+                entry, entry_type, name = opening.group(1), opening.group(2), None
+                count += 1
+            if entry is not None and name is None:
+                element = _INTERPRO_NAME.search(line)
+                if element:
+                    found_name = element.group(1)
+                    name = found_name
+                    if entry_type in LABEL_TYPE_NOUNS:
+                        labels.add(tuned_label(found_name, entry_type))
+            for database, key in _INTERPRO_MEMBER.findall(line):
+                if database != "PFAM":
+                    continue
+                accession = key.split(".", 1)[0]
+                if accession in wanted:
+                    entries.setdefault(accession, (entry or "", entry_type, name or ""))
+    if not count:
+        raise RuntimeError(f"{path} carries no InterPro entry")
+    return {"entries": entries, "labels": labels, "n_entries": count}
+
+
+def tuned_label_reproduction(labels: Container[str], *, path: Path) -> dict[str, Any]:
+    """How much of the released family-instruction data this label rule reproduces.
+
+    The evidence for the label form, as a count rather than an assertion. Only
+    instructions carrying a single label component are testable -- a compound
+    request names several entries and is not one label -- and both numbers are
+    reported so the share is readable against the population it was taken over.
+    """
+
+    if not Path(path).is_file():
+        return {"available": False, "path": str(path), "reason": "not staged on this host"}
+    text = Path(path).read_text(encoding="utf-8", errors="replace")
+    found = _RELEASED_FAMILY_INSTRUCTION.findall(text)
+    single = [label for label in found if " and " not in label and ", has" not in label]
+    reproduced = sum(1 for label in single if label in labels)
+    return {
+        "available": True,
+        "path": str(path),
+        "n_family_instructions": len(found),
+        "n_single_component": len(single),
+        "n_reproduced": reproduced,
+        "share_reproduced": (reproduced / len(single)) if single else None,
+    }
+
+
+def zero_hit_upper_bound_95(n: int) -> float:
+    """The exact one-sided 95% upper bound for zero successes in ``n`` trials.
+
+    From ``(1-p)^n = 0.05``. It is reported only where no success was observed,
+    because that identity is the case it holds in; a nonzero count needs the beta
+    quantile, which nothing here claims.
+    """
+
+    return 1.0 - 0.05 ** (1.0 / n)
+
+
+def jaccard(left: frozenset[str], right: frozenset[str]) -> float:
+    """Set Jaccard, with two empty sets scored as no similarity rather than one."""
+
+    union = left | right
+    return len(left & right) / len(union) if union else 0.0
+
+
+def soft_read(
+    sequences_by_condition: Mapping[str, Sequence[str]],
+    groups_by_condition: Mapping[str, np.ndarray],
+    pools: Mapping[str, Sequence[str]],
+    *,
+    requested: str,
+    mismatched: str,
+    seed: int,
+    resamples: int,
+    bootstrap_seed: int,
+) -> dict[str, Any]:
+    """The secondary reading: is a generation nearer the requested family's members?
+
+    Every generation is scored twice with the same instrument -- the residue
+    5-mer Jaccard from ``near_duplicates``, the shingle this repository already
+    groups protein records at -- against the staged Swiss-Prot members of the
+    requested family and against those of the mismatched family, taking the
+    maximum on each side. A generation is *nearer the requested family* when its
+    requested-side maximum is strictly larger.
+
+    The pools are drawn to the same size from each side under the probe's seed,
+    because the two classes do not carry the same number of staged records and a
+    maximum over a larger set is larger. The instrument is priced on the same read
+    before any generation is interpreted: real members of each family, compared
+    leave-one-out against their own family and against the other, so a null read
+    is distinguishable from an instrument that cannot separate the two families at
+    all.
+
+    What this establishes: whether the sampled 5-mer content sits nearer the
+    requested family's staged members than the mismatched family's, on the same
+    contrast the hard read uses. What it does not: the level of the rate is not
+    calibrated -- the two pools differ in diversity, so only the requested-minus-
+    mismatched difference is readable -- and 5-mer overlap is a composition and
+    order statistic, not profile membership. A positive soft read with a zero hard
+    read is a composition-level statement and nothing stronger.
+    """
+
+    if requested not in pools or mismatched not in pools:
+        raise ValueError("both classes need a staged member pool")
+    size = min(len(pools[requested]), len(pools[mismatched]))
+    if size < 1:
+        raise RuntimeError("a class with no staged Swiss-Prot member cannot be read this way")
+    drawn = {
+        requested: cg.seeded_draw(pools[requested], n=size, seed=seed),
+        mismatched: cg.seeded_draw(pools[mismatched], n=size, seed=seed),
+    }
+    sets = {
+        role: [shingles(sequence, unit="residues", length=SOFT_READ_SHINGLE) for sequence in members]
+        for role, members in drawn.items()
+    }
+
+    flags: dict[str, list[bool]] = {}
+    per_condition: dict[str, Any] = {}
+    for role, samples in sequences_by_condition.items():
+        requested_side: list[float] = []
+        mismatched_side: list[float] = []
+        for sample in samples:
+            if not sample:
+                # An empty generation is a failure of the interface, is kept in the
+                # denominator and is nearer neither family.
+                requested_side.append(0.0)
+                mismatched_side.append(0.0)
+                continue
+            scored = shingles(sample, unit="residues", length=SOFT_READ_SHINGLE)
+            requested_side.append(max((jaccard(scored, other) for other in sets[requested]), default=0.0))
+            mismatched_side.append(max((jaccard(scored, other) for other in sets[mismatched]), default=0.0))
+        flags[role] = [
+            left > right for left, right in zip(requested_side, mismatched_side, strict=True)
+        ]
+        n_nearer = int(sum(flags[role]))
+        per_condition[role] = {
+            "n": len(flags[role]),
+            "n_nearer_requested": n_nearer,
+            "nearer_requested_rate_grouped": cg.grouped_rate(flags[role], groups_by_condition[role]),
+            "mean_similarity_requested": float(np.mean(requested_side)),
+            "mean_similarity_mismatched": float(np.mean(mismatched_side)),
+            "mean_difference_requested_minus_mismatched": float(
+                np.mean(np.asarray(requested_side) - np.asarray(mismatched_side))
+            ),
+            "zero_hit_upper_bound_95": (
+                zero_hit_upper_bound_95(len(flags[role])) if n_nearer == 0 else None
+            ),
+        }
+
+    contrast = cg.two_sample_rate_contrast(
+        flags[requested],
+        groups_by_condition[requested],
+        flags[mismatched],
+        groups_by_condition[mismatched],
+        resamples=resamples,
+        seed=bootstrap_seed,
+    )
+
+    instrument: dict[str, Any] = {}
+    for role, other in ((requested, mismatched), (mismatched, requested)):
+        probes = cg.seeded_draw(pools[role], n=min(SOFT_READ_MEMBERS, len(pools[role])), seed=seed)
+        own_side: list[float] = []
+        other_side: list[float] = []
+        for sequence in probes:
+            scored = shingles(sequence, unit="residues", length=SOFT_READ_SHINGLE)
+            own_side.append(
+                max(
+                    (jaccard(scored, member) for member in sets[role] if member != scored),
+                    default=0.0,
+                )
+            )
+            other_side.append(
+                max((jaccard(scored, member) for member in sets[other]), default=0.0)
+            )
+        instrument[role] = {
+            "n": len(probes),
+            "mean_similarity_own_family": float(np.mean(own_side)),
+            "mean_similarity_other_family": float(np.mean(other_side)),
+            "mean_difference_own_minus_other": float(
+                np.mean(np.asarray(own_side) - np.asarray(other_side))
+            ),
+            "own_family_nearer_rate": float(
+                np.mean([left > right for left, right in zip(own_side, other_side, strict=True)])
+            ),
+        }
+
+    return {
+        "shingle_length": SOFT_READ_SHINGLE,
+        "member_pool_size_per_side": size,
+        "staged_records_per_side": {
+            requested: len(pools[requested]),
+            mismatched: len(pools[mismatched]),
+        },
+        "per_condition": per_condition,
+        "contrast_nearer_requested": contrast,
+        "difference_in_differences": (
+            per_condition[requested]["mean_difference_requested_minus_mismatched"]
+            - per_condition[mismatched]["mean_difference_requested_minus_mismatched"]
+        ),
+        "difference_in_differences_note": (
+            "a point estimate with no interval: the interval-bearing soft statistic "
+            "is contrast_nearer_requested, which is the same estimator the hard read "
+            "uses"
+        ),
+        "instrument_price": instrument,
+        "instrument_price_note": (
+            "real staged members of each family read by the same 5-mer rule, "
+            "leave-one-out against their own family and against the other, before any "
+            "generation is interpreted. A soft read of zero is only readable if this "
+            "separates the two families on real sequences"
+        ),
+    }
 
 
 def eligible_families(
@@ -290,16 +630,30 @@ def run_class(args: argparse.Namespace) -> dict[str, Any]:
     candidates = eligible_families(census, labels, minimum=cg.MIN_CLASS_RECORDS)
     requested, mismatched = class_draw(candidates, seed=args.draw_seed, n=CLASSES)
     declaration = jm.rendering("instructprotein")
-    classes = {
-        role: {
+    channel = interpro_label_channel((requested, mismatched), path=args.interpro_xml)
+    classes = {}
+    for role, key in (("requested", requested), ("mismatched", mismatched)):
+        entry = channel["entries"].get(key)
+        if entry is None:
+            raise RuntimeError(
+                f"{key} carries a name in the Pfam release but no entry of the staged "
+                f"InterPro release declares it as a member signature, so the label "
+                "cannot be rendered in the form this checkpoint was tuned on; the draw "
+                "stops here rather than substituting a label form of this probe's own"
+            )
+        entry_id, entry_type, entry_name = entry
+        label = tuned_label(entry_name, entry_type)
+        classes[role] = {
             "key": key,
             "pfam_name": labels[key][0],
-            "label": labels[key][1] or labels[key][0],
+            "pfam_description": labels[key][1],
+            "interpro_entry": entry_id,
+            "interpro_type": entry_type,
+            "interpro_name": entry_name,
+            "label": label,
             "n_swissprot_records": len(census[key]),
-            "prompt": prompt_for(declaration, labels[key][1] or labels[key][0]),
+            "prompt": prompt_for(declaration, label),
         }
-        for role, key in (("requested", requested), ("mismatched", mismatched))
-    }
     payload = _preamble("instructprotein_family_generation_class")
     payload.update(
         {
@@ -328,17 +682,46 @@ def run_class(args: argparse.Namespace) -> dict[str, Any]:
                 ),
                 "admissible_families": len(candidates),
             },
-            "instruction_template": INSTRUCTION_TEMPLATE,
+            "instruction_template": FAMILY_INSTRUCTION_TEMPLATE,
             "instruction_source": (
-                "Appendix A.4's label-generic forward template, applied there to Fold, "
-                "Family and Superfamily labels; Table 5 carries the same direction as "
-                "Family Generation and Domain Generation"
+                "the released checkpoint repository's own family rendering: "
+                "benchmarks/scripts/run_scope_fold_rank.py instructs the released "
+                "checkpoint with 'Instruction: I would like a protein that is in "
+                "{}.\\n\\nOutput: One of the protein that meets the demand is', and "
+                "dump/pretrain/raw/instructions.txt carries 1,008 family records in "
+                "that form. The paper carries the same direction at Table 6 (Family "
+                "Generation) and Figure 10 (family-instruction-based de novo design) "
+                "in the shorter 'I would like a protein that is in {label} family. "
+                "Output:' form"
             ),
-            "prompt_source": (
-                "joint_modes' declared rendering for this checkpoint: "
-                "'Instruction: {context}\\nOutput: ' then the declared protein start "
-                "delimiter"
-            ),
+            "label_source": {
+                "rule": (
+                    "lower-cased '{InterPro entry name} {type noun}', with the noun "
+                    "omitted when the name already ends in it; the entry is the one "
+                    "that declares the class's own Pfam accession as a member "
+                    "signature, so the label names the family the oracle scores"
+                ),
+                "type_nouns": dict(LABEL_TYPE_NOUNS),
+                "staged_interpro_release": str(args.interpro_xml),
+                "entries_in_the_release": int(channel["n_entries"]),
+                "label_population": len(channel["labels"]),
+                "released_instruction_data": tuned_label_reproduction(
+                    channel["labels"], path=args.released_instructions
+                ),
+            },
+            "prompt_rendering": {
+                "template": FAMILY_INSTRUCTION_TEMPLATE,
+                "protein_start": declaration.protein_start,
+                "declared_generic_template": declaration.protein_context_template,
+                "deviation": (
+                    "the released family rendering separates the instruction from "
+                    "'Output:' with a blank line, while joint_modes declares a single "
+                    "newline for this checkpoint's generic context. The released "
+                    "rendering is the one the checkpoint was tuned on and is what this "
+                    "probe supplies; the declaration's BOS prefix is still checked at "
+                    "the generate stage"
+                ),
+            },
             "classes": classes,
         }
     )
@@ -528,6 +911,12 @@ def run_generate(args: argparse.Namespace) -> dict[str, Any]:
                 f"this prompt encodes with prefix {observed_prefix} where the rendering "
                 f"declares {prefix_ids}; the declared rendering is not the one under test"
             )
+        if not prompt.endswith(declaration.protein_start):
+            raise RuntimeError(
+                f"this prompt does not end at the declared protein start "
+                f"{declaration.protein_start!r}, so the sampled span would not open in "
+                "the residue subspace"
+            )
         seed = cg.cell_seed(
             seed=args.sampling_seed, arm_name=INSTRUCTPROTEIN_ARM, class_key=block["key"], condition=role
         )
@@ -621,6 +1010,7 @@ def run_generate(args: argparse.Namespace) -> dict[str, Any]:
 
 def run_score(args: argparse.Namespace) -> dict[str, Any]:
     anchor = _read(args.anchor_artifact)
+    class_payload = _read(args.class_artifact)
     generations = _read(args.generation_artifact)
     referent = tuple(anchor["class"]["referent"])
 
@@ -648,9 +1038,11 @@ def run_score(args: argparse.Namespace) -> dict[str, Any]:
     flags: dict[str, list[bool]] = {}
     groups: dict[str, np.ndarray] = {}
     grouping: dict[str, Any] = {}
+    sequences: dict[str, list[str]] = {}
     for role, cell in generations["cells"].items():
         flags[role] = cg.assigned(hits, names[role], referent)
         groups[role], grouping[role] = cg.near_duplicate_group_ids(cell["samples"], unit="residues")
+        sequences[role] = list(cell["samples"])
 
     rates = {
         role: {
@@ -663,12 +1055,12 @@ def run_score(args: argparse.Namespace) -> dict[str, Any]:
         for role in flags
     }
     for block in rates.values():
-        # The exact one-sided 95% bound for zero successes in n trials, from
-        # (1-p)^n = 0.05. It is reported only where no hit was observed, because
-        # that identity is the case it holds in: a nonzero count needs the beta
-        # quantile and this probe does not add one to report it.
+        # The exact one-sided 95% bound for zero successes in n trials. It is
+        # reported only where no hit was observed, because that identity is the
+        # case it holds in; a nonzero count needs the beta quantile, which this
+        # probe does not add.
         block["zero_hit_upper_bound_95"] = (
-            1.0 - 0.05 ** (1.0 / block["n"]) if block["n_hits"] == 0 else None
+            zero_hit_upper_bound_95(block["n"]) if block["n_hits"] == 0 else None
         )
     contrast = cg.two_sample_rate_contrast(
         flags["requested"],
@@ -678,6 +1070,38 @@ def run_score(args: argparse.Namespace) -> dict[str, Any]:
         resamples=args.bootstrap,
         seed=args.bootstrap_seed,
     )
+
+    census = family_census(args.pfam_residue)
+    pools = {
+        role: class_pool(sorted(census[block["key"]]), path=args.swissprot)
+        for role, block in class_payload["classes"].items()
+    }
+    soft = soft_read(
+        sequences,
+        groups,
+        pools,
+        requested="requested",
+        mismatched="mismatched",
+        seed=args.draw_seed,
+        resamples=args.bootstrap,
+        bootstrap_seed=args.bootstrap_seed,
+    )
+    soft_contrast = soft["contrast_nearer_requested"]
+    soft_lower_bound_positive = (
+        None if soft_contrast["ci95"] is None else bool(soft_contrast["ci95"][0] > 0.0)
+    )
+    soft_instrument_separates = bool(
+        soft["instrument_price"]["requested"]["mean_difference_own_minus_other"] > 0.0
+        and soft["instrument_price"]["mismatched"]["mean_difference_own_minus_other"] > 0.0
+    )
+    if not soft_instrument_separates:
+        soft_reading = "not_interpretable_soft_instrument_does_not_separate_the_two_families"
+    elif soft_lower_bound_positive is None:
+        soft_reading = "not_scored_soft_interval_degenerate"
+    elif soft_lower_bound_positive:
+        soft_reading = "soft_read_separates_the_two_conditions"
+    else:
+        soft_reading = "soft_read_does_not_separate_the_two_conditions"
 
     statistics = {role: cell["statistics"] for role, cell in generations["cells"].items()}
     pooled_tokens = sum(block["n_generated_tokens"] for block in statistics.values())
@@ -802,6 +1226,21 @@ def run_score(args: argparse.Namespace) -> dict[str, Any]:
                 else "the instrument anchor did not admit this class, so the two rates "
                 "above are not readable as a class-selective statement"
             ),
+            "soft_read": soft,
+            "soft_read_reading": soft_reading,
+            "soft_read_note": (
+                "SECONDARY, and not a gate. The hard read is a profile hit at the "
+                "release's gathering threshold, which a generation carrying family-like "
+                "content can miss, so this read asks the weaker question directly: does "
+                "a generation's 5-mer content sit nearer the staged members of the "
+                "requested family than those of the mismatched family. It establishes "
+                "at most that: 5-mer overlap is a composition and order statistic, not "
+                "profile membership and not structure, and the level of the rate is not "
+                "calibrated because the two pools differ in diversity, so only the "
+                "requested-minus-mismatched contrast is readable. A soft separation "
+                "with a zero hard read is a weaker and different statement from a family "
+                "call, and neither is reported as the other"
+            ),
         }
     )
     return payload
@@ -819,6 +1258,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--work", type=Path, default=DEFAULT_WORK)
     parser.add_argument("--pfam-residue", type=Path, default=PFAM_RESIDUE_TSV)
     parser.add_argument("--pfam-hmm", type=Path, default=None, help="the pressed Pfam-A.hmm; defaults to --work/pfam/Pfam-A.hmm")
+    parser.add_argument("--interpro-xml", type=Path, default=INTERPRO_XML)
+    parser.add_argument("--released-instructions", type=Path, default=RELEASED_INSTRUCTIONS)
     parser.add_argument("--swissprot", type=Path, default=SWISSPROT_FASTA)
     parser.add_argument("--uniref50", type=Path, default=UNIREF50_FASTA)
     parser.add_argument("--class-artifact", type=Path, default=None)

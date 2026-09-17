@@ -1,10 +1,12 @@
 """CPU contract for the InstructProtein family-generation feasibility probe.
 
 Written against the properties the probe depends on rather than against its
-implementation: the prompt is the checkpoint's declared rendering, the residue
-span is recovered from the token ids by the identity rule the family declares,
-and the class draw is the campaign's seeded permutation rather than a list a
-caller could hand-pick. No model, no GPU and no corpus is read here.
+implementation: the prompt is the released checkpoint's own family rendering, the
+label is the naming channel its instruction data was written in, the residue span
+is recovered from the token ids by the identity rule the family declares, the
+class draw is the campaign's seeded permutation rather than a list a caller could
+hand-pick, and the secondary read is a 5-mer comparison and nothing more. No
+model, no GPU and no corpus is read here.
 """
 
 from __future__ import annotations
@@ -13,6 +15,8 @@ import importlib.util
 import sys
 import unittest
 from pathlib import Path
+
+import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -62,25 +66,41 @@ class TheResidueSpan(unittest.TestCase):
         self.assertEqual(PROBE.residue_run([50267, 50268], self.LETTERS), "AC")
 
 
-class ThePromptIsTheDeclaredRendering(unittest.TestCase):
-    """The intervention is the prompt the checkpoint was trained to receive."""
+class ThePromptIsTheReleasedFamilyRendering(unittest.TestCase):
+    """The intervention is the request the released checkpoint was tuned on."""
 
-    def test_the_prompt_is_the_declared_context_scaffold_then_the_protein_start(self):
+    LABEL = "crossover junction endodeoxyribonuclease ruvc domain"
+
+    def test_the_prompt_is_the_released_scaffold_then_the_protein_start(self):
+        declaration = jm.rendering("instructprotein")
+        self.assertEqual(
+            PROBE.prompt_for(declaration, self.LABEL),
+            "Instruction: I would like a protein that is in "
+            "crossover junction endodeoxyribonuclease ruvc domain.\n\n"
+            "Output: One of the protein that meets the demand is <protein>",
+        )
+        self.assertTrue(PROBE.prompt_for(declaration, self.LABEL).endswith(declaration.protein_start))
+
+    def test_the_assistant_prefix_is_present_and_is_the_released_one(self):
+        # The first run supplied the instruction clause and stopped at "Output:".
+        prompt = PROBE.prompt_for(jm.rendering("instructprotein"), self.LABEL)
+        self.assertIn(PROBE.ASSISTANT_PREFIX, prompt)
+        self.assertEqual(
+            PROBE.FAMILY_INSTRUCTION_TEMPLATE.format(label=self.LABEL),
+            "Instruction: I would like a protein that is in "
+            "crossover junction endodeoxyribonuclease ruvc domain.\n\n"
+            "Output: One of the protein that meets the demand is",
+        )
+
+    def test_the_released_template_is_not_the_declared_generic_template(self):
         declaration = jm.rendering("instructprotein")
         template = declaration.protein_context_template
-        assert template is not None, "this probe's intervention is the declared scaffold"
-        instruction = PROBE.INSTRUCTION_TEMPLATE.format(
-            label="Crossover junction endodeoxyribonuclease RuvC"
-        )
-        prompt = PROBE.prompt_for(declaration, "Crossover junction endodeoxyribonuclease RuvC")
-        self.assertEqual(
-            prompt,
-            "Instruction: I would like a protein that is in "
-            "Crossover junction endodeoxyribonuclease RuvC.\nOutput: <protein>",
-        )
-        self.assertEqual(
-            prompt,
-            template.format(context=instruction) + declaration.protein_start,
+        assert template is not None, "this checkpoint declares a generic context template"
+        self.assertNotEqual(
+            PROBE.FAMILY_INSTRUCTION_TEMPLATE,
+            template.format(context=PROBE.FAMILY_INSTRUCTION_SENTENCE),
+            "the released family rendering carries a blank line and an assistant "
+            "prefix; the generic declared one carries neither",
         )
 
     def test_the_instruction_is_the_published_one_and_only_the_label_moves(self):
@@ -91,6 +111,87 @@ class ThePromptIsTheDeclaredRendering(unittest.TestCase):
         self.assertEqual(
             left.replace("family one", "{label}"), right.replace("family two", "{label}")
         )
+
+
+class TheLabelIsTheTunedNamingChannel(unittest.TestCase):
+    """A lower-case prose name ending in the entry's own type noun."""
+
+    def test_the_type_noun_is_appended_only_where_the_name_lacks_it(self):
+        self.assertEqual(PROBE.tuned_label("RadC-like JAB domain", "Domain"), "radc-like jab domain")
+        self.assertEqual(
+            PROBE.tuned_label("SAP domain superfamily", "Homologous_superfamily"),
+            "sap domain superfamily",
+        )
+        self.assertEqual(
+            PROBE.tuned_label("Nucleotide-binding protein YajQ/Smlt4090-like", "Family"),
+            "nucleotide-binding protein yajq/smlt4090-like family",
+        )
+        self.assertEqual(PROBE.tuned_label("Cystatin domain", "Active_site"), "cystatin domain active site")
+
+    def test_an_entry_type_the_released_form_does_not_cover_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "not one the released label form covers"):
+            PROBE.tuned_label("Something", "PTM")
+
+
+class TheSoftRead(unittest.TestCase):
+    """A 5-mer comparison on real member sets, labelled as a soft read."""
+
+    REQUESTED = ["ACDEFGHIKLMNPQRSTVWY" * 3 + "ACDEFGHIKL"] * 3
+    MISMATCHED = ["YWVTSRQPNMLKIHGFEDCA" * 3 + "YWVTSRQPNM"] * 3
+
+    def _read(self, samples_by_condition):
+        groups = {role: np.arange(len(value)) for role, value in samples_by_condition.items()}
+        return PROBE.soft_read(
+            samples_by_condition,
+            groups,
+            {"requested": self.REQUESTED, "mismatched": self.MISMATCHED},
+            requested="requested",
+            mismatched="mismatched",
+            seed=PROBE.PROBE_SEED,
+            resamples=64,
+            bootstrap_seed=PROBE.PROBE_SEED,
+        )
+
+    def test_a_generation_of_the_requested_family_is_nearer_the_requested_family(self):
+        near = "ACDEFGHIKLMNPQRSTVWY" * 3 + "ACDEFGHIKM"
+        read = self._read({"requested": [near] * 20, "mismatched": [near] * 20})
+        self.assertEqual(read["per_condition"]["requested"]["nearer_requested_rate_grouped"], 1.0)
+        self.assertGreater(read["per_condition"]["requested"]["mean_similarity_requested"],
+                           read["per_condition"]["requested"]["mean_similarity_mismatched"])
+
+    def test_a_generation_of_the_mismatched_family_is_not(self):
+        far = "YWVTSRQPNMLKIHGFEDCA" * 3 + "YWVTSRQPNL"
+        read = self._read({"requested": [far] * 20, "mismatched": [far] * 20})
+        self.assertEqual(read["per_condition"]["requested"]["nearer_requested_rate_grouped"], 0.0)
+        self.assertIsNotNone(read["per_condition"]["requested"]["zero_hit_upper_bound_95"])
+
+    def test_an_empty_generation_is_nearer_neither_family_and_stays_in_the_denominator(self):
+        read = self._read({"requested": [""] * 20, "mismatched": [""] * 20})
+        self.assertEqual(read["per_condition"]["requested"]["n"], 20)
+        self.assertEqual(read["per_condition"]["requested"]["n_nearer_requested"], 0)
+        self.assertEqual(read["per_condition"]["requested"]["mean_similarity_requested"], 0.0)
+
+    def test_the_two_pools_are_scored_at_the_same_size(self):
+        groups = {"requested": np.arange(4), "mismatched": np.arange(4)}
+        read = PROBE.soft_read(
+            {"requested": ["ACDEFGHIKLMNPQRSTVWY" * 3] * 4, "mismatched": ["ACDEFGHIKLMNPQRSTVWY" * 3] * 4},
+            groups,
+            {"requested": self.REQUESTED, "mismatched": self.MISMATCHED + ["ACDEFGHIKL" * 9]},
+            requested="requested",
+            mismatched="mismatched",
+            seed=PROBE.PROBE_SEED,
+            resamples=64,
+            bootstrap_seed=PROBE.PROBE_SEED,
+        )
+        self.assertEqual(read["member_pool_size_per_side"], len(self.REQUESTED))
+        self.assertEqual(read["staged_records_per_side"]["mismatched"], len(self.MISMATCHED) + 1)
+
+    def test_the_contrast_is_the_estimator_the_hard_read_uses(self):
+        read = self._read({"requested": ["ACDEFGHIKLMNPQRSTVWY" * 3] * 20,
+                           "mismatched": ["ACDEFGHIKLMNPQRSTVWY" * 3] * 20})
+        self.assertIn("difference", read["contrast_nearer_requested"])
+        self.assertIn("ci95", read["contrast_nearer_requested"])
+        self.assertIn("difference_in_differences", read)
 
 
 class TheClassDraw(unittest.TestCase):
