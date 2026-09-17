@@ -3053,3 +3053,11 @@ The shared-premises closer in `summary.md` now only requires scoring artefacts t
 ## 2026-09-17 — Dispatch RITA frozen pairing, Galactica admission, ProtGPT3 native gate
 
 Added `campaign_rita_xl_frozen_analyse.tsv` and `campaign_protgpt3_native_gate.tsv` (commit `e84b17d`). RITA pairing finished from the snapshot copy on freeze `20260917222641_07fae5c1614a`; numbers unchanged and now citable. Galactica 6.7B/30B score files received records-only ADMITTED; 125M ProteinGym was kept, not rescored. ProtGPT3 native eight-block gate is running on the 4-GPU allocation; ProteinGym is queued after it. No pod names recorded.
+
+## 2026-09-17 — Gate non-identification does not block later experiments
+
+`summary.md` no longer treats Galactica-125M ProteinGym as a small-scale referent. An unidentified context-information interval is recorded and later experiments still run. No pod names recorded.
+
+## 2026-09-17 — ProtGPT3 native gate and ProteinGym enter the summary
+
+Native eight-block identification is PASS (minimum displacement-corrected lower bound +0.8563). Native ProteinGym is admitted: MODEL − LOOKUP −0.0512 [−0.0791, −0.0246], `indeterminate`, 201/163. Gate non-identification no longer withholds later cells. No pod names recorded.
