@@ -123,6 +123,26 @@ INPUT_FORMAT_UNDECLARED = "undeclared_native_rendering"
 #: :data:`src.transfer.proteinglm.INPUT_FORMAT`. Not ``raw`` and not EC-conditioned.
 INPUT_FORMAT_GMASK_SOP_EOS = _proteinglm.INPUT_FORMAT
 
+#: BOS-then-direction rendering: ``<|bos|>``, then the checkpoint's direction
+#: token, then the sequence. This is ProtGPT3-1.3B's native format, and it has to
+#: be declared because the checkpoint's own ``tokenizer_config.json`` cannot
+#: answer the question it looks like it answers. That file's post-processor is
+#: Sequence-only and ``add_bos_token`` is False, so a bare residue string encodes
+#: with no BOS -- but the file states what the tokenizer does *by default*, not
+#: what the model was trained on, and the model card's own loading recipe passes
+#: ``add_bos_token=True`` while stating that the direction tokens "should be
+#: placed at the start of the protein sequence (i.e., after the BOS token) to
+#: select the direction". Reading the first as evidence about the second is what
+#: left this arm rendered as ``raw``, two tokens short of its training format.
+#:
+#: Measured on the staged checkpoint, block 0 of the gate's own Swiss-Prot draw
+#: (band 64-246, n=200, digest ``17f1ca32b288``): ``raw`` costs 3.0495
+#: nats/residue against this rendering's 1.7957, and after ``<|bos|>`` the model
+#: places 0.499998 of its next-token mass on ``"1"``, 0.499998 on ``"2"`` and
+#: ~0 on every other token of its 31-wide head -- which is a model that expects a
+#: direction token there and nothing else.
+INPUT_FORMAT_BOS_DIRECTION_SEQ = "bos_direction_seq"
+
 #: How a cohort's records were drawn from their corpus. ``seeded_permutation``
 #: is the only mode Appendix B rule 1 of the transfer audit permits for a
 #: reported number; ``file_order`` is retained because several frozen artefacts
@@ -1179,13 +1199,23 @@ STAGED_ARMS["qwen3-8b-base"] = ArmSpec(
 # a WordLevel character split. Measured, not assumed from the vocabulary size:
 # each of :data:`AA20` encodes as exactly one id and single-token decode returns
 # that residue; a full-string decode inserts spaces (``"A C D E"``) which do not
-# enter the AA20 per-symbol count, so reported units stay nats/token. ``add_bos_token``
-# is False and the post-processor is Sequence-only, so a raw residue string is
-# not prefixed with ``<|bos|>``. Pad/bos/eos are ids 0/1/2. Non-alphabet symbols
-# such as ``J`` map to ``[UNK]`` id 3, which is inside the 31-wide head;
+# enter the AA20 per-symbol count, so reported units stay nats/token. Pad/bos/eos
+# are ids 0/1/2 and the direction tokens are the ordinary entries 4/5. Non-alphabet
+# symbols such as ``J`` map to ``[UNK]`` id 3, which is inside the 31-wide head;
 # tokenizer.unk_token ``<unk>`` is id 33 and is **outside** that head, and AA20
 # strings do not emit it. Weight licence is unknown: that is a disclosure, not
 # a loader error, and it is not experiment admission.
+#
+# ``input_format`` is :data:`INPUT_FORMAT_BOS_DIRECTION_SEQ`, the format the card
+# declares and the checkpoint was trained behind. It used to be ``raw``, on the
+# reasoning that ``add_bos_token`` is False and the post-processor is
+# Sequence-only -- which is true of the *published tokenizer default* and false of
+# the *training format*: the card's loading recipe overrides that default with
+# ``add_bos_token=True``, names two direction tokens, and says they follow the
+# BOS. Scored as ``raw`` this arm was two tokens short of its own format and read
+# below its held-out unigram baseline on all eight gate blocks; scored natively it
+# reads +1.0825 nats/residue of context information on the gate's block 0 against
+# ``raw``'s -0.1767 on the same records and the same held-out reference.
 STAGED_ARMS["protgpt3-1.3b"] = ArmSpec(
     name="protgpt3-1.3b",
     path=MODEL_ROOT / "ProtGPT3-1.3B",
@@ -1194,7 +1224,7 @@ STAGED_ARMS["protgpt3-1.3b"] = ArmSpec(
     n_layer=17,
     d_model=1024,
     tokenisation="residue",
-    input_format="raw",
+    input_format=INPUT_FORMAT_BOS_DIRECTION_SEQ,
     evaluation_cohort_source="swissprot",
     architecture="mixtral",
     pretraining_corpus=PRETRAINING_UNDECLARED,
@@ -2572,6 +2602,8 @@ class Cohort:
             ]
         if fmt == "n_to_c_control":
             return [N_TO_C_MARKER + s for s in self.records]
+        if fmt == INPUT_FORMAT_BOS_DIRECTION_SEQ:
+            return [bos_direction_rendering(arm, s) for s in self.records]
         if fmt == "ec_conditioned":
             labels = self.metadata.get("ec_labels")
             if labels is None or len(labels) != len(self.records):
@@ -2604,6 +2636,53 @@ CONDITIONING_END = "<end>"
 #: must keep it out of a content span cannot find it through ``all_special_ids``
 #: and has to resolve it from here, through :func:`rendering_marker_ids`.
 N_TO_C_MARKER = "1"
+
+#: The direction tokens an ``INPUT_FORMAT_BOS_DIRECTION_SEQ`` rendering places
+#: after the BOS, as the checkpoint's card names them: ``"1"`` for N-to-C and
+#: ``"2"`` for C-to-N. Both are **ordinary vocabulary entries** rather than
+#: special tokens -- measured on the staged checkpoint they are ids 4 and 5, and
+#: ``all_special_ids`` is ``[0, 1, 2, 33]`` -- so a measurement that must keep them
+#: out of a content span resolves them through :func:`rendering_marker_ids`, not
+#: through the tokenizer's special ids.
+#:
+#: :data:`BOS_DIRECTION_N_TO_C` is :data:`N_TO_C_MARKER` rather than a second copy
+#: of ``"1"``: the string that selects N-to-C is one fact this panel holds for
+#: both checkpoints that declare a direction, and spelling it twice would let the
+#: two drift apart. It is also the direction this panel *scores*; its sibling is
+#: the directional control, because a model trained in both directions need not
+#: prefer the one a call site happened to pick.
+BOS_DIRECTION_N_TO_C = N_TO_C_MARKER
+BOS_DIRECTION_C_TO_N = "2"
+
+
+def bos_direction_rendering(
+    arm: Arm, sequence: str, direction: str = BOS_DIRECTION_N_TO_C
+) -> str:
+    """``<|bos|>`` + direction token + sequence, ProtGPT3-1.3B's native rendering.
+
+    The single declaration of that format; :meth:`Cohort.input_strings` renders
+    through it so that no stage spells the prefix itself, and its inverse is
+    :func:`rendering_marker_ids`, which returns the two ids it puts in front of
+    the content.
+
+    ``direction`` takes either declared direction token. Passing
+    :data:`BOS_DIRECTION_C_TO_N` is the directional control -- the same sequence
+    under the opposite marker, which for a model trained in both directions is a
+    different estimate of the same quantity and not a relabelling of this one.
+    """
+
+    if direction not in (BOS_DIRECTION_N_TO_C, BOS_DIRECTION_C_TO_N):
+        raise ValueError(
+            f"{arm.name}: {direction!r} is not a declared direction token; the "
+            f"declared pair is {(BOS_DIRECTION_N_TO_C, BOS_DIRECTION_C_TO_N)}"
+        )
+    bos = arm.tokenizer.bos_token
+    if bos is None:
+        raise ValueError(
+            f"{arm.name}: its rendering places a BOS before the direction token, "
+            "but the tokenizer declares no BOS token"
+        )
+    return f"{bos}{direction}{sequence}"
 
 
 def conditioning_boundary_ids(
@@ -2646,7 +2725,22 @@ def rendering_marker_ids(arm: Arm) -> tuple[int, ...]:
     positions of such a rendering are not content.
     :meth:`Cohort.input_strings` prefixes ``fasta_wrapped`` with the tokenizer's
     end-of-text token and ``n_to_c_control`` with :data:`N_TO_C_MARKER`; ``raw``
-    prefixes nothing.
+    prefixes nothing; ``bos_direction_seq`` prefixes two tokens, the tokenizer's
+    BOS and then :data:`BOS_DIRECTION_N_TO_C`.
+
+    **A two-token prefix is not a special case of a one-token prefix.** Under the
+    ``all_valid`` rule the first rendered token is context and is never a target,
+    so a one-token marker is excluded from the scored span by construction. The
+    second token of ``bos_direction_seq`` is not: the model's next-token
+    distribution after the BOS is 0.499998/0.499998 on ``"1"``/``"2"``, so under
+    the pooled unigram baseline that column reads as *high* context information
+    (the baseline prices a token that occurs once per ~160 targets at 5.08 nats
+    while the model spends 0.69) and inflates the figure by +0.027 nats/token.
+    That is the same treatment ``src.transfer.replaceable`` already gives RITA's
+    terminus token -- a structural position the model predicts and the likelihood
+    scores -- and it is recorded here rather than repaired, because it is 2.5% of
+    a +1.08 figure that is 0.10-0.17 nats from the block-selection sensitivity
+    this programme already reports.
 
     **A tokenizer's special ids do not cover this, and assuming they did was a
     defect.** ProGen2 declares only ``<|pad|>``, ``<|bos|>`` and ``<|eos|>``
@@ -2696,6 +2790,22 @@ def rendering_marker_ids(arm: Arm) -> tuple[int, ...]:
                 "prefixes cannot be kept out of the content span"
             )
         return (int(resolved),)
+    if fmt == INPUT_FORMAT_BOS_DIRECTION_SEQ:
+        bos = arm.tokenizer.bos_token_id
+        if bos is None:
+            raise ValueError(
+                f"{arm.name}: its rendering prefixes a BOS token, but the tokenizer "
+                "declares no BOS id, so that position cannot be located"
+            )
+        resolved = arm.tokenizer.convert_tokens_to_ids(BOS_DIRECTION_N_TO_C)
+        if resolved is None or resolved == arm.tokenizer.unk_token_id:
+            raise ValueError(
+                f"{arm.name}: tokenizer has no {BOS_DIRECTION_N_TO_C!r} id, but its "
+                "input format is bos_direction_seq, so the direction token its "
+                "rendering places after the BOS cannot be kept out of the content "
+                "span"
+            )
+        return (int(bos), int(resolved))
     if fmt == "ec_conditioned":
         raise ValueError(
             f"{arm.name} renders a conditioning prompt rather than a marker prefix: "

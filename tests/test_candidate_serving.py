@@ -37,9 +37,14 @@ from src.transfer.arms import (  # noqa: E402
     _BUILTIN_CAUSAL_LM_ARCHITECTURES,
     _DECOMPOSABLE,
     _ROTARY_DECODERS,
+    INPUT_FORMAT_BOS_DIRECTION_SEQ,
+    BOS_DIRECTION_C_TO_N,
+    BOS_DIRECTION_N_TO_C,
     arm_spec,
+    bos_direction_rendering,
     load_arm,
     load_arm_spec,
+    rendering_marker_ids,
     require_input_path,
     tokenize_batch,
 )
@@ -190,7 +195,11 @@ def test_candidate_paths_use_the_existing_relocators_and_not_instruct():
     assert protein.path.name == "ProtGPT3-1.3B"
     assert qwen.modality == "text"
     assert protein.modality == "protein"
-    assert qwen.input_format == protein.input_format == "raw"
+    # The two candidates do not share a rendering and must not be asserted to:
+    # a text document is fed raw, and this checkpoint's card declares a BOS and a
+    # direction token ahead of the sequence.
+    assert qwen.input_format == "raw"
+    assert protein.input_format == INPUT_FORMAT_BOS_DIRECTION_SEQ
     assert qwen.scoring_target_alphabet_size == 151936
     assert protein.scoring_target_alphabet_size == 31
 
@@ -346,6 +355,18 @@ def test_qwen3_tokenizer_has_no_bos_prefix_and_pads_with_eos():
     assert tokenizer.bos_token_id not in tokenizer(short, return_tensors=None)["input_ids"]
 
 
+def _protgpt3_arm(tokenizer) -> Arm:
+    """The staged ProtGPT3 spec with a real tokenizer and no weights."""
+
+    return Arm(
+        spec=STAGED_ARMS[PROTGPT3],
+        model=SimpleNamespace(config=SimpleNamespace(vocab_size=31)),
+        tokenizer=tokenizer,
+        device="cpu",
+        dtype="float32",
+    )
+
+
 def test_protgpt3_encodes_aa20_one_token_each_without_bos():
     tokenizer = _local_tokenizer(PROTGPT3)
     assert tokenizer.add_bos_token is False
@@ -364,27 +385,65 @@ def test_protgpt3_encodes_aa20_one_token_each_without_bos():
     assert len(ids) == 20
     assert max(ids) < 31
     assert 33 not in ids
-    arm = Arm(
-        spec=STAGED_ARMS[PROTGPT3],
-        model=SimpleNamespace(config=SimpleNamespace(vocab_size=31)),
-        tokenizer=tokenizer,
-        device="cpu",
-        dtype="float32",
-    )
+    arm = _protgpt3_arm(tokenizer)
     cohort = Cohort(
         name="stub", kind="protein", records=["ACDE", "MKTAYI"], min_symbols=0, max_symbols=8
     )
     rendered = cohort.input_strings(arm)
-    assert rendered == ["ACDE", "MKTAYI"]
+    assert rendered == ["<|bos|>1ACDE", "<|bos|>1MKTAYI"]
+    # The bare rendering this arm used to be scored under is gone, and it is not
+    # merely a prefix of the new one: the format carries tokens the old one
+    # never sent.
+    assert "ACDE" not in rendered and "MKTAYI" not in rendered
     batched, mask = tokenize_batch(arm, rendered, 16)
     assert batched.shape[0] == 2
-    assert int(mask[0].sum()) == 4
-    assert int(mask[1].sum()) == 6
-    assert int(batched[0, 4]) == 0
-    keep = sequence_target_mask(batched, mask, rule=target_rule("raw"))
-    # First residue is context-only under raw causal scoring; pads are excluded.
-    assert int(keep[0].sum()) == 3
-    assert int(keep[1].sum()) == 5
+    assert int(mask[0].sum()) == 6
+    assert int(mask[1].sum()) == 8
+    assert int(batched[0, 6]) == 0
+    # BOS is context only; the direction token and every residue are targets.
+    keep = sequence_target_mask(batched, mask, rule=target_rule(arm.spec.input_format))
+    assert int(keep[0].sum()) == 5
+    assert int(keep[1].sum()) == 7
+
+
+def test_protgpt3_renders_bos_then_direction_then_sequence():
+    """The card's format, pinned as token ids, with its directional control.
+
+    The direction tokens are **ordinary vocabulary entries** (ids 4 and 5), not
+    special tokens, so ``<|bos|>`` has to be rendered explicitly: the published
+    ``tokenizer_config.json`` declares ``add_bos_token`` False and its
+    Sequence-only post-processor prefixes nothing. Reading that default as
+    evidence about the training format is what the arm's comment records.
+    """
+
+    tokenizer = _local_tokenizer(PROTGPT3)
+    arm = _protgpt3_arm(tokenizer)
+    assert arm.spec.input_format == INPUT_FORMAT_BOS_DIRECTION_SEQ == "bos_direction_seq"
+
+    def ids(text: str) -> list[int]:
+        return tokenizer(text, return_tensors=None, add_special_tokens=False)["input_ids"]
+
+    assert BOS_DIRECTION_N_TO_C == "1" and BOS_DIRECTION_C_TO_N == "2"
+    assert 4 not in tokenizer.all_special_ids and 5 not in tokenizer.all_special_ids
+    assert ids("MKT") == [17, 15, 24], "the raw rendering is what this arm no longer does"
+    assert ids(bos_direction_rendering(arm, "MKT")) == [1, 4, 17, 15, 24]
+    assert ids(bos_direction_rendering(arm, "MKT", BOS_DIRECTION_C_TO_N)) == [1, 5, 17, 15, 24]
+    assert bos_direction_rendering(arm, "MKT") == "<|bos|>1MKT"
+    assert rendering_marker_ids(arm) == (1, 4)
+    assert target_rule(arm.spec.input_format) == "all_valid"
+    assert arm.spec.scoring_target_alphabet_size == 31
+
+
+def test_protgpt3_direction_rendering_refuses_an_undeclared_direction():
+    tokenizer = _local_tokenizer(PROTGPT3)
+    arm = _protgpt3_arm(tokenizer)
+    with pytest.raises(ValueError, match="not a declared direction token"):
+        bos_direction_rendering(arm, "MKT", "3")
+    # The control works by asking for the other declared direction, not by
+    # relabelling the rendering this arm is scored under.
+    assert bos_direction_rendering(arm, "MKT") != bos_direction_rendering(
+        arm, "MKT", BOS_DIRECTION_C_TO_N
+    )
 
 
 class _NoPadTokenizer:

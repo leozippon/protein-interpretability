@@ -97,6 +97,7 @@ from src.transfer.precision_policy import (  # noqa: E402
 )
 from src.transfer.amino_acids import AA20  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
+    INPUT_FORMAT_BOS_DIRECTION_SEQ,
     INPUT_FORMAT_GMASK_SOP_EOS,
     MODEL_ROOT,
     PANEL,
@@ -500,8 +501,9 @@ if list(PROTEINGLM_CORPUS) != ["proteinglm-7b-clm"]:
 if arm_spec("proteinglm-7b-clm").input_format != INPUT_FORMAT_GMASK_SOP_EOS:
     raise AssertionError("proteinglm-7b-clm ProteinGym scoring is gmask_sop_eos")
 
-#: ProtGPT3-1.3B ProteinGym scoring. Raw residue string, Mixtral decoder.
-#: Corpus undeclared; LOOKUP is an external UniRef50 profile.
+#: ProtGPT3-1.3B ProteinGym scoring. The card's native rendering -- BOS, then the
+#: N-to-C direction token, then the sequence -- on a Mixtral decoder. Corpus
+#: undeclared; LOOKUP is an external UniRef50 profile.
 PROTGPT3_CORPUS: dict[str, dict[str, str]] = {
     "protgpt3-1.3b": {
         "declared": arm_spec("protgpt3-1.3b").pretraining_corpus,
@@ -512,17 +514,19 @@ PROTGPT3_CORPUS: dict[str, dict[str, str]] = {
             "the released card does not identify a training corpus, so no "
             "corpus can be attributed. UniRef50 is searched because it is what "
             "this repository stages. Neither containment direction is evidenced, "
-            "so the residual bias is not signed. Scoring is the raw residue "
-            "string the tokenizer encodes without a BOS prefix. This door does "
-            "not mint a fitness PASS from a checkpoint name"
+            "so the residual bias is not signed. Scoring is the checkpoint's own "
+            "format -- the BOS the card's loading recipe adds and the direction "
+            "token it says follows it -- not the bare residue string the "
+            "published tokenizer config happens to produce unconfigured. This "
+            "door does not mint a fitness PASS from a checkpoint name"
         ),
     },
 }
 
 if list(PROTGPT3_CORPUS) != ["protgpt3-1.3b"]:
     raise AssertionError("the ProtGPT3 scoring door is exactly protgpt3-1.3b")
-if arm_spec("protgpt3-1.3b").input_format != "raw":
-    raise AssertionError("protgpt3-1.3b ProteinGym scoring is raw")
+if arm_spec("protgpt3-1.3b").input_format != INPUT_FORMAT_BOS_DIRECTION_SEQ:
+    raise AssertionError("protgpt3-1.3b ProteinGym scoring is bos_direction_seq")
 
 #: InstructProtein protein-mode ProteinGym scoring. Joint rendering, not an
 #: ArmSpec. Text mode is not this door.
