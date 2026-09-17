@@ -270,6 +270,40 @@ ARM_IDENTIFICATION: Mapping[str, Mapping[str, str]] = {
             "targets are the sequence's residues."
         ),
     },
+    "progen3-112m": {
+        "identification": "undeclared_corpus_no_exclusion_possible",
+        "note": (
+            "the released ProGen3-112M card states no training corpus, so no "
+            "corpus can be attributed to this rung and the certificate's UniRef50 "
+            "search cannot be shown to contain or to be contained in its training "
+            "data. A design's absence from UniRef50 therefore implies nothing at "
+            "all about this rung and the residual cannot be signed: the "
+            "certificate on this arm licenses no statement about retrieval, in "
+            "either direction or of any size. This measurement scores the rung "
+            "left-to-right on the N-to-C direction by its own decision, which is "
+            "recorded at :data:`EXCLUDED_ARMS`; the reading is on the N-to-C "
+            "stratum and is never compared with this lineage's bidirectional "
+            "reading or with a comparison formed on that stratum."
+        ),
+    },
+    "progen3-3b": {
+        "identification": "unbounded_in_the_model_favouring_direction",
+        "note": (
+            "the rung's card declares the Profluent Protein Atlas v1 as its "
+            "pretraining corpus. That corpus was not searched and is not staged, "
+            "so a design absent from the searched UniRef50 snapshot may still be "
+            "present in this rung's corpus and the gap runs in the direction that "
+            "flatters the model. The bound is wider than the ProGen2 ladder's, "
+            "which is already only a bound: that ladder's searched snapshot at "
+            "least overlaps the UniRef90 part of its declared mixture, and nothing "
+            "in this rung's corpus overlaps this certificate at all. This "
+            "measurement scores the rung left-to-right on the N-to-C direction by "
+            "its own decision, which is recorded at :data:`EXCLUDED_ARMS`; the "
+            "reading is on the N-to-C stratum and is never compared with this "
+            "lineage's bidirectional reading or with a comparison formed on that "
+            "stratum."
+        ),
+    },
 }
 
 #: What EXP-R2-226's ProLLaMA rungs let the certificate say. A separate table
@@ -338,20 +372,26 @@ if _unknown_classes:
 
 #: Arms excluded from this estimand, with the reason, so that a narrower panel is
 #: a declared decision rather than a default nobody checked (L18).
+#:
+#: **ProGen3 is not in this table, and the ground that put it here is gone rather
+#: than overridden.** It was refused because its published scoring convention is
+#: the mean of the N-to-C and C-to-N summed log-likelihoods, "which is a different
+#: estimand from the summed left-to-right log-likelihood every arm here is read
+#: under". That ground rested on reading ProGen3 in the N-to-C arms' *reported*
+#: comparison while its own number was taken on another functional. This
+#: measurement scores ProGen3 on the single N-to-C direction, by decision, and
+#: records it under :data:`~src.transfer.scale_comparison.STRATUM_N_TO_C` -- so one
+#: name means one functional, the deviation from the lineage's own convention is
+#: declared in the payload, and the comparison the ground was protecting against
+#: no longer arises. The claim this licenses is the opposite of a claim that the
+#: lineage's bidirectional convention is wrong: that convention is what
+#: ``20_retrieval_bound.py`` scores and what its ProteinGym reading is on, and the
+#: two ProGen3 readings now live on two functionals that are never pooled, ranked
+#: together or converted into one another.
 EXCLUDED_ARMS: Mapping[str, str] = {
     "zymctrl": (
         "its rendering is EC-conditioned and a de novo design carries no EC "
         "number, so the estimand is not defined on this referent for this arm"
-    ),
-    "progen3-112m": (
-        "its published scoring convention is bidirectional, which is a different "
-        "estimand from the summed left-to-right log-likelihood every arm here is "
-        "read under; a bidirectional door for this lineage is not built here"
-    ),
-    "progen3-3b": (
-        "as progen3-112m: its published scoring convention is bidirectional, and "
-        "this stage reaches it through no route -- the rung has no panel or "
-        "staged-scale membership and would need its own bidirectional scorer"
     ),
 }
 

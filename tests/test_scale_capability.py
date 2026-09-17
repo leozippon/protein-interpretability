@@ -268,7 +268,15 @@ def test_retrieval_bound_default_arms_are_unchanged():
     assert "progen3-112m" in stage.ARM_CORPUS
 
 
-def test_designed_referent_default_arms_and_progen3_exclusion_are_unchanged():
+def test_designed_referent_default_arms_and_progen3_decision_are_recorded():
+    """The default arm list is unchanged; ProGen3 is admitted on the N-to-C stratum.
+
+    EXP-R2-244 scores both ProGen3 rungs on the single N-to-C direction by
+    decision, so the exclusion that refused them on a stratum ground is gone and
+    the decision, the stratum and each rung's corpus identification are what the
+    tables have to carry instead.
+    """
+
     stage = _load_stage("29_designed_referent.py")
     assert stage.DEFAULT_ARMS == (
         "protgpt2",
@@ -276,14 +284,19 @@ def test_designed_referent_default_arms_and_progen3_exclusion_are_unchanged():
         "progen2-base",
         "progen2-medium",
     )
-    assert "progen3-112m" in stage.D.EXCLUDED_ARMS
-    assert "bidirectional" in stage.D.EXCLUDED_ARMS["progen3-112m"]
+    assert "progen3-112m" not in stage.D.EXCLUDED_ARMS
+    assert "progen3-3b" not in stage.D.EXCLUDED_ARMS
     assert "progen2-large" in stage.D.ARM_IDENTIFICATION
     assert "progen2-xlarge" in stage.D.ARM_IDENTIFICATION
     assert (
         stage.D.ARM_IDENTIFICATION["progen2-large"]["identification"]
         == "unbounded_in_the_model_favouring_direction"
     )
+    assert (
+        stage.D.ARM_IDENTIFICATION["progen3-112m"]["identification"]
+        == "undeclared_corpus_no_exclusion_possible"
+    )
+    assert stage._ProGen3Likelihood.scoring_stratum == "n_to_c_summed_log_likelihood"
 
 
 # ------------------------------------------------------------- stage 42 fixtures

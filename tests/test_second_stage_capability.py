@@ -517,7 +517,7 @@ def test_the_two_over_assumptions_are_refused_with_their_reasons():
     """The prereg licenses both; the code refuses both, and says so by name."""
 
     progen3 = STAGE43.require_wave("protein_progen3")
-    with pytest.raises(ValueError, match="EXCLUDED_ARMS"):
+    with pytest.raises(ValueError, match="freeze delivers no MegaScale row"):
         STAGE43.require_endpoint(progen3, "megascale")
     galactica = STAGE43.require_wave("joint_galactica")
     with pytest.raises(ValueError, match="no code path exists"):
@@ -530,9 +530,26 @@ def test_the_two_over_assumptions_are_refused_with_their_reasons():
 
 
 def test_the_megascale_refusal_is_the_one_the_stage_29_table_states():
+    """The row is absent because of the freeze, not because of the code.
+
+    Stage 29 admits both ProGen3 rungs and EXP-R2-244 scores them on the single
+    N-to-C direction by decision. What stops a MegaScale row on this campaign is
+    that no wave of it carries the endpoint.
+    """
+
     designed = importlib.import_module("src.transfer.designed_referent")
-    assert "bidirectional" in designed.EXCLUDED_ARMS["progen3-112m"]
-    assert "progen3-3b" not in designed.ARM_IDENTIFICATION
+    assert "progen3-112m" not in designed.EXCLUDED_ARMS
+    assert "progen3-3b" not in designed.EXCLUDED_ARMS
+    assert (
+        designed.ARM_IDENTIFICATION["progen3-3b"]["identification"]
+        == "unbounded_in_the_model_favouring_direction"
+    )
+    assert (
+        designed.ARM_IDENTIFICATION["progen3-112m"]["identification"]
+        == "undeclared_corpus_no_exclusion_possible"
+    )
+    for name in ("progen3-112m", "progen3-3b"):
+        assert "N-to-C stratum" in designed.ARM_IDENTIFICATION[name]["note"]
     assert "bidirectional" in STAGE43.NOT_DELIVERABLE["megascale/progen3"]
 
 
@@ -920,9 +937,12 @@ def test_stage_29_door_admits_exactly_the_declared_protein_doors():
     for name in ("qwen2.5-7b", "qwen2.5-32b", "qwen3-8b-base"):
         assert stage._admitted_door(name) is not None, name
         assert arm_spec(name).modality == "text", name
-    for name in ("progen3-3b", "progen3-112m", "galactica-6.7b", "instructprotein"):
+    for name in ("progen3-112m", "progen3-3b"):
+        assert stage._admitted_door(name) == "a ProGen3 rung", name
+        assert name not in D.EXCLUDED_ARMS, name
+        assert name in D.ARM_IDENTIFICATION, name
+    for name in ("galactica-6.7b", "instructprotein"):
         assert stage._admitted_door(name) is None, name
-    assert "bidirectional" in D.EXCLUDED_ARMS["progen3-3b"]
     assert "rita-xl" not in D.EXCLUDED_ARMS
 
 

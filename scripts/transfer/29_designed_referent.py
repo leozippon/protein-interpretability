@@ -73,6 +73,7 @@ from src.transfer import designed_referent as D  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
     INPUT_FORMAT_GMASK_SOP_EOS,
     PANEL,
+    PROGEN3_ARMS,
     REPO,
     STAGED_CANDIDATE_ARMS,
     STAGED_SCALE_ARMS,
@@ -86,6 +87,7 @@ from src.transfer.arms import (  # noqa: E402
     tokenize_batch,
 )
 from src.transfer import joint_lineage as L  # noqa: E402
+from src.transfer import progen3 as PG  # noqa: E402
 from src.transfer import proteinglm as PGLM  # noqa: E402
 from src.transfer import rita_fitness as RITA  # noqa: E402
 from src.transfer.scoring import sequence_target_mask, target_rule  # noqa: E402
@@ -125,19 +127,26 @@ SCHEMA_VERSION = D.SCHEMA_VERSION
 
 #: The declared protein doors stage 29 admits, each a campaign's own name for a
 #: set of staged checkpoints: EXP-R2-224's scale rungs, EXP-R2-225's second-stage
-#: checkpoints and the budget-only candidate checkpoints, beside the first-round
-#: panel. Listed one by one rather than folded into a predicate, so a door added
-#: later is admitted by a decision recorded here and not by matching a shape, and
-#: narrower than "any arm in ``arms.py``": a text arm is refused by
-#: :func:`~src.transfer.arms.arm_spec`'s modality, a joint checkpoint reached by
-#: path is in none of these tuples, and the ProGen3 rungs stay behind
-#: :data:`~src.transfer.designed_referent.EXCLUDED_ARMS` because their published
-#: convention is a different stratum.
+#: checkpoints, the budget-only candidate checkpoints and the packed-MoE ProGen3
+#: rungs, beside the first-round panel. Listed one by one rather than folded into
+#: a predicate, so a door added later is admitted by a decision recorded here and
+#: not by matching a shape, and narrower than "any arm in ``arms.py``": a text arm
+#: is refused by :func:`~src.transfer.arms.arm_spec`'s modality and a joint
+#: checkpoint reached by path is in none of these tuples.
+#:
+#: The ProGen3 door is a fourth tuple and not a widening of the others for the
+#: reason ``arms._check_progen3_arms`` gives: those rungs are packed MoE and their
+#: weights are reached through :func:`src.transfer.progen3.load_progen3` rather
+#: than through an AutoModel call, which loads random experts and still runs.
+#: Admitting them here is the decision recorded at
+#: :data:`~src.transfer.designed_referent.EXCLUDED_ARMS`: this measurement scores
+#: them on the single N-to-C direction and labels the payload accordingly.
 ADMITTED_PROTEIN_DOORS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("a protein panel arm", tuple(PANEL)),
     ("a staged scale rung", tuple(STAGED_SCALE_ARMS)),
     ("a staged second-stage arm", tuple(STAGED_SECOND_STAGE_ARMS)),
     ("a staged candidate arm", tuple(STAGED_CANDIDATE_ARMS)),
+    ("a ProGen3 rung", tuple(PROGEN3_ARMS)),
 )
 
 #: The inference precisions this stage may be asked for. Declared once because
@@ -704,6 +713,112 @@ class _ProteinGLMLikelihood:
         self.torch.cuda.empty_cache()
 
 
+class _ProGen3Likelihood:
+    """One ProGen3 rung, scored left-to-right on the single N-to-C direction.
+
+    **This measurement's decision, and a declared deviation.** The lineage's own
+    published convention is the mean of the N-to-C and C-to-N summed
+    log-likelihoods, which ``20_retrieval_bound.py`` scores. The estimand here is
+    one functional compared across many arms, and a bidirectional mean is a
+    functional no other arm in this stage carries, so ProGen3 is read on the
+    direction every other arm here is read on and the payload records
+    :data:`~src.transfer.scale_comparison.STRATUM_N_TO_C`. That is what makes the
+    number readable beside the rest of this measurement and **not** readable
+    beside the lineage's bidirectional ProteinGym reading: the two are separate
+    functionals and are never pooled, ranked together or converted into one
+    another. The deviation is declared here, in the payload and in
+    :data:`~src.transfer.designed_referent.ARM_IDENTIFICATION`, and is not
+    inferred from an arm name.
+
+    The rendering is the lineage's own: ``prepare_clm`` builds
+    ``"1" + sequence + "2"`` and wraps it in ``<bos>`` and ``<eos>``, so with
+    ``reverse=False`` the direction marker is the lineage's N-to-C marker rather
+    than one this stage invents. **The scored targets are the sequence's residues
+    1..L and nothing else.** ``progen3.scored_logits`` applies
+    ``residue_target_mask``, which excludes ``"1"``, ``"2"``, ``<eos>``,
+    ``<bos>``, ``<pad>`` and ``<mask>`` from the target set; before that repair
+    the three marker positions of every record were inside the sum, and no other
+    arm in this stage scores a marker, so the magnitude is not the one a
+    marker-inclusive reading produces.
+
+    Weights are reached through :func:`src.transfer.progen3.load_progen3` and not
+    through AutoModel, because the Hugging Face eager MoE path loads random
+    experts and still runs, and :func:`src.transfer.progen3.self_check` is run
+    before a wild type is scored. ``context`` is the checkpoint's own declared
+    ceiling -- 65536 on both rungs, against a rendering of L + 4 tokens and a
+    cohort whose longest wild type is 72 residues -- so the over-context skip is
+    reachable and does not fire here.
+    """
+
+    score_description = (
+        "summed left-to-right N-to-C log-likelihood of the sequence's residues "
+        "1..L under the lineage's own <bos>\"1\"<sequence>\"2\"<eos> rendering; "
+        "the \"1\", \"2\", <bos> and <eos> markers are context, not targets"
+    )
+    scoring_stratum = STRATUM_N_TO_C
+
+    def __init__(self, name: str, *, device: str, dtype: str, batch_size: int) -> None:
+        import torch
+
+        from src.transfer.progen3 import load_progen3, self_check
+
+        torch_dtype = PG.PROGEN3_DTYPES.get(dtype)
+        if torch_dtype is None:
+            raise ValueError(
+                f"{name}: ProGen3's attention is pinned to the flash SDPA backend, "
+                f"which has no kernel for {dtype!r}; supported: "
+                f"{sorted(PG.PROGEN3_DTYPES)}"
+            )
+        self.torch = torch
+        self.name = name
+        self.batch_size = batch_size
+        self.pg = load_progen3(arm_spec(name).path, device=device, dtype=torch_dtype)
+        # Resolved from the loaded config's own fingerprint, so a rung gated
+        # against another rung's band is a KeyError here rather than a number.
+        self.check = self_check(self.pg)
+        self.context = config_context_length(self.pg.config)
+
+    def render(self, sequences: list[str]) -> list[str]:
+        """The records :meth:`log_likelihood` consumes: raw residue strings."""
+
+        return list(sequences)
+
+    def token_lengths(self, sequences: list[str]) -> list[int]:
+        """The rendered width, measured from the lineage's own preparer.
+
+        Measured rather than computed as L + 4: the preparer decides how many ids
+        a residue becomes, and a probe that disagreed with the encoding it
+        measures would make the over-context skip fire on the wrong records.
+        """
+
+        return [
+            int(self.pg.batch([sequence], reverse=False)["input_ids"].shape[-1])
+            for sequence in sequences
+        ]
+
+    def log_likelihood(self, sequences: list[str]) -> np.ndarray:
+        from src.transfer.progen3 import scored_logits, token_nll
+
+        torch = self.torch
+        totals = np.empty(len(sequences), dtype=np.float64)
+        with torch.no_grad():
+            for start in range(0, len(sequences), self.batch_size):
+                chunk = list(sequences[start : start + self.batch_size])
+                batch = self.pg.batch(chunk, reverse=False)
+                logits, targets, mask = scored_logits(self.pg, batch)
+                nll = token_nll(logits, targets)
+                totals[start : start + len(chunk)] = (
+                    -(nll * mask).sum(1).double().cpu().numpy()
+                )
+        if not np.isfinite(totals).all():
+            raise FloatingPointError(f"{self.name}: a non-finite N-to-C total")
+        return totals
+
+    def release(self) -> None:
+        del self.pg
+        self.torch.cuda.empty_cache()
+
+
 class _JointRungLikelihood:
     """One rung of the ProLLaMA lineage, under the bare ``Seq=<...>`` block.
 
@@ -838,6 +953,10 @@ def _open_scorer(name: str, args: argparse.Namespace) -> tuple[Any, dict[str, An
         scorer = _RitaLikelihood(
             name, device=args.device, dtype=args.dtype, batch_size=args.batch_size
         )
+    elif spec.architecture == "progen3":
+        scorer = _ProGen3Likelihood(
+            name, device=args.device, dtype=args.dtype, batch_size=args.batch_size
+        )
     else:
         scorer = _ArmLikelihood(
             name, device=args.device, dtype=args.dtype, batch_size=args.batch_size
@@ -853,6 +972,8 @@ def _open_scorer(name: str, args: argparse.Namespace) -> tuple[Any, dict[str, An
         "scoring_stratum": scorer.scoring_stratum,
         "door": door,
     }
+    if spec.architecture == "progen3":
+        settings["self_check"] = scorer.check
     if args.dtype == "float32":
         settings["precision_policy"] = _require_declared_fp32_policy(name)
     return scorer, settings, dict(D.ARM_IDENTIFICATION[name])

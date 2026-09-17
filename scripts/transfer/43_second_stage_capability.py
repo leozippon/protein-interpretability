@@ -28,18 +28,20 @@ refusal rather than as a sentence.
 EXP-R2-225's text licenses have no code path here, and each is declared as
 unreachable with its reason rather than given a gate no artefact can feed:
 
-* **MegaScale, on every wave.** The only pure-protein wave is ProGen3, which
-  ``29_designed_referent.py`` refuses through
-  ``designed_referent.EXCLUDED_ARMS`` because its published scoring convention is
-  bidirectional -- a different estimand from the summed left-to-right
-  log-likelihood every arm in that stage is read under. That refusal's ground is
-  EXP-R2-225's own strata rule, which read against the prereg's "ProteinGym and
-  MegaScale are entered ... by pure-protein arms" left a conflict the
-  2026-08-26 pre-data amendment has since settled: the ground stands, its scope
-  narrows to refusing ProGen3 in the same reading as the N-to-C arms, and the
-  row becomes a **future** deliverable conditional on three things that do not
-  exist. EXP-R2-225 delivers no MegaScale row on any wave, so this stage builds
-  no gate for one.
+* **MegaScale, on every wave.** EXP-R2-225's freeze delivers no MegaScale row
+  on any wave, so this stage builds no gate for one. The code-path obstruction
+  this bullet used to describe is gone: ``29_designed_referent.py`` now admits
+  both ProGen3 rungs -- ``arms.PROGEN3_ARMS`` is a door there and
+  ``designed_referent.EXCLUDED_ARMS`` no longer names the lineage -- and
+  EXP-R2-244 scores them on the single N-to-C direction by decision, which is
+  what the exclusion's ground was about. The ground stands and is satisfied
+  rather than overridden: that lineage may not be read in the same reading as the
+  N-to-C arms, and on this queue its own reading is the N-to-C one, recorded
+  under :data:`scale_comparison.STRATUM_N_TO_C`. Its published bidirectional
+  convention is not called wrong anywhere -- it is what stage 20 scores and what
+  the lineage's ProteinGym reading is on -- and the two readings are separate
+  functionals that are never pooled, ranked together or converted into one
+  another.
 * **ProteinGym and MegaScale on Galactica protein mode.** No code path reaches
   either: Galactica is declared as an arm nowhere and is reachable only through
   ``21_joint_mode_qualification.py --checkpoint <dir> --rendering galactica``,
@@ -121,21 +123,23 @@ EXISTENCE_ONLY = (
 ENDPOINTS = ("dms", "megascale", "context_information")
 
 MEGASCALE_PROGEN3_REFUSAL = (
-    "29_designed_referent.py raises before anything loads: "
-    "designed_referent.EXCLUDED_ARMS['progen3-112m'] refuses the lineage because "
-    "its published scoring convention is bidirectional, which is a different "
-    "estimand from the summed left-to-right log-likelihood every arm in that "
-    "stage is read under. The refusal's ground IS this campaign's own strata "
-    "rule, and the conflict that ground raised with the prereg's MegaScale "
-    "clause is settled by the 2026-08-26 EXP-R2-225 pre-data amendment: the "
-    "ground stands, its scope is narrowed to refusing ProGen3 in the same "
-    "reading as the N-to-C arms, and the row is a FUTURE deliverable and not "
-    "this campaign's. It is conditional on three things that do not exist -- a "
-    "route to these weights needing no ArmSpec together with the bidirectional "
-    "scorer the lineage itself publishes, an ARM_IDENTIFICATION entry per rung "
-    "recording that this lineage carries no corpus-disjointness certificate at "
-    "all, and a stratum field in stage 29's payloads. Until all three exist "
-    "this refusal stands and EXP-R2-225 reports no MegaScale row on any wave"
+    "EXP-R2-225's freeze delivers no MegaScale row on any wave, and that is now "
+    "the whole of the reason: the code-path obstruction this string used to "
+    "describe is gone. 29_designed_referent.py admits both ProGen3 rungs -- "
+    "arms.PROGEN3_ARMS is a door there and designed_referent.EXCLUDED_ARMS no "
+    "longer names the lineage -- and EXP-R2-244 scores them on the single N-to-C "
+    "direction by decision, which is exactly what the exclusion's ground was "
+    "about: ProGen3 may not be read in the same reading as the N-to-C arms, and "
+    "on that queue its own reading now IS the N-to-C one, recorded under "
+    "scale_comparison.STRATUM_N_TO_C. The deviation from the lineage's published "
+    "bidirectional convention is declared in the payload rather than silently "
+    "resolved, and the two ProGen3 readings -- that N-to-C designed-referent one "
+    "and stage 20's bidirectional ProteinGym one -- are separate functionals "
+    "that are never pooled, ranked together or converted into one another. What "
+    "still stops a row here is the freeze and not the code: no wave of this "
+    "campaign carries the endpoint, so this stage builds no gate no artefact of "
+    "this campaign can feed. A gate for the stage-29 reading belongs to the "
+    "campaign that produces it"
 )
 GALACTICA_FITNESS_REFUSAL = (
     "no code path exists. Galactica is declared as an arm nowhere -- "
