@@ -1,0 +1,60 @@
+# EXP-R2-242 re-measurement of the ProGen3 lineage after the scored-span repair.
+#
+# What changed and why the numbers have to move. `src.transfer.progen3.scored_logits`
+# and `n_to_c_target_rows` built the scored set from `labels[1:]` under a pad mask
+# alone. `ProGen3BatchPreparer.prepare_clm` renders `<bos>` + `"1"` + sequence +
+# `"2"` + `<eos>` and returns `labels` identical to `input_ids`, so that set
+# contains three marker positions per record: `"1"`, `"2"` and `<eos>`. No other
+# arm of the panel scores a marker -- ProGen2's direction marker is position 0 and
+# is never a target, and ProtGPT2's, ZymCTRL's and ProteinGLM's renderings carry no
+# terminal marker -- so the three positions entered ProGen3's per-token figure as
+# an arm-specific term with no analogue on any arm it is read against. The scored
+# span is now the residues, resolved from the `NON_RESIDUE_TOKENS` declaration both
+# paths already consumed through `content_mask`. The rendering is unchanged: the
+# ids fed to the model, and the labels the shift reads, are byte-identical, and
+# only the mask moved.
+#
+# What is reproduced, exactly. The 8-block context-information design of
+# EXP-R2-240: 8 blocks x 200 records, res 64-246, pool 4000, disjoint unigram over
+# 4000 held-out records, `--cohort-draw-seed 20260728 --seed 20260727`,
+# `--skip-truncation`, skips 0/7000/.../49000, and the same `--cohort-name`, so the
+# cohort and reference digests must come back identical to the recorded ones -- a
+# mismatch is a failure to reproduce the design and not a result. Stage 41 then
+# runs over these 16 sidecars alone (CPU, seed 20260820, 2000 paired bootstrap,
+# `--alpha-sweep 1.0`), and identification is the displacement-corrected lower
+# bound above zero on all eight blocks, as before.
+#
+# The ProteinGym cells are EXP-R2-225's two rungs at the stage's own defaults the
+# frozen `lookup.json` was produced at (`--variants 1000 --seed 20260807
+# --batch-size 16`, bfloat16), re-scored because the scored span is an input to
+# every summed log-likelihood. `wildtypes.json` is staged into each cell's own
+# output directory before dispatch, digest-verified against this repository's copy
+# (e080a37758e29c66...); it is an input beside a result and is not either cell's
+# `expect`. Analysis is `43_second_stage_capability.py --wave protein_progen3`
+# against a directory holding these two payloads and the frozen `lookup.json`.
+#
+# Provenance. TRANSFER_PYTHON is the same GPFS ct runtime the R240 cells ran under,
+# so the two runs differ in the code change under test and not in the interpreter.
+# PROGEN3_CHECKPOINTS resolves each rung's own directory: the 112M keeps the
+# module's TRANSFER_PROGEN3_DIR default and the 3B is addressed at
+# ${TRANSFER_MODEL_BASE_DIR}/progen3-3b.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	r242	0	01_cohort_power.py	r242_progen3-112m_b0	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r240_progen3-112m_17f1ca32b288.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms progen3-112m --allow-progen3-arms --dtype bfloat16 --cohort-name swissprot_r240_progen3-112m --cohort-skip 0
+1	r242	1	01_cohort_power.py	r242_progen3-112m_b1	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r240_progen3-112m_ee0e4f711920.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms progen3-112m --allow-progen3-arms --dtype bfloat16 --cohort-name swissprot_r240_progen3-112m --cohort-skip 7000
+1	r242	2	01_cohort_power.py	r242_progen3-112m_b2	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r240_progen3-112m_41dc586d3f8b.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms progen3-112m --allow-progen3-arms --dtype bfloat16 --cohort-name swissprot_r240_progen3-112m --cohort-skip 14000
+1	r242	3	01_cohort_power.py	r242_progen3-112m_b3	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r240_progen3-112m_12c68b520c81.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms progen3-112m --allow-progen3-arms --dtype bfloat16 --cohort-name swissprot_r240_progen3-112m --cohort-skip 21000
+2	r242	0	01_cohort_power.py	r242_progen3-112m_b4	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r240_progen3-112m_890b6081c4d2.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms progen3-112m --allow-progen3-arms --dtype bfloat16 --cohort-name swissprot_r240_progen3-112m --cohort-skip 28000
+2	r242	1	01_cohort_power.py	r242_progen3-112m_b5	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r240_progen3-112m_16bfb97b3c00.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms progen3-112m --allow-progen3-arms --dtype bfloat16 --cohort-name swissprot_r240_progen3-112m --cohort-skip 35000
+2	r242	2	01_cohort_power.py	r242_progen3-112m_b6	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r240_progen3-112m_00fd8200e9cb.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms progen3-112m --allow-progen3-arms --dtype bfloat16 --cohort-name swissprot_r240_progen3-112m --cohort-skip 42000
+2	r242	3	01_cohort_power.py	r242_progen3-112m_b7	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r240_progen3-112m_13a1eb94a514.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms progen3-112m --allow-progen3-arms --dtype bfloat16 --cohort-name swissprot_r240_progen3-112m --cohort-skip 49000
+3	r242	0	01_cohort_power.py	r242_progen3-3b_b0	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r240_progen3-3b_17f1ca32b288.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms progen3-3b --allow-progen3-arms --dtype bfloat16 --cohort-name swissprot_r240_progen3-3b --cohort-skip 0
+3	r242	1	01_cohort_power.py	r242_progen3-3b_b1	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r240_progen3-3b_ee0e4f711920.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms progen3-3b --allow-progen3-arms --dtype bfloat16 --cohort-name swissprot_r240_progen3-3b --cohort-skip 7000
+3	r242	2	01_cohort_power.py	r242_progen3-3b_b2	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r240_progen3-3b_41dc586d3f8b.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms progen3-3b --allow-progen3-arms --dtype bfloat16 --cohort-name swissprot_r240_progen3-3b --cohort-skip 14000
+3	r242	3	01_cohort_power.py	r242_progen3-3b_b3	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r240_progen3-3b_12c68b520c81.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms progen3-3b --allow-progen3-arms --dtype bfloat16 --cohort-name swissprot_r240_progen3-3b --cohort-skip 21000
+4	r242	0	01_cohort_power.py	r242_progen3-3b_b4	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r240_progen3-3b_890b6081c4d2.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms progen3-3b --allow-progen3-arms --dtype bfloat16 --cohort-name swissprot_r240_progen3-3b --cohort-skip 28000
+4	r242	1	01_cohort_power.py	r242_progen3-3b_b5	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r240_progen3-3b_16bfb97b3c00.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms progen3-3b --allow-progen3-arms --dtype bfloat16 --cohort-name swissprot_r240_progen3-3b --cohort-skip 35000
+4	r242	2	01_cohort_power.py	r242_progen3-3b_b6	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r240_progen3-3b_00fd8200e9cb.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms progen3-3b --allow-progen3-arms --dtype bfloat16 --cohort-name swissprot_r240_progen3-3b --cohort-skip 42000
+4	r242	3	01_cohort_power.py	r242_progen3-3b_b7	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r240_progen3-3b_13a1eb94a514.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms progen3-3b --allow-progen3-arms --dtype bfloat16 --cohort-name swissprot_r240_progen3-3b --cohort-skip 49000
+5	r242	0	20_retrieval_bound.py	r242_s20_progen3_112m	-	model_progen3-112m.json	--stages score --arms progen3-112m --dtype bfloat16
+5	r242	1	20_retrieval_bound.py	r242_s20_progen3_3b	-	model_progen3-3b.json	--stages score --arms progen3-3b --dtype bfloat16
