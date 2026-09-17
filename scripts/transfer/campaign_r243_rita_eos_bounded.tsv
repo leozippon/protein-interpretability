@@ -63,15 +63,27 @@
 # residues, so 248 tokens, and the 1024-position context is not reached.
 #
 # Stage 41 runs over one key's eight sidecars alone at its recorded settings
-# (seed 20260820, 2000 paired bootstrap, --alpha-sweep 1.0), as a `cpu` row so
-# that it holds no card. Identification is the displacement-corrected lower bound
-# above zero on all eight blocks, and both keys are read the same way.
+# (seed 20260820, 2000 paired bootstrap, --alpha-sweep 1.0), CUDA hidden, directly
+# in the pod rather than as a queue row -- revision 2's note above records why.
+# Identification is the displacement-corrected lower bound above zero on all
+# eight blocks, and both keys are read the same way.
 #
 # gpu and slot: this campaign shares the pod with another agent's running
 # ProGen3 campaign, so it holds the two cards that were idle when it was written
 # (cuda:2 and cuda:3) and takes one slot per pair of blocks. TRANSFER_PYTHON is
 # the same GPFS ct runtime the recorded cells ran under, so the two runs differ
 # in the code under test and not in the interpreter.
+# REVISION 2 (this dispatch). The two stage-41 rows of revision 1 are removed, because
+# `41_context_information_bootstrap.py` takes no `--device` and the queue injects one on
+# every row including `cpu` rows, so both rows exited 2 with `unrecognized arguments:
+# --device cpu`. Stage 41 is therefore run directly in the pod with CUDA_VISIBLE_DEVICES
+# empty -- the shape EXP-R2-240's stage-41 harness already uses -- at the same settings
+# (seed 20260820, 2000 paired bootstrap, --alpha-sweep 1.0) and into the label directory
+# revision 1 declared for it. Revision 1's status file records that outcome; nothing in it
+# was edited. The 16 stage-01 rows are byte-identical to revision 1's, so the corrected
+# dispatch skips every cell that already wrote its artefact and runs only the one refused
+# cell, r243_rita-xl_base_b0.
+#
 # slot	key	gpu	stage	label	env	expect	args
 1	native	2	01_cohort_power.py	r243_rita-xl_b0	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_17f1ca32b288.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl --cohort-skip 0
 1	native	3	01_cohort_power.py	r243_rita-xl_b1	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_ee0e4f711920.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl --cohort-skip 7000
@@ -89,5 +101,3 @@
 7	base	3	01_cohort_power.py	r243_rita-xl_base_b5	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_base_16bfb97b3c00.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl_base --cohort-skip 35000
 8	base	2	01_cohort_power.py	r243_rita-xl_base_b6	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_base_00fd8200e9cb.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl_base --cohort-skip 42000
 8	base	3	01_cohort_power.py	r243_rita-xl_base_b7	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_base_13a1eb94a514.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl_base --cohort-skip 49000
-9	native	cpu	41_context_information_bootstrap.py	r243_rita-xl_stage41	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	context_information_bootstrap.json	--sidecar ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_b0/power_swissprot_r243_rita-xl_17f1ca32b288.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_b1/power_swissprot_r243_rita-xl_ee0e4f711920.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_b2/power_swissprot_r243_rita-xl_41dc586d3f8b.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_b3/power_swissprot_r243_rita-xl_12c68b520c81.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_b4/power_swissprot_r243_rita-xl_890b6081c4d2.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_b5/power_swissprot_r243_rita-xl_16bfb97b3c00.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_b6/power_swissprot_r243_rita-xl_00fd8200e9cb.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_b7/power_swissprot_r243_rita-xl_13a1eb94a514.records.npz --arms rita-xl --expected-arms rita-xl --seed 20260820 --n-bootstrap 2000 --alpha-sweep 1.0
-10	base	cpu	41_context_information_bootstrap.py	r243_rita-xl_base_stage41	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	context_information_bootstrap.json	--sidecar ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_base_b0/power_swissprot_r243_rita-xl_base_17f1ca32b288.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_base_b1/power_swissprot_r243_rita-xl_base_ee0e4f711920.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_base_b2/power_swissprot_r243_rita-xl_base_41dc586d3f8b.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_base_b3/power_swissprot_r243_rita-xl_base_12c68b520c81.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_base_b4/power_swissprot_r243_rita-xl_base_890b6081c4d2.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_base_b5/power_swissprot_r243_rita-xl_base_16bfb97b3c00.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_base_b6/power_swissprot_r243_rita-xl_base_00fd8200e9cb.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_base_b7/power_swissprot_r243_rita-xl_base_13a1eb94a514.records.npz --arms rita-xl --expected-arms rita-xl --seed 20260820 --n-bootstrap 2000 --alpha-sweep 1.0
