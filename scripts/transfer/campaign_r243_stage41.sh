@@ -42,7 +42,8 @@ set -euo pipefail
 # not be paired against a block it does not share. A block that is merely absent is
 # waited for, with a bound; a key that is not ready by then is refused rather than
 # analysed over a partial set. A stage-41 invocation that exits nonzero stops the
-# harness. The DONE file records both exit codes.
+# harness. The DONE file records both exit codes, and a refusal is a nonzero
+# status rather than an immediate exit, so a refused run still leaves a record.
 #
 # Usage, on the controller, after freezing the campaign's snapshot:
 #
@@ -103,15 +104,24 @@ done
 NATIVE_RESULTS="${GPFS_PROJECT_ROOT}/results/external_baseline/$(basename "${SNAPSHOT_NATIVE}")"
 BASE_RESULTS="${GPFS_PROJECT_ROOT}/results/external_baseline/$(basename "${SNAPSHOT_BASE}")"
 
+# One kind of input per glob, because the cell directory also carries the power
+# JSON's own `.sha256` sidecar and a `power_*.json` that is not a sidecar: a bare
+# `power_*` prefix matches three files in a complete cell and would refuse it.
+kind_glob() {
+  case "$1" in
+    power) printf '%s' 'power_*.records.npz' ;;
+    cohort|reference) printf '%s' "$1_*.json" ;;
+    *) echo "unknown block input kind: $1" >&2; return 2 ;;
+  esac
+}
+
 # The one file of one kind under one block directory, or a nonzero status: 1 when
 # none matched (not ready yet) and 2 when several did (refused).
 block_files() {
-  local results="$1" prefix="$2" block="$3" kind="$4"
-  local dir="${results}/${prefix}_b${block}" path found=()
-  for path in "${dir}/${kind}_"*; do
-    [ -e "${path}" ] || break
-    found+=("${path}")
-  done
+  local results="$1" prefix="$2" block="$3" kind="$4" glob
+  local dir="${results}/${prefix}_b${block}" found=()
+  glob="$(kind_glob "${kind}")" || return 2
+  mapfile -t found < <(compgen -G "${dir}/${glob}" 2>/dev/null || true)
   case "${#found[@]}" in
     0) return 1 ;;
     1) printf '%s\n' "${found[0]}" ;;
@@ -133,7 +143,7 @@ require_one_of_each() {
     for kind in power cohort reference; do
       block_files "${results}" "${prefix}" "${block}" "${kind}" >/dev/null || {
         status=$?
-        [ "${status}" -eq 2 ] && exit 2
+        [ "${status}" -eq 2 ] && return 2
       }
     done
   done
@@ -154,7 +164,7 @@ ready_blocks() {
 
 wait_ready() {
   local key="$1" results="$2" prefix="$3" deadline=$((SECONDS + WAIT_SECONDS)) ready
-  require_one_of_each "${results}" "${prefix}"
+  require_one_of_each "${results}" "${prefix}" || return $?
   while :; do
     ready="$(ready_blocks "${results}" "${prefix}")"
     log "${key}: ${ready}/8 blocks carry a records sidecar, a cohort and a reference"
