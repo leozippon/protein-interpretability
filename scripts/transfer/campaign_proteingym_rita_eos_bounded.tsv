@@ -1,0 +1,95 @@
+# ProteinGym substitution-fitness score and MODEL−LOOKUP analysis for RITA-xl,
+# re-measured under the document-boundary rendering the arm now declares.
+#
+# WHY THIS RUN EXISTS, as the current fact. rita-xl carries a recorded ProteinGym
+# score and a MODEL−LOOKUP, both produced while the arm was rendered as a bare
+# residue string with the tokenizer's terminal `<EOS>` and nothing before residue
+# 1. `src/transfer/arms.py` now declares `input_format=eos_bounded_seq` for it:
+# the document boundary, then the sequence, then that same terminal token. The
+# recorded payload still says what it was: its `settings.score` reads "raw
+# sequence with tokenizer-native terminal EOS; summed N-to-C next-token log
+# likelihood", its `loader.checkpoint_facts.input_format` reads the same, and its
+# per-record span excludes residue 1, which the corrected rendering scores as the
+# target conditioned on the boundary. The context-information re-measurement
+# (EXP-R2-243) is the gate's side of that repair; this manifest is the
+# ProteinGym side, so the arm's fitness row is measured in the format the
+# checkpoint was trained behind rather than left on the retracted one.
+#
+# WHICH PATH PRODUCED THE RECORDED SCORE, read off the artefacts rather than
+# assumed. It is NOT `native_dms_extension.py`'s own scoring phase: that script's
+# phases are `probe` and `analyse` only. The recorded score is stage 20's
+# `--stages score` for a native-extension arm, dispatched as label
+# `native_score_rita_xl_b16` in run `20260913193000_6612da48b3bb` and written to
+# `results/external_baseline/20260913193000_6612da48b3bb/native_score_rita_xl_b16/
+# model_rita-xl.json` (78841 B). The launcher was the ignored local controller
+# `logs/native_dms_extension/run_one_score.py`, which is a wrapper around
+# `run_external_baseline_h200.sh`: it passes `--pin`, `--run-id`,
+# `--stage 20_retrieval_bound.py`, `--label native_score_<slug>_b16`,
+# `--gpu 0`, `--expect model_rita-xl.json`, then `--stages score --arms rita-xl
+# --dtype float32 --batch-size 16 --variants 1000 --seed 20260807
+# --proteingym-dir <dir> --assays <the probe's frozen lookup_order>`. This
+# manifest is that invocation as a queue row, with the two things the queue
+# supplies already declared (`--out`, `--device`) and `--assays` left to the
+# stage's own default, which is every assay staged in the frozen LOOKUP order:
+# this arm's recorded score and the ProteinGLM score agree row-for-row on assay
+# name, order and the per-row `seed = 20260807 + original LOOKUP index`, and the
+# stage's default order is the same sorted order the probe froze, so the draw is
+# the same draw.
+#
+# THE PROBE IS RE-RUN, BECAUSE THE RENDERING IS THE INTERFACE THE PROBE CERTIFIES.
+# `native_dms_extension.py analyse` refuses a probe that did not pass, and it
+# verifies dtype, stratum, seed, variant cap, batch size, the wildtypes
+# fingerprint, the skip set, the scored set, and every scored assay's
+# wildtype_id, n_variants, mutant_digest and csv hash against the score. It does
+# not compare the render text, so the recorded probe would in fact pair with a
+# corrected score -- which is exactly why re-probing is the honest choice rather
+# than the convenient one: the recorded probe's `settings.score` and its
+# `longest_eligible_batch` are statements about the old rendering, and a report
+# that paired them with a new score would carry two renderings in one
+# certificate.
+#
+# EXPECTED SUPPORT, derived before the run so the probe's outcome is a check
+# rather than a surprise. The frozen catalogue holds 217 assays over 174
+# wild-type families; the arm's context is 1024 positions; every drawn
+# substitution preserves the wild type's length, so an assay's rendered length
+# moves by exactly one token between the two renderings (`L + 1` -> `L + 2`).
+# The recorded probe's largest eligible assay is MSH2_HUMAN_Jia_2020 at 935
+# rendered tokens against 1024, and its 16 exclusions are all above the context;
+# no assay's recorded maximum is 1023 or 1024, so the exclusion set cannot change
+# and the expectation is the recorded 201 scored / 163 families over 16 skipped
+# on this arm's own over-context reason. The arm is read on its own support and
+# never intersected with another arm's.
+#
+# THE THREE CELLS, on one card and one card only. This pod is shared with another
+# agent's running campaign on cuda:0 and cuda:3 and a separate 1-GPU allocation
+# running a Galactica-30B job, so these cells are serialized in three slots on
+# cuda:1: the probe, then the score over the support the probe freezes, then the
+# CPU-only analysis. A single card means one busy-card gate can refuse at most one
+# cell, and neither the other campaign nor the 1-GPU allocation is touched.
+# `analyse` loads no model, takes no `--device` of its own, and enters as a `cpu`
+# row, which the runner gives an empty `CUDA_VISIBLE_DEVICES`.
+#
+# STAGING, because stage 20 reads its catalogue from its own `--out`. The frozen
+# `wildtypes.json` (45503 B, SHA-256
+# e080a37758e29c664d71e2a080f990f0bc0e8efdffbae7678b4a8b6271045faa) is copied
+# into `pgym_rita_xl_eos_score/` before the queue starts. That is what makes the
+# score's `input_fingerprints.wildtypes_sha256` equal the probe's, which
+# `_verify_probe_against_score` refuses to see disagree, and it is byte-identical
+# to the catalogue the recorded score was taken against. The probe reads
+# `wildtypes.faa` (74616 B, SHA-256
+# f4647ef0317278658f0a1ae9c8b8cdd9b3ce07aa19594a2cd57b4d3a621700a0) from the
+# same frozen directory. `lookup.json` (335133 B, SHA-256
+# 1209b6c12d81c3d27020a3d87b00c253e4e70fc22f6bdaa150b8b0c9ef026ec3) is the
+# frozen 217-assay / 174-family catalogue the recorded probe, score and analysis
+# all read; analyse refuses a LOOKUP whose hash disagrees with the probe's.
+#
+# `--batch-size 16` is the recorded probe's and the recorded score's batch, so the
+# arm's per-assay draw, its dtype and its batch stay the ones EXP-R2-134's
+# population was measured at. The rendering adds one token per record; the longest
+# eligible wild type is 934 residues, so 936 tokens against 1024 positions, and
+# no truncation path is reachable.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	rita	1	native_dms_extension.py	pgym_rita_xl_eos_probe	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	interface_check.json	probe --lookup /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260913131730_d91171619815/native_dms_inputs/lookup.json --wildtypes /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260913131730_d91171619815/native_dms_inputs/wildtypes.json --wildtypes-fasta /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260913131730_d91171619815/native_dms_inputs/wildtypes.faa --arm rita-xl --dtype float32 --batch-size 16 --proteingym-dir /gpfs/jiaotongdamoxing/zhk_zip/data/proteingym/DMS_ProteinGym_substitutions
+2	rita	1	20_retrieval_bound.py	pgym_rita_xl_eos_score	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	model_rita-xl.json	--stages score --arms rita-xl --dtype float32 --batch-size 16 --variants 1000 --seed 20260807 --proteingym-dir /gpfs/jiaotongdamoxing/zhk_zip/data/proteingym/DMS_ProteinGym_substitutions
+3	rita	cpu	native_dms_extension.py	pgym_rita_xl_eos_analyse	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	native_dms_comparison.json	analyse --lookup /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260913131730_d91171619815/native_dms_inputs/lookup.json --probe rita-xl=${TRANSFER_RESULTS_RUN_DIR}/pgym_rita_xl_eos_probe/interface_check.json --score rita-xl=${TRANSFER_RESULTS_RUN_DIR}/pgym_rita_xl_eos_score/model_rita-xl.json
