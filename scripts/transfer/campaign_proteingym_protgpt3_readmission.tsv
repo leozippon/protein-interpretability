@@ -1,0 +1,93 @@
+# ProteinGym substitution-fitness score and MODEL−LOOKUP analysis for
+# ProtGPT3-1.3B, the one non-text main-table protein arm this round withheld.
+#
+# WHY IT ENTERS NOW, as the current fact rather than as history. This arm was
+# withheld because its 8-block displacement-corrected context-information
+# envelope read [−0.2941, −0.1258] — below the held-out unigram baseline — and
+# the round's rule is to dispatch a ProteinGym cell only for an arm that
+# identified. That reading was taken on a bare residue string (MKT → [17, 15,
+# 24]) while the checkpoint's own card requires a BOS followed by a direction
+# token (MKT → [1, 4, 17, 15, 24]); it is retracted. Re-measured in the
+# rendering the arm declares, its envelope is [+0.8563, +1.1788]: all eight
+# corrected lower bounds are positive and the minimum is +0.8563. The arm
+# therefore satisfies the same dispatch rule every other cell satisfied, and
+# this manifest carries exactly its two cells.
+#
+# WHAT IS SCORED. The rendering is `bos_direction_seq` (src/transfer/arms.py):
+# `<|bos|>` (id 1), then the N-to-C direction token `1` (id 4, an ordinary
+# vocabulary entry — the tokenizer's special ids are only 0/1/2/33), then the
+# residues. Both prefix ids are context and the scored targets are the L
+# residues, residue 1 included, because the prefix precedes it.
+# `scoring.sequence_target_mask` removes any target equal to a rendering's
+# declared marker under every rule, and stage 20's `_ArmScorer` resolves that
+# rule and those ids from the same declaration (`target_rule` and
+# `rendering_marker_ids`) instead of keeping every real token after the first.
+# That is what keeps the direction token out of the sum: it is the *second*
+# input token, so it is a target under "every real token", and the model
+# assigns it a high likelihood while a pooled unigram baseline prices it as
+# rare.
+#
+# EXPECTED SUPPORT, derived before the run. The checkpoint's own config.json
+# declares `max_position_embeddings` 1025, and the rendering spends two tokens,
+# so a wild type of L residues renders as L + 2 tokens and is scored iff
+# L <= 1023. Measured against the released tokenizer, its pre-tokenizer splits
+# every character in isolation (one token per residue, unknown residues one
+# [UNK] token), and a render of L = 3 … 3423 residues tokenises to exactly L + 2
+# with the ids the rendering declares first. The frozen catalogue holds 217
+# assays over wild types of 37 … 3423 residues, and exactly 16 of those assays
+# have a wild type above 1023 residues (1154 / 1278 / 3423 at min/median/max;
+# 13 wild types carry those 16 assays, three of them carrying two each). The
+# declared expectation is therefore 201 assays scored and 16 skipped on this
+# arm's own over-context reason — the same 16 names the 1024-context arms drop
+# — and not the 4 the 2048-context arms drop. The arm is read on its own
+# support and never intersected with another arm's.
+#
+# WHICH ANALYSE AND WHY — NOT RESTATED HERE. This is stage 20's own `analyse`,
+# the invocation the ProGen2-small/base, ProteinGLM and InstructProtein analyse
+# cells use with one arm changed. The native helper cannot serve these arms
+# (`_arm_family` knows only galactica/rita and raises `KeyError`) and
+# 42_scale_capability.py is fixed at three rungs. `analyse` loads no model and
+# treats every arm identically.
+#
+# `protgpt3-1.3b` IS A `--arms` CHOICE FOR BOTH STAGES. It enters
+# `SCOREABLE_ARMS` through `PROTGPT3_CORPUS` rather than `ARM_CORPUS`, so it
+# does not widen the frozen three-arm default, and argparse's `--arms choices`
+# is exactly `sorted(SCOREABLE_ARMS)`. `corpus_record` resolves the arm, which
+# both `_score_one_arm` and `_arm_analysis` call. No probe is needed:
+# `interface_check.json` is an artefact of native_dms_extension.py's family
+# table only, and this stage has no `--probe` argument.
+#
+# `analyse` has no path flags — it reads its inputs from its own `--out` — so
+# its four inputs are staged into that cell's output directory: the three
+# frozen channel files before dispatch, and the payload the score cell writes
+# as soon as that cell is terminal and before this slot's barrier expires. The
+# three, with the digests they carry in
+# results/transfer/retrieval_bound/ (and, for the first two, in the plan-134
+# catalogue under results/external_baseline/20260913131730_d91171619815/
+# native_dms_inputs/):
+#
+#   wildtypes.json    45503 B  e080a37758e29c664d71e2a080f990f0bc0e8efdffbae7678b4a8b6271045faa
+#   lookup.json      335133 B  1209b6c12d81c3d27020a3d87b00c253e4e70fc22f6bdaa150b8b0c9ef026ec3
+#   profiles.json     73862 B  55bcbe12e3449b07602c3c0a3327ad8bc903fd7d864d379a1478b4cf96d37872
+#
+# `--seed 20260807` and `--bootstrap 2000` are each stage's own default and are
+# stated because the frozen lookup.json and the score payload are produced at
+# that seed. The mutant digest is the campaign's frozen one:
+# `--variants 1000 --seed 20260807`, the same digest the ProGen2, ZymCTRL,
+# ProteinGLM, Galactica and InstructProtein cells draw, so `_arm_analysis`'s
+# per-assay digest check against the LOOKUP channel holds. dtype float32 is
+# reserved for the Galactica FP32 v2 protocol; this door's other cells use
+# bfloat16, and this checkpoint's own config declares torch_dtype bfloat16.
+#
+# `blosum62_reproduces_frozen` is a whole-benchmark statement over 217 assays
+# and is withheld for an arm below 217, as it is for progen2-base and
+# InstructProtein.
+#
+# TWO CELLS. Slot 1 is the score cell on an idle card of the 4-GPU allocation;
+# slot 2 is the analyse cell on `cpu`, which takes no GPU gate and cannot
+# disturb the separate 1-GPU allocation. The runner holds slot 2 until slot 1
+# has exited and the settle has elapsed.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	protgpt3	2	20_retrieval_bound.py	pgym_protgpt3-1.3b	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	model_protgpt3-1.3b.json	--stages score --arms protgpt3-1.3b --dtype bfloat16 --variants 1000 --seed 20260807 --batch-size 16 --proteingym-dir /gpfs/jiaotongdamoxing/zhk_zip/data/proteingym/DMS_ProteinGym_substitutions
+2	protgpt3	cpu	20_retrieval_bound.py	pgym_protgpt3-1.3b_analyse	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	retrieval_bound.json	--stages analyse --arms protgpt3-1.3b --bootstrap 2000 --seed 20260807 --proteingym-dir /gpfs/jiaotongdamoxing/zhk_zip/data/proteingym/DMS_ProteinGym_substitutions
