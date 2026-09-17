@@ -204,25 +204,37 @@ DIAGNOSTIC_NEVER_THE_EFFECT = (
 
 # ------------------------------------------------------------------- the arms
 
-#: Residue-level and BPE protein decoders, all at a 1024-position budget.
-PROTEIN_ARMS: tuple[str, ...] = ("protgpt2", "progen2-small", "progen2-medium")
-
-#: The text half of the panel's declared MATCHED_PAIR.
-TEXT_ARMS: tuple[str, ...] = ("gpt2-large",)
-
+#: F16 names keep working exactly as they do today. The expansion wave adds
+#: protein arms under the same imposed 1024-token budget; it does not rescore
+#: the F16 four and does not admit ZymCTRL or further text arms.
+F16_PROTEIN_ARMS: tuple[str, ...] = ("protgpt2", "progen2-small", "progen2-medium")
+F16_TEXT_ARMS: tuple[str, ...] = ("gpt2-large",)
+EXPANSION_PROTEIN_ARMS: tuple[str, ...] = (
+    "progen2-base",
+    "progen2-large",
+    "progen2-xlarge",
+    "progen3-112m",
+    "progen3-3b",
+    "proteinglm-7b-clm",
+    "protgpt3-1.3b",
+    "rita-xl",
+    "galactica-125m",
+    "galactica-1.3b",
+    "galactica-6.7b",
+    "galactica-30b",
+    "instructprotein",
+    "llama-2-7b",
+    "prollama-stage-1",
+    "prollama",
+)
+PROTEIN_ARMS: tuple[str, ...] = F16_PROTEIN_ARMS + EXPANSION_PROTEIN_ARMS
+TEXT_ARMS: tuple[str, ...] = F16_TEXT_ARMS
 ARMS: tuple[str, ...] = TEXT_ARMS + PROTEIN_ARMS
 
 #: Excluded by name, with the reason, rather than quietly absent.
+#: progen2-base / large / xlarge are expansion arms under the imposed 1024
+#: budget and must not be differenced as a scale or window contrast.
 EXCLUDED_ARMS: dict[str, str] = {
-    "progen2-base": (
-        "its staged config declares n_positions 2048 while every other arm here "
-        "declares 1024. Holding a context budget fixed across a 2048-position arm "
-        "and 1024-position arms confounds the corpus contrast with the budget, and "
-        "letting the budget scale with the window confounds it with the "
-        "position-embedding regime. The budget is fixed at 1024 positions on every "
-        "arm and this rung is out, which also means this campaign measures nothing "
-        "about long-context behaviour beyond 1024 positions on any arm"
-    ),
     "zymctrl": (
         "its declared rendering wraps content in an EC conditioning tag, so every "
         "in-context homologue would arrive carrying an enzyme-class label and the "
@@ -230,8 +242,58 @@ EXCLUDED_ARMS: dict[str, str] = {
         "tag is 1.73 nats off distribution (L15, EXP-R2-034) and scoring with a "
         "fabricated one is worse"
     ),
-    "progen2-large": "staged non-member; nothing in this design needs it",
-    "progen2-xlarge": "staged non-member; nothing in this design needs it",
+}
+
+#: Packing family names. Dispatch is by arm name first: ProGen3's ArmSpec
+#: input_format is ``raw``, which would otherwise inherit GPT-2's EOT prefix.
+PACKING_F16 = "f16"
+PACKING_BOS_DIRECTION = "bos_direction_seq"
+PACKING_GMASK = "gmask_sop_eos"
+PACKING_PROGEN3 = "progen3_clm"
+PACKING_RITA = "rita_document_stream"
+PACKING_GALACTICA = "galactica_amino_blocks"
+PACKING_INSTRUCT = "instructprotein_protein_blocks"
+PACKING_LLAMA = "llama_seq_blocks"
+
+#: Recorded on every expansion-arm artefact. A certificate or gate gap is a
+#: caveat, not a reason to skip the arm.
+CAVEATS: dict[str, str] = {
+    "progen2-base": (
+        "unidentified mixture; 2048 ceiling scored at imposed 1024; no scale/window contrast"
+    ),
+    "progen2-large": (
+        "staged non-member; 1024 budget imposed; no scale/window contrast"
+    ),
+    "progen2-xlarge": (
+        "staged non-member; 1024 budget imposed; no scale/window contrast"
+    ),
+    "progen3-112m": (
+        "N→C only, not bidirectional ProteinGym mean; MoE requires sequence_ids"
+    ),
+    "progen3-3b": (
+        "N→C only, not bidirectional ProteinGym mean; MoE requires sequence_ids"
+    ),
+    "proteinglm-7b-clm": (
+        "UniRef mixture unverified; continuation scores residues 2..L"
+    ),
+    "protgpt3-1.3b": "candidate arm; native bos_direction_seq",
+    "rita-xl": "UniRef100 family; document-stream packing",
+    "galactica-125m": (
+        "protein-mode context-information unidentified; UniRef50 certificate unsigned"
+    ),
+    "galactica-1.3b": "UniRef50 certificate unsigned",
+    "galactica-6.7b": "UniRef50 certificate unsigned",
+    "galactica-30b": "UniRef50 certificate unsigned",
+    "instructprotein": (
+        "UniRef100 family relation unestablished; do not use instruction slot"
+    ),
+    "llama-2-7b": "text-initialized protein-mode floor, not protein-pretrained",
+    "prollama-stage-1": (
+        "Stage 1 protein mode under bare Seq=<...>; Superfamily= is a different experiment"
+    ),
+    "prollama": (
+        "Stage 2 protein mode is off its tuned template; Superfamily= is a different experiment"
+    ),
 }
 
 #: Every arm is scored inside this many positions, on every condition. It is a
@@ -540,6 +602,165 @@ def require_position_budget(config: Any, *, arm: str) -> int:
     return int(declared)
 
 
+def packing_of(name: str) -> str:
+    """Which id-concatenation family one arm uses.
+
+    Name first, not ``ArmSpec.input_format``: ProGen3 declares ``raw``, which is
+    GPT-2's EOT-joined stream and is the wrong packing.
+    """
+
+    if name.startswith("progen3-"):
+        return PACKING_PROGEN3
+    if name == "protgpt3-1.3b":
+        return PACKING_BOS_DIRECTION
+    if name == "proteinglm-7b-clm":
+        return PACKING_GMASK
+    if name == "rita-xl":
+        return PACKING_RITA
+    if name.startswith("galactica-"):
+        return PACKING_GALACTICA
+    if name == "instructprotein":
+        return PACKING_INSTRUCT
+    if name in {"llama-2-7b", "prollama-stage-1", "prollama"}:
+        return PACKING_LLAMA
+    if name in ARMS:
+        return PACKING_F16
+    raise ValueError(f"{name!r} is not an arm of {PRE_REGISTRATION}")
+
+
+def _joint_family(name: str) -> str:
+    packing = packing_of(name)
+    if packing == PACKING_GALACTICA:
+        return "galactica"
+    if packing == PACKING_INSTRUCT:
+        return "instructprotein"
+    if packing == PACKING_LLAMA:
+        return "prollama"
+    raise ValueError(f"{name}: not a joint-rendering packing")
+
+
+def _joint_tokenisation(arm: Arm) -> Any:
+    provenance = arm.serving_provenance or {}
+    cached = provenance.get("joint_tokenisation")
+    if cached is not None:
+        return cached
+    from .joint_modes import rendering, resolve
+
+    return resolve(arm.tokenizer, rendering(_joint_family(arm.name)))
+
+
+def _leading_prefix_len(arm: Arm, ids: Sequence[int], tokenisation: Any) -> int:
+    markers = tuple(int(value) for value in tokenisation.prefix_marker_ids)
+    if markers:
+        if tuple(ids[: len(markers)]) != markers:
+            raise ValueError(
+                f"{arm.name}: joint block does not open with the declared prefix "
+                f"{list(markers)}; got {list(ids[: len(markers)])}"
+            )
+        return len(markers)
+    bos = _bos_id(arm.tokenizer)
+    if bos is not None and ids and int(ids[0]) == bos:
+        return 1
+    raise ValueError(
+        f"{arm.name}: subsequent packed blocks must drop a leading BOS, but none was found"
+    )
+
+
+def _bos_id(tokenizer: Any) -> int | None:
+    for attribute in ("bos_token_id", "bos_id"):
+        value = getattr(tokenizer, attribute, None)
+        if value is not None:
+            return int(value)
+    return None
+
+
+def _joint_item_ids(arm: Arm, record: str, *, drop_prefix: bool) -> list[int]:
+    tokenisation = _joint_tokenisation(arm)
+    rendered = tokenisation.render(record, context=None)
+    ids = list(rendered.token_ids)
+    if not drop_prefix:
+        return ids
+    return ids[_leading_prefix_len(arm, ids, tokenisation) :]
+
+
+def _progen3_special_ids(tokenizer: Any) -> dict[str, int]:
+    vocab = tokenizer.get_vocab()
+    names = ("<bos>", "1", "2", "<eos>", "<pad>")
+    missing = [name for name in names if name not in vocab]
+    if missing:
+        raise ValueError(
+            f"ProGen3 tokenizer is missing {missing}; ids are resolved from the "
+            "checkpoint vocab and are not hardcoded"
+        )
+    return {name: int(vocab[name]) for name in names}
+
+
+def _progen3_item_ids(arm: Arm, record: str) -> list[int]:
+    specials = _progen3_special_ids(arm.tokenizer)
+    residues = [_progen3_residue_id(arm.tokenizer, residue) for residue in record]
+    return [specials["<bos>"], specials["1"], *residues, specials["2"], specials["<eos>"]]
+
+
+def _progen3_residue_id(tokenizer: Any, residue: str) -> int:
+    vocab = tokenizer.get_vocab()
+    if residue not in vocab:
+        resolved = tokenizer.convert_tokens_to_ids(residue)
+        if resolved is None or resolved == tokenizer.unk_token_id:
+            raise ValueError(f"ProGen3 vocab has no residue {residue!r}")
+        return int(resolved)
+    return int(vocab[residue])
+
+
+def _rita_eos(arm: Arm) -> int:
+    eos = arm.tokenizer.eos_token_id
+    if eos is None:
+        raise ValueError(f"{arm.name}: RITA document stream needs a native EOS id")
+    return int(eos)
+
+
+def _residue_token_ids(arm: Arm, record: str) -> list[int]:
+    ids = arm.tokenizer(record, add_special_tokens=False, return_tensors=None)["input_ids"]
+    if not ids:
+        raise ValueError(f"{arm.name}: residue string tokenised to nothing")
+    return list(ids)
+
+
+def row_prefix_ids(arm: Arm) -> list[int]:
+    """Ids written once at the start of a packed row, never repeated per item."""
+
+    packing = packing_of(arm.name)
+    if packing == PACKING_RITA:
+        return [_rita_eos(arm)]
+    if packing == PACKING_INSTRUCT:
+        return list(_joint_tokenisation(arm).prefix_marker_ids)
+    if packing == PACKING_LLAMA:
+        bos = _bos_id(arm.tokenizer)
+        if bos is None:
+            raise ValueError(f"{arm.name}: Llama-lineage packing needs a BOS id")
+        return [bos]
+    return []
+
+
+def _item_affixes(arm: Arm, ids: Sequence[int], *, record: str | None = None) -> tuple[int, int]:
+    """How many leading and trailing non-content tokens one packed item carries."""
+
+    packing = packing_of(arm.name)
+    if packing == PACKING_F16:
+        return content_offset(arm), 0
+    if packing == PACKING_BOS_DIRECTION:
+        return 2, 0
+    if packing == PACKING_GMASK:
+        return 3, 0
+    if packing == PACKING_PROGEN3:
+        return 2, 2
+    if packing == PACKING_RITA:
+        return 0, 1
+    if packing in {PACKING_GALACTICA, PACKING_INSTRUCT, PACKING_LLAMA}:
+        start, end = target_span(arm, ids, record=record)
+        return start, len(ids) - end
+    raise ValueError(f"{arm.name}: no affix rule for packing {packing!r}")
+
+
 # --------------------------------------------------------- the overlap screen
 
 
@@ -767,6 +988,8 @@ def item_prefix(arm: Arm) -> str:
     scored-span offset and the self-check all read it.
     """
 
+    if packing_of(arm.name) != PACKING_F16:
+        return ""
     fmt = arm.spec.input_format
     if fmt in ("fasta_wrapped", "n_to_c_control"):
         return ""
@@ -790,6 +1013,20 @@ def content_offset(arm: Arm) -> int:
     and this campaign's whole contrast lives on that span.
     """
 
+    packing = packing_of(arm.name)
+    if packing == PACKING_BOS_DIRECTION:
+        return 2
+    if packing == PACKING_GMASK:
+        return 3
+    if packing == PACKING_PROGEN3:
+        return 2
+    if packing in {
+        PACKING_RITA,
+        PACKING_GALACTICA,
+        PACKING_INSTRUCT,
+        PACKING_LLAMA,
+    }:
+        return 0
     fmt = arm.spec.input_format
     if fmt == "raw":
         return len(arm.tokenizer(item_prefix(arm), return_tensors=None)["input_ids"])
@@ -814,20 +1051,103 @@ def item_ids(arm: Arm, record: str, *, modality: str) -> list[int]:
     otherwise change which tokens are scored when the context content changes.
     """
 
-    rendered = item_prefix(arm) + render_records(arm, [record], modality=modality)[0]
-    ids = arm.tokenizer(rendered, return_tensors=None)["input_ids"]
-    if not ids:
-        raise ValueError(f"{arm.name}: a rendered item tokenised to nothing")
-    return list(ids)
+    packing = packing_of(arm.name)
+    if packing == PACKING_F16:
+        rendered = item_prefix(arm) + render_records(arm, [record], modality=modality)[0]
+        ids = arm.tokenizer(rendered, return_tensors=None)["input_ids"]
+        if not ids:
+            raise ValueError(f"{arm.name}: a rendered item tokenised to nothing")
+        return list(ids)
+    if packing == PACKING_BOS_DIRECTION:
+        from .arms import BOS_DIRECTION_N_TO_C
+
+        bos = arm.tokenizer.bos_token_id
+        direction = arm.tokenizer.convert_tokens_to_ids(BOS_DIRECTION_N_TO_C)
+        if bos is None or direction is None or direction == arm.tokenizer.unk_token_id:
+            raise ValueError(
+                f"{arm.name}: native bos_direction_seq needs BOS and "
+                f"{BOS_DIRECTION_N_TO_C!r} ids from the tokenizer"
+            )
+        return [int(bos), int(direction)] + _residue_token_ids(arm, record)
+    if packing == PACKING_GMASK:
+        from .proteinglm import PREFIX_IDS
+
+        return list(PREFIX_IDS) + _residue_token_ids(arm, record)
+    if packing == PACKING_PROGEN3:
+        return _progen3_item_ids(arm, record)
+    if packing == PACKING_RITA:
+        return _residue_token_ids(arm, record) + [_rita_eos(arm)]
+    if packing == PACKING_GALACTICA:
+        return _joint_item_ids(arm, record, drop_prefix=False)
+    if packing in {PACKING_INSTRUCT, PACKING_LLAMA}:
+        return _joint_item_ids(arm, record, drop_prefix=True)
+    raise ValueError(f"{arm.name}: no item encoding for packing {packing!r}")
 
 
-def target_span(arm: Arm, ids: Sequence[int]) -> tuple[int, int]:
+def target_span(
+    arm: Arm, ids: Sequence[int], record: str | None = None
+) -> tuple[int, int]:
     """The half-open scored span of a rendered target, marker tokens removed."""
 
-    offset = content_offset(arm)
-    if len(ids) <= offset:
-        raise ValueError(f"{arm.name}: a rendered target carries no content tokens")
-    return offset, len(ids)
+    packing = packing_of(arm.name)
+    if packing == PACKING_F16:
+        offset = content_offset(arm)
+        if len(ids) <= offset:
+            raise ValueError(f"{arm.name}: a rendered target carries no content tokens")
+        return offset, len(ids)
+    if packing == PACKING_BOS_DIRECTION:
+        offset = 2
+        if len(ids) <= offset:
+            raise ValueError(f"{arm.name}: a rendered target carries no content tokens")
+        return offset, len(ids)
+    if packing == PACKING_GMASK:
+        if len(ids) < 5:
+            raise ValueError(
+                f"{arm.name}: continuation scores residues 2..L and needs at least "
+                "two residues after the three-token prefix"
+            )
+        return 4, len(ids)
+    if packing == PACKING_PROGEN3:
+        if len(ids) < 5:
+            raise ValueError(
+                f"{arm.name}: prepare_clm scores residue tokens only and needs at "
+                "least one residue between the direction markers"
+            )
+        return 2, len(ids) - 2
+    if packing == PACKING_RITA:
+        if len(ids) < 2:
+            raise ValueError(f"{arm.name}: a RITA item needs residues and a trailing EOS")
+        return 0, len(ids) - 1
+    if packing in {PACKING_GALACTICA, PACKING_INSTRUCT, PACKING_LLAMA}:
+        return _joint_target_span(arm, ids, record=record)
+    raise ValueError(f"{arm.name}: no target span for packing {packing!r}")
+
+
+def _joint_target_span(
+    arm: Arm, ids: Sequence[int], *, record: str | None
+) -> tuple[int, int]:
+    tokenisation = _joint_tokenisation(arm)
+    packing = packing_of(arm.name)
+    if record is None:
+        raise ValueError(
+            f"{arm.name}: joint packing locates the scored span from the declared "
+            "rendering and needs the residue string"
+        )
+    rendered = tokenisation.render(record, context=None)
+    full = list(rendered.token_ids)
+    drop = 0 if packing == PACKING_GALACTICA else _leading_prefix_len(arm, full, tokenisation)
+    positions = [int(position) - drop for position in rendered.scored_positions]
+    if not positions:
+        raise ValueError(f"{arm.name}: the declared rendering selected no scored tokens")
+    if positions != list(range(positions[0], positions[-1] + 1)):
+        raise ValueError(
+            f"{arm.name}: scored positions {positions} are not a contiguous span"
+        )
+    if list(ids) != full[drop:]:
+        raise ValueError(
+            f"{arm.name}: target ids drifted from the declared rendering of this record"
+        )
+    return positions[0], positions[-1] + 1
 
 
 # ---------------------------------------------------- context reconstruction
@@ -944,18 +1264,19 @@ def filler_item_ids(arm: Arm, filler: str, *, modality: str, n_tokens: int) -> l
     if n_tokens < 1:
         raise ValueError("a context item needs at least one token")
     ids = item_ids(arm, filler, modality=modality)
-    offset = content_offset(arm)
-    content = ids[offset:]
-    if not content:
+    prefix_len, suffix_len = _item_affixes(arm, ids, record=filler)
+    interior = ids[prefix_len : len(ids) - suffix_len if suffix_len else None]
+    if not interior:
         raise ValueError(f"{arm.name}: the filler renders to no content tokens")
-    wanted = n_tokens - offset
+    wanted = n_tokens - prefix_len - suffix_len
     if wanted < 1:
         raise ValueError(
             f"{arm.name}: a {n_tokens}-token filler item cannot carry this arm's "
-            f"{offset}-token marker prefix"
+            f"{prefix_len}+{suffix_len} affix tokens"
         )
-    repeats = math.ceil(wanted / len(content))
-    return list(ids[:offset]) + list((content * repeats)[:wanted])
+    repeats = math.ceil(wanted / len(interior))
+    suffix = list(ids[len(ids) - suffix_len :]) if suffix_len else []
+    return list(ids[:prefix_len]) + list((interior * repeats)[:wanted]) + suffix
 
 
 def build_item(
@@ -1003,15 +1324,17 @@ def build_row(
     context: list[int] = []
     for recipe in recipes:
         context.extend(build_item(arm, recipe, records=records, filler=filler, modality=modality))
-    target = item_ids(arm, records[int(unit["target"])], modality=modality)
-    offset, end = target_span(arm, target)
-    row = context + target
+    target_record = records[int(unit["target"])]
+    target = item_ids(arm, target_record, modality=modality)
+    offset, _end = target_span(arm, target, record=target_record)
+    prefix = row_prefix_ids(arm)
+    row = prefix + context + target
     if len(row) > POSITION_BUDGET:
         raise ValueError(
             f"{arm.name}: unit {unit['key']} condition {condition!r} builds "
             f"{len(row)} tokens, past the fixed {POSITION_BUDGET}-position budget"
         )
-    return row, len(context) + offset
+    return row, len(prefix) + len(context) + offset
 
 
 # --------------------------------------------------------- frozen artefacts
@@ -1509,6 +1832,11 @@ def pool_token_lengths(
 ) -> np.ndarray:
     """Rendered token length of every pool record under one arm's own rendering."""
 
+    if packing_of(arm.name) != PACKING_F16:
+        return np.array(
+            [len(item_ids(arm, record, modality=modality)) for record in records],
+            dtype=np.int64,
+        )
     lengths = np.zeros(len(records), dtype=np.int64)
     prefix = item_prefix(arm)
     for start in range(0, len(records), batch):
@@ -1636,6 +1964,7 @@ def plan_units(arm: Arm, cohort: Mapping[str, Any], *, modality: str) -> dict[st
     records: list[str] = block["records"]
     filler: str = block["filler"]["record"]
     lengths = pool_token_lengths(arm, records, modality=modality)
+    row_overhead = len(row_prefix_ids(arm))
     composition = composition_matrix(records) if modality == "protein" else None
     unigrams: list[Counter] | None = None
     shingles: list[frozenset[str]] | None = None
@@ -1660,7 +1989,7 @@ def plan_units(arm: Arm, cohort: Mapping[str, Any], *, modality: str) -> dict[st
     for unit in block["units"]:
         target = int(unit["target"])
         target_tokens = int(lengths[target])
-        budget = POSITION_BUDGET - target_tokens
+        budget = POSITION_BUDGET - target_tokens - row_overhead
         partners = [int(value) for value in unit["partners"]]
         used = 0
         chosen: list[int] = []
@@ -1772,10 +2101,10 @@ def plan_units(arm: Arm, cohort: Mapping[str, Any], *, modality: str) -> dict[st
                         shuffle_trim_excess.append(produced - int(recipe[3]))
                 total += len(built)
             context_tokens[condition] = total
-            if total + target_tokens > POSITION_BUDGET:
+            if total + target_tokens + row_overhead > POSITION_BUDGET:
                 raise RuntimeError(
                     f"{arm.name}: unit {unit['key']} condition {condition!r} needs "
-                    f"{total + target_tokens} positions, past the fixed budget"
+                    f"{total + target_tokens + row_overhead} positions, past the fixed budget"
                 )
         filler_ids = item_ids(arm, filler, modality=modality)
         tiled_filler_items += sum(
@@ -2086,17 +2415,124 @@ def tokenizer_arm(name: str) -> Arm:
     model is loaded" step on a GPU for no reason. Only the rendering, tokenisation
     and planning functions here accept such an arm; anything that reaches
     ``arm.model`` raises, which is the intended failure.
+
+    Expansion names are not registered into PANEL or STAGED_ARMS. A tokenizer-only
+    handle is built from the family's own spec or checkpoint path.
     """
 
     from transformers import AutoConfig, AutoTokenizer
 
-    if name not in PANEL:
-        raise KeyError(f"unknown arm {name!r}")
-    spec = PANEL[name]
-    config = AutoConfig.from_pretrained(spec.path, trust_remote_code=True)
+    if name not in ARMS:
+        raise KeyError(f"unknown arm {name!r}; arms are {list(ARMS)}")
+    if name in EXCLUDED_ARMS:
+        raise ValueError(f"{name} is excluded from {PRE_REGISTRATION}: {EXCLUDED_ARMS[name]}")
+    if name in PANEL:
+        spec = PANEL[name]
+        config = AutoConfig.from_pretrained(spec.path, trust_remote_code=True)
+        require_position_budget(config, arm=name)
+        tokenizer = AutoTokenizer.from_pretrained(spec.path, trust_remote_code=True)
+        return Arm(spec=spec, model=None, tokenizer=tokenizer, device="cpu", dtype="none")
+    return _tokenizer_only_expansion(name)
+
+
+def _tokenizer_only_expansion(name: str) -> Arm:
+    from types import SimpleNamespace
+    from transformers import AutoConfig, AutoTokenizer
+
+    from .arms import STAGED_ARMS, arm_spec, require_input_path
+
+    packing = packing_of(name)
+    if name in STAGED_ARMS:
+        spec = arm_spec(name)
+        config = AutoConfig.from_pretrained(spec.path, trust_remote_code=True)
+        require_position_budget(config, arm=name)
+        tokenizer = AutoTokenizer.from_pretrained(spec.path, trust_remote_code=True)
+        return Arm(spec=spec, model=None, tokenizer=tokenizer, device="cpu", dtype="none")
+    if packing == PACKING_PROGEN3:
+        spec = arm_spec(name)
+        tokenizer, preparer = _progen3_tokenizer_only()
+        raw = json.loads(Path(spec.path, "config.json").read_text(encoding="utf-8"))
+        require_position_budget(SimpleNamespace(**raw), arm=name)
+        return Arm(
+            spec=spec,
+            model=None,
+            tokenizer=tokenizer,
+            device="cpu",
+            dtype="none",
+            serving_provenance={"progen3_preparer": preparer},
+        )
+    if packing == PACKING_GALACTICA:
+        from .galactica_fitness import CHECKPOINTS
+
+        path = require_input_path(CHECKPOINTS[name].resolve(), name)
+        return _tokenizer_only_joint(name, path, architecture="opt", tokenisation="bpe")
+    if packing == PACKING_INSTRUCT:
+        from .instructprotein_fitness import CHECKPOINTS
+
+        path = require_input_path(CHECKPOINTS[name].resolve(), name)
+        return _tokenizer_only_joint(name, path, architecture="opt", tokenisation="residue")
+    if packing == PACKING_LLAMA:
+        from .joint_lineage import rung
+
+        path = require_input_path(rung(name).checkpoint.resolve(), name)
+        return _tokenizer_only_joint(name, path, architecture="llama", tokenisation="sentencepiece")
+    raise KeyError(f"{name}: no tokenizer-only route; packing is {packing!r}")
+
+
+def _progen3_tokenizer_only() -> tuple[Any, Any]:
+    """Checkpoint tokenizer via progen3. Does not load experts."""
+
+    import os
+    import sys
+
+    from .progen3 import PROGEN3_SOURCE
+
+    source = Path(os.environ.get("TRANSFER_PROGEN3_SRC", PROGEN3_SOURCE))
+    if not (source / "progen3").is_dir():
+        raise FileNotFoundError(
+            f"no progen3 package under {source}; set TRANSFER_PROGEN3_SRC to the "
+            "src/ directory of the patched third-party copy"
+        )
+    if str(source) not in sys.path:
+        sys.path.insert(0, str(source))
+    from progen3.batch_preparer import ProGen3BatchPreparer
+
+    preparer = ProGen3BatchPreparer()
+    return preparer.tokenizer, preparer
+
+
+def _tokenizer_only_joint(
+    name: str, path: Path, *, architecture: str, tokenisation: str
+) -> Arm:
+    from transformers import AutoConfig, AutoTokenizer
+
+    from .arms import ArmSpec
+    from .joint_modes import rendering, resolve
+
+    config = AutoConfig.from_pretrained(path, trust_remote_code=True)
     require_position_budget(config, arm=name)
-    tokenizer = AutoTokenizer.from_pretrained(spec.path, trust_remote_code=True)
-    return Arm(spec=spec, model=None, tokenizer=tokenizer, device="cpu", dtype="none")
+    tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
+    tokenisation_obj = resolve(tokenizer, rendering(_joint_family(name)))
+    spec = ArmSpec(
+        name=name,
+        path=path,
+        path_variable="TRANSFER_MODEL_BASE_DIR",
+        modality="protein",
+        n_layer=1,
+        d_model=1,
+        tokenisation=tokenisation,
+        input_format=packing_of(name),
+        evaluation_cohort_source="swissprot",
+        architecture=architecture,
+    )
+    return Arm(
+        spec=spec,
+        model=None,
+        tokenizer=tokenizer,
+        device="cpu",
+        dtype="none",
+        serving_provenance={"joint_tokenisation": tokenisation_obj},
+    )
 
 
 def rendering_check(arm: Arm, *, modality: str) -> dict[str, Any]:
@@ -2111,7 +2547,25 @@ def rendering_check(arm: Arm, *, modality: str) -> dict[str, Any]:
 
     record = self_check_record(modality)
     ids = item_ids(arm, record, modality=modality)
-    offset, end = target_span(arm, ids)
+    offset, end = target_span(arm, ids, record=record)
+    packing = packing_of(arm.name)
+    if packing != PACKING_F16:
+        packed = _self_check_packed_row(arm, record, modality=modality)
+        assertions = packing_assertions(arm, packed)
+        return {
+            "input_format": arm.spec.input_format,
+            "packing": packing,
+            "tokenisation": arm.spec.tokenisation,
+            "content_offset_tokens": int(offset),
+            "scored_span": [int(offset), int(end)],
+            "rendered_tokens": int(end),
+            "shuffle_unit": SHUFFLE_UNITS[modality],
+            "packing_assertions": assertions,
+            "id_concatenation_note": (
+                "items are tokenised separately and concatenated as ids so the target's "
+                "token grid is identical under every condition"
+            ),
+        }
     marker_text = arm.tokenizer.decode(ids[:offset])
     rendered = item_prefix(arm) + render_records(arm, [record], modality=modality)[0]
     if not rendered.startswith(marker_text):
@@ -2124,6 +2578,7 @@ def rendering_check(arm: Arm, *, modality: str) -> dict[str, Any]:
     together = arm.tokenizer(rendered + rendered, return_tensors=None)["input_ids"]
     return {
         "input_format": arm.spec.input_format,
+        "packing": packing,
         "tokenisation": arm.spec.tokenisation,
         "item_prefix_repr": repr(item_prefix(arm)),
         "content_offset_tokens": int(offset),
@@ -2138,3 +2593,72 @@ def rendering_check(arm: Arm, *, modality: str) -> dict[str, Any]:
             "drift the id-level concatenation removes"
         ),
     }
+
+
+def _self_check_packed_row(arm: Arm, record: str, *, modality: str) -> list[int]:
+    unit = {
+        "key": "self-check",
+        "target": 1,
+        "conditions": {HOMOLOGUE: [["pool", 0]]},
+    }
+    row, _start = build_row(
+        arm,
+        unit,
+        HOMOLOGUE,
+        records=[record, record],
+        filler=record,
+        modality=modality,
+    )
+    return row
+
+
+def _decode_packed_row(arm: Arm, row: Sequence[int]) -> str:
+    decode = getattr(arm.tokenizer, "decode", None)
+    if callable(decode):
+        return decode(list(row))
+    convert = getattr(arm.tokenizer, "convert_ids_to_tokens", None)
+    if callable(convert):
+        return "".join(str(convert(int(value)) or "") for value in row)
+    return ""
+
+
+def packing_assertions(arm: Arm, row: Sequence[int]) -> dict[str, bool]:
+    """Refuse a packed expansion row that used a forbidden template."""
+
+    packing = packing_of(arm.name)
+    decoded = _decode_packed_row(arm, row)
+    checks: dict[str, bool] = {}
+    if packing == PACKING_GALACTICA:
+        if "# " in decoded:
+            raise ValueError(
+                f"{arm.name}: packed ids contain a '#' heading; never use # {{context}}"
+            )
+        checks["no_hash_heading"] = True
+    if packing == PACKING_INSTRUCT:
+        if "Instruction:" in decoded:
+            raise ValueError(
+                f"{arm.name}: packed string contains Instruction:; do not use the instruction slot"
+            )
+        checks["no_instruction_slot"] = True
+    if packing == PACKING_LLAMA:
+        if "Superfamily=" in decoded:
+            raise ValueError(
+                f"{arm.name}: packed string contains Superfamily=; that template is a different experiment"
+            )
+        checks["no_superfamily_template"] = True
+    if packing == PACKING_RITA:
+        eos = _rita_eos(arm)
+        for left, right in zip(row, row[1:]):
+            if int(left) == eos and int(right) == eos:
+                raise ValueError(f"{arm.name}: packed ids have adjacent {eos},{eos}")
+        checks["no_adjacent_eos"] = True
+    if packing == PACKING_GMASK:
+        from .proteinglm import NATIVE_PREFIX
+
+        if NATIVE_PREFIX not in decoded and "<gmask>" not in decoded:
+            # id-concatenated rows decode the prefix tokens; absence is a drift
+            raise ValueError(
+                f"{arm.name}: packed proteinglm row does not decode its native prefix"
+            )
+        checks["native_prefix_present"] = True
+    return checks

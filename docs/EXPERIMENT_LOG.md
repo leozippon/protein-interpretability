@@ -20249,3 +20249,7 @@ Freeze `20260918004837_b3cb66ec0963` (pin `9208cec`). Manifest launched from the
 ## 2026-09-18 — Released the idle 1-GPU allocation
 
 The 1-GPU hold was idle (0 MiB / 0%, no experiment process) and was deleted. The 4-GPU allocation remains; MegaScale Galactica / InstructProtein scoring was not moved. No pod names recorded.
+
+## 2026-09-18 — Homologous-context expansion: doors open, queued after MegaScale
+
+Stage 46 keeps the F16 four unrescored and opens the remaining protein/joint names under the same 1024-token budget: ProGen2-base/large/xlarge, ProGen3 112M/3B (N→C, `sequence_ids` required), ProteinGLM-7B-CLM (residues 2..L, float32), ProtGPT3-1.3B (`bos_direction_seq`), RITA-xl (document stream, no adjacent EOS), Galactica four rungs (amino blocks, not `#` headings, float32), InstructProtein (extra `<protein>` blocks, not `Instruction:`), and Llama-2-7B / ProLLaMA Stage 1/2 (extra `Seq=<…>` blocks, not `Superfamily=`). Caveats travel in the artefact. Manifest `scripts/transfer/campaign_s46_homologue_expansion.tsv` (113 cells). Wrapper `scripts/transfer/wait_then_queue_s46_homologue_expansion.sh` launches from a snapshot copy only after MegaScale `s29_galactica_instructprotein` is clean (`# FAILURES 0`, 30B `exited-ok` or `skipped-complete`). Reuses F16 cohort digest `33707cee59c523dec945f9cc6f815bf5e5a1610eeff6e40ca2f16ce3134a7532`. Scores are not in this entry. No pod names recorded.

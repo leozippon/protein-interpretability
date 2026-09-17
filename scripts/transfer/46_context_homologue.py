@@ -57,7 +57,11 @@ from src.transfer import context_homologue as ch  # noqa: E402
 from src.transfer import homology  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
     DEFAULT_CORPUS_DRAW_SEED,
+    PANEL,
+    Arm,
+    arm_spec,
     load_arm,
+    load_arm_spec,
     protein_cohort,
     text_cohort,
 )
@@ -374,17 +378,125 @@ def _condition_gaps(plan: dict[str, Any]) -> dict[str, Any]:
 # ------------------------------------------------------------- the self-check
 
 
+def load_scorable_arm(name: str, *, device: str, dtype: str) -> Arm:
+    """A weights-loaded handle that can score a packed row.
+
+    Routes like stage 29 ``_open_scorer`` but returns an :class:`Arm`. Illegal
+    dtypes are refused here rather than silently recast.
+    """
+
+    if name not in ch.ARMS:
+        raise KeyError(f"unknown arm {name!r}; arms are {list(ch.ARMS)}")
+    if name in ch.EXCLUDED_ARMS:
+        raise ValueError(f"{name} is excluded: {ch.EXCLUDED_ARMS[name]}")
+    packing = ch.packing_of(name)
+    if name in PANEL:
+        return load_arm(name, device=device, dtype=dtype)
+    if name in {"progen2-large", "progen2-xlarge", "protgpt3-1.3b"}:
+        return load_arm_spec(arm_spec(name), device=device, dtype=dtype)
+    if name == "proteinglm-7b-clm":
+        from src.transfer import proteinglm as PGLM
+
+        if dtype != "float32":
+            raise ValueError(f"{name}: ProteinGLM scoring is float32-only; got {dtype!r}")
+        loaded = PGLM.load_pretrained(arm_spec(name).path, device=device, dtype=dtype)
+        return Arm(
+            spec=arm_spec(name),
+            model=loaded["model"],
+            tokenizer=loaded["tokenizer"],
+            device=device,
+            dtype=dtype,
+            serving_provenance={
+                "derived": loaded.get("derived"),
+                "max_length": loaded.get("max_length"),
+            },
+        )
+    if name == "rita-xl":
+        from src.transfer import rita_fitness as RITA
+
+        if dtype != "float32":
+            raise ValueError(f"{name}: RITA scoring is float32-only; got {dtype!r}")
+        scorer = RITA.RitaFitnessScorer(
+            checkpoint=arm_spec(name).path,
+            device=device,
+            dtype=dtype,
+            batch_size=1,
+        )
+        return Arm(
+            spec=arm_spec(name),
+            model=scorer.model,
+            tokenizer=scorer.tokenizer,
+            device=device,
+            dtype=dtype,
+            serving_provenance={"rita_scorer": scorer},
+        )
+    if packing == ch.PACKING_PROGEN3:
+        from src.transfer.progen3 import PROGEN3_DTYPES, load_progen3_as_arm
+
+        if dtype not in PROGEN3_DTYPES:
+            raise ValueError(
+                f"{name}: ProGen3 has no kernel for {dtype!r}; supported "
+                f"{sorted(PROGEN3_DTYPES)}"
+            )
+        return load_progen3_as_arm(name, device=device, dtype=dtype)
+    if packing == ch.PACKING_GALACTICA:
+        from src.transfer import galactica_fitness as G
+
+        if dtype != "float32":
+            raise ValueError(f"{name}: Galactica scoring is float32-only; got {dtype!r}")
+        loaded = G.load_galactica(name, device=device, dtype=dtype)
+        handle = ch.tokenizer_arm(name)
+        return Arm(
+            spec=handle.spec,
+            model=loaded.model,
+            tokenizer=loaded.tokenizer,
+            device=device,
+            dtype=dtype,
+            serving_provenance={"joint_tokenisation": loaded.tokenisation},
+        )
+    if packing == ch.PACKING_INSTRUCT:
+        from src.transfer import instructprotein_fitness as IP
+
+        loaded = IP.load_instructprotein(name, device=device, dtype=dtype)
+        handle = ch.tokenizer_arm(name)
+        return Arm(
+            spec=handle.spec,
+            model=loaded.model,
+            tokenizer=loaded.tokenizer,
+            device=device,
+            dtype=dtype,
+            serving_provenance={"joint_tokenisation": loaded.tokenisation},
+        )
+    if packing == ch.PACKING_LLAMA:
+        from src.transfer import joint_lineage as L
+
+        loaded = L.load_rung(name, device=device, dtype=dtype)
+        handle = ch.tokenizer_arm(name)
+        return Arm(
+            spec=handle.spec,
+            model=loaded.model,
+            tokenizer=loaded.tokenizer,
+            device=device,
+            dtype=dtype,
+            serving_provenance={"joint_tokenisation": loaded.tokenisation},
+        )
+    raise KeyError(f"{name}: no scorable loader; packing is {packing!r}")
+
+
 def run_self_check(args: argparse.Namespace) -> dict[str, Any]:
     modality = ch.modality_of(args.arm)
-    arm = load_arm(args.arm, device=args.device, dtype=args.dtype)
+    arm = load_scorable_arm(args.arm, device=args.device, dtype=args.dtype)
     declared = ch.require_position_budget(arm.model.config, arm=args.arm)
     record = ch.self_check_record(modality)
-    ids = ch.item_ids(arm, record, modality=modality)
-    start, end = ch.target_span(arm, ids)
-    tensor = torch.tensor([ids], dtype=torch.long, device=arm.device)
-    with torch.no_grad():
-        logits = arm.model(input_ids=tensor).logits
-    nll = _target_nll(logits, tensor, start, end)
+    rendering = ch.rendering_check(arm, modality=modality)
+    packed = ch._self_check_packed_row(arm, record, modality=modality)
+    target = ch.item_ids(arm, record, modality=modality)
+    span0, span1 = ch.target_span(arm, target, record=record)
+    context_len = len(packed) - len(ch.row_prefix_ids(arm)) - len(target)
+    start = len(ch.row_prefix_ids(arm)) + context_len + span0
+    end = start + (span1 - span0)
+    logits, scored_ids = _forward_rows(arm, [packed])
+    nll = _target_nll(logits[:1], scored_ids[:1], start, end)
     return _header(
         {
             "arm": args.arm,
@@ -393,7 +505,9 @@ def run_self_check(args: argparse.Namespace) -> dict[str, Any]:
             "dtype": args.dtype,
             "declared_positions": declared,
             "position_budget": ch.POSITION_BUDGET,
-            "rendering": ch.rendering_check(arm, modality=modality),
+            "rendering": rendering,
+            "packing_assertions": rendering.get("packing_assertions", {}),
+            "caveats": ch.CAVEATS.get(args.arm),
             "fixed_record_nll_nats_per_token": nll["nats_per_token"],
             "fixed_record_scored_tokens": nll["scored_tokens"],
             "fixed_record": record,
@@ -432,7 +546,7 @@ def run_score(args: argparse.Namespace) -> dict[str, Any]:
     block = cohort[modality]
     records = block["records"]
     filler = block["filler"]["record"]
-    arm = load_arm(args.arm, device=args.device, dtype=args.dtype)
+    arm = load_scorable_arm(args.arm, device=args.device, dtype=args.dtype)
     ch.require_position_budget(arm.model.config, arm=args.arm)
 
     rows: list[dict[str, Any]] = []
@@ -450,32 +564,24 @@ def run_score(args: argparse.Namespace) -> dict[str, Any]:
                 filler=filler,
                 modality=modality,
             )
+            target_record = records[int(unit["target"])]
+            target = ch.item_ids(arm, target_record, modality=modality)
+            span0, span1 = ch.target_span(arm, target, record=target_record)
             expected = unit["context_tokens"][args.condition]
-            observed = span_start - ch.content_offset(arm)
+            observed = span_start - len(ch.row_prefix_ids(arm)) - span0
             if observed != expected:
                 drift.append(
                     {"key": unit["key"], "planned": expected, "rebuilt": observed}
                 )
-            built.append((unit, row, span_start))
-        width = max(len(row) for _, row, _ in built)
-        pad = arm.tokenizer.eos_token_id
-        if pad is None:
-            raise ValueError(f"{arm.name}: tokenizer has no end-of-text token to pad with")
-        ids = torch.full((len(built), width), int(pad), dtype=torch.long)
-        mask = torch.zeros((len(built), width), dtype=torch.long)
-        for position, (_, row, _) in enumerate(built):
-            ids[position, : len(row)] = torch.tensor(row, dtype=torch.long)
-            mask[position, : len(row)] = 1
-        ids = ids.to(arm.device)
-        mask = mask.to(arm.device)
-        with torch.no_grad():
-            logits = arm.model(input_ids=ids, attention_mask=mask).logits
-        for position, (unit, row, span_start) in enumerate(built):
+            built.append((unit, row, span_start, span_start + (span1 - span0), observed))
+        packed = [row for _, row, _, _, _ in built]
+        logits, scored_ids = _forward_rows(arm, packed)
+        for position, (unit, row, span_start, span_end, context_tokens) in enumerate(built):
             scored = _target_nll(
                 logits[position : position + 1],
-                ids[position : position + 1],
+                scored_ids[position : position + 1],
                 span_start,
-                len(row),
+                span_end,
             )
             rows.append(
                 {
@@ -486,7 +592,7 @@ def run_score(args: argparse.Namespace) -> dict[str, Any]:
                     "k": unit["k"],
                     "max_lcs": unit["max_lcs"],
                     "shared_kmers": unit["shared_kmers"],
-                    "context_tokens": span_start - ch.content_offset(arm),
+                    "context_tokens": context_tokens,
                     "row_tokens": len(row),
                     **scored,
                 }
@@ -507,10 +613,76 @@ def run_score(args: argparse.Namespace) -> dict[str, Any]:
             "dtype": args.dtype,
             "cohort_digest": cohort["digest"],
             "plan_digest": plan["digest"],
+            "caveats": ch.CAVEATS.get(args.arm),
             "rows": rows,
             "n_units": len(rows),
         }
     )
+
+
+def _forward_rows(arm: Arm, rows: list[list[int]]) -> tuple[torch.Tensor, torch.Tensor]:
+    """Logits and id tensor for packed rows. RITA is unpadded; ProGen3 needs MoE ids."""
+
+    packing = ch.packing_of(arm.name)
+    lengths = [len(row) for row in rows]
+    if packing == ch.PACKING_RITA:
+        if len(set(lengths)) != 1:
+            raise ValueError(
+                f"{arm.name}: RITA refuses padding and attention_mask; unequal "
+                f"row lengths {sorted(set(lengths))} need batch_size=1"
+            )
+        ids = torch.tensor(rows, dtype=torch.long, device=arm.device)
+        with torch.no_grad():
+            logits = arm.model(input_ids=ids).logits
+        return logits, ids
+    if packing == ch.PACKING_PROGEN3:
+        return _forward_progen3(arm, rows)
+    width = max(lengths)
+    if packing == ch.PACKING_F16:
+        pad = arm.tokenizer.eos_token_id
+    else:
+        pad = arm.tokenizer.pad_token_id
+        if pad is None:
+            pad = arm.tokenizer.eos_token_id
+    if pad is None:
+        raise ValueError(f"{arm.name}: tokenizer has no pad or end-of-text token")
+    ids = torch.full((len(rows), width), int(pad), dtype=torch.long, device=arm.device)
+    mask = torch.zeros((len(rows), width), dtype=torch.long, device=arm.device)
+    for position, row in enumerate(rows):
+        ids[position, : len(row)] = torch.tensor(row, dtype=torch.long, device=arm.device)
+        mask[position, : len(row)] = 1
+    with torch.no_grad():
+        logits = arm.model(input_ids=ids, attention_mask=mask).logits
+    return logits, ids
+
+
+def _forward_progen3(arm: Arm, rows: list[list[int]]) -> tuple[torch.Tensor, torch.Tensor]:
+    from src.transfer.progen3 import forward
+
+    pg = (arm.serving_provenance or {}).get("progen3")
+    if pg is None:
+        raise ValueError(
+            f"{arm.name}: ProGen3 serving handle is missing; refusing naked "
+            "model(input_ids=), which is a silent wrong answer on this MoE"
+        )
+    specials = ch._progen3_special_ids(arm.tokenizer)
+    pad = specials["<pad>"]
+    width = max(len(row) for row in rows)
+    ids = torch.full((len(rows), width), pad, dtype=torch.long, device=arm.device)
+    position_ids = torch.zeros((len(rows), width), dtype=torch.long, device=arm.device)
+    sequence_ids = torch.zeros((len(rows), width), dtype=torch.long, device=arm.device)
+    for index, row in enumerate(rows):
+        ids[index, : len(row)] = torch.tensor(row, dtype=torch.long, device=arm.device)
+        position_ids[index, : len(row)] = torch.arange(len(row), device=arm.device)
+        sequence_ids[index, : len(row)] = index
+    batch = {
+        "input_ids": ids,
+        "position_ids": position_ids,
+        "sequence_ids": sequence_ids,
+    }
+    with torch.no_grad():
+        logits = forward(pg, batch).logits
+    return logits, ids
 
 
 # ---------------------------------------------------------------- the analysis
@@ -519,11 +691,9 @@ def run_score(args: argparse.Namespace) -> dict[str, Any]:
 def run_analyse(args: argparse.Namespace) -> dict[str, Any]:
     cohort = ch.load_cohort(args.cohort)
     arms_block: dict[str, Any] = {}
-    for arm in ch.ARMS:
-        plan_path = args.score_dir / f"plan_{arm}.json"
-        if not plan_path.is_file():
-            arms_block[arm] = {"status": "no plan artefact", "path": str(plan_path)}
-            continue
+    plans = sorted(args.score_dir.glob("plan_*.json"))
+    for plan_path in plans:
+        arm = plan_path.name[len("plan_") : -len(".json")]
         plan = ch.load_plan(plan_path, cohort=cohort, arm=arm)
         scored: dict[str, dict[str, dict[str, Any]]] = {}
         missing = []
@@ -538,10 +708,16 @@ def run_analyse(args: argparse.Namespace) -> dict[str, Any]:
                     f"{path} was scored against a different cohort or plan digest"
                 )
             scored[condition] = {row["key"]: row for row in payload["rows"]}
+        caveats = ch.CAVEATS.get(arm)
         if missing:
-            arms_block[arm] = {"status": f"conditions not scored: {missing}"}
+            arms_block[arm] = {
+                "status": f"conditions not scored: {missing}",
+                "caveats": caveats,
+            }
             continue
-        arms_block[arm] = _analyse_arm(arm, plan, scored, resamples=args.bootstrap, seed=args.bootstrap_seed)
+        block = _analyse_arm(arm, plan, scored, resamples=args.bootstrap, seed=args.bootstrap_seed)
+        block["caveats"] = caveats
+        arms_block[arm] = block
     return _header(
         {
             "cohort_digest": cohort["digest"],
