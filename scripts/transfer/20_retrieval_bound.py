@@ -1749,7 +1749,11 @@ def _load_scorer(arm: str, args: argparse.Namespace) -> tuple[Any, int | None, d
             "config_eos_token_id_status": scorer.facts[
                 "config_eos_token_id_status"
             ],
-            "input_format": "raw sequence with tokenizer-native terminal EOS",
+            "input_format": (
+                f"{arm_spec(arm).input_format} native rendering; the document "
+                "boundary and the tokenizer-native terminal EOS are markers, so "
+                "the scored targets are the sequence's residues"
+            ),
             "checkpoint_facts": scorer.facts,
             "scientific_role": scorer.facts["scientific_role"],
         }

@@ -15,13 +15,23 @@ import numpy as np
 import pytest
 import torch
 from torch import nn
-from torch.nn import functional as F
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from src.transfer.arms import LOADING_INFO_KEYS  # noqa: E402
+from src.transfer.arms import (  # noqa: E402
+    EOS_BOUNDED_BOUNDARY,
+    INPUT_FORMAT_EOS_BOUNDED_SEQ,
+    LOADING_INFO_KEYS,
+    STAGED_ARMS,
+    Arm,
+    Cohort,
+    eos_bounded_rendering,
+    rendering_marker_ids,
+)
+from src.transfer.budget import scored_tokens  # noqa: E402
+from src.transfer.prediction_addressed import scored_target_records  # noqa: E402
 from src.transfer.rita_fitness import (  # noqa: E402
     NATIVE_EOS_ID,
     NATIVE_PAD_ID,
@@ -31,6 +41,7 @@ from src.transfer.rita_fitness import (  # noqa: E402
     _verify_residue_tokenisation,
 )
 from src.transfer.scale_comparison import STRATUM_N_TO_C  # noqa: E402
+from src.transfer.scoring import sequence_target_mask, target_rule  # noqa: E402
 
 AA20_IDS = {
     "L": 3,
@@ -61,12 +72,18 @@ def _empty_info() -> dict[str, list[str]]:
 
 
 class _FakeRitaTokenizer:
-    """Mirrors native RITA ids: <PAD>=1, <EOS>=2, AA20=3..22, empty special map."""
+    """Mirrors native RITA ids: <PAD>=1, <EOS>=2, AA20=3..22, empty special map.
+
+    ``eos_token_id``, ``pad_token_id`` and ``unk_token_id`` are all ``None`` on
+    the staged checkpoint's tokenizer, which is why its post-processor appends
+    ``<EOS>`` of its own accord while the id has to be resolved by token string.
+    """
 
     def __init__(self, *, eos_id: int = NATIVE_EOS_ID, append_eos: int | None = None) -> None:
         self._vocab = {"<unk>": 0, "<PAD>": NATIVE_PAD_ID, "<EOS>": int(eos_id), **AA20_IDS}
         self.eos_token_id = None
         self.pad_token_id = None
+        self.unk_token_id = None
         self._append_eos = NATIVE_EOS_ID if append_eos is None else int(append_eos)
         self.backend_tokenizer = SimpleNamespace(
             post_processor=SimpleNamespace(eos_id=self._append_eos)
@@ -83,7 +100,12 @@ class _FakeRitaTokenizer:
         return inverse.get(int(index), "<unk>")
 
     def encode(self, text: str, add_special_tokens: bool = True) -> list[int]:
-        ids = [self.convert_tokens_to_ids(symbol) for symbol in str(text)]
+        rendered = str(text)
+        boundary: list[int] = []
+        if rendered.startswith(EOS_BOUNDED_BOUNDARY):
+            boundary = [self.convert_tokens_to_ids(EOS_BOUNDED_BOUNDARY)]
+            rendered = rendered[len(EOS_BOUNDED_BOUNDARY) :]
+        ids = boundary + [self.convert_tokens_to_ids(symbol) for symbol in rendered]
         if add_special_tokens:
             ids = ids + [self._append_eos]
         return ids
@@ -101,12 +123,18 @@ class _UnkRitaTokenizer(_FakeRitaTokenizer):
 
 
 class _PermutingRitaTokenizer(_FakeRitaTokenizer):
-    """Single letters are honest; multi-residue encode is a permutation."""
+    """The boundary is honest; the multi-residue encode is a permutation."""
 
     def encode(self, text: str, add_special_tokens: bool = True) -> list[int]:
-        if len(str(text)) <= 1:
-            return super().encode(text, add_special_tokens=add_special_tokens)
-        ids = [self.convert_tokens_to_ids(symbol) for symbol in reversed(str(text))]
+        rendered = str(text)
+        if not rendered.startswith(EOS_BOUNDED_BOUNDARY):
+            return super().encode(rendered, add_special_tokens=add_special_tokens)
+        sequence = rendered[len(EOS_BOUNDED_BOUNDARY) :]
+        if len(sequence) <= 1:
+            return super().encode(rendered, add_special_tokens=add_special_tokens)
+        ids = [self.convert_tokens_to_ids(EOS_BOUNDED_BOUNDARY)] + [
+            self.convert_tokens_to_ids(symbol) for symbol in reversed(sequence)
+        ]
         if add_special_tokens:
             ids = ids + [self._append_eos]
         return ids
@@ -183,14 +211,6 @@ def _wide_logits(input_ids: torch.Tensor) -> torch.Tensor:
     return torch.zeros(batch, width, 32)
 
 
-def _shifted_ce_sum(ids: list[int], logits: torch.Tensor) -> float:
-    labels = torch.tensor(ids, dtype=torch.long)
-    shift_logits = logits[:-1].float()
-    shift_labels = labels[1:]
-    nll = F.cross_entropy(shift_logits, shift_labels, reduction="none")
-    return float((-nll).sum().double())
-
-
 def _scorer(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -226,22 +246,24 @@ def _scorer(
     )
 
 
-def test_the_scorer_declares_n_to_c_stratum_and_native_eos_description():
+def test_the_scorer_declares_n_to_c_stratum_and_its_scored_span():
     assert RitaFitnessScorer.scoring_stratum == STRATUM_N_TO_C
     assert RitaFitnessScorer.score_description == (
-        "raw sequence with tokenizer-native terminal EOS; summed N-to-C "
-        "next-token log likelihood"
+        "document-boundary rendering; summed N-to-C next-token log likelihood "
+        "over the sequence's residues"
     )
     assert "qualified" not in RitaFitnessScorer.score_description
 
 
-def test_native_encode_keeps_eos_scores_it_and_does_not_score_the_first_token(
+def test_native_encoding_carries_both_boundaries_and_scores_the_residues(
     tmp_path, monkeypatch
 ):
     model = _RitaDummy(torch.float32, _rita_config(), logits_fn=_rule_logits)
     scorer = _scorer(tmp_path, monkeypatch, model, batch_size=1)
-    assert scorer.token_lengths(["MKT"]) == [4]
+    assert scorer.token_lengths(["MKT"]) == [5]
     assert scorer.facts["native_eos_token_id"] == NATIVE_EOS_ID
+    assert scorer.facts["native_document_boundary"] == "<EOS>"
+    assert "are not scored" in scorer.facts["scoring_span"]
     assert scorer.facts["config_eos_token_id"] == 50256
     assert "ignored" in scorer.facts["config_eos_token_id_status"]
     assert scorer.facts["storage_torch_dtype"] == "float16"
@@ -249,20 +271,19 @@ def test_native_encode_keeps_eos_scores_it_and_does_not_score_the_first_token(
     assert "not a qualified information arm" in scorer.facts["scientific_role"]
     assert "PASS" not in scorer.facts["scientific_role"]
 
-    ids = [AA20_IDS["M"], AA20_IDS["K"], AA20_IDS["T"], NATIVE_EOS_ID]
+    ids = [NATIVE_EOS_ID, AA20_IDS["M"], AA20_IDS["K"], AA20_IDS["T"], NATIVE_EOS_ID]
     logits = _rule_logits(torch.tensor([ids]))[0]
-    expected = _shifted_ce_sum(ids, logits)
+    logp = torch.log_softmax(logits.float(), dim=-1)
+    shifted = logp[:-1].gather(-1, torch.tensor(ids[1:]).unsqueeze(-1)).squeeze(-1)
+    # The scored targets are the residues: residue 1 is scored because the
+    # boundary conditions it, and the tokenizer's terminal EOS is not content.
+    expected = float(shifted[:-1].sum().double())
     got = scorer.log_likelihood(["MKT"])
     assert got.shape == (1,)
     assert got[0] == pytest.approx(expected)
-
-    logp = torch.log_softmax(logits.float(), dim=-1)
-    shifted = logp[:-1].gather(-1, torch.tensor(ids[1:]).unsqueeze(-1)).squeeze(-1)
-    assert float(shifted.sum()) == pytest.approx(expected)
+    assert abs(float(shifted.sum().double()) - expected) > 1.0
     with_first = logp.gather(-1, torch.tensor(ids).unsqueeze(-1)).squeeze(-1).sum()
-    without_eos = shifted[:-1].sum()
-    assert abs(float(with_first) - expected) > 1.0
-    assert abs(float(without_eos) - expected) > 1.0
+    assert abs(float(with_first.double()) - expected) > 1.0
     assert model.forward_kwargs
     assert all("attention_mask" not in kwargs for kwargs in model.forward_kwargs)
 
@@ -280,9 +301,11 @@ def test_batched_and_single_sequence_sums_match_author_shifted_ce(tmp_path, monk
     assert batched == pytest.approx(singles)
     expected = []
     for sequence in sequences:
-        ids = _FakeRitaTokenizer().encode(sequence)
+        ids = _FakeRitaTokenizer().encode(eos_bounded_rendering(sequence))
         logits = _rule_logits(torch.tensor([ids]))[0]
-        expected.append(_shifted_ce_sum(ids, logits))
+        logp = torch.log_softmax(logits.float(), dim=-1)
+        shifted = logp[:-1].gather(-1, torch.tensor(ids[1:]).unsqueeze(-1)).squeeze(-1)
+        expected.append(float(shifted[:-1].sum().double()))
     assert batched == pytest.approx(np.array(expected))
 
 
@@ -302,7 +325,7 @@ def test_variable_length_illegal_aa_over_context_and_nonfinite_are_refused(
             scorer.token_lengths([illegal])
 
     lengths = scorer.token_lengths(["MKTA"])
-    assert lengths == [5]
+    assert lengths == [6]
     with pytest.raises(ValueError, match="exceeds this checkpoint"):
         scorer.log_likelihood(["MKTA"])
 
@@ -433,8 +456,31 @@ def test_permuted_multiresidue_encoding_is_refused_before_scoring():
     }
     with pytest.raises(ValueError, match="per-letter id list"):
         _encode_native(
-            tokenizer, "MKT", eos_id=NATIVE_EOS_ID, residue_ids=mapping
+            tokenizer,
+            eos_bounded_rendering("MKT"),
+            eos_id=NATIVE_EOS_ID,
+            residue_ids=mapping,
         )
+
+
+def test_a_bare_residue_string_is_refused_rather_than_rendered():
+    """The rendering is the arm's, and this door does not supply it silently.
+
+    ``_encode_native`` used to take a bare residue string, which is exactly the
+    input the checkpoint was not given; a caller that means to score a sequence
+    renders it through :func:`eos_bounded_rendering` first.
+    """
+
+    tokenizer = _FakeRitaTokenizer()
+    mapping = {residue: tokenizer.convert_tokens_to_ids(residue) for residue in AA20_IDS}
+    with pytest.raises(ValueError, match="document boundary"):
+        _encode_native(tokenizer, "MKT", eos_id=NATIVE_EOS_ID, residue_ids=mapping)
+    assert _encode_native(
+        tokenizer,
+        eos_bounded_rendering("MKT"),
+        eos_id=NATIVE_EOS_ID,
+        residue_ids=mapping,
+    ) == [2, 19, 10, 13, 2]
 
 
 def test_staged_tokenizer_native_mkt_keeps_eos_without_loading_weights():
@@ -457,7 +503,94 @@ def test_staged_tokenizer_native_mkt_keeps_eos_without_loading_weights():
     assert tokenizer.encode("MKT") == [19, 10, 13, 2]
     assert tokenizer.encode("MKT", add_special_tokens=False) == [19, 10, 13]
     assert _encode_native(
-        tokenizer, "MKT", eos_id=NATIVE_EOS_ID, residue_ids=mapping
-    ) == [19, 10, 13, 2]
+        tokenizer,
+        eos_bounded_rendering("MKT"),
+        eos_id=NATIVE_EOS_ID,
+        residue_ids=mapping,
+    ) == [2, 19, 10, 13, 2]
     assert tokenizer.convert_tokens_to_ids("<EOS>") == 2
     assert tokenizer.convert_tokens_to_ids("<PAD>") == 1
+
+
+def _rita_arm(tokenizer, model: nn.Module | None = None) -> Arm:
+    """The staged RITA spec with a real tokenizer and no loaded weights."""
+
+    return Arm(
+        spec=STAGED_ARMS["rita-xl"],
+        model=(
+            model
+            if model is not None
+            else SimpleNamespace(config=SimpleNamespace(vocab_size=VOCAB_SIZE))
+        ),
+        tokenizer=tokenizer,
+        device="cpu",
+        dtype="float32",
+    )
+
+
+def test_rita_renders_the_document_boundary_and_declares_one_marker():
+    """The rendered id sequence, pinned, with both boundaries and the marker id.
+
+    The published post-processor is Sequence-then-``<EOS>``, so it prefixes
+    nothing and the leading boundary has to be rendered; the trailing one is the
+    tokenizer's own. Both are id 2, which is why the declared marker is a single
+    id and why the scored targets are the residues.
+    """
+
+    tokenizer = _FakeRitaTokenizer()
+    arm = _rita_arm(tokenizer)
+    assert arm.spec.input_format == INPUT_FORMAT_EOS_BOUNDED_SEQ == "eos_bounded_seq"
+    assert eos_bounded_rendering("MKT") == "<EOS>MKT"
+    assert rendering_marker_ids(arm) == (NATIVE_EOS_ID,)
+    assert target_rule(arm.spec.input_format) == "all_valid"
+    cohort = Cohort(
+        name="stub", kind="protein", records=["MKT", "AAA"], min_symbols=0, max_symbols=8
+    )
+    rendered = cohort.input_strings(arm)
+    assert rendered == ["<EOS>MKT", "<EOS>AAA"]
+    # The bare rendering this arm was scored under is gone, and it is not a
+    # subsequence of the new one: the format carries a token it never sent.
+    assert "MKT" not in rendered and "AAA" not in rendered
+    assert tokenizer.encode(rendered[0], add_special_tokens=False) == [2, 19, 10, 13]
+    assert tokenizer.encode(rendered[0]) == [2, 19, 10, 13, 2]
+
+
+def test_the_declared_span_is_the_residues_and_its_size_is_unchanged():
+    """One target per residue, on the gate's path and on the reference path.
+
+    The span is resolved from the arm's own declarations -- ``target_rule`` and
+    ``rendering_marker_ids`` -- rather than from a hand-written slice of the id
+    list, and it holds the size the bare rendering scored: one target per
+    residue, L. What moved is which token is scored at each position -- residue 1
+    is scored here, conditioned on the boundary, and the terminal ``<EOS>`` that
+    the bare rendering scored in its place is a marker and is not -- so the
+    count is a like-for-like one and the membership is not.
+    """
+
+    tokenizer = _FakeRitaTokenizer()
+    arm = _rita_arm(
+        tokenizer, _RitaDummy(torch.float32, _rita_config(), logits_fn=_rule_logits)
+    )
+    records = ["MKT", "AAA"]
+    cohort = Cohort(
+        name="stub", kind="protein", records=records, min_symbols=0, max_symbols=8
+    )
+    rendered = cohort.input_strings(arm)
+    scored = scored_tokens(arm, rendered, max_len=8, batch_size=1)
+    counts, _ = scored_target_records(arm, rendered, max_len=8)
+    residue_total = sum(len(record) for record in records)
+    assert scored.target_ids.size == residue_total
+    assert NATIVE_EOS_ID not in set(scored.target_ids.tolist())
+    assert (counts == np.bincount(scored.target_ids, minlength=VOCAB_SIZE)).all()
+    assert int(counts[NATIVE_EOS_ID]) == 0
+    assert int(counts.sum()) == residue_total
+
+    tensor = torch.tensor([_FakeRitaTokenizer().encode(rendered[0])])
+    keep = sequence_target_mask(
+        tensor,
+        torch.ones_like(tensor),
+        rule=target_rule(arm.spec.input_format),
+        marker_token_ids=rendering_marker_ids(arm),
+    )[0]
+    assert keep.tolist() == [True, True, True, False]
+    assert int(keep.sum()) == len(records[0])

@@ -32,7 +32,12 @@ from src.transfer import galactica_fitness as G  # noqa: E402
 from src.transfer import precision_policy as P  # noqa: E402
 from src.transfer import rita_fitness as RITA  # noqa: E402
 from src.transfer import scale_comparison as C  # noqa: E402
-from src.transfer.arms import AA20, STAGED_ARMS  # noqa: E402
+from src.transfer.arms import (  # noqa: E402
+    AA20,
+    STAGED_ARMS,
+    Arm,
+    rendering_marker_ids,
+)
 from src.transfer.fitness import load_assay, wildtype_of  # noqa: E402
 from src.transfer.generation_evidence import read_fasta  # noqa: E402
 from src.transfer.io import sha256_file, write_json  # noqa: E402
@@ -414,20 +419,44 @@ def attach_token_lengths(
     }
 
 
+def _rita_marker_token_ids(scorer: Any, *, arm: str) -> tuple[int, ...]:
+    """The marker ids RITA's rendering declares, from the arm's own declaration.
+
+    :func:`src.transfer.arms.rendering_marker_ids` is the one place a rendering
+    states which ids it added rather than scored, and it reads an ``Arm`` for the
+    format label and the tokenizer. This door holds a scorer, so the arm is
+    assembled from it here rather than the id being restated.
+    """
+
+    view = Arm(
+        spec=STAGED_ARMS[arm],
+        model=scorer.model,
+        tokenizer=scorer.tokenizer,
+        device=str(scorer.model.device),
+        dtype=RITA.INFERENCE_DTYPE,
+    )
+    return tuple(int(value) for value in rendering_marker_ids(view))
+
+
 def _n_scored_targets(scorer: Any, sequences: Sequence[str], *, arm: str) -> list[int]:
     family = _arm_family(arm)
     if family == "galactica":
         return [int(record.n_scored_tokens) for record in scorer.render(sequences)]
+    markers = set(_rita_marker_token_ids(scorer, arm=arm))
     encoded = [
         RITA._encode_native(
             scorer.tokenizer,
-            sequence,
+            RITA.eos_bounded_rendering(sequence),
             eos_id=scorer.eos_id,
             residue_ids=scorer.residue_ids,
         )
         for sequence in sequences
     ]
-    return [max(len(ids) - 1, 0) for ids in encoded]
+    # Every shifted target after the first, less the ids the rendering declares
+    # as markers: the sequence's residues.
+    return [
+        sum(1 for value in ids[1:] if value not in markers) for ids in encoded
+    ]
 
 
 def _require_native_loss(outputs: Any, *, arm: str) -> Any:
@@ -522,15 +551,16 @@ def _galactica_author_log_likelihood(
 
 
 def _rita_author_log_likelihood(
-    scorer: Any, sequences: Sequence[str]
+    scorer: Any, sequences: Sequence[str], *, arm: str
 ) -> tuple[np.ndarray, dict[str, Any]]:
     torch = scorer.torch
     import torch.nn.functional as F
 
+    markers = _rita_marker_token_ids(scorer, arm=arm)
     encoded = [
         RITA._encode_native(
             scorer.tokenizer,
-            sequence,
+            RITA.eos_bounded_rendering(sequence),
             eos_id=scorer.eos_id,
             residue_ids=scorer.residue_ids,
         )
@@ -561,8 +591,19 @@ def _rita_author_log_likelihood(
                 shift_labels.reshape(-1),
                 reduction="none",
             ).reshape(len(chunk), width - 1)
+            # The arm's own model loss is taken over every shifted position, and
+            # is compared against the model's own `labels=` loss over the same
+            # positions; the value this door hands the scorer comparison is
+            # restricted to the targets the rendering scores, so the two sides of
+            # that check are the same multiset rather than one span and another.
             nll = per_token.sum(1)
-            totals[start : start + len(chunk)] = (-nll).cpu().numpy()
+            scored = per_token.masked_fill(
+                torch.isin(
+                    shift_labels, torch.tensor(markers, dtype=torch.long, device=device)
+                ),
+                0.0,
+            ).sum(1)
+            totals[start : start + len(chunk)] = (-scored).cpu().numpy()
             outputs = scorer.model(input_ids=ids, labels=ids)
             native_max = max(
                 native_max,
@@ -603,7 +644,7 @@ def check_author_alignment(
         if family == "galactica":
             author, extras = _galactica_author_log_likelihood(scorer, sequences)
         else:
-            author, extras = _rita_author_log_likelihood(scorer, sequences)
+            author, extras = _rita_author_log_likelihood(scorer, sequences, arm=arm)
         per_target = np.abs(scorer_totals - author) / targets
         max_author = float(per_target.max())
         if max_author > FP32_PER_TARGET_ABS:

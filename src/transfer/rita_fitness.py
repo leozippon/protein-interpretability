@@ -9,9 +9,12 @@ it, remains an external profile baseline, not a retrieval exclusion.
 
 Inference is float32 only. The checkpoint JSON may store ``torch_dtype``
 float16 and an out-of-vocabulary ``eos_token_id``; those are recorded and are
-not the scoring dtype or the EOS id. Native encoding keeps the tokenizer
-postprocessor's terminal ``<EOS>`` (id 2). Scoring does not invent a pad token,
-does not pass an attention mask, and does not truncate.
+not the scoring dtype or the EOS id. Native encoding is the arm's own rendering:
+the document-boundary ``<EOS>`` that RITA's training stream separates documents
+with, then the residues, then the tokenizer postprocessor's terminal ``<EOS>``
+(id 2). The boundary and the terminator are one id, so neither is content and
+the scored targets are the sequence's residues. Scoring does not invent a pad
+token, does not pass an attention mask, and does not truncate.
 """
 
 from __future__ import annotations
@@ -23,8 +26,10 @@ import numpy as np
 
 from .amino_acids import AA20
 from .arms import (
+    EOS_BOUNDED_BOUNDARY,
     config_context_length,
     config_shape,
+    eos_bounded_rendering,
     require_clean_loading_info,
     require_input_path,
     unpack_pretrained_loading_info,
@@ -106,19 +111,36 @@ def _floating_dtypes(module: Any) -> tuple[list[str], list[str]]:
     return parameters, buffers
 
 
-def _canonical_sequence(sequence: str) -> str:
-    text = str(sequence)
-    if not text or any(symbol not in CANONICAL_RESIDUES for symbol in text):
+def _sequence_of(rendered: str) -> str:
+    """The AA20 sequence of an ``eos_bounded_seq`` rendering, boundary removed.
+
+    The rendering is refused rather than interpreted when the boundary is
+    missing: a bare residue string is the input this door used to score, and
+    scoring it silently under the corrected rendering would put a number against
+    a format the checkpoint was not given.
+    """
+
+    text = str(rendered)
+    if not text.startswith(EOS_BOUNDED_BOUNDARY):
         raise ValueError(
-            f"non-canonical amino-acid sequence {text!r}; RITA scoring accepts "
-            "non-empty AA20 only and does not apply O/U/X/B/Z/J normalisation"
+            f"native RITA scoring takes the arm's own rendering -- "
+            f"{EOS_BOUNDED_BOUNDARY!r} then the sequence -- and {text!r} does not "
+            "start with the document boundary"
         )
-    return text
+    sequence = text[len(EOS_BOUNDED_BOUNDARY) :]
+    if not sequence or any(symbol not in CANONICAL_RESIDUES for symbol in sequence):
+        raise ValueError(
+            f"non-canonical amino-acid sequence in rendering {text!r}; RITA scoring "
+            "accepts non-empty AA20 only and does not apply O/U/X/B/Z/J "
+            "normalisation"
+        )
+    return sequence
 
 
 def _native_special_ids(tokenizer: Any) -> tuple[int, int]:
     eos_id = _as_int(
-        tokenizer.convert_tokens_to_ids("<EOS>"), what="tokenizer <EOS> id"
+        tokenizer.convert_tokens_to_ids(EOS_BOUNDED_BOUNDARY),
+        what="tokenizer <EOS> id",
     )
     pad_id = _as_int(
         tokenizer.convert_tokens_to_ids("<PAD>"), what="tokenizer <PAD> id"
@@ -147,8 +169,12 @@ def _native_special_ids(tokenizer: Any) -> tuple[int, int]:
     return NATIVE_EOS_ID, NATIVE_PAD_ID
 
 
-def native_encode_for_budget(tokenizer: Any, sequence: str) -> list[int]:
-    """Raw residues plus tokenizer-native EOS, without assigning a pad token."""
+def native_encode_for_budget(tokenizer: Any, text: str) -> list[int]:
+    """Document boundary, residues, tokenizer-native EOS, with no pad token.
+
+    ``text`` is the arm's own rendering, :func:`src.transfer.arms.Cohort.input_strings`
+    output; a bare residue string is refused rather than wrapped.
+    """
 
     cache = getattr(tokenizer, "_rita_budget_native", None)
     if cache is None:
@@ -158,31 +184,42 @@ def native_encode_for_budget(tokenizer: Any, sequence: str) -> list[int]:
         tokenizer._rita_budget_native = cache
     eos_id, _, residue_ids = cache
     return _encode_native(
-        tokenizer, sequence, eos_id=eos_id, residue_ids=residue_ids
+        tokenizer, text, eos_id=eos_id, residue_ids=residue_ids
     )
 
 
 def _encode_native(
     tokenizer: Any,
-    sequence: str,
+    text: str,
     *,
     eos_id: int,
     residue_ids: dict[str, int],
 ) -> list[int]:
-    text = _canonical_sequence(sequence)
-    expected = [residue_ids[symbol] for symbol in text]
+    sequence = _sequence_of(text)
+    expected = [residue_ids[symbol] for symbol in sequence]
+    boundary_id = _as_int(
+        tokenizer.convert_tokens_to_ids(EOS_BOUNDED_BOUNDARY),
+        what=f"tokenizer {EOS_BOUNDED_BOUNDARY} id",
+    )
+    if boundary_id != eos_id:
+        raise ValueError(
+            f"the rendering prefixes {EOS_BOUNDED_BOUNDARY!r} at id {boundary_id} "
+            f"while this checkpoint's terminal <EOS> is {eos_id}; the document "
+            "boundary and the terminator are the same token, so the two must agree"
+        )
     residues = _as_int_list(tokenizer.encode(text, add_special_tokens=False))
     native = _as_int_list(tokenizer.encode(text))
-    if residues != expected:
+    if residues != [boundary_id] + expected:
         raise ValueError(
-            f"multi-residue encoding of {text!r} must equal the per-letter id "
-            f"list {expected}; got {residues}"
+            f"encoding {text!r} without special tokens must be the document "
+            f"boundary {boundary_id} plus the per-letter id list {expected}; got "
+            f"{residues}"
         )
-    if native != expected + [eos_id]:
+    if native != [boundary_id] + expected + [eos_id]:
         raise ValueError(
-            "native encoding must be the per-letter residue ids plus "
-            f"tokenizer-native terminal EOS {eos_id}, with no BOS and without "
-            f"dropping EOS; got {native} from expected {expected}"
+            "native encoding must be the document boundary, the per-letter residue "
+            f"ids, and the tokenizer-native terminal EOS {eos_id}, with no other "
+            f"special token; got {native} from expected {expected}"
         )
     if any(token_id < 0 or token_id >= VOCAB_SIZE for token_id in native):
         raise ValueError(
@@ -220,7 +257,7 @@ def _verify_residue_tokenisation(
             "AA20 must occupy 20 distinct non-special ids in 3..22; got "
             f"{sorted(mapping.values())}"
         )
-    probe = "".join(sorted(CANONICAL_RESIDUES))
+    probe = eos_bounded_rendering("".join(sorted(CANONICAL_RESIDUES)))
     _encode_native(tokenizer, probe, eos_id=eos_id, residue_ids=mapping)
     return mapping
 
@@ -277,17 +314,20 @@ def _require_rita_model(model: Any, *, dtype: str) -> dict[str, Any]:
 
 
 class RitaFitnessScorer:
-    """Summed N-to-C log-likelihood of a raw RITA sequence plus native EOS.
+    """Summed N-to-C log-likelihood of a RITA document under its native rendering.
 
-    The first residue is the unconditioned context token and is not a scored
-    target. The tokenizer-native terminal EOS is a scored target. The softmax is
+    The rendering is the document boundary followed by the sequence, with the
+    tokenizer's terminal ``<EOS>`` still appended. The boundary and that terminal
+    token carry one id and a position whose target is a marker is not content, so
+    the scored targets are the sequence's residues: the first residue is a scored
+    target, conditioned on the boundary, and the terminator is not. The softmax is
     the full 26-wide vocabulary. Equal-length substitution batches are stacked
     with no padding and no attention mask.
     """
 
     score_description = (
-        "raw sequence with tokenizer-native terminal EOS; summed N-to-C "
-        "next-token log likelihood"
+        "document-boundary rendering; summed N-to-C next-token log likelihood "
+        "over the sequence's residues"
     )
     scoring_stratum = STRATUM_N_TO_C
 
@@ -356,6 +396,12 @@ class RitaFitnessScorer:
             "inference_dtype": INFERENCE_DTYPE,
             "tokenizer_class": type(tokenizer).__name__,
             "native_eos_token_id": _as_int(eos_id, what="native EOS id"),
+            "native_document_boundary": EOS_BOUNDED_BOUNDARY,
+            "scoring_span": (
+                "the sequence's residues; the document boundary and the "
+                "tokenizer-native terminal EOS carry marker id "
+                f"{_as_int(eos_id, what='native EOS id')} and are not scored"
+            ),
             "native_pad_token_id": _as_int(pad_id, what="native PAD id"),
             "pad_used_for_scoring": False,
             "config_eos_token_id": (
@@ -373,13 +419,13 @@ class RitaFitnessScorer:
         }
 
     def token_lengths(self, sequences: Sequence[str]) -> list[int]:
-        """Encoded length including native EOS; used for a context pre-check."""
+        """Encoded length including both boundaries; used for a context pre-check."""
 
         return [
             len(
                 _encode_native(
                     self.tokenizer,
-                    sequence,
+                    eos_bounded_rendering(sequence),
                     eos_id=self.eos_id,
                     residue_ids=self.residue_ids,
                 )
@@ -392,7 +438,7 @@ class RitaFitnessScorer:
         encoded = [
             _encode_native(
                 self.tokenizer,
-                sequence,
+                eos_bounded_rendering(sequence),
                 eos_id=self.eos_id,
                 residue_ids=self.residue_ids,
             )
@@ -428,9 +474,15 @@ class RitaFitnessScorer:
                         f"{tuple(logits.shape)}"
                     )
                 logp = torch.log_softmax(logits[:, :-1].float(), dim=-1)
-                token = logp.gather(-1, ids[:, 1:].unsqueeze(-1)).squeeze(-1)
+                target = ids[:, 1:]
+                token = logp.gather(-1, target.unsqueeze(-1)).squeeze(-1)
+                # The document boundary is the first token and is context by
+                # construction; the tokenizer's terminal EOS carries the same id
+                # and is the marker the rendering declares, so it is not content
+                # either. What is scored is the sequence's residues.
+                content = target != self.eos_id
                 totals[start : start + len(chunk)] = (
-                    token.sum(1).double().cpu().numpy()
+                    token.masked_fill(~content, 0.0).sum(1).double().cpu().numpy()
                 )
         if not np.all(np.isfinite(totals)):
             raise RuntimeError("a scored sequence returned a non-finite total")

@@ -206,10 +206,24 @@ def scored_target_records(
     if arm.spec.architecture == "rita":
         from .rita_fitness import native_encode_for_budget
 
+        # The same exclusion :func:`src.transfer.budget.scored_tokens` applies,
+        # from the same declaration: RITA's document rendering prefixes a
+        # boundary and its tokenizer appends the same token as a terminator, and
+        # a position whose target is one of those ids is not cohort content. A
+        # reference counted over the terminator too would fit the context-free
+        # baseline on a token the model is never scored on.
+        rita_markers = set(rendering_marker_ids(arm))
         rows = []
         for text in strings:
             ids = native_encode_for_budget(arm.tokenizer, text)[:max_len]
-            array = np.asarray(ids[1:], dtype=np.int64) if len(ids) >= 2 else np.asarray([], dtype=np.int64)
+            array = (
+                np.asarray(
+                    [value for value in ids[1:] if value not in rita_markers],
+                    dtype=np.int64,
+                )
+                if len(ids) >= 2
+                else np.asarray([], dtype=np.int64)
+            )
             require_scoring_target_ids(array, alphabet, arm=arm.name)
             rows.append(array)
         per_record = SparseCounts.from_records(rows)

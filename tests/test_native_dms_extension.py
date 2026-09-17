@@ -24,7 +24,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.transfer import galactica_fitness as G  # noqa: E402
-from src.transfer.arms import AA20  # noqa: E402
+from src.transfer.arms import AA20, EOS_BOUNDED_BOUNDARY, eos_bounded_rendering  # noqa: E402
 from src.transfer.fitness import load_assay, wildtype_of  # noqa: E402
 from src.transfer.io import sha256_file  # noqa: E402
 from src.transfer.joint_modes import resolve  # noqa: E402
@@ -251,10 +251,13 @@ class _RuleLogits(nn.Module):
 
 
 class _RitaTokenizer:
+    """The staged tokenizer's shape: no declared eos/pad/unk, ``<EOS>`` by string."""
+
     def __init__(self) -> None:
         self._vocab = {"<unk>": 0, "<PAD>": NATIVE_PAD_ID, "<EOS>": NATIVE_EOS_ID, **AA20_IDS}
         self.eos_token_id = None
         self.pad_token_id = None
+        self.unk_token_id = None
 
     def convert_tokens_to_ids(self, token: str) -> int:
         return int(self._vocab.get(str(token), 0))
@@ -264,7 +267,12 @@ class _RitaTokenizer:
         return inverse[int(token_id)]
 
     def encode(self, text: str, add_special_tokens: bool = True):
-        ids = [AA20_IDS[symbol] for symbol in text]
+        rendered = str(text)
+        boundary = []
+        if rendered.startswith(EOS_BOUNDED_BOUNDARY):
+            boundary = [NATIVE_EOS_ID]
+            rendered = rendered[len(EOS_BOUNDED_BOUNDARY) :]
+        ids = boundary + [AA20_IDS[symbol] for symbol in rendered]
         if add_special_tokens:
             return ids + [NATIVE_EOS_ID]
         return ids
@@ -334,7 +342,7 @@ def _rita_scorer(*, context: int = 64, batch_size: int = 2):
         batch_size=batch_size,
         context=context,
         scoring_stratum=STRATUM_N_TO_C,
-        score_description="raw sequence with tokenizer-native terminal EOS",
+        score_description="document-boundary rendering; summed N-to-C log likelihood",
         facts={
             "scientific_role": "cpu test-stub metadata, not a GPU observation",
             "rung": "rita-xl",
@@ -342,12 +350,15 @@ def _rita_scorer(*, context: int = 64, batch_size: int = 2):
     )
 
     def token_lengths(sequences):
-        return [len(sequence) + 1 for sequence in sequences]
+        return [len(sequence) + 2 for sequence in sequences]
 
     def log_likelihood(sequences):
         if any(any(symbol not in AA20 for symbol in sequence) for sequence in sequences):
             raise ValueError("non-canonical amino-acid sequence")
-        encoded = [scorer.tokenizer.encode(sequence) for sequence in sequences]
+        encoded = [
+            scorer.tokenizer.encode(eos_bounded_rendering(sequence))
+            for sequence in sequences
+        ]
         if len({len(ids) for ids in encoded}) != 1:
             raise ValueError("variable-length batch is refused")
         width = len(encoded[0])
@@ -356,8 +367,11 @@ def _rita_scorer(*, context: int = 64, batch_size: int = 2):
         ids = torch.tensor(encoded, dtype=torch.long)
         logits = scorer.model(input_ids=ids).logits
         logp = torch.log_softmax(logits[:, :-1].float(), dim=-1)
-        token = logp.gather(-1, ids[:, 1:].unsqueeze(-1)).squeeze(-1)
-        return token.sum(1).double().cpu().numpy()
+        target = ids[:, 1:]
+        token = logp.gather(-1, target.unsqueeze(-1)).squeeze(-1)
+        return (
+            token.masked_fill(target == NATIVE_EOS_ID, 0.0).sum(1).double().cpu().numpy()
+        )
 
     def release():
         return None

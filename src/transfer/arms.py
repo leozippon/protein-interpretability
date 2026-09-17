@@ -143,6 +143,28 @@ INPUT_FORMAT_GMASK_SOP_EOS = _proteinglm.INPUT_FORMAT
 #: direction token there and nothing else.
 INPUT_FORMAT_BOS_DIRECTION_SEQ = "bos_direction_seq"
 
+#: Document-boundary rendering: the checkpoint's own document-boundary token --
+#: :data:`EOS_BOUNDED_BOUNDARY` -- then the sequence, with the tokenizer's
+#: post-processor still appending its terminal ``<EOS>``, so a scored record is
+#: ``<EOS> seq <EOS>``. This is RITA-xl's native format. Its published
+#: post-processor is Sequence-then-``<EOS>`` and prefixes nothing, so a bare
+#: residue string encodes with no boundary at all -- but that file states what
+#: the tokenizer does unconfigured, not what the checkpoint was trained behind,
+#: and RITA's training stream is documents separated by that boundary token.
+#:
+#: Measured on the staged checkpoint over the gate's own draw (200 Swiss-Prot
+#: records of 64-246 residues, seed 20260728, float32): at the position after one
+#: ``<EOS>`` the model places 0.99963 of its next-token mass on the 20 residue
+#: ids (mean over 64 records) and assigns the first residue a mean NLL of 0.7973
+#: +/- 0.0333 nats; scoring the tokens both renderings score -- residues 2..L and
+#: the terminal ``<EOS>`` -- the boundary-prefixed rendering costs 1.24520
+#: nats/token against the bare rendering's 1.40124, a paired per-record mean
+#: difference of -0.17384 +/- 0.01383 nats/token over 200 records, against
+#: -0.00618 for a ``<PAD>``-prefixed control. Reading the post-processor's
+#: silence as evidence about the training format is what left this arm short of
+#: its own format, as it did for :data:`INPUT_FORMAT_BOS_DIRECTION_SEQ`.
+INPUT_FORMAT_EOS_BOUNDED_SEQ = "eos_bounded_seq"
+
 #: How a cohort's records were drawn from their corpus. ``seeded_permutation``
 #: is the only mode Appendix B rule 1 of the transfer audit permits for a
 #: reported number; ``file_order`` is retained because several frozen artefacts
@@ -1104,9 +1126,17 @@ STAGED_ARMS["proteinglm-7b-clm"] = ArmSpec(
 
 # RITA-XL, EXP-R2-225's secondary new-architecture single point. 24 blocks of
 # width 2048, a 26-symbol residue vocabulary, a 1024-position context, float16
-# weights. Its card states the rendering this one needs: a bare residue string,
-# scored as the UniRef-100 language-model loss the card's own table reports, with
-# no marker and no wrapper -- which is ``raw``.
+# weights. Its rendering is :data:`INPUT_FORMAT_EOS_BOUNDED_SEQ` -- the
+# document-boundary ``<EOS>`` its training stream separates documents with, then
+# the sequence, with the tokenizer's own terminal ``<EOS>`` still appended -- and
+# the reason it is not ``raw`` is the reason its context-information envelope was
+# measured on an input the checkpoint does not use: the released post-processor
+# prefixes nothing, which is what the tokenizer does unconfigured rather than
+# what the checkpoint was trained behind. Its card's own table reports the
+# UniRef-100 language-model loss, which is a loss on a document stream whose
+# separator is that boundary; scored as a bare string the arm is short of it by
+# one token, and the position that predicts residue 1 has no boundary to
+# condition on.
 #
 # ``rita`` is in none of the architecture tables the interpretability families
 # resolve through, so ``budget`` would be the most it could carry -- and it
@@ -1127,10 +1157,11 @@ STAGED_ARMS["proteinglm-7b-clm"] = ArmSpec(
 # 24 x 2048 matching the declaration, live output width 26 from
 # ``lm_head.out_features``, and a 16-residue probe returns finite logits at a
 # mean next-token NLL of 2.2363 nats. The tokenizer appends ``<EOS>`` to a bare
-# residue string of its own accord, which is the rendering the card describes and
-# is why ``input_format`` is ``raw``. Its remote modeling code additionally
-# fails a float16 forward pass on CPU -- ``att @ v`` mixes float32 and half
-# inside its own attention -- so the numbers above are the float32 reading.
+# residue string of its own accord and prefixes nothing; that is why the
+# boundary is rendered here rather than left to the tokenizer. Its remote
+# modeling code additionally fails a float16 forward pass on CPU -- ``att @ v``
+# mixes float32 and half inside its own attention -- so the numbers above are the
+# float32 reading.
 #
 # ``scoring_target_alphabet_size`` is declared at the config's 26 rather than
 # inherited, as every staged arm's is.
@@ -1142,7 +1173,7 @@ STAGED_ARMS["rita-xl"] = ArmSpec(
     n_layer=24,
     d_model=2048,
     tokenisation="residue",
-    input_format="raw",
+    input_format=INPUT_FORMAT_EOS_BOUNDED_SEQ,
     evaluation_cohort_source="swissprot",
     architecture="rita",
     pretraining_corpus="uniref100",
@@ -2602,6 +2633,8 @@ class Cohort:
             ]
         if fmt == "n_to_c_control":
             return [N_TO_C_MARKER + s for s in self.records]
+        if fmt == INPUT_FORMAT_EOS_BOUNDED_SEQ:
+            return [eos_bounded_rendering(s) for s in self.records]
         if fmt == INPUT_FORMAT_BOS_DIRECTION_SEQ:
             return [bos_direction_rendering(arm, s) for s in self.records]
         if fmt == "ec_conditioned":
@@ -2653,6 +2686,33 @@ N_TO_C_MARKER = "1"
 #: prefer the one a call site happened to pick.
 BOS_DIRECTION_N_TO_C = N_TO_C_MARKER
 BOS_DIRECTION_C_TO_N = "2"
+
+
+#: The document-boundary token an ``eos_bounded_seq`` rendering prefixes: the
+#: token RITA's training stream separates documents with, and the one the
+#: checkpoint's tokenizer carries at id 2. Spelled once, because the rendering
+#: that prefixes it and
+#: :func:`src.transfer.rita_fitness._native_special_ids`, which verifies its id,
+#: must resolve the same token. Its sibling is the tokenizer's terminal
+#: ``<EOS>``, which the post-processor appends and which carries this same id:
+#: the boundary and the terminator are one token, so an id set cannot separate
+#: them, and every position whose target is it is a marker rather than content.
+EOS_BOUNDED_BOUNDARY = "<EOS>"
+
+
+def eos_bounded_rendering(sequence: str) -> str:
+    """``<EOS>`` + sequence, RITA-xl's native document rendering.
+
+    The single declaration of that format; :meth:`Cohort.input_strings` renders
+    through it and :func:`src.transfer.rita_fitness.native_encode_for_budget`
+    refuses any text that does not start with the boundary it places, so neither
+    the gate nor the ProteinGym door can score the bare residue string this arm
+    used to be rendered as. The boundary token needs no ``Arm``: it is a fixed
+    declared token rather than a tokenizer attribute, and its id is verified
+    against the native one when the checkpoint loads.
+    """
+
+    return EOS_BOUNDED_BOUNDARY + str(sequence)
 
 
 def bos_direction_rendering(
@@ -2726,10 +2786,16 @@ def rendering_marker_ids(arm: Arm) -> tuple[int, ...]:
     :meth:`Cohort.input_strings` prefixes ``fasta_wrapped`` with the tokenizer's
     end-of-text token and ``n_to_c_control`` with :data:`N_TO_C_MARKER`; ``raw``
     prefixes nothing; ``bos_direction_seq`` prefixes two tokens, the tokenizer's
-    BOS and then :data:`BOS_DIRECTION_N_TO_C`. The scored span therefore starts at
-    the first residue, not at the second token: the BOS is never a target, and the
-    direction token is excluded by the marker ids this function returns, not by
-    the position it happens to occupy.
+    BOS and then :data:`BOS_DIRECTION_N_TO_C`; ``eos_bounded_seq`` prefixes
+    :data:`EOS_BOUNDED_BOUNDARY`, whose id is also the terminal token its
+    tokenizer appends. The scored span therefore starts at the first residue, not
+    at the second token: the BOS is never a target, and the direction token is
+    excluded by the marker ids this function returns, not by the position it
+    happens to occupy. ``eos_bounded_seq`` is the one rendering whose terminator
+    carries a marker id, so an exclusion stated by id removes that target as well:
+    what is content there is the sequence's residues, which is the statement
+    :data:`src.transfer.progen3.NON_RESIDUE_TOKENS` makes for ProGen3's terminus
+    tokens and the one :func:`src.transfer.budget.scored_tokens` applies.
 
     **A tokenizer's special ids do not cover this, and assuming they did was a
     defect.** ProGen2 declares only ``<|pad|>``, ``<|bos|>`` and ``<|eos|>``
@@ -2777,6 +2843,15 @@ def rendering_marker_ids(arm: Arm) -> tuple[int, ...]:
                 f"{arm.name}: tokenizer has no {N_TO_C_MARKER!r} id, but its input "
                 "format is n_to_c_control, so the direction marker its rendering "
                 "prefixes cannot be kept out of the content span"
+            )
+        return (int(resolved),)
+    if fmt == INPUT_FORMAT_EOS_BOUNDED_SEQ:
+        resolved = arm.tokenizer.convert_tokens_to_ids(EOS_BOUNDED_BOUNDARY)
+        if resolved is None or resolved == arm.tokenizer.unk_token_id:
+            raise ValueError(
+                f"{arm.name}: tokenizer has no {EOS_BOUNDED_BOUNDARY!r} id, but its "
+                "input format is eos_bounded_seq, so the document boundary its "
+                "rendering prefixes cannot be kept out of the content span"
             )
         return (int(resolved),)
     if fmt == INPUT_FORMAT_BOS_DIRECTION_SEQ:

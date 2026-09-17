@@ -33,7 +33,12 @@ if str(REPO_ROOT / "scripts/transfer") not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / "scripts/transfer"))
 
 from src.transfer import scale_comparison as C  # noqa: E402
-from src.transfer.arms import STAGED_ARMS, config_context_length  # noqa: E402
+from src.transfer.arms import (  # noqa: E402
+    EOS_BOUNDED_BOUNDARY,
+    STAGED_ARMS,
+    config_context_length,
+    eos_bounded_rendering,
+)
 
 
 def _load_stage(filename: str):
@@ -753,13 +758,35 @@ def test_stage_20_native_extension_arms_bind_csv_and_wildtypes_hashes(tmp_path):
 
 
 class _ResidueTokenizer:
-    """RITA's shape: one id per residue, an appended end-of-sequence id, no pad."""
+    """RITA's shape: one id per residue, an appended end-of-sequence id, no pad.
+
+    The document boundary and the terminator are one id, as they are on the
+    staged checkpoint, and the tokenizer reports no eos, pad or unk id of its own
+    -- so the boundary is resolved by token string rather than from an attribute.
+    """
 
     ALPHABET = "ACDEFGHIKLMNPQRSTVWY"
     EOS = 25
 
+    def __init__(self) -> None:
+        self.eos_token_id = None
+        self.pad_token_id = None
+        self.unk_token_id = None
+
+    def convert_tokens_to_ids(self, token: str) -> int:
+        return self.EOS if str(token) == EOS_BOUNDED_BOUNDARY else 0
+
     def __call__(self, text, return_tensors=None):
-        ids = [self.ALPHABET.index(symbol) + 1 for symbol in text] + [self.EOS]
+        rendered = str(text)
+        boundary = []
+        if rendered.startswith(EOS_BOUNDED_BOUNDARY):
+            boundary = [self.EOS]
+            rendered = rendered[len(EOS_BOUNDED_BOUNDARY) :]
+        ids = (
+            boundary
+            + [self.ALPHABET.index(symbol) + 1 for symbol in rendered]
+            + [self.EOS]
+        )
         return {"input_ids": ids}
 
 
@@ -793,7 +820,7 @@ def _stub_rita(width=26):
     from src.transfer.arms import Arm
 
     tokenizer = _ResidueTokenizer()
-    native_ids = tokenizer(QUAL.PROTEIN_PROBE.native)["input_ids"]
+    native_ids = tokenizer(eos_bounded_rendering(QUAL.PROTEIN_PROBE.native))["input_ids"]
     model = _BigramModel(native_ids, width=width)
     model.lm_head = SimpleNamespace(out_features=width)
     return Arm(

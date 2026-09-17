@@ -89,10 +89,12 @@ from src.transfer.arms import (  # noqa: E402
     arm_spec,
     load_arm_spec,
     output_logit_width,
+    rendering_marker_ids,
     require_scoring_target_ids,
     scoring_target_alphabet,
 )
 from src.transfer.io import write_json  # noqa: E402
+from src.transfer.scoring import sequence_target_mask, target_rule  # noqa: E402
 
 SCHEMA_VERSION = "r2_transfer_second_stage_interface_qualification_v1"
 DEFAULT_OUT = REPO / "results/transfer/second_stage_interface_qualification"
@@ -480,6 +482,27 @@ def encode_ids(tokenizer: Any, text: str) -> list[int]:
     return [int(value) for value in ids]
 
 
+def scored_target_ids(arm: Arm, token_ids: Sequence[int]) -> list[int]:
+    """The targets this arm's rendering declares as content.
+
+    Not ``token_ids[1:]``: a rendering may prefix a marker, and a position whose
+    target is a marker the rendering itself added is not content under any rule.
+    Resolved through the same two declarations
+    :func:`src.transfer.budget.scored_tokens` resolves -- the format's rule and
+    the ids the rendering declares -- so this check cannot certify a span the
+    gate does not score.
+    """
+
+    ids = torch.tensor([list(token_ids)], dtype=torch.long)
+    keep = sequence_target_mask(
+        ids,
+        torch.ones_like(ids),
+        rule=target_rule(arm.spec.input_format),
+        marker_token_ids=rendering_marker_ids(arm),
+    )[0]
+    return [int(value) for value in ids[0][1:][keep].tolist()]
+
+
 def score_token_ids(arm: Arm, token_ids: Sequence[int], *, live_width: int) -> list[float]:
     ids = torch.tensor([list(token_ids)], dtype=torch.long, device=arm.device)
     output = arm.model(input_ids=ids)
@@ -522,8 +545,8 @@ def qualify_loaded_arm(arm: Arm) -> dict[str, Any]:
     control_ids = encode_ids(arm.tokenizer, control_text)
     if len(native_ids) < 2 or len(control_ids) < 2:
         raise ValueError(f"{name}: a rendered probe scored fewer than one target")
-    native_targets = native_ids[1:]
-    control_targets = control_ids[1:]
+    native_targets = scored_target_ids(arm, native_ids)
+    control_targets = scored_target_ids(arm, control_ids)
     require_scoring_target_ids(native_targets, alphabet, arm=name)
     require_scoring_target_ids(control_targets, alphabet, arm=name)
 

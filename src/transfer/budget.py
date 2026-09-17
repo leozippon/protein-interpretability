@@ -298,7 +298,12 @@ class ScoredTokens:
 def _scored_tokens_rita(
     arm: Arm, input_strings: Sequence[str], *, max_len: int
 ) -> ScoredTokens:
-    """Left-to-right NLL on native residue ids plus tokenizer EOS, one record at a time.
+    """NLL on the document rendering's scored targets, one record at a time.
+
+    The targets are the arm's declared ones -- :func:`target_rule` and
+    :func:`rendering_marker_ids` resolved once below, as every other arm resolves
+    them -- so the document boundary this rendering prefixes and the terminal
+    ``<EOS>`` its tokenizer appends are context rather than scored content.
 
     Does not assign ``tokenizer.pad_token`` and does not pass an attention mask.
     Variable-length records are not stacked: padding would require an attention
@@ -307,6 +312,8 @@ def _scored_tokens_rita(
 
     from .rita_fitness import native_encode_for_budget
 
+    rule = target_rule(arm.spec.input_format)
+    markers = rendering_marker_ids(arm)
     target_blocks: list[np.ndarray] = []
     nll_blocks: list[np.ndarray] = []
     index_blocks: list[np.ndarray] = []
@@ -323,11 +330,17 @@ def _scored_tokens_rita(
         logprobs = F.log_softmax(logits[:, :-1].float(), dim=-1)
         target = tensor[:, 1:]
         nll = -logprobs.gather(-1, target.unsqueeze(-1)).squeeze(-1)[0]
-        if not bool(torch.isfinite(nll).all()):
+        keep = sequence_target_mask(
+            tensor,
+            torch.ones_like(tensor),
+            rule=rule,
+            marker_token_ids=markers,
+        )[0]
+        if not bool(torch.isfinite(nll[keep]).all()):
             raise FloatingPointError(f"{arm.name}: non-finite clean NLL")
-        target_blocks.append(target[0].detach().cpu().numpy().astype(np.int64))
-        nll_blocks.append(nll.detach().cpu().numpy().astype(np.float64))
-        index_blocks.append(np.full(target.shape[1], index, dtype=np.int64))
+        target_blocks.append(target[0][keep].detach().cpu().numpy().astype(np.int64))
+        nll_blocks.append(nll[keep].detach().cpu().numpy().astype(np.float64))
+        index_blocks.append(np.full(int(keep.sum()), index, dtype=np.int64))
     return ScoredTokens(
         target_ids=np.concatenate(target_blocks),
         nll_nats=np.concatenate(nll_blocks),
