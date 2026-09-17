@@ -17,6 +17,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import torch
+from safetensors import safe_open
 from torch import nn
 from torch.nn import functional as F
 from transformers import (
@@ -134,6 +135,20 @@ def _require_dir(path: Path) -> Path:
     if not path.is_dir():
         pytest.skip(f"local tokenizer directory is absent: {path}")
     return path
+
+
+#: The text tokenizers that merge neighbouring residues into multi-residue
+#: pieces, with the boundary each is declared under. GPT-2 reaches 22 scored
+#: tokens for the 33-residue PROBE, Qwen2/Qwen3/Llama 21, so none of them can
+#: carry the per-residue functional.
+_MERGING_CASES = {
+    "gpt2_tokenizer": _gpt2_boundary,
+    "qwen2_tokenizer": _qwen_boundary,
+    "qwen3_tokenizer": lambda: _qwen_boundary(
+        name="qwen3-8b-base", model_type="qwen3"
+    ),
+    "llama_tokenizer": _llama_boundary,
+}
 
 
 @pytest.fixture(scope="module")
@@ -441,19 +456,76 @@ def test_missing_or_malformed_input_ids_are_fatal_tool_errors():
     assert not isinstance(batched.value, TextAAEncodingError)
 
 
+def test_merging_text_tokenizer_is_refused_at_the_encoder(request):
+    """A merged scored span is refused inside the shared encoder.
+
+    These are the four families whose tokenizer merges amino acids, so the
+    declared summed log-likelihood is not a per-residue quantity and no caller
+    is allowed to compute it. The refusal reports what was measured rather than
+    truncating, re-splitting, or substituting another unit.
+    """
+
+    for fixture_name, factory in _MERGING_CASES.items():
+        tokenizer = request.getfixturevalue(fixture_name)
+        boundary = factory()
+        targets = tokenizer(PROBE, add_special_tokens=False)["input_ids"]
+        assert len(targets) < len(PROBE)
+        with pytest.raises(TextAAEncodingError) as caught:
+            encode_text_aa(tokenizer, PROBE, boundary)
+        message = str(caught.value)
+        assert f"{boundary.name}: the text tokenizer produced" in message
+        assert f"{len(targets)} scored tokens for {len(PROBE)} residues" in message
+        assert f"{len(PROBE) / len(targets):.3f} residues per token" in message
+        assert "merged residues into multi-residue pieces" in message
+        assert "EXP-R2-151" in message
+
+
+def test_the_residue_rule_belongs_to_the_encoding_not_the_checkpoint(gpt2_tokenizer):
+    """GPT-2 merges ``MM`` into one piece but still carries ``M`` one-to-one."""
+
+    boundary = _gpt2_boundary()
+    ids = encode_text_aa(gpt2_tokenizer, "M", boundary)
+    assert ids == [50256, *gpt2_tokenizer("M", add_special_tokens=False)["input_ids"]]
+    assert len(ids) == 2
+    with pytest.raises(TextAAEncodingError, match="1 scored tokens for 2 residues"):
+        encode_text_aa(gpt2_tokenizer, "MM", boundary)
+
+
+def test_one_token_per_residue_is_permitted_and_the_scorer_inherits_the_refusal(
+    bygpt5_tokenizer, gpt2_tokenizer
+):
+    boundary = _bygpt5_boundary()
+    ids = encode_text_aa(bygpt5_tokenizer, PROBE, boundary)
+    assert len(ids) == len(PROBE) + 1
+    assert ids[0] == boundary.conditioning_id
+    assert boundary.conditioning_id not in ids[1:]
+    scorer = _scorer(
+        _StubLM(len(bygpt5_tokenizer)), bygpt5_tokenizer, boundary, window=64
+    )
+    assert scorer.encoding_metadata(PROBE)["n_scored_tokens"] == len(PROBE)
+    assert np.isfinite(scorer.log_likelihood([PROBE])).all()
+    merging = _scorer(
+        _StubLM(len(gpt2_tokenizer)), gpt2_tokenizer, _gpt2_boundary(), window=64
+    )
+    with pytest.raises(TextAAEncodingError, match="residues per token"):
+        merging.log_likelihood([PROBE])
+    with pytest.raises(TextAAEncodingError, match="residues per token"):
+        merging.token_lengths([PROBE])
+
+
 def test_gpt2_encode_prepends_boundary_keeps_first_target_and_omits_eos(
     gpt2_tokenizer,
 ):
     boundary = _gpt2_boundary()
-    ids = encode_text_aa(gpt2_tokenizer, PROBE, boundary)
+    ids = encode_text_aa(gpt2_tokenizer, "M", boundary)
     assert ids[0] == 50256
-    targets = gpt2_tokenizer(PROBE, add_special_tokens=False)["input_ids"]
+    targets = gpt2_tokenizer("M", add_special_tokens=False)["input_ids"]
     assert ids[1:] == list(targets)
-    assert len(targets) == 22
+    assert len(targets) == 1
     assert ids[-1] != 50256
     assert 50256 not in ids[1:]
-    assert gpt2_tokenizer.decode(targets, skip_special_tokens=False) == PROBE
-    default = gpt2_tokenizer(PROBE, add_special_tokens=True)["input_ids"]
+    assert gpt2_tokenizer.decode(targets, skip_special_tokens=False) == "M"
+    default = gpt2_tokenizer("M", add_special_tokens=True)["input_ids"]
     assert list(default) == list(targets)
 
 
@@ -466,25 +538,25 @@ def test_qwen_uses_eos_separator_not_chat_or_bos(
     ):
         boundary = _qwen_boundary(name=name, model_type=model_type)
         assert tokenizer.bos_token_id is None
-        ids = encode_text_aa(tokenizer, PROBE, boundary)
+        ids = encode_text_aa(tokenizer, "M", boundary)
         assert ids[0] == 151643
         assert 151644 not in ids
-        targets = tokenizer(PROBE, add_special_tokens=False)["input_ids"]
-        assert len(targets) == 21
+        targets = tokenizer("M", add_special_tokens=False)["input_ids"]
+        assert len(targets) == 1
         assert ids[-1] != 151643
-        assert tokenizer.decode(targets, skip_special_tokens=False) == PROBE
+        assert tokenizer.decode(targets, skip_special_tokens=False) == "M"
 
 
 def test_llama_true_bos_is_concatenated_without_double_prefix(llama_tokenizer):
     boundary = _llama_boundary()
-    ids = encode_text_aa(llama_tokenizer, PROBE, boundary)
+    ids = encode_text_aa(llama_tokenizer, "M", boundary)
     assert ids[0] == 128000
-    targets = llama_tokenizer(PROBE, add_special_tokens=False)["input_ids"]
+    targets = llama_tokenizer("M", add_special_tokens=False)["input_ids"]
     assert 128000 not in targets
     assert ids[1:] == list(targets)
-    assert len(targets) == 21
+    assert len(targets) == 1
     assert ids[-1] != 128001
-    with_special = llama_tokenizer(PROBE, add_special_tokens=True)["input_ids"]
+    with_special = llama_tokenizer("M", add_special_tokens=True)["input_ids"]
     assert list(with_special) == ids
 
 
@@ -512,28 +584,28 @@ def test_missing_window_is_refused(gpt2_tokenizer):
         _scorer(model, gpt2_tokenizer, _gpt2_boundary(), window=1)
 
 
-def test_over_window_and_hard_context_are_refused(gpt2_tokenizer):
-    boundary = _gpt2_boundary()
-    stub = _StubLM(len(gpt2_tokenizer))
-    encoded = encode_text_aa(gpt2_tokenizer, "MKT", boundary)
-    scorer = _scorer(stub, gpt2_tokenizer, boundary, window=len(encoded) - 1)
+def test_over_window_and_hard_context_are_refused(bygpt5_tokenizer):
+    boundary = _bygpt5_boundary()
+    stub = _StubLM(len(bygpt5_tokenizer))
+    encoded = encode_text_aa(bygpt5_tokenizer, "MKT", boundary)
+    scorer = _scorer(stub, bygpt5_tokenizer, boundary, window=len(encoded) - 1)
     assert scorer.token_lengths(["MKT"]) == [len(encoded)]
     with pytest.raises(ValueError, match="application_window_tokens"):
         scorer.log_likelihood(["MKT"])
     with pytest.raises(ValueError, match="hard context"):
         _scorer(
             stub,
-            gpt2_tokenizer,
+            bygpt5_tokenizer,
             boundary,
             window=4096,
             hard=1024,
         )
 
 
-def test_empty_list_mixed_length_order_and_repeats(gpt2_tokenizer):
-    boundary = _gpt2_boundary()
-    model = _tiny_gpt2(gpt2_tokenizer)
-    scorer = _scorer(model, gpt2_tokenizer, boundary, window=64, hard=64)
+def test_empty_list_mixed_length_order_and_repeats(bygpt5_tokenizer):
+    boundary = _bygpt5_boundary()
+    model = _StubLM(len(bygpt5_tokenizer))
+    scorer = _scorer(model, bygpt5_tokenizer, boundary, window=64, hard=64)
     assert scorer.token_lengths([]) == []
     empty = scorer.log_likelihood([])
     assert empty.shape == (0,)
@@ -557,11 +629,11 @@ def test_empty_list_mixed_length_order_and_repeats(gpt2_tokenizer):
 
 
 def test_independent_shifted_ce_matches_public_api_and_keeps_first_target(
-    gpt2_tokenizer,
+    bygpt5_tokenizer,
 ):
-    boundary = _gpt2_boundary()
-    model = _tiny_gpt2(gpt2_tokenizer)
-    scorer = _scorer(model, gpt2_tokenizer, boundary, window=64, hard=64)
+    boundary = _bygpt5_boundary()
+    model = _StubLM(len(bygpt5_tokenizer))
+    scorer = _scorer(model, bygpt5_tokenizer, boundary, window=64, hard=64)
     sequence = "MKTAYIAK"
     ids = scorer.encode(sequence)
     got = scorer.log_likelihood([sequence])[0]
@@ -589,7 +661,7 @@ def test_qwen_conditioning_equals_pad_still_attends_position_zero(qwen2_tokenize
     boundary = _qwen_boundary()
     stub = _StubLM(len(qwen2_tokenizer))
     scorer = _scorer(stub, qwen2_tokenizer, boundary, window=64)
-    scorer.log_likelihood(["MKT"])
+    scorer.log_likelihood(["M"])
     ids = stub.forward_ids[0]
     mask = stub.forward_masks[0]
     assert int(ids[0, 0]) == 151643
@@ -618,8 +690,8 @@ def test_llama_tiny_numeric_gate(llama_tokenizer):
     boundary = _llama_boundary()
     model = _tiny_llama(llama_tokenizer)
     scorer = _scorer(model, llama_tokenizer, boundary, window=64, hard=64)
-    ids = scorer.encode("MKT")
-    got = scorer.log_likelihood(["MKT"])[0]
+    ids = scorer.encode("M")
+    got = scorer.log_likelihood(["M"])[0]
     independent, n_target = _independent_shifted_ce_sum(model, ids)
     assert abs(got - independent) / n_target <= FP32_PER_TARGET_ABS
 
@@ -628,8 +700,8 @@ def test_qwen2_tiny_numeric_gate(qwen2_tokenizer):
     boundary = _qwen_boundary()
     model = _tiny_qwen2(qwen2_tokenizer)
     scorer = _scorer(model, qwen2_tokenizer, boundary, window=64, hard=64)
-    ids = scorer.encode("ACDE")
-    got = scorer.log_likelihood(["ACDE"])[0]
+    ids = scorer.encode("M")
+    got = scorer.log_likelihood(["M"])[0]
     independent, n_target = _independent_shifted_ce_sum(model, ids)
     assert abs(got - independent) / n_target <= FP32_PER_TARGET_ABS
 
@@ -640,13 +712,65 @@ def test_bf16_parameters_are_refused(gpt2_tokenizer):
         _scorer(model, gpt2_tokenizer, _gpt2_boundary())
 
 
+def test_declared_storage_dtype_reads_both_spellings_and_invents_nothing():
+    from src.transfer.text_aa_fitness import _declared_storage_dtype
+
+    assert _declared_storage_dtype(SimpleNamespace(dtype=torch.bfloat16)) == "bfloat16"
+    assert _declared_storage_dtype(SimpleNamespace(torch_dtype=torch.float16)) == "float16"
+    assert _declared_storage_dtype(SimpleNamespace()) == "undeclared"
+    assert (
+        _declared_storage_dtype(SimpleNamespace(dtype=None, torch_dtype=None))
+        == "undeclared"
+    )
+
+
+def test_stored_bf16_checkpoint_is_upcast_and_recorded_not_refused(
+    gpt2_tokenizer, tmp_path
+):
+    """The protocol requires float32 execution, not float32 storage.
+
+    ``load_text_aa_scorer`` asks for float32 from the checkpoint, which performs
+    the upcast, so the only refusal that can fire is the loaded-parameter check.
+    The checkpoint's own declared dtype is recorded as ``storage_torch_dtype``
+    instead of being refused a second time on a claim the loader already acted on.
+    """
+
+    model = _tiny_gpt2(gpt2_tokenizer, n_positions=64)
+    model.config.dtype = torch.bfloat16
+    model = model.to(torch.bfloat16)
+    checkpoint = tmp_path / "tiny-gpt2-bf16"
+    checkpoint.mkdir()
+    model.save_pretrained(checkpoint)
+    gpt2_tokenizer.save_pretrained(checkpoint)
+    with safe_open(checkpoint / "model.safetensors", framework="pt") as handle:
+        assert handle.get_tensor("transformer.wte.weight").dtype == torch.bfloat16
+    scorer = load_text_aa_scorer(
+        checkpoint,
+        boundary=_gpt2_boundary(),
+        application_window_tokens=64,
+        device="cpu",
+        name="gpt2",
+    )
+    try:
+        assert scorer.facts["storage_torch_dtype"] == "bfloat16"
+        assert scorer.facts["dtype_observed"] == ["float32"]
+        assert scorer.model.get_input_embeddings().weight.dtype == torch.float32
+        got = scorer.log_likelihood(["M"])[0]
+        independent, n_target = _independent_shifted_ce_sum(
+            scorer.model, scorer.encode("M")
+        )
+        assert abs(got - independent) / n_target <= FP32_PER_TARGET_ABS
+    finally:
+        scorer.release()
+
+
 def test_fp32_matmul_context_restores_caller_state(gpt2_tokenizer):
     model = _tiny_gpt2(gpt2_tokenizer)
     scorer = _scorer(model, gpt2_tokenizer, _gpt2_boundary(), window=64, hard=64)
     torch.backends.cuda.matmul.allow_tf32 = True
     torch.backends.cudnn.allow_tf32 = True
     torch.set_float32_matmul_precision("high")
-    scorer.log_likelihood(["MKT"])
+    scorer.log_likelihood(["M"])
     assert torch.backends.cuda.matmul.allow_tf32 is True
     assert torch.backends.cudnn.allow_tf32 is True
     assert torch.get_float32_matmul_precision() == "high"
@@ -667,7 +791,7 @@ def test_three_item_lifetime_releases_prior_logits(gpt2_tokenizer):
 
     model.forward = wrapped
     scorer = _scorer(model, gpt2_tokenizer, boundary, window=64, hard=64)
-    sequences = ["W", "MKT", "ACDEFGHIKL"]
+    sequences = ["W", "M", "K"]
     totals = scorer.log_likelihood(sequences)
     assert totals.shape == (3,)
     gc.collect()
@@ -693,11 +817,12 @@ def test_load_text_aa_scorer_from_saved_tiny_gpt2(gpt2_tokenizer, tmp_path):
     try:
         assert scorer.facts["protocol"] == TEXT_AA_FP32_V1
         assert scorer.facts["dtype_observed"] == ["float32"]
+        assert scorer.facts["storage_torch_dtype"] == "float32"
         assert scorer.facts["hard_context"] == 64
         assert scorer.facts["experiment_admitted"] is False
         assert scorer.facts["production_batch_size"] == 1
-        totals = scorer.log_likelihood(["MKT"])
-        independent, n_target = _independent_shifted_ce_sum(scorer.model, scorer.encode("MKT"))
+        totals = scorer.log_likelihood(["M"])
+        independent, n_target = _independent_shifted_ce_sum(scorer.model, scorer.encode("M"))
         assert abs(float(totals[0]) - independent) / n_target <= FP32_PER_TARGET_ABS
     finally:
         scorer.release()

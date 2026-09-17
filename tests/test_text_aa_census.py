@@ -19,6 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.transfer.amino_acids import AA20  # noqa: E402
 from src.transfer.arms import arm_spec  # noqa: E402
 from src.transfer.fitness import load_assay  # noqa: E402
 from src.transfer.precision_policy import TEXT_AA_FP32_V1  # noqa: E402
@@ -49,6 +50,36 @@ def _require_dir(path: Path) -> Path:
     if not path.is_dir():
         pytest.skip(f"local tokenizer directory is absent: {path}")
     return path
+
+
+class _PerResidueTokenizer:
+    """A GPT-2 tokenizer wrapper whose scored span is one token per residue.
+
+    Wrapping the real tokenizer keeps the config, boundary and fail-fast paths
+    under test while renumbering the residue ids, because GPT-2 merges amino
+    acids and can no longer carry a legal multi-residue encoding. These
+    accounting tests need a legal encoding *and* a declared hard context, and
+    ByGPT5 -- the only declared checkpoint that reaches one token per residue --
+    declares no hard context at all, so the over-window branch is otherwise
+    unreachable.
+    """
+
+    def __init__(self, inner) -> None:
+        self._inner = inner
+        self.all_special_ids = list(getattr(inner, "all_special_ids", []))
+        self._ids = {
+            residue: 50000 + index for index, residue in enumerate(sorted(AA20))
+        }
+        self._reverse = {value: key for key, value in self._ids.items()}
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def __call__(self, sequence, add_special_tokens=False):
+        return {"input_ids": [self._ids[residue] for residue in sequence]}
+
+    def decode(self, ids, skip_special_tokens=False):
+        return "".join(self._reverse[int(token)] for token in ids)
 
 
 def _load_cli():
@@ -263,9 +294,17 @@ def test_load_text_aa_tokenizer_does_not_need_weights(gpt2_tokenizer, tmp_path):
         )
 
 
-def test_mutant_over_window_excludes_whole_assay_and_keeps_digest(
-    gpt2_tokenizer, tmp_path
-):
+def test_over_window_excludes_whole_assay_and_keeps_digest(gpt2_tokenizer, tmp_path):
+    """An over-window assay is excluded as a whole and keeps the freeze ledger.
+
+    A substitution mutant has its wild type's length, so under a
+    one-token-per-residue tokenizer the declared window admits or rejects every
+    row of one assay together. The second assay stays inside the window so the
+    census completes: what is pinned is that the over-window assay is excluded
+    with the digest, seed, and n_variants it was frozen with, while the other
+    assay remains admitted.
+    """
+
     native = _load_native()
     gym = tmp_path / "gym"
     _write_assay_csv(
@@ -274,28 +313,38 @@ def test_mutant_over_window_excludes_whole_assay_and_keeps_digest(
         wildtype="AAA",
         mutants=[("A1W", "WAA"), ("A3G", "AAG")],
     )
-    rows = [("short_wt", "AAA", "q00000", 0)]
+    _write_assay_csv(
+        gym,
+        "ok_wt",
+        wildtype="AA",
+        mutants=[("A1W", "WA"), ("A2G", "AG")],
+    )
+    rows = [("short_wt", "AAA", "q00000", 0), ("ok_wt", "AA", "q00001", 1)]
     frozen, *_ = _freeze(tmp_path, gym, rows)
     table = load_text_aa_boundary_table()
     boundary = resolve_text_aa_boundary("gpt2", table)
-    wt_ids = encode_text_aa(gpt2_tokenizer, "AAA", boundary)
-    mut_ids = encode_text_aa(gpt2_tokenizer, "WAA", boundary)
-    assert len(wt_ids) < len(mut_ids)
+    tokenizer = _PerResidueTokenizer(gpt2_tokenizer)
+    wt_ids = encode_text_aa(tokenizer, "AAA", boundary)
+    mut_ids = encode_text_aa(tokenizer, "WAA", boundary)
+    assert len(wt_ids) == len(mut_ids) == 4
+    assert len(encode_text_aa(tokenizer, "AA", boundary)) == 3
+    hard = 3
     payload = census_one_model(
         "gpt2",
-        tokenizer=gpt2_tokenizer,
+        tokenizer=tokenizer,
         boundary=boundary,
-        hard_context=len(wt_ids),
+        hard_context=hard,
         request=frozen,
-        documented_context=len(wt_ids),
+        documented_context=hard,
     )
     row = payload["assays"][0]
+    assert row["assay"] == "short_wt"
     assert row["admitted"] is False
     assert row["exclude_reason"] == EXCEEDS_HARD_CONTEXT
     assert row["n_variants"] == frozen["assays"][0]["n_variants"]
     assert row["mutant_digest"] == frozen["assays"][0]["mutant_digest"]
     assert row["seed"] == native.VARIANT_SEED
-    assert payload["native_fixed"] == []
+    assert payload["native_fixed"] == ["ok_wt"]
     assert frozen["sequences"]["short_wt"] == list(
         load_assay(
             "short_wt", n=1000, seed=native.VARIANT_SEED, directory=gym
@@ -363,7 +412,7 @@ def test_illegal_encoding_excludes_and_file_errors_fail_fast(
                 "csv_sha256": "c",
                 "seed": 1,
                 "wildtype_id": "q00000",
-                "wildtype_sequence": "AAA",
+                "wildtype_sequence": "A",
             }
         ],
         "sequences": {"bad": ["AAZ"]},
@@ -416,7 +465,7 @@ def test_illegal_encoding_excludes_and_file_errors_fail_fast(
         )
 
 
-def test_original_seed_index_is_kept(gpt2_tokenizer, tmp_path):
+def test_original_seed_index_is_kept(bygpt5_tokenizer, tmp_path):
     native = _load_native()
     gym = tmp_path / "gym"
     _write_assay_csv(
@@ -436,12 +485,12 @@ def test_original_seed_index_is_kept(gpt2_tokenizer, tmp_path):
     ]
     table = load_text_aa_boundary_table()
     payload = census_one_model(
-        "gpt2",
-        tokenizer=gpt2_tokenizer,
-        boundary=resolve_text_aa_boundary("gpt2", table),
-        hard_context=1024,
+        "bygpt5-small-en",
+        tokenizer=bygpt5_tokenizer,
+        boundary=resolve_text_aa_boundary("bygpt5-small-en", table),
+        hard_context=None,
         request=frozen,
-        documented_context=1024,
+        documented_context=None,
     )
     assert [row["seed"] for row in payload["assays"]] == [
         native.VARIANT_SEED,
@@ -483,9 +532,9 @@ def test_incomplete_models_cannot_claim_all13_or_mixed_families():
     assert family["assays"] == ["a"]
 
 
-def test_same_token_length_different_ids_change_digest(gpt2_tokenizer):
+def test_same_token_length_different_ids_change_digest(bygpt5_tokenizer):
     table = load_text_aa_boundary_table()
-    boundary = resolve_text_aa_boundary("gpt2", table)
+    boundary = resolve_text_aa_boundary("bygpt5-small-en", table)
     base = {
         "assays": [
             {
@@ -503,25 +552,25 @@ def test_same_token_length_different_ids_change_digest(gpt2_tokenizer):
         "declared_assays": 1,
     }
     first = census_one_model(
-        "gpt2",
-        tokenizer=gpt2_tokenizer,
+        "bygpt5-small-en",
+        tokenizer=bygpt5_tokenizer,
         boundary=boundary,
-        hard_context=1024,
+        hard_context=None,
         request={**base, "sequences": {"x": ["KKK"]}},
-        documented_context=1024,
+        documented_context=None,
     )
     second = census_one_model(
-        "gpt2",
-        tokenizer=gpt2_tokenizer,
+        "bygpt5-small-en",
+        tokenizer=bygpt5_tokenizer,
         boundary=boundary,
-        hard_context=1024,
+        hard_context=None,
         request={**base, "sequences": {"x": ["MMM"]}},
-        documented_context=1024,
+        documented_context=None,
     )
-    wt = encode_text_aa(gpt2_tokenizer, "WWW", boundary)
-    left = encode_text_aa(gpt2_tokenizer, "KKK", boundary)
-    right = encode_text_aa(gpt2_tokenizer, "MMM", boundary)
-    assert len(left) == len(right) == len(wt)
+    wt = encode_text_aa(bygpt5_tokenizer, "WWW", boundary)
+    left = encode_text_aa(bygpt5_tokenizer, "KKK", boundary)
+    right = encode_text_aa(bygpt5_tokenizer, "MMM", boundary)
+    assert len(left) == len(right) == len(wt) == 4
     assert left != right
     assert first["assays"][0]["encoded_ids_digest"] != second["assays"][0]["encoded_ids_digest"]
     assert first["assays"][0]["n_input_tokens_max_legal"] == second["assays"][0][
@@ -551,9 +600,9 @@ def test_cli_accepts_injected_device_and_refuses_later_phases(
     )
     monkeypatch.setattr(
         "src.transfer.text_aa_cohort.resolve_text_aa_checkpoint",
-        lambda name: GPT2_DIR,
+        lambda name: BYGPT5_DIR,
     )
-    _require_dir(GPT2_DIR)
+    _require_dir(BYGPT5_DIR)
     out = tmp_path / "out"
     payload = cli.main(
         [
@@ -571,7 +620,7 @@ def test_cli_accepts_injected_device_and_refuses_later_phases(
             "--proteingym-dir",
             str(gym),
             "--model",
-            "gpt2",
+            "bygpt5-small-en",
         ]
     )
     assert payload["execution"]["tokenizer_only"] is True
@@ -801,19 +850,19 @@ def test_request_items_keep_none_wildtype_and_int_mutant_indices():
     assert items[2][1] is not None and type(items[2][1]) is int
 
 
-def test_encode_fail_then_later_legal_max_and_digest(gpt2_tokenizer):
+def test_encode_fail_then_later_legal_max_and_digest(bygpt5_tokenizer):
     table = load_text_aa_boundary_table()
-    boundary = resolve_text_aa_boundary("gpt2", table)
+    boundary = resolve_text_aa_boundary("bygpt5-small-en", table)
     payload = census_one_model(
-        "gpt2",
-        tokenizer=gpt2_tokenizer,
+        "bygpt5-small-en",
+        tokenizer=bygpt5_tokenizer,
         boundary=boundary,
-        hard_context=1024,
+        hard_context=None,
         request=_toy_request("AAA", ["AAZ", "W" * 16]),
-        documented_context=1024,
+        documented_context=None,
     )
     row = payload["assays"][0]
-    later_ids = encode_text_aa(gpt2_tokenizer, "W" * 16, boundary)
+    later_ids = encode_text_aa(bygpt5_tokenizer, "W" * 16, boundary)
     assert row["admitted"] is False
     assert row["exclude_reason"] == ENCODE_FAIL
     assert row["failed_sequences"][0]["error_class"] == "TextAAEncodingError"
@@ -823,20 +872,20 @@ def test_encode_fail_then_later_legal_max_and_digest(gpt2_tokenizer):
     assert payload["longest_probe_identity"]["n_input_tokens"] == len(later_ids)
     assert payload["native_fixed"] == []
     left = census_one_model(
-        "gpt2",
-        tokenizer=gpt2_tokenizer,
+        "bygpt5-small-en",
+        tokenizer=bygpt5_tokenizer,
         boundary=boundary,
-        hard_context=1024,
+        hard_context=None,
         request=_toy_request("AAA", ["AAZ", "W" * 8]),
-        documented_context=1024,
+        documented_context=None,
     )
     right = census_one_model(
-        "gpt2",
-        tokenizer=gpt2_tokenizer,
+        "bygpt5-small-en",
+        tokenizer=bygpt5_tokenizer,
         boundary=boundary,
-        hard_context=1024,
+        hard_context=None,
         request=_toy_request("AAA", ["AAZ", "M" * 8]),
-        documented_context=1024,
+        documented_context=None,
     )
     assert left["assays"][0]["encoded_ids_digest"] != right["assays"][0][
         "encoded_ids_digest"
@@ -881,17 +930,18 @@ def test_none_documented_context_means_no_hard_context(
 def test_over_window_counts_as_encoded_not_encode_fail(gpt2_tokenizer):
     table = load_text_aa_boundary_table()
     boundary = resolve_text_aa_boundary("gpt2", table)
+    tokenizer = _PerResidueTokenizer(gpt2_tokenizer)
     wt = "AAA"
     long_mut = "W" * 40
     short_mut = "GGG"
-    wt_n = len(encode_text_aa(gpt2_tokenizer, wt, boundary))
-    long_n = len(encode_text_aa(gpt2_tokenizer, long_mut, boundary))
-    short_n = len(encode_text_aa(gpt2_tokenizer, short_mut, boundary))
+    wt_n = len(encode_text_aa(tokenizer, wt, boundary))
+    long_n = len(encode_text_aa(tokenizer, long_mut, boundary))
+    short_n = len(encode_text_aa(tokenizer, short_mut, boundary))
     assert long_n > wt_n + 1
     assert short_n <= wt_n + 1
     payload = census_one_model(
         "gpt2",
-        tokenizer=gpt2_tokenizer,
+        tokenizer=tokenizer,
         boundary=boundary,
         hard_context=wt_n + 1,
         request=_toy_request(wt, [long_mut, short_mut]),
@@ -911,3 +961,29 @@ def test_over_window_counts_as_encoded_not_encode_fail(gpt2_tokenizer):
     assert payload["n_sequences"] == payload["n_encode_ok"] + payload["n_encode_fail"]
     assert payload["n_encode_ok"] == sum(item["n_encode_ok"] for item in payload["assays"])
     assert row["n_input_tokens_max_legal"] == max(wt_n, short_n)
+
+
+def test_merging_tokenizer_cannot_complete_a_census(gpt2_tokenizer):
+    """A merging tokenizer leaves no legal sequence, so the census fails.
+
+    ``docs/PROTEINGYM_TEXT_AA_FP32_V1.md`` states that a checkpoint with no
+    strictly legal sequence fails rather than inventing a window. The refusal
+    comes from the shared encoder, so the census inherits it and the failure
+    names the merge instead of blaming the window.
+    """
+
+    table = load_text_aa_boundary_table()
+    boundary = resolve_text_aa_boundary("gpt2", table)
+    with pytest.raises(ValueError, match="no strictly encodable sequence") as caught:
+        census_one_model(
+            "gpt2",
+            tokenizer=gpt2_tokenizer,
+            boundary=boundary,
+            hard_context=1024,
+            request=_toy_request("AAA", ["WAA", "AAG"]),
+            documented_context=1024,
+        )
+    message = str(caught.value)
+    assert not isinstance(caught.value, TextAAEncodingError)
+    assert "merged residues into multi-residue pieces" in message
+    assert "First refusal:" in message

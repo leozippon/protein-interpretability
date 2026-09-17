@@ -227,6 +227,7 @@ def census_one_model(
     n_encode_ok = 0
     n_encode_fail = 0
     n_over = 0
+    first_refusal: str | None = None
     for assay in assays:
         name_assay = str(assay["assay"])
         mutants = list(sequences[name_assay])
@@ -259,6 +260,8 @@ def census_one_model(
                 n_row_encode_fail += 1
                 encode_fail = True
                 reason = ENCODE_FAIL
+                if first_refusal is None:
+                    first_refusal = str(exc)
                 _update_stream(stream, reason.encode("ascii"), type(exc).__name__.encode("ascii"))
                 failures.append(
                     {
@@ -342,8 +345,10 @@ def census_one_model(
         )
     if not legal_candidates:
         raise ValueError(
-            f"{name}: no strictly encodable sequence fits the scoring window; "
-            "a window will not be invented"
+            f"{name}: no strictly encodable sequence exists for this checkpoint, "
+            "so no scoring window can be derived and none will be invented; the "
+            "census fails rather than reporting a window. First refusal: "
+            f"{first_refusal}"
         )
     if hard_context is not None:
         application_window = int(hard_context)

@@ -6,6 +6,14 @@ a raw uppercase AA20 string after one declared document-boundary token. Mutant
 minus WT is applied upstream. There is no length normalisation, no biological
 prompt, and no trailing EOS in the scored path.
 
+Every scored span must carry exactly one token per residue. A text tokenizer
+that merges neighbouring residues into multi-residue pieces is refused inside
+:func:`encode_text_aa` -- the same rule ``joint_modes.verify_one_token_per_residue``
+enforces per rendering -- so neither the scorer nor the census can measure a
+merged unit. The property belongs to the encoding and not to the checkpoint, so
+a string that does encode one-to-one is still permitted even on a tokenizer that
+merges elsewhere; nothing re-splits, truncates, or substitutes a different unit.
+
 Usage (core only; not a legal ProteinGym run until a later stage is wired)::
 
     from src.transfer.text_aa_fitness import load_text_aa_scorer
@@ -295,7 +303,15 @@ def encode_text_aa(
     sequence: str,
     boundary: TextAABoundary,
 ) -> list[int]:
-    """Prefix one declared conditioning token onto reversible AA20 target ids."""
+    """Prefix one declared conditioning token onto reversible AA20 target ids.
+
+    The returned span must carry exactly one target token per residue. A
+    tokenizer that merges neighbouring residues into multi-residue pieces is
+    refused here, before any caller can score or count the merged unit, because
+    a mutation changes the segmentation and token position stops being residue
+    position. This is the rule ``joint_modes.verify_one_token_per_residue``
+    already applies to the joint checkpoints.
+    """
 
     sequence = _require_aa20(sequence)
     encoded = tokenizer(sequence, add_special_tokens=False)
@@ -320,6 +336,19 @@ def encode_text_aa(
         raise TextAAEncodingError(
             "decode(target_ids, skip_special_tokens=False) must equal the raw "
             f"AA20 string; got {decoded!r}"
+        )
+    if len(target_ids) != len(sequence):
+        raise TextAAEncodingError(
+            f"{boundary.name}: the text tokenizer produced {len(target_ids)} "
+            f"scored tokens for {len(sequence)} residues "
+            f"({len(sequence) / len(target_ids):.3f} residues per token). It "
+            "merged residues into multi-residue pieces, so token position is "
+            "not residue position and the summed log-likelihood is not the "
+            "per-residue quantity this protocol declares -- measured at about "
+            "2.9 nats/token on galactica-1.3b (EXP-R2-151, Appendix B rule 4). "
+            "Re-splitting or truncating would score a different unit, so this "
+            "encoding is refused by the same rule "
+            "joint_modes.verify_one_token_per_residue applies"
         )
     prefix = int(boundary.conditioning_id)
     if prefix in target_ids:
@@ -373,6 +402,26 @@ def _observed_floating_dtypes(model: Any) -> list[str]:
     )
 
 
+def _declared_storage_dtype(config: Any) -> str:
+    """The dtype the checkpoint itself declares, or ``"undeclared"``.
+
+    Read from the config's instance dict because ``dtype`` is the current
+    transformers spelling and ``torch_dtype`` the older one, and because reading
+    the attribute would log a deprecation warning for a value that is also the
+    storage dtype. Absent keys mean the checkpoint declares nothing, which is
+    the GPT-2 family's normal case and not a float32 claim.
+    """
+
+    fields = getattr(config, "__dict__", None)
+    if not isinstance(fields, dict):
+        return "undeclared"
+    for name in ("dtype", "torch_dtype"):
+        value = fields.get(name)
+        if value is not None:
+            return str(value).removeprefix("torch.")
+    return "undeclared"
+
+
 def _refuse_autocast(torch_mod: Any) -> None:
     enabled = bool(torch_mod.is_autocast_enabled())
     cuda_enabled = False
@@ -385,7 +434,7 @@ def _refuse_autocast(torch_mod: Any) -> None:
 
 
 class TextAAFitnessScorer:
-    """Summed target-token log-likelihood under a declared text-AA boundary.
+    """Summed per-residue log-likelihood under a declared text-AA boundary.
 
     Production scoring is always ``batch_size=1``. A public call may contain
     several sequences, including mixed lengths, repeats, and the empty list;
@@ -396,8 +445,9 @@ class TextAAFitnessScorer:
 
     score_description = (
         "raw uppercase AA20 string after one declared document-boundary token; "
-        "summed conditional log-likelihood of every target token, no length "
-        "normalisation, prefix and trailing EOS not scored"
+        "summed conditional log-likelihood of every target token, which is "
+        "exactly one per residue, no length normalisation, prefix and trailing "
+        "EOS not scored"
     )
     scoring_stratum = STRATUM_N_TO_C
 
@@ -434,9 +484,12 @@ class TextAAFitnessScorer:
         observed = _observed_floating_dtypes(model)
         if observed != ["float32"]:
             raise ValueError(
-                "text-AA scoring loads float32 from the checkpoint; "
-                f"observed {observed}. BF16/FP16 weights cast with .float() "
-                "are refused"
+                "text-AA scoring runs in float32, so every floating parameter "
+                f"of the bound model must be float32; observed {observed}. This "
+                "checks the model handed to the scorer, not how the checkpoint "
+                "was stored: a BF16/FP16-stored checkpoint that the loader "
+                "upcast is permitted, and its declared storage dtype is "
+                "recorded as facts['storage_torch_dtype']"
             )
         vocab = int(model.get_input_embeddings().num_embeddings)
         self.vocab_size = vocab
@@ -668,6 +721,11 @@ def load_text_aa_scorer(
     the already-vendored local ``configuration_bygpt5`` /
     ``modeling_bygpt5`` / ``tokenization_bygpt5`` files are accepted. Weights
     are not downloaded and the checkpoint directory is not modified.
+
+    The checkpoint is read with ``torch_dtype=torch.float32``, so a checkpoint
+    stored in BF16/FP16 is upcast and scored as float32. What is enforced is the
+    loaded parameter dtype -- exactly ``float32`` -- not the storage dtype, which
+    is recorded as ``facts['storage_torch_dtype']`` instead of being refused.
     """
 
     import torch
@@ -689,6 +747,7 @@ def load_text_aa_scorer(
     trust = bool(spec.trust_remote_code)
     model_type = str(getattr(config, "model_type", "") or "")
     tokenizer_class = type(tokenizer).__name__
+    storage_dtype = _declared_storage_dtype(config)
 
     loaded = AutoModelForCausalLM.from_pretrained(
         str(resolved),
@@ -720,6 +779,7 @@ def load_text_aa_scorer(
         "device": device,
         "dtype_requested": "float32",
         "dtype_observed": observed,
+        "storage_torch_dtype": storage_dtype,
         "tokenizer_class": tokenizer_class,
         "model_type": model_type,
         "conditioning_kind": spec.conditioning_kind,
@@ -736,7 +796,9 @@ def load_text_aa_scorer(
         "strict_loading_diagnostics": diagnostics,
         "experiment_admitted": False,
         "facts_source": (
-            "read back from the loaded tokenizer, model config, and parameters"
+            "read back from the loaded tokenizer, model config, and parameters; "
+            "storage_torch_dtype is the checkpoint's declared dtype and is not "
+            "the inference dtype"
         ),
         **_relative_position_facts(config, model_type=model_type),
     }
