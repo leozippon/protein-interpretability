@@ -3061,3 +3061,7 @@ Added `campaign_rita_xl_frozen_analyse.tsv` and `campaign_protgpt3_native_gate.t
 ## 2026-09-17 — ProtGPT3 native gate and ProteinGym enter the summary
 
 Native eight-block identification is PASS (minimum displacement-corrected lower bound +0.8563). Native ProteinGym is admitted: MODEL − LOOKUP −0.0512 [−0.0791, −0.0246], `indeterminate`, 201/163. Gate non-identification no longer withholds later cells. No pod names recorded.
+
+## 2026-09-18 — MegaScale non-text fill is annotation, not a new score wave
+
+`summary.md` now carries the existing stage-29 MegaScale cells for every non-text main-table arm except ZymCTRL, Galactica and InstructProtein. The last two have no stage-29 door and were not given a new scorer. Uninterpretable control failures are recorded rather than dropped. No pod names recorded.
