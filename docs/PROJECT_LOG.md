@@ -3073,3 +3073,7 @@ Stage 29 reuses the ProteinGym rendering scorers for Galactica (float32) and Ins
 ## 2026-09-18 — MegaScale Galactica / InstructProtein queue
 
 Launched from freeze `20260918004837_b3cb66ec0963` snapshot copy. Slot 1 scoring. No verdict yet. No pod names recorded.
+
+## 2026-09-18 — Release the idle 1-GPU allocation
+
+Confirmed 0 MiB / 0% and no experiment process, then deleted the idle 1-GPU job. The 4-GPU allocation remains and still holds the MegaScale Galactica / InstructProtein queue. No pod names recorded.
