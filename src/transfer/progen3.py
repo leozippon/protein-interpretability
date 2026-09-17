@@ -504,17 +504,22 @@ def scored_logits(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """``(logits, targets, mask)`` aligned for next-token scoring, logits in fp32.
 
-    The shift and the pad mask are declared once here because every downstream
-    number -- NLL, KL, every ablation effect -- is taken through them, and an
-    off-by-one on either produces a plausible number rather than an error.
-    ``targets`` is every non-pad label after the first position, which is the
-    convention the checkpoint's published figures were measured under.
+    The shift and the non-residue mask are declared once here because every
+    downstream number -- NLL, KL, every ablation effect -- is taken through them,
+    and an off-by-one on either produces a plausible number rather than an error.
+    ``targets`` is every label after the first position and ``mask`` selects the
+    residues among them: ``prepare_clm`` places its ``"1"`` marker, the ``"2"``
+    terminator and ``<eos>`` inside the batch's labels, so without the mask those
+    three positions are scored on every record of the panel's only arm that
+    carries them, and no comparable arm scores any of its markers (ProGen2's
+    direction marker is position 0 and therefore never a target; ProtGPT2's,
+    ZymCTRL's and ProteinGLM's renderings carry no terminal marker at all).
     """
 
     output = forward(pg, batch)
     labels = batch["labels"]
     targets = labels[..., 1:]
-    mask = (labels != pg.config.pad_token_id)[..., 1:]
+    mask = residue_target_mask(pg, labels)
     return output.logits[..., :-1, :].float(), targets, mask
 
 
@@ -647,6 +652,26 @@ def self_check(pg: ProGen3, *, batch_size: int = 8) -> dict[str, Any]:
 NON_RESIDUE_TOKENS = ("<pad>", "<bos>", "<eos>", "<mask>", "1", "2")
 
 
+def non_residue_token_ids(pg: ProGen3) -> tuple[int, ...]:
+    """The ids :data:`NON_RESIDUE_TOKENS` names, in that declaration's order.
+
+    The single resolution of that declaration, for the two spans that have to
+    agree about which positions of a batch are not residues: the one
+    reconstruction statistics are read on, :func:`content_mask`, and the one a
+    likelihood is scored on, :func:`residue_target_mask`.
+    """
+
+    vocabulary = pg.tokenizer.get_vocab()
+    absent = [name for name in NON_RESIDUE_TOKENS if name not in vocabulary]
+    if absent:
+        raise RuntimeError(
+            f"the ProGen3 tokenizer carries no {absent}; the residue mask cannot "
+            "be built and the scored span would silently include non-residue "
+            "positions"
+        )
+    return tuple(int(vocabulary[name]) for name in NON_RESIDUE_TOKENS)
+
+
 def content_mask(pg: ProGen3, input_ids: torch.Tensor) -> torch.Tensor:
     """Residue positions: everything but padding and the sequence markers.
 
@@ -657,17 +682,25 @@ def content_mask(pg: ProGen3, input_ids: torch.Tensor) -> torch.Tensor:
     (Appendix B rule 12).
     """
 
-    vocabulary = pg.tokenizer.get_vocab()
-    absent = [name for name in NON_RESIDUE_TOKENS if name not in vocabulary]
-    if absent:
-        raise RuntimeError(
-            f"the ProGen3 tokenizer carries no {absent}; the residue mask cannot "
-            "be built and the reconstruction statistics would silently include "
-            "non-residue positions"
-        )
     mask = torch.ones_like(input_ids, dtype=torch.bool)
-    for name in NON_RESIDUE_TOKENS:
-        mask &= input_ids != vocabulary[name]
+    for value in non_residue_token_ids(pg):
+        mask &= input_ids != value
+    return mask
+
+
+def residue_target_mask(pg: ProGen3, labels: torch.Tensor) -> torch.Tensor:
+    """Mask over next-token targets: ``True`` where the target is a residue.
+
+    Column ``q`` governs the prediction of ``labels[q + 1]``, so the mask has one
+    fewer column than ``labels``. Built from :func:`non_residue_token_ids`, so the
+    scored span and :func:`content_mask`'s reconstruction span are the same span
+    read at a different offset, rather than two rules that can drift apart.
+    """
+
+    targets = labels[..., 1:]
+    mask = torch.ones_like(targets, dtype=torch.bool)
+    for value in non_residue_token_ids(pg):
+        mask &= targets != value
     return mask
 
 
@@ -893,7 +926,7 @@ def n_to_c_target_rows(
             )
         labels = batch["labels"][0]
         targets = labels[1:]
-        mask = labels[1:] != pg.config.pad_token_id
+        mask = residue_target_mask(pg, labels)
         ids = targets[mask].detach().cpu().numpy().astype(np.int64)
         if ids.size < 1:
             raise ValueError("a ProGen3 record produced no scored N-to-C targets")

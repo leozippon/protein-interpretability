@@ -56,6 +56,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.transfer.progen3 import (  # noqa: E402
+    NON_RESIDUE_TOKENS,
     SELF_CHECK_HALF_WIDTH,
     SELF_CHECK_REFERENCES,
     Component,
@@ -65,8 +66,12 @@ from src.transfer.progen3 import (  # noqa: E402
     components,
     convert_megablocks_state_dict,
     moe_intercept,
+    n_to_c_target_rows,
+    non_residue_token_ids,
     release_shards,
     released_state_dict,
+    residue_target_mask,
+    scored_logits,
     self_check_reference,
     strict_load,
 )
@@ -899,6 +904,156 @@ class TheReferenceArmCertifiesItsTapLikeEveryArmComparedAgainstIt(unittest.TestC
         self.assertIn("post_attention_layernorm input", target["identity_verified"])
         self.assertIn("verified exactly on the live forward pass", target["identity_verified"])
         self.assertTrue(target["block_layout"].startswith("serial"))
+
+
+#: A tokenizer and a rendering small enough to state the scored span on.
+#:
+#: The ids follow the released vocabulary's arrangement: padding and the special
+#: tokens first, then the direction markers as **ordinary vocabulary entries** --
+#: which is why the span cannot be built from ``all_special_ids`` -- then the
+#: residues. ``_ClmPreparer`` renders exactly what the released
+#: ``ProGen3BatchPreparer.prepare_clm`` renders, ``<bos>`` + ``"1"`` + sequence +
+#: ``"2"`` + ``<eos>``, with ``labels`` identical to ``input_ids``.
+MARKER_VOCAB = {
+    "<pad>": 0,
+    "<bos>": 1,
+    "<eos>": 2,
+    "<mask>": 3,
+    "1": 4,
+    "2": 5,
+    "A": 6,
+    "C": 7,
+    "D": 8,
+    "E": 9,
+    "F": 10,
+}
+
+#: ``ACDEF`` under that rendering: the residue ids, and the labels one target
+#: column is shifted from.
+RESIDUE_IDS = [6, 7, 8, 9, 10]
+N_TO_C_LABELS = [1, 4, 6, 7, 8, 9, 10, 5, 2]
+
+
+class _MarkerTokenizer:
+    def get_vocab(self) -> dict[str, int]:
+        return dict(MARKER_VOCAB)
+
+
+class _ClmPreparer:
+    """The released CLM rendering, for one short record."""
+
+    def __init__(self) -> None:
+        self.tokenizer = _MarkerTokenizer()
+
+    def get_batch_kwargs(self, sequences, *, device, reverse=False):
+        rows = []
+        for sequence in sequences:
+            text = "1" + sequence + "2"
+            if reverse:
+                text = text[::-1]
+            rows.append(
+                [MARKER_VOCAB["<bos>"]]
+                + [MARKER_VOCAB[character] for character in text]
+                + [MARKER_VOCAB["<eos>"]]
+            )
+        width = max(len(row) for row in rows)
+        ids = torch.tensor(
+            [row + [MARKER_VOCAB["<pad>"]] * (width - len(row)) for row in rows],
+            dtype=torch.long,
+        ).to(device)
+        return {"input_ids": ids, "labels": ids, "position_ids": ids.clone(), "sequence_ids": ids.clone()}
+
+
+def marker_stub() -> ProGen3:
+    """A handle whose preparer renders the released CLM format and whose model is a stub."""
+
+    return ProGen3(
+        model=_Model(1, 3, 4),
+        config=SimpleNamespace(
+            num_hidden_layers=1,
+            num_attention_heads=3,
+            hidden_size=12,
+            fused_attention_norm=False,
+            pad_token_id=0,
+        ),
+        preparer=_ClmPreparer(),
+        device=torch.device("cpu"),
+        checkpoint=Path("/nonexistent"),
+    )
+
+
+class TheScoredSpanIsTheResidues(unittest.TestCase):
+    """No marker the released rendering writes may be a scored target.
+
+    ``prepare_clm`` puts ``"1"`` inside the labels after the BOS, and ``"2"``
+    and ``<eos>`` at the end, and the author's own scorer takes every non-pad
+    label after the first position. Read that way, this lineage scores three
+    near-deterministic marker positions per record that no other arm of the
+    protein side scores: ProGen2's direction marker is position 0 and is never a
+    target, and ProtGPT2's, ZymCTRL's, ProteinGLM's and the residue-level arms'
+    renderings carry no terminal marker at all. Under a held-out unigram of the
+    scored cohort that arm-specific term is priced as rare and the model assigns
+    it near-zero likelihood, so it enters the context-information figure with no
+    analogue on any arm it is compared against.
+
+    The exclusion is not restated here: the expected positions are derived from
+    :func:`src.transfer.progen3.non_residue_token_ids`, so a token that joins or
+    leaves :data:`src.transfer.progen3.NON_RESIDUE_TOKENS` moves these assertions
+    with it.
+    """
+
+    def test_the_scored_columns_are_the_residue_positions(self):
+        pg = marker_stub()
+        batch = pg.batch(["ACDEF"])
+        mask = residue_target_mask(pg, batch["labels"])
+        # One target column per skipped label: "1" is a target because only the
+        # BOS precedes it, and "2" and <eos> are the last two.
+        self.assertEqual(
+            mask[0].tolist(), [False, True, True, True, True, True, False, False]
+        )
+        self.assertEqual(int(mask[0].sum()), len(RESIDUE_IDS))
+
+    def test_the_targets_are_the_residues_and_no_declared_marker(self):
+        pg = marker_stub()
+        rows = n_to_c_target_rows(pg, ["ACDEF"], max_len=32)
+        self.assertEqual(rows[0].tolist(), RESIDUE_IDS)
+        for value in non_residue_token_ids(pg):
+            self.assertNotIn(int(value), rows[0].tolist())
+
+    def test_the_reversed_rendering_scores_its_residues_too(self):
+        pg = marker_stub()
+        batch = pg.batch(["ACDEF"], reverse=True)
+        self.assertEqual(batch["input_ids"][0].tolist(), [1, 5, 10, 9, 8, 7, 6, 4, 2])
+        mask = residue_target_mask(pg, batch["labels"])
+        self.assertEqual(mask[0].tolist(), [False, True, True, True, True, True, False, False])
+
+    def test_the_scoring_path_reads_the_labels_it_was_given(self):
+        # The rendering is not the fix: the ids the model is fed, and the targets
+        # the shift produces from them, still carry the markers. Only the mask
+        # that selects the scored columns moved.
+        pg = marker_stub()
+        batch = pg.batch(["ACDEF"])
+        self.assertEqual(batch["input_ids"][0].tolist(), N_TO_C_LABELS)
+        self.assertEqual(batch["labels"][0].tolist(), N_TO_C_LABELS)
+        _, targets, mask = scored_logits(pg, batch)
+        self.assertEqual(targets[0].tolist(), N_TO_C_LABELS[1:])
+        self.assertEqual(
+            mask[0].tolist(), [False, True, True, True, True, True, False, False]
+        )
+
+    def test_the_content_span_and_the_scored_span_are_one_declaration(self):
+        # name -> id, resolved once. A tokenizer the released rendering uses but
+        # that does not carry a declared marker is refused rather than masked
+        # around, which is what keeps the two spans from drifting apart.
+        pg = marker_stub()
+        self.assertEqual(
+            non_residue_token_ids(pg),
+            tuple(MARKER_VOCAB[name] for name in NON_RESIDUE_TOKENS),
+        )
+        pg.preparer.tokenizer = SimpleNamespace(get_vocab=lambda: {"<pad>": 0})
+        with self.assertRaises(RuntimeError) as caught:
+            residue_target_mask(pg, pg.batch(["ACDEF"])["labels"])
+        self.assertIn("non-residue positions", str(caught.exception))
 
 
 if __name__ == "__main__":  # pragma: no cover
