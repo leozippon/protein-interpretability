@@ -3029,3 +3029,7 @@ Recorded the stage-20 MODEL − LOOKUP analysis for the `instructprotein` arm, w
 ## 2026-09-17 — Align summary qualification numbers to EXP-R2-240
 
 `summary.md` §共同测量前提 now quotes the EXP-R2-240 combined stage-41 envelopes (ProGen3 112M/3B, RITA-xl, ProtGPT3-1.3B unidentified), the EXP-R2-151 InstructProtein residue-mass on wikitext-103, and the EXP-R2-043 ProGen2-medium truncation-curve movement. No new measurement. No pod names recorded.
+
+## 2026-09-17 — Drop the dual-mode row from shared premises
+
+`summary.md` §共同测量前提 no longer lists joint dual-mode qualification as a separate gate. Mode-wise identification stays on the eight-block context-information intervals; InstructProtein residue-token mass and Galactica reverse-protein non-identification sit on the native-interface row. Stage 21 and its artefacts are unchanged. No pod names recorded.
