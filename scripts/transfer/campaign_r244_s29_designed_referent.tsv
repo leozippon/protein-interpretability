@@ -1,0 +1,99 @@
+# EXP-R2-244 stage 29: three further protein arms on the frozen MegaScale
+# designed referent, at each arm's own declared rendering.
+#
+# THE ESTIMAND IS UNCHANGED AND NOTHING ABOUT IT IS REDRAWN. Per wild type, the
+# Spearman correlation between an arm's summed log-likelihood of a rendered
+# variant and that variant's measured folding stability, ddG_ML, which is the
+# column ProteinGym itself publishes as DMS_score for its 64 Tsuboyama assays.
+# Per-wild-type correlations are averaged inside a unit and the unit is
+# resampled; a design's unit is its design series and a natural's is WT_cluster.
+# The cohort is the census certified by EXP-R2-190 and not a draw: 412 wild types
+# and 527,204 variants in all, of which 130 certified zero-hit design wild types
+# over 40 series (36 of them wholly zero-hit) carry 110,730 variants and 266
+# natural domains over 124 WT_cluster units carry 404,114. The MIN_VARIANTS = 30
+# floor is already applied, so the smallest wild type carries 488 variants; the
+# scored set is every wild type, and the design side of the analysis is the 130
+# certified zero-hit ones. The cohort artefact is the file whose SHA-256 is
+# caaa233dc44146d4fca40087b431e49aea97d073f864b04168e0a764ad400205,
+# staged once at the run root and read by every cell through --cohort; each
+# payload recomputes that digest and stage_analyse refuses a mismatch. The
+# baselines and the free and fragment-level gates are the frozen ones
+# (results/transfer/designed_referent/baselines.json); no baseline is recomputed
+# and no threshold is retuned. The verdict rule is designed_referent.arm_verdict
+# and is applied afterwards, not here.
+#
+# WHY THE RUN EXISTS. Stage 29's door admitted a panel member or a staged scale
+# rung, so the three checkpoints below were unreachable however well their corpus
+# identification was recorded. It now admits the union of the declared protein
+# doors -- the panel, EXP-R2-224's scale rungs, EXP-R2-225's second-stage
+# checkpoints and the budget-only candidate checkpoints -- each listed one by
+# one, and still narrower than "any arm": a text arm in the same tuple is refused
+# by its own modality, a joint checkpoint reached by path is in no door, and the
+# ProGen3 rungs stay behind EXCLUDED_ARMS. Reaching an arm is not scoring it, so
+# this campaign scores it.
+#
+# WHAT EACH SCORER ACTUALLY RENDERS, read from each arm's own declaration rather
+# than assumed. rita-xl declares eos_bounded_seq and is scored by
+# rita_fitness.RitaFitnessScorer: the document boundary <EOS>, then the sequence,
+# with the tokenizer's terminal <EOS> still appended, and both marker positions
+# excluded from the scored targets because they carry one id, so the scored
+# targets are the sequence's residues. That scorer assigns no pad token and takes
+# no attention mask, so it refuses a variable-length batch and pads nothing; all
+# variants of one wild type have one length, so every batch is an equal-length
+# substitution batch and the refusal never fires. proteinglm-7b-clm declares
+# gmask_sop_eos and is scored on the served continuation: the native
+# <gmask><sop><eos> prefix and then residues 2..L, with the prefix and residue 1
+# not scored. That is a different scoring functional from a full-protein
+# left-to-right sum and is labelled as one in the payload rather than described
+# as one. protgpt3-1.3b declares bos_direction_seq and renders <|bos|> then the
+# N-to-C direction token then the sequence; both markers are prefix ids and one of
+# them, the direction token, sat inside the old all-valid sum, so the scorer now
+# resolves the scored span from target_rule(input_format) together with
+# rendering_marker_ids(arm) and the direction token is context rather than
+# content. Measured on the tiny cohort on Compute before dispatch: a 40-residue
+# sequence scores 41 positions under the old all-valid rule and 40 under the new
+# one, one column per record at the direction token's position, and the markers
+# this arm's rendering declares are ids 1 and 4.
+#
+# PRECISION IS A PROPERTY OF THE CHECKPOINT, NOT A SPEED KNOB. rita-xl and
+# proteinglm-7b-clm are float32: rita_fitness refuses any other inference
+# precision, and ProteinGLM's derived serving package refuses one too. At float32
+# a TF32 matmul is a different arithmetic rather than a faster one, so the stage
+# checks the live policy against precision_policy's single declaration and refuses
+# a mismatch, and the three observed policy fields travel in the payload. TF32 is
+# NOT enabled to shorten this run. protgpt3-1.3b is scored at the panel's
+# bfloat16. One precision per arm, and the precision each payload was taken at is
+# in its own settings block.
+#
+# THE SCORING STRATUM IS RECORDED, AND THE SIX PAYLOADS THAT PREDATE THE FIELD
+# ARE LEFT ALONE. All three payloads carry scoring_stratum
+# n_to_c_summed_log_likelihood, as the three EXP-R2-226 rungs already did; the
+# six panel payloads written on 2026-08-13 and 2026-08-25 record none, and they
+# are neither re-scored here nor edited here. Adding the field to them by hand
+# would synthesise a label no run recorded, which is the thing
+# scale_comparison.require_uniform_stratum refuses a payload for, so that refusal
+# is left standing rather than edited away. A payload that records a stratum
+# outside the three declared ones is refused at analysis.
+#
+# PROGEN3 IS NOT IN THIS CAMPAIGN AND ITS EXCLUSION IS UNCHANGED. Both rungs'
+# published scoring convention is the mean of the N-to-C and C-to-N summed
+# log-likelihoods, which is a different stratum from the left-to-right sum every
+# arm here is read under, and this stage has no bidirectional door: stage 29
+# scores by summing left-to-right next-token log-likelihoods and reaches an arm
+# through arms.arm_spec. The record already states what a ProGen3 MegaScale row
+# would require -- a route needing no ArmSpec together with the lineage's own
+# bidirectional scorer, a per-rung ARM_IDENTIFICATION entry, and stratum
+# labelling -- and opening that route also narrows a refusal that
+# 43_second_stage_capability.py reads and three guard tests pin. That is a
+# separate capability and it is not half-built here.
+#
+# CARDS. cuda:2 and cuda:3 only, which were the two cards idle on this allocation
+# when the campaign was written; cuda:0 and cuda:1 carried another agent's cell
+# and are not named here. The queue runner refuses a card that is not idle rather
+# than sharing it, so a busy card fails a cell loudly instead of corrupting two
+# measurements. Slot 1 holds the two expensive cells; slot 2 holds the cheapest.
+#
+#	slot	key	gpu	stage	label	env	expect	args
+1	r244	2	29_designed_referent.py	r244_s29_proteinglm-7b-clm	-	model_proteinglm-7b-clm.json	--stages score --arms proteinglm-7b-clm --dtype float32 --batch-size 256 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json
+1	r244	3	29_designed_referent.py	r244_s29_rita-xl	-	model_rita-xl.json	--stages score --arms rita-xl --dtype float32 --batch-size 256 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json
+2	r244	3	29_designed_referent.py	r244_s29_protgpt3-1.3b	-	model_protgpt3-1.3b.json	--stages score --arms protgpt3-1.3b --dtype bfloat16 --batch-size 512 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json
