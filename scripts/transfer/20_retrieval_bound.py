@@ -114,6 +114,7 @@ from src.transfer.arms import (  # noqa: E402
     iter_fasta,
     load_arm,
     load_arm_spec,
+    rendering_marker_ids,
     require_input_path,
     tokenize_batch,
 )
@@ -1293,7 +1294,14 @@ class _ArmScorer:
     #: Written into every payload it produces, because EXP-R2-225 forbids pooling
     #: strata and a rule about not mixing conventions needs each artefact to say
     #: which one it carries rather than leave a reader to infer it from the arm.
-    score_description = "summed log-likelihood of the rendered variant"
+    #: The estimand names the *scored targets* rather than "the rendered variant"
+    #: because a rendering may prefix ids of its own: only the first token of a
+    #: batch is context by construction, so a second prefix id is inside the sum
+    #: unless the rendering's own declaration keeps it out.
+    score_description = (
+        "summed log-likelihood of the rendered variant's scored targets; the ids "
+        "this arm's rendering declares as markers are context, not targets"
+    )
     scoring_stratum = STRATUM_N_TO_C
 
     def __init__(self, arm_name: str, args: argparse.Namespace) -> None:
@@ -1320,6 +1328,20 @@ class _ArmScorer:
             else load_arm_spec(spec, device=args.device, dtype=args.dtype)
         )
         self.context = config_context_length(self.arm.model.config)
+        # The scored span, resolved from the same two declarations the rendering
+        # is built from -- not restated here as "every real token". A rendering
+        # that prefixes markers puts them in front of the content and only the
+        # first token of a batch is context by construction, so a second marker
+        # would otherwise be scored as content: the model assigns it a high
+        # likelihood and a pooled unigram baseline prices it as rare, which is a
+        # positive contribution to every context-information reading taken over
+        # the same positions. `rendering_marker_ids` is the one place a
+        # measurement may learn which positions are not content. Resolved at
+        # construction rather than inside `log_likelihood`, so an arm whose
+        # rendering declares no resolvable marker refuses before an assay is
+        # scored instead of hours into the cell.
+        self.target_rule = target_rule(fmt)
+        self.markers = rendering_marker_ids(self.arm)
 
     def _render(self, sequences: list[str]) -> list[str]:
         # Rendering is the panel's decision, not this stage's: Appendix B rule 12
@@ -1354,7 +1376,12 @@ class _ArmScorer:
                 logp = torch.log_softmax(logits[:, :-1].float(), dim=-1)
                 targets = ids[:, 1:]
                 token = logp.gather(-1, targets.unsqueeze(-1)).squeeze(-1)
-                keep = (mask[:, 1:] * mask[:, :-1]).bool()
+                keep = sequence_target_mask(
+                    ids,
+                    mask,
+                    rule=self.target_rule,
+                    marker_token_ids=self.markers,
+                )
                 totals[start : start + len(chunk)] = (
                     (token * keep).sum(1).double().cpu().numpy()
                 )

@@ -22,6 +22,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.transfer.amino_acids import AA20  # noqa: E402
 from src.transfer.arms import INPUT_FORMAT_GMASK_SOP_EOS, arm_spec  # noqa: E402
 from src.transfer.joint_modes import RESIDUE_UNIT, resolve  # noqa: E402
 from src.transfer.scale_comparison import STRATUM_N_TO_C  # noqa: E402
@@ -90,6 +91,113 @@ def test_arm_scorer_refuses_ec_and_gmask_formats():
         stage._ArmScorer("zymctrl", args)
     with pytest.raises(ValueError, match="residues 2..L"):
         stage._ArmScorer("proteinglm-7b-clm", args)
+
+
+class _OneTokenPerResidueTokenizer:
+    """The staged ProtGPT3 tokenizer's id layout, with no vocabulary file.
+
+    Measured on the released checkpoint: pad/bos/eos/[UNK] are 0/1/2/3, the
+    direction token ``"1"`` is an **ordinary** vocabulary entry rather than a
+    special id, and each residue is exactly one token. What is stubbed is only
+    that these ids are emitted without a ``tokenizer.json``, so the test runs on
+    a host with no checkpoint staged.
+    """
+
+    pad_token_id = 0
+    bos_token_id = 1
+    bos_token = "<|bos|>"
+    eos_token_id = 2
+    unk_token_id = 3
+
+    def __init__(self) -> None:
+        self._table = {"1": 4}
+        self._table.update({residue: 5 + i for i, residue in enumerate(AA20)})
+
+    def convert_tokens_to_ids(self, token):
+        return self._table.get(token, self.unk_token_id)
+
+    def __call__(self, text, return_tensors=None):
+        ids: list[int] = []
+        if text.startswith(self.bos_token):
+            ids.append(self.bos_token_id)
+            text = text[len(self.bos_token) :]
+        ids.extend(self._table[character] for character in text)
+        return {"input_ids": ids}
+
+
+class _UniformLogits(nn.Module):
+    """Constant logits, so every scored target is worth exactly ``-log(vocab)``.
+
+    The scorer returns a sum over scored positions, so with this model the sum
+    *is* the count of scored positions times ``-log(vocab)``, and the count can
+    be read off a number without any weights.
+    """
+
+    def __init__(self, vocab: int) -> None:
+        super().__init__()
+        self.vocab = vocab
+        self.config = SimpleNamespace(max_position_embeddings=1025)
+
+    def forward(self, input_ids, attention_mask=None, use_cache=None):
+        batch, tokens = input_ids.shape
+        return SimpleNamespace(
+            logits=torch.zeros(batch, tokens, self.vocab, dtype=torch.float32)
+        )
+
+
+def test_arm_scorer_scores_residues_not_the_bos_direction_prefix(monkeypatch):
+    """Stage 20's ProteinGym cell for ProtGPT3-1.3B scores the residues only.
+
+    The rendering the door declares is ``<|bos|>`` then the N-to-C direction
+    token then the sequence, so the direction token is the *second* input token
+    and is a target under any rule that means "every real token after the
+    first". The model assigns it a high likelihood while a pooled unigram
+    baseline prices it as rare, so scoring it inflates every
+    context-information reading taken over the same positions; the exclusion has
+    to reach the stage-20 scorer, not only ``sequence_target_mask``.
+    """
+
+    stage = _stage()
+    tokenizer = _OneTokenPerResidueTokenizer()
+    arm = SimpleNamespace(
+        name="protgpt3-1.3b",
+        modality="protein",
+        spec=arm_spec("protgpt3-1.3b"),
+        tokenizer=tokenizer,
+        device="cpu",
+        model=_UniformLogits(31),
+        target_token_shuffle=None,
+    )
+    monkeypatch.setattr(stage, "load_arm_spec", lambda *a, **k: arm)
+    scorer = stage._ArmScorer(
+        "protgpt3-1.3b",
+        argparse.Namespace(device="cpu", dtype="bfloat16", batch_size=2),
+    )
+
+    assert scorer.context == 1025
+    assert scorer.markers == (1, 4)
+    assert scorer.target_rule == "all_valid"
+    assert scorer.token_lengths(["MKT"]) == [5], "two prefix tokens plus three residues"
+
+    rendered = scorer._render(["MKT"])
+    ids, mask = stage.tokenize_batch(arm, rendered, scorer.context)
+    assert ids.tolist()[0][:2] == [1, 4]
+    assert int(ids.shape[1]) == 5
+    # The difference is the direction token and nothing else: "every real token"
+    # reads 4, the arm's own declaration reads 3.
+    assert int(sequence_target_mask(ids, mask, rule="all_valid").sum()) == 4
+    assert (
+        int(
+            sequence_target_mask(
+                ids, mask, rule="all_valid", marker_token_ids=scorer.markers
+            ).sum()
+        )
+        == 3
+    )
+
+    totals = scorer.log_likelihood(["MKT", "MKTAA"])
+    assert np.allclose(totals, [-3 * np.log(31), -5 * np.log(31)])
+    assert "declares as markers are context, not targets" in scorer.score_description
 
 
 def test_ec_labels_by_sequence_refuses_conflict(tmp_path):

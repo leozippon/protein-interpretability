@@ -674,7 +674,8 @@ def test_stage_20_labels_the_two_scoring_strata_it_can_produce():
     assert stage._ProGen3Scorer.scoring_stratum == C.STRATUM_BIDIRECTIONAL
     assert (
         stage._ArmScorer.score_description
-        == "summed log-likelihood of the rendered variant"
+        == "summed log-likelihood of the rendered variant's scored targets; the ids "
+        "this arm's rendering declares as markers are context, not targets"
     )
     assert "bidirectional" in stage._ProGen3Scorer.score_description
 

@@ -97,9 +97,26 @@ def test_loader_record_context_comes_from_checkpoint_config_not_a_1024_literal(
     stage = _stage()
     loaded: list[tuple[str, str]] = []
 
+    class _DirectionMarkerTokenizer:
+        """Just enough tokenizer for `rendering_marker_ids` on `n_to_c_control`.
+
+        ProGen2 declares only ``<|pad|>``/``<|bos|>``/``<|eos|>`` special, so its
+        direction marker is an ordinary vocabulary entry whose id has to be
+        looked up and can come back as the unknown id. This stub answers that one
+        lookup; what the test above it checks is the context record, not the id.
+        """
+
+        unk_token_id = 0
+
+        def convert_tokens_to_ids(self, token):
+            assert token == "1"
+            return 3
+
     class _FakeArm:
         def __init__(self, name: str, n_positions: int) -> None:
             self.name = name
+            self.spec = arm_spec(name)
+            self.tokenizer = _DirectionMarkerTokenizer()
             self.model = SimpleNamespace(config=SimpleNamespace(n_positions=n_positions))
 
     def _load_arm(name, device="cpu", dtype="bfloat16"):
