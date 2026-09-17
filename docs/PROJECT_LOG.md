@@ -3033,3 +3033,7 @@ Recorded the stage-20 MODEL − LOOKUP analysis for the `instructprotein` arm, w
 ## 2026-09-17 — Drop the dual-mode row from shared premises
 
 `summary.md` §共同测量前提 no longer lists joint dual-mode qualification as a separate gate. Mode-wise identification stays on the eight-block context-information intervals; InstructProtein residue-token mass and Galactica reverse-protein non-identification sit on the native-interface row. Stage 21 and its artefacts are unchanged. No pod names recorded.
+
+## 2026-09-17 — Drop the scoring-direction premise row
+
+`summary.md` §共同测量前提 no longer treats scoring direction as a separate convention keyed to ProGen3's official bidirectional mean. The default is N-to-C summation, recorded on the precision/numeric row; mixed directions still do not combine. No pod names recorded.
