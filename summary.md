@@ -56,6 +56,7 @@
 | 计分跨度规则 | 所有计分臂；十三档纯文本氨基酸串对照（`text-aa-fp32-v1`） | 渲染声明的标记位置不计分；按残基计分处一个残基必须对应一个 token，合并跨度按不同泛函拒绝 | 合并跨度相对逐残基计分的差异在 galactica-1.3b 上实测约 2.9 nats/token（EXP-R2-151）；十三档文本串对照中只有 ByGPT5 三档为字节级（约一字一 token），其余十档因合并不能作逐残基对照 | 硬缺陷而不是约定：`joint_modes.verify_one_token_per_residue` 在计分 token 数不等于残基数时抛出，`text_aa_fitness` 直接拒绝合并编码；ProtGPT3 的 `<\|bos\|>` 加方向 token、RITA-xl 前置的文档边界 `<EOS>`、ProGen3 的 `<bos>…<eos>` 都按此排除标记位置 |
 | 精度 / 数值约定 | 所有计分臂；ProGen2 各档、ProteinGLM-7B-CLM、RITA-xl 与 Galactica 蛋白模式的精度已在主表声明 | 存储 dtype 与计分 dtype 分别声明、允许不同，并逐端点固定 | ProGen2-small 在 bfloat16 相对 float32 的代价约 +8.7e-3 nats/residue；ProGen2-medium 的同一量在 bfloat16 下移动约 16%（0.6266 → 0.7293 nats），由此单独按 float32 计分；ProteinGym 阶段一律 bfloat16 | 精度是可比性条件而不是实现细节：同一谱系的梯子若各档精度不同，比较的是算术而不是 checkpoint；一个端点固定一个精度 |
 | 抽样种子纪律 | 所有抽取语料的阶段；文本 OpenWebText，蛋白 Swiss-Prot 与带 EC 标签的 UniProt | 语料抽取是带种子的置换，不是文件顺序前缀：`protein_cohort` 与 `text_cohort`（及其 repeat 版本）在声明的 draw seed 下置换后再取 `--cohort-skip` 窗口，种子写入充分统计量 `seeds.cohort_draw` | 文件顺序前缀是语料的一个区域而不是样本：生物语料按 cluster 排序，网页语料按 shard 排序；`--cohort-draw-seed 0` 的文件顺序变体只在对照中记录 | 前提而非逐实验选择：`tests/test_cohort_draw_contract.py` 静态检查每个抽取语料的阶段的调用点，新增未声明 draw seed 的抽取即失败 |
+| 计分方向约定 | 所有实际计分的臂；ProGen3 112M/3B 是唯一采用双向约定的谱系 | 同一模型的似然可有两种以上函数式：正向（N→C）求和、反向（C→N）求和、两者逐位置平均、掩码或伪似然。一次比较内各臂必须同层，不同层不汇总、不并排相减 | 主表其余臂为正向求和；ProGen3 官方为双向平均。ProGen3 在设计稳定性测量中按正向计分（用户决定），因此它的设计稳定性读数（正向）与它的 ProteinGym 读数（双向）是两个量，不可互相比较；该测量在产物中记录计分层 | 不同层的数字名称相同而量不同，跨层只能并排报告；产物未记录计分层时后继分析拒绝而不是推断 |
 
 ## 方向一：比较模型具有什么能力
 
