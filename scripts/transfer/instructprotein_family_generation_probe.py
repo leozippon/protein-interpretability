@@ -450,6 +450,8 @@ def run_anchor(args: argparse.Namespace) -> dict[str, Any]:
                 ),
             },
             "hmmscan": scan,
+            "hmmer": tool.record(),
+            "pfam": database.record(),
             "pfam_threshold": PFAM_THRESHOLD,
         }
     )
@@ -721,6 +723,8 @@ def run_score(args: argparse.Namespace) -> dict[str, Any]:
             "oracle": {
                 "engine": "HMMER 3.4 hmmscan",
                 "database": "staged Pfam-A release",
+                "hmmer": tool.record(),
+                "pfam": database.record(),
                 "threshold": PFAM_THRESHOLD,
                 "threshold_note": (
                     "Pfam-A's own curated per-family gathering thresholds (--cut_ga), the "
