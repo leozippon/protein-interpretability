@@ -87,13 +87,18 @@
 # 43_second_stage_capability.py reads and three guard tests pin. That is a
 # separate capability and it is not half-built here.
 #
-# CARDS. cuda:2 and cuda:3 only, which were the two cards idle on this allocation
-# when the campaign was written; cuda:0 and cuda:1 carried another agent's cell
-# and are not named here. The queue runner refuses a card that is not idle rather
-# than sharing it, so a busy card fails a cell loudly instead of corrupting two
-# measurements. Slot 1 holds the two expensive cells; slot 2 holds the cheapest.
+# CARDS. cuda:0 and cuda:3 only, which were the two cards idle on this
+# allocation when the campaign was written; cuda:1 and cuda:2 carried another
+# agent's running cells and are not named here. An earlier revision of this file
+# named cuda:2 and cuda:3, and cuda:2 acquired a 4,342 MiB cell between that
+# check and this one -- which is why the cards are re-read in the pod immediately
+# before dispatch rather than taken from the check before it. The queue runner
+# refuses a card that is not idle rather than sharing it, so a card that goes busy
+# after this line is written fails a cell loudly instead of corrupting two
+# measurements, and a refused cell is not complete and is re-dispatched rather
+# than counted. Slot 1 holds the two expensive cells; slot 2 holds the cheapest.
 #
 #	slot	key	gpu	stage	label	env	expect	args
-1	r244	2	29_designed_referent.py	r244_s29_proteinglm-7b-clm	-	model_proteinglm-7b-clm.json	--stages score --arms proteinglm-7b-clm --dtype float32 --batch-size 256 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json
+1	r244	0	29_designed_referent.py	r244_s29_proteinglm-7b-clm	-	model_proteinglm-7b-clm.json	--stages score --arms proteinglm-7b-clm --dtype float32 --batch-size 256 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json
 1	r244	3	29_designed_referent.py	r244_s29_rita-xl	-	model_rita-xl.json	--stages score --arms rita-xl --dtype float32 --batch-size 256 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json
-2	r244	3	29_designed_referent.py	r244_s29_protgpt3-1.3b	-	model_protgpt3-1.3b.json	--stages score --arms protgpt3-1.3b --dtype bfloat16 --batch-size 512 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json
+2	r244	0	29_designed_referent.py	r244_s29_protgpt3-1.3b	-	model_protgpt3-1.3b.json	--stages score --arms protgpt3-1.3b --dtype bfloat16 --batch-size 512 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json
