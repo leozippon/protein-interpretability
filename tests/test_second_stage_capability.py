@@ -872,62 +872,87 @@ def test_a_model_that_cannot_beat_its_own_anagram_is_refused():
 
 
 def test_stage_29_admits_no_arm_whose_identification_it_does_not_declare():
-    """The wall behind the closed door, asserted so it can never be opened onto.
+    """The wall behind the door, asserted so it can never be opened onto.
 
     ``29_designed_referent.py`` indexes ``ARM_IDENTIFICATION[name]`` directly
     after admitting an arm, so an arm it admits without an entry there is a
-    ``KeyError`` a long way into a scored run. That is exactly the defect class
-    the EXP-R2-225 doors were left closed to avoid, and it is cheaper to assert
-    the invariant than to guard the index: every arm the stage admits must
-    declare its corpus identification, whatever the admitted set becomes.
+    ``KeyError`` a long way into a scored run. The admitted set is that stage's
+    own ``ADMITTED_PROTEIN_DOORS``, so this asserts the invariant over what the
+    stage actually admits rather than over a list restated here, and it asserts
+    the two identification tables stay disjoint so neither door can be indexed
+    with a name the other admitted.
     """
 
     from src.transfer import designed_referent as D
-    from src.transfer.arms import PANEL, STAGED_SCALE_ARMS, arm_spec
+    from src.transfer.arms import arm_spec
 
+    stage = _load_stage("29_designed_referent.py")
     admitted = [
         name
-        for name in list(PANEL) + list(STAGED_SCALE_ARMS)
+        for _, members in stage.ADMITTED_PROTEIN_DOORS
+        for name in members
         if arm_spec(name).modality == "protein" and name not in D.EXCLUDED_ARMS
     ]
     assert admitted, "the admitted set must not be empty or this is vacuous"
     missing = [name for name in admitted if name not in D.ARM_IDENTIFICATION]
     assert missing == [], f"admitted by stage 29 with no ARM_IDENTIFICATION: {missing}"
+    assert set(D.ARM_IDENTIFICATION).isdisjoint(D.JOINT_LINEAGE_IDENTIFICATION)
 
 
-def test_stage_29_declares_the_identification_each_new_arm_needs():
-    """A missing entry is a ``KeyError``, and two of the three cannot be signed.
+def test_stage_29_door_admits_exactly_the_declared_protein_doors():
+    """What the door admits, what it refuses, and on which ground.
 
-    ``proteinglm-7b-clm`` read UniRef50/S + UniRef90 + ColabFoldDB against a
-    certificate that searched UniRef50 alone, so its residual runs in the
-    model-favouring direction. RITA-xl declares a corpus family whose relation to
-    the searched snapshot is evidenced in neither direction, and ProtGPT3-1.3B
-    declares none at all, so neither residual can be signed. None of the three is
-    reachable yet: the door is unchanged by this change.
+    EXP-R2-225's and the candidate campaign's protein checkpoints are now
+    reachable, and their text checkpoints in the same tuples are not; a joint
+    checkpoint reached by path is in no door at all; and the ProGen3 rungs stay
+    behind the exclusion that records their published convention.
     """
 
     from src.transfer import designed_referent as D
+    from src.transfer.arms import arm_spec
 
     stage = _load_stage("29_designed_referent.py")
-    assert (
-        D.ARM_IDENTIFICATION["proteinglm-7b-clm"]["identification"]
-        == "unbounded_in_the_model_favouring_direction"
-    )
-    assert (
-        D.ARM_IDENTIFICATION["protgpt3-1.3b"]["identification"]
-        == "undeclared_corpus_no_exclusion_possible"
-    )
-    assert (
-        D.ARM_IDENTIFICATION["rita-xl"]["identification"]
-        == "declared_family_relation_unestablished"
-    )
-    assert all(
-        entry["identification"] in D.IDENTIFICATION_CLASSES
-        for entry in list(D.ARM_IDENTIFICATION.values())
-        + list(D.JOINT_LINEAGE_IDENTIFICATION.values())
-    )
-    assert "bidirectional" in D.EXCLUDED_ARMS["progen3-3b"]
-    for name in ("progen3-3b", "rita-xl", "proteinglm-7b-clm", "qwen2.5-7b"):
+    for name in ("protgpt3-1.3b", "rita-xl", "proteinglm-7b-clm"):
         assert name not in stage.DEFAULT_ARMS, name
-    assert stage.DTYPES == ("bfloat16", "float16", "float32")
-    assert stage._ArmLikelihood.scoring_stratum == C.STRATUM_N_TO_C
+        assert stage._admitted_door(name) is not None, name
+        assert arm_spec(name).modality == "protein", name
+        assert name in D.ARM_IDENTIFICATION, name
+    for name in ("qwen2.5-7b", "qwen2.5-32b", "qwen3-8b-base"):
+        assert stage._admitted_door(name) is not None, name
+        assert arm_spec(name).modality == "text", name
+    for name in ("progen3-3b", "progen3-112m", "galactica-6.7b", "instructprotein"):
+        assert stage._admitted_door(name) is None, name
+    assert "bidirectional" in D.EXCLUDED_ARMS["progen3-3b"]
+    assert "rita-xl" not in D.EXCLUDED_ARMS
+
+
+def test_stage_29_scorer_routes_are_the_declared_ones():
+    """Each new arm reaches the scorer its own declaration selects.
+
+    ``_open_scorer`` keys on ``ArmSpec`` rather than on an arm name, so what has
+    to hold is that each arm's declaration selects one route and that the generic
+    route refuses the other two before a checkpoint is loaded -- a refusal that
+    answers in milliseconds rather than hours into a cell. ``float32`` must be an
+    admissible precision or the two arms that require it cannot be dispatched at
+    all, and ``rita_fitness`` requires exactly that one.
+    """
+
+    from src.transfer.arms import (
+        INPUT_FORMAT_BOS_DIRECTION_SEQ,
+        INPUT_FORMAT_GMASK_SOP_EOS,
+        arm_spec,
+    )
+    from src.transfer import rita_fitness as RITA
+
+    stage = _load_stage("29_designed_referent.py")
+    assert arm_spec("proteinglm-7b-clm").input_format == INPUT_FORMAT_GMASK_SOP_EOS
+    assert arm_spec("rita-xl").architecture == "rita"
+    assert arm_spec("protgpt3-1.3b").input_format == INPUT_FORMAT_BOS_DIRECTION_SEQ
+    assert stage._ArmLikelihood.score_description.endswith(
+        "markers are context, not targets"
+    )
+    assert stage._ProteinGLMLikelihood.scoring_stratum == C.STRATUM_N_TO_C
+    assert RITA.INFERENCE_DTYPE in stage.DTYPES
+    for name in ("zymctrl", "proteinglm-7b-clm", "rita-xl"):
+        with pytest.raises(ValueError):
+            stage._ArmLikelihood(name, device="cpu", dtype="float32", batch_size=1)

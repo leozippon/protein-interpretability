@@ -71,17 +71,24 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.transfer import designed_referent as D  # noqa: E402
 from src.transfer.arms import (  # noqa: E402
+    INPUT_FORMAT_GMASK_SOP_EOS,
     PANEL,
     REPO,
+    STAGED_CANDIDATE_ARMS,
     STAGED_SCALE_ARMS,
+    STAGED_SECOND_STAGE_ARMS,
     Cohort,
     arm_spec,
     config_context_length,
     load_arm,
     load_arm_spec,
+    rendering_marker_ids,
     tokenize_batch,
 )
 from src.transfer import joint_lineage as L  # noqa: E402
+from src.transfer import proteinglm as PGLM  # noqa: E402
+from src.transfer import rita_fitness as RITA  # noqa: E402
+from src.transfer.scoring import sequence_target_mask, target_rule  # noqa: E402
 from src.transfer.scale_comparison import (  # noqa: E402
     SCORING_STRATA,
     STRATUM_N_TO_C,
@@ -116,6 +123,23 @@ QUALIFICATION = _load_stage("adaptation_stage_qualification.py")
 
 SCHEMA_VERSION = D.SCHEMA_VERSION
 
+#: The declared protein doors stage 29 admits, each a campaign's own name for a
+#: set of staged checkpoints: EXP-R2-224's scale rungs, EXP-R2-225's second-stage
+#: checkpoints and the budget-only candidate checkpoints, beside the first-round
+#: panel. Listed one by one rather than folded into a predicate, so a door added
+#: later is admitted by a decision recorded here and not by matching a shape, and
+#: narrower than "any arm in ``arms.py``": a text arm is refused by
+#: :func:`~src.transfer.arms.arm_spec`'s modality, a joint checkpoint reached by
+#: path is in none of these tuples, and the ProGen3 rungs stay behind
+#: :data:`~src.transfer.designed_referent.EXCLUDED_ARMS` because their published
+#: convention is a different stratum.
+ADMITTED_PROTEIN_DOORS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("a protein panel arm", tuple(PANEL)),
+    ("a staged scale rung", tuple(STAGED_SCALE_ARMS)),
+    ("a staged second-stage arm", tuple(STAGED_SECOND_STAGE_ARMS)),
+    ("a staged candidate arm", tuple(STAGED_CANDIDATE_ARMS)),
+)
+
 #: The inference precisions this stage may be asked for. Declared once because
 #: two of the arms it admits require float32 by their own checkpoint's terms --
 #: ``rita_fitness`` refuses any other precision and ProteinGLM's derived serving
@@ -146,6 +170,15 @@ HOLDOUT_ROOT = REPO / "data/kmer_background/uniref50_holdout"
 #: draws are independent samples of the same corpus, so a cross-entropy that
 #: moves between them is telling the reader the estimate is not settled.
 HOLDOUT_DRAWS: tuple[str, ...] = ("a", "b")
+
+
+def _admitted_door(name: str) -> str | None:
+    """Which declared protein door admits ``name``, or ``None`` if none does."""
+
+    for label, members in ADMITTED_PROTEIN_DOORS:
+        if name in members:
+            return label
+    return None
 
 
 def _read(path: Path) -> dict[str, Any]:
@@ -436,14 +469,21 @@ class _ArmLikelihood:
     """Summed log-likelihood of a sequence under one arm, in its own rendering.
 
     The convention is stage 20's: render through ``Cohort.input_strings`` so the
-    panel decides the input format, then sum the token log-probabilities over
-    every position whose target and context are both real. ProtGPT2's FASTA
-    wrapping is worth 1.42 nats/token and is not this stage's decision to make.
-    What was computed travels in :attr:`score_description` and under which
-    convention the sum was taken in :attr:`scoring_stratum`.
+    panel decides the input format, then sum the token log-probabilities over the
+    positions the arm's own rendering declares as content. ProtGPT2's FASTA
+    wrapping is worth 1.42 nats/token and is not this stage's decision to make,
+    and neither is the scored span: a rendering that prefixes markers puts them in
+    front of the content, and only the first token of a batch is context by
+    construction, so a second marker -- ProtGPT3's direction token -- would
+    otherwise be scored as content. What was computed travels in
+    :attr:`score_description` and under which convention the sum was taken in
+    :attr:`scoring_stratum`.
     """
 
-    score_description = "summed log-likelihood of the rendered variant"
+    score_description = (
+        "summed log-likelihood of the rendered variant's scored targets; the ids "
+        "this arm's rendering declares as markers are context, not targets"
+    )
     scoring_stratum = STRATUM_N_TO_C
 
     def __init__(self, name: str, *, device: str, dtype: str, batch_size: int) -> None:
@@ -453,12 +493,39 @@ class _ArmLikelihood:
         self.name = name
         self.batch_size = batch_size
         spec = arm_spec(name)
+        if spec.input_format == "ec_conditioned":
+            raise ValueError(
+                f"{name}: EC-conditioned scoring is not this door's; the estimand "
+                "is undefined on a de novo referent that carries no EC number"
+            )
+        if spec.input_format == INPUT_FORMAT_GMASK_SOP_EOS:
+            raise ValueError(
+                f"{name}: ProteinGLM scoring is residues 2..L under its native "
+                "prefix; _ArmLikelihood would score the prefix and residue 1"
+            )
+        if spec.architecture == "rita":
+            raise ValueError(
+                f"{name}: RITA scoring is its own native encoder, because its "
+                "tokenizer declares no pad token and tokenize_batch refuses every "
+                "batch; _ArmLikelihood cannot render it"
+            )
+        if spec.architecture == "progen3":
+            raise ValueError(
+                f"{name}: ProGen3 is scored bidirectionally through its own "
+                "loader; tokenize_batch would drop sequence_ids and AutoModel "
+                "would score random experts"
+            )
         self.arm = (
             load_arm(name, device=device, dtype=dtype)
             if name in PANEL
             else load_arm_spec(spec, device=device, dtype=dtype)
         )
         self.context = config_context_length(self.arm.model.config)
+        # Resolved at construction rather than inside log_likelihood, so an arm
+        # whose rendering declares no resolvable marker refuses before a wild type
+        # is scored instead of hours into the cell.
+        self.target_rule = target_rule(spec.input_format)
+        self.markers = rendering_marker_ids(self.arm)
 
     def render(self, sequences: list[str]) -> list[str]:
         cohort = Cohort(
@@ -488,7 +555,145 @@ class _ArmLikelihood:
                 logp = torch.log_softmax(logits[:, :-1].float(), dim=-1)
                 targets = ids[:, 1:]
                 token = logp.gather(-1, targets.unsqueeze(-1)).squeeze(-1)
-                keep = (mask[:, 1:] * mask[:, :-1]).bool()
+                keep = sequence_target_mask(
+                    ids,
+                    mask,
+                    rule=self.target_rule,
+                    marker_token_ids=self.markers,
+                )
+                totals[start : start + len(chunk)] = (
+                    (token * keep).sum(1).double().cpu().numpy()
+                )
+        return totals
+
+    def release(self) -> None:
+        del self.arm
+        self.torch.cuda.empty_cache()
+
+
+class _RitaLikelihood:
+    """RITA-xl under its own native document rendering, at float32.
+
+    A thin adapter over :class:`src.transfer.rita_fitness.RitaFitnessScorer`,
+    which owns the encoding, the span and the arithmetic. It takes raw residue
+    strings rather than rendered text because its rendering is not a string
+    transformation this stage may re-do: the boundary is a declared token and the
+    terminal ``<EOS>`` comes from its own post-processor, and
+    ``rita_fitness._encode_native`` verifies the ids of both. Its span is the
+    sequence's residues -- the boundary is the first token and is context by
+    construction, and the terminator carries the boundary's id and is the marker
+    the rendering declares -- so a full-protein sum would fold the terminator's own
+    next-token term into a stability reading.
+
+    Batches are the arm's own equal-length substitution batches: the scorer
+    refuses a variable-length batch rather than padding, because the encoding
+    assigns no pad token and the forward pass takes no attention mask.
+    """
+
+    def __init__(self, name: str, *, device: str, dtype: str, batch_size: int) -> None:
+        self.name = name
+        self.scorer = RITA.RitaFitnessScorer(
+            checkpoint=arm_spec(name).path,
+            device=device,
+            dtype=dtype,
+            batch_size=batch_size,
+        )
+        self.context = self.scorer.context
+
+    @property
+    def score_description(self) -> str:
+        return self.scorer.score_description
+
+    @property
+    def scoring_stratum(self) -> str:
+        return self.scorer.scoring_stratum
+
+    def render(self, sequences: list[str]) -> list[str]:
+        """The records :meth:`log_likelihood` consumes: raw residue strings."""
+
+        return list(sequences)
+
+    def token_lengths(self, sequences: list[str]) -> list[int]:
+        return self.scorer.token_lengths(sequences)
+
+    def log_likelihood(self, sequences: list[str]) -> np.ndarray:
+        return self.scorer.log_likelihood(sequences)
+
+    def release(self) -> None:
+        self.scorer.release()
+
+
+class _ProteinGLMLikelihood:
+    """ProteinGLM continuation: native prefix, residues 2..L, float32.
+
+    A different scoring functional from a full-protein left-to-right sum, and
+    labelled as what it is rather than described as one: the native
+    ``<gmask><sop><eos>`` prefix and residue 1 are not scored. Stage 20's own
+    door, reproduced here because the estimand and the precision are properties of
+    the checkpoint rather than of the queue it is read on.
+
+    ``render`` returns the records :meth:`log_likelihood` consumes, which for this
+    arm are the raw residue strings: :meth:`token_lengths` must be total -- it
+    measures, it does not refuse -- so that a wild type whose rendering exceeds
+    the serving window becomes a recorded skip rather than a failed cell.
+    """
+
+    score_description = (
+        "summed log-likelihood of residues 2..L under the native "
+        "<gmask><sop><eos> prefix; residue 1 and the prefix are not scored"
+    )
+    scoring_stratum = STRATUM_N_TO_C
+
+    def __init__(self, name: str, *, device: str, dtype: str, batch_size: int) -> None:
+        import torch
+
+        if name != "proteinglm-7b-clm":
+            raise ValueError(f"ProteinGLM scoring is proteinglm-7b-clm, not {name!r}")
+        if dtype != "float32":
+            raise ValueError(
+                f"ProteinGLM scoring is float32-only; got {dtype!r}. The "
+                "checkpoint declares float32 and its derived serving package "
+                "refuses another precision"
+            )
+        spec = arm_spec(name)
+        if spec.input_format != INPUT_FORMAT_GMASK_SOP_EOS:
+            raise ValueError(
+                f"{name}: expected {INPUT_FORMAT_GMASK_SOP_EOS!r}, got "
+                f"{spec.input_format!r}"
+            )
+        self.torch = torch
+        self.name = name
+        self.batch_size = batch_size
+        self.arm = load_arm_spec(spec, device=device, dtype=dtype)
+        self.context = PGLM.CONTEXT_LENGTH
+        declared = config_context_length(self.arm.model.config)
+        if declared != self.context:
+            raise ValueError(
+                f"{name}: serving window is {self.context}, config context is "
+                f"{declared}"
+            )
+
+    def render(self, sequences: list[str]) -> list[str]:
+        return list(sequences)
+
+    def token_lengths(self, sequences: list[str]) -> list[int]:
+        return [PGLM.budget_token_length(sequence) for sequence in sequences]
+
+    def log_likelihood(self, sequences: list[str]) -> np.ndarray:
+        torch = self.torch
+        texts = [PGLM.render_budget_sequence(sequence) for sequence in sequences]
+        totals = np.empty(len(texts), dtype=np.float64)
+        rule = target_rule(INPUT_FORMAT_GMASK_SOP_EOS)
+        with torch.no_grad():
+            for start in range(0, len(texts), self.batch_size):
+                chunk = texts[start : start + self.batch_size]
+                ids, mask = tokenize_batch(self.arm, chunk, self.context)
+                ids = ids.to(self.arm.device)
+                mask = mask.to(self.arm.device)
+                keep = sequence_target_mask(ids, mask, rule=rule)
+                logits = self.arm.model(input_ids=ids, attention_mask=mask).logits
+                logp = torch.log_softmax(logits[:, :-1].float(), dim=-1)
+                token = logp.gather(-1, ids[:, 1:].unsqueeze(-1)).squeeze(-1)
                 totals[start : start + len(chunk)] = (
                     (token * keep).sum(1).double().cpu().numpy()
                 )
@@ -585,11 +790,25 @@ def _open_scorer(name: str, args: argparse.Namespace) -> tuple[Any, dict[str, An
     spec = arm_spec(name)
     if spec.modality != "protein":
         raise KeyError(f"{name} is not a protein arm")
-    if name not in PANEL and name not in STAGED_SCALE_ARMS:
-        raise KeyError(f"{name} is not a protein panel arm or a staged scale rung")
-    scorer = _ArmLikelihood(
-        name, device=args.device, dtype=args.dtype, batch_size=args.batch_size
-    )
+    door = _admitted_door(name)
+    if door is None:
+        raise KeyError(
+            f"{name} is not "
+            + ", ".join(label for label, _ in ADMITTED_PROTEIN_DOORS[:-1])
+            + f" or {ADMITTED_PROTEIN_DOORS[-1][0]}"
+        )
+    if spec.input_format == INPUT_FORMAT_GMASK_SOP_EOS:
+        scorer: Any = _ProteinGLMLikelihood(
+            name, device=args.device, dtype=args.dtype, batch_size=args.batch_size
+        )
+    elif spec.architecture == "rita":
+        scorer = _RitaLikelihood(
+            name, device=args.device, dtype=args.dtype, batch_size=args.batch_size
+        )
+    else:
+        scorer = _ArmLikelihood(
+            name, device=args.device, dtype=args.dtype, batch_size=args.batch_size
+        )
     settings = {
         "checkpoint": str(spec.path),
         "input_format": spec.input_format,
@@ -599,6 +818,7 @@ def _open_scorer(name: str, args: argparse.Namespace) -> tuple[Any, dict[str, An
         "batch_size": args.batch_size,
         "score": scorer.score_description,
         "scoring_stratum": scorer.scoring_stratum,
+        "door": door,
     }
     return scorer, settings, dict(D.ARM_IDENTIFICATION[name])
 
@@ -939,6 +1159,9 @@ def stage_analyse(args: argparse.Namespace) -> dict[str, Any]:
             "scoring_strata_declared": list(SCORING_STRATA),
         },
         "excluded_arms": dict(D.EXCLUDED_ARMS),
+        "admitted_protein_doors": {
+            label: list(members) for label, members in ADMITTED_PROTEIN_DOORS
+        },
         "scoring_strata": {
             arm: record["scoring_stratum"] for arm, record in arms.items()
         },
