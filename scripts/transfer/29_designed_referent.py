@@ -745,6 +745,39 @@ class _JointRungLikelihood:
         self.scorer.release()
 
 
+def _require_declared_fp32_policy(address: str) -> dict[str, Any]:
+    """The live fp32 matmul policy, refused unless it is the declared one.
+
+    Two of the arms this door admits are scored at float32, and at float32 a
+    TF32 matmul is a different arithmetic rather than a faster one, so a reading
+    taken under it is not commensurable with the one stage 20 recorded for the
+    same checkpoint. The policy is declared once, in ``precision_policy``, and
+    this is a check against that declaration and not a second copy of it.
+
+    The two fields that govern a matmul -- ``cuda.matmul.allow_tf32`` and
+    ``get_float32_matmul_precision`` -- are compared against the declaration.
+    ``cudnn.allow_tf32`` is reported rather than required: it governs padded
+    convolution, which neither of these decoders calls, and it is ``True`` by
+    torch default. All three observed fields travel in the payload, so the
+    policy the numbers were taken under is read rather than assumed.
+    """
+
+    import torch
+
+    from src.transfer import precision_policy as PP
+
+    observed = PP.snapshot_matmul_policy(torch)
+    requested = PP.requested_fp32_matmul_policy()
+    for field in ("cuda_matmul_allow_tf32", "float32_matmul_precision"):
+        if observed[field] != requested[field]:
+            raise RuntimeError(
+                f"{address}: scored at float32, whose arithmetic depends on the "
+                f"matmul policy; {field} is {observed[field]!r} rather than the "
+                f"declared {requested[field]!r}"
+            )
+    return {"requested": requested, "observed": observed}
+
+
 def _open_scorer(name: str, args: argparse.Namespace) -> tuple[Any, dict[str, Any], dict[str, str]]:
     """One arm or one EXP-R2-226 rung, with its settings and its identification.
 
@@ -820,6 +853,8 @@ def _open_scorer(name: str, args: argparse.Namespace) -> tuple[Any, dict[str, An
         "scoring_stratum": scorer.scoring_stratum,
         "door": door,
     }
+    if args.dtype == "float32":
+        settings["precision_policy"] = _require_declared_fp32_policy(name)
     return scorer, settings, dict(D.ARM_IDENTIFICATION[name])
 
 

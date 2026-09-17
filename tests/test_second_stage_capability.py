@@ -956,3 +956,28 @@ def test_stage_29_scorer_routes_are_the_declared_ones():
     for name in ("zymctrl", "proteinglm-7b-clm", "rita-xl"):
         with pytest.raises(ValueError):
             stage._ArmLikelihood(name, device="cpu", dtype="float32", batch_size=1)
+
+
+def test_stage_29_refuses_an_fp32_score_taken_under_a_tf32_matmul(monkeypatch):
+    """The two float32 arms record the arithmetic they were taken under.
+
+    At float32 a TF32 matmul is a different arithmetic rather than a faster one,
+    so a reading taken under it is not commensurable with the one stage 20
+    recorded for the same checkpoint.
+    """
+
+    from src.transfer import precision_policy as PP
+
+    stage = _load_stage("29_designed_referent.py")
+    declared = PP.requested_fp32_matmul_policy()
+    record = stage._require_declared_fp32_policy("probe")
+    assert record["requested"] == declared
+    for field in ("cuda_matmul_allow_tf32", "float32_matmul_precision"):
+        assert record["observed"][field] == declared[field]
+    monkeypatch.setattr(
+        PP,
+        "snapshot_matmul_policy",
+        lambda torch: {**declared, "cuda_matmul_allow_tf32": True},
+    )
+    with pytest.raises(RuntimeError, match="cuda_matmul_allow_tf32"):
+        stage._require_declared_fp32_policy("probe")
