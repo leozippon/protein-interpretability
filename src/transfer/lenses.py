@@ -1,4 +1,4 @@
-"""What each layer is trying to say: the logit, tuned and Jacobian lenses.
+"""What each layer decodes to: the logit, tuned and Jacobian lenses.
 
 The programme hypothesis is that protein decoders have a *limited output
 semantic interface*. A text unembedding maps onto ~50k word-like tokens which

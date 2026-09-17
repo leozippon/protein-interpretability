@@ -15,7 +15,7 @@ qualification has to be commensurable with the panel's -- and it carries stage
 01's reading with it: a mode below the floor is **unmeasurable on that cohort**,
 not failing. That distinction is the whole verdict. It says the evaluation
 interface cannot resolve anything on this cohort, and it says nothing about what
-the checkpoint knows.
+the checkpoint encodes.
 
 **The published verdict is a pre-interval screen, not the identification
 criterion.** The floor is

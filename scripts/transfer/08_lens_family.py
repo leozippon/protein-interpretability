@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The lens family: what each layer of each panel arm is trying to say.
+"""The lens family: what each layer of each panel arm decodes to.
 
 A text unembedding maps onto ~50k word-like tokens which are themselves the
 language explanations are written in. A protein unembedding maps onto twenty

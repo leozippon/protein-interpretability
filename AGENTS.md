@@ -125,13 +125,14 @@ When these principles conflict, preserve explicit requirements, correctness, and
 - Apply the Single-Source Principle across documents. Keep each fact, design decision, and procedure in one authoritative section. Use links or brief pointers elsewhere; when sections overlap, clarify their boundaries instead of repeating the same content.
 - Write Markdown prose as logical lines; do not hard-wrap it at 80 columns.
 - Keep documentation aligned with current behavior.
+- Describe a model's behaviour as quantities and operations, in documentation, code comments, commit messages and report prose alike: a model assigns likelihood, places probability mass, scores positions, carries a representation or makes an assignment, and it does not know, prefer, decide, want, intend, hope, believe, understand or spend. State every quantitative claim as a quantity with its unit, support and interval.
 - Use filename casing as a soft audience convention: retain ecosystem-standard names such as `README.md`, `LICENSE.md`, and `CHANGELOG.md`; use `lowercase-kebab-case.md` for ordinary user-facing documents and `UPPER_SNAKE_CASE.md` for agent, process, or internal-control documents.
 - Structure user-facing documentation for human readability in plain, approachable language. Follow these practices:
   - Use headings only for meaningful divisions at the same level, group related ideas together, and move from overview to detail and normal use to exceptions where that order fits.
   - Maintain a clear logical progression and fluent, natural language within and between sections.
   - Keep the content as concise as possible without sacrificing logical completeness.
   - Use tables and lists for genuinely parallel information; use concise prose for reasoning, sequences, and qualifications.
-  - Avoid canned introductions, repetitive summaries, excessive headings, artificial parallelism, and unnecessary bold emphasis.
+  - Avoid canned introductions, repetitive summaries, excessive headings, artificial parallelism, unnecessary bold emphasis, and narration or evaluative filler such as `surprisingly`, `obviously` or `makes sense`.
   - Avoid unnecessary abstraction and redundant concepts; retain necessary standard technical terminology.
   - Omit variable names, filenames, and similar details unless necessary.
   - Keep unnecessary cross-references to a minimum.

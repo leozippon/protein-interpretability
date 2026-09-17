@@ -1569,7 +1569,7 @@ def primary_verdict(
         else (
             "NULL_NOT_SHOWN_REACHABLE: this arm's rho does not separate a real kinase "
             "domain from its own composition-preserving shuffle, so a null on the "
-            "contradiction contrast cannot be attributed to what the model knows about "
+            "contradiction contrast cannot be attributed to what the model encodes about "
             "catalysis rather than to a readout that does not respond to domain "
             "architecture on this arm (Appendix B rule 40)"
         )

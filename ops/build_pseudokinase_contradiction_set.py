@@ -9,8 +9,8 @@ beaten by a residue-statistics baseline. The diagnosis is not that the models ar
 empty; it is that all three were read on an **agreement set**, a cohort on which
 evolutionary sequence statistics and biological knowledge predict the same label.
 On an agreement set a model that recombines corpus fragments and a model that
-knows biology score alike, so the measurement cannot separate them however
-careful the statistics are.
+has learned biological information score alike, so the measurement cannot
+separate them however careful the statistics are.
 
 Pseudokinases are the cleanest natural **contradiction set** a protein corpus
 offers. They carry the eukaryotic protein-kinase fold, they score on the Pfam

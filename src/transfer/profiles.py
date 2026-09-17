@@ -4,13 +4,13 @@
 EXP-R2-134 measured MODEL - FREE over all 217 ProteinGym substitution assays:
 ProGen3-112M's zero-shot fitness beats a BLOSUM62 substitution-matrix lookup by
 +0.0647 Spearman [+0.0386, +0.0909]. That is the whole of this programme's
-evidence that a protein decoder knows anything about function, and it cannot
+evidence that a protein decoder predicts function at all, and it cannot
 separate the two accounts that matter. BLOSUM62 is free of the corpus, so a model
 that had merely *stored* its pretraining data would beat it exactly as a model
 that had *learned* anything would. The missing comparison is MODEL - LOOKUP,
 where LOOKUP is a site-independent position-specific profile built by aligning
 each assay's wild type against the arm's own pretraining corpus. Whatever a
-column-frequency lookup of the corpus already knows is retrieved, not acquired;
+column-frequency lookup of the corpus already supplies is retrieved, not acquired;
 what the model adds on top of it is the part that needs an explanation.
 
 The estimand is measured against **wet-lab phenotype** -- ProteinGym's DMS scores

@@ -3,8 +3,8 @@
 Why this module exists
 ======================
 
-F10 bounds what a protein decoder knows about function *relative to a lookup of
-its own corpus*, and it cannot do better than bound it: every natural protein has
+F10 bounds a protein decoder's function prediction *relative to a lookup of its
+own corpus*, and it cannot do better than bound it: every natural protein has
 homologues in UniRef50, so over 187 ProteinGym wild types the least homologous is
 still 55.5% identical to a cluster the model was trained on (EXP-R2-189).
 Retrieval could be estimated and subtracted; it could never be excluded.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""D3.d: does a protein decoder know a coupling its corpus does not already carry?
+"""D3.d: does a protein decoder predict a coupling its corpus does not already carry?
 
 F10 (EXP-R2-143) bounded the *first-order* question: no protein decoder's
 zero-shot fitness exceeds a position-independent profile lookup over its own
