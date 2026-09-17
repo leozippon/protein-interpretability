@@ -2726,21 +2726,10 @@ def rendering_marker_ids(arm: Arm) -> tuple[int, ...]:
     :meth:`Cohort.input_strings` prefixes ``fasta_wrapped`` with the tokenizer's
     end-of-text token and ``n_to_c_control`` with :data:`N_TO_C_MARKER`; ``raw``
     prefixes nothing; ``bos_direction_seq`` prefixes two tokens, the tokenizer's
-    BOS and then :data:`BOS_DIRECTION_N_TO_C`.
-
-    **A two-token prefix is not a special case of a one-token prefix.** Under the
-    ``all_valid`` rule the first rendered token is context and is never a target,
-    so a one-token marker is excluded from the scored span by construction. The
-    second token of ``bos_direction_seq`` is not: the model's next-token
-    distribution after the BOS is 0.499998/0.499998 on ``"1"``/``"2"``, so under
-    the pooled unigram baseline that column reads as *high* context information
-    (the baseline prices a token that occurs once per ~160 targets at 5.08 nats
-    while the model spends 0.69) and inflates the figure by +0.027 nats/token.
-    That is the same treatment ``src.transfer.replaceable`` already gives RITA's
-    terminus token -- a structural position the model predicts and the likelihood
-    scores -- and it is recorded here rather than repaired, because it is 2.5% of
-    a +1.08 figure that is 0.10-0.17 nats from the block-selection sensitivity
-    this programme already reports.
+    BOS and then :data:`BOS_DIRECTION_N_TO_C`. The scored span therefore starts at
+    the first residue, not at the second token: the BOS is never a target, and the
+    direction token is excluded by the marker ids this function returns, not by
+    the position it happens to occupy.
 
     **A tokenizer's special ids do not cover this, and assuming they did was a
     defect.** ProGen2 declares only ``<|pad|>``, ``<|bos|>`` and ``<|eos|>``
@@ -3225,6 +3214,12 @@ def target_shuffle_for(arm: Arm, *, seed: int) -> TargetTokenShuffle:
     An EC-conditioned arm gets ``between_boundaries`` with its ``<start>`` and
     ``<end>`` ids, so its EC tag stays in context, in place, and out of the
     permuted span.
+
+    Every other rendering's marker ids travel with it too. The permuted set is
+    recomputed inside :meth:`TargetTokenShuffle.apply`, so a control that resolved
+    the rule but not the markers would permute a position the measurement does not
+    score -- which for a rendering whose prefix is two tokens means shuffling the
+    direction token into a residue's place.
     """
 
     start_id, end_id = conditioning_boundary_ids(arm)
@@ -3233,6 +3228,7 @@ def target_shuffle_for(arm: Arm, *, seed: int) -> TargetTokenShuffle:
         rule=target_rule(arm.spec.input_format),
         start_token_id=start_id,
         end_token_id=end_id,
+        marker_token_ids=() if start_id is not None else rendering_marker_ids(arm),
     )
 
 

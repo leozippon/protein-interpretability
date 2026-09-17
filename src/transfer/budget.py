@@ -78,6 +78,7 @@ from .arms import (
     Cohort,
     conditioning_boundary_ids,
     output_logit_width,
+    rendering_marker_ids,
     require_scoring_target_ids,
     scoring_target_alphabet,
     symbols_per_token,
@@ -366,6 +367,12 @@ def scored_tokens(
     rule = target_rule(arm.spec.input_format)
     start_id, end_id = conditioning_boundary_ids(arm)
     conditioned = start_id is not None
+    # A conditioned arm's span is its <start>/<end> pair; every other rendering's
+    # is whatever that rendering declared as its marker prefix. Resolved here from
+    # the same two declarations the rendering is built from, so the scored span and
+    # the rendered string cannot come to disagree about which positions are
+    # content.
+    markers = () if conditioned else rendering_marker_ids(arm)
 
     targets: list[np.ndarray] = []
     losses: list[np.ndarray] = []
@@ -392,6 +399,7 @@ def scored_tokens(
             rule=rule,
             start_token_id=start_id,
             end_token_id=end_id,
+            marker_token_ids=markers,
         )
         selected = nll[keep]
         if not bool(torch.isfinite(selected).all()):

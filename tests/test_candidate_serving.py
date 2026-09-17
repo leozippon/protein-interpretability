@@ -46,6 +46,7 @@ from src.transfer.arms import (  # noqa: E402
     load_arm_spec,
     rendering_marker_ids,
     require_input_path,
+    target_shuffle_for,
     tokenize_batch,
 )
 from src.transfer.budget import scored_tokens  # noqa: E402
@@ -135,7 +136,13 @@ def _tiny_mixtral() -> Arm:
         max_position_embeddings=64,
     )
     torch.manual_seed(1)
-    spec = replace(STAGED_ARMS[PROTGPT3], n_layer=1, d_model=32)
+    # The ProtGPT3 spec is borrowed for its architecture and shape only. Its
+    # rendering is not: this stub carries ``_PadTokenizer``, which declares no BOS
+    # token, so the arm declares ``raw`` rather than a format whose prefix cannot
+    # be located. The real tokenizer and format are exercised above.
+    spec = replace(
+        STAGED_ARMS[PROTGPT3], n_layer=1, d_model=32, input_format="raw"
+    )
     return Arm(
         spec=spec,
         model=MixtralForCausalLM(config).eval(),
@@ -400,10 +407,20 @@ def test_protgpt3_encodes_aa20_one_token_each_without_bos():
     assert int(mask[0].sum()) == 6
     assert int(mask[1].sum()) == 8
     assert int(batched[0, 6]) == 0
-    # BOS is context only; the direction token and every residue are targets.
+    # BOS and the direction token are context; every residue is a target. The
+    # scored span is the residues not because the direction token happens to sit
+    # at position 1 but because the rendering declares it a marker.
     keep = sequence_target_mask(batched, mask, rule=target_rule(arm.spec.input_format))
-    assert int(keep[0].sum()) == 5
-    assert int(keep[1].sum()) == 7
+    assert int(keep[0].sum()) == 5, "all_valid alone still scores the direction token"
+    keep = sequence_target_mask(
+        batched,
+        mask,
+        rule=target_rule(arm.spec.input_format),
+        marker_token_ids=rendering_marker_ids(arm),
+    )
+    assert int(keep[0].sum()) == 4
+    assert int(keep[1].sum()) == 6
+    assert not bool(keep[0, 0]), "the direction token is not a scored target"
 
 
 def test_protgpt3_renders_bos_then_direction_then_sequence():
@@ -444,6 +461,75 @@ def test_protgpt3_direction_rendering_refuses_an_undeclared_direction():
     assert bos_direction_rendering(arm, "MKT") != bos_direction_rendering(
         arm, "MKT", BOS_DIRECTION_C_TO_N
     )
+
+
+def _tiny_protgpt3_arm() -> Arm:
+    """The staged ProtGPT3 spec and tokenizer over a one-block random MoE."""
+
+    config = MixtralConfig(
+        vocab_size=32,
+        hidden_size=32,
+        intermediate_size=64,
+        num_hidden_layers=1,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        num_local_experts=2,
+        num_experts_per_tok=1,
+        max_position_embeddings=64,
+    )
+    torch.manual_seed(2)
+    spec = replace(STAGED_ARMS[PROTGPT3], n_layer=1, d_model=32)
+    return Arm(
+        spec=spec,
+        model=MixtralForCausalLM(config).eval(),
+        tokenizer=_local_tokenizer(PROTGPT3),
+        device="cpu",
+        dtype="float32",
+        attn_implementation="eager",
+    )
+
+
+def test_protgpt3_scores_residues_only_and_counts_the_reference_the_same_way():
+    """One span for the probability path and for the token-count path.
+
+    The gate's clean cross-entropy comes from ``scored_tokens`` and its unigram
+    baseline from ``scored_target_records``, which walk the ids in two different
+    ways -- a mask over a batch, and a walk over one untruncated list. They have
+    to select the same span, and a marker this arm's rendering declares has to be
+    outside both: the direction token is the second token, so it is a target
+    under ``all_valid`` while the BOS before it is not.
+    """
+
+    from src.transfer.prediction_addressed import scored_target_records
+
+    import numpy as np
+
+    arm = _tiny_protgpt3_arm()
+    cohort = Cohort(
+        name="stub", kind="protein", records=["ACDE", "MKTAYI"], min_symbols=0, max_symbols=8
+    )
+    texts = cohort.input_strings(arm)
+    scored = scored_tokens(arm, texts, max_len=16, batch_size=2)
+    counts, _ = scored_target_records(arm, texts, max_len=16)
+    ids = sorted(scored.target_ids.tolist())
+    assert scored.target_ids.size == 4 + 6, "one target per residue, and no marker"
+    assert 1 not in ids and 4 not in ids
+    assert (counts == np.bincount(scored.target_ids, minlength=31)).all()
+    assert int(counts[1]) == 0 and int(counts[4]) == 0
+    assert int(counts.sum()) == scored.target_ids.size
+
+
+def test_protgpt3_token_shuffle_holds_both_markers_in_place():
+    arm = _tiny_protgpt3_arm()
+    shuffle = target_shuffle_for(arm, seed=7)
+    assert shuffle.marker_token_ids == rendering_marker_ids(arm) == (1, 4)
+    control = replace(arm, target_token_shuffle=shuffle)
+    cohort = Cohort(
+        name="stub", kind="protein", records=["ACDE", "MKTAYI"], min_symbols=0, max_symbols=8
+    )
+    ids, _ = tokenize_batch(control, cohort.input_strings(arm), 16)
+    assert int(ids[0, 0]) == 1 and int(ids[0, 1]) == 4
+    assert sorted(int(v) for v in ids[0, 2:6]) == [6, 8, 9, 10]
 
 
 class _NoPadTokenizer:

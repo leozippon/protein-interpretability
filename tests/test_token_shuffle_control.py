@@ -158,6 +158,34 @@ def test_padding_is_not_touched_and_the_scored_count_does_not_move() -> None:
     assert torch.equal(shuffled[:, 0], ids[:, 0])
 
 
+def test_a_declared_rendering_marker_is_never_a_scored_target() -> None:
+    """A marker the rendering added is content for no rule, and a one-token
+    prefix is already excluded by the position it occupies.
+
+    Only the first token of a batch is context and never a target, so a
+    rendering whose prefix is a single marker needs no help. A rendering that
+    prefixes two does: its second token is a target, and it is the position the
+    model predicts most confidently and a pooled unigram baseline prices as rare,
+    which is context information the sequence does not supply.
+    """
+
+    ids = torch.tensor([[70, 71, 8, 9, 0, 0], [70, 71, 8, 9, 10, 0]], dtype=torch.long)
+    mask = torch.tensor([[1, 1, 1, 1, 0, 0], [1, 1, 1, 1, 1, 0]], dtype=torch.long)
+    plain = sequence_target_mask(ids, mask, rule="all_valid")
+    # Id 70 is the first token, so it is already outside the span.
+    assert torch.equal(
+        plain, sequence_target_mask(ids, mask, rule="all_valid", marker_token_ids=(70,))
+    )
+    # Id 71 is not, and excluding it leaves exactly the residues.
+    excluded = sequence_target_mask(ids, mask, rule="all_valid", marker_token_ids=(70, 71))
+    assert int(excluded.sum()) == int(plain.sum()) - ids.shape[0]
+    assert not bool(excluded[:, 0].any())
+    assert [ids[row, 1:][excluded[row]].tolist() for row in range(2)] == [
+        [8, 9],
+        [8, 9, 10],
+    ]
+
+
 # ------------------------------------------------------------- reproducibility
 
 

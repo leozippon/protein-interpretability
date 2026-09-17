@@ -150,11 +150,24 @@ def sequence_target_mask(
     rule: str,
     start_token_id: int | None = None,
     end_token_id: int | None = None,
+    marker_token_ids: Sequence[int] = (),
 ) -> torch.Tensor:
     """Return a mask over next-token targets belonging to the scored cohort.
 
     Column ``q`` of the returned mask governs the prediction of input token
     ``q + 1``, so it has one fewer column than ``input_ids``.
+
+    ``marker_token_ids`` are the ids the arm's own rendering declares as markers
+    rather than cohort content -- :func:`src.transfer.arms.rendering_marker_ids`,
+    resolved from the same declaration the rendering is built from. A position
+    whose *target* is one of them is not content under **any** rule, so the
+    exclusion is applied once here rather than per rule or per caller: a
+    rendering's prefix is the arm's statement about which positions it added,
+    and no rule can revise it. That matters as soon as a rendering prefixes more
+    than one token, because only the first token of a batch is context and never
+    a target: a one-token marker is excluded by construction, a second one is
+    not, and the model predicts it with more confidence than it predicts any
+    residue while a pooled unigram baseline prices it as rare.
     """
 
     if rule not in TARGET_RULES:
@@ -166,6 +179,9 @@ def sequence_target_mask(
     ):
         raise ValueError("invalid token or attention-mask shape")
     valid = attention_mask[:, 1:].bool() & attention_mask[:, :-1].bool()
+    if len(marker_token_ids):
+        markers = input_ids.new_tensor(list(marker_token_ids))
+        valid = valid & ~torch.isin(input_ids[:, 1:], markers)
     if rule == PROTEINGLM_TARGET_RULE:
         if start_token_id is not None or end_token_id is not None:
             raise ValueError(
@@ -285,6 +301,7 @@ class TargetTokenShuffle:
     rule: str
     start_token_id: int | None = None
     end_token_id: int | None = None
+    marker_token_ids: tuple[int, ...] = ()
 
     def apply(self, input_ids: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
         """``input_ids`` with each record's scored target positions permuted.
@@ -300,6 +317,7 @@ class TargetTokenShuffle:
             rule=self.rule,
             start_token_id=self.start_token_id,
             end_token_id=self.end_token_id,
+            marker_token_ids=self.marker_token_ids,
         )
         shuffled = input_ids.clone()
         for row in range(input_ids.shape[0]):
@@ -324,11 +342,13 @@ class TargetTokenShuffle:
             "target_rule": self.rule,
             "start_token_id": self.start_token_id,
             "end_token_id": self.end_token_id,
+            "marker_token_ids": list(self.marker_token_ids),
             "permuted_positions": (
                 "exactly the scored next-token target positions of each record, "
                 "after truncation and padding; the first token of a plain "
                 "rendering, a conditioning prompt and its <start>/<end> markers, "
-                "and every padding position are held in place"
+                "every declared rendering marker, and every padding position "
+                "are held in place"
             ),
             "invariant": (
                 "the per-record target-token multiset, and therefore every "

@@ -60,6 +60,7 @@ from .arms import (
     Arm,
     Cohort,
     conditioning_boundary_ids,
+    rendering_marker_ids,
     require_scoring_target_ids,
     scoring_target_alphabet,
     symbols_per_token,
@@ -231,6 +232,11 @@ def scored_target_records(
         return counts, per_record
     conditioned = target_rule(arm.spec.input_format) == "between_boundaries"
     start_id, end_id = conditioning_boundary_ids(arm)
+    # The same exclusion :func:`src.transfer.budget.scored_tokens` applies, from
+    # the same declaration: a position whose target is a marker the rendering
+    # itself added is not cohort content, and the held-out reference has to be
+    # counted over the span the model is scored on rather than over a wider one.
+    markers = set() if conditioned else set(rendering_marker_ids(arm))
     records: list[np.ndarray] = []
     for text in strings:
         ids = arm.tokenizer(text, return_tensors=None)["input_ids"][:max_len]
@@ -241,7 +247,7 @@ def scored_target_records(
                     raise ValueError(f"{arm.name}: row lacks exactly one <start>/<end> pair")
                 targets = ids[ids.index(start_id) + 1 : ids.index(end_id)]
             else:
-                targets = ids[1:]
+                targets = [value for value in ids[1:] if value not in markers]
         array = np.asarray(targets, dtype=np.int64)
         require_scoring_target_ids(array, alphabet, arm=arm.name)
         records.append(array)
