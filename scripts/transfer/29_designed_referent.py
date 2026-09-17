@@ -58,6 +58,7 @@ import argparse
 import json
 import sys
 import time
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -81,6 +82,10 @@ from src.transfer.arms import (  # noqa: E402
     tokenize_batch,
 )
 from src.transfer import joint_lineage as L  # noqa: E402
+from src.transfer.scale_comparison import (  # noqa: E402
+    SCORING_STRATA,
+    STRATUM_N_TO_C,
+)
 from src.transfer.io import sha256_file, write_json  # noqa: E402
 from src.transfer.kmer_background import count_kmers  # noqa: E402
 from src.transfer.kmer_background import load as load_kmer_background  # noqa: E402
@@ -110,6 +115,14 @@ def _load_stage(filename: str) -> Any:
 QUALIFICATION = _load_stage("adaptation_stage_qualification.py")
 
 SCHEMA_VERSION = D.SCHEMA_VERSION
+
+#: The inference precisions this stage may be asked for. Declared once because
+#: two of the arms it admits require float32 by their own checkpoint's terms --
+#: ``rita_fitness`` refuses any other precision and ProteinGLM's derived serving
+#: package does too -- while every other arm is read at the panel's bfloat16.
+#: The precision each payload was taken at travels in its ``settings`` block.
+DTYPES: tuple[str, ...] = ("bfloat16", "float16", "float32")
+
 STAGES = (
     "cohort",
     "baseline",
@@ -426,7 +439,12 @@ class _ArmLikelihood:
     panel decides the input format, then sum the token log-probabilities over
     every position whose target and context are both real. ProtGPT2's FASTA
     wrapping is worth 1.42 nats/token and is not this stage's decision to make.
+    What was computed travels in :attr:`score_description` and under which
+    convention the sum was taken in :attr:`scoring_stratum`.
     """
+
+    score_description = "summed log-likelihood of the rendered variant"
+    scoring_stratum = STRATUM_N_TO_C
 
     def __init__(self, name: str, *, device: str, dtype: str, batch_size: int) -> None:
         import torch
@@ -579,7 +597,8 @@ def _open_scorer(name: str, args: argparse.Namespace) -> tuple[Any, dict[str, An
         "device": args.device,
         "dtype": args.dtype,
         "batch_size": args.batch_size,
-        "score": "summed log-likelihood of the rendered variant",
+        "score": scorer.score_description,
+        "scoring_stratum": scorer.scoring_stratum,
     }
     return scorer, settings, dict(D.ARM_IDENTIFICATION[name])
 
@@ -848,6 +867,16 @@ def stage_analyse(args: argparse.Namespace) -> dict[str, Any]:
         models[arm] = model_payload
         if model_payload["cohort_sha256"] != digest:
             raise RuntimeError(f"{arm} was scored on a different cohort")
+        # A payload that records no stratum predates the field and is left as it
+        # is -- it cannot vouch for what it was scored under, and neither can
+        # this stage. A payload that records one must record a declared one, so a
+        # stratum spelled fresh beside an arm cannot travel into a report.
+        recorded_stratum = model_payload["settings"].get("scoring_stratum")
+        if recorded_stratum is not None and recorded_stratum not in SCORING_STRATA:
+            raise RuntimeError(
+                f"{arm} records scoring stratum {recorded_stratum!r}, which is "
+                f"not one of the declared {list(SCORING_STRATA)}"
+            )
         model_all = {
             name: float(entry["spearman"])
             for name, entry in model_payload["wildtypes"].items()
@@ -876,6 +905,7 @@ def stage_analyse(args: argparse.Namespace) -> dict[str, Any]:
         control = side(naturals, series_units, "b: natural-domain control, WT_cluster units")
         arms[arm] = {
             "identification": model_payload["identification"],
+            "scoring_stratum": model_payload["settings"].get("scoring_stratum"),
             "designs": designs,
             "control": control,
             "verdict": D.arm_verdict(designs["gates"], control["gates"]),
@@ -906,8 +936,12 @@ def stage_analyse(args: argparse.Namespace) -> dict[str, Any]:
             "bootstrap": args.bootstrap,
             "seed": args.seed,
             "baselines": list(D.BASELINES),
+            "scoring_strata_declared": list(SCORING_STRATA),
         },
         "excluded_arms": dict(D.EXCLUDED_ARMS),
+        "scoring_strata": {
+            arm: record["scoring_stratum"] for arm, record in arms.items()
+        },
         "arms": arms,
         "post_hoc": _post_hoc(
             referent,
@@ -2085,7 +2119,7 @@ def main() -> None:
     parser.add_argument("--holdout-fraction", type=float, default=0.0005)
     parser.add_argument("--max-order", type=int, default=7)
     parser.add_argument("--device", default="cuda:0")
-    parser.add_argument("--dtype", default="bfloat16", choices=("bfloat16", "float16"))
+    parser.add_argument("--dtype", default="bfloat16", choices=DTYPES)
     parser.add_argument("--batch-size", type=int, default=256)
     args = parser.parse_args()
     _require_joint_qualification_dir(args)

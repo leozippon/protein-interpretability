@@ -895,12 +895,39 @@ def test_stage_29_admits_no_arm_whose_identification_it_does_not_declare():
     assert missing == [], f"admitted by stage 29 with no ARM_IDENTIFICATION: {missing}"
 
 
-def test_stage_29_gained_no_second_stage_door():
-    """EXP-R2-225's checkpoints reach MegaScale through nothing, deliberately."""
+def test_stage_29_declares_the_identification_each_new_arm_needs():
+    """A missing entry is a ``KeyError``, and two of the three cannot be signed.
+
+    ``proteinglm-7b-clm`` read UniRef50/S + UniRef90 + ColabFoldDB against a
+    certificate that searched UniRef50 alone, so its residual runs in the
+    model-favouring direction. RITA-xl declares a corpus family whose relation to
+    the searched snapshot is evidenced in neither direction, and ProtGPT3-1.3B
+    declares none at all, so neither residual can be signed. None of the three is
+    reachable yet: the door is unchanged by this change.
+    """
 
     from src.transfer import designed_referent as D
 
     stage = _load_stage("29_designed_referent.py")
+    assert (
+        D.ARM_IDENTIFICATION["proteinglm-7b-clm"]["identification"]
+        == "unbounded_in_the_model_favouring_direction"
+    )
+    assert (
+        D.ARM_IDENTIFICATION["protgpt3-1.3b"]["identification"]
+        == "undeclared_corpus_no_exclusion_possible"
+    )
+    assert (
+        D.ARM_IDENTIFICATION["rita-xl"]["identification"]
+        == "declared_family_relation_unestablished"
+    )
+    assert all(
+        entry["identification"] in D.IDENTIFICATION_CLASSES
+        for entry in list(D.ARM_IDENTIFICATION.values())
+        + list(D.JOINT_LINEAGE_IDENTIFICATION.values())
+    )
+    assert "bidirectional" in D.EXCLUDED_ARMS["progen3-3b"]
     for name in ("progen3-3b", "rita-xl", "proteinglm-7b-clm", "qwen2.5-7b"):
         assert name not in stage.DEFAULT_ARMS, name
-        assert name not in D.ARM_IDENTIFICATION, name
+    assert stage.DTYPES == ("bfloat16", "float16", "float32")
+    assert stage._ArmLikelihood.scoring_stratum == C.STRATUM_N_TO_C

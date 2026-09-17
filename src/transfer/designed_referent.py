@@ -149,6 +149,30 @@ BASELINES: tuple[str, ...] = FREE_BASELINES + FRAGMENT_BASELINES
 #: ``statistics.MINIMUM_BOOTSTRAP_UNITS``).
 BOOTSTRAP_RESAMPLES = 2000
 
+#: The classes :data:`ARM_IDENTIFICATION` states. Declared once so the whole
+#: vocabulary is visible in one place and a new class is an explicit addition
+#: rather than a string spelled fresh beside an arm.
+#:
+#: ``exact``
+#:     absence from the searched snapshot implies absence from the trained-on
+#:     corpus, so the exclusion is identified.
+#: ``unbounded_in_the_model_favouring_direction``
+#:     an unsearched part of the corpus may contain the design. The sign is known
+#:     and the size is not: the gap runs in the direction that flatters the model.
+#: ``undeclared_corpus_no_exclusion_possible``
+#:     no corpus is declared, so the searched snapshot's relation to the training
+#:     data is not established and the residual cannot even be signed.
+#: ``declared_family_relation_unestablished``
+#:     a corpus *family* is declared -- not an identity -- and neither containment
+#:     direction between it and the searched snapshot is evidenced, so the
+#:     residual cannot be signed either.
+IDENTIFICATION_CLASSES: tuple[str, ...] = (
+    "exact",
+    "unbounded_in_the_model_favouring_direction",
+    "undeclared_corpus_no_exclusion_possible",
+    "declared_family_relation_unestablished",
+)
+
 #: What each arm's corpus lets the certificate say. Not a caveat block: the
 #: certificate was run against UniRef50 alone, so it *identifies* the exclusion
 #: for ProtGPT2 and does not for any other arm, and the direction of the gap is
@@ -202,6 +226,50 @@ ARM_IDENTIFICATION: Mapping[str, Mapping[str, str]] = {
             "fully searched. The bound runs in the model-favouring direction."
         ),
     },
+    "proteinglm-7b-clm": {
+        "identification": "unbounded_in_the_model_favouring_direction",
+        "note": (
+            "UniRef50/S + UniRef90 + ColabFoldDB, from the checkpoint's own card. "
+            "The certificate searched UniRef50 alone and the searched snapshot is "
+            "not identified as that mix, so a design absent from it may still be "
+            "present in this arm's corpus: the UniRef90 and ColabFoldDB parts were "
+            "not searched and are not staged. The gap runs in the direction that "
+            "flatters the model. Scoring is the served continuation -- residues "
+            "2..L under the native <gmask><sop><eos> prefix, no tail EOS -- not a "
+            "full-protein left-to-right sum over residue 1 and the prefix."
+        ),
+    },
+    "protgpt3-1.3b": {
+        "identification": "undeclared_corpus_no_exclusion_possible",
+        "note": (
+            "the released card identifies no training corpus, so no corpus can be "
+            "attributed to this checkpoint and the certificate's UniRef50 search "
+            "cannot be shown to contain or to be contained in its training data. "
+            "A design's absence from UniRef50 therefore implies nothing at all "
+            "about this arm and the residual cannot be signed. Scored in the "
+            "format the card declares -- BOS, then the N-to-C direction token, "
+            "then the sequence -- rather than the bare residue string its "
+            "published tokenizer config happens to produce unconfigured."
+        ),
+    },
+    "rita-xl": {
+        "identification": "declared_family_relation_unestablished",
+        "note": (
+            "RITA's released documentation names UniRef-100 as the pretraining "
+            "corpus family. A family is not an identity: the release and the "
+            "clustering the checkpoint saw are not evidenced, and neither "
+            "containment direction between that corpus and the searched UniRef50 "
+            "snapshot is established. UniRef100 is also a finer clustering, so a "
+            "design with no UniRef50 hit may still be near-identical to a "
+            "UniRef100 entry whose cluster representative is not a hit -- which is "
+            "a model-favouring gap this repository cannot measure. The residual is "
+            "therefore not signed in either direction. Scored in the checkpoint's "
+            "own document rendering -- the boundary <EOS>, then the sequence, "
+            "with the tokenizer's terminal <EOS> still appended -- with both "
+            "marker positions excluded from the scored targets, so the scored "
+            "targets are the sequence's residues."
+        ),
+    },
 }
 
 #: What EXP-R2-226's ProLLaMA rungs let the certificate say. A separate table
@@ -251,6 +319,23 @@ JOINT_LINEAGE_IDENTIFICATION: Mapping[str, Mapping[str, str]] = {
     },
 }
 
+#: Every identification class either table states is one of
+#: :data:`IDENTIFICATION_CLASSES`. Checked at import so that a class spelled fresh
+#: beside an arm cannot become a second vocabulary a reader has to reconcile.
+_unknown_classes = sorted(
+    {
+        entry["identification"]
+        for entry in list(ARM_IDENTIFICATION.values())
+        + list(JOINT_LINEAGE_IDENTIFICATION.values())
+        if entry["identification"] not in IDENTIFICATION_CLASSES
+    }
+)
+if _unknown_classes:
+    raise AssertionError(
+        f"identification classes outside {list(IDENTIFICATION_CLASSES)}: "
+        f"{_unknown_classes}"
+    )
+
 #: Arms excluded from this estimand, with the reason, so that a narrower panel is
 #: a declared decision rather than a default nobody checked (L18).
 EXCLUDED_ARMS: Mapping[str, str] = {
@@ -259,9 +344,14 @@ EXCLUDED_ARMS: Mapping[str, str] = {
         "number, so the estimand is not defined on this referent for this arm"
     ),
     "progen3-112m": (
-        "not a panel member, and its published scoring convention is "
-        "bidirectional, which is a different estimand from the summed "
-        "left-to-right log-likelihood every arm here is read under"
+        "its published scoring convention is bidirectional, which is a different "
+        "estimand from the summed left-to-right log-likelihood every arm here is "
+        "read under; a bidirectional door for this lineage is not built here"
+    ),
+    "progen3-3b": (
+        "as progen3-112m: its published scoring convention is bidirectional, and "
+        "this stage reaches it through no route -- the rung has no panel or "
+        "staged-scale membership and would need its own bidirectional scorer"
     ),
 }
 
