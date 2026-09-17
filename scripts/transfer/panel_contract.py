@@ -1166,7 +1166,23 @@ COHORT_POWER_ITEM_RULES: tuple[tuple[str, str], ...] = (
         "residue-level protein arms taking the script's declared default dtype; no "
         "precision override is inferred from a different checkpoint. Named for the "
         "rule rather than for a member: the old name described its only occupant, "
-        "and admitting ProGen2-small made that name cover one of two arms",
+        "and admitting ProGen2-small made that name cover one of two arms. Both "
+        "occupants' checkpoints declare ``torch_dtype`` float32 -- progen2-small's "
+        "and progen2-base's configs, as progen2-medium's does; progen2-large and "
+        "progen2-xlarge declare float16 -- so what this item chooses is bfloat16 for "
+        "two of the three fp32-declared ProGen2 rungs, and the choice costs this "
+        "much. Measured on the staged checkpoints over 200 Swiss-Prot records of "
+        "64-246 residues at draw seed 20260728 (32,666 scored residues, this default "
+        "against float32, agreement taken over the same positions): progen2-small "
+        "1.965933 nats/residue at bfloat16 against 1.957239 at float32, +8.694e-03, "
+        "KL 1.125e-02, argmax agreement 0.7975; progen2-base 1.579147 against "
+        "1.574456, +4.691e-03, KL 3.456e-03, argmax agreement 0.9109. Each delta "
+        "exceeds the upper end of the 1.4e-04 to 2.9e-03 nat host divergence the "
+        "L20-vs-H200 cross-check prices, the smaller by 1.6x and the larger by "
+        "3.0x, so neither is inside the spread that cross-check treats as "
+        "host-bound. This item is where that cost is taken: the medium rung is kept "
+        "out of it by the item below, and moving either arm across that boundary is "
+        "a scoring decision this campaign has not taken",
     ),
     (
         "protein_progen2_medium",
