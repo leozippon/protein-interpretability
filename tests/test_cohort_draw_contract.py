@@ -117,6 +117,20 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "only to positions, over a 150-of-396,000 file-order prefix"
     ),
     "12_induction_robustness.py": "reads artefacts from disk; loads no corpus",
+    "instructprotein_family_generation_probe.py": (
+        "its unit is the FAMILY, not the corpus record: it counts every staged "
+        "Pfam-span record per family in one pass over the whole table and then "
+        "draws two admissible families under a seeded permutation of the "
+        "canonically ordered eligible list. Its one corpus read is "
+        "conditioned_generation.swissprot_sequences over the accession set of a "
+        "drawn family, which is a filter over the whole file and not a prefix of "
+        "it, and that filter's order is then permuted under the same seed to give "
+        "the disjoint referent and anchor draws. Rule 1 is answered by "
+        "--draw-seed and by the census of every admissible family that reaches "
+        "the artefact; a cohort constructor cannot serve it, because a "
+        "constructor selects across the corpus under one length band and keeps no "
+        "class partition"
+    ),
     "45_conditioned_generation.py": (
         "its unit is the CLASS, not the corpus record: EXP-R2-227 draws sixteen full "
         "EC numbers and sixteen InterPro homologous superfamilies under a seeded "
