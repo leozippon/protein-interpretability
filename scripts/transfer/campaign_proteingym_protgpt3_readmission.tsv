@@ -61,7 +61,19 @@
 # its four inputs are staged into that cell's output directory: the three
 # frozen channel files before dispatch, and the payload the score cell writes
 # as soon as that cell is terminal and before this slot's barrier expires. The
-# three, with the digests they carry in
+# score cell also reads `wildtypes.json` from its own `--out` —
+# `_score_one_arm` resolves every assay's wild-type id through that catalogue —
+# so that file is staged into both cells' directories. That second staging is
+# recorded because the first dispatch of this manifest, on run
+# 20260916210506_8fc483d0d6f5, omitted it: `pgym_protgpt3-1.3b` exited 1 at
+# 2026-09-17T04:18:39Z on `FileNotFoundError: .../pgym_protgpt3-1.3b/
+# wildtypes.json does not exist`, 30 s after launch, without loading the
+# checkpoint. The analyse cell then ran with no payload and wrote a
+# `retrieval_bound.json` holding `arms: {}` and `verdicts: {}` (its own arm
+# loop skips an arm it has no scores for), which is why this revision states
+# both staging requirements rather than leaving the second to be remembered.
+#
+# The three, with the digests they carry in
 # results/transfer/retrieval_bound/ (and, for the first two, in the plan-134
 # catalogue under results/external_baseline/20260913131730_d91171619815/
 # native_dms_inputs/):
