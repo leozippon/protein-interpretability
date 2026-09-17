@@ -13,6 +13,7 @@ The last of those is not hypothetical on this panel. ``gpt2-large`` and
 
 from __future__ import annotations
 
+import dataclasses
 import importlib.util
 import sys
 import unittest
@@ -464,6 +465,10 @@ class _StubTokenizer:
     #: markers, one format along.
     _IDS = {"<sep>": 2, "<start>": 3, "<end>": 4, "1": 5}
 
+    #: ProtGPT3-1.3B's rendering places a BOS before its direction token, so the
+    #: marker ids are two and the second one is a scored column.
+    bos_token_id = 6
+
     def convert_tokens_to_ids(self, token):
         return self._IDS.get(token, self.unk_token_id)
 
@@ -644,6 +649,86 @@ class RenderingMarkersAreNotContent(unittest.TestCase):
         with self.assertRaises(ValueError) as raised:
             A.rendering_marker_ids(_stub("zymctrl").arm)
         self.assertIn("conditioning_boundary_ids", str(raised.exception))
+
+
+class RenderingMarkersAreNotTargets(unittest.TestCase):
+    """No marker an arm's rendering prefixes may enter the scored likelihood.
+
+    The target-side counterpart of :class:`RenderingMarkersAreNotContent`. A
+    rendering whose prefix is two tokens puts the *second* one at a scored
+    column: column ``q`` predicts input token ``q + 1``, so an exclusion stated by
+    position rather than by id leaves the direction token in the likelihood while
+    the content mask already excludes it. On ProtGPT3-1.3B -- the one arm that
+    renders this way -- that term was measured at +0.0279 nats/token.
+
+    ``_target_mask`` reads the arm's declared rendering and nothing else about
+    its checkpoint, so the format is substituted onto a stub that carries a
+    measured band rather than loading weights; the assertion is on token ids, so
+    no GPU is needed.
+    """
+
+    #: ``<|bos|>`` then the direction token, as ``bos_direction_seq`` renders,
+    #: then three residues and one padding position. The padding id is the stub's
+    #: end-of-text id, the arrangement every GPT-2-lineage arm has.
+    BOS, DIRECTION = 6, 5
+    RESIDUES = (10, 11, 12)
+    PAD = 1
+
+    def _model(self, arm_name: str, input_format: str) -> R.DenseReplaceable:
+        model = _stub(arm_name)
+        model.arm = dataclasses.replace(
+            model.arm, spec=dataclasses.replace(model.arm.spec, input_format=input_format)
+        )
+        return model
+
+    def test_a_two_token_prefix_keeps_its_direction_token_out_of_the_targets(self):
+        model = self._model("protgpt2", A.INPUT_FORMAT_BOS_DIRECTION_SEQ)
+        self.assertEqual(A.rendering_marker_ids(model.arm), (self.BOS, self.DIRECTION))
+        ids = [self.BOS, self.DIRECTION, *self.RESIDUES, self.PAD, self.PAD]
+        batch = {
+            "input_ids": torch.tensor([ids]),
+            "attention_mask": torch.tensor([[1, 1, 1, 1, 1, 0, 0]]),
+        }
+        mask = model._target_mask(batch)[0].tolist()
+        # Column 0 predicts the direction token and is out; columns 1..3 predict
+        # the three residues and are in; the two padding targets are out.
+        self.assertEqual(mask, [False, True, True, True, False, False])
+        self.assertEqual(sum(mask), len(self.RESIDUES))
+
+    def test_the_target_mask_agrees_with_the_content_mask_on_every_marker(self):
+        # The two masks are built from the same two declarations, so neither can
+        # keep a position the other calls a marker. One row per declared
+        # rendering a replaceable stage can reach, plus the two-token format the
+        # rule exists for: the rendering's declared markers, three residues, then
+        # a padding position whose id is the stub's end-of-text id.
+        cases = (
+            ("gpt2-large", "raw", [10, 11, 12, 13, 1, 1], [True, True, True, False, False]),
+            ("protgpt2", "fasta_wrapped", [1, 10, 11, 12, 1, 1], [True, True, True, False, False]),
+            (
+                "progen2-medium",
+                "n_to_c_control",
+                [5, 10, 11, 12, 1, 1],
+                [True, True, True, False, False],
+            ),
+            (
+                "protgpt2",
+                A.INPUT_FORMAT_BOS_DIRECTION_SEQ,
+                [self.BOS, self.DIRECTION, *self.RESIDUES, self.PAD, self.PAD],
+                [False, True, True, True, False, False],
+            ),
+        )
+        for arm_name, input_format, ids, expected in cases:
+            with self.subTest(arm=arm_name, input_format=input_format):
+                model = self._model(arm_name, input_format)
+                batch = {
+                    "input_ids": torch.tensor([ids]),
+                    "attention_mask": torch.tensor([[1] * (len(ids) - 2) + [0, 0]]),
+                }
+                mask = model._target_mask(batch)[0].tolist()
+                self.assertEqual(mask, expected)
+                kept = [ids[column + 1] for column, keep in enumerate(mask) if keep]
+                for marker in A.rendering_marker_ids(model.arm):
+                    self.assertNotIn(marker, kept)
 
 
 class CorpusStreams(unittest.TestCase):

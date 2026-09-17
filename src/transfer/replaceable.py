@@ -1296,23 +1296,32 @@ class DenseReplaceable(ReplaceableModel):
     def _target_mask(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
         """Which next-token targets belong to this arm's content, over ``T - 1``.
 
-        Resolved from :func:`src.transfer.scoring.target_rule` and
-        :func:`src.transfer.scoring.sequence_target_mask` -- the repository's one
-        declaration of what a conditioned rendering scores -- rather than by an
-        arm name or a second copy of the rule (Appendix B rule 12). For every
-        unconditioned arm the rule is ``all_valid`` and the result is
-        ``attention_mask[:, 1:] & attention_mask[:, :-1]``, which under right
-        padding is bit-identical to the ``attention_mask[..., 1:]`` this stage
-        scored before, so no frozen number moves.
+        Resolved from :func:`src.transfer.scoring.target_rule`,
+        :func:`src.transfer.arms.conditioning_boundary_ids` and
+        :func:`src.transfer.arms.rendering_marker_ids` -- the repository's
+        declarations of what a rendering scores -- rather than by an arm name or
+        a second copy of the rule (Appendix B rule 12), and the same three
+        declarations :func:`src.transfer.budget.scored_tokens` resolves. For an
+        arm whose rendering prefixes nothing the rule is ``all_valid`` and the
+        result is ``attention_mask[:, 1:] & attention_mask[:, :-1]``, which under
+        right padding is bit-identical to the ``attention_mask[..., 1:]`` this
+        stage scored before, so no frozen number moves.
         """
 
         start, end = conditioning_boundary_ids(self.arm)
+        # A conditioned arm's span is its <start>/<end> pair; every other
+        # rendering's is whatever that rendering declared as a marker prefix, so
+        # a marker the rendering itself added is context rather than a scored
+        # target. The two are alternatives: `rendering_marker_ids` refuses a
+        # conditioned format, whose prompt carries no marker id at all.
+        markers = () if start is not None else rendering_marker_ids(self.arm)
         return sequence_target_mask(
             batch["input_ids"],
             batch["attention_mask"],
             rule=target_rule(self.arm.spec.input_format),
             start_token_id=start,
             end_token_id=end,
+            marker_token_ids=markers,
         )
 
     def content_mask(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
@@ -1383,20 +1392,22 @@ class DenseReplaceable(ReplaceableModel):
     def scored_logits(
         self, batch: dict[str, torch.Tensor]
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Every non-padding target after the first, which is ProGen3's convention.
+        """Every non-padding content target after the first, ProGen3's convention.
 
         ``targets`` is the shifted ids and ``mask`` the shifted validity mask, so
-        a padded row contributes only the positions it actually holds. The
-        special-token *markers* are scored, exactly as ProGen3 scores its
-        terminus tokens: they are positions the model predicts, and excluding
-        them from the likelihood while including them in the context would be a
-        third scoring convention.
+        a padded row contributes only the positions it actually holds. A marker
+        an arm's rendering itself prefixes -- an end-of-text or direction token
+        ahead of the content, or the document boundary ``eos_bounded_seq`` both
+        prefixes and terminates with -- is context rather than cohort content, so
+        :meth:`_target_mask` drops any position whose target id one of them
+        declares. That is the repository's one statement of the rule and the one
+        :func:`src.transfer.budget.scored_tokens` applies: the rendering declares
+        which positions it added, and no target rule can revise it.
 
-        **An ``ec_conditioned`` arm is the one exception, and it is not a third
-        convention but the one the repository already declares.** Its EC number,
-        ``<sep>`` and ``<start>`` are a *conditioning prompt* rather than content:
-        the tag supplies 1.73 nats of label information (L15), so scoring the
-        prompt would put that leak into the clean cross-entropy, into the
+        **An ``ec_conditioned`` arm is the case the boundary rule exists for.**
+        Its EC number, ``<sep>`` and ``<start>`` are a *conditioning prompt*
+        rather than content: the tag supplies 1.73 nats of label information
+        (L15), so scoring the prompt would put that leak into the clean cross-entropy, into the
         fully-ablated endpoint and therefore into both ends of the recovery
         ratio. :func:`src.transfer.scoring.target_rule` selects
         ``between_boundaries`` for exactly that reason, and this method reads it
