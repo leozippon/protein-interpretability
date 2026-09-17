@@ -1,0 +1,93 @@
+# EXP-R2-243 RITA-xl context-information qualification, re-measured under the
+# checkpoint's native document rendering, with the pre-repair rendering beside it.
+#
+# WHY THIS RUN EXISTS. RITA-xl was declared `input_format="raw"`: a bare residue
+# string, which the released post-processor renders as `seq<EOS>` because its
+# template is Sequence-then-`<EOS>` and prefixes nothing. The checkpoint's
+# training stream is documents separated by that token, so a document is preceded
+# by one, and the arm was scored with no boundary for its first residue to be
+# conditioned on. `input_format` is now `eos_bounded_seq` -- the declared
+# document boundary, then the sequence, with the tokenizer's terminal `<EOS>`
+# still appended -- and nothing else about the estimand, the cohort, the
+# reference, the dtype, the seed or the bootstrap changed. Before this campaign
+# the format effect was measured directly on the checkpoint: over the gate's own
+# draw (200 Swiss-Prot records of 64-246 residues, seed 20260728, float32), at
+# the position after one `<EOS>` the model places 0.99963 of its next-token mass
+# on the 20 residue ids (mean over 64 records) and assigns the first residue a
+# mean NLL of 0.7973 +/- 0.0333 nats; over the tokens both renderings score --
+# residues 2..L and the terminal `<EOS>` -- the boundary-prefixed rendering costs
+# 1.24520 nats/token against the bare rendering's 1.40124, a paired per-record
+# mean difference of -0.17384 +/- 0.01383 nats/token over 200 records, against
+# -0.00618 for a `<PAD>`-prefixed control.
+#
+# WHAT MOVED BESIDES THE RENDERING, stated rather than left to be inferred. The
+# rendering declares one marker id: the boundary it prefixes, which is the same
+# id the tokenizer appends as its terminator, so an exclusion stated by id
+# removes both. The scored targets are therefore the sequence's residues, 1..L,
+# where the bare rendering scored residues 2..L plus that terminator. The scored
+# *count* per record is L either way and the scored *positions* are unchanged
+# (input indices 1..L); the *membership* changes by one token per record,
+# residue 1's term entering and the terminator's leaving. That is the span this
+# arm's own declaration states, not a second convention: it is the statement
+# `rendering_marker_ids` makes for this format and the one
+# `budget.scored_tokens` applies to every other arm. EXP-R2-242's sibling repair
+# for ProGen3 moved that lineage's span to its residues for the same reason.
+#
+# WHY THERE ARE TWO KEYS. `native` is the repaired code (this campaign's commit)
+# and `base` is the pre-repair code, frozen at the commit this campaign's commit
+# is built on. They differ in the rendering and in the span resolution and in
+# nothing else, so the pair is a measured statement of what the repair moved on
+# the same pod, the same draw and the same sidecar design -- and `base` is also a
+# same-day reproduction of the recorded 8-block envelope, which is a diagnostic of
+# the record rather than a replacement for it. This is a new measurement, not a
+# correction of the old one: new run-id, new artefacts and the recorded envelopes
+# are left exactly as they are. A FAIL or an interval containing zero is a
+# completed measurement and is reported as one.
+#
+# The draw is the eight frozen EXP-R2-216/224/240 blocks, unchanged: pool 4000,
+# --cohort-draw-seed 20260728, --cohort-skip 7000k for k = 0..7, band 64-246,
+# n 200, held-out unigram reference 4000, --seed 20260727, disjoint estimator.
+# Cohort.digest hashes records only and the records are the same ones, so each
+# cell's expect basename carries that block's existing digest: a cell that drew
+# anything else writes a differently named file and is reported no-artifact
+# rather than silently paired against a block it does not share. All sixteen
+# stage-01 cells are expected to carry the eight recorded digests, in order.
+#
+# --allow-second-stage-arms is this campaign's door and admits only
+# STAGED_SECOND_STAGE_ARMS. float32 and --skip-truncation as before: rita-xl's
+# native encoding does not go through tokenize_batch, and a bfloat16 reading of
+# this checkpoint is a different measurement (its remote attention mixes float32
+# and half). --batch-size 1 as before: the encoding assigns no pad token and the
+# forward takes no attention mask, so records are scored one at a time. The
+# rendering adds one token per record; the longest record in the band is 246
+# residues, so 248 tokens, and the 1024-position context is not reached.
+#
+# Stage 41 runs over one key's eight sidecars alone at its recorded settings
+# (seed 20260820, 2000 paired bootstrap, --alpha-sweep 1.0), as a `cpu` row so
+# that it holds no card. Identification is the displacement-corrected lower bound
+# above zero on all eight blocks, and both keys are read the same way.
+#
+# gpu and slot: this campaign shares the pod with another agent's running
+# ProGen3 campaign, so it holds the two cards that were idle when it was written
+# (cuda:2 and cuda:3) and takes one slot per pair of blocks. TRANSFER_PYTHON is
+# the same GPFS ct runtime the recorded cells ran under, so the two runs differ
+# in the code under test and not in the interpreter.
+# slot	key	gpu	stage	label	env	expect	args
+1	native	2	01_cohort_power.py	r243_rita-xl_native_b0	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_17f1ca32b288.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl --cohort-skip 0
+1	native	3	01_cohort_power.py	r243_rita-xl_native_b1	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_ee0e4f711920.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl --cohort-skip 7000
+2	native	2	01_cohort_power.py	r243_rita-xl_native_b2	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_41dc586d3f8b.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl --cohort-skip 14000
+2	native	3	01_cohort_power.py	r243_rita-xl_native_b3	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_12c68b520c81.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl --cohort-skip 21000
+3	native	2	01_cohort_power.py	r243_rita-xl_native_b4	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_890b6081c4d2.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl --cohort-skip 28000
+3	native	3	01_cohort_power.py	r243_rita-xl_native_b5	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_16bfb97b3c00.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl --cohort-skip 35000
+4	native	2	01_cohort_power.py	r243_rita-xl_native_b6	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_00fd8200e9cb.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl --cohort-skip 42000
+4	native	3	01_cohort_power.py	r243_rita-xl_native_b7	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_13a1eb94a514.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl --cohort-skip 49000
+5	base	2	01_cohort_power.py	r243_rita-xl_base_b0	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_base_17f1ca32b288.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl_base --cohort-skip 0
+5	base	3	01_cohort_power.py	r243_rita-xl_base_b1	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_base_ee0e4f711920.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl_base --cohort-skip 7000
+6	base	2	01_cohort_power.py	r243_rita-xl_base_b2	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_base_41dc586d3f8b.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl_base --cohort-skip 14000
+6	base	3	01_cohort_power.py	r243_rita-xl_base_b3	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_base_12c68b520c81.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl_base --cohort-skip 21000
+7	base	2	01_cohort_power.py	r243_rita-xl_base_b4	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_base_890b6081c4d2.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl_base --cohort-skip 28000
+7	base	3	01_cohort_power.py	r243_rita-xl_base_b5	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_base_16bfb97b3c00.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl_base --cohort-skip 35000
+8	base	2	01_cohort_power.py	r243_rita-xl_base_b6	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_base_00fd8200e9cb.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl_base --cohort-skip 42000
+8	base	3	01_cohort_power.py	r243_rita-xl_base_b7	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_base_13a1eb94a514.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl_base --cohort-skip 49000
+9	native	cpu	41_context_information_bootstrap.py	r243_rita-xl_stage41	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	context_information_bootstrap.json	--sidecar ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_b0/power_swissprot_r243_rita-xl_17f1ca32b288.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_b1/power_swissprot_r243_rita-xl_ee0e4f711920.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_b2/power_swissprot_r243_rita-xl_41dc586d3f8b.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_b3/power_swissprot_r243_rita-xl_12c68b520c81.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_b4/power_swissprot_r243_rita-xl_890b6081c4d2.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_b5/power_swissprot_r243_rita-xl_16bfb97b3c00.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_b6/power_swissprot_r243_rita-xl_00fd8200e9cb.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_b7/power_swissprot_r243_rita-xl_13a1eb94a514.records.npz --arms rita-xl --expected-arms rita-xl --seed 20260820 --n-bootstrap 2000 --alpha-sweep 1.0
+10	base	cpu	41_context_information_bootstrap.py	r243_rita-xl_base_stage41	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	context_information_bootstrap.json	--sidecar ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_base_b0/power_swissprot_r243_rita-xl_base_17f1ca32b288.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_base_b1/power_swissprot_r243_rita-xl_base_ee0e4f711920.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_base_b2/power_swissprot_r243_rita-xl_base_41dc586d3f8b.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_base_b3/power_swissprot_r243_rita-xl_base_12c68b520c81.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_base_b4/power_swissprot_r243_rita-xl_base_890b6081c4d2.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_base_b5/power_swissprot_r243_rita-xl_base_16bfb97b3c00.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_base_b6/power_swissprot_r243_rita-xl_base_00fd8200e9cb.records.npz ${TRANSFER_RESULTS_RUN_DIR}/r243_rita-xl_base_b7/power_swissprot_r243_rita-xl_base_13a1eb94a514.records.npz --arms rita-xl --expected-arms rita-xl --seed 20260820 --n-bootstrap 2000 --alpha-sweep 1.0

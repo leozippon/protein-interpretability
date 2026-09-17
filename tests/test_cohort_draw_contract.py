@@ -633,6 +633,16 @@ class EveryCorpusDrawDeclaresItsSeed(unittest.TestCase):
                 # which is why the two draws share --cohort-draw-seed rather than
                 # each carrying their own.
                 "38_mode_subspaces.py",
+                # Draws BOTH constructors at stage 01's own band and window, because
+                # the question it settles -- which prefix rendering a checkpoint was
+                # trained behind -- is read against the population the prefix's cost
+                # is quoted on, and a prefix priced on a head-of-file region is a
+                # number about that region. It reads --cohort-draw-seed under the
+                # imported DEFAULT_CORPUS_DRAW_SEED default and passes it to both
+                # constructors and into the record it writes, so a question can be
+                # re-read at stage 01's draw or at a disjoint window of the same
+                # permutation rather than only on the one the first run chose.
+                "prefix_render_probe.py",
                 # Draws BOTH constructors under one --cohort-draw-seed: the
                 # Swiss-Prot pool its DIAMOND all-against-all identity bands are
                 # built over, and the OpenWebText documents its 80-130-token
