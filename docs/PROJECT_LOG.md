@@ -3049,3 +3049,7 @@ The shared-premises closer in `summary.md` now only requires scoring artefacts t
 ## 2026-09-17 — Add MODEL − BLOSUM62 to the ProteinGym summary row
 
 `summary.md` now reports family-bootstrap MODEL − BLOSUM62 beside MODEL − LOOKUP for the scored ProteinGym arms, including the Galactica intervals from the existing group-analyse artefact. No new measurement. No pod names recorded.
+
+## 2026-09-17 — Dispatch RITA frozen pairing, Galactica admission, ProtGPT3 native gate
+
+Added `campaign_rita_xl_frozen_analyse.tsv` and `campaign_protgpt3_native_gate.tsv` (commit `e84b17d`). RITA pairing finished from the snapshot copy on freeze `20260917222641_07fae5c1614a`; numbers unchanged and now citable. Galactica 6.7B/30B score files received records-only ADMITTED; 125M ProteinGym was kept, not rescored. ProtGPT3 native eight-block gate is running on the 4-GPU allocation; ProteinGym is queued after it. No pod names recorded.
