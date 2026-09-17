@@ -3037,3 +3037,7 @@ Recorded the stage-20 MODEL − LOOKUP analysis for the `instructprotein` arm, w
 ## 2026-09-17 — Drop the scoring-direction premise row
 
 `summary.md` §共同测量前提 no longer treats scoring direction as a separate convention keyed to ProGen3's official bidirectional mean. The default is N-to-C summation, recorded on the precision/numeric row; mixed directions still do not combine. No pod names recorded.
+
+## 2026-09-17 — Shorten the scoring-artefact recording note
+
+The shared-premises closer in `summary.md` now only requires scoring artefacts to record direction, span, precision, alphabet and tokenizer policy, and format declarations to cite a model card, paper or repo probe. No pod names recorded.

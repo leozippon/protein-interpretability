@@ -54,7 +54,7 @@
 | 精度 / 数值约定 | 所有计分臂；ProGen2 各档、ProteinGLM-7B-CLM、RITA-xl 与 Galactica 蛋白模式的精度已在主表声明 | 存储 dtype 与计分 dtype 分别声明、允许不同，并逐端点固定。计分默认 N→C 求和；一次比较内方向必须相同 | ProGen2-medium 的截断曲线统计在 bfloat16 下移动约 16%（0.6266 → 0.7293 nats），由此单独按 float32 计分；ProteinGym 阶段一律 bfloat16 | 精度和方向都是可比性条件：同一谱系的梯子若各档精度不同，比较的是算术而不是 checkpoint。不同方向的数字不混合，也不要求采用某一 checkpoint 的官方双向计分 |
 | 抽样种子纪律 | 所有抽取语料的阶段；文本 OpenWebText，蛋白 Swiss-Prot 与带 EC 标签的 UniProt | 语料抽取是带种子的置换：`protein_cohort` 与 `text_cohort`（及其 repeat 版本）在声明的 draw seed 下置换后再取 `--cohort-skip` 窗口，种子写入充分统计量 `seeds.cohort_draw` | 文件顺序前缀是语料的一个区域而不是样本：生物语料按 cluster 排序，网页语料按 shard 排序；`--cohort-draw-seed 0` 的文件顺序变体只在对照中记录 | 前提而非逐实验选择：`tests/test_cohort_draw_contract.py` 静态检查每个抽取语料的阶段的调用点，新增未声明 draw seed 的抽取即失败 |
 
-每个计分产物须记录五项事实：计分方向（默认 N→C 求和）、计分跨度（哪些位置是目标）、精度、计分字母表与 tokenizer id 策略；本项目已发现的四次输入接口缺陷，若这五项已在产物中记录，都能从产物本身读出。每个输入格式声明须引用其证据来源，即 checkpoint 自己的模型卡、论文，或本仓库 probe 的测量；缺陷都来自无记录支持的格式声明，而缺失 token、未计分标记、声明与 checkpoint 训练格式不一致这三类失效形态不能由同一项机械检查全部捕获，因此这是声明要求，而不是运行时守卫。
+计分产物写明方向（默认 N→C）、跨度、精度、字母表和 tokenizer 策略。输入格式声明须引用模型卡、论文或本仓库 probe。
 
 ## 方向一：比较模型具有什么能力
 
