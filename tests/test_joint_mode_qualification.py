@@ -86,6 +86,7 @@ class StubTokenizer:
         specials: tuple[str, ...],
         split_marker: str | None = None,
         bos_id: int | None = None,
+        bos_token: str = "<s>",
         alias: dict[str, str] | None = None,
     ) -> None:
         self.split_marker = split_marker
@@ -93,9 +94,11 @@ class StubTokenizer:
         self._vocab: dict[str, int] = {}
         self._inverse: dict[int, str] = {}
         if bos_id is not None:
-            # A real tokenizer spells its beginning-of-sequence token, and the
-            # spelled-run rule reads every id it produced.
-            self._inverse[bos_id] = "<s>"
+            # A real tokenizer spells its beginning-of-sequence token, and both the
+            # spelled-run rule and a declared rendering prefix read the spelling:
+            # InstructProtein's ``bos_token`` is "</s>", not "<s>", so the stub
+            # takes the spelling as an argument rather than assuming one.
+            self._inverse[bos_id] = bos_token
         self._add("<unk>")
         for token in specials:
             self._add(token)
@@ -108,6 +111,11 @@ class StubTokenizer:
             self._add(character)
         for token, target in (alias or {}).items():
             self._vocab[token] = self._vocab[target]
+        if bos_id is not None:
+            # Added after the vocabulary is built, so that declaring the prefix
+            # token does not shift every other id: its id is the tokenizer's own
+            # rather than the next free one.
+            self._vocab[bos_token] = bos_id
         self._longest = max(len(token) for token in self._vocab)
         self.unk_id = self._vocab["<unk>"]
 
@@ -184,6 +192,9 @@ def instructprotein_stub(*, drop: tuple[str, ...] = (), alias=None) -> StubToken
     return StubTokenizer(
         specials=("<protein>", "</protein>") + residues,
         bos_id=2,
+        # The staged tokenizer's own spelling: ``bos_token`` is "</s>" at id 2,
+        # which is also its end-of-sequence token.
+        bos_token="</s>",
         alias=alias,
     )
 
@@ -221,6 +232,7 @@ def _declaration(**overrides) -> JM.JointRendering:
         "residue_escape": "^",
         "escape_before_end_delimiter": False,
         "protein_context_template": None,
+        "prefix_marker": None,
         "scored_target_rule": JM.BETWEEN_DELIMITERS,
         "residue_subspace_disjoint_from_text": False,
         "note": "",
@@ -456,6 +468,7 @@ class PerResidueVerification(unittest.TestCase):
             tokenizer=galactica_stub(honours_the_split_rule=False),
             start_id=resolved.start_id,
             end_id=resolved.end_id,
+            prefix_marker_ids=resolved.prefix_marker_ids,
             residue_ids=resolved.residue_ids,
             scored_target_ids=resolved.scored_target_ids,
         )
@@ -520,6 +533,7 @@ class PerResidueVerification(unittest.TestCase):
             tokenizer=resolved.tokenizer,
             start_id=None,
             end_id=None,
+            prefix_marker_ids=resolved.prefix_marker_ids,
             residue_ids=resolved.residue_ids,
             scored_target_ids=tuple(sorted(resolved.residue_ids.values())),
         )
@@ -1105,6 +1119,8 @@ class TheProteinRecordAndItsControls(unittest.TestCase):
         self.assertFalse(facts["naive_control_available"])
         self.assertFalse(facts["delimiters_are_tokens"])
         self.assertIsNone(facts["start_token_id"])
+        self.assertIsNone(facts["prefix_marker"])
+        self.assertEqual(facts["prefix_marker_ids"], [])
         self.assertEqual(
             facts["n_scored_target_token_ids"], len(facts["scored_target_token_ids"])
         )
@@ -1114,6 +1130,8 @@ class TheProteinRecordAndItsControls(unittest.TestCase):
         self.assertEqual(galactica["symbol_unit"], JM.RESIDUE_UNIT)
         self.assertTrue(galactica["delimiters_are_tokens"])
         self.assertEqual(galactica["n_scored_target_token_ids"], len(AA20))
+        self.assertIsNone(galactica["prefix_marker"])
+        self.assertEqual(galactica["prefix_marker_ids"], [])
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -143,6 +143,21 @@ class JointRendering:
     embedded in, with a single ``{context}`` field. It is optional in the strong
     sense: a rendering with no context is the bare block, and the context string
     that was used reaches the artefact rather than being implied by a flag.
+
+    ``prefix_marker`` is the token this family's tokenizer puts in front of the
+    *encoded* rendering, and it is not part of the string ``render_protein``
+    returns. It is declared here because :func:`encode` calls the tokenizer with
+    ``add_special_tokens`` at its default, so the ids a rendering produces are its
+    text plus whatever the post-processor adds, and that addition is otherwise
+    invisible from every artefact: InstructProtein's protein rendering is
+    ``</s>`` followed by the declared block, which is also its end-of-sequence id
+    and is what its ``tokenizer_config.json``'s ``add_bos_token`` puts there.
+    ``None`` means this family declares no prefix marker, which is not the
+    statement that its rendering prefixes nothing: ProLLaMA's and LLaMA-2's
+    tokenizers prepend ``<s>`` under the same call and neither family's prefix has
+    been priced, so neither declares one. :func:`prefix_marker_ids` is the door a
+    measurement resolves it through, and the counterpart of
+    :func:`src.transfer.arms.rendering_marker_ids` for the panel's own prefixes.
     """
 
     name: str
@@ -152,6 +167,7 @@ class JointRendering:
     residue_escape: str | None
     escape_before_end_delimiter: bool
     protein_context_template: str | None
+    prefix_marker: str | None
     scored_target_rule: str
     residue_subspace_disjoint_from_text: bool
     note: str
@@ -279,6 +295,10 @@ JOINT_RENDERINGS: dict[str, JointRendering] = {
         # repeated once before the closing delimiter.
         escape_before_end_delimiter=True,
         protein_context_template="# {context}\n\n",
+        # The released tokenizer declares no beginning-of-sequence token and its
+        # post-processor adds nothing, so this rendering's encoded ids are its own
+        # text and there is no prefix to declare.
+        prefix_marker=None,
         # The residues are ordinary single-letter pieces of a 50000-piece text
         # vocabulary, so identity cannot separate a residue from the same letter
         # occurring in prose. Position can, and the delimiters are added tokens.
@@ -304,6 +324,19 @@ JOINT_RENDERINGS: dict[str, JointRendering] = {
         residue_escape="Ƥ",
         escape_before_end_delimiter=False,
         protein_context_template="Instruction: {context}\nOutput: ",
+        # The prefix this checkpoint's own ``tokenizer_config.json`` puts there: it
+        # declares ``add_bos_token`` true with ``bos_token`` "</s>", so ``encode``
+        # opens the ids with id 2 whatever the text is. Measured on the staged
+        # checkpoint at stage 01's cohort draw seed 20260728 in float32, over 8
+        # Swiss-Prot records of 64-246 residues: the protein-mode span reads
+        # 0.878428 nats/residue with the prefix against 3.088913 without, so
+        # removing it costs +2.210484 nats/residue, and residue 1's mean NLL is
+        # 0.035087 nats (stderr 5.7742e-08) against 16.340752 (stderr 8.0095e-07).
+        # At position 0 the token that follows is <protein> with probability
+        # 0.981308, mean over the same 8 records. The prefix is therefore part of
+        # this rendering and is declared here rather than left to the call's
+        # default.
+        prefix_marker="</s>",
         # added_tokens.json declares <protein> 50265, </protein> 50266 and
         # ƤA..ƤY 50267-50286, so the residue output space is enumerable and
         # disjoint from the text vocabulary and a scored position is decidable by
@@ -336,6 +369,11 @@ JOINT_RENDERINGS: dict[str, JointRendering] = {
         # that names one measures stage 2's; whichever was used reaches the
         # artefact.
         protein_context_template="[Generate by superfamily] Superfamily=<{context}> ",
+        # No prefix marker is declared. The tokenizer does prepend one -- ``<s>``,
+        # id 1, under the same default ``encode`` call -- but no measurement prices
+        # that prefix on this lineage's text mode, and declaring it here would
+        # report an unpriced rendering as an established one.
+        prefix_marker=None,
         # 'Seq=<' is three pieces of this vocabulary and '>' merges with the
         # preceding word when it stands alone, so neither delimiter is a token
         # whose id could bound the span. The span is the token run that spells
@@ -380,9 +418,60 @@ def rendering(name: str) -> JointRendering:
 
 
 def encode(tokenizer: Any, text: str) -> list[int]:
-    """Token ids for one string, as a plain list."""
+    """Token ids for one string, as a plain list.
+
+    ``add_special_tokens`` stays at its default, so the ids are the string plus
+    whatever this tokenizer's post-processor puts in front of it, and that prefix
+    is a declared fact rather than a detail of the call:
+    :attr:`JointRendering.prefix_marker` names it for a family whose price has
+    been measured, and :func:`prefix_marker_ids` resolves it to ids. InstructProtein's
+    is ``</s>`` (id 2), which its protein rendering is declared to open with and
+    does, and which costs 3.90703 nats/token in that same checkpoint's *text* mode
+    over 200 OpenWebText documents of at least 800 characters at the 384-token
+    window (23.74888 against 19.84184; the unprefixed span starts one document
+    token later, so the two are not the same target set).
+
+    This one call governs every family, and turning the default off would move the
+    ids of all of them at once -- InstructProtein's protein rendering, and
+    ProLLaMA's, ProLLaMA Stage 1's and LLaMA-2's text renderings, whose prefixes
+    are unmeasured. So the call stays as it is and each family declares what its
+    own measurement found, which keeps the ids identical for every checkpoint this
+    line governs.
+    """
 
     return [int(value) for value in tokenizer(text, return_tensors=None)["input_ids"]]
+
+
+def prefix_marker_ids(tokenizer: Any, declaration: JointRendering) -> tuple[int, ...]:
+    """Ids of the token a rendering's post-processor puts in front of its text.
+
+    The joint families' door to the question
+    :func:`src.transfer.arms.rendering_marker_ids` answers for an ``Arm``,
+    resolved from the rendering's own declaration so that no caller spells a
+    marker's id by hand. A measurement that has to know which positions of a
+    rendering are not its own text cannot read them off the ids: the prefix
+    carries no spelling that separates it from a content token on this vocabulary.
+
+    Raises for a family that declares no prefix marker rather than returning an
+    empty tuple, because an empty tuple is the answer "this rendering prefixes
+    nothing" and that answer has not been established for ProLLaMA or LLaMA-2:
+    their tokenizers prepend ``<s>`` (id 1) under the same ``encode`` call, and
+    absence of a declaration is not absence of a prefix. The token itself is
+    round-tripped through :func:`_declared_token_id`, which refuses one the
+    tokenizer does not carry as a token of its own.
+    """
+
+    if declaration.prefix_marker is None:
+        raise ValueError(
+            f"{declaration.name} declares no prefix marker, so the tokens its "
+            "tokenizer puts in front of the rendering cannot be reported. That is "
+            "a different statement from 'this rendering prefixes nothing': "
+            "ProLLaMA and LLaMA-2 take the same encode call and their tokenizers "
+            "prepend <s> (id 1), and neither family's prefix has been priced"
+        )
+    return (
+        _declared_token_id(tokenizer, declaration.prefix_marker, role="prefix marker"),
+    )
 
 
 def _declared_token_id(tokenizer: Any, token: str, *, role: str) -> int:
@@ -605,12 +694,18 @@ class JointTokenisation:
     take under this rendering, and it is the single source of the held-out
     unigram's support. For a residue-unit family it is the twenty residue ids; for
     a token-unit family it is every token spelled purely of canonical residues.
+
+    ``prefix_marker_ids`` is the resolved prefix of every id list this rendering
+    encodes to -- ``</s>`` (id 2) on InstructProtein -- and it is empty exactly
+    when the declaration carries no prefix marker, which is a family whose prefix
+    has not been priced rather than one that has none.
     """
 
     declaration: JointRendering
     tokenizer: Any
     start_id: int | None
     end_id: int | None
+    prefix_marker_ids: tuple[int, ...]
     residue_ids: Mapping[str, int]
     scored_target_ids: tuple[int, ...]
 
@@ -644,6 +739,17 @@ class JointTokenisation:
                 f"but produced ids {unrowed}, which its own declared size does not "
                 "cover. An embedding padded above that size is safe only while "
                 "every emitted id has a row"
+            )
+        if self.prefix_marker_ids and token_ids[: len(self.prefix_marker_ids)] != self.prefix_marker_ids:
+            raise ValueError(
+                f"{self.declaration.name}: this rendering is declared to open with "
+                f"{self.declaration.prefix_marker!r} (id {self.prefix_marker_ids[0]}), "
+                f"and the encoding of {text!r} opens with "
+                f"{list(token_ids[: len(self.prefix_marker_ids)])}. The declared "
+                "prefix is what the tokenizer's post-processor puts in front of "
+                "every encode() call this rendering makes, so an encoding that "
+                "does not open with it means the declaration and the ids have "
+                "drifted apart"
             )
         rule = (
             self.declaration.scored_target_rule
@@ -757,6 +863,15 @@ class JointTokenisation:
             "naive_control_available": declaration.naive_control_available,
             "start_token_id": None if self.start_id is None else int(self.start_id),
             "end_token_id": None if self.end_id is None else int(self.end_id),
+            "prefix_marker": declaration.prefix_marker,
+            "prefix_marker_ids": [int(value) for value in self.prefix_marker_ids],
+            "prefix_marker_note": (
+                "the token the tokenizer's post-processor puts in front of every "
+                "encode() call this rendering makes, resolved from the rendering's "
+                "own declaration. Empty exactly when the declaration carries no "
+                "prefix marker, which is an unpriced prefix rather than an absent "
+                "one"
+            ),
             "delimiters_are_tokens": self.start_id is not None,
             "residue_token_ids": {
                 residue: int(value) for residue, value in sorted(self.residue_ids.items())
@@ -840,6 +955,11 @@ def resolve(tokenizer: Any, declaration: JointRendering | str) -> JointTokenisat
         tokenizer=tokenizer,
         start_id=start_id,
         end_id=end_id,
+        prefix_marker_ids=(
+            ()
+            if declaration.prefix_marker is None
+            else prefix_marker_ids(tokenizer, declaration)
+        ),
         residue_ids=residue_ids,
         scored_target_ids=scored_target_ids,
     )
