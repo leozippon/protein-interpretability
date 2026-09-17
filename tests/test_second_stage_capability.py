@@ -520,9 +520,9 @@ def test_the_two_over_assumptions_are_refused_with_their_reasons():
     with pytest.raises(ValueError, match="freeze delivers no MegaScale row"):
         STAGE43.require_endpoint(progen3, "megascale")
     galactica = STAGE43.require_wave("joint_galactica")
-    with pytest.raises(ValueError, match="no code path exists"):
+    with pytest.raises(ValueError, match="freeze delivers no ProteinGym or MegaScale row"):
         STAGE43.require_endpoint(galactica, "dms")
-    with pytest.raises(ValueError, match="no code path exists"):
+    with pytest.raises(ValueError, match="freeze delivers no ProteinGym or MegaScale row"):
         STAGE43.require_endpoint(galactica, "megascale")
     qwen = STAGE43.require_wave("text_qwen")
     with pytest.raises(ValueError, match="Qwen does not enter them"):
@@ -914,6 +914,8 @@ def test_stage_29_admits_no_arm_whose_identification_it_does_not_declare():
     missing = [name for name in admitted if name not in D.ARM_IDENTIFICATION]
     assert missing == [], f"admitted by stage 29 with no ARM_IDENTIFICATION: {missing}"
     assert set(D.ARM_IDENTIFICATION).isdisjoint(D.JOINT_LINEAGE_IDENTIFICATION)
+    assert set(D.ARM_IDENTIFICATION).isdisjoint(D.JOINT_RENDERING_IDENTIFICATION)
+    assert set(D.JOINT_LINEAGE_IDENTIFICATION).isdisjoint(D.JOINT_RENDERING_IDENTIFICATION)
 
 
 def test_stage_29_door_admits_exactly_the_declared_protein_doors():
@@ -943,6 +945,7 @@ def test_stage_29_door_admits_exactly_the_declared_protein_doors():
         assert name in D.ARM_IDENTIFICATION, name
     for name in ("galactica-6.7b", "instructprotein"):
         assert stage._admitted_door(name) is None, name
+        assert name in D.JOINT_RENDERING_IDENTIFICATION, name
     assert "rita-xl" not in D.EXCLUDED_ARMS
 
 
@@ -962,6 +965,9 @@ def test_stage_29_scorer_routes_are_the_declared_ones():
         INPUT_FORMAT_GMASK_SOP_EOS,
         arm_spec,
     )
+    from src.transfer import designed_referent as D
+    from src.transfer import galactica_fitness as G
+    from src.transfer import instructprotein_fitness as IP
     from src.transfer import rita_fitness as RITA
 
     stage = _load_stage("29_designed_referent.py")
@@ -976,6 +982,14 @@ def test_stage_29_scorer_routes_are_the_declared_ones():
     for name in ("zymctrl", "proteinglm-7b-clm", "rita-xl"):
         with pytest.raises(ValueError):
             stage._ArmLikelihood(name, device="cpu", dtype="float32", batch_size=1)
+    for name in G.GALACTICA_RUNGS:
+        assert name in D.JOINT_RENDERING_IDENTIFICATION, name
+        assert stage._admitted_door(name) is None, name
+    assert IP.INSTRUCTPROTEIN_ARM in D.JOINT_RENDERING_IDENTIFICATION
+    with pytest.raises(ValueError, match="float32-only"):
+        stage._GalacticaLikelihood(
+            "galactica-125m", device="cpu", dtype="bfloat16", batch_size=1
+        )
 
 
 def test_stage_29_refuses_an_fp32_score_taken_under_a_tf32_matmul(monkeypatch):

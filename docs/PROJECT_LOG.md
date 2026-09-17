@@ -3065,3 +3065,7 @@ Native eight-block identification is PASS (minimum displacement-corrected lower 
 ## 2026-09-18 — MegaScale non-text fill is annotation, not a new score wave
 
 `summary.md` now carries the existing stage-29 MegaScale cells for every non-text main-table arm except ZymCTRL, Galactica and InstructProtein. The last two have no stage-29 door and were not given a new scorer. Uninterpretable control failures are recorded rather than dropped. No pod names recorded.
+
+## 2026-09-18 — MegaScale Galactica / InstructProtein door
+
+Stage 29 reuses the ProteinGym rendering scorers for Galactica (float32) and InstructProtein. Identification is a third table, `JOINT_RENDERING_IDENTIFICATION`, disjoint from the ArmSpec and ProLLaMA tables. Manifest `campaign_s29_galactica_instructprotein.tsv`. No scores in this entry. No pod names recorded.

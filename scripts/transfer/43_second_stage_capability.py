@@ -142,12 +142,14 @@ MEGASCALE_PROGEN3_REFUSAL = (
     "campaign that produces it"
 )
 GALACTICA_FITNESS_REFUSAL = (
-    "no code path exists. Galactica is declared as an arm nowhere -- "
-    "21_joint_mode_qualification.py's rule that an unqualified joint checkpoint "
-    "'must not be in arms.py at all' -- and stages 20 and 29 both resolve an "
-    "ArmSpec by name. The only route to these weights is "
-    "21_joint_mode_qualification.py --checkpoint <dir> --rendering galactica, "
-    "which measures context information and not fitness"
+    "EXP-R2-225's freeze delivers no ProteinGym or MegaScale row on the "
+    "Galactica wave, and that is now the whole of the reason: the code-path "
+    "obstruction this string used to describe is gone. 20_retrieval_bound.py "
+    "scores the four rungs through galactica_fitness.GalacticaFitnessScorer, "
+    "and 29_designed_referent.py opens the same scorer on MegaScale without "
+    "an ArmSpec. What still stops a row here is the freeze and not the code: "
+    "no wave of this campaign carries either fitness endpoint, so this stage "
+    "builds no gate no artefact of this campaign can feed"
 )
 QWEN_FITNESS_FORBIDDEN = (
     "EXP-R2-225 forbids it: 'Qwen does not enter them.' A text checkpoint gets "

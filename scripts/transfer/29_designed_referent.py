@@ -86,6 +86,8 @@ from src.transfer.arms import (  # noqa: E402
     rendering_marker_ids,
     tokenize_batch,
 )
+from src.transfer import galactica_fitness as G  # noqa: E402
+from src.transfer import instructprotein_fitness as IP  # noqa: E402
 from src.transfer import joint_lineage as L  # noqa: E402
 from src.transfer import progen3 as PG  # noqa: E402
 from src.transfer import proteinglm as PGLM  # noqa: E402
@@ -819,6 +821,95 @@ class _ProGen3Likelihood:
         self.torch.cuda.empty_cache()
 
 
+class _GalacticaLikelihood:
+    """One Galactica rung under the declared protein rendering, at float32.
+
+    A thin adapter over :class:`src.transfer.galactica_fitness.GalacticaFitnessScorer`,
+    which is the ProteinGym door. It takes raw residue strings rather than
+    rendered text because that scorer owns the ``[START_AMINO]...[END_AMINO]``
+    rendering and the protein-content span. Float32 is required so the arithmetic
+    is the one ProteinGym recorded for the same checkpoint, not a faster one.
+    """
+
+    def __init__(self, name: str, *, device: str, dtype: str, batch_size: int) -> None:
+        if dtype != "float32":
+            raise ValueError(
+                f"Galactica MegaScale scoring is float32-only; got {dtype!r}. "
+                "The ProteinGym door scores these rungs at float32"
+            )
+        loaded = G.load_galactica(name, device=device, dtype=dtype)
+        self.name = name
+        self.scorer = G.GalacticaFitnessScorer(loaded, batch_size=batch_size)
+        self.context = self.scorer.context
+
+    @property
+    def score_description(self) -> str:
+        return self.scorer.score_description
+
+    @property
+    def scoring_stratum(self) -> str:
+        return self.scorer.scoring_stratum
+
+    def render(self, sequences: list[str]) -> list[str]:
+        """The records :meth:`log_likelihood` consumes: raw residue strings."""
+
+        return list(sequences)
+
+    def token_lengths(self, sequences: list[str]) -> list[int]:
+        return self.scorer.token_lengths(sequences)
+
+    def log_likelihood(self, sequences: list[str]) -> np.ndarray:
+        return self.scorer.log_likelihood(sequences)
+
+    def residue_accounting(self) -> dict[str, Any]:
+        return self.scorer.residue_accounting()
+
+    def release(self) -> None:
+        self.scorer.release()
+
+
+class _InstructProteinLikelihood:
+    """InstructProtein protein mode under the declared residue-token rendering.
+
+    A thin adapter over
+    :class:`src.transfer.instructprotein_fitness.InstructProteinFitnessScorer`,
+    which is the ProteinGym door. It takes raw residue strings because that
+    scorer owns the ``<protein>ƤA..ƤY</protein>`` rendering and the
+    protein-content span. Text mode is not a scoring door.
+    """
+
+    def __init__(self, name: str, *, device: str, dtype: str, batch_size: int) -> None:
+        loaded = IP.load_instructprotein(name, device=device, dtype=dtype)
+        self.name = name
+        self.scorer = IP.InstructProteinFitnessScorer(loaded, batch_size=batch_size)
+        self.context = self.scorer.context
+
+    @property
+    def score_description(self) -> str:
+        return self.scorer.score_description
+
+    @property
+    def scoring_stratum(self) -> str:
+        return self.scorer.scoring_stratum
+
+    def render(self, sequences: list[str]) -> list[str]:
+        """The records :meth:`log_likelihood` consumes: raw residue strings."""
+
+        return list(sequences)
+
+    def token_lengths(self, sequences: list[str]) -> list[int]:
+        return self.scorer.token_lengths(sequences)
+
+    def log_likelihood(self, sequences: list[str]) -> np.ndarray:
+        return self.scorer.log_likelihood(sequences)
+
+    def residue_accounting(self) -> dict[str, Any]:
+        return self.scorer.residue_accounting()
+
+    def release(self) -> None:
+        self.scorer.release()
+
+
 class _JointRungLikelihood:
     """One rung of the ProLLaMA lineage, under the bare ``Seq=<...>`` block.
 
@@ -893,17 +984,56 @@ def _require_declared_fp32_policy(address: str) -> dict[str, Any]:
     return {"requested": requested, "observed": observed}
 
 
-def _open_scorer(name: str, args: argparse.Namespace) -> tuple[Any, dict[str, Any], dict[str, str]]:
-    """One arm or one EXP-R2-226 rung, with its settings and its identification.
+def _joint_rendering_settings(scorer: Any, args: argparse.Namespace) -> dict[str, Any]:
+    """Settings block shared by the two ProteinGym rendering doors."""
 
-    The two doors are separate all the way down, deliberately. A panel arm is
+    settings = {
+        "checkpoint": scorer.scorer.facts["checkpoint"],
+        "input_format": (
+            f"{scorer.scorer.loaded.tokenisation.declaration.name} declared "
+            "protein rendering, context=None"
+        ),
+        "context": scorer.context,
+        "device": args.device,
+        "dtype": args.dtype,
+        "batch_size": args.batch_size,
+        "score": scorer.score_description,
+        "scoring_stratum": scorer.scoring_stratum,
+        "checkpoint_facts": scorer.scorer.facts,
+        "scientific_role": scorer.scorer.facts["scientific_role"],
+        "door": "a ProteinGym protein-mode rendering door",
+    }
+    if args.dtype == "float32":
+        settings["precision_policy"] = _require_declared_fp32_policy(scorer.name)
+    return settings
+
+
+def _open_scorer(name: str, args: argparse.Namespace) -> tuple[Any, dict[str, Any], dict[str, str]]:
+    """One arm, one EXP-R2-226 rung, or one ProteinGym rendering door.
+
+    The three doors are separate all the way down, deliberately. A panel arm is
     resolved through ``arms.arm_spec`` and carries an ``ARM_IDENTIFICATION``
-    entry; a joint checkpoint is not in ``arms.py`` at all
-    (``21_joint_mode_qualification.py``'s rule) and carries a
-    ``JOINT_LINEAGE_IDENTIFICATION`` entry. Neither table is indexed with a name
-    the other door admitted.
+    entry; a ProLLaMA rung is not in ``arms.py`` and carries a
+    ``JOINT_LINEAGE_IDENTIFICATION`` entry; a Galactica or InstructProtein name
+    is reached the same way ProteinGym reaches it and carries a
+    ``JOINT_RENDERING_IDENTIFICATION`` entry. No table is indexed with a name
+    another door admitted.
     """
 
+    if name in G.GALACTICA_RUNGS:
+        scorer = _GalacticaLikelihood(
+            name, device=args.device, dtype=args.dtype, batch_size=args.batch_size
+        )
+        return scorer, _joint_rendering_settings(scorer, args), dict(
+            D.JOINT_RENDERING_IDENTIFICATION[name]
+        )
+    if name in IP.CHECKPOINTS:
+        scorer = _InstructProteinLikelihood(
+            name, device=args.device, dtype=args.dtype, batch_size=args.batch_size
+        )
+        return scorer, _joint_rendering_settings(scorer, args), dict(
+            D.JOINT_RENDERING_IDENTIFICATION[name]
+        )
     if name in L.RUNGS:
         qualification = QUALIFICATION.read_verdict(
             args.joint_qualification_dir, name, dtype=args.dtype

@@ -1,0 +1,30 @@
+# Stage 29 MegaScale scores for the five ProteinGym rendering doors that
+# have no ArmSpec: Galactica 125M/1.3B/6.7B/30B and InstructProtein.
+#
+# THE ESTIMAND IS UNCHANGED. Per wild type, Spearman between the summed
+# log-likelihood of a rendered variant and ddG_ML. Cohort is the EXP-R2-190
+# census, SHA-256
+# caaa233dc44146d4fca40087b431e49aea97d073f864b04168e0a764ad400205,
+# staged once at the run root and read through --cohort. Baselines stay the
+# frozen ones; no threshold is retuned. Verdict is designed_referent.arm_verdict
+# after the scores land, not here.
+#
+# THE SCORER IS PROTEINGYM'S. Galactica is
+# galactica_fitness.GalacticaFitnessScorer at float32, declared
+# [START_AMINO]...[END_AMINO], protein-content positions only. InstructProtein
+# is instructprotein_fitness.InstructProteinFitnessScorer at bfloat16, declared
+# <protein>ƤA..ƤY</protein>. Neither name is an ArmSpec. Identification is
+# designed_referent.JOINT_RENDERING_IDENTIFICATION: Galactica cannot sign the
+# UniRef50 certificate; InstructProtein declares a UniRef100 family whose
+# relation to that snapshot is unestablished. A gate non-identification does
+# not withhold a cell.
+#
+# Slot 1 holds the three cheaper cells. Slot 2 is 6.7B alone. Slot 3 is 30B
+# alone. Cards are re-read in the pod immediately before dispatch.
+#
+#	slot	key	gpu	stage	label	env	expect	args
+1	s29_joint	0	29_designed_referent.py	s29_galactica-125m	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	model_galactica-125m.json	--stages score --arms galactica-125m --dtype float32 --batch-size 16 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json
+1	s29_joint	1	29_designed_referent.py	s29_galactica-1.3b	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	model_galactica-1.3b.json	--stages score --arms galactica-1.3b --dtype float32 --batch-size 16 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json
+1	s29_joint	2	29_designed_referent.py	s29_instructprotein	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	model_instructprotein.json	--stages score --arms instructprotein --dtype bfloat16 --batch-size 16 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json
+2	s29_joint	0	29_designed_referent.py	s29_galactica-6.7b	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	model_galactica-6.7b.json	--stages score --arms galactica-6.7b --dtype float32 --batch-size 16 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json
+3	s29_joint	0	29_designed_referent.py	s29_galactica-30b	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	model_galactica-30b.json	--stages score --arms galactica-30b --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json

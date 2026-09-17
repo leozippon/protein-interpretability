@@ -146,10 +146,24 @@ def test_stage_29_declares_an_identification_for_every_rung_it_admits():
         assert entry["note"], name
 
 
+def test_stage_29_declares_an_identification_for_every_proteingym_rendering_door():
+    from src.transfer import galactica_fitness as G
+    from src.transfer import instructprotein_fitness as IP
+
+    expected = set(G.GALACTICA_RUNGS) | {IP.INSTRUCTPROTEIN_ARM}
+    assert set(D.JOINT_RENDERING_IDENTIFICATION) == expected
+    for name in expected:
+        entry = D.JOINT_RENDERING_IDENTIFICATION[name]
+        assert entry["identification"] in D.IDENTIFICATION_CLASSES, name
+        assert entry["note"], name
+
+
 def test_the_two_identification_tables_are_disjoint():
     """Neither door may be indexed with a name the other one admitted."""
 
     assert set(D.ARM_IDENTIFICATION).isdisjoint(D.JOINT_LINEAGE_IDENTIFICATION)
+    assert set(D.ARM_IDENTIFICATION).isdisjoint(D.JOINT_RENDERING_IDENTIFICATION)
+    assert set(D.JOINT_LINEAGE_IDENTIFICATION).isdisjoint(D.JOINT_RENDERING_IDENTIFICATION)
     assert set(D.JOINT_LINEAGE_IDENTIFICATION).isdisjoint(PANEL)
     assert set(D.JOINT_LINEAGE_IDENTIFICATION).isdisjoint(STAGED_SCALE_ARMS)
 

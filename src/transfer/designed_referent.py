@@ -353,6 +353,68 @@ JOINT_LINEAGE_IDENTIFICATION: Mapping[str, Mapping[str, str]] = {
     },
 }
 
+#: What the Galactica and InstructProtein protein-mode doors let the certificate
+#: say. A third table, not a widening of :data:`ARM_IDENTIFICATION` or
+#: :data:`JOINT_LINEAGE_IDENTIFICATION`: those two resolve an ``ArmSpec`` or a
+#: ProLLaMA rung, and these five names are reached the same way ProteinGym
+#: reaches them -- ``galactica_fitness`` / ``instructprotein_fitness``, not
+#: ``arms.arm_spec``. The question is still the certificate's.
+JOINT_RENDERING_IDENTIFICATION: Mapping[str, Mapping[str, str]] = {
+    "galactica-125m": {
+        "identification": "undeclared_corpus_no_exclusion_possible",
+        "note": (
+            "Galactica's released documentation describes a scientific corpus of "
+            "papers, code, and knowledge bases. The certificate searched UniRef50, "
+            "which cannot be shown to contain or to be contained in that set, so a "
+            "design's absence from it implies nothing at all about this rung and "
+            "the residual cannot be signed. Protein-mode context-information on "
+            "this rung is unidentified; that is a recorded interface status and "
+            "does not withhold this score. Scored in the declared "
+            "[START_AMINO]...[END_AMINO] rendering at float32, protein-content "
+            "positions only, the same door ProteinGym uses."
+        ),
+    },
+    "galactica-1.3b": {
+        "identification": "undeclared_corpus_no_exclusion_possible",
+        "note": (
+            "as galactica-125m: the scientific corpus is declared as a family of "
+            "sources, not as an identity with the searched UniRef50 snapshot, so "
+            "the residual cannot be signed. Scored in the declared "
+            "[START_AMINO]...[END_AMINO] rendering at float32, protein-content "
+            "positions only, the same door ProteinGym uses."
+        ),
+    },
+    "galactica-6.7b": {
+        "identification": "undeclared_corpus_no_exclusion_possible",
+        "note": (
+            "as galactica-1.3b. Same unsigned residual; same ProteinGym rendering "
+            "and float32 arithmetic."
+        ),
+    },
+    "galactica-30b": {
+        "identification": "undeclared_corpus_no_exclusion_possible",
+        "note": (
+            "as galactica-1.3b. Same unsigned residual; same ProteinGym rendering "
+            "and float32 arithmetic."
+        ),
+    },
+    "instructprotein": {
+        "identification": "declared_family_relation_unestablished",
+        "note": (
+            "InstructProtein's released documentation names UniRef100 continued "
+            "pretraining and instruction tuning. A family is not an identity: the "
+            "release and the clustering the checkpoint saw are not evidenced, and "
+            "neither containment direction between that corpus and the searched "
+            "UniRef50 snapshot is established. UniRef100 is also a finer "
+            "clustering, so a design with no UniRef50 hit may still be "
+            "near-identical to a UniRef100 entry -- a model-favouring gap this "
+            "repository cannot measure. The residual is therefore not signed. "
+            "Scored in the declared <protein>ƤA..ƤY</protein> rendering, "
+            "protein-content positions only, the same door ProteinGym uses."
+        ),
+    },
+}
+
 #: Every identification class either table states is one of
 #: :data:`IDENTIFICATION_CLASSES`. Checked at import so that a class spelled fresh
 #: beside an arm cannot become a second vocabulary a reader has to reconcile.
@@ -361,6 +423,7 @@ _unknown_classes = sorted(
         entry["identification"]
         for entry in list(ARM_IDENTIFICATION.values())
         + list(JOINT_LINEAGE_IDENTIFICATION.values())
+        + list(JOINT_RENDERING_IDENTIFICATION.values())
         if entry["identification"] not in IDENTIFICATION_CLASSES
     }
 )
