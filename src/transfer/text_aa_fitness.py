@@ -2,9 +2,10 @@
 
 This is a dedicated scoring core, not a panel door and not a stage-20 wire-up.
 The estimand is the sum of conditional log-likelihoods of every target token of
-a raw uppercase AA20 string after one declared document-boundary token. Mutant
-minus WT is applied upstream. There is no length normalisation, no biological
-prompt, and no trailing EOS in the scored path.
+a raw uppercase AA20 string after the document-boundary token its own family
+declares -- or after nothing, for a family whose measured rendering is the byte
+string itself. Mutant minus WT is applied upstream. There is no length
+normalisation, no biological prompt, and no trailing EOS in the scored path.
 
 Every scored span must carry exactly one token per residue. A text tokenizer
 that merges neighbouring residues into multi-residue pieces is refused inside
@@ -62,6 +63,7 @@ __all__ = [
     "CHECKPOINT_VARIABLE",
     "FP32_PER_TARGET_ABS",
     "HARD_CONTEXT_ATTRIBUTES",
+    "NO_CONDITIONING_KIND",
     "TEXT_AA_FP32_V1",
     "TextAABoundary",
     "TextAAEncodingError",
@@ -94,6 +96,11 @@ _BYGPT5_LOCAL_FILES = (
     "tokenization_bygpt5.py",
 )
 _PRODUCTION_BATCH_SIZE = 1
+
+#: ``conditioning.kind`` for a family whose rendering prefixes no conditioning
+#: token at all. Spelled once: the boundary table declares it, the parser requires
+#: a null id under it, and :func:`encode_text_aa` returns the target ids alone.
+NO_CONDITIONING_KIND = "none_declared"
 
 
 class TextAAEncodingError(ValueError):
@@ -164,14 +171,27 @@ def read_hard_context(config: Any) -> int | None:
 
 @dataclass(frozen=True)
 class TextAABoundary:
-    """Frozen document-boundary contract for one text-AA checkpoint family."""
+    """Frozen document-boundary contract for one text-AA checkpoint family.
+
+    ``conditioning_id`` is the token the rendering prefixes, and it is ``None``
+    exactly when ``conditioning_kind`` is :data:`NO_CONDITIONING_KIND`: the family
+    declares that its rendering carries no conditioning prefix, so
+    :func:`encode_text_aa` returns the target ids alone. That is a declaration and
+    not a missing field -- a boundary whose ``conditioning`` mapping is absent
+    altogether is refused -- and a declared prefix is never chosen from a config
+    default: ByGPT5's ``decoder_start_token_id`` (0, ``<pad>``) is T5Config's own
+    default carried into a decoder-only config, and the rendering measured on that
+    checkpoint scores lower without it (0.88939 nats/token against 0.90865 over
+    200 OpenWebText documents of at least 800 characters at the 384-token window,
+    draw seed 20260728, float32).
+    """
 
     name: str
     model_type: str
     tokenizer_class: str
     conditioning_kind: str
-    conditioning_id: int
-    conditioning_token: str
+    conditioning_id: int | None
+    conditioning_token: str | None
     bos_token_id: int | None
     eos_token_id: int | None
     pad_token_id: int | None
@@ -194,6 +214,26 @@ class TextAABoundary:
         conditioning = spec.get("conditioning")
         if not isinstance(conditioning, Mapping):
             raise ValueError(f"{name}: boundary spec is missing conditioning")
+        kind = str(conditioning.get("kind") or "")
+        if not kind:
+            raise ValueError(f"{name}: conditioning.kind is required")
+        if conditioning.get("id") is None:
+            if kind != NO_CONDITIONING_KIND:
+                raise ValueError(
+                    f"{name}: conditioning.id is required, and is null only under "
+                    f"conditioning.kind {NO_CONDITIONING_KIND!r}, which declares "
+                    "that this family's rendering prefixes no conditioning token"
+                )
+            conditioning_id: int | None = None
+            conditioning_token: str | None = None
+        else:
+            if kind == NO_CONDITIONING_KIND:
+                raise ValueError(
+                    f"{name}: {NO_CONDITIONING_KIND!r} declares that no "
+                    "conditioning token is prefixed, so it cannot also carry one"
+                )
+            conditioning_id = _as_int(conditioning.get("id"), what="conditioning.id")
+            conditioning_token = str(conditioning.get("token") or "")
         forbid = tuple(
             _id_list(conditioning.get("do_not_use"))
             + _id_list(spec.get("forbid_token_ids"))
@@ -208,9 +248,9 @@ class TextAABoundary:
             name=str(name),
             model_type=model_type,
             tokenizer_class=str(spec.get("tokenizer_class") or ""),
-            conditioning_kind=str(conditioning.get("kind") or ""),
-            conditioning_id=_as_int(conditioning.get("id"), what="conditioning.id"),
-            conditioning_token=str(conditioning.get("token") or ""),
+            conditioning_kind=kind,
+            conditioning_id=conditioning_id,
+            conditioning_token=conditioning_token,
             bos_token_id=_as_optional_int(tokenizer_bos, what="bos_token_id"),
             eos_token_id=_as_optional_int(spec.get("eos_token_id"), what="eos_token_id"),
             pad_token_id=_as_optional_int(spec.get("pad_token_id"), what="pad_token_id"),
@@ -303,7 +343,7 @@ def encode_text_aa(
     sequence: str,
     boundary: TextAABoundary,
 ) -> list[int]:
-    """Prefix one declared conditioning token onto reversible AA20 target ids.
+    """Prefix a declared conditioning token onto reversible AA20 target ids.
 
     The returned span must carry exactly one target token per residue. A
     tokenizer that merges neighbouring residues into multi-residue pieces is
@@ -311,6 +351,12 @@ def encode_text_aa(
     a mutation changes the segmentation and token position stops being residue
     position. This is the rule ``joint_modes.verify_one_token_per_residue``
     already applies to the joint checkpoints.
+
+    A boundary declaring :data:`NO_CONDITIONING_KIND` returns the target ids
+    alone: its rendering is the byte string itself, and the first of those ids is
+    then the sequence's first residue, which the scorer treats as context exactly
+    as it treats a declared prefix. That declaration is not a missing
+    conditioning -- the parser refuses a boundary that carries none.
     """
 
     sequence = _require_aa20(sequence)
@@ -321,7 +367,8 @@ def encode_text_aa(
     if not target_ids:
         raise TextAAEncodingError("tokenizer produced no target tokens")
     forbidden = _special_ids(tokenizer)
-    forbidden.add(int(boundary.conditioning_id))
+    if boundary.conditioning_id is not None:
+        forbidden.add(int(boundary.conditioning_id))
     if boundary.unk_token_id is not None:
         forbidden.add(int(boundary.unk_token_id))
     forbidden.update(boundary.forbid_token_ids)
@@ -350,10 +397,12 @@ def encode_text_aa(
             "encoding is refused by the same rule "
             "joint_modes.verify_one_token_per_residue applies"
         )
-    prefix = int(boundary.conditioning_id)
+    prefix = boundary.conditioning_id
+    if prefix is None:
+        return list(target_ids)
     if prefix in target_ids:
         raise TextAAEncodingError("conditioning id must not appear in target ids")
-    return [prefix, *target_ids]
+    return [int(prefix), *target_ids]
 
 
 def _require_application_window(value: Any) -> int:
@@ -506,10 +555,16 @@ class TextAAFitnessScorer:
         ids = self.encode(sequence)
         return {
             "n_residues": len(sequence),
-            "n_prefix_tokens": 1,
+            # Read off the ids rather than restated from the declaration: the span
+            # carries one token per residue, so what is left is the prefix, and
+            # that is zero on a family declaring none.
+            "n_prefix_tokens": len(ids) - len(sequence),
             "n_scored_tokens": len(ids) - 1,
             "n_input_tokens": len(ids),
-            "conditioning_id": int(self.boundary.conditioning_id),
+            "conditioning_id": (
+                None if self.boundary.conditioning_id is None
+                else int(self.boundary.conditioning_id)
+            ),
             "conditioning_kind": self.boundary.conditioning_kind,
             "trailing_eos_scored": False,
             "prefix_scored": False,
@@ -681,17 +736,22 @@ def load_text_aa_tokenizer(
     _check_special_id(tokenizer.pad_token_id, spec.pad_token_id, what="pad_token_id")
     _check_special_id(tokenizer.unk_token_id, spec.unk_token_id, what="unk_token_id")
     if spec.decoder_start_token_id is not None:
+        # Checked against the loaded config as the checkpoint's own declared start
+        # token, and deliberately NOT required to equal the conditioning id. On
+        # ByGPT5 the two are different quantities: the config key is T5Config's
+        # default 0 carried into a decoder-only config, while the conditioning id
+        # is the token the rendering prefixes, and no measurement supports that
+        # token there.
         config_start = getattr(config, "decoder_start_token_id", None)
         _check_special_id(
             config_start,
             spec.decoder_start_token_id,
             what="decoder_start_token_id",
         )
-        if spec.decoder_start_token_id != spec.conditioning_id:
-            raise ValueError(
-                f"{label}: decoder_start_token_id must equal the conditioning id"
-            )
-    if spec.conditioning_id in spec.forbid_token_ids:
+    if (
+        spec.conditioning_id is not None
+        and spec.conditioning_id in spec.forbid_token_ids
+    ):
         raise ValueError(f"{label}: conditioning id is forbidden")
     if spec.model_type in {"qwen2", "qwen3"} and spec.bos_token_id is not None:
         raise ValueError(

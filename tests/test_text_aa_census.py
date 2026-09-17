@@ -385,7 +385,10 @@ def test_bygpt5_measures_length_then_window_and_wt_tie(
     )
     assert payload["window_rule"] == "max_legal_request_input"
     assert payload["hard_context"] is None
-    expected = 1 + len("MKT")
+    # ByGPT5's boundary declares no conditioning token, so the longest legal
+    # request input is the residue run itself; with a prefix it was one token
+    # longer.
+    expected = len("MKT")
     assert payload["application_window_tokens"] == expected
     probe = payload["longest_probe_identity"]
     assert probe["assay"] == "first"
@@ -570,7 +573,9 @@ def test_same_token_length_different_ids_change_digest(bygpt5_tokenizer):
     wt = encode_text_aa(bygpt5_tokenizer, "WWW", boundary)
     left = encode_text_aa(bygpt5_tokenizer, "KKK", boundary)
     right = encode_text_aa(bygpt5_tokenizer, "MMM", boundary)
-    assert len(left) == len(right) == len(wt) == 4
+    # One input token per byte and no conditioning prefix, so the three 3-residue
+    # sequences have equal length and different ids.
+    assert len(left) == len(right) == len(wt) == 3
     assert left != right
     assert first["assays"][0]["encoded_ids_digest"] != second["assays"][0]["encoded_ids_digest"]
     assert first["assays"][0]["n_input_tokens_max_legal"] == second["assays"][0][

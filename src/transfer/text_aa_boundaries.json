@@ -113,9 +113,10 @@
       "unk_token_id": 2,
       "decoder_start_token_id": 0,
       "conditioning": {
-        "kind": "decoder_start",
-        "token": "<pad>",
-        "id": 0
+        "kind": "none_declared",
+        "token": null,
+        "id": null,
+        "evidence": "This rendering prefixes nothing, which is a measurement rather than a default. The config declares decoder_start_token_id 0, and an earlier declaration copied that key as the conditioning token; the config is ByGPT5Config(T5Config) with is_encoder_decoder false, so the key is T5Config's own default carried into a decoder-only config and not a document boundary the checkpoint was trained behind. Measured on the staged checkpoint over 200 OpenWebText documents of at least 800 characters at a 384-token window, draw seed 20260728, float32, on the byte targets both renderings score: the bare byte string assigns 0.88939 nats/token, the same string prefixed with id 0 assigns 0.90865 (+0.01926 for the prefix), and the string with a trailing <eos> id 1 assigns 0.95080. At position 0 after the id-0 prefix the checkpoint places 0.35119 of its next-token mass on ' ' (id 35) and assigns the first byte a mean NLL of 8.97205 +/- 0.08700 nats, and the trailing <eos> costs 25.63308 +/- 0.20677 nats. Because the scorer builds its targets from position -- every input token but the first -- a prefix would additionally make each document's first byte a scored target, and the prefixed rendering's reported figure would be 0.92965 nats/token against the bare rendering's 0.88939, +0.04025. decoder_start_token_id therefore stays declared as the config fact it is, checked against the loaded config, and the scored rendering is the byte string itself"
       }
     },
     "bygpt5-base-en": {

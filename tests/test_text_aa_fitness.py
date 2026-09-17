@@ -2,8 +2,10 @@
 
 Real published weights are not loaded. Tokenisers may be read from local
 ``/Data/public`` files. Tiny Transformers configs stand in for GPT-2, Qwen2,
-and Llama. ByGPT5 uses its local tokenizer plus a float32 stub so pad-id
-conditioning can be checked without executing an unbounded remote-code path.
+and Llama. ByGPT5 uses its local tokenizer plus a float32 stub, and it is the one
+family whose boundary declares no conditioning prefix at all, so the scorer's
+zero-prefix path is checked on its real vocabulary without executing an
+unbounded remote-code weight load.
 """
 
 from __future__ import annotations
@@ -37,12 +39,14 @@ if str(REPO_ROOT) not in sys.path:
 from src.transfer.precision_policy import FP32_PER_TARGET_ABS  # noqa: E402
 from src.transfer.scale_comparison import STRATUM_N_TO_C  # noqa: E402
 from src.transfer.text_aa_fitness import (  # noqa: E402
+    NO_CONDITIONING_KIND,
     TEXT_AA_FP32_V1,
     TextAABoundary,
     TextAAEncodingError,
     TextAAFitnessScorer,
     encode_text_aa,
     load_text_aa_scorer,
+    load_text_aa_tokenizer,
     read_hard_context,
     resolve_text_aa_boundary,
 )
@@ -117,9 +121,9 @@ def _bygpt5_boundary() -> TextAABoundary:
         name="bygpt5-small-en",
         model_type="bygpt5",
         tokenizer_class="ByGPT5Tokenizer",
-        conditioning_kind="decoder_start",
-        conditioning_id=0,
-        conditioning_token="<pad>",
+        conditioning_kind=NO_CONDITIONING_KIND,
+        conditioning_id=None,
+        conditioning_token=None,
         bos_token_id=None,
         eos_token_id=1,
         pad_token_id=0,
@@ -496,13 +500,12 @@ def test_one_token_per_residue_is_permitted_and_the_scorer_inherits_the_refusal(
 ):
     boundary = _bygpt5_boundary()
     ids = encode_text_aa(bygpt5_tokenizer, PROBE, boundary)
-    assert len(ids) == len(PROBE) + 1
-    assert ids[0] == boundary.conditioning_id
-    assert boundary.conditioning_id not in ids[1:]
+    assert len(ids) == len(PROBE)
+    assert ids == list(bygpt5_tokenizer(PROBE, add_special_tokens=False)["input_ids"])
     scorer = _scorer(
         _StubLM(len(bygpt5_tokenizer)), bygpt5_tokenizer, boundary, window=64
     )
-    assert scorer.encoding_metadata(PROBE)["n_scored_tokens"] == len(PROBE)
+    assert scorer.encoding_metadata(PROBE)["n_scored_tokens"] == len(PROBE) - 1
     assert np.isfinite(scorer.log_likelihood([PROBE])).all()
     merging = _scorer(
         _StubLM(len(gpt2_tokenizer)), gpt2_tokenizer, _gpt2_boundary(), window=64
@@ -560,15 +563,98 @@ def test_llama_true_bos_is_concatenated_without_double_prefix(llama_tokenizer):
     assert list(with_special) == ids
 
 
-def test_bygpt5_byte_targets_and_pad_conditioning(bygpt5_tokenizer):
+def test_bygpt5_byte_targets_are_scored_without_a_conditioning_prefix(bygpt5_tokenizer):
+    """The declared rendering is the byte string itself, and it is declared.
+
+    ``decoder_start_token_id`` 0 is ByGPT5Config(T5Config)'s own default carried
+    into a decoder-only config: measured on the staged checkpoint over 200
+    OpenWebText documents at the 384-token window on the byte targets both
+    renderings score, the bare string assigns 0.88939 nats/token against 0.90865
+    prefixed with id 0, so the prefix is not the rendering and is not prepended.
+    The declaration is explicit rather than an absent field: the boundary table
+    names ``none_declared``, and ``from_mapping`` refuses a boundary that carries
+    no conditioning block at all.
+    """
+
     boundary = _bygpt5_boundary()
+    targets = list(bygpt5_tokenizer(PROBE, add_special_tokens=False)["input_ids"])
     ids = encode_text_aa(bygpt5_tokenizer, PROBE, boundary)
-    assert ids[0] == 0
-    assert ids[0] == bygpt5_tokenizer.pad_token_id
-    targets = bygpt5_tokenizer(PROBE, add_special_tokens=False)["input_ids"]
-    assert len(targets) == 33
-    assert 0 not in targets
-    assert bygpt5_tokenizer.decode(targets, skip_special_tokens=False) == PROBE
+    assert ids == targets
+    assert len(ids) == len(PROBE)
+    assert 0 not in ids
+    assert bygpt5_tokenizer.decode(ids, skip_special_tokens=False) == PROBE
+    stub = _StubLM(len(bygpt5_tokenizer))
+    scorer = _scorer(stub, bygpt5_tokenizer, boundary, window=64)
+    meta = scorer.encoding_metadata(PROBE)
+    assert meta["n_prefix_tokens"] == 0
+    # Every input token but the first is a target, so with no prefix the scored
+    # set starts at the sequence's second byte rather than at its first.
+    assert meta["n_scored_tokens"] == len(PROBE) - 1
+    assert meta["n_input_tokens"] == len(PROBE)
+    assert meta["conditioning_id"] is None
+    assert meta["conditioning_kind"] == NO_CONDITIONING_KIND
+    scorer.log_likelihood([PROBE])
+    # The mask is still built from position rather than from id == pad, which is
+    # the fact this vocabulary makes worth checking: its pad id is 0.
+    forwarded = stub.forward_ids[0]
+    mask = stub.forward_masks[0]
+    assert mask is not None
+    assert int(forwarded[0, 0]) == targets[0]
+    assert torch.equal(mask, torch.ones_like(forwarded))
+
+
+def test_a_null_conditioning_id_is_only_the_declaration_that_none_is_prefixed():
+    base = {
+        "model_type": "bygpt5",
+        "tokenizer_class": "ByGPT5Tokenizer",
+        "eos_token_id": 1,
+        "pad_token_id": 0,
+    }
+    with pytest.raises(ValueError, match="missing conditioning"):
+        TextAABoundary.from_mapping(base, name="bygpt5-small-en")
+    with pytest.raises(ValueError, match="conditioning.id is required"):
+        TextAABoundary.from_mapping(
+            {**base, "conditioning": {"kind": "decoder_start", "token": "<pad>", "id": None}},
+            name="bygpt5-small-en",
+        )
+    with pytest.raises(ValueError, match="cannot also carry one"):
+        TextAABoundary.from_mapping(
+            {**base, "conditioning": {"kind": NO_CONDITIONING_KIND, "id": 0}},
+            name="bygpt5-small-en",
+        )
+    resolved = TextAABoundary.from_mapping(
+        {**base, "conditioning": {"kind": NO_CONDITIONING_KIND, "token": None, "id": None}},
+        name="bygpt5-small-en",
+    )
+    assert resolved.conditioning_id is None
+    assert resolved.conditioning_token is None
+    assert resolved.decoder_start_token_id is None
+
+
+def test_the_declared_start_token_is_not_required_to_be_the_scoring_prefix(
+    bygpt5_tokenizer,
+):
+    """The removed requirement, on the real checkpoint and the tracked table.
+
+    The loader used to refuse any boundary whose ``decoder_start_token_id``
+    differed from its conditioning id, which forced a config default to be a
+    training fact. It still checks that key against the loaded config; it no
+    longer ties it to the rendering the scorer uses.
+    """
+
+    from src.transfer.text_aa_cohort import load_text_aa_boundary_table
+
+    table = load_text_aa_boundary_table()
+    boundary = resolve_text_aa_boundary("bygpt5-small-en", table)
+    assert boundary.decoder_start_token_id == 0
+    assert boundary.conditioning_id is None
+    assert boundary.conditioning_kind == NO_CONDITIONING_KIND
+    assert resolve_text_aa_boundary("bygpt5-base-en", table).conditioning_id is None
+    bundle = load_text_aa_tokenizer(
+        BYGPT5_DIR, boundary=boundary, name="bygpt5-small-en"
+    )
+    assert bundle.boundary.conditioning_id is None
+    assert bundle.tokenizer is not None
 
 
 def test_missing_window_is_refused(gpt2_tokenizer):
@@ -650,7 +736,12 @@ def test_independent_shifted_ce_matches_public_api_and_keeps_first_target(
         skip_total = float(skip_first.sum().double().cpu())
     assert abs(got - skip_total) / n_target > FP32_PER_TARGET_ABS
     meta = scorer.encoding_metadata(sequence)
-    assert meta["n_prefix_tokens"] == 1
+    # ByGPT5's boundary declares no conditioning token, so the one token that is
+    # context is the sequence's own first byte and every other byte is a target.
+    assert meta["n_prefix_tokens"] == 0
+    assert scorer.encode(sequence) == list(
+        bygpt5_tokenizer(sequence, add_special_tokens=False)["input_ids"]
+    )
     assert meta["n_scored_tokens"] == n_target
     assert meta["n_residues"] == len(sequence)
     assert meta["trailing_eos_scored"] is False
@@ -670,20 +761,6 @@ def test_qwen_conditioning_equals_pad_still_attends_position_zero(qwen2_tokenize
     assert torch.equal(mask, torch.ones_like(mask))
     dropped = (ids != 151643).to(dtype=torch.long)
     assert int(dropped[0, 0]) == 0
-
-
-def test_bygpt5_pad_conditioning_uses_position_mask(bygpt5_tokenizer):
-    boundary = _bygpt5_boundary()
-    stub = _StubLM(384)
-    scorer = _scorer(stub, bygpt5_tokenizer, boundary, window=128)
-    scorer.log_likelihood(["MKT"])
-    ids = stub.forward_ids[0]
-    mask = stub.forward_masks[0]
-    assert int(ids[0, 0]) == 0
-    assert mask is not None
-    assert int(mask[0, 0]) == 1
-    assert int((ids[0] == 0).sum()) >= 1
-    assert torch.equal(mask, torch.ones_like(ids))
 
 
 def test_llama_tiny_numeric_gate(llama_tokenizer):
