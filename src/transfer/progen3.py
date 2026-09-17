@@ -120,14 +120,15 @@ SELF_CHECK_SEQUENCES: tuple[str, ...] = (
 #:
 #: Sized from two measurements rather than from taste. The **spread of a
 #: correctly loaded model** across everything an environment can plausibly change
-#: is 0.005 nats: on the 112M, bfloat16 and float16 at batch sizes 8, 4 and 1 give
-#: 2.2867-2.2879, scoring N->C only instead of both directions gives 2.2912, and
-#: CPU bfloat16 gives 2.2884. The **distance to the nearest corruption** that
-#: ``strict=True`` cannot see is 0.89 nats on the 112M and larger on the 3B. A
-#: half-width of 0.3 nats is therefore ~60x the observed spread and still leaves
-#: more than half a nat of clearance below the nearest corruption on both
-#: checkpoints, so it cannot fail on hardware and cannot pass on a broken
-#: mapping. One shared half-width rather than one per checkpoint because it is a
+#: is 0.004 nats: on the 112M, under EXP-R2-242's residue-only span, bfloat16 and
+#: float16 at batch sizes 8, 4 and 1 give 2.3265-2.3271, scoring N->C only instead
+#: of both directions gives 2.3236, and CPU bfloat16 gives 2.3265. The **distance
+#: to the nearest corruption** that ``strict=True`` cannot see is 0.71 nats on the
+#: 112M and 2.12 nats on the 3B, so a half-width of 0.3 nats is ~75x the observed
+#: spread and still leaves more than 0.40 nats of clearance below the nearest
+#: corruption on both checkpoints: it cannot fail on hardware and cannot pass on a
+#: broken mapping. One shared half-width rather than one per checkpoint because it
+#: is a
 #: statement about measurement noise, which does not scale with the model; what
 #: does scale is the value it is centred on, and that is declared per checkpoint.
 #:
@@ -145,8 +146,9 @@ class SelfCheckReference:
 
     ``correct_mapping`` is that checkpoint's own mean per-token NLL of
     :data:`SELF_CHECK_SEQUENCES` under this module's scoring convention (both
-    directions, every non-pad target, bfloat16); ``corruptions`` are what the
-    mappings that survive ``strict=True`` score on the same eight sequences.
+    directions, the residue targets :func:`residue_target_mask` selects, bfloat16);
+    ``corruptions`` are what the mappings that survive ``strict=True`` score on the
+    same eight sequences.
     Both are measured on the checkpoint they are filed under, never carried over
     from another one: the panel-wide figures in the module docstring were taken
     on 64 Swiss-Prot records at 60-400 residues and do not transfer to this
@@ -185,28 +187,31 @@ class SelfCheckReference:
 #: the directory, while the shape the state dict has to match is not free to
 #: move.
 SELF_CHECK_REFERENCES: dict[tuple[int, int, int], SelfCheckReference] = {
-    # Measured on one L20, bfloat16 (EXP: progen3_eager_probe). CPU bfloat16
-    # reproduces the correct mapping at 2.2884.
+    # Re-measured under EXP-R2-242's residue-only scored span, on one H200,
+    # bfloat16, both directions, batch 8: that campaign's stage-20 loader
+    # self-check measured 2.3270, an independent probe 2.3271, and CPU bfloat16
+    # 2.3265.
     (10, 384, 1152): SelfCheckReference(
         name="progen3-112m",
-        correct_mapping=2.2867,
+        correct_mapping=2.3270,
         corruptions={
-            "w1_v1_swapped": 3.1793,
-            "gate_rows_rolled_by_one": 3.3055,
-            "from_pretrained_eager_random_moe": 18.4764,
+            "w1_v1_swapped": 3.0355,
+            "gate_rows_rolled_by_one": 3.0662,
+            "from_pretrained_eager_random_moe": 18.5247,
         },
     ),
-    # Measured on CPU, bfloat16: the L20s carried other work and none had the
-    # 6 GB the weights need. The environment is one the 112M's own value was
-    # reproduced in to 0.0017 nats, and the nearest corruption here stands 2.13
-    # nats above the band, so the band does not rest on the difference.
+    # Re-measured under EXP-R2-242's residue-only scored span, on one H200,
+    # bfloat16, both directions, batch 8: that campaign's stage-20 loader
+    # self-check measured 1.5301 and an independent probe on another card of the
+    # same pod measured 1.5315. The nearest corruption here stands 1.82 nats
+    # above the band, so the band does not rest on the difference.
     (24, 1280, 3840): SelfCheckReference(
         name="progen3-3b",
-        correct_mapping=1.5045,
+        correct_mapping=1.5301,
         corruptions={
-            "w1_v1_swapped": 4.5841,
-            "gate_rows_rolled_by_one": 3.9304,
-            "from_pretrained_eager_random_moe": 11.7474,
+            "w1_v1_swapped": 4.4700,
+            "gate_rows_rolled_by_one": 3.6496,
+            "from_pretrained_eager_random_moe": 11.3407,
         },
     ),
 }
@@ -910,7 +915,13 @@ def require_progen3_handle(arm: Any) -> ProGen3:
 def n_to_c_target_rows(
     pg: ProGen3, sequences: Sequence[str], *, max_len: int
 ) -> list[np.ndarray]:
-    """Per-record N-to-C target ids from the native preparer, no forward pass."""
+    """Per-record N-to-C residue ids from the native preparer, no forward pass.
+
+    The same span :func:`scored_logits` scores, from the same
+    :func:`residue_target_mask`, so a held-out reference counted here and a
+    likelihood scored there are taken over one target set: the `"1"` marker,
+    the `"2"` terminator and `<eos>` are context, not counts.
+    """
 
     if max_len < 2:
         raise ValueError("max_len must admit at least one next-token target")
