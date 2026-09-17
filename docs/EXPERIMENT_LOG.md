@@ -20241,3 +20241,7 @@ User instruction: score MegaScale on every non-text generative arm except ZymCTR
 ## 2026-09-18 — MegaScale Galactica / InstructProtein use the ProteinGym scorers
 
 Stage 29 now opens the same two rendering doors ProteinGym uses: `galactica_fitness.GalacticaFitnessScorer` at float32 for the four Galactica rungs, and `instructprotein_fitness.InstructProteinFitnessScorer` at bfloat16 for InstructProtein. They are not `ArmSpec` names. Corpus identification is `designed_referent.JOINT_RENDERING_IDENTIFICATION`: Galactica cannot sign the UniRef50 certificate; InstructProtein declares a UniRef100 family whose relation to that snapshot is unestablished. A gate non-identification does not withhold a cell. Manifest `scripts/transfer/campaign_s29_galactica_instructprotein.tsv`. Scores are not in this entry. No pod names recorded.
+
+## 2026-09-18 — MegaScale Galactica / InstructProtein queue launched
+
+Freeze `20260918004837_b3cb66ec0963` (pin `9208cec`). Manifest launched from the snapshot copy (`manifest_sha256` `9e2a728839d9dcfeaf00925fbd5882e677b056c1b71ae3a797f5262d419410ee`). Cohort at the run root hashes to `caaa233dc44146d4fca40087b431e49aea97d073f864b04168e0a764ad400205`. Queue `s29_galactica_instructprotein` `started_utc 2026-09-17T16:54:14Z`, slot 1 running 125M / 1.3B / InstructProtein, slots 2–3 pending 6.7B then 30B. First wild-type Spearman already printed (125M 0.1703, InstructProtein 0.3658 on `1A0N.pdb_L7S`). `QUEUE_LAUNCHED` is not completion. No pod names recorded.

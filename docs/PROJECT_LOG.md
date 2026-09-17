@@ -3069,3 +3069,7 @@ Native eight-block identification is PASS (minimum displacement-corrected lower 
 ## 2026-09-18 — MegaScale Galactica / InstructProtein door
 
 Stage 29 reuses the ProteinGym rendering scorers for Galactica (float32) and InstructProtein. Identification is a third table, `JOINT_RENDERING_IDENTIFICATION`, disjoint from the ArmSpec and ProLLaMA tables. Manifest `campaign_s29_galactica_instructprotein.tsv`. No scores in this entry. No pod names recorded.
+
+## 2026-09-18 — MegaScale Galactica / InstructProtein queue
+
+Launched from freeze `20260918004837_b3cb66ec0963` snapshot copy. Slot 1 scoring. No verdict yet. No pod names recorded.
