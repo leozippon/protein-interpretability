@@ -1,0 +1,82 @@
+# EXP-R2-245 stage 29: the two ProGen3 rungs on the N-to-C direction, and the two
+# ProGen2 rungs this measurement had not carried.
+#
+# THE ESTIMAND IS UNCHANGED AND THE COHORT IS THE SAME FILE. Per wild type, the
+# Spearman correlation between an arm's summed log-likelihood of a rendered
+# variant and that variant's measured folding stability, ddG_ML. Per-wild-type
+# correlations are averaged inside a unit and the unit is resampled; a design's
+# unit is its design series and a natural's is WT_cluster. The cohort is the
+# census certified by EXP-R2-190 and not a draw -- 130 certified zero-hit design
+# wild types over 40 series (36 of them wholly zero-hit, 110,730 variants) and 266
+# natural domains over 124 WT_cluster units (404,114 variants), 412 wild types and
+# 527,204 variants in all -- read from the file whose SHA-256 is
+# caaa233dc44146d4fca40087b431e49aea97d073f864b04168e0a764ad400205, staged once at
+# the run root and recomputed by every payload. The baselines and the seven free
+# and fragment-level gates are the frozen ones; nothing is recomputed and no
+# threshold is retuned. The verdict rule is designed_referent.arm_verdict and is
+# applied afterwards, not here. Like-for-like with EXP-R2-244 by construction:
+# same cohort file and digest, same baselines, same rule.
+#
+# WHY THE PROGEN3 CELLS EXIST. Both rungs' published scoring convention is the
+# mean of the N-to-C and C-to-N summed log-likelihoods, and this stage sums
+# left-to-right. By decision of this measurement the rungs are scored on the
+# single N-to-C direction: the estimand is one functional compared across many
+# arms, a bidirectional mean is a functional no other arm here carries, and the
+# strata rule requires that one name mean one functional and that a deviation be
+# declared -- not that an author's convention be obeyed. So the rungs are read on
+# the N-to-C stratum and their payloads record scoring_stratum
+# n_to_c_summed_log_likelihood. THE TWO PROGEN3 READINGS ARE SEPARATE
+# FUNCTIONALS: this N-to-C designed-referent reading and the lineage's
+# bidirectional ProteinGym reading that 20_retrieval_bound.py produces. They are
+# never pooled, ranked together, or converted into one another, and
+# scale_comparison.require_uniform_stratum refuses a pairing that would.
+#
+# WHAT THE PROGEN3 SCORER RENDERS AND WHAT IT SCORES. The rendering is the
+# lineage's own: prepare_clm builds "1" + sequence + "2" and wraps it in <bos> and
+# <eos>, and the scorer calls the preparer with reverse=False, so the direction
+# marker is the lineage's N-to-C marker rather than one this stage invents. The
+# SCORED TARGET SET IS THE SEQUENCE'S RESIDUES 1..L AND NOTHING ELSE:
+# progen3.scored_logits applies residue_target_mask, which excludes "1", "2",
+# <eos>, <bos>, <pad> and <mask>, so the three marker positions of every record
+# are context and not targets. Before that repair they were inside the sum -- no
+# other arm in this stage scores a marker -- so these magnitudes are not those of
+# a marker-inclusive reading. Measured on Compute before dispatch, on CPU at
+# bfloat16: a 29-residue sequence renders to 33 tokens, its scored targets number
+# exactly 29, and three marker targets per record are excluded. Weights are
+# reached through progen3.load_progen3 and not through AutoModel -- the Hugging
+# Face eager MoE path loads random experts and still runs -- and
+# progen3.self_check runs before any wild type is scored, with its verdict in the
+# payload. The declared context ceiling on both rungs is 65536 positions against
+# a rendering of L + 4 tokens and a cohort whose longest wild type is 72
+# residues, so the over-context skip is reachable and does not fire.
+#
+# WHY THE PROGEN2 CELLS EXIST. ProteinGym measures all five ProGen2 rungs and this
+# measurement reached only medium, large and xlarge, so the ladder could not be
+# read across the two experiments. These two cells close that gap, and they carry
+# a second thing worth having: the pair is scored twice, once on 2026-08-13
+# without a recorded stratum (results/transfer/designed_referent/) and once here,
+# on the identical cohort file, so the two passes are a reproduction diagnostic of
+# the frozen numbers as well as the payloads that carry the label. NO CODE CHANGE
+# WAS NEEDED FOR THEM and none was made: both are PANEL members, stage 29's door
+# has admitted them since the first round and both are in its DEFAULT_ARMS, and
+# designed_referent.ARM_IDENTIFICATION already carries an entry for each. Their
+# rendering is n_to_c_control, "1" + sequence, whose marker is the first token and
+# is therefore context by construction and never a scored target; the scored set
+# is the sequence's residues. bfloat16, which is the precision the 2026-08-13
+# payloads were taken at.
+#
+# CARDS. Re-read in the pod immediately before dispatch, where all four were idle
+# and the four cells fit in ONE slot; an earlier reading had two other agents'
+# cells running on two of the cards, which is why the cards are re-read rather
+# than taken from the revision before it. The queue runner refuses a card that is
+# not idle rather than sharing it, so a card that goes busy after this line is
+# written refuses the cell instead of corrupting two measurements, and a refused
+# cell is not complete and is re-dispatched rather than counted. One slot, four
+# cards, one cell each: the barrier has nothing to wait for and the whole round is
+# minutes rather than hours.
+#
+#	slot	key	gpu	stage	label	env	expect	args
+1	r245	0	29_designed_referent.py	r245_s29_progen3-3b	-	model_progen3-3b.json	--stages score --arms progen3-3b --dtype bfloat16 --batch-size 256 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json
+1	r245	1	29_designed_referent.py	r245_s29_progen2-base	-	model_progen2-base.json	--stages score --arms progen2-base --dtype bfloat16 --batch-size 512 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json
+1	r245	2	29_designed_referent.py	r245_s29_progen3-112m	-	model_progen3-112m.json	--stages score --arms progen3-112m --dtype bfloat16 --batch-size 512 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json
+1	r245	3	29_designed_referent.py	r245_s29_progen2-small	-	model_progen2-small.json	--stages score --arms progen2-small --dtype bfloat16 --batch-size 512 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json
