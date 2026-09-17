@@ -3041,3 +3041,7 @@ Recorded the stage-20 MODEL − LOOKUP analysis for the `instructprotein` arm, w
 ## 2026-09-17 — Shorten the scoring-artefact recording note
 
 The shared-premises closer in `summary.md` now only requires scoring artefacts to record direction, span, precision, alphabet and tokenizer policy, and format declarations to cite a model card, paper or repo probe. No pod names recorded.
+
+## 2026-09-17 — Record completed ProteinGLM and Galactica ProteinGym cells
+
+`summary.md` ProteinGym row now carries ProteinGLM-7B-CLM MODEL − LOOKUP **+0.0384 [+0.0175, +0.0592]** (`acquired`, 201/163) and the Galactica FP32 v2 four-rung raw Spearman plus negative MODEL − LOOKUP intervals (213/171). Incomplete or process-limited cells are annotated rather than dropped: ZymCTRL remains a completed 217-assay refusal, ProtGPT3-1.3B has no score, Galactica-125M is an unidentified small-scale referent, and RITA-xl's pairing is retained but not audit-promoted because it launched a mutable TSV. Audit §0 no longer lists Galactica 30B / group analyse or ProteinGLM as in flight. Experiment-log entries record the terminal freezes `20260916125622_5b6e4cc879d9`, `20260916190252_930f1357f972` and `20260915134508_95c515bf6881`. No pod names recorded.
