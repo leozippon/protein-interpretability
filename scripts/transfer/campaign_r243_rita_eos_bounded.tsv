@@ -84,6 +84,20 @@
 # dispatch skips every cell that already wrote its artefact and runs only the one refused
 # cell, r243_rita-xl_base_b0.
 #
+# REVISION 3 (this dispatch). Revision 2 is dispatched unchanged -- its 16 stage-01 rows
+# are byte-identical here -- and the direct stage-41 run it describes is committed as
+# `scripts/transfer/campaign_r243_stage41.sh` rather than left as an invocation only the
+# pod can see. The reason that harness passes each block's `cohort_*.json` and
+# `reference_*.json` beside its records sidecar, which revision 1's failed rows did not
+# declare: stage 41 recomputes the near-duplicate groups from the cohort records and falls
+# back to singleton groups where they are absent, and that fallback narrows the interval
+# exactly where group dependence is strongest. EXP-R2-240's stage-41 run, whose rita-xl
+# envelope is the [+1.1942, +1.5878] this campaign is compared against, supplied both --
+# its report's `metadata.configuration` records the cohort_json and reference_json lists.
+# A run that omitted them would move the interval for a reason the rendering has nothing to
+# do with. Nothing else about the analysis moves: seed 20260820, 2000 paired bootstrap,
+# --alpha-sweep 1.0, --arms rita-xl, and the label directory revision 1 declared.
+#
 # slot	key	gpu	stage	label	env	expect	args
 1	native	2	01_cohort_power.py	r243_rita-xl_b0	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_17f1ca32b288.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl --cohort-skip 0
 1	native	3	01_cohort_power.py	r243_rita-xl_b1	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	power_swissprot_r243_rita-xl_ee0e4f711920.json	--kind protein --n-seq 200 --res-min 64 --res-max 246 --cohort-pool-size 4000 --cohort-draw-seed 20260728 --unigram-estimator disjoint --unigram-reference-size 4000 --record-statistics --seed 20260727 --skip-truncation --arms rita-xl --allow-second-stage-arms --dtype float32 --batch-size 1 --cohort-name swissprot_r243_rita-xl --cohort-skip 7000
