@@ -100,6 +100,23 @@
 # disturb the separate 1-GPU allocation. The runner holds slot 2 until slot 1
 # has exited and the settle has elapsed.
 #
+# CORRECTION, 2026-09-17, added after the cells ran. The "WHAT IS SCORED"
+# paragraph above says the model assigns the direction token "a high likelihood
+# while a pooled unigram baseline prices it as rare". That sentence is not
+# supported and is withdrawn as written. Measured on the released checkpoint in
+# bfloat16 over the first eight variants of A0A192B1T2_9HIV1_Haddox_2018, the
+# direction token's log-likelihood is -0.6931 nats, and it depends only on the
+# BOS, so it is the same for every variant of an assay (spread 3e-5 nats,
+# bfloat16 rounding). It is therefore a constant offset to that assay's summed
+# log-likelihood, which no per-assay Spearman can see: the exclusion changes
+# the estimand and the absolute sums and not the rank statistic this stage
+# reports. The reasoning that does stand is structural and is why the rows are
+# what they are: the token is not content under the arm's own declaration, and
+# under "every real token" it is a scored target because it is the second token
+# of the record. The cell rows below are unchanged from the revision that ran
+# (sha256 b5413f28c344b8b61bb4278332a0884511669efd489eb5a5c205bba22c6ecbfd,
+# recorded in the campaign's status file); this note is comment text only.
+#
 # slot	key	gpu	stage	label	env	expect	args
 1	protgpt3	2	20_retrieval_bound.py	pgym_protgpt3-1.3b	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	model_protgpt3-1.3b.json	--stages score --arms protgpt3-1.3b --dtype bfloat16 --variants 1000 --seed 20260807 --batch-size 16 --proteingym-dir /gpfs/jiaotongdamoxing/zhk_zip/data/proteingym/DMS_ProteinGym_substitutions
 2	protgpt3	cpu	20_retrieval_bound.py	pgym_protgpt3-1.3b_analyse	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	retrieval_bound.json	--stages analyse --arms protgpt3-1.3b --bootstrap 2000 --seed 20260807 --proteingym-dir /gpfs/jiaotongdamoxing/zhk_zip/data/proteingym/DMS_ProteinGym_substitutions

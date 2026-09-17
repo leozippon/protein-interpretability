@@ -1332,14 +1332,24 @@ class _ArmScorer:
         # is built from -- not restated here as "every real token". A rendering
         # that prefixes markers puts them in front of the content and only the
         # first token of a batch is context by construction, so a second marker
-        # would otherwise be scored as content: the model assigns it a high
-        # likelihood and a pooled unigram baseline prices it as rare, which is a
-        # positive contribution to every context-information reading taken over
-        # the same positions. `rendering_marker_ids` is the one place a
-        # measurement may learn which positions are not content. Resolved at
-        # construction rather than inside `log_likelihood`, so an arm whose
-        # rendering declares no resolvable marker refuses before an assay is
-        # scored instead of hours into the cell.
+        # would otherwise be scored as content, which its own declaration says
+        # it is not. `rendering_marker_ids` is the one place a measurement may
+        # learn which positions are not content. Resolved at construction rather
+        # than inside `log_likelihood`, so an arm whose rendering declares no
+        # resolvable marker refuses before an assay is scored instead of hours
+        # into the cell.
+        #
+        # What the exclusion is worth on this panel is a measured quantity and
+        # not an assumption, and it is smaller than the shape of the defect
+        # suggests. For ProtGPT3-1.3B the direction token is one position per
+        # record whose prediction depends only on the BOS, so under the old mask
+        # it added a term that was identical for every variant of an assay:
+        # measured on the released checkpoint over the first eight variants of
+        # A0A192B1T2_9HIV1_Haddox_2018 at bfloat16, its log-likelihood is
+        # -0.6931 nats (spread 3e-5 nats, bfloat16 rounding), so it moved the
+        # summed log-likelihood by that constant and no per-assay Spearman at
+        # all. The exclusion therefore changes the estimand and the absolute
+        # sums, not the rank statistic this stage reports.
         self.target_rule = target_rule(fmt)
         self.markers = rendering_marker_ids(self.arm)
 
