@@ -356,6 +356,7 @@ def _sample_rita(model: Any, tokenizer: Any, prompt: str, *, n: int, seed: int) 
 
     from .rita_fitness import NATIVE_EOS_ID
 
+    model = cg.ensure_generate(model)
     encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
     ids = encoded["input_ids"]
     device = getattr(model, "device", ids.device)

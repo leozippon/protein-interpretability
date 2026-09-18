@@ -160,7 +160,7 @@ def test_protgpt3_bos_direction_offset_is_two():
 
 
 def test_rita_document_stream_has_single_eos_separators():
-    tokenizer = _MapTokenizer(eos=2)
+    tokenizer = _MapTokenizer(eos=None, extra={"<EOS>": 2})
     arm = _arm("rita-xl", tokenizer, input_format="eos_bounded_seq")
     records = ["ACDE", "FGHI", "KLMN"]
     unit = {
@@ -261,7 +261,7 @@ def test_llama_leading_bos_once_and_no_superfamily():
 
 
 def test_build_row_target_ids_identical_across_conditions():
-    tokenizer = _MapTokenizer(eos=2)
+    tokenizer = _MapTokenizer(eos=None, extra={"<EOS>": 2})
     arm = _arm("rita-xl", tokenizer)
     records = ["ACDE", "FGHI", "KLMN"]
     unit = {
@@ -345,3 +345,17 @@ def test_rita_tokenizer_arm_when_checkpoint_exists():
         modality="protein",
     )
     ch.packing_assertions(arm, row)
+
+
+def test_rita_eos_uses_native_token_when_eos_token_id_is_unset():
+    tokenizer = _MapTokenizer(eos=None, extra={"<EOS>": 2})
+    arm = _arm("rita-xl", tokenizer, input_format="eos_bounded_seq")
+    assert ch._rita_eos(arm) == 2
+
+
+def test_resolve_plan_path_finds_the_queue_cell_directory(tmp_path):
+    missing = tmp_path / "plan_progen2-base.json"
+    actual = tmp_path / "s46x_plan_progen2-base" / "plan_progen2-base.json"
+    actual.parent.mkdir()
+    actual.write_text("{}", encoding="utf-8")
+    assert ch.resolve_plan_path(missing, arm="progen2-base") == actual

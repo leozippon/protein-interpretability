@@ -1,0 +1,6 @@
+# Retry the two unconditional-generation arms that lacked generate().
+# Cards 1 and 2 only. Do not launch beside a job already on those cards.
+#
+#	slot	key	gpu	stage	label	env	expect	args
+1	s48r	1	48_unconditional_generation.py	s48_generate_rita-xl	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	unconditional_generation.json	--stage generate --arm rita-xl
+1	s48r	2	48_unconditional_generation.py	s48_generate_proteinglm-7b-clm	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	unconditional_generation.json	--stage generate --arm proteinglm-7b-clm

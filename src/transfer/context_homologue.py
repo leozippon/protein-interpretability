@@ -141,7 +141,7 @@ from typing import Any
 import numpy as np
 
 from .amino_acids import AA20
-from .arms import Arm, Cohort, PANEL, config_context_length
+from .arms import EOS_BOUNDED_BOUNDARY, Arm, Cohort, PANEL, config_context_length
 from .statistics import bootstrap_unit_floor
 
 SCHEMA_VERSION = "r2_context_homologue_v1"
@@ -712,10 +712,19 @@ def _progen3_residue_id(tokenizer: Any, residue: str) -> int:
 
 
 def _rita_eos(arm: Arm) -> int:
-    eos = arm.tokenizer.eos_token_id
-    if eos is None:
+    """Native document-boundary id. tokenizer.eos_token_id may be unset."""
+
+    from .rita_fitness import NATIVE_EOS_ID
+
+    token_id = arm.tokenizer.convert_tokens_to_ids(EOS_BOUNDED_BOUNDARY)
+    if token_id is None or int(token_id) < 0:
         raise ValueError(f"{arm.name}: RITA document stream needs a native EOS id")
-    return int(eos)
+    resolved = int(token_id)
+    if resolved != NATIVE_EOS_ID:
+        raise ValueError(
+            f"{arm.name}: native <EOS> must be id {NATIVE_EOS_ID}, got {resolved}"
+        )
+    return NATIVE_EOS_ID
 
 
 def _residue_token_ids(arm: Arm, record: str) -> list[int]:
@@ -1410,10 +1419,26 @@ def plan_digest(payload: Mapping[str, Any]) -> str:
     )
 
 
+def resolve_plan_path(path: Path, *, arm: str | None = None) -> Path:
+    """Find a plan at the given path or in the queue's per-cell directory."""
+
+    path = Path(path)
+    candidates = [path]
+    if arm:
+        candidates.append(path.parent / f"s46x_plan_{arm}" / path.name)
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        f"plan not found at {path}"
+        + (f" or {candidates[-1]}" if len(candidates) > 1 else "")
+    )
+
+
 def load_plan(path: Path, *, cohort: Mapping[str, Any], arm: str | None = None) -> dict[str, Any]:
     """Read a frozen plan, refusing drift in the plan or in the cohort under it."""
 
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    payload = json.loads(resolve_plan_path(path, arm=arm).read_text(encoding="utf-8"))
     recorded = payload.get("digest")
     if not recorded:
         raise ValueError(f"{path} carries no digest; it is not a frozen plan")

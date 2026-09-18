@@ -1030,6 +1030,24 @@ def cell_seed(*, seed: int, arm_name: str, class_key: str, condition: str) -> in
     return (int(seed) + offset) % (2**31 - 1)
 
 
+def ensure_generate(model: Any) -> Any:
+    """Attach GenerationMixin when a remote-code causal LM has no ``generate``.
+
+    Transformers 4.50+ stopped giving ``PreTrainedModel`` that method. RITA and
+    ProteinGLM still declare ``prepare_inputs_for_generation`` and need the mixin.
+    """
+
+    if callable(getattr(model, "generate", None)):
+        return model
+    from transformers.generation.utils import GenerationMixin
+
+    cls = model.__class__
+    model.__class__ = type(cls.__name__, (cls, GenerationMixin), {})
+    if not callable(getattr(model, "generate", None)):
+        raise TypeError(f"{cls.__name__} still has no generate after mixing GenerationMixin")
+    return model
+
+
 def sample_continuations(
     model: Any,
     tokenizer: Any,
@@ -1061,6 +1079,7 @@ def sample_continuations(
 
     if n < 1 or batch_size < 1:
         raise ValueError("generation needs a positive count and batch size")
+    model = ensure_generate(model)
     device = getattr(model, "device", None)
     encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=add_special_tokens)
     ids = encoded["input_ids"]

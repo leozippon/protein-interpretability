@@ -79,6 +79,14 @@ class PromptTable(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "text-only"):
             ug.require_admitted("gpt2-large")
 
+    def test_ensure_generate_mixes_in_generate_when_missing(self):
+        class Dummy:
+            pass
+
+        dummy = Dummy()
+        patched = ug.cg.ensure_generate(dummy)
+        self.assertTrue(callable(patched.generate))
+
 
 class FakeGeneration(unittest.TestCase):
     def test_eight_attempts_are_retained_including_an_empty_extract(self):

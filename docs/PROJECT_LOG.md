@@ -3093,3 +3093,7 @@ EXP-R2-246 opens native unlabelled generation for the seventeen missing protein 
 ## 2026-09-18 — Cross-measure association door
 
 EXP-R2-247 freezes the Direction-1 association among gate, external scoring, generation and declared parameter count in `docs/D1_CROSS_MEASURE_ASSOCIATION.md` before remaining MegaScale, homologous-context and unconditional-generation numbers are written into it. The CPU runner is stage 50. No coefficients. No pod names recorded.
+
+## 2026-09-18 — Repair s46 plan path, RITA EOS, and generate mixin
+
+Homologous-context scores now resolve the queue's per-cell plan path. RITA packing reads native `<EOS>` id 2 when `eos_token_id` is unset. Unconditional generation attaches `GenerationMixin` for RITA and ProteinGLM. Retry manifests pack the three idle cards and leave Galactica-30B on card 0. No numbers. No pod names recorded.
