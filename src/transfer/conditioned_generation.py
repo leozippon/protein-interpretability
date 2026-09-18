@@ -1041,7 +1041,9 @@ def sample_continuations(
     max_new_tokens: int = MAX_NEW_TOKENS,
     temperature: float = TEMPERATURE,
     top_p: float = TOP_P,
+    top_k: int = TOP_K,
     use_cache: bool = True,
+    add_special_tokens: bool = True,
 ) -> list[str]:
     """``n`` sampled continuations of one prompt, decoded with specials kept.
 
@@ -1060,7 +1062,7 @@ def sample_continuations(
     if n < 1 or batch_size < 1:
         raise ValueError("generation needs a positive count and batch size")
     device = getattr(model, "device", None)
-    encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=True)
+    encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=add_special_tokens)
     ids = encoded["input_ids"]
     if ids.shape[1] == 0:
         bos = tokenizer.bos_token_id if tokenizer.bos_token_id is not None else tokenizer.eos_token_id
@@ -1084,7 +1086,7 @@ def sample_continuations(
                 do_sample=True,
                 temperature=temperature,
                 top_p=top_p,
-                top_k=TOP_K,
+                top_k=top_k,
                 repetition_penalty=REPETITION_PENALTY,
                 max_new_tokens=max_new_tokens,
                 pad_token_id=pad,

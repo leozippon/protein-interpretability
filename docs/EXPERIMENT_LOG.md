@@ -20257,3 +20257,13 @@ Stage 46 keeps the F16 four unrescored and opens the remaining protein/joint nam
 ## 2026-09-18 — Homologous-context expansion uses cards 1–3 beside MegaScale 30B
 
 The wait-for-MegaScale gate is no longer required for launch. The expansion manifest packs only cards 1, 2 and 3 so Galactica-30B MegaScale can keep card 0. Wrapper `--now` freezes and queues immediately. No scores in this entry. No pod names recorded.
+
+## 2026-09-18 — Homologous-context expansion: RITA-xl cells failed native EOS
+
+Live `campaign_s46_homologue_expansion.status.tsv` marks `s46x_selfcheck_rita-xl` and `s46x_plan_rita-xl` `exited-nonzero`. Both traces raise `rita-xl: RITA document stream needs a native EOS id` from `context_homologue._rita_eos`. The other expansion cells continue; these two stay named unavailable rather than silently replaced. No other arm's score was rewritten. No pod names recorded.
+
+## 2026-09-18 — EXP-R2-246: unconditional generation expansion door, not yet generated
+
+Protocol freeze: `docs/D1_UNCONDITIONAL_GENERATION_EXPANSION.md`. One native unlabelled start per admitted checkpoint, 800 retained attempts, 128 length-stratified structure parents, seed 20260905, T=0.85 / top-p=0.95 / top-k=50 / `max_new_tokens=400`. ProGen3-3B is not regenerated. Excluded: ZymCTRL, text-only, Llama-2-7B. Galactica uses `[START_AMINO]`, InstructProtein uses `</s><protein>` without a second tokenizer BOS, ProLLaMA uses `Seq=<`.
+
+Seventeen generate cells in `scripts/transfer/campaign_s48_unconditional_generation.tsv`, smaller arms first, Galactica-30B last and alone. Wrapper `scripts/transfer/wait_then_queue_s48_unconditional_generation.sh` waits until MegaScale `s29_galactica_instructprotein` and the s46 expansion no longer occupy cards, then freezes HEAD and launches from the snapshot copy. Named failures on those queues do not withhold this one. No 800-attempt ledger exists yet. No pod names recorded.

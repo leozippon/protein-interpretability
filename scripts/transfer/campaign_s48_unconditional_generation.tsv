@@ -1,0 +1,29 @@
+# Unconditional unlabelled generation (stage 48, EXP-R2-246).
+#
+# One generate cell per admitted arm. ProGen3-3B is already complete and is
+# not in this manifest. Smaller arms first; Galactica-30B is last and alone.
+#
+# Cards 0-3 are packed for after the current jobs finish. This manifest must
+# not launch beside MegaScale s29 Galactica-30B scoring or the s46x
+# homologous-context expansion. The waiter is the only gate.
+#
+# RITA batch-size 1 is enforced in code, not as extra TSV columns.
+#
+#	slot	key	gpu	stage	label	env	expect	args
+1	s48	0	48_unconditional_generation.py	s48_generate_progen3-112m	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	unconditional_generation.json	--stage generate --arm progen3-112m
+1	s48	1	48_unconditional_generation.py	s48_generate_galactica-125m	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	unconditional_generation.json	--stage generate --arm galactica-125m
+1	s48	2	48_unconditional_generation.py	s48_generate_progen2-small	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	unconditional_generation.json	--stage generate --arm progen2-small
+1	s48	3	48_unconditional_generation.py	s48_generate_protgpt2	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	unconditional_generation.json	--stage generate --arm protgpt2
+2	s48	0	48_unconditional_generation.py	s48_generate_progen2-base	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	unconditional_generation.json	--stage generate --arm progen2-base
+2	s48	1	48_unconditional_generation.py	s48_generate_progen2-medium	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	unconditional_generation.json	--stage generate --arm progen2-medium
+2	s48	2	48_unconditional_generation.py	s48_generate_rita-xl	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	unconditional_generation.json	--stage generate --arm rita-xl
+2	s48	3	48_unconditional_generation.py	s48_generate_protgpt3-1.3b	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	unconditional_generation.json	--stage generate --arm protgpt3-1.3b
+3	s48	0	48_unconditional_generation.py	s48_generate_galactica-1.3b	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	unconditional_generation.json	--stage generate --arm galactica-1.3b
+3	s48	1	48_unconditional_generation.py	s48_generate_instructprotein	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	unconditional_generation.json	--stage generate --arm instructprotein
+3	s48	2	48_unconditional_generation.py	s48_generate_progen2-large	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	unconditional_generation.json	--stage generate --arm progen2-large
+3	s48	3	48_unconditional_generation.py	s48_generate_progen2-xlarge	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	unconditional_generation.json	--stage generate --arm progen2-xlarge
+4	s48	0	48_unconditional_generation.py	s48_generate_galactica-6.7b	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	unconditional_generation.json	--stage generate --arm galactica-6.7b
+4	s48	1	48_unconditional_generation.py	s48_generate_proteinglm-7b-clm	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	unconditional_generation.json	--stage generate --arm proteinglm-7b-clm
+4	s48	2	48_unconditional_generation.py	s48_generate_prollama-stage-1	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	unconditional_generation.json	--stage generate --arm prollama-stage-1
+4	s48	3	48_unconditional_generation.py	s48_generate_prollama	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	unconditional_generation.json	--stage generate --arm prollama
+5	s48	0	48_unconditional_generation.py	s48_generate_galactica-30b	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	unconditional_generation.json	--stage generate --arm galactica-30b

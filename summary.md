@@ -1,6 +1,6 @@
 # InterpretabilityTransfer 研究方向与当前结论
 
-**更新日期：** 2026-09-17
+**更新日期：** 2026-09-18
 
 本项目比较纯文本、纯蛋白质和语言–蛋白质联合生成模型。
 
@@ -58,7 +58,7 @@
 
 ## 方向一：比较模型具有什么能力
 
-本节关注模型在外部任务、原生生成和条件／上下文利用中实际做得怎样，包括未通过对照的结果。序列评分、生成质量与产出、条件选择性和泛化是不同的能力维度，不能合成一个排名。已有蛋白的实验标签不能转移给新生成物；生成评测须用天然、阴性与简单参照校准，计算证据也不等于实测折叠或功能。
+本节关注模型在外部任务、条件生成、无条件生成和上下文利用中实际做得怎样，包括未通过对照的结果。序列评分、条件选择性、生成产出和泛化是不同的能力维度，不能合成一个排名。已有蛋白的实验标签不能转移给新生成物；生成评测须用天然、阴性与简单参照校准，计算证据也不等于实测折叠或功能。
 
 ### 外部蛋白任务上的序列评分
 
@@ -67,26 +67,40 @@
 | ProteinGym 突变适应度 | ProtGPT2；ProGen2 small/base/medium/large/xlarge；ProGen3 112M/3B；ProteinGLM-7B-CLM；ProtGPT3-1.3B；InstructProtein 蛋白；RITA-xl；Llama-2-7B 与 ProLLaMA Stage 1/2；Galactica 125M/1.3B/6.7B/30B 蛋白。基础评测集为 217 个 substitution assays / 174 个家族；1024-token 臂共同支持 201 assays / 163 families，2048-token 臂为 213 assays / 171 families。ZymCTRL 因缺 EC 标签，217 个 assay 全部跳过 | 在固定 mutant digest 上用模型似然排序突变，以逐位 profile 和 BLOSUM62 作序列基线；按家族 bootstrap 比较 MODEL−LOOKUP 和 MODEL−BLOSUM62，同谱系 checkpoint 只在相同分析集和评分方向内形成配对增量 | ProtGPT2 的 MODEL−LOOKUP 为 −0.0143。ProGen2 三个 checkpoint 为 −0.0043、+0.0122、+0.0039，区间均覆盖零。ProGen3 从 112M 的 −0.0801 [−0.1135,−0.0460] 变为 3B 的 +0.0555 [+0.0345,+0.0774]，raw Spearman 增量为 +0.1356 [+0.1082,+0.1647]。ProLLaMA 的 raw Spearman 为 −0.0071→+0.1358→+0.1507，但最佳 checkpoint 仍低于 LOOKUP +0.3537 和 BLOSUM62 +0.2097。ProGen2-small/base 的 MODEL−LOOKUP 各自在自己的支持集上读取：201 assays/163 families 为 −0.0554 [−0.0816,−0.0291]，indeterminate；213 assays/171 families 为 +0.0037 [−0.0252,+0.0325]，retrieval_bounded；InstructProtein 的 MODEL−LOOKUP 为 −0.0754 [−0.1021,−0.0481]，retrieval_dominated，同样在自己的 213 assays/171 families 支持集上读取。ProteinGLM-7B-CLM 在 201 assays / 163 families 上 MODEL−LOOKUP 为 +0.0384 [+0.0175, +0.0592]，判决 acquired，LOOKUP 为外部 UniRef50 profile。Galactica 各档均为 213 assays / 171 families：raw Spearman 为 125M −0.0077 [−0.0245, +0.0084]、1.3B +0.0484 [+0.0307, +0.0672]、6.7B +0.0954 [+0.0744, +0.1167]、30B +0.1479 [+0.1249, +0.1710]；MODEL−LOOKUP 均为负，125M −0.3633 [−0.3909, −0.3352]、1.3B −0.3071 [−0.3366, −0.2769]、6.7B −0.2602 [−0.2930, −0.2270]、30B −0.2076 [−0.2393, −0.1782]。RITA-xl 在 201 assays / 163 families 上 MODEL−LOOKUP 为 +0.0075 [−0.0141, +0.0282]，区间覆盖零。ProtGPT3-1.3B 在同一支持集上 MODEL−LOOKUP 为 −0.0512 [−0.0791, −0.0246]，判决 indeterminate。MODEL−BLOSUM62 用同一套家族 bootstrap：ProtGPT2 为 +0.1343 [+0.1056, +0.1607]。ProGen2 medium/large/xlarge 为 +0.1522 [+0.1248, +0.1787]、+0.1688 [+0.1465, +0.1916]、+0.1604 [+0.1412, +0.1789]；small 在 201/163 上为 +0.1012 [+0.0725, +0.1273]，base 在 213/171 上为 +0.1531 [+0.1254, +0.1797]。ProGen3 从 112M 的 +0.0688 [+0.0398, +0.0975] 变为 3B 的 +0.2044 [+0.1835, +0.2259]。Llama-2 到 ProLLaMA Stage 1/2 为 −0.2133 [−0.2345, −0.1896]→−0.0704 [−0.0999, −0.0411]→−0.0555 [−0.0840, −0.0282]。InstructProtein 为 +0.0740 [+0.0532, +0.0947]。ProteinGLM-7B-CLM 为 +0.1949 [+0.1725, +0.2165]。Galactica 各档均为负：125M −0.2138 [−0.2360, −0.1910]、1.3B −0.1577 [−0.1789, −0.1357]、6.7B −0.1107 [−0.1336, −0.0861]、30B −0.0582 [−0.0805, −0.0339]。RITA-xl 为 +0.1640 [+0.1431, +0.1833]。ProtGPT3-1.3B 为 +0.1053 [+0.0770, +0.1323] | ProGen2 相邻规模 checkpoint 均未改变通过或不通过的结论；ProGen3 只支持两个具名 checkpoint 的描述性转变。各组的分析集、评分方向、语料和架构不同，不能跨组排名或形成参数量因果。ProGen2 的 profile 覆盖不完整；ProGen3、ProteinGLM、Galactica 与 InstructProtein 的 LOOKUP 是外部 UniRef50 基线，不排除训练语料检索；赢过 LOOKUP 不是获得生物学知识；赢过 BLOSUM62 只说明排序好过替换表。ZymCTRL 的全部 217 个 assay 因语料原因跳过，是完成的整体拒绝，不产生适应度数字。Galactica-125M 蛋白资格门未识别，ProteinGym 仍按正式结果读取，与 1.3B/6.7B/30B 写在同一组；该组分析不给出 acquired 或 retrieval_bounded 判决。RITA-xl 配对已从冻结清单副本重跑，数字与上次相同，现可作为正式结果引用。ProtGPT3-1.3B 按原生格式计分，LOOKUP 同为外部 UniRef50 |
 | MegaScale 设计稳定性 | 除 ZymCTRL 外的主表非文本生成模型。已有格子：ProtGPT2；ProGen2 五档；ProGen3 112M/3B（只按 N→C，与 ProteinGym 双向计分不是同一套加法）；ProteinGLM-7B-CLM；ProtGPT3-1.3B；RITA-xl；Llama-2-7B 与 ProLLaMA Stage 1/2。ZymCTRL 除外：设计序列没有酶分类号，这个模型的输入不成立。Galactica 四档蛋白与 InstructProtein 按 ProteinGym 同一套渲染计分，入口已接上，数字待打分后写入。设计评测含 130 个无可检出 UniRef50 整序列同源的 WT、40 个 series、110,730 个变体，天然对照含 266 WT、124 clusters、404,114 个变体 | 计算模型 likelihood 与实测稳定性的 Spearman，并比较 hydropathy、BLOSUM62、composition 和 3–7-mer 基线；按设计 series 或天然 cluster 重采样。天然对照不过门槛时，设计侧数字只记录、不读成库外结论 | 设计侧能读的：ProtGPT2 +0.0837；ProGen2-base/medium/large/xlarge 为 +0.0456 / +0.0280 / +0.0519 / +0.0480；ProGen3-3B +0.1189；ProteinGLM-7B-CLM +0.1395；RITA-xl +0.0332。这些都低于疏水性变化，也未超过 BLOSUM62。相对 7-mer，ProtGPT2 为 +0.0516 [+0.0213,+0.0807]。天然对照没过、设计侧不读的：ProGen2-small −0.0100，ProGen3-112M +0.0409，ProtGPT3-1.3B +0.0273，Llama-2 −0.1102，ProLLaMA Stage 1/2 为 +0.0217 / +0.0082。Galactica 与 InstructProtein 尚无本实验数字 | 除 ZymCTRL 外，入口都在。只有 ProtGPT2 的「整条不在训练库」坐实；其余或是更宽上界，或语料未声明。Galactica 的证书对 UniRef50 签不了名；InstructProtein 声明的是 UniRef100 家族，关系同样未坐实。证书只排除整序列检索，设计序列的 7-mer 仍有 99.57% 可在语料中找到。不证明功能、知识或机制 |
 
-### 按条件生成与使用上下文
+### 条件生成
+
+ZymCTRL 的 EC 标签和 ProLLaMA Stage 2 的 superfamily 指令是目前仅有的两条原生类别条件任务。下面几行用同一批写出、同一套分母，分别看选择性、非冗余产出、顺序信息和参考支持；不是同任务排名，也不比较两套解码配方。设计与停止条件见[生成补充实验预注册](docs/D1_GENERATION_BIOLOGY_PREREGISTRATION.md)。
+
+| 评价指标 | 模型与数据 | 方法 | 结果 | 状态与边界 |
+| --- | --- | --- | --- | --- |
+| 类别选择性 | 14 个可测 EC 和 15 个可测 superfamily，每个类别与条件各 200 条 | 同一模型比较请求标签、固定错配标签和无条件下限；先用真实蛋白与随机序列校准 HMMER/Pfam-A，再按类别和近重复组做 2,000 次 bootstrap | 请求减错配为 ZymCTRL +0.8822 [+0.7202,+0.9872]，14/14 类别为正；ProLLaMA +0.1267 [+0.0527,+0.2360]，11/15 类别为正。两者都满足“生成朝请求类别移动”的复合条件 | 已完成。策展 profile 对生成物的类别归属，不是功能验证。两个模型的比率不直接比较；Pfam 只能识别 13.5% 的 ProLLaMA 生成物 |
+| 全尝试与非冗余产出 | 同上，只计请求条件：2,800 与 3,000 次 | 目标 profile 命中；在原条件单元内按残基 5-mer 包含度去近重复 | 目标命中 2,488/2,800 和 380/3,000，分别落入 1,688 和 380 组 | 选择性和非冗余产出是不同指标；profile 命中不是 EC 活性或生成物功能 |
+| 顺序信息（生成减自身扰乱） | 116 个天然／自身扰乱预测作校准；main 2,320 个预测、1,160 对，含请求与错配抽样 | 天然对照先过校准；每条生成物配一条组成扰乱，比较 mean CA-pLDDT；97.5% 类别 bootstrap | 校准全部通过。请求条件差为 ZymCTRL +56.68 [45.90, 62.57]，ProLLaMA +5.92 [2.49, 10.57] | 有超出组成和长度、预测器可识别的顺序信息。自然／扰乱对照不是实测可折叠／不可折叠分类器 |
+| 绝对置信度与全分母产率 | 同上的请求条件结构样本，推回全部尝试 | 平均 CA-pLDDT；固定门槛（平均 ≥70 且 ≥80% 残基各自 ≥70）的全尝试加权估计 | 请求条件均值为 86.00 和 44.39；全尝试点估计约 86.36% 和 1.36%，后者一个短输入未知使支持上界为 1.40% | 正 margin 不等于高绝对产率。支持范围不是置信区间，更不是实测成功率 |
+| 参考支持 | 冻结账本 16,400 条全部重搜 UniRef50；原字段保留。下表数字是请求条件 | 同一条命中同时读 identity 与 query／target coverage；无命中保持为状态 | 7,043 个既有非空 identity 逐值不变。请求条件有命中 2,658/2,800 和 390/3,000，中位 identity／query coverage 为 70.00%／98.82% 和 32.05%／79.85% | 有无参考支持与置信度同时报告。近不证明训练外泛化，远不是记忆的因果证明 |
+
+### 无条件生成
+
+指标与条件生成同类，但没有请求类，故不报目标 profile 或请求减错配，也不与上一节横比。ProGen3-3B 已完成。其余准入臂按同一套 800 次／128 条结构样本补测，协议见[无条件生成扩面预注册](docs/D1_UNCONDITIONAL_GENERATION_EXPANSION.md)；3B 本身不再重跑，见[ProGen3 生成预注册](docs/D1_PROGEN3_GENERATION_PREREGISTRATION.md)。
+
+准入而未完成：ProtGPT2；ProGen2 small/base/medium/large/xlarge；ProGen3-112M；ProteinGLM-7B-CLM；ProtGPT3-1.3B；RITA-xl；Galactica 125M/1.3B/6.7B/30B 的 `[START_AMINO]`；InstructProtein 的 `<protein>`；ProLLaMA Stage 1/2 的 `Seq=<`。ZymCTRL、纯文本和 Llama-2-7B 不进入。Galactica 不用标题槽，InstructProtein 不用指令槽，ProLLaMA 不用 Superfamily 槽。
+
+| 评价指标 | 模型与数据 | 方法 | 结果 | 状态与边界 |
+| --- | --- | --- | --- | --- |
+| 完成状态与任意 Pfam | ProGen3-3B：800 次全部保留。其余准入臂各 800 次，待写入 | 有编译器则报是否收下，否则报原生闭合或预算截断；HMMER 对上任意家族即识别 | 3B：501 个接口接受的输出、299 个预算截断前缀；496 个获任意 Pfam 识别。其余待写入 | 3B 已完成。无目标类。截断前缀不是完整产物 |
+| 顺序信息（生成减自身扰乱） | 3B：128 条原产物与 128 条自身扰乱；沿用条件侧的天然校准。其余准入臂同样抽样，待写入 | 与条件生成相同的 CA-pLDDT 配对；95% 序列组 bootstrap | 3B：256 次预测全部成功。combined margin +38.39 [34.53, 42.27]。其余待写入 | 3B 支持这个任务上的顺序信息。primary 含 89 个完整输出和 39 个前缀；前缀自信不能计作完整产物，也不构成跨家族泛化 |
+| 绝对置信度与全分母产率 | 同上，推回各臂 800 次 | 与条件生成相同的固定门槛 | 3B：原产物均值 72.38；全尝试点估计约 43.07%。其余待写入 | 估计可含截断前缀。不是实测折叠或功能 |
+| 参考支持 | 同一批尝试 | 同一条命中同时读 identity 与 query／target coverage；3B 原检索未留 target 坐标，新臂按已对账约定补两侧覆盖 | 3B：569 条有比对、231 条无命中；有比对者中位 identity／query coverage 为 43.71%／93.03%。其余待写入 | 无命中不是训练外证书。不与条件生成的 identity 横比 |
+
+结构预测只是计算证据；实际功能仍需对应候选的实验数据。这些有界结果也不表示方向三的知识鉴别已经通过。扩面排队等 MegaScale 30B 与同源上下文扩面释放当前四卡后再上，不从这两项抽卡。详细终态见[科学审计](docs/INTERPRETABILITY_TRANSFER_AUDIT.md#current-assessment-and-next-decisions-2026-09-05)。
+
+### 同源上下文利用
+
+这是给已有目标序列加上下文再打分，不是生成新序列。
 
 | 实验 | 模型与数据 | 方法 | 结果 | 状态与边界 |
 | --- | --- | --- | --- | --- |
-| 原生条件生成 | ZymCTRL 的 EC 标签和 ProLLaMA Stage 2 的 superfamily 指令；分别保留 14 个可测 EC 类别和 15 个可测 superfamily，每个类别与条件生成 200 条 | 同一模型比较请求标签、固定错配标签和无条件下限；先用真实蛋白与随机序列校准 HMMER/Pfam-A 判定器，再按类别和近重复组做 2,000 次 bootstrap | ZymCTRL 的请求减错配为 +0.8822 [+0.7202,+0.9872]，14/14 类别为正；ProLLaMA 为 +0.1267 [+0.0527,+0.2360]，11/15 类别为正。两个模型都满足“生成朝请求类别移动”的复合条件 | 已完成。结论只是策展 profile 对生成物的类别归属，不是功能验证。ZymCTRL 生成物对 UniRef50 的最大 identity 中位数为 69.2%，未排除训练分布内检索；Pfam 只能识别 13.5% 的 ProLLaMA 生成物，两个模型的比率也不直接比较 |
 | 同源上下文利用 | 已完成的 F16：gpt2-large、ProtGPT2、ProGen2-small、ProGen2-medium。扩面（同一 1,024-token 预算，不重跑 F16）：ProGen2-base/large/xlarge；ProGen3 112M/3B；ProteinGLM-7B-CLM；ProtGPT3-1.3B；RITA-xl；Galactica 125M/1.3B/6.7B/30B 蛋白块；InstructProtein 蛋白块；Llama-2-7B 与 ProLLaMA Stage 1/2 的 `Seq=<…>` 块。每个模型仍是 800 个目标单位，蛋白按 70–90、50–70、30–50、<30% identity 分档。ZymCTRL 与纯语言模型不进入扩面 | 在固定 1,024-token 预算内匹配上下文条数、长度和填充，比较真同源、组成匹配无关序列、打乱同源和位置占位控制；要求效应在 `<30%` identity 的最低局部重叠层仍成立。窗口更长的模型也按 1,024 打包，不做成规模或窗口对照。Galactica 不用标题槽，InstructProtein 不用指令槽，ProLLaMA 不用 Superfamily 槽 | F16：ProtGPT2 和 ProGen2-small 的合并 AUROC 为 0.786 和 0.653，但随局部重叠降低分别变为 0.915→0.935→0.770→0.525 和 0.860→0.670→0.550→0.530，低于 30% identity 后回到机会；ProGen2-medium 和 gpt2-large 的合并 AUROC 为 0.379 和 0.504。扩面数字待写入 | F16 已完成。四个未再训练的 checkpoint 都没有显示超出局部复制的同源利用；结论只适用于当前 token 预算和实际 k，不约束专门为多序列条件训练的模型。文本 BM25 带与蛋白 identity 带不是同一因素，ProtGPT2 的 FASTA 多序列预训练也是独立混杂。扩面入口已接上，用 1–3 号卡与 MegaScale 的 Galactica 30B（0 号卡）并行；证书、资格门和渲染限度写入产物，不因此不做。Llama-2-7B 是文本起点的蛋白模式地板 |
-
-### 生成物的顺序信息、产出与参考距离
-
-EXP-R2-232/233 已完成结构与原生生成终态，补充回答“生成了多少、序列顺序是否提供信息、实际产出与参考支持怎样”，与上表的请求类别选择性是不同问题，各自保留原分母。原条件生成仍是 ZymCTRL 的 EC 标签任务和 ProLLaMA 的 superfamily 指令任务；本次没有把它们改成同任务模型排名，也没有开展两套 ProLLaMA 解码配方比较。
-
-| 已完成测量 | 结果 | 能支持的结论与边界 |
-| --- | --- | --- |
-| 全尝试与非冗余识别 | 主要请求条件下的目标 profile 命中为 ZymCTRL 2,488/2,800、ProLLaMA 380/3,000，分别落入 1,688 和 380 个原条件单元内的近重复组 | 正确条件的选择性和实际非冗余产出是不同指标；profile 命中不是 EC 活性或生成物功能 |
-| 天然校准及条件生成结构 | 116 个天然／自身扰乱预测全部完成并通过校准；main 的 2,320 个预测、1,160 对全部有效。ZymCTRL 的生成减自身扰乱 mean CA-pLDDT 为 +56.68，97.5% 类别 bootstrap 区间 [45.90, 62.57]；ProLLaMA 为 +5.92 [2.49, 10.57] | 两者都有超出组成和长度的、预测器可识别的序列顺序信息；自然／扰乱对照不是实测可折叠／不可折叠分类器 |
-| 绝对置信度及全分母估计 | 请求条件 mean CA-pLDDT 为 86.00 和 44.39；固定 confidence event 的全尝试点估计约 86.36% 和 1.36%，后者一个短输入未知使支持上界为 1.40% | 正 margin 不等于高绝对产率。这些是固定预测器的样本加权估计，支持范围不是置信区间，更不是实测成功率 |
-| ProGen3-3B 原生无条件生成 | 800 次全部保留：501 个原生接口接受的输出、299 个预算截断前缀；496 个获任意 Pfam 识别。128 原产物和 128 自身扰乱均预测成功，combined margin +38.39，95% 序列组 bootstrap 区间 [34.53, 42.27] | 支持这个具名原生任务的顺序信息；primary 包含 89 个完整原生输出和 39 个截断前缀，后者的置信度不能计作完整产物证据，也不构成跨家族泛化 |
-| 完整参考检索核对 | fresh 16,400 条全部核验；原字段全部保留，7,043 个既有非空 identity 数值逐值不变。主要请求条件评测 ZymCTRL 2,658/2,800 有命中，identity／query coverage 中位 70.00%／98.82%；ProLLaMA 390/3,000，32.05%／79.85% | 身份与双覆盖来自同一命中；有无参考支持与置信度同时报告，描述性分层不能当成训练外泛化或记忆因果证明 |
-
-全部测量保持固定样本和端点，未因结果扩张模型或解码矩阵。参考库距离不等于完整训练外；fresh 检索同时保留 identity 与同一命中的覆盖率。结构预测只是计算证据，实际功能仍需对应候选的实验数据；这些有界生成结果也不表示方向三的知识鉴别已经通过。设计与停止条件见[生成补充实验预注册](docs/D1_GENERATION_BIOLOGY_PREREGISTRATION.md)，详细终态、已完成的本地审阅包及作者侧待办见[科学审计](docs/INTERPRETABILITY_TRANSFER_AUDIT.md#current-assessment-and-next-decisions-2026-09-05)。
 
 ### 联合训练阶段的行为收益与文本代价
 
@@ -98,7 +112,7 @@ EXP-R2-232/233 已完成结构与原生生成终态，补充回答“生成了�
 
 ### 尚未完成的能力评测
 
-EXP-R2-225 扩展的 7B 接口资格仍未作为该扩展运行；派生预算资格代码不是 7B 运行。ProteinGym 上 ProteinGLM、Galactica、RITA-xl 与 ProtGPT3-1.3B 的数字见上表。MegaScale 上除 ZymCTRL 外的非文本臂入口都在；Galactica 与 InstructProtein 已按 ProteinGym 同一套渲染接上，数字待写入。这些不替代方向二、三的下一步。
+EXP-R2-225 扩展的 7B 接口资格仍未作为该扩展运行；派生预算资格代码不是 7B 运行。ProteinGym 上 ProteinGLM、Galactica、RITA-xl 与 ProtGPT3-1.3B 的数字见上表。MegaScale 上除 ZymCTRL 外的非文本臂入口都在；Galactica 与 InstructProtein 已按 ProteinGym 同一套渲染接上，数字待写入。无条件生成扩面（EXP-R2-246）协议已冻结，17 个准入臂待生成，不重跑 ProGen3-3B。这些不替代方向二、三的下一步。
 
 ## 方向二：用现有方法解释能力如何形成、表示和计算
 

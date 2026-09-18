@@ -3081,3 +3081,11 @@ Confirmed 0 MiB / 0% and no experiment process, then deleted the idle 1-GPU job.
 ## 2026-09-18 — Homologous-context expansion door
 
 Stage 46 now packs every remaining protein/joint checkpoint at the imposed 1024-token budget. F16 arms are not rescored. ZymCTRL and text-only arms stay out. Manifest `campaign_s46_homologue_expansion.tsv` uses cards 1–3 only so it can run beside MegaScale Galactica-30B on card 0. No scores in this entry. No pod names recorded.
+
+## 2026-09-18 — Direction-1 generation tables regrouped
+
+`summary.md` now splits the former mixed generation block into conditional generation, unconditional generation and homologous-context use. Existing endpoints and numbers are unchanged; homologous context remains a scoring-with-context measurement, not a generation task. No pod names recorded.
+
+## 2026-09-18 — Unconditional generation expansion door
+
+EXP-R2-246 opens native unlabelled generation for the seventeen missing protein and joint arms. ProGen3-3B is not rerun. The queue waits until MegaScale 30B and the homologous-context expansion release the four-card allocation. No generation numbers in this entry. No pod names recorded.
