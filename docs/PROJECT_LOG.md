@@ -3097,3 +3097,7 @@ EXP-R2-247 freezes the Direction-1 association among gate, external scoring, gen
 ## 2026-09-18 — Repair s46 plan path, RITA EOS, and generate mixin
 
 Homologous-context scores now resolve the queue's per-cell plan path. RITA packing reads native `<EOS>` id 2 when `eos_token_id` is unset. Unconditional generation attaches `GenerationMixin` for RITA and ProteinGLM. Retry manifests pack the three idle cards and leave Galactica-30B on card 0. No numbers. No pod names recorded.
+
+## 2026-09-18 — Attach GenerationConfig after mixing generate
+
+The first generate retry failed because `generation_config` was unset. `ensure_generate` now builds it from `model.config`. Homologous-context score retry freeze `20260918221340_b43d0e29e7de` is left running. No numbers. No pod names recorded.

@@ -1031,20 +1031,30 @@ def cell_seed(*, seed: int, arm_name: str, class_key: str, condition: str) -> in
 
 
 def ensure_generate(model: Any) -> Any:
-    """Attach GenerationMixin when a remote-code causal LM has no ``generate``.
+    """Attach GenerationMixin and a GenerationConfig when remote-code LMs lack them.
 
-    Transformers 4.50+ stopped giving ``PreTrainedModel`` that method. RITA and
+    Transformers 4.50+ stopped giving ``PreTrainedModel`` ``generate``. RITA and
     ProteinGLM still declare ``prepare_inputs_for_generation`` and need the mixin.
+    Mixing the method in is not enough: ``generate`` then reads
+    ``generation_config``, which those checkpoints leave unset.
     """
 
-    if callable(getattr(model, "generate", None)):
-        return model
-    from transformers.generation.utils import GenerationMixin
-
-    cls = model.__class__
-    model.__class__ = type(cls.__name__, (cls, GenerationMixin), {})
     if not callable(getattr(model, "generate", None)):
-        raise TypeError(f"{cls.__name__} still has no generate after mixing GenerationMixin")
+        from transformers.generation.utils import GenerationMixin
+
+        cls = model.__class__
+        model.__class__ = type(cls.__name__, (cls, GenerationMixin), {})
+        if not callable(getattr(model, "generate", None)):
+            raise TypeError(f"{cls.__name__} still has no generate after mixing GenerationMixin")
+    if getattr(model, "generation_config", None) is None:
+        from transformers.generation.configuration_utils import GenerationConfig
+
+        config = getattr(model, "config", None)
+        if config is None:
+            raise TypeError(
+                f"{type(model).__name__} has no generation_config and no config to build one"
+            )
+        model.generation_config = GenerationConfig.from_model_config(config)
     return model
 
 
