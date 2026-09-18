@@ -20285,3 +20285,7 @@ Galactica-30B unconditional generate finished `exited-ok` in freeze `20260918194
 ## 2026-09-18 — RITA and ProteinGLM decode through forward, not generate
 
 Pin `709ec2c` freeze `20260918222410_1921db641f56` (`s48_generate_retry2`) still failed: RITA `forward` rejects `cache_position`; ProteinGLMConfig has no `num_hidden_layers` for `DynamicCache`. Unconditional generation for those two arms now samples last-step logits from `forward` only, at the same POLICY. Homologous-context score retry `20260918221340_b43d0e29e7de` is not restarted. No generation numbers. No pod names recorded.
+
+## 2026-09-18 — Forward-decode generate retry is running
+
+Pin `2fd894b` froze as `20260918223307_9935857a1d58`. Queue `s48_generate_retry3` has RITA-xl on card 1 and ProteinGLM-7B-CLM on card 2, both `running`, `# FAILURES 0`. Homologous-context score retry `20260918221340_b43d0e29e7de` continues on card 3 (`exited-ok=8`, `running=1`, `pending=72`, `# FAILURES 0`). Original s48 freeze `20260918194031_e37ee9cdeffc` holds 15 `exited-ok` generates including Galactica-30B (800 attempts). No numbers written into the summary. No pod names recorded.

@@ -3105,3 +3105,7 @@ The first generate retry failed because `generation_config` was unset. `ensure_g
 ## 2026-09-18 — Forward-only decode for RITA and ProteinGLM
 
 Transformers 4.50 `generate` is not used for those two arms. Token sampling reads last-step `forward` logits at the frozen POLICY. The homologous-context score queue is left running. No numbers. No pod names recorded.
+
+## 2026-09-18 — Generate retry 3 launched beside homologous-context scores
+
+Freeze `20260918223307_9935857a1d58` is sampling RITA-xl and ProteinGLM on cards 1–2. Homologous-context scores continue from `20260918221340_b43d0e29e7de` on card 3. No numbers. No pod names recorded.
