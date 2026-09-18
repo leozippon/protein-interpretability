@@ -20281,3 +20281,7 @@ Repairs: `resolve_plan_path` accepts the per-cell plan directory; `_rita_eos` ta
 ## 2026-09-18 — Retry freeze: s46 scores start; generate still lacked generation_config
 
 Galactica-30B unconditional generate finished `exited-ok` in freeze `20260918194031_e37ee9cdeffc` (800 attempts). Pin `fd1bc5a` froze as `20260918221340_b43d0e29e7de`. Homologous-context retry: RITA plan `exited-ok`; first score `s46x_score_progen2-base_position_only` `exited-ok`; remaining score cells continue on card 3. RITA-xl and ProteinGLM generate retries both `exited-nonzero`: `generate` is now present but `generation_config` is `None` (`_from_model_config`). `ensure_generate` now builds `GenerationConfig.from_model_config`. The running s46 score queue is not restarted. No generation numbers. No pod names recorded.
+
+## 2026-09-18 — RITA and ProteinGLM decode through forward, not generate
+
+Pin `709ec2c` freeze `20260918222410_1921db641f56` (`s48_generate_retry2`) still failed: RITA `forward` rejects `cache_position`; ProteinGLMConfig has no `num_hidden_layers` for `DynamicCache`. Unconditional generation for those two arms now samples last-step logits from `forward` only, at the same POLICY. Homologous-context score retry `20260918221340_b43d0e29e7de` is not restarted. No generation numbers. No pod names recorded.

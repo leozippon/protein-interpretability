@@ -133,6 +133,7 @@ ADMITTED: dict[str, UnconditionalArm] = {
         batch_size=1,
         use_cache=False,
         dtype="float32",
+        add_special_tokens=False,
     ),
     "galactica-125m": _galactica("galactica-125m"),
     "galactica-1.3b": _galactica("galactica-1.3b"),
@@ -349,37 +350,78 @@ def _decode_kwargs(spec: UnconditionalArm) -> dict[str, Any]:
     }
 
 
-def _sample_rita(model: Any, tokenizer: Any, prompt: str, *, n: int, seed: int) -> list[str]:
-    """One sequence at a time, no pad, no attention mask, cache off."""
+def _sample_next_id(logits: Any, *, temperature: float, top_k: int, top_p: float) -> Any:
+    """One token from last-step logits. Does not call ``model.generate``."""
 
     import torch
 
-    from .rita_fitness import NATIVE_EOS_ID
+    scores = logits / float(temperature)
+    if top_k > 0:
+        kept = min(int(top_k), int(scores.size(-1)))
+        threshold = torch.topk(scores, kept).values[-1]
+        scores = scores.masked_fill(scores < threshold, float("-inf"))
+    if 0.0 < top_p < 1.0:
+        ranked, order = torch.sort(scores, descending=True)
+        cumulative = torch.cumsum(torch.softmax(ranked, dim=-1), dim=-1)
+        drop = cumulative > top_p
+        drop[..., 1:] = drop[..., :-1].clone()
+        drop[..., 0] = False
+        ranked = ranked.masked_fill(drop, float("-inf"))
+        scores = torch.full_like(scores, float("-inf")).scatter(-1, order, ranked)
+    return torch.multinomial(torch.softmax(scores, dim=-1), 1)
 
-    model = cg.ensure_generate(model)
-    encoded = tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
-    ids = encoded["input_ids"]
-    device = getattr(model, "device", ids.device)
-    ids = ids.to(device)
-    prompt_length = int(ids.shape[1])
+
+def _eos_id(spec: UnconditionalArm, tokenizer: Any) -> int:
+    if spec.name == "rita-xl":
+        from .rita_fitness import NATIVE_EOS_ID
+
+        return NATIVE_EOS_ID
+    token_id = tokenizer.convert_tokens_to_ids(spec.close_token)
+    if token_id is None or int(token_id) < 0:
+        raise ValueError(f"{spec.name}: close token {spec.close_token!r} has no id")
+    return int(token_id)
+
+
+def _sample_by_forward(
+    spec: UnconditionalArm, model: Any, tokenizer: Any, *, n: int, seed: int
+) -> list[str]:
+    """Token-by-token decode through ``forward`` only.
+
+    Transformers 4.50 ``generate`` passes ``cache_position`` and builds a
+    ``DynamicCache`` from ``num_hidden_layers``. RITA and ProteinGLM accept
+    neither. The operating point is still POLICY; only the decode driver changes.
+    """
+
+    import torch
+
+    encoded = tokenizer(spec.prompt, return_tensors="pt", add_special_tokens=spec.add_special_tokens)
+    prompt_ids = encoded["input_ids"]
+    device = getattr(model, "device", None)
+    if device is None:
+        device = prompt_ids.device
+    prompt_ids = prompt_ids.to(device)
+    prompt_length = int(prompt_ids.shape[1])
+    if prompt_length < 1:
+        raise ValueError(f"{spec.name}: empty prompt")
+    eos_id = _eos_id(spec, tokenizer)
     outputs: list[str] = []
     with torch.no_grad():
         for index in range(n):
             torch.manual_seed(seed + index)
-            generated = model.generate(
-                input_ids=ids,
-                do_sample=True,
-                temperature=POLICY["temperature"],
-                top_p=POLICY["top_p"],
-                top_k=POLICY["top_k"],
-                repetition_penalty=POLICY["repetition_penalty"],
-                max_new_tokens=POLICY["max_new_tokens"],
-                min_new_tokens=POLICY["min_new_tokens"],
-                pad_token_id=NATIVE_EOS_ID,
-                eos_token_id=NATIVE_EOS_ID,
-                use_cache=False,
-            )
-            outputs.append(tokenizer.decode(generated[0][prompt_length:], skip_special_tokens=False))
+            ids = prompt_ids
+            for _ in range(POLICY["max_new_tokens"]):
+                out = model(input_ids=ids)
+                logits = out.logits if hasattr(out, "logits") else out[0]
+                next_id = _sample_next_id(
+                    logits[0, -1],
+                    temperature=POLICY["temperature"],
+                    top_k=POLICY["top_k"],
+                    top_p=POLICY["top_p"],
+                )
+                ids = torch.cat([ids, next_id.view(1, 1).to(ids.device)], dim=1)
+                if int(next_id.item()) == eos_id:
+                    break
+            outputs.append(tokenizer.decode(ids[0, prompt_length:], skip_special_tokens=False))
     return outputs
 
 
@@ -414,8 +456,8 @@ def _sample_official_progen3(model: Any, n: int, seed: int) -> list[str]:
 
 
 def _sample_hf(spec: UnconditionalArm, model: Any, tokenizer: Any, n: int, seed: int) -> list[str]:
-    if spec.name == "rita-xl":
-        return _sample_rita(model, tokenizer, spec.prompt, n=n, seed=seed)
+    if spec.name in {"rita-xl", "proteinglm-7b-clm"}:
+        return _sample_by_forward(spec, model, tokenizer, n=n, seed=seed)
     return cg.sample_continuations(
         model,
         tokenizer,

@@ -3101,3 +3101,7 @@ Homologous-context scores now resolve the queue's per-cell plan path. RITA packi
 ## 2026-09-18 — Attach GenerationConfig after mixing generate
 
 The first generate retry failed because `generation_config` was unset. `ensure_generate` now builds it from `model.config`. Homologous-context score retry freeze `20260918221340_b43d0e29e7de` is left running. No numbers. No pod names recorded.
+
+## 2026-09-18 — Forward-only decode for RITA and ProteinGLM
+
+Transformers 4.50 `generate` is not used for those two arms. Token sampling reads last-step `forward` logits at the frozen POLICY. The homologous-context score queue is left running. No numbers. No pod names recorded.

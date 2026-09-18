@@ -67,6 +67,7 @@ class PromptTable(unittest.TestCase):
         self.assertEqual(ug.arm_batch_size("protgpt2"), 8)
         self.assertEqual(ug.GENERATION_ORDER[-1], "galactica-30b")
         self.assertFalse(ug.ADMITTED["instructprotein"].add_special_tokens)
+        self.assertFalse(ug.ADMITTED["rita-xl"].add_special_tokens)
         self.assertTrue(ug.ADMITTED["protgpt2"].add_special_tokens)
 
     def test_refusals_name_the_excluded_checkpoints(self):
@@ -92,6 +93,38 @@ class PromptTable(unittest.TestCase):
         self.assertTrue(callable(patched.generate))
         self.assertIsNotNone(patched.generation_config)
         self.assertTrue(patched.generation_config._from_model_config)
+
+    def test_forward_sampler_does_not_call_generate(self):
+        import torch
+
+        class Tiny(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.device = torch.device("cpu")
+                self.embed = torch.nn.Embedding(8, 4)
+                self.proj = torch.nn.Linear(4, 8)
+
+            def generate(self, *args, **kwargs):
+                raise AssertionError("forward sampler must not call generate")
+
+            def forward(self, input_ids):
+                hidden = self.embed(input_ids)
+                return type("Out", (), {"logits": self.proj(hidden)})()
+
+        class Tok:
+            def __call__(self, text, return_tensors=None, add_special_tokens=False):
+                return {"input_ids": torch.tensor([[1]])}
+
+            def convert_tokens_to_ids(self, token):
+                return 2
+
+            def decode(self, ids, skip_special_tokens=False):
+                return "A" * len(list(ids))
+
+        spec = ug.ADMITTED["rita-xl"]
+        raws = ug._sample_by_forward(spec, Tiny(), Tok(), n=2, seed=0)
+        self.assertEqual(len(raws), 2)
+        self.assertTrue(all(isinstance(item, str) for item in raws))
 
 
 class FakeGeneration(unittest.TestCase):
