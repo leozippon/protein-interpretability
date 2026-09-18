@@ -3080,4 +3080,4 @@ Confirmed 0 MiB / 0% and no experiment process, then deleted the idle 1-GPU job.
 
 ## 2026-09-18 — Homologous-context expansion door
 
-Stage 46 now packs every remaining protein/joint checkpoint at the imposed 1024-token budget. F16 arms are not rescored. ZymCTRL and text-only arms stay out. Manifest `campaign_s46_homologue_expansion.tsv` waits for MegaScale `s29_galactica_instructprotein` via `wait_then_queue_s46_homologue_expansion.sh`. No scores in this entry. No pod names recorded.
+Stage 46 now packs every remaining protein/joint checkpoint at the imposed 1024-token budget. F16 arms are not rescored. ZymCTRL and text-only arms stay out. Manifest `campaign_s46_homologue_expansion.tsv` uses cards 1–3 only so it can run beside MegaScale Galactica-30B on card 0. No scores in this entry. No pod names recorded.

@@ -6,9 +6,20 @@
 # Usage, on the workstation, with H200_POD already set in this shell:
 #
 #   bash scripts/transfer/wait_then_queue_s46_homologue_expansion.sh
+#   bash scripts/transfer/wait_then_queue_s46_homologue_expansion.sh --now
 #
-# Do not persist the pod name. Do not read hangzhou-compute/config.sh.
+# --now skips the MegaScale wait and launches immediately. The manifest uses
+# cards 1, 2 and 3 only, so it can share the allocation with a card-0 MegaScale
+# cell. Do not persist the pod name. Do not read hangzhou-compute/config.sh.
 set -euo pipefail
+
+LAUNCH_NOW=0
+for arg in "$@"; do
+  case "${arg}" in
+    --now) LAUNCH_NOW=1 ;;
+    *) echo "unknown argument: ${arg}" >&2; exit 2 ;;
+  esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -58,6 +69,9 @@ require_s29_ready() {
 
 STATUS_COPY="$(mktemp)"
 trap 'rm -f "${STATUS_COPY}"' EXIT
+if [ "${LAUNCH_NOW}" -eq 1 ]; then
+  log "LAUNCH_NOW: skip MegaScale wait; manifest uses cards 1-3 only"
+else
 log "polling ${S29_STATUS} every ${POLL_SECONDS}s via the selected pod"
 while true; do
   set +e
@@ -83,6 +97,7 @@ while true; do
   fi
   sleep "${POLL_SECONDS}"
 done
+fi
 
 log "freezing a new snapshot with --pin HEAD --freeze-only"
 FREEZE_LOG="$(mktemp)"
@@ -106,32 +121,28 @@ if [ -z "${RUN_ID}" ] || [ -z "${SNAPSHOT_DIR}" ]; then
   exit 2
 fi
 FREEZE_META="${GPFS_PROJECT_ROOT}/logs/external_baseline/s46x_homologue_expansion.freeze.txt"
-mkdir -p "$(dirname "${FREEZE_META}")"
-{
-  printf 'RUN_ID=%s\n' "${RUN_ID}"
-  printf 'SNAPSHOT_DIR=%s\n' "${SNAPSHOT_DIR}"
-} > "${FREEZE_META}"
+"${H200_CLI}" exec -- bash -lc "
+  mkdir -p '$(dirname "${FREEZE_META}")'
+  printf 'RUN_ID=%s\nSNAPSHOT_DIR=%s\n' '${RUN_ID}' '${SNAPSHOT_DIR}' > '${FREEZE_META}'
+"
 log "froze RUN_ID=${RUN_ID}"
 log "snapshot ${SNAPSHOT_DIR}"
 
 RESULTS_DIR="${GPFS_PROJECT_ROOT}/results/external_baseline/${RUN_ID}"
-mkdir -p "${RESULTS_DIR}"
-F16_COHORT=""
-for candidate in \
-  "${GPFS_PROJECT_ROOT}/results/external_baseline/${F16_RUN_ID}/cohort.json" \
-  "${GPFS_PROJECT_ROOT}/results/external_baseline/${F16_RUN_ID}/context_homologue/cohort.json"
-do
-  if [ -f "${candidate}" ]; then
-    F16_COHORT="${candidate}"
-    break
+F16_COHORT_A="${GPFS_PROJECT_ROOT}/results/external_baseline/${F16_RUN_ID}/cohort.json"
+F16_COHORT_B="${GPFS_PROJECT_ROOT}/results/external_baseline/${F16_RUN_ID}/context_homologue/cohort.json"
+observed="$("${H200_CLI}" exec -- bash -lc "
+  mkdir -p '${RESULTS_DIR}'
+  src=''
+  if [ -f '${F16_COHORT_A}' ]; then src='${F16_COHORT_A}'
+  elif [ -f '${F16_COHORT_B}' ]; then src='${F16_COHORT_B}'
+  else
+    echo 'F16_COHORT_MISSING'
+    exit 2
   fi
-done
-if [ -z "${F16_COHORT}" ]; then
-  echo "F16 cohort not found under ${GPFS_PROJECT_ROOT}/results/external_baseline/${F16_RUN_ID}" >&2
-  exit 2
-fi
-cp -f -- "${F16_COHORT}" "${RESULTS_DIR}/cohort.json"
-observed="$(sha256sum "${RESULTS_DIR}/cohort.json" | awk '{print $1}')"
+  cp -f -- \"\${src}\" '${RESULTS_DIR}/cohort.json'
+  sha256sum '${RESULTS_DIR}/cohort.json' | awk '{print \$1}'
+")"
 if [ "${observed}" != "${F16_COHORT_DIGEST}" ]; then
   echo "staged cohort hashes to ${observed}, expected ${F16_COHORT_DIGEST}" >&2
   exit 2
