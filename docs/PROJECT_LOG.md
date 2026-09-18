@@ -3089,3 +3089,7 @@ Stage 46 now packs every remaining protein/joint checkpoint at the imposed 1024-
 ## 2026-09-18 — Unconditional generation expansion door
 
 EXP-R2-246 opens native unlabelled generation for the seventeen missing protein and joint arms. ProGen3-3B is not rerun. The queue waits until MegaScale 30B and the homologous-context expansion release the four-card allocation. No generation numbers in this entry. No pod names recorded.
+
+## 2026-09-18 — Cross-measure association door
+
+EXP-R2-247 freezes the Direction-1 association among gate, external scoring, generation and declared parameter count in `docs/D1_CROSS_MEASURE_ASSOCIATION.md` before remaining MegaScale, homologous-context and unconditional-generation numbers are written into it. The CPU runner is stage 50. No coefficients. No pod names recorded.

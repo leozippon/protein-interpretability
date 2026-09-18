@@ -112,7 +112,7 @@ ZymCTRL 的 EC 标签和 ProLLaMA Stage 2 的 superfamily 指令是目前仅有�
 
 ### 尚未完成的能力评测
 
-EXP-R2-225 扩展的 7B 接口资格仍未作为该扩展运行；派生预算资格代码不是 7B 运行。ProteinGym 上 ProteinGLM、Galactica、RITA-xl 与 ProtGPT3-1.3B 的数字见上表。MegaScale 上除 ZymCTRL 外的非文本臂入口都在；Galactica 与 InstructProtein 已按 ProteinGym 同一套渲染接上，数字待写入。无条件生成扩面（EXP-R2-246）协议已冻结，17 个准入臂待生成，不重跑 ProGen3-3B。这些不替代方向二、三的下一步。
+EXP-R2-225 扩展的 7B 接口资格仍未作为该扩展运行；派生预算资格代码不是 7B 运行。ProteinGym 上 ProteinGLM、Galactica、RITA-xl 与 ProtGPT3-1.3B 的数字见上表。MegaScale 上除 ZymCTRL 外的非文本臂入口都在；Galactica 与 InstructProtein 已按 ProteinGym 同一套渲染接上，数字待写入。无条件生成扩面（EXP-R2-246）协议已冻结，17 个准入臂待生成，不重跑 ProGen3-3B。资格门、外部评分、生成与声明参数量的秩相关（EXP-R2-247）口径已冻结，等当前队列和生成分析齐了再算，不算参数量因果，也不把同源上下文 AUROC 当成生成。这些不替代方向二、三的下一步。
 
 ## 方向二：用现有方法解释能力如何形成、表示和计算
 
