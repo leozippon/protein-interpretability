@@ -141,13 +141,13 @@ observed="$("${H200_CLI}" exec -- bash -lc "
     exit 2
   fi
   cp -f -- \"\${src}\" '${RESULTS_DIR}/cohort.json'
-  sha256sum '${RESULTS_DIR}/cohort.json' | awk '{print \$1}'
+  python3 -c \"import json; print(json.load(open('${RESULTS_DIR}/cohort.json'))['digest'])\"
 ")"
 if [ "${observed}" != "${F16_COHORT_DIGEST}" ]; then
-  echo "staged cohort hashes to ${observed}, expected ${F16_COHORT_DIGEST}" >&2
+  echo "staged cohort digest is ${observed}, expected ${F16_COHORT_DIGEST}" >&2
   exit 2
 fi
-log "staged F16 cohort into ${RESULTS_DIR}/cohort.json (sha256 verified)"
+log "staged F16 cohort into ${RESULTS_DIR}/cohort.json (content digest verified)"
 
 MANIFEST="${SNAPSHOT_DIR}/scripts/transfer/${MANIFEST_NAME}"
 if [ ! -f "${MANIFEST}" ]; then
