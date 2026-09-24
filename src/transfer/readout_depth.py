@@ -39,6 +39,7 @@ import torch
 from .amino_acids import AA20
 from .profile_increment import correlation, standardized_rank, summarize
 from .readout_analysis import ALPHAS, nested_predict, sequence_features
+from .readout_class_sweep import projected_block
 from .readout_extraction import (pool_hidden, representation_blocks, representation_positions,
                                  pack_sequence, forward_readout_rows)
 
@@ -535,12 +536,32 @@ def load_admitted_arrays(cohort_path, manifest_path, arm: str, assay_ids):
     return rows, np.concatenate(blocks), hashes, manifest['identity']
 
 
-def admitted_design(blocks: np.ndarray) -> np.ndarray:
-    """The admitted 1,024-coordinate representation design from four-block arrays."""
+def admitted_design(blocks: np.ndarray, variant_counts) -> np.ndarray:
+    """The admitted 1,024-coordinate representation design from four-block arrays.
+
+    The admitted analysis forms this float32 product one assay at a time, and a
+    float32 matrix product is not invariant to how its rows are blocked. On the
+    212-assay native Qwen2.5-32B panel, 27,071 rows at hidden width 5,120, forming
+    the product over all rows at once departs from the per-assay product by up to
+    7.629e-06 in absolute value against a largest absolute entry of 723.245 -- at
+    every BLAS thread count of 1, 4 and 16 -- and that reached 3.483e-08 in the
+    held-out predictions, above the 1e-8 the pipeline-identity control is bound at.
+    The rows are therefore blocked by assay exactly as the admitted analysis blocks
+    them, through the admitted projection contract in
+    :func:`readout_class_sweep.projected_block`, which also pins the BLAS reduction
+    order. The per-assay product is measured identical at 1, 4 and 16 threads.
+    """
     if blocks.ndim != 3 or blocks.shape[1] != 4:
         raise ValueError('admitted design requires four aligned blocks')
+    counts = [int(count) for count in variant_counts]
+    if sum(counts) != len(blocks):
+        raise ValueError(f'{sum(counts)} assay rows do not cover {len(blocks)} block rows')
     projection = admitted_projection(int(blocks.shape[2]))
-    return np.concatenate([blocks[:, i] @ projection[i] for i in range(4)], axis=1)
+    pieces, start = [], 0
+    for count in counts:
+        pieces.append(projected_block(blocks[start:start + count], projection))
+        start += count
+    return np.concatenate(pieces, axis=0)
 
 
 def admitted_blocks_from_depth(panel: 'DepthPanel') -> np.ndarray:

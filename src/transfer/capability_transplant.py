@@ -36,7 +36,7 @@ rather than by two implementations agreeing.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 import hashlib
 import json
 from pathlib import Path
@@ -204,27 +204,112 @@ def _n_layers(checkpoint: Path) -> int:
     return int(json.loads((checkpoint / "config.json").read_text())["num_hidden_layers"])
 
 
+#: Semantic configuration fields, and the keys each architecture family declares
+#: them under, in resolution order.
+#:
+#: Written because comparing raw key names is a blind spot rather than a
+#: comparison. This function compared ``hidden_act`` and nothing else, which
+#: Llama declares and OPT does not: an OPT pair differing at ``gelu`` against
+#: ``relu`` read as *matching*, because ``config.get("hidden_act")`` returned
+#: ``None`` on both sides. A census whose purpose is to refuse incompatible pairs
+#: must compare the property in force, not the spelling one family happens to
+#: use, or it passes the next pair for the same reason.
+#:
+#: Aliases are ordered, and the first key a config declares wins. ``enable_bias``
+#: appears under both bias fields because OPT declares one flag where Llama
+#: declares two; a family that separates them is compared field by field and one
+#: that fuses them resolves both fields to the same flag.
+CONFIG_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    "model_type": ("model_type",),
+    "hidden_width": ("hidden_size", "n_embd", "d_model"),
+    "mlp_width": ("intermediate_size", "ffn_dim", "n_inner", "d_ff"),
+    "depth": ("num_hidden_layers", "n_layer", "num_layers"),
+    "attention_heads": ("num_attention_heads", "n_head", "num_heads"),
+    "key_value_heads": ("num_key_value_heads",),
+    "vocabulary": ("vocab_size",),
+    "activation": ("hidden_act", "activation_function", "activation"),
+    "norm_epsilon": ("rms_norm_eps", "layer_norm_epsilon", "layer_norm_eps"),
+    "rope_theta": ("rope_theta",),
+    "rope_scaling": ("rope_scaling",),
+    "position_budget": ("max_position_embeddings", "n_positions"),
+    "attention_bias": ("attention_bias", "enable_bias"),
+    "mlp_bias": ("mlp_bias", "enable_bias"),
+    "tied_embeddings": ("tie_word_embeddings",),
+}
+
+#: Fields a config may legitimately omit, with the value that omission means.
+#: ``tie_word_embeddings`` defaults to ``True`` in the transformers base
+#: configuration, so an absent field means *tied*, and the old truthiness test on
+#: a missing key admitted a tied pair as untied. Defaulting to the refusing
+#: direction is what makes the tie check a check.
+CONFIG_FIELD_DEFAULTS: dict[str, Any] = {"tied_embeddings": True}
+
+
+def resolve_config_field(config: Mapping[str, Any], field: str) -> dict[str, Any]:
+    """The value of one semantic field, whichever key declares it.
+
+    Returns the key that supplied it and whether it was declared, defaulted or
+    absent, so a comparison can say *why* two configs agree.
+    """
+
+    if field not in CONFIG_FIELD_ALIASES:
+        raise ValueError(f"undeclared configuration field {field!r}")
+    for key in CONFIG_FIELD_ALIASES[field]:
+        if key in config:
+            return {"field": field, "key": key, "value": config[key], "source": "declared"}
+    if field in CONFIG_FIELD_DEFAULTS:
+        return {"field": field, "key": None, "value": CONFIG_FIELD_DEFAULTS[field],
+                "source": "family default"}
+    return {"field": field, "key": None, "value": None, "source": "absent"}
+
+
+def compare_configs(configs: Sequence[Mapping[str, Any]],
+                    fields: Sequence[str] = tuple(CONFIG_FIELD_ALIASES)) -> dict[str, Any]:
+    """Field-by-field semantic comparison of two configurations.
+
+    A field absent from both is not a mismatch -- ``key_value_heads`` is absent
+    for every non-Llama family -- but it is reported in ``absent_on_both``
+    instead of vanishing, because a field neither config declares is a property
+    the comparison did not check and that has to be visible rather than silent.
+    """
+
+    if len(configs) != 2:
+        raise ValueError("a configuration comparison takes exactly two configs")
+    resolved = {field: [resolve_config_field(config, field) for config in configs]
+                for field in fields}
+    mismatched = sorted(field for field, pair in resolved.items()
+                        if pair[0]["value"] != pair[1]["value"])
+    absent = sorted(field for field, pair in resolved.items()
+                    if all(entry["source"] == "absent" for entry in pair))
+    return {
+        "fields": {field: {"values": [entry["value"] for entry in pair],
+                           "keys": [entry["key"] for entry in pair],
+                           "sources": [entry["source"] for entry in pair]}
+                   for field, pair in resolved.items()},
+        "matching": sorted(field for field in resolved if field not in mismatched),
+        "mismatched": mismatched,
+        "absent_on_both": absent,
+    }
+
+
 def architecture_record(destination: Path, source: Path) -> dict[str, Any]:
     """Refuse a pair that cannot be transplanted, and record why it can be.
 
     Shapes alone are not enough: two checkpoints that disagree on the rendering
     their tokenizer produces, or that tie input and output weights, would make
     the endpoints of a transplant incomparable even with every tensor the same
-    size.
+    size. The comparison is over the semantic fields of
+    :data:`CONFIG_FIELD_ALIASES` rather than over one family's key names, for the
+    reason that table records.
     """
 
-    keys = (
-        "model_type", "hidden_size", "intermediate_size", "num_hidden_layers",
-        "num_attention_heads", "num_key_value_heads", "vocab_size", "rms_norm_eps",
-        "rope_theta", "rope_scaling", "max_position_embeddings", "hidden_act",
-        "attention_bias", "mlp_bias", "tie_word_embeddings",
-    )
     configs = [json.loads((root / "config.json").read_text()) for root in (destination, source)]
-    mismatched = {key: [config.get(key) for config in configs] for key in keys
-                  if configs[0].get(key) != configs[1].get(key)}
-    if mismatched:
-        raise ValueError(f"architecture mismatch: {mismatched}")
-    if configs[0].get("tie_word_embeddings"):
+    comparison = compare_configs(configs)
+    if comparison["mismatched"]:
+        raise ValueError("architecture mismatch: " + json.dumps(
+            {field: comparison["fields"][field] for field in comparison["mismatched"]},
+            sort_keys=True))
+    if resolve_config_field(configs[0], "tied_embeddings")["value"]:
         raise ValueError("embedding/head transplant is undefined for tied weights")
     tokenizers = [hashlib.sha256((root / "tokenizer.model").read_bytes()).hexdigest()
                   for root in (destination, source)]
@@ -240,7 +325,8 @@ def architecture_record(destination: Path, source: Path) -> dict[str, Any]:
         "config_sha256": [hashlib.sha256((root / "config.json").read_bytes()).hexdigest()
                           for root in (destination, source)],
         "n_tensors": len(maps[0]),
-        "num_hidden_layers": int(configs[0]["num_hidden_layers"]),
+        "num_hidden_layers": int(resolve_config_field(configs[0], "depth")["value"]),
+        "configuration": comparison,
     }
 
 

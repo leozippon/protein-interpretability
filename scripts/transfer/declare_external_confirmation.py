@@ -298,7 +298,7 @@ def main() -> None:
             'eligible_variants': len(rows),
             'variants': [{'position': row['position'], 'mutant': row['mutant'],
                           'sequence': row['sequence'], 'target': row['target'],
-                          'sigma': row['sigma']} for row in variants],
+                          'uncertainty': row['sigma']} for row in variants],
         })
     drawn = [{'domain': entry['name'], **row}
              for entry in domains for row in entry['variants']]
@@ -311,8 +311,14 @@ def main() -> None:
                    'archive_sha256': archive_sha, 'member': SOURCE_MEMBER},
         'draw': {'seed': DRAW_SEED, 'variant_cap': VARIANT_CAP,
                  'minimum_variants': MIN_VARIANTS},
+        'uncertainty_source': ('the source\'s own `normalized_fitness_sigma`, the standard '
+                               'error of the row\'s normalised fitness; it is carried as '
+                               'reported and is never weighted, shrunk or thresholded on'),
         'domains': domains,
     }
+    # Named as the stability and remote-homology cohorts name it, so one loader
+    # reads all three: the digest over this cohort's own endpoint values.
+    cohort['endpoint_sha256'] = endpoint_digest(drawn) if drawn else None
     cohort_path = args.out_dir / 'cohort.json'
     write_json(cohort_path, cohort)
     cohort_sha = sha256_file(cohort_path)
@@ -405,7 +411,7 @@ def main() -> None:
             'backgrounds. The alignment edge rule, its scoring and its thresholds are the '
             'contract as delivered, and the design stratum and source-cluster sources do '
             'not apply because every retained domain is a natural human domain'),
-        'endpoint_digest': endpoint_digest(drawn) if drawn else None,
+        'endpoint_digest': cohort['endpoint_sha256'],
         'cohort_sha256': cohort_sha,
         'plan_content_sha256': plan_digest(plan),
         'plan_sha256': sha256_file(plan_path),

@@ -1,0 +1,25 @@
+# Nested-gate extraction, MGnify remote-homology gate, cDNA-display proteolysis stability.
+# Lane group w1d: 3 of the frozen 33-arm roster, 1 cards, 3 slots.
+# Cohort sha256 64182578cff3d1bbd2bf9e10aae5cc46d0319438a208035fb897667f48c1b3c7.
+# Extraction plan content digest aa63ff6dc4b66ea51c9a495e1ca173ab22d622cbc4fe48bc8f92b6b012d05e48.
+# Endpoint digest 3e7cf0ca040a94f9c25a3601e3657d50b3c865036fa0910bb2c3e6b9d79aea14.
+# Support: 305 units, 179 family groups, 6291 variants, 6596 sequences and 457600 residues per arm.
+#
+# Every cell carries --keep-full-features: the representation cells are provisional
+# pending the readout-class reassessment, and the unprojected per-state block
+# outputs are what make that reassessment a refit rather than a second forward.
+#
+# The plan carries sequences and state indices only. The entry point verifies the
+# plan digest, refuses a plan carrying a measurement field, and re-derives every
+# declared state against its own wild type before a forward pass.
+#
+# Every cell names the staged ct-20260905 interpreter and pins the BLAS thread
+# count to 4: a float32 matmul reduction order depends on the thread
+# count, and the admitted projection ran at that value.
+#
+# Paths are resolved against /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	cc	1	extract_stability_singles.py	rh-prollama-stage-1	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 MKL_NUM_THREADS=4	manifest_prollama-stage-1.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/remote_homology_20260924/extraction_plan.json --expect-plan-sha256 aa63ff6dc4b66ea51c9a495e1ca173ab22d622cbc4fe48bc8f92b6b012d05e48 --arm prollama-stage-1 --keep-full-features
+2	cc	1	extract_stability_singles.py	rh-protgpt2	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 MKL_NUM_THREADS=4	manifest_protgpt2.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/remote_homology_20260924/extraction_plan.json --expect-plan-sha256 aa63ff6dc4b66ea51c9a495e1ca173ab22d622cbc4fe48bc8f92b6b012d05e48 --arm protgpt2 --keep-full-features
+3	cc	1	extract_stability_singles.py	rh-dialogpt-small	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 MKL_NUM_THREADS=4	manifest_dialogpt-small.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/remote_homology_20260924/extraction_plan.json --expect-plan-sha256 aa63ff6dc4b66ea51c9a495e1ca173ab22d622cbc4fe48bc8f92b6b012d05e48 --arm dialogpt-small --keep-full-features

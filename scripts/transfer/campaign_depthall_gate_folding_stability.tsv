@@ -1,0 +1,22 @@
+# Targeted three-depth extraction for the folding_stability gate, on the frozen 101-background single-mutant stability cohort
+# (25,856 single substitutions and 101 wild types). One cell per arm at that arm's own admitted precision setting and batch
+# size one, hooking the depth the readout reassessment selected for that arm
+# together with the two depths its own retained manifest records as admitted, so
+# the new cells are comparable with the published ones on the same arrays. An arm
+# whose selected depth is already one of those two hooks two rather than three,
+# and its lane names no extra depth.
+# 
+# Why a targeted set and not a stack: the representation extraction of this gate
+# hooked (L-1)//2 and L-1 only, so a depth selection other than those two cannot be
+# applied to it at all (audit L53). Capturing a third block costs the same single
+# forward pass per sequence, so the GPU cost is this cohort's own measured
+# extraction cost, 0.23 GPU-hours over 1 arms, and only the retained
+# storage grows, to 8.91 GiB at the selected depths against 29.75 GiB at the two
+# admitted ones.
+# 
+# Cells are ordered longest-first by the measured wall clock of the same arm's
+# completed extraction, which reads a measured duration and no fitted outcome.
+# 
+# extract_stability_singles.py accepts --extra-block-index, so these lanes are queueable as written.
+# slot	key	gpu	stage	label	env	expect	args
+1	depth3	0	extract_stability_singles.py	depth3-gpt2-large	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4	manifest_gpt2-large.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/extraction_plan.json --expect-plan-sha256 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d --arm gpt2-large --keep-full-features --extra-block-index 0 --extra-block-index 1 --extra-block-index 2 --extra-block-index 3 --extra-block-index 4 --extra-block-index 5 --extra-block-index 6 --extra-block-index 7 --extra-block-index 8 --extra-block-index 9 --extra-block-index 10 --extra-block-index 11 --extra-block-index 12 --extra-block-index 13 --extra-block-index 14 --extra-block-index 15 --extra-block-index 16 --extra-block-index 18 --extra-block-index 19 --extra-block-index 20 --extra-block-index 21 --extra-block-index 22 --extra-block-index 23 --extra-block-index 24 --extra-block-index 25 --extra-block-index 26 --extra-block-index 27 --extra-block-index 28 --extra-block-index 29 --extra-block-index 30 --extra-block-index 31 --extra-block-index 32 --extra-block-index 33 --extra-block-index 34

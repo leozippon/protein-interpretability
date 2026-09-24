@@ -30,13 +30,22 @@ import torch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from src.transfer import readout_depth as rd
+from src.transfer.recomputation import admitted_prediction_tolerance  # noqa: E402
 
 #: The admitted full-available-panel roster this sweep is bound to. Its digest is
 #: the one the passed final admission receipt records for `expected.json`.
 ROSTER_SHA256 = '1bf26a6ae8d71e3c0f790f12c92da7d3dd4a9add7be6f7ef807836297e12dd0c'
-#: The tolerance the admitted final admission receipt used for the same
-#: prediction comparison. The pipeline-identity control is gated on it.
-PIPELINE_TOLERANCE = 1e-8
+#: The admitted final admission receipt, whose ``baseline_tolerance.atol`` is the
+#: tolerance the pipeline-identity control is gated on. Read from the receipt
+#: rather than transcribed: a copied tolerance can drift from the artefact that
+#: established it, and a tolerance is exactly the constant whose drift corrupts
+#: silently. Resolved lazily through
+#: :func:`~src.transfer.recomputation.admitted_prediction_tolerance`, which
+#: refuses rather than defaulting when the receipt cannot be read -- a replay that
+#: invented its own tolerance would certify nothing. The default is the
+#: project-relative path; a run whose code is a frozen snapshot passes
+#: ``--admission-receipt`` with the project's own absolute path.
+ADMISSION_RECEIPT = ROOT / 'results/transfer/readout_20260923/final_admission.json'
 CODE_FILES = ('scripts/transfer/analyse_readout_depth.py',
               'src/transfer/readout_depth.py',
               'src/transfer/readout_analysis.py',
@@ -140,7 +149,8 @@ def declared_axes(depth: int, position_resolved: bool, primary: bool) -> dict[st
 
 
 def fit_cell(panel: rd.DepthPanel, rows: list[dict], admitted_blocks: np.ndarray, reports: dict, *,
-             seeds, device: str, bootstrap: int, shuffle: bool, progress) -> dict:
+             seeds, device: str, bootstrap: int, shuffle: bool, progress,
+             receipt=ADMISSION_RECEIPT) -> dict:
     """Every declared design, at every declared seed, on one shared set of rows.
 
     ``rows`` carries the admitted likelihood, profile score, sequence
@@ -152,8 +162,10 @@ def fit_cell(panel: rd.DepthPanel, rows: list[dict], admitted_blocks: np.ndarray
         raise ValueError('the primary split seed must be among a panel\'s declared seeds')
     measured, assays, clusters = rd.row_labels(rows)
     baseline = rd.baseline_design(rows)
-    admitted_representation = rd.admitted_design(rd.admitted_blocks_from_depth(panel))
-    admitted_source_representation = rd.admitted_design(admitted_blocks)
+    variant_counts = [len(row['mutants']) for row in rows]
+    admitted_representation = rd.admitted_design(rd.admitted_blocks_from_depth(panel),
+                                                 variant_counts)
+    admitted_source_representation = rd.admitted_design(admitted_blocks, variant_counts)
     state = {seed: dict(predictions=dict(raw_P=baseline[:, 0].copy(), raw_M=baseline[:, 1].copy()),
                         folds={}, contrasts={}, dimensions={}) for seed in seeds}
 
@@ -238,15 +250,17 @@ def fit_cell(panel: rd.DepthPanel, rows: list[dict], admitted_blocks: np.ndarray
                 predictions, folds, source_map)
             worst = max(source['max_absolute_deviation'][f'{name}_prediction']
                         for name in ('B', 'R', 'B_R'))
-            source['tolerance'] = PIPELINE_TOLERANCE
+            tolerance = admitted_prediction_tolerance(receipt)
+            source['tolerance'] = tolerance
+            source['tolerance_source'] = str(receipt)
             source['worst_prediction_deviation'] = worst
-            source['passed'] = bool(worst <= PIPELINE_TOLERANCE)
+            source['passed'] = bool(worst <= tolerance)
             agreement['pipeline_identity'] = source
             if not source['passed']:
                 raise ValueError(
                     'pipeline-identity control failed: refitting the admitted class from the '
                     f'admitted retained states deviates by {worst} against a tolerance of '
-                    f'{PIPELINE_TOLERANCE}')
+                    f'{tolerance}')
         out[str(fold_seed)] = dict(
             fold_seed=fold_seed, feature_dimensions=dimensions,
             selected_alphas={label: [record['alpha'] for record in value]
@@ -268,6 +282,9 @@ def main():
     parser.add_argument('--device', default='cpu')
     parser.add_argument('--threads', type=int, default=32)
     parser.add_argument('--bootstrap', type=int, default=rd.BOOTSTRAP_DRAWS)
+    parser.add_argument('--admission-receipt', type=Path, default=ADMISSION_RECEIPT,
+                        help='the admitted final admission receipt whose baseline_tolerance.atol '
+                             'gates the pipeline-identity control; refused if unreadable')
     parser.add_argument('--no-shuffle-control', action='store_true')
     args = parser.parse_args()
     if args.device != 'cpu':
@@ -320,7 +337,8 @@ def main():
                           extraction_agreement=extraction_agreement,
                           prefix_control=panel.prefix_check())), flush=True)
 
-    seeds = fit_cell(panel, admitted_rows, admitted_blocks, cell['reports'], seeds=cell['seeds'],
+    seeds = fit_cell(panel, admitted_rows, admitted_blocks, cell['reports'],
+                     receipt=args.admission_receipt, seeds=cell['seeds'],
                      device=args.device, bootstrap=args.bootstrap,
                      shuffle=not args.no_shuffle_control,
                      progress=lambda name: print(json.dumps(dict(

@@ -216,10 +216,65 @@ def forward_readout_rows(arm, rows, stage46):
     return logits, ids
 
 
-def extract_batch(arm, sequences, stage46):
+def hooked_block_indices(block_count: int, extra=None) -> tuple[int, ...]:
+    """Which transformer blocks one forward pass hooks, in the order it hooks them.
+
+    With no ``extra`` this is exactly the pair every admitted extraction used --
+    the block after half the stack and the last block -- so the default is
+    unchanged for the 33 arms of completed extraction and for every published cell
+    that rests on them. That property is asserted by test against both real
+    extractors rather than left to inspection.
+
+    ``extra`` adds further zero-based indices, deduplicated against the admitted
+    pair and against each other and sorted ascending, and appended **after** it.
+    Appending rather than interleaving is deliberate: the admitted pair stays at
+    feature positions 0 to 3, so an archive with extra depths still presents the
+    admitted four blocks where a reader of the admitted layout expects them, and a
+    class-level recomputation reads it unchanged.
+
+    An index outside the stack is refused rather than clamped. Clamping would
+    silently hook a block the caller did not ask for and record it as the one it
+    did, which is the failure a depth-resolved archive cannot tolerate.
+    """
+
+    if block_count < 1:
+        raise ValueError('a transformer stack has at least one block')
+    admitted = [(block_count - 1) // 2, block_count - 1]
+    requested = sorted({int(index) for index in (extra or ())})
+    for index in requested:
+        if not 0 <= index < block_count:
+            raise ValueError(f'block index {index} is outside 0..{block_count - 1}; a requested '
+                             'depth outside the stack is refused rather than clamped')
+    return tuple(admitted) + tuple(index for index in requested if index not in admitted)
+
+
+def feature_block_names(block_indices) -> list[str]:
+    """The retained feature axis, one name per hooked block and pooling rule.
+
+    Recorded in the receipt so a later reader can tell which block and which
+    pooling rule each slice of an archive holds, rather than inferring it from a
+    count. The first four names of a default extraction are the admitted
+    ``middle_mean``, ``middle_last``, ``final_mean``, ``final_last``.
+    """
+
+    names = []
+    for position, index in enumerate(block_indices):
+        stem = ('middle', 'final')[position] if position < 2 else f'block{index:03d}'
+        names.extend(f'{stem}_{rule}' for rule in ('mean', 'last'))
+    return names
+
+
+def extract_batch(arm, sequences, stage46, block_indices=None):
     packed = [pack_sequence(arm, s) for s in sequences]
     blocks = representation_blocks(arm)
-    indices = ((len(blocks)-1)//2, len(blocks)-1)
+    indices = (hooked_block_indices(len(blocks)) if block_indices is None
+               else tuple(int(index) for index in block_indices))
+    if len(set(indices)) != len(indices):
+        raise ValueError(f'hooked block indices repeat: {indices}')
+    for index in indices:
+        if not 0 <= index < len(blocks):
+            raise ValueError(f'block index {index} is outside 0..{len(blocks)-1}')
+    labels = [f'h{position}' for position in range(len(indices))]
     captured, handles = {}, []
     spans = [p[2] for p in packed]
     positions = representation_positions(arm, sequences, packed)
@@ -228,7 +283,7 @@ def extract_batch(arm, sequences, stage46):
             hidden = output[0] if isinstance(output, tuple) else output
             captured[label] = pool_hidden(hidden, spans, time_first=arm.name == 'proteinglm-7b-clm', positions=positions)
         return hook
-    for label, index in zip(('middle', 'final'), indices):
+    for label, index in zip(labels, indices):
         handles.append(blocks[index].register_forward_hook(capture(label)))
     try:
         logits, ids = forward_readout_rows(arm, [p[0] for p in packed], stage46)
@@ -236,9 +291,9 @@ def extract_batch(arm, sequences, stage46):
     finally:
         for handle in handles:
             handle.remove()
-    if set(captured) != {'middle', 'final'} or not np.isfinite(likelihood).all():
+    if set(captured) != set(labels) or not np.isfinite(likelihood).all():
         raise ValueError('Incomplete or nonfinite forward')
-    return np.concatenate((captured['middle'], captured['final']), axis=1), likelihood
+    return np.concatenate([captured[label] for label in labels], axis=1), likelihood
 
 
 def mutation_relative_drift(batched, singleton):

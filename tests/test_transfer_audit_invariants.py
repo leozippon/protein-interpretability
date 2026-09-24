@@ -59,6 +59,7 @@ from src.transfer import (  # noqa: E402
     proteingym_higher_order,
     profiles,
     relational,
+    remote_homology,
     statistics,
 )
 from src.transfer.arms import (  # noqa: E402
@@ -2379,6 +2380,28 @@ FLOOR_RESPECTING_RESAMPLERS: dict[str, dict[str, object]] = {
             [(index, index + 1) for index in range(n) for _ in range(4)],
             seed=0,
             resamples=200,
+        ),
+    },
+    # The remote-homology gate's between-channel decomposition, resampled over
+    # family groups of the wild-type background. ``degenerate`` for the same
+    # reason as ``proteingym_higher_order.channel_decomposition_bootstrap``: the
+    # unit count is a measured property of an identity stratum's support, the
+    # point estimates of the decomposition are still that stratum's finding when
+    # it is too thin to bound, and the interval fields are absent rather than
+    # null-valued below the floor so a reader cannot quote a bound that was
+    # never computed.
+    "remote_homology.channel_interval": {
+        "refusal": "degenerate",
+        "below": lambda n: remote_homology.channel_interval(
+            [
+                remote_homology.channel_moments(
+                    np.array([0.1 * index, 0.2 * index]),
+                    np.array([0.1 * index + 0.05, 0.2 * index - 0.05]),
+                )
+                for index in range(1, n + 1)
+            ],
+            draws=200,
+            seed=0,
         ),
     },
     "statistics.paired_group_bootstrap": {

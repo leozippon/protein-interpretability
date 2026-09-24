@@ -21,6 +21,7 @@ import sys
 import unittest
 
 import numpy as np
+from threadpoolctl import threadpool_limits
 import torch
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -31,6 +32,7 @@ if str(REPO_ROOT / 'scripts' / 'transfer') not in sys.path:
 
 from src.transfer import readout_depth as rd
 from src.transfer.readout_analysis import ALPHAS, evaluate_readouts, family_folds
+from src.transfer.readout_class_sweep import PROJECTION_BLAS_THREADS
 from src.transfer.profile_increment import standardized_rank
 
 AA = 'ACDEFGHIKLMNPQRSTVWY'
@@ -158,7 +160,7 @@ class DepthContract(unittest.TestCase):
     @staticmethod
     def with_representation(rows, blocks):
         """The rows the admitted analysis fits: its own projected representation."""
-        design = rd.admitted_design(blocks)
+        design = rd.admitted_design(blocks, [len(row['mutants']) for row in rows])
         out, start = [], 0
         for row in rows:
             stop = start + len(row['mutants'])
@@ -182,7 +184,8 @@ class DepthContract(unittest.TestCase):
         # The depth layout must hold the very same admitted four blocks.
         np.testing.assert_array_equal(rd.admitted_blocks_from_depth(panel), blocks)
         baseline = rd.baseline_design(rows)
-        representation = rd.admitted_design(rd.admitted_blocks_from_depth(panel))
+        representation = rd.admitted_design(rd.admitted_blocks_from_depth(panel),
+                                            [len(row['mutants']) for row in rows])
         measured, assays, clusters = rd.row_labels(rows)
         predictions, folds = {}, {}
         for label, design in (('baseline/B', baseline), ('admitted/R', representation),
@@ -541,6 +544,41 @@ class DepthContract(unittest.TestCase):
             np.testing.assert_array_equal(np.sort(first[index]), np.sort(measured[index]))
         self.assertGreater(float(np.max(np.abs(
             standardized_rank(first) - standardized_rank(measured)))), 0.0)
+
+
+class AdmittedDesignConstruction(unittest.TestCase):
+    """The admitted design must be blocked by assay, the way the admitted analysis blocks it.
+
+    A float32 matrix product is not invariant to how its rows are blocked, so a
+    design formed over a whole panel at once is not the design the admitted
+    analysis fitted. That difference has already exceeded the 1e-8 the
+    pipeline-identity control is bound at, on the widest arm of the panel.
+    """
+
+    def test_the_design_is_the_per_assay_product_at_any_ambient_thread_count(self):
+        rng = np.random.default_rng(31)
+        counts = [7, 11, 5, 13]
+        blocks = rng.normal(size=(sum(counts), 4, 96)).astype(np.float32)
+        projection = rd.admitted_projection(96)
+        with threadpool_limits(limits=PROJECTION_BLAS_THREADS, user_api='blas'):
+            pieces, start = [], 0
+            for count in counts:
+                chunk = blocks[start:start + count]
+                pieces.append(np.concatenate([chunk[:, i] @ projection[i] for i in range(4)],
+                                             axis=1))
+                start += count
+        reference = np.concatenate(pieces, axis=0)
+        for ambient in (1, 4, 16, 48):
+            with threadpool_limits(limits=ambient, user_api='blas'):
+                observed = rd.admitted_design(blocks, counts)
+            np.testing.assert_array_equal(
+                observed, reference,
+                err_msg=f'the admitted design moved at {ambient} ambient BLAS threads')
+
+    def test_assay_row_counts_must_cover_the_block_rows(self):
+        blocks = np.zeros((10, 4, 8), dtype=np.float32)
+        with self.assertRaises(ValueError):
+            rd.admitted_design(blocks, [4, 4])
 
 
 if __name__ == '__main__':

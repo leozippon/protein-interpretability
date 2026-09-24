@@ -22,6 +22,7 @@ reported count here is at the group or site-pair level for that reason.
 from __future__ import annotations
 
 import hashlib
+import json
 
 import numpy as np
 
@@ -593,6 +594,27 @@ def row_identity(groups, site_pairs, epsilon) -> str:
     return hashlib.sha256('\n'.join(
         f'{group}|{pair}|{float(target)!r}'
         for group, pair, target in zip(groups, site_pairs, epsilon)).encode()).hexdigest()
+
+
+def fold_identity(folds) -> str:
+    """Digest of the held-group partition, one declaration for every fit that compares it.
+
+    Two fits are the same fit only if they held the same groups out in the same
+    folds, and the global-context gate refuses to proceed when its digest differs
+    from the admitted pairwise fit's. A comparison like that is only as reliable
+    as the two sides being computed the same way, and until now the expression
+    lived twice: once in ``fit_pairwise_epistasis.py``, which records the digest,
+    and once in ``fit_global_context_gate.py``, which checks it. The expression is
+    preserved exactly, so every digest already recorded under it reproduces.
+
+    ``held_groups`` carries plain group labels. A NumPy integer would make
+    ``json.dumps`` raise rather than hash differently, which is the safe direction
+    of the rendering hazard ``row_identity`` documents, so no coercion is applied
+    here and a caller passing NumPy labels is refused rather than silently served.
+    """
+
+    return hashlib.sha256(json.dumps(
+        [fold['held_groups'] for fold in folds], sort_keys=True).encode()).hexdigest()
 
 
 def kish_effective_site_pairs(groups, site_pairs) -> float:

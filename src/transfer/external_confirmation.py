@@ -193,6 +193,88 @@ G_FEATURE_ORDER = ('calibrated_response', 'first_stage_prediction')
 #: block summaries at 256 projected coordinates each.
 MODEL_BLOCKS = ('M', 'R')
 
+# --------------------------------------------------------------------------- #
+# The numeric environment, declared once for every entry point of this gate and
+# of the remote-homology gate that imports this machinery.
+# --------------------------------------------------------------------------- #
+
+#: Pinned BLAS thread count. A float32 matrix product's reduction order depends
+#: on how many threads the library splits it over, so an unpinned thread count
+#: makes a projected feature block and a ridge solution reproducible only on the
+#: machine that produced them. The admitted projection ran at 4 threads and this
+#: is that value, carried so a refit reproduces it rather than re-deriving it.
+BLAS_THREADS = 4
+
+#: Environment variables that must carry :data:`BLAS_THREADS` before NumPy is
+#: imported. Setting them afterwards does not move an already-initialised
+#: library's pool, which is why this is checked and refused rather than fixed.
+BLAS_THREAD_VARIABLES = ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS')
+
+
+def require_blas_threads(expected: int = BLAS_THREADS) -> dict:
+    """Refuse to run unless the BLAS thread count is pinned to ``expected``.
+
+    At least one of the declared variables must be set to ``expected``, and none
+    may be set to anything else. The check fails fast instead of setting the
+    variables itself: by the time this module is imported NumPy has already
+    initialised its thread pool, so a late assignment would record a pinned count
+    while computing at an unpinned one.
+    """
+
+    import os
+
+    observed = {name: os.environ.get(name) for name in BLAS_THREAD_VARIABLES}
+    wrong = {name: value for name, value in observed.items()
+             if value is not None and value.strip() != str(expected)}
+    if wrong:
+        raise SystemExit(f'BLAS thread count must be pinned to {expected}; found {wrong}')
+    if not any(value is not None for value in observed.values()):
+        raise SystemExit(
+            f'BLAS thread count is not pinned: set one of {list(BLAS_THREAD_VARIABLES)} '
+            f'to {expected} before invoking this entry point')
+    return {'pinned_threads': int(expected), 'environment': observed,
+            'reason': ('a float32 matmul reduction order depends on the thread count, so '
+                       'a projected block and a ridge solution are reproducible only at a '
+                       'pinned one; the admitted projection ran at 4 threads')}
+
+
+#: The cohort schemas this gate's nested machinery fits, with the key each one
+#: carries its independent measured units under. Two endpoints share the
+#: weighting, the folds, the ridge recipe, the control ladder and the group
+#: bootstrap, and differ in their unit's name and in whether they declare
+#: identity strata, so the shared entry points read this rather than branching on
+#: a file path.
+COHORT_SCHEMAS = {
+    'external_confirmation_cohort_v1': 'domains',
+    'remote_homology_cohort_v1': 'backgrounds',
+}
+
+
+def load_cohort(path) -> dict:
+    """Read a cohort of either declared schema, with its unit list and its strata.
+
+    A cohort whose schema is not declared is refused rather than guessed at: the
+    unit key decides what the independent unit is, and reading the wrong key
+    would silently reweight every number downstream.
+    """
+
+    import json
+
+    from .io import sha256_file
+
+    cohort = json.loads(Path(path).read_bytes())
+    schema = cohort.get('schema')
+    if schema not in COHORT_SCHEMAS:
+        raise ValueError(f'{schema!r} is not a declared nested-gate cohort schema; '
+                         f'expected one of {sorted(COHORT_SCHEMAS)}')
+    key = COHORT_SCHEMAS[schema]
+    units = cohort[key]
+    strata = {row['group']: row['stratum'] for row in units if 'stratum' in row} or None
+    return {'cohort': cohort, 'schema': schema, 'unit_key': key, 'units': units,
+            'strata': strata, 'sha256': sha256_file(Path(path)),
+            'endpoint': cohort['endpoint'], 'endpoint_sha256': cohort['endpoint_sha256'],
+            'unit_name': 'domain' if key == 'domains' else 'background'}
+
 
 def source_frame(path) -> 'object':
     """Read the pinned zip member into a pandas frame, columns as declared."""
@@ -529,20 +611,27 @@ def row_identity(group: np.ndarray, site: np.ndarray, target: np.ndarray) -> str
 # Panel assembly, the nonlinear response and the nested held-group comparison.
 # --------------------------------------------------------------------------- #
 
-def build_panel(cohort: dict, profiles: dict) -> dict:
-    """Rows, target, labels and every model-free control block."""
+def build_panel(units: list[dict], profiles: dict) -> dict:
+    """Rows, target, labels and every model-free control block.
 
-    target, group, domain, site, rank, sigma = [], [], [], [], [], []
+    ``units`` is the cohort's list of independent measured units -- a Domainome
+    domain here, a MGnify background in the remote-homology gate -- each carrying
+    its name, wild type, family group and admitted variants. The argument is the
+    unit list rather than the cohort so that one panel builder serves both
+    endpoints without either cohort having to rename its own unit key.
+    """
+
+    target, group, domain, site, rank, uncertainty = [], [], [], [], [], []
     ident, geom, comp, chem, prof, prof2 = [], [], [], [], [], []
-    for row in cohort['domains']:
+    for row in units:
         name, wildtype = row['name'], row['wildtype']
         profile = profiles[name]
         for variant in row['variants']:
             position = variant['position'] - 1
             mutant, sequence = variant['mutant'], variant['sequence']
             target.append(variant['target'])
-            sigma.append(variant['sigma'])
-            rank.append(row['quality_rank'])
+            uncertainty.append(variant['uncertainty'])
+            rank.append(row.get('quality_rank', 0))
             group.append(row['group'])
             domain.append(name)
             site.append(f"{name}:{variant['position']}")
@@ -554,7 +643,12 @@ def build_panel(cohort: dict, profiles: dict) -> dict:
             prof2.append(profile_bounded_block(profile, wildtype, position, mutant))
     panel = {
         'target': np.asarray(target, dtype=float),
-        'sigma': np.asarray(sigma, dtype=float),
+        # The source's own reported uncertainty of each row, carried as reported
+        # and named for what it is rather than as a standard error: the Domainome
+        # cohort carries `normalized_fitness_sigma` and the remote-homology
+        # cohort carries a 95% interval width, which are different quantities.
+        # Nothing here weights, shrinks or thresholds on it.
+        'uncertainty': np.asarray(uncertainty, dtype=float),
         'quality_rank': np.asarray(rank, dtype=int),
         'group': np.asarray(group), 'domain': np.asarray(domain), 'site': np.asarray(site),
         'blocks': {'ident': np.asarray(ident, dtype=float),
@@ -769,6 +863,59 @@ def qualify(increments: dict[int, float]) -> dict:
             'qualified': bool(min(values) > 0.0)}
 
 
+def secondary_control_set(controls: dict) -> tuple[tuple[str, ...], dict]:
+    """The control set the correlation rule accepts, derived from the frozen ladder.
+
+    The prespecified qualification rule is stated on group-equal held-out mean
+    squared error, and the capability map's binding rule for a control is stated
+    on held-out correlation. Where the two disagree about one block -- the
+    mutation-local profile transfers rank and does not transfer level on the
+    development endpoint -- the gate does not resolve the disagreement by
+    choosing a metric after seeing it. Both sets are carried: the primary set is
+    the one the mean-squared-error rule qualified, and this secondary set adds
+    every discarded candidate whose correlation increment is positive at all
+    three split seeds, in ladder order, with a superseded candidate replaced by
+    its restatement.
+
+    ``SUPERSEDED`` is imported from the stability gate rather than restated, so
+    which block supersedes which is one declaration across the three endpoints
+    that use these blocks. This function differs from that gate's own only in
+    reading the unit-neutral ``per_seed_increment`` key, because these two
+    endpoints are not in kcal²/mol².
+    """
+
+    from .stability_gate import SUPERSEDED
+
+    kept = list(controls['qualified_control_set'])
+    added, reasons = [], {}
+    for row in controls['ladder']:
+        candidate = row['candidate']
+        if row['qualified'] or candidate in SUPERSEDED or candidate in kept:
+            continue
+        points = [row['spearman_increment'][str(seed)]['point'] for seed in SPLIT_SEEDS]
+        if any(point is None or point <= 0 for point in points):
+            continue
+        added.append(candidate)
+        reasons[candidate] = {'per_seed_spearman_increment': points,
+                              'per_seed_squared_error_increment': list(
+                                  row['per_seed_increment'].values())}
+    wanted, ordered = set(kept) | set(added), []
+    for candidate in controls['candidate_order']:
+        block = SUPERSEDED.get(candidate, candidate)
+        if block in wanted and block not in ordered:
+            ordered.append(block)
+    secondary = tuple([*controls['base_blocks'], *ordered])
+    return secondary, {
+        'added_over_primary': added,
+        'rule': ('the primary set is the one the mean-squared-error rule qualified; this '
+                 'secondary set adds every discarded candidate whose correlation increment '
+                 'is positive at all three split seeds, with a superseded candidate replaced '
+                 'by its restatement. A squared-error increment over the secondary set and a '
+                 'correlation increment over the primary set are reported as sensitivities '
+                 'beside the licensed pair, not as findings'),
+        'evidence': reasons}
+
+
 def declaration_digest(payload: dict) -> str:
     """Content digest over a declaration's canonical JSON form."""
 
@@ -780,7 +927,8 @@ def declaration_digest(payload: dict) -> str:
 
 __all__ = [
     'ALIGNMENT_GAP_EXTEND', 'ALIGNMENT_GAP_OPEN', 'ARM_CANDIDATE_BLOCKS',
-    'BASE_BLOCKS', 'CANDIDATE_BLOCKS', 'DEVELOPMENT_COVERAGE',
+    'BASE_BLOCKS', 'BLAS_THREADS', 'BLAS_THREAD_VARIABLES', 'CANDIDATE_BLOCKS',
+    'DEVELOPMENT_COVERAGE',
     'DEVELOPMENT_IDENTITY', 'DEVELOPMENT_STRATUM_IDENTITY', 'DRAW_SEED',
     'ENDPOINT', 'FEATURE_BLOCKS', 'G_FEATURE_ORDER', 'GROUPING_COVERAGE',
     'GROUPING_IDENTITY', 'MEASURED_QUANTITY', 'MIN_VARIANTS', 'MODEL_BLOCKS',
@@ -791,7 +939,9 @@ __all__ = [
     'build_panel', 'chemistry_width', 'declaration_digest', 'domain_start', 'draw_order',
     'endpoint_digest', 'family_groups', 'fold_predictions', 'group_errors',
     'interval', 'kish_units', 'nested_weights', 'nuisance_response',
+    'COHORT_SCHEMAS', 'load_cohort', 'secondary_control_set',
     'paired_increment', 'pfam_accession', 'projection_matrices', 'qualify',
-    'raw_spearman', 'row_identity', 'source_frame', 'spearman_increment',
+    'raw_spearman', 'require_blas_threads', 'row_identity', 'source_frame',
+    'spearman_increment',
     'substitution_records', 'tokenisation_block', 'wildtype_rows',
 ]

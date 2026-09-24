@@ -1,0 +1,6 @@
+# Depth-resolved readout extraction: every transformer block, one forward per sequence.
+# One cell per arm or shard, at that arm's own admitted precision setting and batch size.
+# Cells are ordered longest-first by the admitted wall clock and the hooked block count;
+# that order carries no measured effect and no fitted outcome.
+# slot key gpu stage label env expect args
+1	depth	2	extract_depth_readout.py	depth_extract_galactica_1_3b	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4	manifest_depth_galactica-1.3b.json	--arm galactica-1.3b --dtype float32 --batch-size 8 --budget 1024 --max-score-drift 0.001 --max-feature-drift 0.001 --cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/context_mutation_rescue/cohort.json

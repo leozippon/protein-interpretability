@@ -1,0 +1,61 @@
+# Evidence integration: how a measured number reaches the manuscript
+
+Every number the Direction-1 manuscript states used to be copied there by hand. That produced errors a careful reader caught rather than a check: a context count written as 7 and 4 where the source table gives 8 and 5, a count of 2 of 19 whose paired contrast exists for only 14 checkpoints, and a ranking correlation from a 128-variant-per-assay anchor read against native supports of up to 1,000 variants per assay. Hand transcription is the defect source, so this pipeline removes it. A number is derived once, from the file that measured it, and the manuscript is checked against that derivation.
+
+Three stages do the work, and all three are read-only with respect to `manuscript/direction-one/`:
+
+| Stage | What it does |
+| --- | --- |
+| `scripts/transfer/build_derived_numbers.py` | reads the admitted artifacts and per-gate records and writes the derived-number table and the figure-data contract |
+| `scripts/transfer/check_manuscript_evidence.py` | compares the manuscript against that table and refuses when a stated condition does not hold |
+| `scripts/transfer/regenerate_manuscript_evidence.py` | re-derives everything, re-checks, and reports exactly what moved |
+
+Their outputs live under `evidence/manuscript_evidence/`: `derived-numbers.json` and `derived-numbers.csv` (the table), `evidence-gaps.json` (what no file supports), `figure-data-contract.json` (each figure bound to its inputs and their artifacts), `checker-policy.json` (the declared exceptions), `consistency-report.json` (the checker's findings) and `regeneration-report.json` (the diff). The shared vocabulary and the table-level refusals live in `src/transfer/evidence_ledger.py`.
+
+## The table
+
+One row is one quantity. It carries the value and its unit, the support it was measured on, the interval with the resampling unit and draw count that produced it, the seed set, the level the result sits at, the verdict it carries, and the path, digest and pointer of the file it was read from. A row exists only because a locator resolved against a file on disk; the semantic fields the artifact does not carry — the support's description, the level, the verdict — are declared in the generator beside the locator, never the value.
+
+The last build covers 5,552 quantities read from 133 files across 39 declared supports, in nineteen families: mutation-effect ranking on native supports and on the common-support anchor, the literal amino-acid-string extension, the frozen-state readout, measured pairwise interaction, endpoint reliability, higher-order reproducibility, the structural contact contrast, related-context use, the generation census, the matched-generator gate, conditional generation, retrieval and provenance strata, the stability controls, cross-measure association, the recomputation pipeline's own identity measurements, the declared design constants, the panel roster and the shared conventions. Of those rows, 5,548 are artifact-backed and 4 are gate-record-backed, meaning their only local source is a per-gate or pipeline document and they are anchored to an exact line of it.
+
+Design constants sit in the table beside the measured quantities and are marked as such: a design width, a coordinate count, a projection seed, a fold budget, a window radius, a contact distance or a corpus size is read from the declaration or receipt that fixes it, with that artifact's digest. A constant has no population behind it, so it carries no interval and no resampling unit and the build demands neither. The manuscript is never a source: a constant no declaration states is a gap under never-recorded, not a row copied from the sentence that quotes it.
+
+Two distinctions are carried on the row rather than left to prose. Representation-level rows are marked provisional, because they are conditional on one compressed linear readout class at two extraction depths and stay open until the readout-class sweep and the per-block re-extraction report; likelihood-level rows carry no such condition. Verdicts come from a closed four-outcome vocabulary — supported, not detected, unresolved, measurement-limited — so `unresolved` and `not detected` cannot be merged into one another by a row that names both.
+
+A row is refused outright, and the build fails, when it would carry a hole: no unit, an interval without its resampling unit or draw count, a point estimate with neither an interval nor a stated reason it has none, an interval that does not bracket its estimate, a verdict outside the vocabulary, an undeclared support, or an effective (Kish) count with no weighting convention. That last one is not pedantry. The pairwise cohort's effective counts are 129.2 and 96.1 site pairs under the weighting the estimator applies and 121.6 and 88.4 under a cycle-share convention, about 6% apart; an effective count quoted bare says nothing about the power of the intervals it appears next to.
+
+## What no file supports
+
+A number the manuscript needs and no retained file supports is absent from the table and listed in `evidence-gaps.json`. It is never filled in from prose. Each gap says why it is absent, because the two reasons do not mean the same thing: a quantity that exists in the cluster store and is not staged on the workstation is a retrieval problem and constrains nothing, while a quantity no run computed, or that no run recorded beside the estimate it belongs to, constrains what the paper may claim. The local-context gate's qualification receipt and its 99 measurement cells were the largest gap of the first kind; they were retrieved from the cluster store, hash to the digests the gate record declares for them, and now back 1,056 rows, so no gap of that kind remains. The 29 recorded gaps are 20 quantities no run computed and 9 that no run recorded: 18 cross-measure pairs whose support is one checkpoint or fewer, a census cell the run left null, the class-resampled requested-minus-mismatched conditional difference, the protein-sequence-model denominator of the profile-exceeding count, the effective site-pair count under the cycle-share convention, the cycle count of the insertion-and-deletion exclusion, ProGen3-3B's native completion accounting, the recomputation pipeline's formation probe as a machine-readable report, and six design constants the manuscript states that no declaration records; and the product-formation departures and cell-identity digest of the recomputation pipeline, which its record states in prose while no machine-readable report for them is retained on this host.
+
+## The checks
+
+The checker reads `main.tex` and `supplementary-information.tex`, strips LaTeX markup and blanks out checkpoint names so that the digits in ProGen3-3B are not read as quantities, splits what remains into sentences, captions and table rows, and matches every number against the table. A number matches an entry's value or one end of its interval. A decimal with three or more places identifies an entry on its own; a shorter number, and any integer, has to be attributed by what the sentence names or be a count, a support size, a declared constant or a recorded accounting field, because a table of four thousand rows would otherwise match almost anything. Attribution then narrows a value match to what the sentence is actually quoting: first by a checkpoint name in the entry's identifier, then by how much of the entry's own claim the sentence repeats. A refusal does not need the row pinned down, only the property it tests: the cross-support rule reads a token whose surviving candidates agree on their support, the unit rule one whose candidates agree on their unit, and so on. A number whose candidates disagree on the property a check needs is reported as not pinned to one row rather than checked, and the report counts those so the blind spot stays visible. A gap is only ever recorded after the locator has been pointed at the artifact that would declare the quantity, because a gap list that reports a recorded quantity as unrecorded is worse than an untraced number: the untraced number prompts a search and the false gap ends it. Numbers that trace to nothing are reported in three parts --- the main text's claim-bearing half, its Methods half and the supplement --- because a result a reader cannot check and a design constant no declaration states are different problems.
+
+Six conditions are then refusals. Every number traces to an entry. No two entries differing in their support are quoted in one sentence or one table row. Every interval resolves to an entry whose resampling unit and draw count are recorded. Every quantity in a physical or scaled unit is quoted where that unit is named — a counting unit is carried by the sentence's own noun, so requiring it again would report grammar. An estimate the table carries an interval for is not quoted bare. An effective count is quoted only where its weighting convention is named, and a provisional quantity only in a sentence that says so.
+
+Exceptions are declared in `checker-policy.json`, and each names an anchor: a substring of the sentence it was written for. A dead anchor is itself a refusal, so an exception cannot outlive its sentence. The exception lists start empty by design; a finding is meant to be read and either fixed in the manuscript or declared with a reason.
+
+`tests/test_manuscript_evidence.py` holds a negative path for each refusal — a fabricated number, a cross-support comparison, an interval quoted without its unit, a bare point estimate, an effective count without its convention, an unmarked provisional quantity and a stale exception — on fixtures rather than on the live manuscript, whose findings move as another author edits it.
+
+## The figure-data contract
+
+The manuscript's renderer already works from included CSVs, and those CSVs already carry the artifact path and digest of every row they were extracted from. The contract reads those columns back, verifies each artifact still hashes to the recorded digest, and binds each included figure to the tables beside it. A digest that no longer matches, a file that is gone, or a table recording two digests for one artifact breaks the binding instead of being read past, and a table in a figure directory that no included figure claims is listed rather than left unmentioned. The renderer is untouched.
+
+## When a recomputation lands
+
+Running `regenerate_manuscript_evidence.py` re-reads every artifact, rebuilds the table and the contract, diffs the result against the previous build quantity by quantity, and re-runs the checker. The report names every quantity whose value, interval, support, unit, resampling unit, draw count, seed set, level, verdict, weighting convention or source digest moved, every quantity that appeared or disappeared, every gap opened or closed, every figure input table whose bindings changed, and the checker's verdict before and after. `--dry-run` produces that report without replacing the committed table.
+
+When the readout-class sweep and the per-block re-extraction report, their artifacts replace the ones the readout family reads. The 440 readout rows and the 526 provisional rows are the ones that will move, together with the panel counts derived from them and the `readout-contrasts-source.csv` binding behind Figure 2; the regeneration report is what the corresponding manuscript edit is made from. Likelihood-level rows are unaffected, which is the point of keeping the level on the row.
+
+## Running it
+
+From the validated `ct` environment, in this order:
+
+```bash
+python scripts/transfer/build_derived_numbers.py
+python scripts/transfer/check_manuscript_evidence.py
+python scripts/transfer/regenerate_manuscript_evidence.py --dry-run
+```
+
+The build and the check are local and light: no model is loaded, no cohort is drawn, no fit is run and no interval is resampled. Every interval in the table was computed by the artifact it is read from and is copied with its resampling unit attached.

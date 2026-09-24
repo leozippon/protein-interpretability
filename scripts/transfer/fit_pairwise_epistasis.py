@@ -27,8 +27,8 @@ from src.transfer.pairwise_epistasis import (
     BOOTSTRAP_DRAWS, BOOTSTRAP_SEED, CONTROL_SETS, DESIGN_PLAN, FEATURE_BLOCKS,
     PROJECTION_DIM, ROSTER, SPLIT_SEEDS, TOKENISATION_STRATUM, cycle_contrast,
     cycle_control_features, design_blocks, design_names, group_errors, group_spearman,
-    interval, kish_effective_site_pairs, nested_compare, plan_digest, row_identity,
-    state_features, tokenisation_features)
+    fold_identity, interval, kish_effective_site_pairs, nested_compare, plan_digest,
+    row_identity, state_features, tokenisation_features)
 from src.transfer.profiles import Profile
 
 #: Declared contrasts. Each pair is (baseline, augmented) on one support: the
@@ -356,8 +356,7 @@ def main() -> None:
         for seed in SPLIT_SEEDS:
             outcome = nested_compare(panel, support, seed=seed, device=args.device)
             evaluation = evaluate(panel, outcome, support, draws=args.bootstrap, seed=BOOTSTRAP_SEED)
-            fold_identity = hashlib.sha256(json.dumps(
-                [f['held_groups'] for f in outcome['folds']], sort_keys=True).encode()).hexdigest()
+            fold_digest = fold_identity(outcome['folds'])
             restricted = None
             if exclusions:
                 keep = ~excluded_mask(panel, exclusions)
@@ -373,7 +372,7 @@ def main() -> None:
                     dropped_groups=sorted(set(panel['group']) - set(view['group'])))
                 restricted.pop('per_group_mse'), restricted.pop('per_group_spearman')
             entry['seeds'][str(seed)] = {
-                'fold_identity_sha256': fold_identity,
+                'fold_identity_sha256': fold_digest,
                 'folds': [{k: f[k] for k in ('fold', 'held_groups', 'alpha', 'dimensions')}
                           for f in outcome['folds']],
                 'nuisance': outcome['nuisance'],

@@ -43,7 +43,8 @@ from src.transfer.pairwise_epistasis import (
     ARM_DTYPE, FEATURE_BLOCKS, PRODUCTION_BATCH_SIZE, PROJECTION_DIM,
     PROJECTION_SEED, ROSTER, plan_digest, projection_matrices)
 from src.transfer.readout_extraction import (
-    extract_batch, load_readout_arm, pack_sequence, representation_blocks,
+    extract_batch, feature_block_names, hooked_block_indices, load_readout_arm, pack_sequence,
+    representation_blocks,
     representation_positions, text_boundary)
 
 SCHEMA = 'pairwise_epistasis_extraction_v1'
@@ -84,6 +85,13 @@ def main() -> None:
     parser.add_argument('--budget', type=int, default=1024)
     parser.add_argument('--background-limit', type=int, default=0,
                         help='throughput qualification only; a limited run never publishes a manifest')
+    parser.add_argument('--extra-block-index', type=int, action='append',
+                        help='hook a further zero-based transformer block, repeatable. The two '
+                             'admitted blocks are always hooked and stay at feature positions 0 '
+                             'to 3, so an archive with extra depths still presents the admitted '
+                             'four where a reader of the admitted layout expects them. An index '
+                             'outside the stack is refused rather than clamped, and duplicates '
+                             'are dropped')
     parser.add_argument('--keep-full-features', action='store_true',
                         help='also write the full-width per-sequence block outputs to a separate file, '
                              'so a different projection can be replayed without model inference')
@@ -155,7 +163,7 @@ def main() -> None:
     if text_boundary(arm) is None:
         ch.require_position_budget(arm.model.config, arm=args.arm)
     blocks = representation_blocks(arm)
-    block_indices = [(len(blocks) - 1) // 2, len(blocks) - 1]
+    block_indices = hooked_block_indices(len(blocks), args.extra_block_index)
 
     selected = plan['backgrounds']
     if args.background_limit:
@@ -171,21 +179,32 @@ def main() -> None:
             tokens = [token_record(arm, sequence, args.budget) for sequence in row['sequences']]
             features, likelihood = [], []
             for sequence in row['sequences']:
-                block, score = extract_batch(arm, [sequence], stage46)
+                block, score = extract_batch(arm, [sequence], stage46, block_indices)
                 features.append(block[0])
                 likelihood.append(score[0])
             features = np.stack(features).astype(np.float32)
             likelihood = np.asarray(likelihood, dtype=np.float64)
-            if features.ndim != 3 or features.shape[1] != len(FEATURE_BLOCKS):
-                raise ValueError('expected four aligned block summaries per state')
+            if features.ndim != 3 or features.shape[1] != 2 * len(block_indices):
+                raise ValueError(f'expected {2 * len(block_indices)} aligned block summaries '
+                                 'per state, two per hooked block')
+            if features.shape[1] < len(FEATURE_BLOCKS):
+                raise ValueError('the admitted four block summaries must be present')
             if projection is None:
                 projection = projection_matrices(features.shape[2])
             if features.shape[2] != projection[0].shape[0]:
                 raise ValueError('hidden width changed within one checkpoint')
+            # The projected archive stays exactly what it is today: the projection is
+            # formed over the admitted four blocks alone, under the admitted seeds
+            # 20260923-20260926, so a published cell reads a byte-identical array
+            # whether or not extra depths were hooked. Extra depths are retained at
+            # full width only, which is what a depth-resolved refit reads anyway --
+            # it forms its own projection under its own declared seed rule -- and
+            # inventing projection seeds for them here would declare a contract
+            # nothing has declared.
             projected = np.stack([features[:, i] @ projection[i] for i in range(len(FEATURE_BLOCKS))], axis=1)
             repeat_likelihood, repeat_projected = [], []
             for sequence in row['sequences'][:REPEAT_SEQUENCES]:
-                block, score = extract_batch(arm, [sequence], stage46)
+                block, score = extract_batch(arm, [sequence], stage46, block_indices)
                 repeat_likelihood.append(score[0])
                 repeat_projected.append(np.stack(
                     [block[0, i].astype(np.float32) @ projection[i] for i in range(len(FEATURE_BLOCKS))]))
@@ -220,8 +239,21 @@ def main() -> None:
             if args.keep_full_features:
                 full = args.out / f'full_{filename}'
                 temp = full.with_suffix('.tmp')
+                # One array per hooked block whenever more than the admitted pair is
+                # hooked, and the single admitted array otherwise. The layout is
+                # load-bearing rather than incidental: an every-block sweep of these
+                # cohorts is about 720 GiB of states, and `np.load` on an npz reads a
+                # named array whole, so a fit over them can stream one depth at a time
+                # only if each depth is its own array. The default -- no extra depths --
+                # writes exactly the array it always wrote, byte for byte, because 33
+                # arms of completed extraction and every published cell read that key.
+                if len(block_indices) > len(FEATURE_BLOCKS) // 2:
+                    arrays = {f'features_d{index:03d}': features[:, 2 * position:2 * position + 2]
+                              for position, index in enumerate(block_indices)}
+                else:
+                    arrays = {'features': features}
                 with temp.open('wb') as stream:
-                    np.savez(stream, features=features, metadata=json.dumps(row_identity))
+                    np.savez(stream, **arrays, metadata=json.dumps(row_identity))
                 temp.replace(full)
             print(f'{args.arm} {name}: repeat_delta_M_nats={likelihood_repeat_nats}, '
                   f'repeat_relative_l2={feature_repeat_relative_l2}', flush=True)
@@ -235,7 +267,8 @@ def main() -> None:
                           'cycles': len(row['cycles']), 'hidden_width': width,
                           'repeat_likelihood_nats': repeats[0],
                           'repeat_feature_relative_l2': repeats[1]})
-        record = {'identity': identity, 'block_indices': block_indices, 'backgrounds': completed,
+        record = {'identity': identity, 'block_indices': list(block_indices),
+                  'feature_blocks': feature_block_names(block_indices), 'backgrounds': completed,
                   'status': 'complete' if len(completed) == len(plan['backgrounds']) else 'running',
                   'background_limit': args.background_limit,
                   'updated_utc': datetime.now(timezone.utc).isoformat(),

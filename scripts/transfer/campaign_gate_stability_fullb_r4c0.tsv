@@ -1,0 +1,24 @@
+# Re-dispatch of the full-width retention wave under a distinct basename, because the first
+# dispatch named a code snapshot frozen before --keep-full-features existed and its cells were
+# refused by argparse with exit 2. The snapshot used here carries the flag and is otherwise
+# identical to the primary extraction on the measured path: the only difference in
+# extract_stability_singles.py is the flag, its help text and the branch that writes the
+# unprojected per-state blocks to a separate file.
+#
+# D1 stability gate: full-width state retention pass over the same frozen 101-background
+# single-mutant cohort and the same label-free plan as the primary extraction (content
+# digest 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d). Identical measurement identity, identical sequences, identical batch-one
+# setting; the only difference is --keep-full-features, which writes the unprojected
+# per-state block outputs beside the projected ones.
+#
+# It exists so that the pending readout-class reassessment can refit a different projection
+# or a different readout head on these frozen states without a second forward pass. The
+# primary results are read from the projected blocks of the primary pass and do not depend
+# on this pass. Lanes are ordered residue-level and byte-level arms first, because a
+# representation claim about protein stability would be read on those.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	cc	0	extract_stability_singles.py	full-progen2-xlarge	-	manifest_progen2-xlarge.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/extraction_plan.json --expect-plan-sha256 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d --arm progen2-xlarge --keep-full-features
+2	cc	0	extract_stability_singles.py	full-progen2-medium	-	manifest_progen2-medium.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/extraction_plan.json --expect-plan-sha256 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d --arm progen2-medium --keep-full-features
+3	cc	0	extract_stability_singles.py	full-bygpt5-small-en	-	manifest_bygpt5-small-en.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/extraction_plan.json --expect-plan-sha256 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d --arm bygpt5-small-en --keep-full-features
+4	cc	0	extract_stability_singles.py	full-gpt2-medium	-	manifest_gpt2-medium.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/extraction_plan.json --expect-plan-sha256 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d --arm gpt2-medium --keep-full-features

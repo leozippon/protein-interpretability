@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
 import time
@@ -248,6 +249,14 @@ def main():
             temporary = path.with_suffix('.tmp')
             with temporary.open('wb') as stream:
                 np.savez(stream, **payload)
+                # The digest below is read back from the shared filesystem, so the
+                # bytes must have settled there first. Without this, two archives
+                # of 6,834 written at about 101 MB each recorded a digest over a
+                # read-back that differed from the settled file: identical length,
+                # all 84 member CRC32 checks intact and identity metadata binding,
+                # but a SHA-256 the fit stage then refused.
+                stream.flush()
+                os.fsync(stream.fileno())
             temporary.replace(path)
         record = dict(assay=row['assay'], file=filename, sha256=sha(path), cluster=row['cluster'],
                       max_packed_tokens=token_lengths[row['assay']], wildtype_id=row['wildtype_id'],

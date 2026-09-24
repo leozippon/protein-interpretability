@@ -111,3 +111,6 @@ Thumbs.db
 
 # Agent harness local session state
 .pi/
+
+# Derived manuscript evidence tables; regenerate with scripts/transfer/regenerate_manuscript_evidence.py
+evidence/manuscript_evidence/

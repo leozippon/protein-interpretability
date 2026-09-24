@@ -20,7 +20,6 @@ with.
 """
 from pathlib import Path
 import argparse
-import hashlib
 import importlib.util
 import json
 import sys
@@ -36,7 +35,7 @@ from src.transfer.global_context import (  # noqa: E402
     declaration_digest, design_blocks, evaluate_gate, gate_compare)
 from src.transfer.pairwise_epistasis import (  # noqa: E402
     BOOTSTRAP_DRAWS, BOOTSTRAP_SEED, PROJECTION_DIM, ROSTER, SPLIT_SEEDS,
-    TOKENISATION_STRATUM, cycle_states, plan_digest)
+    TOKENISATION_STRATUM, cycle_states, fold_identity, plan_digest, row_identity)
 from src.transfer.readout_analysis import row_weights  # noqa: E402
 
 
@@ -224,15 +223,14 @@ def main() -> None:
         accounting = None
         if filtered:
             panel, accounting = apply_indel_exclusion(panel, plan, exclusion, groups)
-        # The target is rendered as a Python float rather than as the numpy scalar
-        # the admitted fit script iterates. Both render identically under numpy
-        # 1.26, which is where the admitted digests were produced, but numpy 2.1
-        # renders a scalar as `np.float64(x)`, so the admitted expression hashes
-        # the same 8,192 rows to a different value in a numpy-2 environment. This
-        # rendering reproduces the admitted digest in both.
-        identity = hashlib.sha256('\n'.join(
-            f'{g}|{p}|{float(e)!r}' for g, p, e in zip(panel['group'], panel['site_pair'],
-                                                       panel['epsilon'])).encode()).hexdigest()
+        # One declaration, imported rather than restated, as the pairwise-epistasis
+        # record asked a later run of this gate to do. It renders the target as a
+        # Python float rather than as the numpy scalar the first version of the
+        # admitted fit script iterated: both render identically under numpy 1.26,
+        # where the admitted digests were produced, but numpy 2.1 renders a scalar
+        # as `np.float64(x)`, so the original expression hashes the same 8,192 rows
+        # to a different value in a numpy-2 environment.
+        identity = row_identity(panel['group'], panel['site_pair'], panel['epsilon'])
         expected = admitted['supports'][base]
         if not filtered and identity != expected['row_identity_sha256']:
             raise SystemExit(f'{support}: rows differ from the admitted pairwise fit')
@@ -269,9 +267,8 @@ def main() -> None:
         for seed in SPLIT_SEEDS:
             outcome = gate_compare(panel, seed=seed, device=args.device)
             evaluation = evaluate_gate(panel, outcome, draws=args.bootstrap, seed=BOOTSTRAP_SEED)
-            fold_identity = hashlib.sha256(json.dumps(
-                [f['held_groups'] for f in outcome['folds']], sort_keys=True).encode()).hexdigest()
-            if not filtered and fold_identity != expected['seeds'][str(seed)][
+            fold_digest = fold_identity(outcome['folds'])
+            if not filtered and fold_digest != expected['seeds'][str(seed)][
                     'fold_identity_sha256']:
                 raise SystemExit(f'{support} seed {seed}: folds differ from the admitted fit')
             for mine, theirs in () if filtered else SHARED_DESIGNS:
@@ -286,7 +283,7 @@ def main() -> None:
                 entry['shared_design_max_absolute_difference_kcal2'] = max(
                     entry['shared_design_max_absolute_difference_kcal2'], moved)
             entry['seeds'][str(seed)] = {
-                'fold_identity_sha256': fold_identity,
+                'fold_identity_sha256': fold_digest,
                 'matches_admitted_pairwise_fit': not filtered,
                 'folds': [{k: f[k] for k in ('fold', 'held_groups', 'alpha', 'dimensions')}
                           for f in outcome['folds']],
