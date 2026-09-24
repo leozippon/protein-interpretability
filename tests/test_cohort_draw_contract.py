@@ -1343,6 +1343,30 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "it refuses a transcribed hidden width or depth that disagrees with the "
         "ArmSpec declaration rather than preferring one of the two"
     ),
+    "declare_external_confirmation.py": (
+        "declares the label-blind support of the Domainome 1.0 external "
+        "confirmation, so its units are that source archive's own DOMAINS and "
+        "not corpus records. It reads one pinned archive whose SHA-256 must "
+        "reproduce the registered digest or the stage exits, plus the pinned "
+        "dataset registry, the endpoint qualification, the ProteinGym reference "
+        "assays and the MegaScale query index, and it carries every domain the "
+        "four declared rules retain rather than a sample of them. Rule 1's "
+        "hazard is absent for the records rather than answered: it opens no "
+        "FASTA corpus and no web corpus, and the two FASTA files it does write "
+        "are the screen's own query and subject sets -- every retained wild type "
+        "against every development target -- so both sides of a negative "
+        "no-close-development-relative statement are exhaustive by construction, "
+        "which is what such a statement requires. Its one draw is the variant "
+        "cap inside a retained domain: at most VARIANT_CAP substitutions per "
+        "domain in the order of a stable SHA-256 of DRAW_SEED, the domain name "
+        "and the mutant sequence, over the domains carrying at least "
+        "MIN_VARIANTS accepted rows. That seed is a declared module constant "
+        "rather than a flag, and the stage takes no seed or cohort argument it "
+        "could draw with and then not record: the seed reaches the cohort "
+        "artefact as draw.seed beside the cap and the minimum-variant floor, and "
+        "the cohort digest carrying it is bound into the declaration digest. It "
+        "fits nothing, resamples nothing and loads no model and no tokenizer"
+    ),
 }
 
 
