@@ -58,7 +58,18 @@ The earlier feasibility draw of 17,822 sequences and 1,060,345 residues does not
 
 The distant stratum covers 53 of the 64 cohort groups, so the protocol's requirement that any beyond-local increment appear on non-overlapping-window support is testable with the majority of the held groups represented.
 
-Site-pair support is the binding power constraint. The cohort carries 217 distinct background/site-pair combinations, a median of 3 site pairs per background (range 1 to 14, with 17 backgrounds carrying a single site pair) and 1 to 128 cycles per site pair (median 27). Taking the site pair as the independent unit and weighting groups equally, the Kish effective count is 121.6 site pairs across 64 groups. That is a substantial improvement on the roughly 25 effective units the label-instrument qualification measured on the full unsampled panel, and it is a direct consequence of the 128-cycle cap and one-background-per-group rule equalising the weighting. It is still far below the 8,192 cycle count, and no interval on this cohort may be computed as though cycles were independent.
+Site-pair support is the binding power constraint. The cohort carries 217 distinct background/site-pair combinations, a median of 3 site pairs per background (range 1 to 14, with 17 backgrounds carrying a single site pair) and 1 to 128 cycles per site pair (median 27). Taking the site pair as the independent unit, the Kish effective count is far below the 8,192 cycle count under either weighting convention, and no interval on this cohort may be computed as though cycles were independent. That is a substantial improvement on the roughly 25 effective units the label-instrument qualification measured on the full unsampled panel, and it is a direct consequence of the 128-cycle cap and one-background-per-group rule equalising the weighting.
+
+### Which effective site-pair count governs interval power
+
+This is the authoritative statement for the pairwise cohort, and every other record points here rather than restating it. An effective count is meaningless without the weighting it was computed under, and this cohort admits two.
+
+| Convention | 64-group support | 45-group Q-inclusive support |
+| --- | ---: | ---: |
+| **Estimator weights — governing.** Each group equal, each site pair equal inside a group, each cycle equal inside a site pair, which is what `readout_analysis.row_weights` realises and what every fit on this cohort applies | **129.2** | **96.1** |
+| Cycle share. A site pair weighted by its share of its group's cycles | 121.6 | 88.4 |
+
+**The estimator-weight pair governs**, because it is the Kish count of the weights the fits actually apply, and therefore the one that bounds their intervals. The cycle-share pair answers a different question — how unevenly the fitted rows spread over the dependence blocks — and is retained because it is informative about the cohort's balance and because this record quoted it first. Both are correct arithmetic under their own convention, both are computed and pinned by the tests, and they differ by about 6%: a reader who compares one of them against the other across two of our records would wrongly conclude that one is an error. The governing figures are the ones the [flagship fit](D1_PAIRWISE_EPISTASIS_RESULTS.md), the [global-context gate](D1_GATE_GLOBAL_CONTEXT.md), the [retrieval gate](D1_GATE_RETRIEVAL_MEMORIZATION.md) and audit register F20 lead with; the retrieval gate reports both side by side per stratum, which is how the two reconcile at band level.
 
 Exclusions are fully accounted in the cohort file: 167 natural backgrounds fall below the 128-cycle cap, 43 carry no accepted wild-type row, and 56 lose to another background already representing their group. The largest excluded eligible count is 126 cycles, just under the cap, so the protocol's separately declared smaller-background sensitivity has real support to draw on. The 148 design-labelled backgrounds are not eligible for this natural primary panel and are counted as such.
 
@@ -124,7 +135,7 @@ An independent-site log profile has a zero double contrast by construction for a
 
 **The family grouping is ready.** The readiness gate reads 102 final groups, 101 of them natural, built from a contract frozen before computation with an exactly verified aligner, one declared and dated amendment, and a shuffle null showing the edge rule is far from chance-level. They are conservative held-group controls, not certified remote-family holdouts.
 
-**The frozen cohort is ready, with the site pair as its independent unit.** 64 backgrounds cover 64 of the 101 natural groups with 8,192 cycles over 12,977 deduplicated sequences and 779,664 residues, on the tightened per-channel admission rule. Power is set by 217 site pairs and 121.6 Kish effective site pairs, not by the cycle count.
+**The frozen cohort is ready, with the site pair as its independent unit.** 64 backgrounds cover 64 of the 101 natural groups with 8,192 cycles over 12,977 deduplicated sequences and 779,664 residues, on the tightened per-channel admission rule. Power is set by 217 site pairs and, under the governing estimator weighting, 129.2 Kish effective site pairs, not by the cycle count.
 
 **Baseline Q is admissible on 45 of the 64 groups and not on the other 19.** On the 45 it passes its declared label-independent check on every background. The 19 without it are not a fixable gap with the corpora on hand.
 
@@ -132,8 +143,8 @@ Because the protocol requires identical support for every incremental comparison
 
 | Comparison | Support |
 | --- | --- |
-| Additive null, sequence/profile baseline C, nonlinear-additive nuisance G, model likelihood and representation increments | all 64 groups, 8,192 cycles, 217 site pairs, 121.6 Kish effective site pairs |
-| The same set with pairwise baseline Q added | 45 groups, 5,760 cycles, 9,143 deduplicated sequences, 550,964 residues, 163 site pairs, 88.4 Kish effective site pairs |
+| Additive null, sequence/profile baseline C, nonlinear-additive nuisance G, model likelihood and representation increments | all 64 groups, 8,192 cycles, 217 site pairs, 129.2 Kish effective site pairs under the governing convention and 121.6 under cycle share |
+| The same set with pairwise baseline Q added | 45 groups, 5,760 cycles, 9,143 deduplicated sequences, 550,964 residues, 163 site pairs, 96.1 Kish effective site pairs under the governing convention and 88.4 under cycle share |
 
 Per-stratum group coverage on the Q-inclusive support is 19 groups and 20 site pairs at separation 1–2, 26 groups and 49 site pairs at 3–9, and 37 groups and 94 site pairs at ≥10. The distant stratum, where the protocol requires any beyond-local increment to appear, therefore rests on 37 groups and 94 site pairs once Q is in the comparison.
 

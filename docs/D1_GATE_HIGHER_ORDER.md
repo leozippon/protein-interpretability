@@ -6,7 +6,7 @@ The work is measurement-only and CPU-only. No model score, likelihood or represe
 
 ## Decision
 
-**The higher-order gate is unresolvable on this data.** Two findings carry the decision, and either alone would be sufficient.
+**The higher-order gate is unresolvable on this data.** Two findings carry the decision, and either alone would be sufficient. *Added 2026-09-24:* this pilot is the first of five assessments, and the line has since closed as **measurement-limited with the limit characterised** rather than as not detected — see [D1_HIGHER_ORDER_QUALIFICATION_HARNESS.md](D1_HIGHER_ORDER_QUALIFICATION_HARNESS.md) and audit F29. What this pilot contributes to that verdict is the **order** failure: these bytes contain no substitution variant of order three or above at all.
 
 The support is two independent units. `dataset2` contains no variant with three or more substitutions relative to its own background wild type, so the only third-order measurement in these bytes is a cross-background one, and after the admitted rule that route yields 60 complete eight-state cycles resting on **2 distinct site pairs in 2 family groups**, against the 217 site pairs and 121.6 Kish effective site pairs the pairwise cohort carries. The frozen five-outer, four-inner held-group fold design cannot be instantiated on two groups at all.
 
