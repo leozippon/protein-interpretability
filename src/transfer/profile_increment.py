@@ -177,12 +177,16 @@ def family_regression(rows: list[dict], covariates: list[str], *, bootstrap: int
     The first is the shared unit floor: the resampling unit is the 50%-identity
     family, so :data:`~.statistics.MINIMUM_BOOTSTRAP_UNITS` governs this
     interval as it governs every other percentile interval in the package. The
-    function published one at any family count until 2026-09-24; measured on
-    generic covariates it returned a depth coefficient of -0.368 [-0.849,
-    -0.069] at seven families, 0.78 wide and excluding zero, against 11.87 wide
-    at eight families and 2.37 at twelve -- the non-monotone pinching the floor's
-    own derivation is written about, with the illegal design reading as the
-    precise one.
+    function published one at any family count until 2026-09-24. Replayed on
+    the generic non-collinear covariates of
+    ``tests.test_profile_increment.family_rows`` at row seed 7, with 2,000
+    family-bootstrap draws at seed 20260923, the pre-fix depth coefficient reads
+    +0.194 [-0.251, +5.560] at seven families over the 286 draws it could fit,
+    5.81 wide, against 18.00 wide at eight families and 7.27 at twelve. The
+    published width therefore does not order with the support it rests on, and
+    the least identified of the three designs reads as the most precise -- the
+    non-monotone pinching the floor's own derivation is written about, with the
+    illegal design reading as the precise one.
 
     The second is specific to a regression: a draw whose resampled design is
     rank deficient cannot be fitted and was silently discarded, so the
