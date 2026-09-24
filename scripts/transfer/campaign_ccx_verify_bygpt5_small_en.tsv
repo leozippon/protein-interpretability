@@ -1,0 +1,8 @@
+# Crossed C / C+L / C+P / C+L+P controls over the admitted full readout panel.
+# Fitting only: the expansion extractions are final, so no model inference happens here.
+# Each cell loads its own extraction manifest plus the ProGen3-3B anchor manifest and is
+# refused unless the realised common support is exactly that 201-assay anchor. ZymCTRL is
+# excluded: its EC-conditioned 40-assay panel is a different support.
+# Pod-CPU interface check at --assay-limit 12; marked smoke, not collectable.
+# slot key gpu stage label env expect args
+1	cc	cpu	analyse_crossed_controls.py	ccx_bygpt5_small_en_20260923_smoke12	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=6 MKL_NUM_THREADS=6	crossed_controls_bygpt5-small-en_fold20260923_smoke12.json	--arm bygpt5-small-en --anchor-arm progen3-3b --seed 20260923 --fold-seed 20260923 --bootstrap 64 --assay-limit 12 --cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/context_mutation_rescue/cohort.json --profile-store /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/transfer/retrieval_bound --manifest /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260923123458_7ce327eba51e/readout_expand_bygpt5_small_en/manifest_bygpt5-small-en.json --manifest /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260923103322_004fdfab72bf/readout_progen3_3b/manifest_progen3-3b.json
