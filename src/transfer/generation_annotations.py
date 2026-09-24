@@ -21,7 +21,92 @@ from . import concept_injection as ci
 from . import generation_evidence as ge
 from . import homology
 from .io import sha256_file
+from .near_duplicates import RESIDUE_SHINGLE, near_duplicate_groups
 from .progen3_generation import POLICY as NATIVE_POLICY
+from .unconditional_generation import ADMITTED
+
+NATIVE_ANNOTATION_ARMS = frozenset(ADMITTED) | {"progen3-3b"}
+MINIMUM_NONEMPTY_FOR_SEQUENCE_DIVERSITY = 8
+
+
+def require_native_ledger(rows: list[dict]) -> str:
+    """Admit one unconditioned 800-attempt ledger; keep ProGen3-3B and the expansion arms."""
+    if len(rows) != NATIVE_POLICY["attempts"] or {row["source_sample_index"] for row in rows} != set(range(NATIVE_POLICY["attempts"])):
+        raise ValueError("native annotation requires every declared generation attempt")
+    arms = {row["arm"] for row in rows}
+    if len(arms) != 1:
+        raise ValueError("native annotation requires a single-arm ledger")
+    arm = next(iter(arms))
+    if arm not in NATIVE_ANNOTATION_ARMS:
+        raise ValueError(
+            f"native annotation admits only unconditioned generation arms, not {arm!r}"
+        )
+    if any(row.get("class_key") is not None or row.get("condition") != "unconditioned" for row in rows):
+        raise ValueError("native annotation requires an unconditioned ledger")
+    return arm
+
+
+def native_alignment_fields(arm: str) -> tuple[str, ...]:
+    """ProGen3-3B keeps the original columns; expansion arms keep identity and both coverages together."""
+    if arm == "progen3-3b":
+        return homology.DIAMOND_FIELDS
+    return homology.ALIGNMENT_FIELDS
+
+
+def unconditional_diversity_census(rows: list[dict]) -> dict[str, Any]:
+    """Near-duplicate groups on one frozen unconditioned 800-attempt ledger.
+
+    Empty decodes share one group. Zero Pfam hits do not become zero hit-groups.
+    Fewer than eight nonempty sequences is a named unreadably-small protein set,
+    not a diversity of zero. Groups are not biological diversity or function.
+    """
+
+    arm = require_native_ledger(rows)
+    if any("any_profile_hit" not in row for row in rows):
+        raise ValueError("diversity census requires any_profile_hit on every attempt")
+    sequences = [row.get("sequence") or "" for row in rows]
+    nonempty = [index for index, sequence in enumerate(sequences) if sequence]
+    _, grouping = cg.near_duplicate_group_ids(sequences, unit="residues")
+    unique_hashes = len({rows[index]["sequence_sha256"] for index in nonempty})
+    if nonempty:
+        _, filled = near_duplicate_groups([sequences[index] for index in nonempty], unit="residues")
+        n_groups_nonempty = filled["n_groups"]
+        n_singleton = filled["n_singleton_groups"]
+        largest = filled["largest_group_size"]
+    else:
+        n_groups_nonempty = None
+        n_singleton = None
+        largest = None
+    hit_indices = [index for index, row in enumerate(rows) if row.get("any_profile_hit") is True]
+    unknown_hits = sum(1 for row in rows if row.get("any_profile_hit") is None)
+    if not hit_indices:
+        n_hit_groups = None
+    else:
+        hit_sequences = [sequences[index] for index in hit_indices]
+        if not all(hit_sequences):
+            raise ValueError("a profile hit cannot be an empty decode")
+        _, hits = near_duplicate_groups(hit_sequences, unit="residues")
+        n_hit_groups = hits["n_groups"]
+    readable = len(nonempty) >= MINIMUM_NONEMPTY_FOR_SEQUENCE_DIVERSITY
+    return {
+        "arm": arm,
+        "n_attempts": len(rows),
+        "n_empty": int(grouping["n_empty_records"]),
+        "n_nonempty": len(nonempty),
+        "n_unique_nonempty_hashes": unique_hashes,
+        "n_groups_nonempty": n_groups_nonempty,
+        "n_singleton_groups_nonempty": n_singleton,
+        "largest_nonempty_group_size": largest,
+        "n_groups_including_empty": int(grouping["n_groups_including_empty"]),
+        "n_any_profile_hits": len(hit_indices),
+        "n_any_profile_groups": n_hit_groups,
+        "n_any_profile_unknown": unknown_hits,
+        "sequence_diversity_readable": readable,
+        "unit": "residues",
+        "shingle_length": RESIDUE_SHINGLE,
+        "not_biological_diversity": True,
+        "not_function": True,
+    }
 
 
 def read_attempts(path: Path) -> list[dict]:
@@ -184,10 +269,9 @@ def annotate_native(attempts: Path, output: Path, *, hmmscan: Path, pfam_hmm: Pa
                     threads: int = 8, shards: int = 4) -> dict:
     """Run already staged executables/databases; never install or build assets."""
     rows = read_attempts(attempts)
-    if len(rows) != NATIVE_POLICY["attempts"] or {row["source_sample_index"] for row in rows} != set(range(NATIVE_POLICY["attempts"])):
-        raise ValueError("native annotation requires every declared generation attempt")
-    if any(row["arm"] != "progen3-3b" or row["class_key"] is not None for row in rows):
-        raise ValueError("native annotation requires the unconditional ProGen3-3B ledger")
+    arm = require_native_ledger(rows)
+    fields = native_alignment_fields(arm)
+    campaign = "EXP-R2-233" if arm == "progen3-3b" else "EXP-R2-246"
     paths = {"attempts": attempts, "hmmscan": hmmscan, "pfam_hmm": pfam_hmm,
              "diamond": diamond, "diamond_db": diamond_db, "reference_metadata": reference_metadata}
     paths.update({f"pfam_index{suffix}": Path(str(pfam_hmm) + suffix) for suffix in (".h3f", ".h3i", ".h3m", ".h3p")})
@@ -196,10 +280,11 @@ def annotate_native(attempts: Path, output: Path, *, hmmscan: Path, pfam_hmm: Pa
             raise FileNotFoundError(path)
     configuration = {"inputs": {label: sha256_file(path) for label, path in paths.items()},
                      "reference_metadata": json.loads(reference_metadata.read_text()),
-                     "threads": threads, "shards": shards,
+                     "arm": arm, "campaign": campaign, "threads": threads, "shards": shards,
                      "pfam_threshold": cg.PFAM_THRESHOLD,
                      "diamond_sensitivity": "very-sensitive", "diamond_evalue": 1e-3,
                      "diamond_max_target_seqs": 5, "diamond_masking": 0,
+                     "diamond_fields": list(fields),
                      "runner_sha256": sha256_file(Path(__file__))}
     ge.write_immutable(output / "search_configuration.json", (json.dumps(configuration, sort_keys=True, indent=2) + "\n").encode())
     manifest = output / "annotation_manifest.json"
@@ -216,8 +301,9 @@ def annotate_native(attempts: Path, output: Path, *, hmmscan: Path, pfam_hmm: Pa
     table = output / "reference_hits.tsv"
     command, log_tail = homology.run_diamond_blastp(SimpleNamespace(executable=diamond), SimpleNamespace(path=diamond_db),
                                                  fasta, table, threads=threads * shards,
-                                                 sensitivity="very-sensitive", evalue=1e-3, max_target_seqs=5)
-    best = best_hits(table, sequences)
+                                                 sensitivity="very-sensitive", evalue=1e-3, max_target_seqs=5,
+                                                 fields=fields)
+    best = best_hits(table, sequences, fields=fields)
     annotations = []
     for row in rows:
         families = ge._families(hits, row["id"])
@@ -226,7 +312,7 @@ def annotate_native(attempts: Path, output: Path, *, hmmscan: Path, pfam_hmm: Pa
                             "target_profile_hit": None, "profile_hit_classes": None,
                             "profile_search_status": "searched" if row["id"] in sequences else "empty_or_noncanonical_not_searched",
                             **reference_fields(best.get(row["id"]), searched=row["id"] in sequences, empty=not row["sequence"])})
-    return write_sidecar(annotations, output, {"campaign": "EXP-R2-233", "new_inference": True,
+    return write_sidecar(annotations, output, {"campaign": campaign, "arm": arm, "new_inference": True,
                                               "configuration_sha256": sha256_file(output / "search_configuration.json"),
                                               "profile_receipt": profile_receipt, "diamond_command": command,
                                               "diamond_log_tail": log_tail, "diamond_table_sha256": sha256_file(table)})

@@ -23,10 +23,12 @@ def main() -> None:
     recover.add_argument("--report", type=Path, default=Path("results/transfer/conditioned_generation/conditioned_generation.json"))
     recover.add_argument("--out", type=Path, default=Path("results/transfer/generation_evidence/reference_annotations"))
     native = commands.add_parser("native-progen3")
-    for name in ("attempts", "out", "hmmscan", "pfam-hmm", "diamond", "diamond-db", "reference-metadata"):
-        native.add_argument(f"--{name}", type=Path, required=True)
-    native.add_argument("--threads", type=int, default=8)
-    native.add_argument("--shards", type=int, default=4)
+    native_uncond = commands.add_parser("native")
+    for parser_native in (native, native_uncond):
+        for name in ("attempts", "out", "hmmscan", "pfam-hmm", "diamond", "diamond-db", "reference-metadata"):
+            parser_native.add_argument(f"--{name}", type=Path, required=True)
+        parser_native.add_argument("--threads", type=int, default=8)
+        parser_native.add_argument("--shards", type=int, default=4)
     reference = commands.add_parser("reference-only")
     for name in ("attempts", "out", "diamond", "diamond-db", "reference-metadata"):
         reference.add_argument(f"--{name}", type=Path, required=True)
@@ -34,7 +36,8 @@ def main() -> None:
     args = vars(parser.parse_args())
     command = args.pop("command")
     args["output"] = args.pop("out")
-    functions = {"recover-r227": ga.recover_r227, "native-progen3": ga.annotate_native, "reference-only": ga.reference_only}
+    functions = {"recover-r227": ga.recover_r227, "native-progen3": ga.annotate_native,
+                 "native": ga.annotate_native, "reference-only": ga.reference_only}
     result = functions[command](**args)
     print(json.dumps(result, sort_keys=True))
 
