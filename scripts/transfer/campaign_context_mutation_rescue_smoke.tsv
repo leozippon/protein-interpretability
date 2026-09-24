@@ -1,0 +1,7 @@
+# Diagnostic protocol: docs/D1_CONTEXT_RESCUE_PROTOCOL.md.
+# Stage cohort.json into TRANSFER_RESULTS_RUN_DIR before launch.
+# slot key gpu stage label env expect args
+1	context_rescue	0	context_mutation_rescue.py	rescue_progen3_3b_smoke	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1	scores_progen3-3b.json	score --arm progen3-3b --dtype bfloat16 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --assay-limit 2
+1	context_rescue	1	context_mutation_rescue.py	rescue_proteinglm_smoke	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1	scores_proteinglm-7b-clm.json	score --arm proteinglm-7b-clm --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --assay-limit 2
+1	context_rescue	2	context_mutation_rescue.py	rescue_prollama_stage1_smoke	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1	scores_prollama-stage-1.json	score --arm prollama-stage-1 --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --assay-limit 2
+1	context_rescue	3	context_mutation_rescue.py	rescue_prollama_stage2_smoke	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1	scores_prollama.json	score --arm prollama --dtype float32 --batch-size 8 --cohort ${TRANSFER_RESULTS_RUN_DIR}/cohort.json --assay-limit 2
