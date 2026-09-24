@@ -13,6 +13,7 @@ A Direction-1 campaign is normally two documents: a protocol frozen before its d
 | `MEASUREMENTS.md` | Estimands and metrics of entry points 01–14 | active, methods only |
 | `EXPERIMENT_LOG.md` | Append-only chronology of every run: date, configuration, result | append-only |
 | `PROJECT_LOG.md` | Append-only chronology of the repository and its operations | append-only |
+| `DATASET_PROVENANCE.md` | What every staged dataset is, where it came from and which provenance fields could not be recovered; the registry itself lives beside the ignored data | active |
 
 ## Direction-1 protocols and results
 
@@ -48,8 +49,19 @@ A Direction-1 campaign is normally two documents: a protocol frozen before its d
 | `D1_READOUT_DEPTH_SWEEP.md` | Depth-resolved re-extraction of the frozen readout, lifting the two-depth bound the class sweep cannot pass | declared, results pending |
 | `D1_GATE_STRUCTURE_CONTACT.md` | Whether measured and then predicted interaction signal is enriched in structural-contact residue pairs against matched non-contact controls | closed at part 1; the model-side part was not run |
 | `D1_GATE_RETRIEVAL_MEMORIZATION.md` | Whether the two established model-side gains survive stratification by retrieved homolog support, identity band, alignment depth, family membership and experimental provenance | closed for the likelihood gain; the representation half provisional |
+| `D1_GATE_STABILITY.md` | Whether a frozen model quantity carries information about a single substitution's measured stability change, on its own endpoint, support and controls rather than the four-state cycle's | closed for the likelihood increments; the representation increments provisional |
+| `D1_GATE_GENERATIVE_CONTROL.md` | Whether sampled sequences satisfy a biological requirement relative to generators carrying only declared sequence statistics, on identical denominators | closed for the two profile endpoints; the structure endpoint unresolved for instrument reasons |
 
-Four gate records named by `D1_CAPABILITY_MAP_PLAN.md` now exist and are listed above. Two more are named by that plan and are not yet present in this checkout: `D1_GATE_STABILITY.md` and `D1_GATE_GENERATIVE_CONTROL.md`. Each is named here from its gate's question alone; nothing about their content is described until they exist.
+Every gate record named by `D1_CAPABILITY_MAP_PLAN.md` now exists and is listed above. The plan's three later-stage gates — conformational dynamics and allostery, molecular recognition and function, and cellular regulation and environment — have no record yet, and none is described here until one exists.
+
+## Direction-2 handoff
+
+These carry Direction-1 outcomes into the mechanism work without restating them. Both are pointers in the other direction from the gate records above: what a later study may act on, and under which confounds.
+
+| Document | What it is for | State |
+|---|---|---|
+| `D1_MATCHED_PAIR_HANDOFF.md` | Which checkpoint pairs a mechanism study of the two readout boundaries can act on, what each pair would and would not license, and the architectural compatibility each transplant would need | handoff of record; design and characterisation, no measurement of its own |
+| `D2_PROLLAMA_CAPABILITY_LOCALIZATION.md` | Localising the ProLLaMA lineage's mutation-ranking capability by component transplant on the one crossing already in use | active |
 
 ## Measurement-rule pre-registrations
 
