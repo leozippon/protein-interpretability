@@ -1,0 +1,26 @@
+# D1 gate: is the residual model-side likelihood information long-range additive
+# sequence context? A CPU-only refit of the frozen 64-background double-mutant
+# cohort over the retained label-free extraction artefacts of the admitted
+# pairwise fit. No model is loaded, no forward pass runs and no GPU is used, so
+# lanes are sized in CPU threads and never claim a card.
+#
+# The roster is the frozen 33-checkpoint panel in
+# src/transfer/pairwise_epistasis.py:ROSTER. Every cell runs both supports (64
+# groups and the 45 on which baseline Q is admissible), all three split seeds and
+# the 2,000-draw group bootstrap, and refuses to proceed if its rows or folds
+# differ from the admitted per-arm pairwise fit.
+#
+# Every cell runs three supports: the 64-group support, the 45-group Q-admissible
+# support, and the 64-group support with the declared insertion/deletion-construct
+# exclusion applied as a sensitivity (3 cycles dropped, 127 targets moved by at
+# most 0.0315 kcal/mol).
+#
+# Scheduling only: arms are spread across the four allocations at eight concurrent
+# processes and eight threads each, so each allocation uses 64 of its 192 cores and
+# leaves the GPU lanes and the remaining cores to other agents' work.
+#
+# allocation	parallel arms	threads per arm	arms (in lane order)
+4gpu	8	8	galactica-30b galactica-6.7b galactica-1.3b galactica-125m gpt2 gpt2-medium gpt2-large gpt2-xl
+ready-4gpu	8	8	progen2-xlarge progen2-large progen2-medium progen2-base progen2-small progen3-3b progen3-112m proteinglm-7b-clm prollama
+ready-2gpu	8	8	prollama-stage-1 protgpt2 protgpt3-1.3b rita-xl instructprotein llama-2-7b llama-3.2-3b qwen2.5-32b
+ready-1gpu	8	8	qwen2.5-7b qwen2.5-0.5b qwen2.5-0.5b-instruct qwen3-8b-base dialogpt-small bygpt5-base-en bygpt5-medium-en bygpt5-small-en
