@@ -1,0 +1,3 @@
+# Run native endpoint manifest first; launch hybrids only after endpoint compatibility/reconstruction passes.
+# slot	key	gpu	stage	label	env	expect	args
+1	swap	0	prollama_component_swap.py	swap_native	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1	component_swap_summary.json	--combinations 000,111 --cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/context_mutation_rescue/cohort.json --hmmscan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/r233_annotation_assets/bin/hmmscan --pfam-hmm /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/r233_annotation_assets/pfam/Pfam-A.hmm

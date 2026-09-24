@@ -1,0 +1,2 @@
+# Exact parameter identity check; CPU only, before interpreting component interventions.
+1	inventory	cpu	inventory_prollama_components.py	prollama_component_inventory	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4	component_tensor_inventory.json	--stage1 ${TRANSFER_MODEL_BASE_DIR}/ProLLaMA_Stage_1 --stage2 ${TRANSFER_MODEL_BASE_DIR}/ProLLaMA
