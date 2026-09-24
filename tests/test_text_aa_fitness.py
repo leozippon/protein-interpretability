@@ -39,6 +39,8 @@ if str(REPO_ROOT) not in sys.path:
 from src.transfer.precision_policy import FP32_PER_TARGET_ABS  # noqa: E402
 from src.transfer.scale_comparison import STRATUM_N_TO_C  # noqa: E402
 from src.transfer.text_aa_fitness import (  # noqa: E402
+    ENCODING_MERGED_BPE,
+    ENCODING_ONE_TOKEN_PER_RESIDUE,
     NO_CONDITIONING_KIND,
     TEXT_AA_FP32_V1,
     TextAABoundary,
@@ -460,13 +462,11 @@ def test_missing_or_malformed_input_ids_are_fatal_tool_errors():
     assert not isinstance(batched.value, TextAAEncodingError)
 
 
-def test_merging_text_tokenizer_is_refused_at_the_encoder(request):
-    """A merged scored span is refused inside the shared encoder.
+def test_merging_text_tokenizer_is_accepted_and_tagged_merged_bpe(request):
+    """A merged scored span is accepted and tagged, not refused.
 
-    These are the four families whose tokenizer merges amino acids, so the
-    declared summed log-likelihood is not a per-residue quantity and no caller
-    is allowed to compute it. The refusal reports what was measured rather than
-    truncating, re-splitting, or substituting another unit.
+    User-ordered 2026-09-20: the token-sum is scored; the encoding class records
+    that it is not one token per residue.
     """
 
     for fixture_name, factory in _MERGING_CASES.items():
@@ -474,14 +474,18 @@ def test_merging_text_tokenizer_is_refused_at_the_encoder(request):
         boundary = factory()
         targets = tokenizer(PROBE, add_special_tokens=False)["input_ids"]
         assert len(targets) < len(PROBE)
-        with pytest.raises(TextAAEncodingError) as caught:
-            encode_text_aa(tokenizer, PROBE, boundary)
-        message = str(caught.value)
-        assert f"{boundary.name}: the text tokenizer produced" in message
-        assert f"{len(targets)} scored tokens for {len(PROBE)} residues" in message
-        assert f"{len(PROBE) / len(targets):.3f} residues per token" in message
-        assert "merged residues into multi-residue pieces" in message
-        assert "EXP-R2-151" in message
+        ids = encode_text_aa(tokenizer, PROBE, boundary)
+        assert ids[0] == boundary.conditioning_id
+        assert ids[1:] == list(targets)
+        scorer = _scorer(_StubLM(len(tokenizer)), tokenizer, boundary, window=128)
+        meta = scorer.encoding_metadata(PROBE)
+        assert meta["encoding_class"] == ENCODING_MERGED_BPE
+        assert meta["n_residues"] == len(PROBE)
+        assert meta["n_target_tokens"] == len(targets)
+        assert meta["residues_per_token"] == pytest.approx(len(PROBE) / len(targets))
+        assert meta["n_prefix_tokens"] == 1
+        assert meta["n_scored_tokens"] == len(ids) - 1
+        assert meta["n_prefix_tokens"] != len(ids) - len(PROBE)
 
 
 def test_the_residue_rule_belongs_to_the_encoding_not_the_checkpoint(gpt2_tokenizer):
@@ -491,11 +495,20 @@ def test_the_residue_rule_belongs_to_the_encoding_not_the_checkpoint(gpt2_tokeni
     ids = encode_text_aa(gpt2_tokenizer, "M", boundary)
     assert ids == [50256, *gpt2_tokenizer("M", add_special_tokens=False)["input_ids"]]
     assert len(ids) == 2
-    with pytest.raises(TextAAEncodingError, match="1 scored tokens for 2 residues"):
-        encode_text_aa(gpt2_tokenizer, "MM", boundary)
+    scorer = _scorer(_StubLM(len(gpt2_tokenizer)), gpt2_tokenizer, boundary, window=64)
+    one = scorer.encoding_metadata("M")
+    assert one["encoding_class"] == ENCODING_ONE_TOKEN_PER_RESIDUE
+    assert one["n_prefix_tokens"] == 1
+    merged = encode_text_aa(gpt2_tokenizer, "MM", boundary)
+    assert len(merged) - 1 == 1
+    meta = scorer.encoding_metadata("MM")
+    assert meta["encoding_class"] == ENCODING_MERGED_BPE
+    assert meta["n_residues"] == 2
+    assert meta["n_target_tokens"] == 1
+    assert meta["n_prefix_tokens"] == 1
 
 
-def test_one_token_per_residue_is_permitted_and_the_scorer_inherits_the_refusal(
+def test_one_token_per_residue_is_still_tagged_and_merged_bpe_is_scored(
     bygpt5_tokenizer, gpt2_tokenizer
 ):
     boundary = _bygpt5_boundary()
@@ -505,15 +518,17 @@ def test_one_token_per_residue_is_permitted_and_the_scorer_inherits_the_refusal(
     scorer = _scorer(
         _StubLM(len(bygpt5_tokenizer)), bygpt5_tokenizer, boundary, window=64
     )
-    assert scorer.encoding_metadata(PROBE)["n_scored_tokens"] == len(PROBE) - 1
+    meta = scorer.encoding_metadata(PROBE)
+    assert meta["encoding_class"] == ENCODING_ONE_TOKEN_PER_RESIDUE
+    assert meta["n_prefix_tokens"] == 0
+    assert meta["n_scored_tokens"] == len(PROBE) - 1
     assert np.isfinite(scorer.log_likelihood([PROBE])).all()
     merging = _scorer(
         _StubLM(len(gpt2_tokenizer)), gpt2_tokenizer, _gpt2_boundary(), window=64
     )
-    with pytest.raises(TextAAEncodingError, match="residues per token"):
-        merging.log_likelihood([PROBE])
-    with pytest.raises(TextAAEncodingError, match="residues per token"):
-        merging.token_lengths([PROBE])
+    assert merging.encoding_metadata(PROBE)["encoding_class"] == ENCODING_MERGED_BPE
+    assert np.isfinite(merging.log_likelihood([PROBE])).all()
+    assert merging.token_lengths([PROBE]) == [len(merging.encode(PROBE))]
 
 
 def test_gpt2_encode_prepends_boundary_keeps_first_target_and_omits_eos(

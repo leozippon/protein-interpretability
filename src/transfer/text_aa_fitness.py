@@ -7,13 +7,15 @@ declares -- or after nothing, for a family whose measured rendering is the byte
 string itself. Mutant minus WT is applied upstream. There is no length
 normalisation, no biological prompt, and no trailing EOS in the scored path.
 
-Every scored span must carry exactly one token per residue. A text tokenizer
-that merges neighbouring residues into multi-residue pieces is refused inside
-:func:`encode_text_aa` -- the same rule ``joint_modes.verify_one_token_per_residue``
-enforces per rendering -- so neither the scorer nor the census can measure a
-merged unit. The property belongs to the encoding and not to the checkpoint, so
-a string that does encode one-to-one is still permitted even on a tokenizer that
-merges elsewhere; nothing re-splits, truncates, or substitutes a different unit.
+Merged BPE is scored. A user-ordered amendment of ``text-aa-fp32-v1`` (2026-09-20)
+stopped refusing an encoding solely because ``len(target_ids) != len(sequence)``.
+The estimand is the sum of target-token conditional log-likelihoods after the
+declared document-boundary token, the same token-sum ProtGPT2 already uses. That
+sum is not the per-residue functional protein models report. Each encoding is
+tagged ``one_token_per_residue`` or ``merged_bpe``. Empty strings, characters
+outside AA20, UNK/special/forbidden ids, a failed strict decode round-trip, and a
+conditioning id inside the targets are still refused. Nothing re-splits,
+truncates, or substitutes a different unit.
 
 Usage (core only; not a legal ProteinGym run until a later stage is wired)::
 
@@ -61,15 +63,20 @@ __all__ = [
     "BUILTIN_MODEL_TYPES",
     "BYGPT5_MODEL_TYPE",
     "CHECKPOINT_VARIABLE",
+    "ENCODING_RULE_AMENDMENT",
     "FP32_PER_TARGET_ABS",
     "HARD_CONTEXT_ATTRIBUTES",
     "NO_CONDITIONING_KIND",
     "TEXT_AA_FP32_V1",
     "TextAABoundary",
+    "ENCODING_MERGED_BPE",
+    "ENCODING_ONE_TOKEN_PER_RESIDUE",
     "TextAAEncodingError",
     "TextAAFitnessScorer",
     "TextAATokenizerBundle",
+    "classify_text_aa_encoding",
     "encode_text_aa",
+    "text_aa_encoding_record",
     "load_text_aa_scorer",
     "load_text_aa_tokenizer",
     "read_hard_context",
@@ -96,6 +103,13 @@ _BYGPT5_LOCAL_FILES = (
     "tokenization_bygpt5.py",
 )
 _PRODUCTION_BATCH_SIZE = 1
+ENCODING_ONE_TOKEN_PER_RESIDUE = "one_token_per_residue"
+ENCODING_MERGED_BPE = "merged_bpe"
+ENCODING_RULE_AMENDMENT = (
+    "user-ordered 2026-09-20: merged BPE is scored as the sum of target-token "
+    "conditional log-likelihoods; this is not a silent fallback and is not the "
+    "per-residue protein functional"
+)
 
 #: ``conditioning.kind`` for a family whose rendering prefixes no conditioning
 #: token at all. Spelled once: the boundary table declares it, the parser requires
@@ -107,7 +121,8 @@ class TextAAEncodingError(ValueError):
     """Declared sequence restriction. Census may exclude the whole assay.
 
     Empty strings, characters outside AA20, empty targets, UNK or special
-    target ids, and failed strict round-trips use this type. Tokenizer
+    target ids, failed strict round-trips, and a conditioning id inside the
+    targets use this type. A merged BPE span is not this type. Tokenizer
     internals, schema, configuration, memory, and unknown backend failures
     must not be converted to it.
     """
@@ -338,6 +353,54 @@ def _special_ids(tokenizer: Any) -> set[int]:
     return {int(item) for item in raw}
 
 
+def classify_text_aa_encoding(*, n_residues: int, n_target_tokens: int) -> str:
+    """Tag a reversible AA20 encoding as residue-aligned or merged BPE."""
+
+    if n_residues < 1 or n_target_tokens < 1:
+        raise TextAAEncodingError("tokenizer produced no target tokens")
+    if n_target_tokens == n_residues:
+        return ENCODING_ONE_TOKEN_PER_RESIDUE
+    return ENCODING_MERGED_BPE
+
+
+def declared_prefix_token_count(boundary: TextAABoundary) -> int:
+    """Return 0 or 1 from the declared prefix, never ``len(ids) - len(sequence)``."""
+
+    return 0 if boundary.conditioning_id is None else 1
+
+
+def text_aa_encoding_record(
+    sequence: str,
+    ids: Sequence[int],
+    boundary: TextAABoundary,
+) -> dict[str, Any]:
+    """Account one encoded span. Prefix count is the declared 0/1, not a merge remainder."""
+
+    n_residues = len(sequence)
+    n_prefix = declared_prefix_token_count(boundary)
+    n_input = len(ids)
+    n_target = n_input - n_prefix
+    encoding_class = classify_text_aa_encoding(
+        n_residues=n_residues, n_target_tokens=n_target
+    )
+    return {
+        "encoding_class": encoding_class,
+        "n_residues": n_residues,
+        "n_target_tokens": n_target,
+        "residues_per_token": n_residues / n_target,
+        "n_prefix_tokens": n_prefix,
+        "n_scored_tokens": n_input - 1,
+        "n_input_tokens": n_input,
+        "conditioning_id": (
+            None if boundary.conditioning_id is None else int(boundary.conditioning_id)
+        ),
+        "conditioning_kind": boundary.conditioning_kind,
+        "trailing_eos_scored": False,
+        "prefix_scored": False,
+        "encoding_rule_amendment": ENCODING_RULE_AMENDMENT,
+    }
+
+
 def encode_text_aa(
     tokenizer: Any,
     sequence: str,
@@ -345,12 +408,15 @@ def encode_text_aa(
 ) -> list[int]:
     """Prefix a declared conditioning token onto reversible AA20 target ids.
 
-    The returned span must carry exactly one target token per residue. A
-    tokenizer that merges neighbouring residues into multi-residue pieces is
-    refused here, before any caller can score or count the merged unit, because
-    a mutation changes the segmentation and token position stops being residue
-    position. This is the rule ``joint_modes.verify_one_token_per_residue``
-    already applies to the joint checkpoints.
+    Merged BPE is accepted and later tagged ``merged_bpe``. That is a
+    user-ordered amendment of ``text-aa-fp32-v1``, not a silent fallback: the
+    summed target-token log-likelihood is the string-level token-sum, not the
+    per-residue quantity ``joint_modes.verify_one_token_per_residue`` still
+    requires of protein and joint renderings.
+
+    Still refused: empty strings, characters outside AA20, empty targets,
+    UNK/special/forbidden ids, a failed strict decode round-trip, and a
+    conditioning id inside the targets.
 
     A boundary declaring :data:`NO_CONDITIONING_KIND` returns the target ids
     alone: its rendering is the byte string itself, and the first of those ids is
@@ -383,19 +449,6 @@ def encode_text_aa(
         raise TextAAEncodingError(
             "decode(target_ids, skip_special_tokens=False) must equal the raw "
             f"AA20 string; got {decoded!r}"
-        )
-    if len(target_ids) != len(sequence):
-        raise TextAAEncodingError(
-            f"{boundary.name}: the text tokenizer produced {len(target_ids)} "
-            f"scored tokens for {len(sequence)} residues "
-            f"({len(sequence) / len(target_ids):.3f} residues per token). It "
-            "merged residues into multi-residue pieces, so token position is "
-            "not residue position and the summed log-likelihood is not the "
-            "per-residue quantity this protocol declares -- measured at about "
-            "2.9 nats/token on galactica-1.3b (EXP-R2-151, Appendix B rule 4). "
-            "Re-splitting or truncating would score a different unit, so this "
-            "encoding is refused by the same rule "
-            "joint_modes.verify_one_token_per_residue applies"
         )
     prefix = boundary.conditioning_id
     if prefix is None:
@@ -494,9 +547,9 @@ class TextAAFitnessScorer:
 
     score_description = (
         "raw uppercase AA20 string after one declared document-boundary token; "
-        "summed conditional log-likelihood of every target token, which is "
-        "exactly one per residue, no length normalisation, prefix and trailing "
-        "EOS not scored"
+        "summed conditional log-likelihood of every target token (merged BPE "
+        "is the token-sum, not a per-residue functional); no length "
+        "normalisation, prefix and trailing EOS not scored"
     )
     scoring_stratum = STRATUM_N_TO_C
 
@@ -553,22 +606,7 @@ class TextAAFitnessScorer:
 
     def encoding_metadata(self, sequence: str) -> dict[str, Any]:
         ids = self.encode(sequence)
-        return {
-            "n_residues": len(sequence),
-            # Read off the ids rather than restated from the declaration: the span
-            # carries one token per residue, so what is left is the prefix, and
-            # that is zero on a family declaring none.
-            "n_prefix_tokens": len(ids) - len(sequence),
-            "n_scored_tokens": len(ids) - 1,
-            "n_input_tokens": len(ids),
-            "conditioning_id": (
-                None if self.boundary.conditioning_id is None
-                else int(self.boundary.conditioning_id)
-            ),
-            "conditioning_kind": self.boundary.conditioning_kind,
-            "trailing_eos_scored": False,
-            "prefix_scored": False,
-        }
+        return text_aa_encoding_record(sequence, ids, self.boundary)
 
     def token_lengths(self, sequences: Sequence[str]) -> list[int]:
         """Full prefix-plus-target length spent against the application window."""
@@ -605,6 +643,33 @@ class TextAAFitnessScorer:
                 f"{self.boundary.name}: a scored sequence returned a non-finite total"
             )
         return totals
+
+    def independent_shifted_ce_sum(self, ids: list[int]) -> tuple[float, int]:
+        """Independent shifted cross-entropy of the same ids the scorer uses."""
+
+        torch = self.torch
+        from torch.nn import functional as F
+
+        device = self.model.device
+        tokens = torch.tensor([ids], dtype=torch.long, device=device)
+        mask = torch.ones((1, len(ids)), dtype=torch.long, device=device)
+        with torch.no_grad():
+            logits = self.model(
+                input_ids=tokens, attention_mask=mask, use_cache=False
+            ).logits
+            if logits.dtype != torch.float32:
+                raise RuntimeError(
+                    f"{self.boundary.name}: logits dtype {logits.dtype} is not float32"
+                )
+            n_target = len(ids) - 1
+            if n_target == 0:
+                return 0.0, 0
+            loss = F.cross_entropy(
+                logits[:, :-1].reshape(-1, logits.size(-1)),
+                tokens[:, 1:].reshape(-1),
+                reduction="sum",
+            )
+        return float((-loss).double().cpu().item()), n_target
 
     def _score_one(self, ids: list[int]) -> float:
         torch = self.torch
@@ -832,6 +897,7 @@ def load_text_aa_scorer(
         "name": label,
         "protocol": TEXT_AA_FP32_V1,
         "research_role": "text-aa-string-control",
+        "encoding_rule_amendment": ENCODING_RULE_AMENDMENT,
         "scientific_role": (
             "text amino-acid string control; not native protein semantics, "
             "not a panel admission, and not an experiment PASS"

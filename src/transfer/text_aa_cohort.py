@@ -17,10 +17,14 @@ from .arms import arm_spec, require_input_path
 from .io import sha256_file
 from .precision_policy import TEXT_AA_FP32_V1
 from .text_aa_fitness import (
+    ENCODING_MERGED_BPE,
+    ENCODING_ONE_TOKEN_PER_RESIDUE,
+    ENCODING_RULE_AMENDMENT,
     TextAAEncodingError,
     encode_text_aa,
     load_text_aa_tokenizer,
     resolve_text_aa_boundary,
+    text_aa_encoding_record,
 )
 
 BOUNDARIES_PATH = Path(__file__).with_name("text_aa_boundaries.json")
@@ -30,7 +34,42 @@ RESEARCH_ROLE = "text-aa-string-control"
 BOOTSTRAP_SEED_BASE = 20260913
 TEXT_AA_SEED_OFFSET = 2000
 BOOTSTRAP_RESAMPLES = 2000
-UNIMPLEMENTED_PHASES = ("probe", "score", "analyse")
+IMPLEMENTED_PHASES = ("census", "probe", "score", "analyse")
+UNIMPLEMENTED_PHASES: tuple[str, ...] = ()
+RESIDUE_ALIGNED_MODELS = ("bygpt5-small-en", "bygpt5-base-en", "bygpt5-medium-en")
+STRING_LEVEL_BPE_MODELS = (
+    "gpt2",
+    "gpt2-medium",
+    "gpt2-large",
+    "gpt2-xl",
+    "dialogpt-small",
+    "qwen2.5-0.5b",
+    "qwen2.5-7b",
+    "qwen2.5-32b",
+    "llama-3.2-3b",
+    "qwen3-8b-base",
+)
+SUPPORT_INDEX = {
+    "native": tuple(range(13)),
+    "common_all13": 13,
+    "gpt2": 14,
+    "qwen2.5": 15,
+    "bygpt5": 16,
+}
+METRIC_INDEX = {
+    "raw": 0,
+    "model_minus_lookup": 1,
+    "model_minus_blosum62": 2,
+    "family_adjacent_delta": 3,
+}
+FAMILY_ADJACENT_PAIRS = {
+    "gpt2": (("gpt2", "gpt2-medium"), ("gpt2-medium", "gpt2-large"), ("gpt2-large", "gpt2-xl")),
+    "qwen2.5": (("qwen2.5-0.5b", "qwen2.5-7b"), ("qwen2.5-7b", "qwen2.5-32b")),
+    "bygpt5": (
+        ("bygpt5-small-en", "bygpt5-base-en"),
+        ("bygpt5-base-en", "bygpt5-medium-en"),
+    ),
+}
 _PATH_KEYS = frozenset({"local_dir", "path", "checkpoint", "checkpoint_dir"})
 _SMALL_TOKENIZER_FILES = (
     "config.json",
@@ -58,9 +97,16 @@ __all__ = [
     "BOUNDARIES_PATH",
     "ENCODE_FAIL",
     "EXCEEDS_HARD_CONTEXT",
+    "FAMILY_ADJACENT_PAIRS",
+    "IMPLEMENTED_PHASES",
+    "METRIC_INDEX",
     "RESEARCH_ROLE",
+    "RESIDUE_ALIGNED_MODELS",
+    "STRING_LEVEL_BPE_MODELS",
+    "SUPPORT_INDEX",
     "TEXT_AA_SEED_OFFSET",
     "UNIMPLEMENTED_PHASES",
+    "text_aa_draw_seed",
     "TextAAEncodingError",
     "census_models",
     "census_one_model",
@@ -176,6 +222,19 @@ def _update_stream(digest: Any, *parts: bytes) -> None:
         digest.update(part)
 
 
+def text_aa_draw_seed(
+    *,
+    support_index: int,
+    metric_index: int,
+    contrast_index: int,
+    base: int = BOOTSTRAP_SEED_BASE,
+    offset: int = TEXT_AA_SEED_OFFSET,
+) -> int:
+    """Family-bootstrap draw seed. The endpoint helper's +10 pair offset is not used."""
+
+    return int(base + offset + 10000 * support_index + 100 * metric_index + contrast_index)
+
+
 def _require_sequence_str(value: Any, *, what: str) -> str:
     if not isinstance(value, str):
         raise TypeError(f"{what} must be a str, got {type(value).__name__}")
@@ -245,6 +304,8 @@ def census_one_model(
         n_row_encode_fail = 0
         n_row_over = 0
         wt_n_input: int | None = None
+        wt_encoding: dict[str, Any] | None = None
+        eligible_encoding_classes: list[str] = []
         for role, mutant_index, sequence in items:
             n_sequences += 1
             _update_stream(
@@ -277,9 +338,11 @@ def census_one_model(
             n_encode_ok += 1
             width = len(ids)
             ids_sha = _ids_sha256(ids)
+            encoding = text_aa_encoding_record(sequence, ids, boundary)
             _update_stream(stream, ids_sha.encode("ascii"))
             if role == "wildtype":
                 wt_n_input = width
+                wt_encoding = encoding
             if hard_context is not None and width > hard_context:
                 n_over += 1
                 n_row_over += 1
@@ -293,10 +356,14 @@ def census_one_model(
                         "sequence_sha256": _sequence_sha256(sequence),
                         "encoded_ids_sha256": ids_sha,
                         "n_residues": len(sequence),
+                        "encoding_class": encoding["encoding_class"],
+                        "n_target_tokens": encoding["n_target_tokens"],
+                        "residues_per_token": encoding["residues_per_token"],
                     }
                 )
                 continue
             n_input_ok.append(width)
+            eligible_encoding_classes.append(str(encoding["encoding_class"]))
             legal_candidates.append(
                 {
                     "assay": name_assay,
@@ -305,6 +372,9 @@ def census_one_model(
                     "mutant_index": mutant_index,
                     "n_input_tokens": width,
                     "n_residues": len(sequence),
+                    "encoding_class": encoding["encoding_class"],
+                    "n_target_tokens": encoding["n_target_tokens"],
+                    "residues_per_token": encoding["residues_per_token"],
                     "sequence_sha256": _sequence_sha256(sequence),
                     "encoded_ids_sha256": ids_sha,
                 }
@@ -331,6 +401,38 @@ def census_one_model(
                 "wildtype_id": assay.get("wildtype_id"),
                 "n_residues_wt": len(assay["wildtype_sequence"]),
                 "n_input_tokens_wt": wt_n_input,
+                "n_target_tokens_wt": (
+                    None if wt_encoding is None else wt_encoding["n_target_tokens"]
+                ),
+                "residues_per_token_wt": (
+                    None if wt_encoding is None else wt_encoding["residues_per_token"]
+                ),
+                "encoding_class_wt": (
+                    None if wt_encoding is None else wt_encoding["encoding_class"]
+                ),
+                "encoding_class_eligible": (
+                    eligible_encoding_classes[0]
+                    if eligible_encoding_classes
+                    and all(
+                        item == eligible_encoding_classes[0]
+                        for item in eligible_encoding_classes
+                    )
+                    else (
+                        "mixed"
+                        if eligible_encoding_classes
+                        else None
+                    )
+                ),
+                "n_one_token_per_residue": sum(
+                    1
+                    for item in eligible_encoding_classes
+                    if item == ENCODING_ONE_TOKEN_PER_RESIDUE
+                ),
+                "n_merged_bpe": sum(
+                    1
+                    for item in eligible_encoding_classes
+                    if item == ENCODING_MERGED_BPE
+                ),
                 "n_input_tokens_max_legal": (max(n_input_ok) if n_input_ok else None),
                 "n_encode_ok": len(items) - n_row_encode_fail,
                 "n_encode_fail": n_row_encode_fail,
@@ -366,6 +468,9 @@ def census_one_model(
                 "mutant_index": item["mutant_index"],
                 "n_input_tokens": item["n_input_tokens"],
                 "n_residues": item["n_residues"],
+                "encoding_class": item["encoding_class"],
+                "n_target_tokens": item["n_target_tokens"],
+                "residues_per_token": item["residues_per_token"],
                 "sequence_sha256": item["sequence_sha256"],
                 "encoded_ids_sha256": item["encoded_ids_sha256"],
             }
@@ -386,6 +491,7 @@ def census_one_model(
         "name": name,
         "protocol_id": TEXT_AA_FP32_V1,
         "research_role": RESEARCH_ROLE,
+        "encoding_rule_amendment": ENCODING_RULE_AMENDMENT,
         "hard_context": hard_context,
         "documented_context": documented_context,
         "application_window_tokens": application_window,
@@ -500,8 +606,9 @@ def census_models(
         "protocol_id": TEXT_AA_FP32_V1,
         "research_role": RESEARCH_ROLE,
         "phase": "census",
-        "implemented_phases": ["census"],
+        "implemented_phases": list(IMPLEMENTED_PHASES),
         "unimplemented_phases": list(UNIMPLEMENTED_PHASES),
+        "encoding_rule_amendment": ENCODING_RULE_AMENDMENT,
         "models_requested": list(names),
         "models": models,
         "support_sets": support_sets(models, table=payload),

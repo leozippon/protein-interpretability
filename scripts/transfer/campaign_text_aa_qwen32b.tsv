@@ -1,0 +1,6 @@
+# Parallel Qwen2.5-32B text-AA score on the hold that finished the 17-checkpoint folds.
+# Same freeze and output path as campaign_text_aa_string_control so analyse reads one artefact.
+# Do not dispatch this on the hold that is scoring Qwen2.5-7B / Qwen3-8B-Base.
+#
+#	slot	key	gpu	stage	label	env	expect	args
+1	textaa	0	text_aa_dms.py	text_aa_score_qwen2.5-32b	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1	text_aa_score.json	score --model qwen2.5-32b --census ${TRANSFER_RESULTS_RUN_DIR}/text_aa_census_all13_cpu/text_aa_census.json --lookup /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260913131730_d91171619815/native_dms_inputs/lookup.json --wildtypes /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260913131730_d91171619815/native_dms_inputs/wildtypes.json --wildtypes-fasta /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260913131730_d91171619815/native_dms_inputs/wildtypes.faa --proteingym-dir /gpfs/jiaotongdamoxing/zhk_zip/data/proteingym/DMS_ProteinGym_substitutions

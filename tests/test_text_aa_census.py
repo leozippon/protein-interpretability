@@ -26,6 +26,7 @@ from src.transfer.precision_policy import TEXT_AA_FP32_V1  # noqa: E402
 from src.transfer.text_aa_cohort import (  # noqa: E402
     ENCODE_FAIL,
     EXCEEDS_HARD_CONTEXT,
+    IMPLEMENTED_PHASES,
     UNIMPLEMENTED_PHASES,
     _request_items,
     census_one_model,
@@ -33,6 +34,10 @@ from src.transfer.text_aa_cohort import (  # noqa: E402
     source_fingerprints,
     support_sets,
     text_aa_model_names,
+)
+from src.transfer.text_aa_fitness import (  # noqa: E402
+    ENCODING_MERGED_BPE,
+    ENCODING_ONE_TOKEN_PER_RESIDUE,
 )
 from src.transfer.text_aa_fitness import (  # noqa: E402
     TextAAEncodingError,
@@ -637,14 +642,20 @@ def test_cli_accepts_injected_device_and_refuses_later_phases(
     assert payload["support_sets"]["common_all13"]["assays"] is None
     assert payload["experiment_admitted"] is False
     assert (out / "text_aa_census.json").is_file()
-    with pytest.raises(SystemExit, match="not implemented"):
+    with pytest.raises(ValueError, match="text-AA controller accepts only"):
         cli.main(
             [
                 "--device",
-                "cuda:0",
+                "cpu",
                 "--out",
                 str(out),
-                "probe",
+                "--protocol",
+                "native-dms-v1",
+                "score",
+                "--model",
+                "gpt2",
+                "--census",
+                str(out / "text_aa_census.json"),
                 "--lookup",
                 str(lookup_path),
                 "--wildtypes",
@@ -653,7 +664,47 @@ def test_cli_accepts_injected_device_and_refuses_later_phases(
                 str(fasta_path),
             ]
         )
-    assert UNIMPLEMENTED_PHASES == ("probe", "score", "analyse")
+    assert IMPLEMENTED_PHASES == ("census", "probe", "score", "analyse")
+    assert UNIMPLEMENTED_PHASES == ()
+
+
+def test_analyse_refuses_a_missing_score(tmp_path):
+    cli = _load_cli()
+    census_path = tmp_path / "text_aa_census.json"
+    census_path.write_text(
+        json.dumps(
+            {
+                "protocol_id": TEXT_AA_FP32_V1,
+                "models_requested": ["gpt2"],
+                "support_sets": {
+                    "native_fixed": {},
+                    "common_all13": {"complete": False},
+                    "families": {
+                        "gpt2": {"complete": False, "assays": None},
+                        "qwen2.5": {"complete": False, "assays": None},
+                        "bygpt5": {"complete": False, "assays": None},
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    lookup_path = tmp_path / "lookup.json"
+    lookup_path.write_text(json.dumps({"assays": []}), encoding="utf-8")
+    out = tmp_path / "analyse"
+    out.mkdir()
+    with pytest.raises(FileNotFoundError, match="missing a score for gpt2"):
+        cli.main(
+            [
+                "--out",
+                str(out),
+                "analyse",
+                "--census",
+                str(census_path),
+                "--lookup",
+                str(lookup_path),
+            ]
+        )
 
 
 def test_old_default_doors_are_unchanged():
@@ -930,6 +981,7 @@ def test_none_documented_context_means_no_hard_context(
     assert payload["hard_context"] is None
     assert payload["documented_context"] is None
     assert payload["window_rule"] == "max_legal_request_input"
+    assert payload["assays"][0]["encoding_class_wt"] == ENCODING_ONE_TOKEN_PER_RESIDUE
 
 
 def test_over_window_counts_as_encoded_not_encode_fail(gpt2_tokenizer):
@@ -968,27 +1020,32 @@ def test_over_window_counts_as_encoded_not_encode_fail(gpt2_tokenizer):
     assert row["n_input_tokens_max_legal"] == max(wt_n, short_n)
 
 
-def test_merging_tokenizer_cannot_complete_a_census(gpt2_tokenizer):
-    """A merging tokenizer leaves no legal sequence, so the census fails.
-
-    ``docs/PROTEINGYM_TEXT_AA_FP32_V1.md`` states that a checkpoint with no
-    strictly legal sequence fails rather than inventing a window. The refusal
-    comes from the shared encoder, so the census inherits it and the failure
-    names the merge instead of blaming the window.
-    """
+def test_merging_tokenizer_completes_a_census_and_tags_merged_bpe(gpt2_tokenizer):
+    """Merged encodings are admitted. Illegal alphabet still excludes the assay."""
 
     table = load_text_aa_boundary_table()
     boundary = resolve_text_aa_boundary("gpt2", table)
-    with pytest.raises(ValueError, match="no strictly encodable sequence") as caught:
-        census_one_model(
-            "gpt2",
-            tokenizer=gpt2_tokenizer,
-            boundary=boundary,
-            hard_context=1024,
-            request=_toy_request("AAA", ["WAA", "AAG"]),
-            documented_context=1024,
-        )
-    message = str(caught.value)
-    assert not isinstance(caught.value, TextAAEncodingError)
-    assert "merged residues into multi-residue pieces" in message
-    assert "First refusal:" in message
+    payload = census_one_model(
+        "gpt2",
+        tokenizer=gpt2_tokenizer,
+        boundary=boundary,
+        hard_context=1024,
+        request=_toy_request("AAA", ["WAA", "AAG"]),
+        documented_context=1024,
+    )
+    assert payload["n_encode_ok"] == 3
+    assert payload["n_encode_fail"] == 0
+    assert payload["native_fixed"] == ["toy"]
+    assert payload["assays"][0]["encoding_class_wt"] == ENCODING_MERGED_BPE
+    assert payload["assays"][0]["n_merged_bpe"] == 3
+    assert payload["longest_probe_identity"]["encoding_class"] == ENCODING_MERGED_BPE
+    illegal = census_one_model(
+        "gpt2",
+        tokenizer=gpt2_tokenizer,
+        boundary=boundary,
+        hard_context=1024,
+        request=_toy_request("AAA", ["AAZ"]),
+        documented_context=1024,
+    )
+    assert illegal["assays"][0]["exclude_reason"] == ENCODE_FAIL
+    assert illegal["assays"][0]["failed_sequences"][0]["error_class"] == "TextAAEncodingError"
