@@ -845,6 +845,110 @@ GATE_DECLARATIONS: dict[str, GateDeclaration] = {
             for step in CONTRACT_STEPS),
         notes=('declared so that an unlaunched gate is a recorded state rather than an omission; '
                'the question is whether a frozen model carries information about expression, localisation, degradation, post-translational modification and membrane context',)),
+    'remote_homology': GateDeclaration(
+        gate='remote_homology',
+        record='docs/D1_GATE_REMOTE_HOMOLOGY.md',
+        elements=(
+            GateElement('endpoint_qualification', 'reported',
+                        quantities=('1.566 [1.301, 1.847]', '+0.1340 [+0.0799, +0.1921]'),
+                        bound='the reproducible component exceeds the per-channel discordance by '
+                              'about half the factor the development endpoint reaches, so a model '
+                              'quantity has roughly half as much resolvable room here'),
+            GateElement('control_qualification', 'reported',
+                        quantities=('36.4% to 36.8%',),
+                        bound='a candidate is kept only if its paired reduction in group-equal '
+                              'held-out error over the standing set is positive at every one of '
+                              'the three split seeds; two of five candidates were discarded',
+                        contributions=(
+                            ControlContribution('local chemistry',
+                                                '+0.00472 [+0.00064, +0.00853]',
+                                                '[+0.00064, +0.00853]', True),
+                            ControlContribution('mutation-local profile, kept by the sign rule '
+                                                'alone',
+                                                '+0.00268 [−0.00100, +0.00618]',
+                                                '[−0.00100, +0.00618]', False),
+                            ControlContribution('the bounded profile restatement',
+                                                '+0.00440 [+0.00002, +0.00908]',
+                                                '[+0.00002, +0.00908]', True),
+                            ControlContribution('composition, discarded',
+                                                '−0.00286 [−0.01098, +0.00509]',
+                                                '[−0.01098, +0.00509]', False),
+                            ControlContribution('the nonlinear-additive response, discarded',
+                                                '−0.02845 [−0.03894, −0.01750]',
+                                                '[−0.03894, −0.01750]', True),
+                        )),
+            GateElement('native_likelihood', 'unresolved',
+                        quantities=('0 of 33 arms',),
+                        bound='the close-identity positive control did not fire, and a stratum on '
+                              'which the pipeline resolves nothing gates the reading of the one '
+                              'on which two arms do'),
+            GateElement('representation_readout', 'provisional',
+                        quantities=('33 of 33, with 0 failures and 0 no-record cells',),
+                        bound='one compressed linear readout of four pooled block summaries at '
+                              'the retained depths; the full-width states are retained so the '
+                              'revisit is a refit rather than a re-extraction'),
+            GateElement('generalization', 'reported',
+                        quantities=('100 family groups are entirely remote and 66 entirely close',),
+                        bound='both strata clear the eight-unit percentile floor, and the mixed '
+                              'stratum holds 45% of the variants on 7% of the units, so it is '
+                              'reported and read as neither',
+                        remote='this gate is the remote stratification: its cohort populates the '
+                               'identity bands every earlier cohort left at 1, 2 and 12 groups, '
+                               'which is what it exists to do'),
+            GateElement('causal_validation', 'absent', reason=_ABSENT_CAUSAL),
+        ),
+        notes=('one of the four gates whose representation cells are retained at the two hooked '
+               'depths only, so a depth selection cannot be applied to it without a fresh '
+               'extraction of its own cohort',)),
+    'external_confirmation': GateDeclaration(
+        gate='external_confirmation',
+        record='docs/D1_EXTERNAL_CONFIRMATION.md',
+        elements=(
+            GateElement('endpoint_qualification', 'reported',
+                        quantities=('+0.0159 [−0.0710, +0.1087]',),
+                        bound='the replicate offset is indistinguishable from zero, so the two '
+                              'replicates are interchangeable in level; the endpoint is a '
+                              'one-estimate level rather than a two-estimate difference, because '
+                              'the wild-type reference is identically zero by construction'),
+            GateElement('control_qualification', 'reported',
+                        quantities=('52.5% to 52.9%', '+0.10096 [+0.09227, +0.10928]'),
+                        bound='every one of the five candidates qualified and nothing was '
+                              'discarded, so the two licensed cells coincide here and the crossed '
+                              'sensitivities the development gate reports do not arise',
+                        contributions=(
+                            ControlContribution('the mutation-local profile, this endpoint\'s '
+                                                'strongest control',
+                                                '+0.00892 [+0.00639, +0.01132]',
+                                                '[+0.00639, +0.01132]', True),
+                            ControlContribution('composition, kept by the sign rule alone',
+                                                '+0.00104 [-0.00048, +0.00253]',
+                                                '[-0.00048, +0.00253]', False),
+                        )),
+            GateElement('native_likelihood', 'absent',
+                        reason='the extraction is in flight, 8 of 33 arms complete when last '
+                               'probed, so no per-arm cell exists yet; what the likelihood cell '
+                               'awaits is wall clock alone, the cohort, plan, controls and '
+                               'profiles being frozen and pushed'),
+            GateElement('representation_readout', 'absent',
+                        reason='as for the likelihood cell, the extraction is in flight; every '
+                               'cell carries --keep-full-features so a readout-class '
+                               'recomputation will be a refit rather than a second forward pass, '
+                               'and a depth selection will still need a fresh extraction'),
+            GateElement('generalization', 'reported',
+                        quantities=('350, 115',),
+                        bound='the screen removes 28 sequence-overlapping domains entirely and a '
+                              'further 66 on a 50%/80% rule against both development sources, '
+                              'which is stricter than the frozen contract\'s own 30% edge; at '
+                              'that weaker threshold 140 of the 494 would cross',
+                        remote='the negative statement rests on exhaustive query and subject sets '
+                               '-- every retained wild type against every development target -- '
+                               'which is what such a statement requires; homology below the rule '
+                               'is undetected'),
+            GateElement('causal_validation', 'absent', reason=_ABSENT_CAUSAL),
+        ),
+        notes=('one of the four gates whose representation cells are retained at the two hooked '
+               'depths only; its extraction is also the long pole, at 4.2 times the stability '
+               'cohort\'s residue workload per arm',)),
     'global_additive_context': GateDeclaration(
         gate='global_additive_context',
         record='docs/D1_GATE_GLOBAL_CONTEXT.md',

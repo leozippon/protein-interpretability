@@ -156,12 +156,17 @@ def _write(args, depths, *, label: str) -> int:
     args.out.mkdir(parents=True, exist_ok=True)
     plan_out = args.out if args.plan_out is None else args.plan_out
     plan_out.mkdir(parents=True, exist_ok=True)
+    gates = [gate.strip() for gate in args.gates.split(',') if gate.strip()] or sorted(COHORTS)
+    unknown = [gate for gate in gates if gate not in COHORTS]
+    if unknown:
+        raise SystemExit(f'--gates names cohorts outside the declaration: {unknown}')
     written, blocked = [], {}
-    for gate, cohort in sorted(COHORTS.items()):
+    for gate, cohort in [(gate, COHORTS[gate]) for gate in sorted(gates)]:
         accepts = extractor_accepts_depth(REPO_ROOT / 'scripts/transfer' / cohort.extractor)
         entry = estimate(gate, depths)
+        cards = [int(index) for index in args.gpus.split(',') if index.strip()] or None
         rows = campaign_rows(gate, depths, project_root=args.project_root, runtime=args.runtime,
-                             gpu=args.gpu)
+                             gpu=args.gpu, gpus=cards)
         # A lane is blocked only if it actually names the option. A selection that
         # lands on an admitted depth for every arm needs no change to the stage,
         # and calling that campaign blocked would be a refusal with no subject.
@@ -219,6 +224,11 @@ def main(argv=None) -> int:
                         help='where the plan records are written, defaulting beside the '
                              'manifests. A dispatched campaign puts its manifests in the tree and '
                              'its plans under ignored logs/, which is where reports belong')
+    second.add_argument('--gates', default='',
+                        help='comma-separated cohorts to write manifests for, defaulting to all '
+                             'four. A deferred cohort is left out here rather than written and '
+                             'not queued, so a manifest on disk is always one somebody decided '
+                             'to run')
     second.add_argument('--arms', default='',
                         help='comma-separated arms to write lanes for, defaulting to all 33. A '
                              'gate cell and its remainder are two runs with complementary lists, '
@@ -228,7 +238,12 @@ def main(argv=None) -> int:
                              'and the wave that follows it do not collide')
     second.add_argument('--project-root', default=DEFAULT_PROJECT_ROOT)
     second.add_argument('--runtime', default=DEFAULT_RUNTIME)
-    second.add_argument('--gpu', type=int, default=0)
+    second.add_argument('--gpu', type=int, default=0,
+                        help='the single card index every lane names, for a one-cell gate manifest')
+    second.add_argument('--gpus', default='',
+                        help='comma-separated card indices to spread the lanes over instead, for '
+                             'a wave; the card a cell lands on is execution metadata outside the '
+                             'measurement identity')
     second.set_defaults(handler=_manifests)
 
     args = parser.parse_args(argv)

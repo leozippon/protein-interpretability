@@ -289,6 +289,99 @@ GATE_RETENTION: dict[str, GateRetention] = {
                     'no arm\'s tokenisation descriptors qualified, so the baseline carries no '
                     'arm-specific column and one baseline per seed serves all 33 arms'),
     ),
+    'remote_homology': GateRetention(
+        gate='remote_homology',
+        kind='mechanism_gate',
+        question='whether the single-substitution stability finding holds on a support that '
+                 'populates the remote-identity bands every earlier cohort left empty',
+        record='docs/D1_GATE_REMOTE_HOMOLOGY.md',
+        cohort='179 MGnify-derived family groups, 6,291 single substitutions over 6,289 mutated '
+               'sites and 305 backgrounds, 6,596 sequences scored per arm',
+        unit='family group',
+        representation_cells=99,
+        cell_shape='33 arms at three split seeds',
+        published_metrics=('representation_mse_increment', 'representation_spearman_increment'),
+        artifacts=(
+            RetainedArtifact('cohort', 'results/remote_homology_20260924/cohort.json', 'cluster',
+                             'with endpoint_qualification.json, endpoint_records.json, '
+                             'support_declaration.json and controls_qualification.json beside it'),
+            RetainedArtifact('full_width_states',
+                             'results/external_baseline/20260924081450_45cbf26d2945/rh-<arm>/',
+                             'cluster',
+                             'every cell carried --keep-full-features, so the unprojected '
+                             'per-state block outputs are retained; 33 of 33 cells exited ok and '
+                             '10,065 full-width archives are present, verified in-pod'),
+            RetainedArtifact('fold_map', 'results/remote_homology_20260924/fits/fit_<arm>.json',
+                             'cluster',
+                             'each carrying its complete fold map and the first-stage diagnostics '
+                             'of the nonlinear response'),
+            RetainedArtifact('penalty_grid', 'results/remote_homology_20260924/fits/fit_<arm>.json',
+                             'cluster',
+                             'the selected ridge penalty of every design in every fold, with the '
+                             'declared design names and their column dimensions'),
+            RetainedArtifact('declared_designs', 'src/transfer/stability_gate.py', 'repository',
+                             'every feature block is imported from the stability gate rather than '
+                             'reimplemented'),
+            RetainedArtifact('published_increments',
+                             'results/remote_homology_20260924/panel/panel.json', 'cluster',
+                             'with a digest of every fit it reads'),
+        ),
+        supported_selections=frozenset({'readout_class'}),
+        missing_for={'extraction_depth': _NO_DEPTH_ON_OWN_COHORT},
+        conditions=('the extraction shares extract_stability_singles.py with the '
+                    'folding-and-stability gate, so the repeatable depth option already reaches '
+                    'this cohort and only its manifests are missing',
+                    'its endpoint has about half the development endpoint\'s headroom, at a '
+                    'shared-to-discordance ratio of 1.566 against 3.86, which bounds any '
+                    'recomputed increment on it as much as the readout class does'),
+    ),
+    'external_confirmation': GateRetention(
+        gate='external_confirmation',
+        kind='mechanism_gate',
+        question='whether the residue-level likelihood finding reproduces on a third source with '
+                 'a third assay, on domains screened against both development sources',
+        record='docs/D1_EXTERNAL_CONFIRMATION.md',
+        cohort='96 family groups over 428 Domainome domains at a 256-substitution cap each, '
+               '109,996 sequences and 6,289,818 residues scored per arm',
+        unit='family group',
+        representation_cells=99,
+        cell_shape='33 arms at three split seeds',
+        published_metrics=('representation_mse_increment', 'representation_spearman_increment'),
+        artifacts=(
+            RetainedArtifact('cohort', 'results/external_confirmation_20260924/cohort.json',
+                             'cluster',
+                             'with endpoint_qualification.json, extraction_plan.json, '
+                             'support_declaration.json, profile_features.npz and the alignment '
+                             'screen\'s own query and subject FASTA under screen/'),
+            RetainedArtifact('full_width_states',
+                             'results/external_baseline/20260924085613_5f8d32cf0368/ec-<arm>/',
+                             'cluster',
+                             'every cell carries --keep-full-features; 8 of 33 cells complete when '
+                             'probed in-pod, the extraction being the long pole at 4.2 times the '
+                             'stability cohort\'s residue workload per arm'),
+            RetainedArtifact('fold_map', 'results/external_confirmation_20260924/fits/', 'cluster',
+                             'the fits follow the extraction; the entry points are the ones that '
+                             'produced the remote-homology gate\'s completed panel'),
+            RetainedArtifact('penalty_grid', 'results/external_confirmation_20260924/fits/',
+                             'cluster', 'as for the sibling gate, in the same records'),
+            RetainedArtifact('declared_designs', 'src/transfer/stability_gate.py', 'repository',
+                             'the control side of this confirmation is the same code the '
+                             'development measurement fitted'),
+            RetainedArtifact('published_increments',
+                             'results/external_confirmation_20260924/panel/panel.json', 'cluster',
+                             'pending the extraction; the cell is reportable the moment the last '
+                             'extraction cell exits'),
+        ),
+        supported_selections=frozenset({'readout_class'}),
+        missing_for={'extraction_depth': _NO_DEPTH_ON_OWN_COHORT},
+        conditions=('the extraction shares extract_stability_singles.py with the '
+                    'folding-and-stability gate, so the repeatable depth option already reaches '
+                    'this cohort and only its manifests are missing',
+                    'the extraction is in flight, so a recomputation of its representation cells '
+                    'waits on the cells existing at all, not only on the selection',
+                    'there is one assay here, so blocking the designs by assay is degenerate: one '
+                    'block and nothing to block on'),
+    ),
     'residue_interactions': GateRetention(
         gate='residue_interactions',
         kind='mechanism_gate',

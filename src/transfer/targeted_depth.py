@@ -38,6 +38,13 @@ from pathlib import Path
 @dataclass(frozen=True)
 class Cohort:
     gate: str
+    #: Short tag that enters every lane label. The campaign queue derives a cell's
+    #: output directory from the run id and the lane label alone, so two cohorts'
+    #: cells for one arm would share a directory -- and the second would be
+    #: reported `skipped-complete` against the first's artifact, writing nothing
+    #: while looking complete. Measured: the pairwise gate cell did exactly that
+    #: against the stability gate cell's manifest before this tag existed.
+    tag: str
     label: str
     states: int
     groups: int
@@ -51,6 +58,7 @@ class Cohort:
 COHORTS: dict[str, Cohort] = {
     'folding_stability': Cohort(
         gate='folding_stability',
+        tag='fs',
         label='the frozen 101-background single-mutant stability cohort',
         states=25_957,
         groups=101,
@@ -58,9 +66,10 @@ COHORTS: dict[str, Cohort] = {
         plan='results/gate_stability_20260924/extraction_plan.json',
         plan_sha256='283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d',
         extractor='extract_stability_singles.py',
-        output_root='results/external_baseline/<wave>/depth3-<arm>/'),
+        output_root='results/external_baseline/<wave>/depth3-<tag>-<arm>/'),
     'remote_homology': Cohort(
         gate='remote_homology',
+        tag='rh',
         label='the frozen 179-family-group MGnify-derived single-mutant cohort',
         states=6_596,
         groups=179,
@@ -68,9 +77,10 @@ COHORTS: dict[str, Cohort] = {
         plan='results/remote_homology_20260924/extraction_plan.json',
         plan_sha256='aa63ff6dc4b66ea51c9a495e1ca173ab22d622cbc4fe48bc8f92b6b012d05e48',
         extractor='extract_stability_singles.py',
-        output_root='results/external_baseline/<wave>/depth3-<arm>/'),
+        output_root='results/external_baseline/<wave>/depth3-<tag>-<arm>/'),
     'external_confirmation': Cohort(
         gate='external_confirmation',
+        tag='ec',
         label='the frozen 96-family-group Domainome abundance cohort',
         states=109_996,
         groups=96,
@@ -78,9 +88,10 @@ COHORTS: dict[str, Cohort] = {
         plan='results/external_confirmation_20260924/extraction_plan.json',
         plan_sha256='805adabe10200fdfb5992796c40d78c328a4f510da80ce56f0f663ee923578aa',
         extractor='extract_stability_singles.py',
-        output_root='results/external_baseline/<wave>/depth3-<arm>/'),
+        output_root='results/external_baseline/<wave>/depth3-<tag>-<arm>/'),
     'residue_interactions': Cohort(
         gate='residue_interactions',
+        tag='ri',
         label='the frozen 64-background four-state double-mutant cycle cohort',
         states=12_977,
         groups=64,
@@ -88,7 +99,7 @@ COHORTS: dict[str, Cohort] = {
         plan='data/pairwise_epistasis/extraction_plan.json',
         plan_sha256='e338420f5df70143ccfc8d16ec5479a67b330ec35d36ea7c5965ea31a59e179c',
         extractor='extract_pairwise_epistasis.py',
-        output_root='results/pairwise_epistasis_20260924/extraction_depth3/<arm>/'),
+        output_root='results/external_baseline/<wave>/depth3-<tag>-<arm>/'),
 }
 
 #: Bytes per retained state coordinate. Both waves wrote float32 features, and
@@ -334,10 +345,14 @@ def depth_agnostic_estimate() -> dict:
                            total_gib=round(total / 2 ** 30, 2),
                            depths_hooked=sum(len(rule(cost)) for cost in ARM_COSTS.values()),
                            resolves_any_depth=label == 'every block')
-    hours = {gate: round(sum(cost.seconds(gate) for cost in ARM_COSTS.values()) / 3600.0, 3)
-             for gate in sorted(COHORTS)}
+    costs = {gate: cohort_gpu_hours(gate) for gate in sorted(COHORTS)}
+    hours = {gate: record['gpu_hours'] for gate, record in costs.items()}
+    calibrated = {gate: record.get('gpu_hours_calibrated', record['gpu_hours'])
+                  for gate, record in costs.items()}
     return dict(schema='d1_depth_agnostic_estimate_v1', variants=rows, gpu_hours=hours,
+                gpu_cost=costs, gpu_hours_calibrated=calibrated,
                 combined_gpu_hours=round(sum(hours.values()), 3),
+                combined_gpu_hours_calibrated=round(sum(calibrated.values()), 3),
                 blocks_over_the_panel=sum(cost.blocks for cost in ARM_COSTS.values()),
                 per_depth_gib=round(sum(retained_bytes(gate, arm, (0,))
                                         for gate in COHORTS for arm in ARM_COSTS) / 2 ** 30, 2),
@@ -456,21 +471,39 @@ def extractor_accepts_depth(source: Path | str) -> bool:
 
 
 def campaign_rows(gate: str, selection: dict[str, int], *, project_root: str,
-                  runtime: str, gpu: int = 0, order_longest_first: bool = True) -> list[dict]:
+                  runtime: str, gpu: int = 0, gpus=None,
+                  order_longest_first: bool = True) -> list[dict]:
     """One lane row per arm, in the campaign manifest's own column order.
 
     Cells are ordered longest-first by the measured wall clock of the same arm's
     completed extraction. That order reads a measured duration and no fitted
     outcome, and it is the order both existing waves used.
+
+    ``gpus`` spreads the cells over several cards: the arms are dealt
+    longest-first across the given card indices, so slot *s* holds one cell per
+    card and the queue's own rule -- one card at most once per slot -- holds by
+    construction. With one card the manifest is the serial one, which is what a
+    gate cell wants; with four it is about a quarter of the wall clock, which is
+    what a 32-arm wave wants. Neither changes any measurement: the card a cell
+    lands on is execution metadata outside the measurement identity.
     """
     cohort = COHORTS[gate]
     # The roster is the selection's own arms, so a gate cell and the wave that
     # follows it are complementary lists and no arm is extracted twice.
     roster = list(selection)
-    arms = sorted(roster, key=lambda arm: -ARM_COSTS[arm].seconds(gate)) \
+    # Longest-first by the measured wall clock where this cohort has one, and by
+    # the stability cohort's where it does not: the ordering reads a measured
+    # duration and no fitted outcome either way, and an arm's relative cost is the
+    # same ordering on any cohort because the panel and the extractor are the same.
+    reference = gate if gate in MEASURED_COHORTS else 'folding_stability'
+    arms = sorted(roster, key=lambda arm: -ARM_COSTS[arm].seconds(reference)) \
         if order_longest_first else sorted(roster)
+    cards = [int(index) for index in (gpus or (gpu,))]
+    if not cards or len(set(cards)) != len(cards):
+        raise ValueError(f'card indices must be distinct and non-empty, got {cards}')
     rows = []
-    for slot, arm in enumerate(arms, start=1):
+    for position, arm in enumerate(arms):
+        slot, card = position // len(cards) + 1, cards[position % len(cards)]
         depths = depths_for(arm, selection[arm])
         extra = [depth for depth in depths if depth not in ARM_COSTS[arm].admitted_depths]
         args = [f'--plan {project_root}/{cohort.plan}']
@@ -478,11 +511,13 @@ def campaign_rows(gate: str, selection: dict[str, int], *, project_root: str,
             args.append(f'--expect-plan-sha256 {cohort.plan_sha256}')
         args += [f'--arm {arm}', '--keep-full-features']
         args += [f'{REQUIRED_EXTRACTOR_OPTION} {depth}' for depth in extra]
-        rows.append(dict(slot=slot, key='depth3', gpu=gpu, stage=cohort.extractor,
-                         label=f'depth3-{arm}', env=runtime,
+        rows.append(dict(slot=slot, key='depth3', gpu=card, stage=cohort.extractor,
+                         label=f'depth3-{cohort.tag}-{arm}', env=runtime,
                          expect=f'manifest_{arm}.json', args=' '.join(args),
                          depths=list(depths), extra_depths=extra,
-                         measured_seconds=ARM_COSTS[arm].seconds(gate)))
+                         measured_seconds=(ARM_COSTS[arm].seconds(gate)
+                                           if gate in MEASURED_COHORTS else None),
+                         ordering_reference=reference))
     return rows
 
 
@@ -499,7 +534,7 @@ def render_campaign(rows: list[dict], header: str) -> str:
 def declaration_digest() -> str:
     """Content digest of the cohorts, the measured cost table and the depth rule."""
     payload = dict(
-        cohorts={gate: dict(label=c.label, states=c.states, groups=c.groups, rows=c.rows,
+        cohorts={gate: dict(tag=c.tag, label=c.label, states=c.states, groups=c.groups, rows=c.rows,
                             plan=c.plan, plan_sha256=c.plan_sha256, extractor=c.extractor,
                             output_root=c.output_root)
                  for gate, c in sorted(COHORTS.items())},

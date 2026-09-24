@@ -1614,6 +1614,20 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "and refuses to mark them queueable while the extractor they name "
         "defines no depth option"
     ),
+    "verify_depth_archive_identity.py": (
+        "compares a newly written depth-resolved archive against the already "
+        "retained two-depth archive of the same arm and requires the admitted "
+        "four block summaries to be byte-identical, which is the one property "
+        "the hooking loop cannot otherwise be tested on because exercising it "
+        "needs a loaded checkpoint. Its units are the archives the two "
+        "directories share and it compares every one of them, so rule 1's "
+        "hazard is absent because there is no subset to select: a sampled "
+        "comparison would turn a byte-identity gate into a probabilistic one. "
+        "It opens no corpus constructor, loads no model and no checkpoint, fits "
+        "nothing and resamples nothing, and it reads no measured effect -- only "
+        "the two archive sets and the arm's block count, which fixes its "
+        "admitted pair through the same shared rule the extractors apply"
+    ),
 }
 
 

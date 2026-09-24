@@ -105,7 +105,11 @@ def test_the_gates_that_need_a_fresh_extraction_for_a_depth_selection_are_named(
     blocked = {gate for gate in GR.GATE_RETENTION
                if GR.recomputability(gate, 'extraction_depth')['verdict']
                == 'requires_re_extraction'}
-    assert blocked == {'folding_stability', 'residue_interactions'}
+    # Four gates, not two. The last two arrived after this inventory was first
+    # written, and an inventory that claims to cover every gate has to be extended
+    # when one arrives or its central verdict is quietly wrong.
+    assert blocked == {'folding_stability', 'residue_interactions',
+                       'remote_homology', 'external_confirmation'}
     for gate in blocked:
         assert GR.recomputability(gate, 'readout_class')['verdict'] == 'recomputable'
         missing = GR.recomputability(gate, 'extraction_depth')['missing']
@@ -938,15 +942,15 @@ def test_every_arm_gets_one_lane_longest_first_naming_only_its_new_depths():
     rows = TD.campaign_rows('folding_stability', selection,
                             project_root='/root', runtime='ENV=1')
     assert len(rows) == len(TD.ARM_COSTS)
-    assert [row['label'] for row in rows][0] == 'depth3-galactica-30b'
+    assert [row['label'] for row in rows][0] == 'depth3-fs-galactica-30b'
     assert all(rows[i]['measured_seconds'] >= rows[i + 1]['measured_seconds']
                for i in range(len(rows) - 1))
     by_label = {row['label']: row for row in rows}
-    moved = by_label['depth3-progen2-xlarge']
+    moved = by_label['depth3-fs-progen2-xlarge']
     assert moved['extra_depths'] == [28]
     assert f'{TD.REQUIRED_EXTRACTOR_OPTION} 28' in moved['args']
     for label, row in by_label.items():
-        if label != 'depth3-progen2-xlarge':
+        if label != 'depth3-fs-progen2-xlarge':
             assert row['extra_depths'] == [] and TD.REQUIRED_EXTRACTOR_OPTION not in row['args']
     rendered = TD.render_campaign(rows, 'a header line')
     assert rendered.startswith('# a header line')
@@ -1104,3 +1108,119 @@ def test_the_depth_stage_reads_its_tolerance_from_the_receipt_and_keeps_its_call
         assert module.admitted_prediction_tolerance(module.ADMISSION_RECEIPT) == 1e-8
     with pytest.raises(RC.RecomputationRefused, match='is not at'):
         module.admitted_prediction_tolerance(REPO_ROOT / 'no-such-receipt.json')
+
+
+# ------------------------------------------- the gate instrument that renders the verdict
+
+
+def _write_archives(directory, name, features, per_depth=None):
+    directory.mkdir(parents=True, exist_ok=True)
+    arrays = {'features': features} if per_depth is None else per_depth
+    np.savez(directory / f'full_{name}.npz', **arrays,
+             metadata=json.dumps({'assay': name}))
+
+
+def test_the_identity_verifier_passes_a_faithful_archive_and_fails_a_permuted_one(tmp_path):
+    """The instrument that decides whether a 720 GiB sweep may be dispatched.
+
+    It has to pass an archive whose admitted four blocks are the retained ones and
+    fail one whose hook order moved, which is the only failure mode that matters:
+    a permuted order produces a well-formed archive of the right shape holding the
+    right numbers in the wrong places.
+    """
+    import importlib.util
+    script = REPO_ROOT / 'scripts/transfer/verify_depth_archive_identity.py'
+    spec = importlib.util.spec_from_file_location('_identity_verifier', script)
+    verifier = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = verifier
+    spec.loader.exec_module(verifier)
+
+    rng = np.random.default_rng(19)
+    blocks, width, rows = 36, 8, 5
+    admitted = (17, 35)                      # (blocks - 1) // 2 and blocks - 1
+    retained = rng.standard_normal((rows, 4, width)).astype(np.float32)
+    depth_arrays = {f'features_d{index:03d}': rng.standard_normal((rows, 2, width)).astype(np.float32)
+                    for index in range(blocks)}
+    # A faithful depth archive holds the retained slices under the admitted names.
+    depth_arrays[f'features_d{admitted[0]:03d}'] = retained[:, 0:2]
+    depth_arrays[f'features_d{admitted[1]:03d}'] = retained[:, 2:4]
+
+    admitted_dir, depth_dir = tmp_path / 'admitted', tmp_path / 'depth'
+    _write_archives(admitted_dir, 'bg', retained)
+    _write_archives(depth_dir, 'bg', None, per_depth=depth_arrays)
+    out = tmp_path / 'faithful.json'
+    assert verifier.main(['--arm', 'a', '--blocks', str(blocks), '--depth-dir', str(depth_dir),
+                          '--admitted-dir', str(admitted_dir), '--out', str(out)]) == 0
+    record = json.loads(out.read_text())
+    assert record['identical'] is True and record['compared'] == 1
+    assert record['admitted_block_indices'] == list(admitted)
+    assert record['archives'][0]['byte_identical'] is True
+
+    # The failure that matters: the two admitted blocks swapped, so every number is
+    # present and every one is in the wrong place.
+    swapped = dict(depth_arrays)
+    swapped[f'features_d{admitted[0]:03d}'] = retained[:, 2:4]
+    swapped[f'features_d{admitted[1]:03d}'] = retained[:, 0:2]
+    swapped_dir = tmp_path / 'swapped'
+    _write_archives(swapped_dir, 'bg', None, per_depth=swapped)
+    out = tmp_path / 'swapped.json'
+    assert verifier.main(['--arm', 'a', '--blocks', str(blocks), '--depth-dir', str(swapped_dir),
+                          '--admitted-dir', str(admitted_dir), '--out', str(out)]) == 1
+    record = json.loads(out.read_text())
+    assert record['identical'] is False and record['non_identical'] == ['bg.npz']
+    assert record['max_absolute_difference'] > 0.0
+
+    # And the two refusals: an archive that is not depth-resolved, and no overlap.
+    plain_dir = tmp_path / 'plain'
+    _write_archives(plain_dir, 'bg', retained)
+    with pytest.raises(SystemExit, match='not a depth-resolved archive'):
+        verifier.main(['--arm', 'a', '--blocks', str(blocks), '--depth-dir', str(plain_dir),
+                       '--admitted-dir', str(admitted_dir), '--out', str(tmp_path / 'x.json')])
+    with pytest.raises(SystemExit, match='nothing to compare'):
+        verifier.main(['--arm', 'a', '--blocks', str(blocks), '--depth-dir', str(depth_dir),
+                       '--admitted-dir', str(tmp_path / 'empty'), '--out', str(tmp_path / 'y.json')])
+
+
+def test_two_cohorts_cells_for_one_arm_never_share_an_output_directory():
+    """The defect the gate run surfaced, and it was not in the hooking rule.
+
+    The campaign queue derives a cell's output directory from the run id and the
+    lane label alone. Both cohorts' gate manifests labelled their cell
+    ``depth3-gpt2-large``, so the second cell found the first's manifest at that
+    path and was reported ``skipped-complete`` -- writing nothing while looking
+    complete. On the 32-arm wave that would have produced no archives for a whole
+    cohort under a clean status file. Every label now carries the cohort's own tag.
+    """
+    labels = {}
+    selection = {'gpt2-large': 0}
+    for gate in TD.COHORTS:
+        row, = TD.campaign_rows(gate, selection, project_root='/root', runtime='ENV=1')
+        labels[gate] = row['label']
+        assert row['label'].startswith(f'depth3-{TD.COHORTS[gate].tag}-')
+        assert row['label'].endswith('-gpt2-large')
+    assert len(set(labels.values())) == len(TD.COHORTS), labels
+    assert len({cohort.tag for cohort in TD.COHORTS.values()}) == len(TD.COHORTS)
+
+
+def test_a_wave_spreads_over_its_cards_with_one_cell_per_card_per_slot():
+    """The queue refuses two cells on one card in one slot, so the spread must
+    satisfy that by construction rather than by luck. With one card the manifest
+    is the serial one a gate cell wants."""
+    selection = {arm: cost.middle_block for arm, cost in TD.ARM_COSTS.items()}
+    rows = TD.campaign_rows('folding_stability', selection, project_root='/root',
+                            runtime='ENV=1', gpus=[0, 1, 2, 3])
+    assert len(rows) == len(TD.ARM_COSTS)
+    seen = set()
+    for row in rows:
+        key = (row['slot'], row['gpu'])
+        assert key not in seen, f'slot {row["slot"]} names card {row["gpu"]} twice'
+        seen.add(key)
+    assert {row['gpu'] for row in rows} == {0, 1, 2, 3}
+    assert max(row['slot'] for row in rows) == -(-len(rows) // 4)
+    serial = TD.campaign_rows('folding_stability', selection, project_root='/root',
+                              runtime='ENV=1', gpu=2)
+    assert {row['gpu'] for row in serial} == {2}
+    assert [row['slot'] for row in serial] == list(range(1, len(serial) + 1))
+    with pytest.raises(ValueError, match='distinct and non-empty'):
+        TD.campaign_rows('folding_stability', selection, project_root='/root',
+                         runtime='ENV=1', gpus=[0, 0])
