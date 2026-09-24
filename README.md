@@ -11,6 +11,7 @@ InterpretabilityTransfer compares pure-text, pure-protein, and joint language–
 | [`docs/RESEARCH_PLAN.md`](docs/RESEARCH_PLAN.md) | Executable comparison guide and stage inventory derived from the canonical plan |
 | [`docs/MEASUREMENTS.md`](docs/MEASUREMENTS.md) | Estimands and metrics for the registered foundational stages |
 | [`scripts/transfer/README.md`](scripts/transfer/README.md) | Local validation and H200 campaign operation |
+| [`docs/README.md`](docs/README.md) | Index of every document under `docs/`, with its purpose and whether its work is open or closed |
 | [`docs/EXPERIMENT_LOG.md`](docs/EXPERIMENT_LOG.md) | Append-only experiment chronology |
 | [`docs/PROJECT_LOG.md`](docs/PROJECT_LOG.md) | Append-only repository and operations chronology |
 | [`AGENTS.md`](AGENTS.md) | Research, development, documentation, and compute rules |
@@ -31,7 +32,7 @@ python scripts/transfer/panel_contract.py --json
 python scripts/transfer/panel_contract.py --verify
 ```
 
-5. Validate changed code on B, run full campaigns on H200, and append admitted results to `docs/EXPERIMENT_LOG.md`. Update the audit before promoting a result into a claim.
+5. Validate changed code on Compute, run full campaigns on H200, and append admitted results to `docs/EXPERIMENT_LOG.md`. Update the audit before promoting a result into a claim.
 
 ## Repository Layout
 
