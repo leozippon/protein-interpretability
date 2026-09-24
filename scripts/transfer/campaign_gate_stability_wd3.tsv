@@ -1,0 +1,16 @@
+# D1 stability gate: the three cells that were refused twice, on the frozen 101-background
+# single-mutant stability cohort (25,856 variants, 25,957 deduplicated sequences,
+# 1,501,137 residues, lengths 36-74). Cohort sha256
+# 1e42c3cc1d11d479fcbcce23ffcc37b5799fcf7fc79c65780b1a521fd953e9de; label-free
+# extraction plan content digest 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d.
+#
+# Each of these three arms was recorded refused-busy-gpu twice, once in the earlier per-card
+# wave and once in the resumption wave, because the card named there was held by another
+# campaign at both dispatch moments. The plan, the code snapshot and the batch-one setting
+# are the ones every other cell of this gate ran under; only the card differs. This wave is
+# dispatched behind a card-idle wait rather than by lowering the queue's idle threshold.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	cc	3	extract_stability_singles.py	gpt2	-	manifest_gpt2.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/extraction_plan.json --expect-plan-sha256 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d --arm gpt2
+2	cc	3	extract_stability_singles.py	dialogpt-small	-	manifest_dialogpt-small.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/extraction_plan.json --expect-plan-sha256 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d --arm dialogpt-small
+3	cc	3	extract_stability_singles.py	progen3-112m	-	manifest_progen3-112m.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/extraction_plan.json --expect-plan-sha256 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d --arm progen3-112m

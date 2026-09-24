@@ -1,0 +1,10 @@
+# D1 stability gate: per-arm fits taken off the tail of the fourteen-arm wave so that two
+# cards that fell idle carry them concurrently instead of waiting behind one serial lane.
+# Cohort sha256 1e42c3cc1d11d479fcbcce23ffcc37b5799fcf7fc79c65780b1a521fd953e9de; control set
+# frozen before any model quantity was read. Each cell's output directory is the same label
+# under the same snapshot as its copy in the earlier wave, so whichever queue reaches it
+# second records skipped-complete rather than repeating the fit.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	cc	0	fit_stability_singles.py	fit-progen2-medium	-	fit_progen2-medium.json	--cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/cohort.json --profiles /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/profile_features.npz --controls /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/controls_qualification.json --extraction /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260924000148_fbfa7ddc1f5f/progen2-medium --arm progen2-medium
+2	cc	0	fit_stability_singles.py	fit-prollama	-	fit_prollama.json	--cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/cohort.json --profiles /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/profile_features.npz --controls /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/controls_qualification.json --extraction /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260924000148_fbfa7ddc1f5f/prollama --arm prollama

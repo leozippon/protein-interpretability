@@ -1,0 +1,15 @@
+# D1 stability gate: the first three per-arm fits of the frozen 101-group single-mutant
+# cohort (25,856 variants, 5,664 sites, Kish effective 101.0 groups), dispatched ahead of
+# the rest of the panel on the three arms whose extraction was already complete, so that
+# the fitting path is exercised on real extractions before 30 further cells are queued.
+# Cohort sha256 1e42c3cc1d11d479fcbcce23ffcc37b5799fcf7fc79c65780b1a521fd953e9de.
+#
+# The control set is the one qualify_stability_controls.py froze before any model quantity
+# was read; the fit entry point refuses to run without that artefact. One cell carries
+# --permutation-check, which verifies that permuting held-out group labels moves no
+# held-out prediction of any design.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	cc	0	fit_stability_singles.py	fit-instructprotein	-	fit_instructprotein.json	--cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/cohort.json --profiles /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/profile_features.npz --controls /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/controls_qualification.json --extraction /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260924000148_fbfa7ddc1f5f/instructprotein --arm instructprotein
+2	cc	0	fit_stability_singles.py	fit-qwen2.5-0.5b-instruct	-	fit_qwen2.5-0.5b-instruct.json	--cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/cohort.json --profiles /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/profile_features.npz --controls /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/controls_qualification.json --extraction /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260924000148_fbfa7ddc1f5f/qwen2.5-0.5b-instruct --arm qwen2.5-0.5b-instruct
+3	cc	0	fit_stability_singles.py	fit-bygpt5-medium-en	-	fit_bygpt5-medium-en.json	--cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/cohort.json --profiles /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/profile_features.npz --controls /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/controls_qualification.json --extraction /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260924000148_fbfa7ddc1f5f/bygpt5-medium-en --arm bygpt5-medium-en --permutation-check

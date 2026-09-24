@@ -1,0 +1,26 @@
+# D1 stability gate: one lane of the full-panel singleton extraction of the frozen
+# 101-background single-mutant stability cohort (25,856 variants, 25,957 deduplicated
+# sequences, 1,501,137 residues, lengths 36-74). Cohort sha256
+# 1e42c3cc1d11d479fcbcce23ffcc37b5799fcf7fc79c65780b1a521fd953e9de; label-free
+# extraction plan content digest 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d.
+#
+# The roster is the pre-declared unconditioned Readout panel of 33 checkpoints frozen
+# in src/transfer/pairwise_epistasis.py:ROSTER, reused unchanged; ZymCTRL stays excluded
+# as a conditioned interface. One manifest per card, so a card that falls idle can start
+# without waiting on a slot barrier for a card another campaign still holds. Arms are
+# ordered longest-first against the pairwise campaign's measured per-arm throughput on the
+# same interface and the same sequence lengths (4.6 sequences/s for galactica-30b to 183
+# for gpt2). Every cell scores the same plan, which carries sequences, mutated positions
+# and state indices only.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	cc	1	extract_stability_singles.py	qwen2.5-0.5b-instruct	-	manifest_qwen2.5-0.5b-instruct.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/extraction_plan.json --expect-plan-sha256 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d --arm qwen2.5-0.5b-instruct
+2	cc	1	extract_stability_singles.py	bygpt5-base-en	-	manifest_bygpt5-base-en.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/extraction_plan.json --expect-plan-sha256 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d --arm bygpt5-base-en
+3	cc	1	extract_stability_singles.py	bygpt5-medium-en	-	manifest_bygpt5-medium-en.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/extraction_plan.json --expect-plan-sha256 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d --arm bygpt5-medium-en
+4	cc	1	extract_stability_singles.py	gpt2-medium	-	manifest_gpt2-medium.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/extraction_plan.json --expect-plan-sha256 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d --arm gpt2-medium
+5	cc	1	extract_stability_singles.py	progen2-small	-	manifest_progen2-small.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/extraction_plan.json --expect-plan-sha256 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d --arm progen2-small
+6	cc	1	extract_stability_singles.py	progen3-112m	-	manifest_progen3-112m.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/extraction_plan.json --expect-plan-sha256 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d --arm progen3-112m
+7	cc	1	extract_stability_singles.py	galactica-125m	-	manifest_galactica-125m.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/extraction_plan.json --expect-plan-sha256 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d --arm galactica-125m
+8	cc	1	extract_stability_singles.py	gpt2	-	manifest_gpt2.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/extraction_plan.json --expect-plan-sha256 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d --arm gpt2
+9	cc	1	extract_stability_singles.py	dialogpt-small	-	manifest_dialogpt-small.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/extraction_plan.json --expect-plan-sha256 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d --arm dialogpt-small
+10	cc	1	extract_stability_singles.py	bygpt5-small-en	-	manifest_bygpt5-small-en.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/extraction_plan.json --expect-plan-sha256 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d --arm bygpt5-small-en

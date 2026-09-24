@@ -1,0 +1,15 @@
+# D1 stability gate: per-arm nested held-group fits on the frozen 101-group single-mutant
+# cohort (25,856 variants, 5,664 sites, Kish effective 101.0 groups). Cohort sha256
+# 1e42c3cc1d11d479fcbcce23ffcc37b5799fcf7fc79c65780b1a521fd953e9de.
+#
+# The control set is the one qualify_stability_controls.py froze before any model quantity
+# was read; the fit entry point refuses to run without that artefact. Two arms read their
+# extraction from the earlier snapshot's results directory because their cells were already
+# running when the per-card manifests were frozen; the extraction code differs between the
+# two snapshots only in where one plan-validation function lives.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	cc	0	fit_stability_singles.py	fit-galactica-30b	-	fit_galactica-30b.json	--cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/cohort.json --profiles /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/profile_features.npz --controls /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/controls_qualification.json --extraction /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260923232409_9ab5f150f2ac/galactica-30b --arm galactica-30b
+2	cc	0	fit_stability_singles.py	fit-progen2-xlarge	-	fit_progen2-xlarge.json	--cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/cohort.json --profiles /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/profile_features.npz --controls /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/controls_qualification.json --extraction /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260924000148_fbfa7ddc1f5f/progen2-xlarge --arm progen2-xlarge
+3	cc	0	fit_stability_singles.py	fit-progen2-large	-	fit_progen2-large.json	--cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/cohort.json --profiles /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/profile_features.npz --controls /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/controls_qualification.json --extraction /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260924000148_fbfa7ddc1f5f/progen2-large --arm progen2-large
+4	cc	0	fit_stability_singles.py	fit-progen2-base	-	fit_progen2-base.json	--cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/cohort.json --profiles /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/profile_features.npz --controls /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/controls_qualification.json --extraction /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260924000148_fbfa7ddc1f5f/progen2-base --arm progen2-base

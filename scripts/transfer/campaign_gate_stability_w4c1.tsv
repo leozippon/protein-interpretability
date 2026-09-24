@@ -1,0 +1,16 @@
+# D1 stability gate: resumption wave of the full-panel singleton extraction of the frozen
+# 101-background single-mutant stability cohort (25,856 variants, 25,957 deduplicated
+# sequences, 1,501,137 residues, lengths 36-74). Cohort sha256
+# 1e42c3cc1d11d479fcbcce23ffcc37b5799fcf7fc79c65780b1a521fd953e9de; label-free
+# extraction plan content digest 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d.
+#
+# These are the fourteen cells the earlier per-card manifests recorded as refused-busy-gpu:
+# the queue declined to co-tenant a card another campaign held, which is the queue behaving
+# correctly. This wave carries the same arms, the same plan, the same code snapshot and the
+# same batch-one setting to cards measured idle at dispatch. The basename is distinct from
+# every earlier wave's, so the earlier waves' status files and locks are untouched.
+# Arms are ordered longest-first within a card against measured per-arm throughput.
+#
+# slot	key	gpu	stage	label	env	expect	args
+1	cc	1	extract_stability_singles.py	qwen3-8b-base	-	manifest_qwen3-8b-base.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/extraction_plan.json --expect-plan-sha256 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d --arm qwen3-8b-base
+2	cc	1	extract_stability_singles.py	llama-3.2-3b	-	manifest_llama-3.2-3b.json	--plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/gate_stability_20260924/extraction_plan.json --expect-plan-sha256 283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d --arm llama-3.2-3b
