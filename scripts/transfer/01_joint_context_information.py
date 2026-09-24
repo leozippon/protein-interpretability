@@ -302,6 +302,13 @@ def main() -> None:
             "kind": cohort.kind,
             "n_records": len(cohort),
         },
+        # Always present, and named the same way 01_cohort_power.py and
+        # 24_component_swap.py name it. ``cohort_sampling`` below carries a
+        # ``draw_seed`` only on the permuted branch, and the sufficient-statistics
+        # sidecar exists only under --record-statistics, so neither is where a
+        # reader can go to learn which draw produced this report: a
+        # ``--cohort-draw-seed 0`` run recorded no seed at all.
+        "seeds": {"cohort_draw": int(args.cohort_draw_seed)},
         "cohort_sampling": sampling,
         "unigram_baseline": {
             "estimator": "disjoint",
