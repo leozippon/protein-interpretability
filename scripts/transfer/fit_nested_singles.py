@@ -54,7 +54,7 @@ from src.transfer.io import sha256_file, write_json
 from src.transfer.pairwise_epistasis import FEATURE_BLOCKS, ROSTER, TOKENISATION_STRATUM
 from src.transfer.remote_homology import (
     OUTCOME_HOMOLOGY_DEPENDENT, OUTCOME_SURVIVES, OUTCOME_UNRESOLVED, STRATUM_UNIT_FLOOR,
-    outcome, stratum_keep)
+    outcome_record, stratum_keep)
 from src.transfer.stability_gate import load_profiles
 
 SCHEMA = 'nested_gate_fit_v1'
@@ -235,13 +235,14 @@ def main() -> None:
         stratified_outcome = {
             'rule': ('an arm resolves on a stratum when all three per-seed intervals of its '
                      'paired increment over that stratum exclude zero above it'),
-            'outcomes': {
-                role: {
-                    'close_resolved': resolved[('close', role)],
-                    'remote_resolved': resolved[('remote', role)],
-                    'outcome': outcome(resolved[('close', role)], resolved[('remote', role)]),
-                    'positive_control_fired': resolved[('close', role)],
-                } for role in baselines},
+            'positive_control': ('the close stratum gates the reading: with this floor a '
+                                 'stratum on which nothing resolves cannot tell an absent '
+                                 'quantity from an unmeasurable one, so an arm resolving on '
+                                 'the remote groups while its own close stratum did not fire '
+                                 'is unresolved and not survival'),
+            'outcomes': {role: outcome_record(resolved[('close', role)],
+                                              resolved[('remote', role)])
+                         for role in baselines},
             'declared_outcomes': [OUTCOME_SURVIVES, OUTCOME_HOMOLOGY_DEPENDENT,
                                   OUTCOME_UNRESOLVED],
         }

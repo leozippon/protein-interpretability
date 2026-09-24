@@ -373,8 +373,16 @@ class ThreeOutcomes(unittest.TestCase):
         self.assertEqual(rh.outcome(True, False), rh.OUTCOME_HOMOLOGY_DEPENDENT)
         self.assertEqual(rh.outcome(False, False), rh.OUTCOME_UNRESOLVED)
 
-    def test_a_remote_result_without_its_positive_control_is_not_a_fourth_outcome(self):
-        self.assertEqual(rh.outcome(False, True), rh.OUTCOME_SURVIVES)
+    def test_a_remote_result_whose_positive_control_did_not_fire_is_unresolved(self):
+        # The close stratum gates the reading, so remote-only is not survival.
+        self.assertEqual(rh.outcome(False, True), rh.OUTCOME_UNRESOLVED)
+        record = rh.outcome_record(False, True)
+        self.assertEqual(record['outcome'], rh.OUTCOME_UNRESOLVED)
+        self.assertFalse(record['positive_control_fired'])
+        self.assertTrue(record['remote_resolved_without_its_positive_control'])
+        licensed = rh.outcome_record(True, True)
+        self.assertEqual(licensed['outcome'], rh.OUTCOME_SURVIVES)
+        self.assertFalse(licensed['remote_resolved_without_its_positive_control'])
 
     def test_the_unresolved_outcome_refuses_to_call_itself_a_null(self):
         self.assertIn('unresolved', rh.OUTCOME_UNRESOLVED)

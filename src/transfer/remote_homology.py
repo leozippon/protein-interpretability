@@ -180,7 +180,8 @@ __all__ = [
     'declaration_digest', 'declared_draw',
     'endpoint_digest', 'family_groups', 'fold_predictions', 'group_errors',
     'group_strata', 'interval', 'kish_units', 'nested_weights', 'nuisance_response',
-    'outcome', 'paired_increment', 'qualify', 'query_bands', 'raw_spearman',
+    'outcome', 'outcome_record', 'paired_increment', 'qualify', 'query_bands',
+    'raw_spearman',
     'read_source', 'row_identity', 'spearman_increment', 'stratum_keep',
     'substitution_at', 'unit_floor_cleared',
 ]
@@ -577,14 +578,31 @@ def unit_floor_cleared(count: int) -> bool:
 def outcome(close_resolved: bool, remote_resolved: bool) -> str:
     """Which of the three declared outcomes one arm's stratified readout selects.
 
-    ``resolves on remote but not on close`` is not a fourth outcome: it is the
-    survival outcome read on a positive control that did not fire, so it is
-    reported as :data:`OUTCOME_SURVIVES` with the control's own failure stated
-    beside it by the caller rather than silently promoted.
+    The close stratum is a **positive control**, so it gates the reading rather
+    than merely accompanying it: with a floor this high, a stratum on which the
+    pipeline resolves nothing at all cannot tell an absent quantity from an
+    unmeasurable one. An arm that resolves on the remote groups while its own
+    positive control did not fire is therefore **unresolved**, not survival --
+    the remote increment is reported beside the verdict as an observation this
+    design does not license, and :func:`outcome_record` carries the flag that
+    says so.
     """
 
-    if remote_resolved:
+    if close_resolved and remote_resolved:
         return OUTCOME_SURVIVES
     if close_resolved:
         return OUTCOME_HOMOLOGY_DEPENDENT
     return OUTCOME_UNRESOLVED
+
+
+def outcome_record(close_resolved: bool, remote_resolved: bool) -> dict:
+    """One arm's stratified verdict, with what licensed it and what did not."""
+
+    return {
+        'close_resolved': bool(close_resolved),
+        'remote_resolved': bool(remote_resolved),
+        'positive_control_fired': bool(close_resolved),
+        'outcome': outcome(close_resolved, remote_resolved),
+        'remote_resolved_without_its_positive_control': bool(
+            remote_resolved and not close_resolved),
+    }

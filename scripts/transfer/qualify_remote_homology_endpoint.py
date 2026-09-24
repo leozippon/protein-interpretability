@@ -169,7 +169,6 @@ def main() -> None:
             f'{CENSUS_MGNIFY_BACKGROUNDS_WITH_A_SERIES_AND_A_WILD_TYPE_ROW}')
 
     draw = declared_draw(with_wildtype, size=BACKGROUND_DRAW, seed=BACKGROUND_DRAW_SEED)
-    drawn = set(draw)
     print(f'{len(with_wildtype)} MGnify backgrounds with a series and a wild-type row; '
           f'declared draw {len(draw)}', flush=True)
 
