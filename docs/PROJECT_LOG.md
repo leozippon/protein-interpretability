@@ -3109,3 +3109,143 @@ Transformers 4.50 `generate` is not used for those two arms. Token sampling read
 ## 2026-09-18 — Generate retry 3 launched beside homologous-context scores
 
 Freeze `20260918223307_9935857a1d58` is sampling RITA-xl and ProteinGLM on cards 1–2. Homologous-context scores continue from `20260918221340_b43d0e29e7de` on card 3. No numbers. No pod names recorded.
+
+## 2026-09-19 — Replace the structure predictor with ESMFold2
+
+The live structure contract is ESMFold2. The runner refuses v1 weights. Summary and the audit no longer carry v1 CA-pLDDT cells as current results. Folding stays out of `ct`. No new structure numbers. No pod names recorded.
+
+## 2026-09-19 — Isolated ESMFold2 runtime and weights
+
+The folding venv imports `EsmFold2Model`. The offline checkpoint is staged. Sampling follows the checkpoint (`num_loops=3`, 14 steps, 32 samples), not the empty-config default. No fold numbers. No pod names recorded.
+
+## 2026-09-19 — Copy ESMFold2 to GPFS and start the re-fold
+
+Runtime overlay and weights are on GPFS. Freeze `20260919155754_24c2c2f83a1a` is folding the pilot first. No structure numbers. No pod names recorded.
+
+## 2026-09-19 — CPU wrap-up while ESMFold2 continues
+
+MegaScale Galactica/InstructProtein and the homologous-context expansion are in summary. Native Pfam/UniRef50 annotation is running on CPU. Folding has reached the 3B native slot. No generated structure numbers. No pod names recorded.
+
+## 2026-09-19 — Release three cards; write U2/U5; ESMFold2 gate failed
+
+Occupancy is one H200. The seventeen native ledgers are joined. Any-Pfam and UniRef50 medians are in `summary.md`. ESMFold2 re-fold of the frozen cohorts is complete; ProLLaMA’s natural control attains calibration and ZymCTRL does not (long-sequence OOM). Generated contrasts stay unread. The runner now splits the 32 diffusion samples across cards. The six long ZymCTRL controls folded; both natural calibrations attained. Occupancy is two H200s. No pod names recorded.
+
+## 2026-09-20 — Start the EXP-R2-246 ESMFold2 expansion
+
+Working-tree freeze `20260920012718_b25862ef372d` queued 17 generate-written structure subsets as two 1-GPU sequence shards. Folds are running, not complete. No structure numbers. No pod names recorded.
+
+## 2026-09-20 — Amend text-aa-fp32-v1 and implement the string-control door
+
+User order: score all thirteen pure-text checkpoints as ProteinGym amino-acid string controls, including merged BPE, the same token-sum used for ProtGPT2. Freeze `20260920022101_336456a6df76` launched the queue on a second two-card hold. Census is running. No scores. Occupancy is four H200s. No pod names recorded.
+
+## 2026-09-20 — Write EXP-R2-246 U3/U4 into the summary
+
+Freeze `20260920012718_b25862ef372d` finished 34/34 folds. CPU analysis wrote generation-minus-own-shuffle contrasts and all-attempt event estimates for the seventeen expansion checkpoints. Shared natural calibration attained. Galactica-125M remains 1 pair and has no 95% interval. Census `results/transfer/s48_u3_u4_census.json`. EXP-R2-247 was not started. No pod names recorded.
+
+## 2026-09-20 — Start Qwen2.5-32B beside the running 7B/8B scores
+
+The seventeen expansion U3/U4 rows are in `summary.md`. Qwen2.5-32B is scoring on the fold hold from freeze `20260920022101_336456a6df76`, in parallel with Qwen2.5-7B and Qwen3-8B-Base. Occupancy remains four H200s. No panel scores written. No pod names recorded.
+
+## 2026-09-21 — Release two idle H200s
+
+The hold that finished Qwen2.5-7B and Qwen3-8B-Base was idle and was released. Qwen2.5-32B continues on the remaining two-card hold. Occupancy is two H200s. No pod names recorded.
+
+## 2026-09-21 — Thirteen text-AA scores exist; analyse running
+
+Qwen2.5-32B finished (217 assays, no instrument failure). CPU analyse of all thirteen scores is running. No panel numbers written. Occupancy is two H200s. No pod names recorded.
+
+## 2026-09-21 — Text-AA numbers and EXP-R2-247 coefficients in summary
+
+Thirteen text-AA analyse numbers are in `summary.md`. EXP-R2-247 associated the already-recorded gate, scoring, generation, and declared-size seats; 34 pooled pairs have coefficients and none remain pending. Artefact under `results/transfer/s50_cross_measure/`. Occupancy is two H200s. No pod names recorded.
+
+## 2026-09-21 — Unconditional near-duplicate groups in summary
+
+The frozen 800-attempt ledgers now have a near-duplicate-group census in `summary.md` §无条件生成. No new samples. Not an EXP-R2-247 axis. Occupancy is two H200s. No pod names recorded.
+
+## 2026-09-21 — Define the Direction-1 publication design
+
+Read the full canonical audit and added its current Direction-1 publication-design section: a bounded capability interpretation, claim-to-artifact reconciliation, family-disjoint confirmation, fixed native-decoding sensitivity, blinded exact-sequence biological validation and a prospective predictor of biological outcomes. Matched training remains conditional on a causal modality claim. The section links publication precedents, distinguishes scientific judgment from journal rules and leaves historical preregistrations unchanged. This is a documentation/design update, not a new model experiment; no model jobs launched. Existing working-tree changes were preserved. Reconciled the audit’s current status and the Direction-1 overview in `summary.md`: current ESMFold2 outputs and structure-dependent R247 associations are reported results with unresolved local row-level replay/provenance, rather than pending computation or a fully local current reproduction package. The ProGen3 R242 DMS aggregate replaces the historical August values: the tracked marker-span manifest and commits explain the residue-only scored-span and self-check repair. Local per-assay payloads support replay; the remaining gap is the terminal queue/status receipt and dated experiment-log reconciliation. Corrected prediction-row versus generated/shuffle-pair accounting and retained historical v1 outputs as retired. The summary now organizes the evidence and proposed main figures around distinct capability questions, includes the ordered confirmation plan, and preserves the Direction-2/3 experimental sections. The publication plan also requires evaluator-version binding, limits alignment no-hit claims to the declared search, and names homologous-context discrimination as within-target paired concordance; it does not infer training-corpus exclusion from corpus size or a causal copying mechanism from that statistic. No new biological result or journal acceptance claim is asserted. The audit also now records the completed thirteen-arm text-AA analysis and distinguishes its 211-assay common support from native per-model supports and its BPE string controls from the residue-aligned subset. Completed the full-text review of repository documentation, source, scripts, tests, operational helpers and configuration/manifest support files, with the reviewers' coverage reconciled against the tracked/nonignored inventory. Selected evidence records were reviewed; raw experiment arrays, cohort datasets, storage/checksum inventories, runtime state and ignored data were not exhaustively read. The final independent acceptance review and whitespace validation passed; no scientific computation was run for this review.
+
+## 2026-09-21 — Reorganize the Direction-1 summary for scientific reading
+
+At the user's request, revised `summary.md` through Direction 1 in fluent Chinese, using the [Nature Computational Science article guidance](https://www.nature.com/natcomputsci/content) and an [example research article](https://www.nature.com/articles/s43588-025-00823-8) as editorial references. The overview now progresses from motivation and comparison design to question-led findings, interpretation and proposed confirmation studies; it defines central metrics and leaves detailed publication planning in the canonical audit. Existing quantitative results, evidence limitations and experiment statuses were retained. Independent editorial acceptance, numeric and link checks, and whitespace validation passed; comparison against the pre-edit snapshot confirmed that Direction 2 and the entire following suffix are byte-identical. Local resource checks preceded the documentation work; no experiments or GPU jobs were launched, and unrelated working-tree changes were preserved.
+
+## 2026-09-21 — Prepare the Nature Computational Science manuscript
+
+Prepared a new local manuscript in `manuscript/nature-computational-science/` using the official Springer Nature December 2024 template with its unchanged Nature bibliography style. Downloaded the official template archive and a Nature Computational Science reference paper, retained source URLs and SHA-256 hashes, and wrote original English prose around the current Direction-1 findings. The paper separates mutation ranking, native generation, homologue-context effects and training-lineage comparisons. Retained evidence tables include supports, intervals, source paths and source hashes. A read-only H200 retrieval recovered the completed thirteen-checkpoint text-amino-acid analysis aggregate with matching checksums; cluster health and local resources were checked, and no experiment or GPU job was launched. Structural aggregates remain explicitly provisional because current ESMFold2 prediction-level provenance is incomplete. Retired ESMFold v1 figures and older ProGen3 marker-scoring results are not reused as current evidence.
+
+The review package contains editable LaTeX, bibliography, two new vector statistical figures with source data and plotting code, the main PDF, Supplementary Information, verified reference records, template provenance and build/validation scripts. Final validation records 14 main PDF pages, six supplementary pages, 143 abstract words, approximately 2,268 main-text words, four main displays, three supplementary tables and 16 cited references. Citation and label checks pass with no overfull boxes. Every main and supplementary page is visually inspected; the source ZIP also rebuilds both PDFs and passes validation after extraction into a clean directory. Independent scientific and editorial acceptance is complete. Final author contributions, declarations, approval and public data/code release arrangements remain author-side preparation items, and no submission is made. Existing manuscript ignore rules and unrelated working-tree changes are preserved; the older `manuscript/direction-one` files are unchanged.
+
+## 2026-09-21 — Expand the manuscript analysis and six-figure Article
+
+Revised `manuscript/nature-computational-science/` around the user's request for relationships across the accumulated Direction-1 results. The new exploratory analysis replays shared variant supports on 201 assays in 163 families, joins ten checkpoints to their retained generation census, and reports leave-lineage-out sensitivity. A separate fifteen-checkpoint join describes homologue-context concordance against generation recognition. The report `cross-result-findings.md`, analysis plan, derived tables and archived analysis script retain the scientific details and limitations. Substantive analysis runs through the H200 runner; resource checks and its configuration/results are recorded separately in the experiment log. No new model inference or biological validation is implied. Structure-dependent findings remain provisional and outside the main figures.
+
+The revised main manuscript contains approximately 2,941 main-text words under the documented counter, 133 abstract words, exactly six figures, no main tables and 40 cited references. Main tables move to the eight-page Supplementary Information; the main PDF has 20 template pages. All six figures are regenerated from retained or newly derived source tables as vector PDF/SVG and PNG previews. Their endpoints retain their own denominators, supports and justified uncertainty. The main and supplementary PDFs pass citation, label and overflow checks. Visual inspection covers all 28 pages and the six artworks; supplementary table placement and duplicate PDF anchors are repaired. The 57-file source ZIP extracts into a clean temporary directory, rebuilds both PDFs and passes the same validation. Its analysis script has a provenance hash and separate raw-input instructions, while ordinary typesetting uses only included tables. The official template files, historical manuscript and unrelated working-tree changes remain untouched; no submission or public release occurs.
+
+## 2026-09-21 — Revise the existing Direction One manuscript for NCS
+
+Reworked the local `manuscript/direction-one` package as a Nature Computational Science Analysis. The paper now connects native information qualification, mutation ranking with sequence baselines, text amino-acid controls, full-attempt generation and homologous-context effects. It preserves task-specific populations and avoids a general capability axis, causal scaling claim or measured function for generated sequences. Retired ESMFold v1 artwork and unreconciled ESMFold2 numerical endpoints stay outside the submission scope. Earlier interpretability, stability, transfer and biological-knowledge experiments appear as qualified supplementary history. The canonical audit gains a brief current-package pointer; older references to the absent `manuscript/nature-computational-science` directory remain identified as historical.
+
+The requested Luna max experiment review and initial reader handoffs are preserved in `manuscript/direction-one/editorial-review/ncs-20260921`, including the experiment coverage matrix and explicit distinctions between direct review, full-text streaming, inventories and unreviewed raw material. Astra medium review resolves material scope and reproduction wording. Final local format/provenance validation and root visual acceptance pass for the 18-page main PDF and six-page supplement, with 2,219 main-text words, 142 abstract words, four main figures, one main table and 34 references. Updated submission guidance, cover letter, reporting answers and reproduction notes preserve pending author verification and data or reviewer access. Existing user changes and historical manuscript/editorial assets are preserved. This work launches no new model experiment and makes no Git commit, push, public deposit or journal submission.
+
+The whitelisted local author-review ZIP contains 48 current files and excludes obsolete artwork, private raw results, runtime logs and editorial history. Its per-file manifest verifies after clean extraction; the included CSVs regenerate all five figures and both PDFs compile successfully from the extracted package. Full raw-artifact provenance validation remains repository-only because the private result tree is not included. The archive receipt retains its SHA-256 and these boundaries.
+
+The separate experiment-log numbering suite reports 18 passed and one failed on the existing 240 → 246 introduction. Reconstructing the starting log from Git HEAD plus the saved pre-task patch reproduces the same failure; its 2,949,491 bytes are an unchanged prefix of the current log (SHA-256 `65458c11c0709026aacfb62535d12167709708106b52608e2b0de211a078dc1a`). The first 246 heading already occurs at baseline line 20,265. The NCS append adds no numbered experiment heading. The dated `repository-validation.json` records this pre-existing failure separately from the passing manuscript and archive checks. Historical numbering and tests remain unchanged.
+
+## 2026-09-22 — Restore the preferred manuscript title and framing
+
+At the user’s request, restore “Behavioral evidence for learned biology in protein sequence generation” in the main manuscript, supplement, cover letter and README, with small abstract and introduction framing changes. Numerical Results, Methods, figures, source tables and evidence exclusions remain unchanged. Both PDFs compile and default manuscript validation passes: 2,234 main-text words, 145 abstract words, five displays, 34 references, 18 main pages and six supplementary pages. Root inspects main pages 1–2 and supplementary page 1; the revised titles and framing fit cleanly, and log scans find no unresolved references, missing glyphs or oversized floats. This changed-page check does not replace the preserved 21 September full scientific review.
+
+The new 48-file `manuscript/direction-one/delivery/ncs-20260922-author-review.zip` uses the same safe whitelist, records current file hashes and preserves the previous archive. Its dated acceptance receipt records the limited revision scope and pending author verification and data or reviewer access. Resource inspection at 15:04 Asia/Shanghai reports about 517 GiB disk and 437 GiB memory available. No GPU workload, inference, analysis, new experiment or additional test is run for this title-only update.
+
+## 2026-09-23 — Direction-1 explanatory follow-up initiated
+
+User authorizes homolog-context mutation rescue, incremental profile prediction, failure-condition analysis, residue-budget generation diagnostics, and lower-priority ProLLaMA component swaps. Three delegated reviews cover disjoint implementations. Existing working-tree changes are preserved. Resource inspection finds 438 GiB local disk available and 427 GiB available RAM; no local substantive GPU work is launched. H200 health reaches `Health=ok`; the selected four-device allocation and a separate one-device allocation each expose idle H200s with 143771 MiB per card. Other cluster allocations are not treated as available resources. Scientific designs and execution receipts will be recorded before result claims.
+
+## 2026-09-23 — Explanatory follow-up implementation and first admitted analysis
+
+Added paired context-rescue scoring with retained mutation vectors, family-held-out profile-increment analysis, historical failure-condition regressions, orthogonal generation failure records and residue-budget sampling, and a lower-priority eight-combination ProLLaMA component intervention. New detailed protocols and `docs/D1_EXPLANATORY_FOLLOWUP.md` define the exploratory scope and interpretation limits. Eleven focused tests pass, including held-family label leakage, score identities, undefined correlations and generation termination distinctions. Historical failure-condition analysis completed on H200 CPU and its output was digest-verified locally; `docs/D1_PROFILE_INCREMENT_RESULTS.md` records results and limitations. ProteinGLM passed remote scoring smoke checks and its main context job was dispatched; other smoke and generation jobs remain active. No completion claim is made for outstanding GPU experiments.
+
+## 2026-09-23 — Canonical follow-up status integrated
+
+The canonical audit current programme and `summary.md` now point to the explanatory follow-up record and prioritize the user-authorized five experiments over the earlier prospective experiment sequence. This is a narrow integration preserving historical findings, retractions and preexisting local edits. Completed historical failure-condition results are distinguished from ongoing context/profile analyses and component controls. Generation ledgers have since been admitted and their detailed report is being finalized.
+
+## 2026-09-23 — Generation admission and component redesign
+
+All four residue-budget generation cells and four historical decompositions are reconciled and documented. Exact checkpoint inventory establishes unchanged ProLLaMA embeddings and LM heads, so the coarse eight-combination intervention reduces to two parameter configurations. Its redundant hybrid jobs are removed. A bounded attention/MLP refinement is fixed before native endpoint results: two crossed hybrids on 32 label-blind selected families, using released primary-job GPUs and contemporaneous native controls. Generation contrast uncertainty will preserve shared seed batches. The four context runs and native controls continue; their scientific outcomes are not yet reported.
+
+## 2026-09-23 — Explanatory follow-up completed
+
+Completed all five requested experiment groups on the project H200 allocation, including the revised attention/MLP component experiment and retained-output length/repetition census. All score and analysis artifacts are checksum-admitted, with detailed results for context rescue, profile increments/failure conditions, generation diagnostics and component interventions. The main explanatory distinctions are genuine native-baseline rescue versus reversal of prefix harm, complementary prediction despite standalone profile deficits, and generation changes whose mutation-component attribution remains unresolved. Low-identity support remains insufficient for interval estimation. The canonical current programme and user overview now distinguish completed evidence from unsupported mechanistic conclusions; historical findings and unrelated working-tree changes are preserved. All production jobs have exited and the five project H200s are idle at final inspection.
+
+## 2026-09-23 — Readout hypothesis experiment started
+
+Begin the newly authorized sequence of discriminating experiments with frozen representations versus likelihood-based readouts. Reuse the existing diagnostic mutation draws, add the text-parent lineage control, and enforce matched labels and family-held-out evaluation. Preserve the completed explanatory follow-up and unrelated working-tree changes.
+
+## 2026-09-23 — Correct ProGen3 independent-sequence batching
+
+Readout validation exposes a learned sequence-identifier error in the shared stage-46 batched forwarding wrapper. Correct the independent-row identifiers and add a regression test. Withdraw the two affected historical ProGen3 stage-46 expansion verdicts pending remeasurement, while retaining the recent singleton context-rescue findings. Remaining reduced-precision batching differences require singleton ProGen3 extraction in the new readout study.
+
+## 2026-09-23 — Limit active work to the readout diagnostic
+
+The user explicitly requests completion of only the Readout experiment before any broader follow-up. Preserve its frozen primary comparison, add preregistered split-seed robustness checks, and leave the information-hierarchy plan as an unexecuted draft.
+
+## 2026-09-23 — Complete the frozen-representation readout experiment
+
+Complete five H200 feature-extraction jobs and 18 prespecified readout fits, then admit their immutable artifacts and identical common-support folds. Record the model-specific native-likelihood and matched-baseline comparisons in `docs/D1_READOUT_RESULTS.md`. ProteinGLM has a small representation increment across all three splits; ProGen3 is more split-sensitive; the lineage representations improve on native likelihood without improving the matched profile/likelihood/sequence baseline. Retain the identity-cluster grouping and readout limitations. Leave all broader follow-up experiments unexecuted.
+
+## 2026-09-23 — Expand readout coverage before further biological experiments
+
+The user authorizes the available model panel, preserving both representation-minus-likelihood and representation-augmentation contrasts. Extend native protein/joint and literal-AA text adapters, retain explicit BPE/formatting/first-byte semantics, and add an independently annotated EC-conditioned ZymCTRL subset. Preserve the original five-model results and the fixed 201-assay anchor; use matched refits for the conditional panel and native-support sensitivities where eligibility differs. Qualify numerical precision before production and use all five project H200s. Higher-order biological experiments remain unexecuted.
+
+## 2026-09-23 — Qualify the MegaScale double-mutant label instrument before pairwise inference
+
+Execute the protocol's measurement-only label qualification with no model quantity involved, adding `scripts/transfer/qualify_megascale_label_instrument.py` and `tests/test_megascale_label_instrument.py`. Report the result in `docs/D1_PAIRWISE_LABEL_INSTRUMENT.md` and point the pairwise protocol to it. Add the identical per-channel confidence rule the pre-registered support was missing, retain the excluded-cohort accounting, and freeze the admission decision and its scope: reproducible nonadditivity at source-selected site pairs in resolvable stability states, measured against the mandatory nonlinear-additive control, with 499 site pairs rather than 99,510 cycles as the independent unit.
+
+## 2026-09-24 — Fill the composition, local-motif and profile rungs from the admitted readout cohort
+
+Execute the information-hierarchy design's retained crossed comparison, reusing the admitted five-arm readout artifacts read-only rather than scoring any model again. Add `scripts/transfer/analyse_crossed_controls.py`, `src/transfer/crossed_controls.py` and its tests, and report in `docs/D1_HIERARCHY_CROSSED_CONTROLS.md`: the representation increment over the mutation-local profile control stays above zero at all three split seeds for ProGen3-3B and ProteinGLM alone, the declared dipeptide/tripeptide block fails as a control because it does not transfer across held-out wild-type clusters, and the tokenisation interface descriptors change nothing. Keep the verdict bounded to the declared controls, the label budget and the compressed linear readout class.
+
+## 2026-09-24 — Floor every interval-publishing resampler and find them by what they do
+
+Close the discovery gap the resampler inventory recorded against itself. `profile_increment.family_regression` applied no unit floor and published 95% family-bootstrap coefficient intervals at any family count; it now refuses below the shared eight-unit floor and refuses when fewer than 95% of the requested draws yield an identifiable design, which eight families do not. The recorded D1 profile-increment analysis ran at 163 to 174 families per arm with all 2,000 draws identifiable, so every published coefficient interval replays unchanged to seventeen significant digits and no recorded result is affected. Unify five own-literal eights onto `statistics.MINIMUM_BOOTSTRAP_UNITS`, and replace the inventory's name matching — which missed ten interval publishers — with an abstract-syntax rule over drawing with replacement and publishing a percentile, declared as a four-way partition with a negative-path test that a newly added interval publisher must fail. Make `h200_env.sh` honour a caller's `TRANSFER_PYTHON` instead of overwriting it, retaining the pod-image fallback so a campaign row that names no interpreter behaves as before (L51).

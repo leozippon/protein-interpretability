@@ -63,12 +63,14 @@ HEADING = re.compile(r"^##\s+(\d{4}-\d{2}-\d{2})\s+—\s+EXP-R2-(\d+)", re.M)
 
 #: Violations of the rule that already exist, as `(previous id, id, why)`.
 #:
-#: Recorded rather than repaired. All of them are the numbering drift of the
-#: 2026-07-30 to 2026-08-05 period, when ids were reserved in blocks and many
-#: were assigned to work that never headed an entry of its own. Nothing later
-#: appears here: every out-of-order id since then has been a continuation of an
-#: experiment already in the log, which the first-occurrence rule admits by
-#: construction rather than by declaration.
+#: Recorded rather than repaired. All but the last are the numbering drift of
+#: the 2026-07-30 to 2026-08-05 period, when ids were reserved in blocks and many
+#: were assigned to work that never headed an entry of its own. Every other
+#: out-of-order id since then has been a continuation of an experiment already in
+#: the log, which the first-occurrence rule admits by construction rather than by
+#: declaration; the one exception is the 2026-09-16 block, which is the same
+#: reservation habit rather than a stale tail read, and is declared below with
+#: the artefacts that carry its five ids.
 KNOWN_VIOLATIONS: tuple[tuple[int, int, str], ...] = (
     (66, 68, "ids reserved in a block during the 2026-07-30 audit"),
     (68, 72, "as above"),
@@ -79,6 +81,17 @@ KNOWN_VIOLATIONS: tuple[tuple[int, int, str], ...] = (
     (93, 92, "EXP-R2-092 was launched under a sub-heading inside EXP-R2-091's entry, so its id first heads an entry at its results"),
     (93, 115, "the 2026-08-04 block; 094 to 114 head no entry of their own"),
     (115, 128, "as above, 116 to 127 likewise"),
+    (
+        240,
+        246,
+        "EXP-R2-241 to 245 were taken on 2026-09-16/17 by the re-measurement "
+        "manifests that still carry them -- campaign_r241_protgpt3_native_"
+        "rendering.tsv, campaign_r242_progen3_marker_span.tsv, campaign_r243_"
+        "rita_eos_bounded.tsv, campaign_r244_s29_designed_referent.tsv and "
+        "campaign_r245_s29_progen3_progen2.tsv -- and each was reported under the "
+        "measurement it produced rather than under its own id, so none of the "
+        "five heads an entry. The ids are not free and are not reassigned",
+    ),
 )
 
 
