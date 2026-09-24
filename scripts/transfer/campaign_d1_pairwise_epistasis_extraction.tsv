@@ -1,0 +1,23 @@
+# D1 pairwise epistasis: full-panel singleton extraction of the frozen 64-background
+# double-mutant cohort (8,192 cycles, 12,977 deduplicated sequences, 779,664 residues).
+# The roster is the complete pre-declared unconditioned Readout panel of 33 checkpoints,
+# frozen in src/transfer/pairwise_epistasis.py:ROSTER before any pairwise scoring and
+# not a function of any outcome. ZymCTRL is excluded as a conditioned interface.
+#
+# Scheduling only: one lane per GPU, arms run serially inside a lane, lanes run
+# concurrently across the four allocations. Lane totals are balanced against the
+# label-blind throughput qualification measured on three backgrounds per arm
+# (4.6 sequences/s for galactica-30b to 183 sequences/s for gpt2).
+#
+# allocation	card	arms (in lane order)
+4gpu	0	galactica-30b
+4gpu	1	qwen2.5-32b gpt2-large
+4gpu	2	progen2-xlarge gpt2-xl
+4gpu	3	qwen3-8b-base progen2-large
+ready-4gpu	0	llama-2-7b llama-3.2-3b progen2-base
+ready-4gpu	1	prollama rita-xl bygpt5-medium-en
+ready-4gpu	2	prollama-stage-1 protgpt3-1.3b progen2-medium
+ready-4gpu	3	progen3-3b galactica-1.3b instructprotein qwen2.5-0.5b protgpt2
+ready-2gpu	0	qwen2.5-7b qwen2.5-0.5b-instruct gpt2 progen3-112m
+ready-2gpu	1	galactica-6.7b progen2-small galactica-125m bygpt5-small-en
+ready-1gpu	0	proteinglm-7b-clm gpt2-medium dialogpt-small bygpt5-base-en
