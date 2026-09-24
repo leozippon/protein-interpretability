@@ -1,0 +1,7 @@
+# Recovery lane A. The ProLLaMA Stage 2 cell of lane g10 exited nonzero when a
+# concurrent campaign took 115 GiB of the single-GPU allocation's only card, and this
+# re-runs it on a card no other campaign holds. Identical arm, precision setting, batch
+# size, cohort, gates and label, so it writes the same canonical manifest the production
+# lane would have written and its measurement identity is unchanged.
+# slot key gpu stage label env expect args
+1	depth	0	extract_depth_readout.py	depth_extract_prollama	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4	manifest_depth_prollama.json	--arm prollama --dtype float32 --batch-size 1 --budget 1024 --max-score-drift 0.001 --max-feature-drift 0.001 --cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/context_mutation_rescue/cohort.json

@@ -1,0 +1,9 @@
+# Recovery lane B. Three cells a busy card refused rather than co-tenanted: ProtGPT3-1.3B
+# and GPT-2 from lane g10, whose only card a concurrent campaign had taken, and ProtGPT2
+# from lane g3, whose card the same campaign took as the lane's previous cell released it.
+# The refusals were left in force; this re-runs the three on a card no other campaign
+# holds, with identical arms, precision settings, batch sizes, cohort, gates and labels.
+# slot key gpu stage label env expect args
+1	depth	1	extract_depth_readout.py	depth_extract_protgpt3_1_3b	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4	manifest_depth_protgpt3-1.3b.json	--arm protgpt3-1.3b --dtype float32 --batch-size 1 --budget 1024 --max-score-drift 0.001 --max-feature-drift 0.001 --cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/context_mutation_rescue/cohort.json
+2	depth	1	extract_depth_readout.py	depth_extract_protgpt2	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4	manifest_depth_protgpt2.json	--arm protgpt2 --dtype float32 --batch-size 8 --budget 1024 --max-score-drift 0.001 --max-feature-drift 0.001 --cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/context_mutation_rescue/cohort.json
+3	depth	1	extract_depth_readout.py	depth_extract_gpt2	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4	manifest_depth_gpt2.json	--arm gpt2 --dtype float32 --batch-size 8 --budget 1024 --max-score-drift 0.001 --max-feature-drift 0.001 --cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/context_mutation_rescue/cohort.json

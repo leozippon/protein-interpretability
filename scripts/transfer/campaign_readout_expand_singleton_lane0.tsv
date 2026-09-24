@@ -1,0 +1,2 @@
+# ProGen2 matched singleton precision qualification.
+1	readout	0	extract_frozen_readout.py	readout_expand_singleton_progen2_xlarge	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4	manifest_progen2-xlarge.json	--arm progen2-xlarge --dtype float32 --batch-size 1 --budget 1024 --cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/context_mutation_rescue/cohort.json --assay-limit 3 --smoke-variants 3 --smoke-length-strata

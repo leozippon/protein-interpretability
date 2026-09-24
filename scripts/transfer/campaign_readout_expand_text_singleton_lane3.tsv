@@ -1,0 +1,2 @@
+# Singleton qualification after batch8 score-drift failures.
+1	readout	3	extract_frozen_readout.py	readout_text_singleton_qwen3_8b_base	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=4 MKL_NUM_THREADS=4	manifest_qwen3-8b-base.json	--arm qwen3-8b-base --dtype float32 --batch-size 1 --budget 1024 --cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/context_mutation_rescue/cohort.json --assay-limit 3 --smoke-variants 3 --smoke-length-strata
