@@ -13,12 +13,13 @@ Grouped by the module they defend.
 
 from __future__ import annotations
 
+import ast
 import contextlib
 import inspect
 import json
 import math
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import fields, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -35,8 +36,16 @@ if str(REPO_ROOT) not in sys.path:
 from src.transfer import (  # noqa: E402
     channels,
     circuits,
+    collision_null,
+    component_statistics,
+    contact_enrichment,
     context_homologue,
+    crossed_group_interval,
     designed_referent,
+    families,
+    fold_discordance,
+    generation_biology_analysis,
+    generative_control,
     homology,
     induction_robustness,
     information_bootstrap,
@@ -46,6 +55,8 @@ from src.transfer import (  # noqa: E402
     pathways,
     prediction_addressed,
     probes,
+    profile_increment,
+    proteingym_higher_order,
     profiles,
     relational,
     statistics,
@@ -2207,6 +2218,115 @@ def _paired_family_bootstrap_floor(n: int) -> dict[str, object]:
     }
 
 
+def _contact_enrichment_floor(n_groups: int) -> dict:
+    """``contact_enrichment.two_stage_bootstrap`` over ``n_groups`` held groups.
+
+    Each group carries one contact and one non-contact site pair in the same
+    coarsened cell, so both arms are occupied at every group count and the only
+    thing the floor sees is the number of outer units.
+    """
+
+    rows, treated = [], []
+    for index in range(n_groups):
+        for contact in (True, False):
+            rows.append(
+                {
+                    "group": f"nat-{index:03d}",
+                    "site_pair": f"{index}:{int(contact)}",
+                    "separation": 12,
+                    "rsa": [0.2, 0.3],
+                    "hydrophobic_count": 1,
+                    "charged_count": 0,
+                    "hydropathy_mean": 1.0,
+                    "length": 60,
+                }
+            )
+            treated.append(contact)
+    return contact_enrichment.two_stage_bootstrap(
+        rows,
+        np.linspace(0.0, 1.0, len(rows)),
+        np.asarray(treated),
+        rsa_boundary=0.25,
+        draws=200,
+        seed=0,
+    )
+
+
+def _crossed_group_interval_floor(n_sequence_groups: int) -> dict[str, object]:
+    """``crossed_group_interval`` over ``n_sequence_groups`` sequence groups.
+
+    Sixteen pairs on sixteen substituted-symbol groups, so the symbol factor is
+    always above the floor and the only thing under test is the sequence factor.
+    Every record carries one scored token per pair, so the Kish effective count
+    equals the group count and the floor sees the group count itself. The live
+    schema says ``refused`` / ``refusal`` rather than ``degenerate`` /
+    ``degenerate_reason``; this adapter maps it onto the contract without
+    listing the resampler as a gap, as ``_paired_family_bootstrap_floor`` does.
+    """
+
+    n_pairs = 16
+    codes = np.asarray([1] * 8 + [-1] * 8)
+    arm_sum = np.zeros((n_pairs, n_sequence_groups))
+    ceiling_sum = np.zeros((n_pairs, n_sequence_groups))
+    offset = np.arange(n_sequence_groups) * 50.0
+    for pair in range(n_pairs):
+        signal = 1.0 if codes[pair] > 0 else 0.0
+        arm_sum[pair] = signal + offset
+        ceiling_sum[pair] = (1.0 - signal) + offset
+    block = crossed_group_interval.crossed_group_interval(
+        codes=codes,
+        symbol_groups=np.arange(n_pairs),
+        sequence_groups=np.arange(n_sequence_groups),
+        arm_sum=arm_sum,
+        arm_count=np.ones((n_pairs, n_sequence_groups)),
+        ceiling_sum=ceiling_sum,
+        ceiling_count=np.ones((n_pairs, n_sequence_groups)),
+        seed=3,
+        n_draws=200,
+    )
+    return {
+        "degenerate": block["refused"],
+        "degenerate_reason": block.get("refusal"),
+        "difference_ci95": block.get("difference_ci95"),
+    }
+
+
+def _family_regression_rows(n_families: int) -> list[dict[str, float | str]]:
+    """``n_families`` family means with generic, non-collinear covariates."""
+
+    generator = np.random.default_rng(7)
+    return [
+        {
+            "cluster": f"F{index}",
+            "model_minus_lookup": float(generator.normal()),
+            **{
+                name: float(generator.normal())
+                for name in (
+                    "log10_neff",
+                    "max_identity_over_query",
+                    "profile_entropy",
+                    "log10_length",
+                )
+            },
+        }
+        for index in range(n_families)
+    ]
+
+
+def _family_regression_floor(n_families: int) -> dict[str, object]:
+    return profile_increment.family_regression(
+        _family_regression_rows(n_families),
+        [
+            "log10_neff",
+            "max_identity_over_query",
+            "profile_entropy",
+            "log10_length",
+        ],
+        bootstrap=2000,
+        seed=20260923,
+    )
+
+
 #: Every resampler in ``src.transfer`` that reaches the shared unit floor, with a
 #: call one unit below the floor and one exactly on it.  ``raises`` is required
 #: of the functions whose unit count is a configuration choice, or whose return
@@ -2234,6 +2354,32 @@ FLOOR_RESPECTING_RESAMPLERS: dict[str, dict[str, object]] = {
         "below": lambda n: information_bootstrap.bootstrap_arms(
             [_information_arm(n)], seed=0, n_bootstrap=400
         ).record["arms"]["arm"]["unit_floor"],
+    },
+    # The resampling unit is the **site tuple**, which is the level the estimand
+    # lives at and the level the ProteinGym cube support is thin at. Every cube on
+    # one site tuple reuses that tuple's whole lower-order series -- its wild type,
+    # its singles and all its intermediate subsets -- so cubes on one tuple are not
+    # independent draws, and a bootstrap over cubes would be wrong by the amount of
+    # that reuse. On the Wu 2016 four-site library that is 25,035 complete order-3
+    # cubes resting on C(4, 3) = 4 site triples, so a cube-level interval would come
+    # out roughly two orders of magnitude too narrow; the function therefore refuses
+    # an interval there, at 4 units, rather than reporting one.
+    #
+    # ``degenerate`` because the unit count is a measured property of an assay's
+    # combinatorial design rather than a configuration choice, and the record has
+    # somewhere to carry the verdict. The point estimates survive the refusal -- the
+    # two-channel decomposition of a real support is still the finding when the
+    # support is too thin to bound -- and the interval fields are absent rather than
+    # null-valued, so a reader cannot quote a bound that was never computed.
+    "proteingym_higher_order.channel_decomposition_bootstrap": {
+        "refusal": "degenerate",
+        "below": lambda n: proteingym_higher_order.channel_decomposition_bootstrap(
+            np.linspace(0.0, 1.0, 4 * n),
+            np.linspace(0.0, 1.0, 4 * n) + 0.1,
+            [(index, index + 1) for index in range(n) for _ in range(4)],
+            seed=0,
+            resamples=200,
+        ),
     },
     "statistics.paired_group_bootstrap": {
         "refusal": "raises",
@@ -2427,15 +2573,220 @@ FLOOR_RESPECTING_RESAMPLERS: dict[str, dict[str, object]] = {
         "refusal": "degenerate",
         "below": _paired_family_bootstrap_floor,
     },
+    # Two stages, and the floor binds on the outer one. The outer draw is over
+    # the held groups of the D1 pairwise cohort, which is the unit this floor is
+    # declared on; the inner draw is over the site pairs inside each drawn group,
+    # which carries no floor of its own because a background legitimately holds
+    # one site pair. Both arms of a drawn group travel together, so a contact
+    # site pair and a non-contact site pair of one background are never split
+    # across draws, and the coarsened-exact-matching weights are re-derived
+    # inside each draw rather than carried from the observed sample: weights
+    # fitted once outside the loop would hold the control arm fixed while the
+    # contact arm moved, and would understate the matching's own variability.
+    "contact_enrichment.two_stage_bootstrap": {
+        "refusal": "degenerate",
+        "below": _contact_enrichment_floor,
+    },
+    # Two crossed factors, and the floor is applied to the effective count of
+    # each. Reached by behaviour discovery rather than by name: nothing in
+    # ``crossed_group_interval`` contains "bootstrap" or "resampl", so the
+    # name-matching inventory never saw a resampler that had honoured the floor
+    # from the day it was written.
+    "crossed_group_interval.crossed_group_interval": {
+        "refusal": "degenerate",
+        "below": _crossed_group_interval_floor,
+    },
+    # ``raises``: ``analyse_profile_increment.py`` writes every coefficient
+    # interval straight into its artefact, so a degenerate marker beside one
+    # would be optional to notice. Eight families clear the unit floor and still
+    # cannot resolve this six-parameter design under resampling with
+    # replacement -- 819 of 2,000 draws are identifiable at eight and 1,737 at
+    # ten, both below ``MINIMUM_FINITE_DRAW_FRACTION`` -- so the at-floor call is
+    # declared at twelve, where 1,966 of 2,000 draws are identifiable. The unit
+    # floor is necessary here and not sufficient, and saying so is the point of
+    # the override.
+    "profile_increment.family_regression": {
+        "refusal": "raises",
+        "below": _family_regression_floor,
+        "accepts_at": 12,
+    },
 }
+
+
+def _class_interval(n_classes: int) -> dict[str, object]:
+    return generation_biology_analysis.class_interval(
+        list(np.linspace(0.0, 1.0, n_classes)), resamples=200
+    )
+
+
+def _sequence_cluster_interval(n_groups: int) -> dict[str, object]:
+    return generation_biology_analysis.sequence_cluster_interval(
+        [
+            {
+                "paired_delta": float(index) / n_groups,
+                "inclusion_probability": 0.5,
+                "near_duplicate_group": f"g{index}",
+            }
+            for index in range(n_groups)
+        ],
+        resamples=200,
+    )
+
+
+def _paired_generation_contrast(n_batches: int) -> dict[str, object]:
+    """One metric of the paired contrast over ``n_batches`` complete seed batches."""
+
+    rows = [
+        {
+            "attempt_index": index,
+            "native_complete": index % 2 == 0,
+            "any_profile_hit": index % 3 == 0,
+        }
+        for index in range(n_batches * 8)
+    ]
+    return component_statistics.paired_generation_contrast(
+        {"arm": rows}, {"arm": 1.0}, resamples=200
+    )["native_complete"]
+
+
+def _paired_rate_contrast(n_groups: int) -> dict[str, object]:
+    return generative_control.paired_rate_contrast(
+        [index % 2 == 0 for index in range(n_groups)],
+        [False] * n_groups,
+        [f"g{index}" for index in range(n_groups)],
+    )
+
+
+def _covariate_analysis(n_probes: int) -> dict[str, object]:
+    """``homology.covariate_analysis`` over ``n_probes`` probes.
+
+    Response, identity and repeat length are given independent spreads. The
+    function withholds its interval on a cohort in which one of them is
+    constant, and on one where the response is a monotone function of the repeat
+    length -- a partial correlation given a covariate that explains the response
+    exactly is undefined -- and both refusals are different ones from the unit
+    floor.
+    """
+
+    generator = np.random.default_rng(11)
+    scores = [
+        SimpleNamespace(
+            sums={"prefix_matching": np.full((1, 1), float(generator.random()))},
+            scored_positions=10,
+            repeat_symbols=8 + 3 * index,
+            record_index=index,
+        )
+        for index in range(n_probes)
+    ]
+    identities = {
+        index: float(20.0 + 60.0 * generator.random()) for index in range(n_probes)
+    }
+    record = homology.covariate_analysis(
+        scores, identities, layer=0, head=0, resamples=200
+    )
+    return {
+        "measured": record["measured"],
+        "ci": record.get("bootstrap", {}).get(
+            "partial_identity_given_repeat_length_ci"
+        ),
+    }
+
+
+#: Resamplers that reach the shared floor through the shared *constant* rather
+#: than through :func:`~src.transfer.statistics.bootstrap_unit_floor`'s record.
+#: They withhold the interval below the floor and carry their own status string,
+#: which is a frozen artefact key and therefore stays spelled out where it
+#: already is. The category exists because it is what the code shows: each of
+#: these compared against a literal ``8`` of its own until 2026-09-24, so the
+#: shared floor could have been raised without reaching any of them, and the
+#: inventory that was supposed to notice matched on function names and could not
+#: see them at all.
+#:
+#: ``below`` returns a record whose ``interval_keys`` must be absent or ``None``
+#: one unit under the floor and present at it. ``None`` in place of a spec means
+#: the floor is asserted from the source here and exercised in that module's own
+#: test file, which is recorded beside the entry rather than duplicated: a
+#: census over a real arm's forward passes does not belong in this file.
+RESAMPLERS_WITH_THE_SHARED_FLOOR_CONSTANT: dict[str, dict[str, object] | None] = {
+    "component_statistics.paired_generation_contrast": {
+        "interval_keys": ("paired_seed_batch_percentile_95",),
+        "below": _paired_generation_contrast,
+    },
+    "generation_biology_analysis.class_interval": {
+        "interval_keys": ("ci95", "ci97_5"),
+        "below": _class_interval,
+    },
+    "generation_biology_analysis.sequence_cluster_interval": {
+        "interval_keys": ("ci95", "ci97_5"),
+        "below": _sequence_cluster_interval,
+    },
+    "generative_control.paired_rate_contrast": {
+        "interval_keys": ("ci95", "ci97_5"),
+        "below": _paired_rate_contrast,
+    },
+    # The unit is the probe, and the floor arrives as ``minimum_n``'s default
+    # rather than as a comparison in the body. ``accepts_at`` for the same
+    # reason as ``family_regression``: this function already refuses when too
+    # few resamples admit a partial correlation, and at eight probes only 172 of
+    # 200 draws do against the 190 it requires. Ten admit 197 and sixteen admit
+    # all 200, so sixteen is declared here for margin rather than ten.
+    "homology.covariate_analysis": {
+        "interval_keys": ("ci",),
+        "below": _covariate_analysis,
+        "accepts_at": 16,
+    },
+    # Refuses below the constant, and its at-floor call needs a real arm and its
+    # forward passes: ``tests/test_collision_null_census.py`` exercises both
+    # ("too_few_probes_is_refused_rather_than_bootstrapped" and the census
+    # verdict) and is not duplicated here.
+    "collision_null.collision_null_census": None,
+}
+
+#: Randomised draws that publish a percentile and are **not** unit bootstraps,
+#: so the unit floor does not govern them. Declared because the behaviour rule
+#: that finds a resampler by what it does finds these too, and "the floor does
+#: not apply" has to be a recorded decision rather than an omission.
+#:
+#: ``fold_discordance.sign_permutation_contrast`` draws an independent sign per
+#: triple. The quantity is the null distribution of the contrast under a random
+#: relabelling of the two candidates, not the sampling distribution of an
+#: estimate over resampled units; it carries its own rule, ``draws >= 20``, on
+#: the number of relabellings.
+#:
+#: ``families.boundary_leakage`` subsamples cross-boundary pairs from an
+#: enumerable population to bound cost, and its ``cross_q99`` is a quantile of
+#: the scored pairs themselves rather than an interval on a statistic. It
+#: publishes no interval, and the count of pairs it scored is reported beside
+#: every quantile.
+RANDOMISED_DRAWS_THAT_ARE_NOT_UNIT_BOOTSTRAPS = frozenset(
+    {
+        "fold_discordance.sign_permutation_contrast",
+        "families.boundary_leakage",
+    }
+)
 
 #: Resamplers that do NOT reach the floor. Recorded rather than quietly left out
 #: of the loop above, because the previous version of this test asserted the
-#: property in its name and exercised no resampler at all, so the five below were
-#: invisible. Each is the same hazard in a module the repair that wrote this list
-#: did not own; ``probes.sequence_bootstrap`` resamples sequences,
-#: ``lenses.*_cluster_bootstrap`` and ``pathways.pathway_cluster_bootstrap``
-#: resample clusters, and all five guard nothing or guard ``n < 2``.
+#: property in its name and exercised no resampler at all, so the first five
+#: below were invisible. Each of those five is the same hazard in a module the
+#: repair that wrote this list did not own; ``probes.sequence_bootstrap``
+#: resamples sequences, ``lenses.*_cluster_bootstrap`` and
+#: ``pathways.pathway_cluster_bootstrap`` resample clusters, and all five guard
+#: nothing or guard ``n < 2``.
+#:
+#: ``cross_measure_association.checkpoint_bootstrap`` is here for a different
+#: reason and is the one entry that is a decision rather than an oversight. Its
+#: resampling unit is a *checkpoint*, drawn with replacement from the arms whose
+#: two seats a pair admits, and the whole pooled set is at most the twenty
+#: checkpoints its table seats -- its four lineage sets hold five, four, three
+#: and two. ``docs/D1_CROSS_MEASURE_ASSOCIATION.md`` froze ``n >= 5`` as that
+#: stage's own interval rule before any coefficient was computed, and the
+#: function implements exactly that: below five checkpoints it returns ``None``
+#: and the artefact carries the coefficient with no interval. Raising it to the
+#: shared eight would void pairs the pre-registration admits, after the numbers
+#: arrived, so the floor is not applied and the cost is recorded instead: a
+#: 95% interval over five to seven checkpoints under-covers, and no gate is read
+#: off one.
 RESAMPLERS_WITHOUT_A_UNIT_FLOOR = frozenset(
     {
         "probes.sequence_bootstrap",
@@ -2443,6 +2794,7 @@ RESAMPLERS_WITHOUT_A_UNIT_FLOOR = frozenset(
         "lenses.residue_class_cluster_bootstrap",
         "lenses.jacobian_cluster_bootstrap",
         "pathways.pathway_cluster_bootstrap",
+        "cross_measure_association.checkpoint_bootstrap",
     }
 )
 
@@ -2450,8 +2802,76 @@ RESAMPLERS_WITHOUT_A_UNIT_FLOOR = frozenset(
 FLOOR_DECLARATION = "statistics.bootstrap_unit_floor"
 
 
-def _package_resamplers() -> set[str]:
-    """Every resampling entry point in ``src.transfer``, found rather than listed."""
+#: Numpy generator methods that draw **with replacement** from a population.
+#: ``permutation`` and ``shuffle`` are absent on purpose: they reorder a
+#: population rather than resample it, which is a randomisation null and not the
+#: thing the unit floor is about.
+DRAWS_WITH_REPLACEMENT = frozenset({"integers", "randint", "choice", "multinomial"})
+
+#: Calls that turn a set of draws into a published interval endpoint.
+PUBLISHES_A_PERCENTILE = frozenset({"percentile", "quantile"})
+
+
+def _draw_and_publish_functions(sources: Iterable[Path]) -> set[str]:
+    """Functions that draw with replacement **and** publish a percentile.
+
+    The rule a name cannot evade. Discovery used to match function names
+    containing ``bootstrap`` or ``resampl``, which is a statement about what a
+    function is called; a resampler is defined by what it does. Ten functions
+    did both of these things under names the match could not see, and one of
+    them -- ``profile_increment.family_regression`` -- published 95%
+    family-bootstrap coefficient intervals at any family count while the
+    inventory that exists to catch exactly that reported no gaps.
+
+    The conjunction is the rule. Drawing alone is a sampler; a percentile alone
+    is a descriptive quantile of observed values; together they are an interval
+    whose validity depends on how many units were resampled, which is what the
+    floor governs. ``replace=False`` is excluded at the call site, because a
+    draw without replacement is not a bootstrap.
+
+    Over-inclusive by design: a randomisation null matches too, and is declared
+    in ``RANDOMISED_DRAWS_THAT_ARE_NOT_UNIT_BOOTSTRAPS`` with its reason rather
+    than filtered out by a heuristic here. Read from source rather than from
+    imported modules, so a module that cannot be imported is still inventoried.
+    """
+
+    found: set[str] = set()
+    for path in sources:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            draws = False
+            percentiles = False
+            for call in ast.walk(node):
+                if not isinstance(call, ast.Call) or not isinstance(
+                    call.func, ast.Attribute
+                ):
+                    continue
+                attribute = call.func.attr
+                if attribute in PUBLISHES_A_PERCENTILE:
+                    percentiles = True
+                elif attribute in DRAWS_WITH_REPLACEMENT and not any(
+                    keyword.arg == "replace"
+                    and isinstance(keyword.value, ast.Constant)
+                    and keyword.value.value is False
+                    for keyword in call.keywords
+                ):
+                    draws = True
+            if draws and percentiles:
+                found.add(f"{path.stem}.{node.name}")
+    return found
+
+
+def _named_resamplers() -> set[str]:
+    """Functions whose *name* says they resample, which is the weaker rule.
+
+    Kept beside the behaviour rule rather than replaced by it, because a
+    function that delegates its draw to a helper -- ``bootstrap_arms``,
+    ``lens_cluster_bootstrap`` -- is still an entry point a reader will hold to
+    the floor, and dropping the name rule would quietly retire six declared
+    entries.
+    """
 
     import importlib
     import pkgutil
@@ -2468,6 +2888,25 @@ def _package_resamplers() -> set[str]:
             if "bootstrap" in lowered or "resampl" in lowered:
                 found.add(f"{module_info.name}.{name}")
     return found
+
+
+def _package_resamplers() -> set[str]:
+    """Every resampling entry point in ``src.transfer``, found rather than listed."""
+
+    from src import transfer as package
+
+    sources = sorted(Path(package.__path__[0]).glob("*.py"))
+    return _named_resamplers() | _draw_and_publish_functions(sources)
+
+
+def _declared_resamplers() -> set[str]:
+    return (
+        set(FLOOR_RESPECTING_RESAMPLERS)
+        | set(RESAMPLERS_WITH_THE_SHARED_FLOOR_CONSTANT)
+        | set(RESAMPLERS_WITHOUT_A_UNIT_FLOOR)
+        | set(RANDOMISED_DRAWS_THAT_ARE_NOT_UNIT_BOOTSTRAPS)
+        | {FLOOR_DECLARATION}
+    )
 
 
 def test_one_bootstrap_unit_floor_is_declared_and_every_resampler_reaches_it():
@@ -2505,33 +2944,68 @@ def test_one_bootstrap_unit_floor_is_declared_and_every_resampler_reaches_it():
             assert f"below the {MINIMUM_BOOTSTRAP_UNITS}-" in (
                 refused.get("degenerate_reason") or refused.get("reason") or ""
             ), name
-        accepted = call(MINIMUM_BOOTSTRAP_UNITS)
+        # ``accepts_at`` is for the resamplers whose design imposes a second
+        # condition above the unit floor. It has to be declared per resampler,
+        # because "the floor is not sufficient here" is exactly the kind of fact
+        # a uniform at-floor call would hide.
+        accepted = call(spec.get("accepts_at", MINIMUM_BOOTSTRAP_UNITS))
         assert accepted is not None, name
         if spec["refusal"] == "degenerate":
             assert accepted["degenerate"] is False, name
+
+    for name, spec in RESAMPLERS_WITH_THE_SHARED_FLOOR_CONSTANT.items():
+        module_name, function_name = name.split(".")
+        module = sys.modules[f"src.transfer.{module_name}"]
+        source = inspect.getsource(getattr(module, function_name))
+        assert "MINIMUM_BOOTSTRAP_UNITS" in source, (
+            f"{name} compares against a floor of its own; a change to "
+            "statistics.MINIMUM_BOOTSTRAP_UNITS would not reach it"
+        )
+        if spec is None:
+            continue
+        keys = spec["interval_keys"]
+        refused = spec["below"](MINIMUM_BOOTSTRAP_UNITS - 1)
+        for key in keys:
+            assert refused.get(key) is None, (name, key)
+        accepted = spec["below"](spec.get("accepts_at", MINIMUM_BOOTSTRAP_UNITS))
+        for key in keys:
+            interval = accepted.get(key)
+            assert interval is not None, (name, key)
+            assert interval[0] <= interval[1], (name, key)
 
 
 def test_the_resampler_inventory_is_complete_and_its_gaps_are_named():
     """C7: a resampler cannot arrive, or be repaired, without a decision.
 
-    The five in ``RESAMPLERS_WITHOUT_A_UNIT_FLOOR`` are an accepted limitation,
-    not a defect that was overlooked: they live in modules outside the change
-    that fixed the others, and the honest record of that is a named list this
-    test holds to be exhaustive.  Adding a resampler fails here until it is
-    placed in one list or the other; giving one of the five a floor fails here
-    until it is moved.
+    The inventory is a partition, and every class is a recorded decision: the
+    shared floor's record, the shared floor's constant, no floor at all as an
+    accepted limitation, and a randomised draw the floor does not govern.
+    Adding a function that draws with replacement and publishes a percentile
+    fails here until it is placed in one of them; giving one of the gaps a floor
+    fails here until it is moved.
+
+    Discovery is behavioural. The previous version matched function names
+    containing ``bootstrap`` or ``resampl``, asserted completeness in its own
+    name, and reported no gaps while ten interval-publishing resamplers were
+    invisible to it -- including one that applied no floor at any family count.
     """
 
     discovered = _package_resamplers()
-    declared = (
-        set(FLOOR_RESPECTING_RESAMPLERS)
-        | set(RESAMPLERS_WITHOUT_A_UNIT_FLOOR)
-        | {FLOOR_DECLARATION}
-    )
+    declared = _declared_resamplers()
     assert discovered == declared, (
         "undeclared resamplers: "
         f"{sorted(discovered - declared)}; declared but absent: "
         f"{sorted(declared - discovered)}"
+    )
+    classes = (
+        set(FLOOR_RESPECTING_RESAMPLERS),
+        set(RESAMPLERS_WITH_THE_SHARED_FLOOR_CONSTANT),
+        set(RESAMPLERS_WITHOUT_A_UNIT_FLOOR),
+        set(RANDOMISED_DRAWS_THAT_ARE_NOT_UNIT_BOOTSTRAPS),
+    )
+    assert sum(len(entries) for entries in classes) == len(set().union(*classes)), (
+        "a resampler is declared in two classes at once, so its floor is "
+        "ambiguous"
     )
     for name in RESAMPLERS_WITHOUT_A_UNIT_FLOOR:
         module_name, function_name = name.split(".")
@@ -2541,6 +3015,58 @@ def test_the_resampler_inventory_is_complete_and_its_gaps_are_named():
             f"{name} now applies the floor; move it into "
             "FLOOR_RESPECTING_RESAMPLERS with a below-floor call"
         )
+        assert "MINIMUM_BOOTSTRAP_UNITS" not in source, (
+            f"{name} now honours the shared constant; move it into "
+            "RESAMPLERS_WITH_THE_SHARED_FLOOR_CONSTANT"
+        )
+
+
+def test_an_undeclared_interval_publisher_is_found_by_what_it_does(tmp_path):
+    """C7: the discovery rule has to be one a new function cannot slip past.
+
+    Written against the rule rather than against the current inventory: a module
+    that draws its units with replacement and publishes a percentile over them
+    is discovered whatever it is called, and lands in the undeclared list. The
+    three near misses are asserted too, because a rule that fires on everything
+    would pass the first assertion and mean nothing -- a draw with no percentile
+    is a sampler, a percentile with no draw is a descriptive quantile of
+    observed values, and a draw with ``replace=False`` is not a bootstrap.
+    """
+
+    module = tmp_path / "newcomer.py"
+    module.write_text(
+        "import numpy as np\n"
+        "\n"
+        "\n"
+        "def honest_looking_estimate(values, *, seed, draws=2000):\n"
+        "    rng = np.random.default_rng(seed)\n"
+        "    picks = rng.integers(0, len(values), (draws, len(values)))\n"
+        "    means = np.asarray(values)[picks].mean(axis=1)\n"
+        "    return {'point': float(np.mean(values)),\n"
+        "            'ci95': np.percentile(means, [2.5, 97.5]).tolist()}\n"
+        "\n"
+        "\n"
+        "def only_draws(values, *, seed):\n"
+        "    return np.random.default_rng(seed).integers(0, len(values), 8).tolist()\n"
+        "\n"
+        "\n"
+        "def only_a_quantile(values):\n"
+        "    return float(np.quantile(values, 0.99))\n"
+        "\n"
+        "\n"
+        "def draws_without_replacement(values, *, seed):\n"
+        "    rng = np.random.default_rng(seed)\n"
+        "    held = rng.choice(len(values), size=4, replace=False)\n"
+        "    return float(np.percentile(np.asarray(values)[held], 95.0))\n",
+        encoding="utf-8",
+    )
+
+    discovered = _draw_and_publish_functions([module])
+    assert discovered == {"newcomer.honest_looking_estimate"}, discovered
+    assert not discovered & _declared_resamplers()
+
+    undeclared = (_package_resamplers() | discovered) - _declared_resamplers()
+    assert undeclared == {"newcomer.honest_looking_estimate"}, undeclared
 
 
 def test_a_cluster_bootstrap_below_the_unit_floor_is_refused():

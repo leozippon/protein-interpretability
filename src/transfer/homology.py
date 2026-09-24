@@ -1583,7 +1583,7 @@ def covariate_analysis(
     *,
     layer: int,
     head: int,
-    minimum_n: int = 8,
+    minimum_n: int = MINIMUM_BOOTSTRAP_UNITS,
     resamples: int = 2000,
     seed: int = 20260729,
     alpha: float = 0.05,
@@ -1606,8 +1606,9 @@ def covariate_analysis(
     better explanation; if the reverse, the stratum gradient is a length artefact.
 
     **Those two partials are the module's adjudicating statistic and they used
-    to be published as bare point estimates.**  ``minimum_n`` is eight, and this
-    file refuses a percentile interval below eight units on the grounds that one
+    to be published as bare point estimates.**  ``minimum_n`` defaults to
+    :data:`~src.transfer.statistics.MINIMUM_BOOTSTRAP_UNITS`, which is eight,
+    and this file refuses a percentile interval below that on the grounds that one
     computed there would mislead -- so the same file was willing to decide
     between memorisation and a length artefact on two correlations over eight
     probes with no interval, no p-value and no resampling of any kind.

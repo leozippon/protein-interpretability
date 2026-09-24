@@ -16,6 +16,7 @@ from typing import Any, Iterable
 import numpy as np
 
 from .amino_acids import AA20 as _AA20_ALPHABET
+from .statistics import MINIMUM_BOOTSTRAP_UNITS
 
 SEED = 20260905
 RESAMPLES = 4000
@@ -84,7 +85,10 @@ def class_interval(values: list[float], *, seed: int = SEED,
     result = {"mean": float(np.mean(values)), "n_classes": len(values),
               "ci95": None, "ci97_5": None, "resamples": resamples,
               "seed": seed, "unit": "class"}
-    if len(values) < 8:
+    # The class is the resampling unit, so the shared floor governs this
+    # interval; imported rather than restated. The status string is a frozen
+    # artefact key and stays spelled out.
+    if len(values) < MINIMUM_BOOTSTRAP_UNITS:
         result["interval_status"] = "fewer_than_eight_classes"
         return result
     rng = np.random.default_rng(seed)
@@ -115,7 +119,7 @@ def sequence_cluster_interval(records: list[dict[str, Any]], *,
               "unit": "sampled_near_duplicate_sequence_group", "seed": seed,
               "resamples": resamples,
               "scope": "fixed_native_task_and_sampling_configuration_not_family_generalization"}
-    if len(values) < 8:
+    if len(values) < MINIMUM_BOOTSTRAP_UNITS:
         result["interval_status"] = "fewer_than_eight_sequence_groups"
         return result
     rng = np.random.default_rng(seed)
