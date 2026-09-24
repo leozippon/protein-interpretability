@@ -1,0 +1,13 @@
+# Retrieval and memorization gate, wave 1, lane c: stability refits that retain per-group errors.
+# Fitting only over artefacts that already exist. No model inference happens here, so every row
+# is a CPU row and no card is requested or touched.
+# Each cell re-runs the admitted pairwise fit of one arm on the 64-group support at all three
+# split seeds and is refused unless its realised row identity, fold identity, support counts,
+# design widths, selected ridge penalties and whole-support increments agree with that arm's
+# admitted fit record. It is also refused unless the frozen strata declaration it is bound to
+# covers exactly the fitted groups.
+# One cell per slot: the queue admits at most one CPU row per slot, so a lane's cells run in
+# sequence. Lanes a, b and c carry disjoint arms and distinct manifest basenames, because the
+# queue derives its status file and its lock from the basename.
+# slot key gpu stage label env expect args
+1	gr	cpu	fit_retrieval_strata_pairwise.py	gate_retrieval_progen2_xlarge	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=8 MKL_NUM_THREADS=8	refit_progen2-xlarge.json	--arm progen2-xlarge --plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/pairwise_epistasis/extraction_plan.json --expect-plan-sha256 e338420f5df70143ccfc8d16ec5479a67b330ec35d36ea7c5965ea31a59e179c --cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/pairwise_epistasis/cohort.json --baseline-q /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/pairwise_epistasis/baseline_q.json --profiles /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/pairwise_epistasis/profile_features.npz --extraction /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/pairwise_epistasis_20260924/extraction --reference-fit /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/pairwise_epistasis_20260924/fits/fit_progen2-xlarge.json --strata-declaration /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/gate_retrieval_strata_20260923/strata_declaration.json --expect-declaration-sha256 cb56f5fe6fabd66176c5ca0928fcb718c27e4ff3bb2de819bd920148c2636681 --bootstrap 2000
