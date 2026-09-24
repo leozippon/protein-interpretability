@@ -1,5 +1,11 @@
 # Direction-1 cross-measure association
 
+**Completed, 2026-09-21.** The frozen roster ran to a terminal state on CPU. The inventory resolved 176 available and 22 named unavailable axis cells with no seat left pending. Of the 51 declared pooled pair ids, 34 returned a coefficient; the seventeen conditional pairs `P-G1-C2`…`P-S3-C2` closed at n ≤ 1 and therefore without one, as the uncertainty rule below requires. Within-lineage coefficients closed at 34, 25, 25 and 17 of the same 51 ids for ProGen2, Galactica, ProGen3 and Llama-2 → ProLLaMA.
+
+Three seat resolutions differ from the frozen table. The four eight-block envelopes recorded below as not located became named unavailable G1 cells for ProtGPT2, ZymCTRL, ProGen2-small and ProGen2-base, which lowers the n of every G1 pair. The Galactica and InstructProtein MegaScale cells resolved unavailable after their natural control failed, so the reserved pending-S3 pair ids hold no seat and S3 closed on the readable arms alone. Galactica-125M's U4 and U5 cells are named unavailable. ESMFold2 values replaced the retired v1 inputs for C3/C4 and for ProGen3-3B's U3/U4.
+
+The coefficients are in `results/transfer/s50_cross_measure/cross_measure_association.json` (sha256 `72edbbef9c898b6853b3b97b0b04e655ca0803b9ab69673009565b8ea023d4e2`) and in `summary.md`. Consistent with the prohibition at the end of this file, they are not copied here; this document remains the frozen design.
+
 Date: 2026-09-18 (Asia/Shanghai). Campaign: EXP-R2-247. This document freezes the association among the context-information gate, external sequence scoring, generation endpoints, and declared parameter count **before** remaining MegaScale Galactica / InstructProtein scores, homologous-context expansion scores, and EXP-R2-246 unconditional-generation numbers are written into it. It does not change [EXP-R2-232](D1_GENERATION_BIOLOGY_PREREGISTRATION.md), [EXP-R2-233](D1_PROGEN3_GENERATION_PREREGISTRATION.md), [EXP-R2-246](D1_UNCONDITIONAL_GENERATION_EXPANSION.md), or any already-recorded cell.
 
 No coefficient is computed in this file. Homologous-context AUROC is scoring-with-context and is not a generation endpoint; stage 46 numbers do not enter any pair below.
@@ -36,7 +42,7 @@ ProteinGym and MegaScale stay two quantities. They are never averaged or otherwi
 
 - **S1.** Family-bootstrap MODEL − LOOKUP, dimensionless Spearman difference (family-mean ρ_model minus ρ_LOOKUP). Unit: Δρ. Source: each arm’s analyse artefact as already cited in `summary.md` §外部蛋白任务上的序列评分 and the 2026-09-17 experiment-log ProteinGym entries. Supports remain the arm’s own analysis set (201/163, 213/171, 214/172, or 217/174) and are never intersected to manufacture a common n.
 - **S2.** Family-bootstrap MODEL − BLOSUM62 on the same artefact, same family bootstrap, same support. Unit: Δρ. Source: the 2026-09-17 entry “Add MODEL − BLOSUM62 beside the ProteinGym MODEL − LOOKUP row” and the same analyse files.
-- **S3.** MegaScale **design-side** Spearman ρ of model likelihood against measured stability, **only where the natural control passed**. Unit: ρ. Readable negatives already on disk: ProtGPT2 `+0.0837`; ProGen2-base / medium / large / xlarge `+0.0456` / `+0.0280` / `+0.0519` / `+0.0480`; ProGen3-3B `+0.1189`; ProteinGLM-7B-CLM `+0.1395`; RITA-xl `+0.0332` (`summary.md` MegaScale row; 2026-09-18 “MegaScale: fill remaining non-text arms”). Design-side numbers whose natural control failed are recorded and are not S3. Galactica and InstructProtein MegaScale scores are not in this file.
+- **S3.** MegaScale **design-side** Spearman ρ of model likelihood against measured stability, **only where the natural control passed**. Unit: ρ. Readable negative findings already on disk: ProtGPT2 `+0.0837`; ProGen2-base / medium / large / xlarge `+0.0456` / `+0.0280` / `+0.0519` / `+0.0480`; ProGen3-3B `+0.1189`; ProteinGLM-7B-CLM `+0.1395`; RITA-xl `+0.0332` (`summary.md` MegaScale row; 2026-09-18 “MegaScale: fill remaining non-text arms”). Design-side numbers whose natural control failed are recorded and are not S3. Galactica and InstructProtein MegaScale scores are not in this file.
 
 Raw ProteinGym Spearman is not an association axis. Winning LOOKUP or BLOSUM62 is not biological knowledge.
 
@@ -49,8 +55,8 @@ Only endpoints already named in `summary.md` §条件生成 and §无条件生�
 | C1 / U1 | Completion or native-terminal rate | attempts / attempts | **Not a row** in §条件生成; C1 is unavailable | Interface-accepted or native-closed outputs over 800 retained attempts. ProGen3-3B: 501/800 accepted, 299 budget-censored prefixes |
 | C2 | Target-profile hit rate, requested condition, all-attempt | hits / attempts | ZymCTRL 2,488/2,800; ProLLaMA Stage 2 380/3,000 | Undefined (no requested class) |
 | U2 | Any-Pfam recognition rate | hits / attempts | Not the conditional target-profile row | ProGen3-3B: 496/800; remaining arms pending EXP-R2-246 |
-| C3 / U3 | Generation-minus-own-shuffle mean CA-pLDDT | pLDDT points (0–100 scale difference) | Requested: ZymCTRL `+56.68` `[45.90, 62.57]`; ProLLaMA `+5.92` `[2.49, 10.57]` (97.5% class bootstrap) | ProGen3-3B combined `+38.39` `[34.53, 42.27]` (95% sequence-group); remaining arms pending |
-| C4 / U4 | All-attempt confidence-event point estimate | dimensionless rate | Requested: about 86.36% and 1.36% | ProGen3-3B about 43.07%; remaining arms pending |
+| C3 / U3 | Generation-minus-own-shuffle mean CA-pLDDT | pLDDT points (0–100 scale difference) | Pending ESMFold2 re-fold and re-attained natural/shuffle calibration | Pending ESMFold2 re-fold; remaining arms pending EXP-R2-246 |
+| C4 / U4 | All-attempt confidence-event point estimate | dimensionless rate | Pending ESMFold2 re-fold | Pending ESMFold2 re-fold; remaining arms pending EXP-R2-246 |
 | C5 / U5 | Median identity among UniRef50 hits | percent identity | Requested hits: 70.00% and 32.05% | ProGen3-3B 43.71% among aligned; remaining arms pending |
 
 Requested-minus-mismatched selectivity is in the conditional table and is **not** an association axis (it is not in the endpoint list above). A budget-censored prefix is not a complete product. A Pfam or profile hit is not function. Median identity is computed among hits; a no-hit is not zero identity.

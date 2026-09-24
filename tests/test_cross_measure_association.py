@@ -15,17 +15,28 @@ from src.transfer.cross_measure_association import (
 
 
 class RefuseInvented(unittest.TestCase):
-    def test_pending_generation_is_not_filled_in(self):
-        self.assertEqual(CELLS["protgpt2"]["U1"].status, "pending")
+    def test_unavailable_cell_is_not_filled_in(self):
+        self.assertEqual(CELLS["protgpt2"]["G1"].status, "unavailable")
         with self.assertRaisesRegex(ValueError, "refusing to invent"):
-            refuse_missing("U1", "protgpt2")
+            refuse_missing("G1", "protgpt2")
 
     def test_pending_pair_has_no_coefficient(self):
+        table = {
+            "progen3-3b": {
+                "G1": Cell("available", 1.5),
+                "U1": Cell("available", 0.6),
+            },
+            "protgpt2": {
+                "G1": Cell("unavailable"),
+                "U1": Cell("pending"),
+            },
+        }
         record = associate_pair(
             "P-G1-U1",
             "G1",
             "U1",
             ("progen3-3b", "protgpt2"),
+            table=table,
         )
         self.assertIn("protgpt2", record["pending"])
         self.assertFalse(record["computed"])
