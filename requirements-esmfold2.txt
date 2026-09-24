@@ -1,0 +1,4 @@
+# Isolated folding runtime for ESMFold2. Do not install into the validated ct environment.
+# Host-provision a CUDA PyTorch build, then:
+#   python -m pip install -r requirements-esmfold2.txt
+transformers>=5.17.0

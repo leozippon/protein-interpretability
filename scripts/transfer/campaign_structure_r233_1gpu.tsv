@@ -1,3 +1,4 @@
+# RETIRED v1 receipt. Do not re-dispatch: run_structure_evidence.py now loads only ESMFold2.
 # Sequential alternative for the same three R233 structure hash shards on GPU 0.
 # Dispatch after native generation finishes and pilot calibration passes; never alongside the 3-GPU alternative.
 # Stage snapshot key d1_structure must resolve to the original generation/inference snapshot, even when this manifest is shipped in a newer snapshot.

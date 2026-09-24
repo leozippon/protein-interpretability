@@ -1,3 +1,4 @@
+# RETIRED v1 receipt. Do not re-dispatch: run_structure_evidence.py now loads only ESMFold2.
 # Natural-reference pilot and own composition shuffles.
 # Three deterministic sequence-hash shards; exact duplicates share inference but retain their source rows.
 # Concurrent schedule uses only current healthy devices 0, 1 and 3; device 2 is excluded.
