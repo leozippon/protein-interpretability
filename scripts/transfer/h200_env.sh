@@ -35,7 +35,15 @@ export TRANSFER_DIAMOND_DIR="${TRANSFER_PROJECT_ROOT}/resources/tools/diamond"
 export TRANSFER_DIAMOND_DB="${TRANSFER_PROJECT_ROOT}/resources/homology/uniref50_full.dmnd"
 export TRANSFER_DIAMOND_TMPDIR="${TRANSFER_PROJECT_ROOT}/scratch/diamond"
 
-export TRANSFER_PYTHON=/opt/ac2/bin/python3
+# L51: a caller's interpreter wins. This was an unconditional export, so a
+# caller that had already selected the staged `ct-20260905` interpreter (Python
+# 3.11.14 / numpy 1.26.4, the validated runtime) had it replaced by the pod
+# image's /opt/ac2/bin/python3 (Python 3.12.7 / numpy 2.1.2) on every source,
+# and campaign rows could only override it by naming it *after* sourcing. The
+# fallback is retained so that a row which names no interpreter behaves exactly
+# as before; it is the pod image's python and not the validated runtime.
+TRANSFER_PYTHON="${TRANSFER_PYTHON:-/opt/ac2/bin/python3}"
+export TRANSFER_PYTHON
 TRANSFER_PACKAGE_ROOT="${TRANSFER_PACKAGE_ROOT:-${TRANSFER_PROJECT_ROOT}/packages}"
 export TRANSFER_PACKAGE_ROOT
 export PYTHONPATH="${TRANSFER_PACKAGE_ROOT}${PYTHONPATH:+:${PYTHONPATH}}"

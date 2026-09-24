@@ -2823,6 +2823,53 @@ class HostSnapshotAndTimeoutTests(unittest.TestCase):
         self.assertIn("TRANSFER_HIGH_ORDER_BACKGROUND_DIR", env)
         self.assertNotIn("H200_POD", env)
 
+    def test_the_pod_environment_keeps_a_callers_interpreter(self):
+        """L51: sourcing must not replace an interpreter the caller selected.
+
+        The export was unconditional, so a caller that had already selected the
+        staged ct-20260905 interpreter got the pod image's python instead, and a
+        campaign row could only win by naming the variable after sourcing. Both
+        directions are asserted: a pre-set value survives, and a caller that
+        sets nothing still gets the documented fallback, which is what every
+        manifest that names no interpreter relies on.
+        """
+
+        script = (
+            f"set -euo pipefail; source {TRANSFER_DIR / 'h200_env.sh'}; "
+            'printf "%s\\n" "${TRANSFER_PYTHON}"'
+        )
+        staged = "/gpfs/example/runtimes/ct-20260905/bin/python"
+        chosen = subprocess.run(
+            ["bash", "-c", script],
+            capture_output=True, text=True, timeout=60,
+            env={**os.environ, "TRANSFER_PYTHON": staged},
+        )
+        self.assertEqual(chosen.returncode, 0, chosen.stderr)
+        self.assertEqual(chosen.stdout.strip(), staged)
+
+        unset = dict(os.environ)
+        unset.pop("TRANSFER_PYTHON", None)
+        default = subprocess.run(
+            ["bash", "-c", script],
+            capture_output=True, text=True, timeout=60, env=unset,
+        )
+        self.assertEqual(default.returncode, 0, default.stderr)
+        self.assertEqual(default.stdout.strip(), "/opt/ac2/bin/python3")
+
+        # A campaign row names its interpreter in an env cell applied to the
+        # stage process, which is after sourcing. That still wins, unchanged.
+        after = subprocess.run(
+            [
+                "bash", "-c",
+                f"set -euo pipefail; source {TRANSFER_DIR / 'h200_env.sh'}; "
+                f"env TRANSFER_PYTHON={staged} "
+                'bash -c \'printf "%s\\n" "${TRANSFER_PYTHON}"\'',
+            ],
+            capture_output=True, text=True, timeout=60, env=unset,
+        )
+        self.assertEqual(after.returncode, 0, after.stderr)
+        self.assertEqual(after.stdout.strip(), staged)
+
     def test_external_driver_refuses_a_glob_expect(self):
         result = subprocess.run(
             [
