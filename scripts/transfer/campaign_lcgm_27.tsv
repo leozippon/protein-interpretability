@@ -1,0 +1,8 @@
+# Local-context gate, measurement lane 27: arm bygpt5-small-en at split seed 20260925.
+# Fitting only over artifacts that already exist; no model inference happens here.
+# Control sets C, C+P and, for each carried-forward local block wall and rf3, the block
+# alone, over composition, and over composition plus the mutation-local profile block,
+# each with no addition, plus the native likelihood, plus the frozen representation, and
+# plus both. One CPU lane at eight threads.
+# slot key gpu stage label env expect args
+1	lcg	cpu	analyse_local_context_gate.py	lcgm_bygpt5_small_en_20260925	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=8 MKL_NUM_THREADS=8	local_context_measure_bygpt5-small-en_fold20260925.json	--stage measure --arm bygpt5-small-en --local-block wall --local-block rf3 --anchor-arm progen3-3b --seed 20260923 --fold-seed 20260925 --bootstrap 2000 --cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/context_mutation_rescue/cohort.json --profile-store /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/transfer/retrieval_bound --manifest /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260923123458_7ce327eba51e/readout_expand_bygpt5_small_en/manifest_bygpt5-small-en.json --manifest /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260923103322_004fdfab72bf/readout_progen3_3b/manifest_progen3-3b.json
