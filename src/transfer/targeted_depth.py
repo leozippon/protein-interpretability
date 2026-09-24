@@ -59,6 +59,26 @@ COHORTS: dict[str, Cohort] = {
         plan_sha256='283b4503ea166a3d61052bf68818c8aef162692ed3eb436a7a9864759a48763d',
         extractor='extract_stability_singles.py',
         output_root='results/external_baseline/<wave>/depth3-<arm>/'),
+    'remote_homology': Cohort(
+        gate='remote_homology',
+        label='the frozen 179-family-group MGnify-derived single-mutant cohort',
+        states=6_596,
+        groups=179,
+        rows='6,291 single substitutions over 6,289 mutated sites and 305 backgrounds',
+        plan='results/remote_homology_20260924/extraction_plan.json',
+        plan_sha256='aa63ff6dc4b66ea51c9a495e1ca173ab22d622cbc4fe48bc8f92b6b012d05e48',
+        extractor='extract_stability_singles.py',
+        output_root='results/external_baseline/<wave>/depth3-<arm>/'),
+    'external_confirmation': Cohort(
+        gate='external_confirmation',
+        label='the frozen 96-family-group Domainome abundance cohort',
+        states=109_996,
+        groups=96,
+        rows='428 domains at a 256-substitution cap each, 19 to 97 residues per domain',
+        plan='results/external_confirmation_20260924/extraction_plan.json',
+        plan_sha256='805adabe10200fdfb5992796c40d78c328a4f510da80ce56f0f663ee923578aa',
+        extractor='extract_stability_singles.py',
+        output_root='results/external_baseline/<wave>/depth3-<arm>/'),
     'residue_interactions': Cohort(
         gate='residue_interactions',
         label='the frozen 64-background four-state double-mutant cycle cohort',
@@ -110,8 +130,20 @@ class ArmCost:
         return (self.middle_block, self.final_block)
 
     def seconds(self, gate: str) -> float:
-        return (self.stability_seconds if gate == 'folding_stability'
-                else self.pairwise_seconds)
+        """This arm's measured extraction wall clock on one cohort, in seconds.
+
+        Only the two cohorts whose extractions completed arm by arm carry a
+        per-arm measurement. The two later gates share this extractor and this
+        panel but their per-arm seconds are not transcribed here, so a cost for
+        them is derived from their state count against these measurements rather
+        than invented per arm, and :func:`cohort_gpu_hours` is the only place
+        that scaling happens.
+        """
+        if gate == 'folding_stability':
+            return self.stability_seconds
+        if gate == 'residue_interactions':
+            return self.pairwise_seconds
+        raise ValueError(f'{gate} carries no per-arm measured wall clock; use cohort_gpu_hours')
 
 
 def _cost(arm, width, middle, final, dtype, stability, pairwise) -> ArmCost:
@@ -162,6 +194,16 @@ ARM_COSTS: dict[str, ArmCost] = {cost.arm: cost for cost in (
 #: Where the measured numbers come from, bound into every plan so a reader can
 #: check them against the artefacts rather than against this table.
 COST_PROVENANCE = {
+    'remote_homology': ('results/external_baseline/20260924081450_45cbf26d2945/rh-<arm>/'
+                        'manifest_<arm>.json: 33 of 33 cells complete, 6,596 sequences scored per '
+                        'arm, 18,101.9 s in total measured in-pod'),
+    'external_confirmation': ('results/external_baseline/20260924085613_5f8d32cf0368/ec-<arm>/'
+                              'manifest_<arm>.json: 8 of 33 cells complete when measured, 109,996 '
+                              'sequences scored per arm, 61,132.3 s over those 8. Lane order is a '
+                              'declared descending parameter scale, so the completed 8 are the '
+                              'largest arms and a per-arm mean over them overstates the remaining '
+                              '25; the 33-arm total is estimated by scaling the stability cohort '
+                              'instead, at 4.2 times its residue workload'),
     'folding_stability': ('results/external_baseline/20260924024010_7caaa5ac6216/full-<arm>/'
                           'manifest_<arm>.json: status complete, 101 of 101 backgrounds and '
                           '25,957 sequences scored for all 33 arms, elapsed_seconds and '
@@ -245,18 +287,25 @@ def arm_estimate(gate: str, arm: str, depths=None) -> dict:
     cost = ARM_COSTS[arm]
     hooked = tuple(sorted(set(depths))) if depths is not None else (-1, -2, -3)
     count = 3 if depths is None else len(hooked)
+    # A cohort without per-arm wall clock reports none per arm rather than a
+    # scaled one: the scaling is a cohort-level statement and splitting it over
+    # arms would present a derived number in the shape of a measured one.
+    seconds = cost.seconds(gate) if gate in MEASURED_COHORTS else None
     return dict(arm=arm, gate=gate, hidden_width=cost.hidden_width, blocks=cost.blocks,
                 dtype=cost.dtype, admitted_depths=list(cost.admitted_depths),
                 selected_depths=None if depths is None else list(hooked),
                 depths_hooked=count,
-                measured_seconds=cost.seconds(gate),
-                gpu_hours=round(cost.seconds(gate) / 3600.0, 4),
+                measured_seconds=seconds,
+                gpu_hours=None if seconds is None else round(seconds / 3600.0, 4),
                 retained_bytes=(COHORTS[gate].states * SUMMARIES_PER_DEPTH * count
                                 * cost.hidden_width * BYTES_PER_COORDINATE),
-                gpu_estimate_basis=('the measured wall clock of this cohort\'s completed '
-                                    'two-depth extraction for this arm, at batch size one on one '
-                                    'H200; hooking a third block is read from the same forward '
-                                    'pass and adds no inference'))
+                gpu_estimate_basis=(
+                    'the measured wall clock of this cohort\'s completed extraction for this '
+                    'arm, at batch size one on one H200; hooking a further block is read from the '
+                    'same forward pass and adds no inference'
+                    if seconds is not None else
+                    'this cohort carries no per-arm wall clock here; its cost is a cohort-level '
+                    'figure from cohort_gpu_hours and is not split over arms'))
 
 
 def depth_agnostic_estimate() -> dict:
@@ -297,6 +346,68 @@ def depth_agnostic_estimate() -> dict:
                                 'follows the depth count'))
 
 
+#: Cohorts whose per-arm wall clock is transcribed in :data:`ARM_COSTS`, so a
+#: per-arm estimate is measured rather than derived.
+MEASURED_COHORTS = ('folding_stability', 'residue_interactions')
+
+#: Measured cohort-level extraction totals, in seconds over the 33 arms, read
+#: from each wave's own manifests in-pod. The first two are the sums of the
+#: per-arm figures in :data:`ARM_COSTS`. The third completed 33 of 33 cells and
+#: its total is measured even though its per-arm seconds are not transcribed
+#: here. The fourth is absent because its extraction is in flight, so its cost is
+#: scaled and labelled so.
+#:
+#: The third entry is what calibrates that scaling, and it is why the scaling is
+#: reported as first-order rather than as a figure: scaling the stability
+#: cohort's total by the ratio of sequences scored predicts 3.530 GPU-hours for
+#: the remote-homology cohort against the 5.028 measured, so the state-count
+#: ratio understates by a factor of about 1.42 on a cohort whose targets are
+#: longer per state. A scaled estimate elsewhere should be read as a lower-leaning
+#: bound for the same reason.
+MEASURED_COHORT_SECONDS = {
+    'folding_stability': 50_007.8,
+    'residue_interactions': 16_544.1,
+    'remote_homology': 18_101.9,
+}
+
+
+def cohort_gpu_hours(gate: str) -> dict:
+    """One cohort's extraction cost, measured where it can be and scaled where not.
+
+    A targeted or depth-agnostic pass costs one forward pass per sequence, which
+    is what the cohort's own completed extraction already cost, so the measured
+    cohorts quote their own wall clock. The two later gates ran the same extractor
+    over the same 33 arms on their own cohorts; their per-arm seconds are not
+    transcribed here, so their cost is the stability cohort's measured total
+    scaled by the ratio of sequences scored. That is a scaling and is labelled
+    one: a longer target costs more per forward than a shorter one, so the ratio
+    of state counts is a first-order estimate and not a measurement.
+    """
+    if gate in MEASURED_COHORT_SECONDS:
+        seconds = MEASURED_COHORT_SECONDS[gate]
+        return dict(gate=gate, gpu_hours=round(seconds / 3600.0, 3), basis='measured',
+                    seconds=round(seconds, 1), per_arm_measured=gate in MEASURED_COHORTS,
+                    note=('the wall clock this cohort\'s own completed extraction recorded, at '
+                          'batch size one on one H200'))
+    reference = 'folding_stability'
+    seconds = MEASURED_COHORT_SECONDS[reference]
+    ratio = COHORTS[gate].states / COHORTS[reference].states
+    # The one cohort that is both scaled-predictable and measured shows the
+    # scaling's direction: it understates by about 1.42, so the same correction is
+    # carried here as a range rather than folded silently into the point.
+    correction = (MEASURED_COHORT_SECONDS['remote_homology']
+                  / (seconds * COHORTS['remote_homology'].states / COHORTS[reference].states))
+    return dict(gate=gate, gpu_hours=round(seconds * ratio / 3600.0, 3), basis='scaled',
+                scaled_from=reference, state_ratio=round(ratio, 3),
+                calibration_factor=round(correction, 3),
+                gpu_hours_calibrated=round(seconds * ratio * correction / 3600.0, 3),
+                note=('scaled from the stability cohort\'s measured total by the ratio of '
+                      'sequences scored, because this cohort\'s extraction is still in flight. '
+                      'The one cohort that is both scaled-predictable and measured shows the '
+                      'state-count ratio understating by about 1.42, so the calibrated figure is '
+                      'the one to plan against and the plain scaling is the lower bound'))
+
+
 def estimate(gate: str, selection: dict[str, int] | None = None) -> dict:
     """The whole targeted extraction's estimate for one gate.
 
@@ -312,7 +423,8 @@ def estimate(gate: str, selection: dict[str, int] | None = None) -> dict:
     for arm in roster:
         depths = None if selection is None else depths_for(arm, selection[arm])
         arms.append(arm_estimate(gate, arm, depths))
-    total_hours = sum(row['gpu_hours'] for row in arms)
+    cohort_hours = cohort_gpu_hours(gate)
+    total_hours = cohort_hours['gpu_hours']
     total_bytes = sum(row['retained_bytes'] for row in arms)
     return dict(gate=gate, cohort=cohort.label, states_per_arm=cohort.states,
                 groups=cohort.groups, rows=cohort.rows, arms=len(arms),
@@ -323,8 +435,10 @@ def estimate(gate: str, selection: dict[str, int] | None = None) -> dict:
                 total_gpu_hours=round(total_hours, 3),
                 total_retained_bytes=total_bytes,
                 total_retained_gib=round(total_bytes / 2 ** 30, 2),
-                longest_arm=max(arms, key=lambda row: row['gpu_hours'])['arm'],
-                cost_provenance=COST_PROVENANCE[gate], per_arm=arms)
+                longest_arm=(max(arms, key=lambda row: row['gpu_hours'])['arm']
+                             if gate in MEASURED_COHORTS else None),
+                cost_provenance=COST_PROVENANCE[gate], gpu_cost=cohort_hours,
+                per_arm=arms)
 
 
 def extractor_accepts_depth(source: Path | str) -> bool:

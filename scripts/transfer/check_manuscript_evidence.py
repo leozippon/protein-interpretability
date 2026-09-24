@@ -108,7 +108,13 @@ UNIT_RENDERINGS = {
 #: would report grammar rather than evidence; a physical or scaled unit is not,
 #: and a quantity quoted without one is not readable.
 PHYSICAL_UNITS = frozenset({"kcal/mol", "kcal^2/mol^2", "percent", "nats per token",
-                            "nats per residue", "scaled-fitness units"})
+                            "nats per residue", "scaled-fitness units", "log2 enrichment"})
+
+#: The measured scales a difference can only be taken within. A percentage or a
+#: ratio is a share *of* a quantity and pairs with it legitimately, so it is not
+#: one of these.
+MEASURED_SCALES = frozenset({"kcal/mol", "kcal^2/mol^2", "log2 enrichment", "nats per token",
+                             "nats per residue", "scaled-fitness units"})
 
 DIMENSIONLESS = tuple(
     unit for unit in ("dimensionless", "dimensionless Spearman", "dimensionless ratio",
@@ -154,6 +160,7 @@ def default_policy() -> dict[str, object]:
             "Intervals throughout are 95\\% percentile intervals over the resampling unit named with "
             "each quantity.",
         "cross_support_exceptions": [],
+        "cross_unit_exceptions": [],
         "bare_estimate_exceptions": [],
         "effective_count_exceptions": [],
         "provisional_exceptions": [],
@@ -349,6 +356,21 @@ def attributable(token: str, candidates: list[dict],
     return candidates, strong
 
 
+def supports_named(descriptions: list[str], scope_words: set[str]) -> bool:
+    """Whether the sentence names every support involved.
+
+    A support's description carries its own counts and nouns; if one of each
+    support's distinctive words appears where the quantities are quoted, the
+    comparison is declared in the text and needs no exception.
+    """
+    for description in descriptions:
+        distinctive = {word for word in _words(description)
+                       if word and word not in STOPWORDS and (len(word) > 4 or word.isdigit())}
+        if not distinctive & scope_words:
+            return False
+    return True
+
+
 def agrees(candidates: list[dict], field: str) -> bool:
     """Whether every surviving candidate answers one refusal the same way.
 
@@ -359,7 +381,7 @@ def agrees(candidates: list[dict], field: str) -> bool:
 
 
 def anchors_live(policy: dict[str, object], text: str, findings: list[dict]) -> None:
-    for name in ("cross_support_exceptions", "bare_estimate_exceptions",
+    for name in ("cross_support_exceptions", "cross_unit_exceptions", "bare_estimate_exceptions",
                  "effective_count_exceptions", "provisional_exceptions"):
         for exception in policy.get(name, []):
             if exception["anchor"] not in text:
@@ -560,12 +582,37 @@ def check(directory: Path = EVIDENCE, manuscript: Path = MANUSCRIPT) -> dict[str
                                for token, candidates, inside, _ in matched
                                if not inside and agrees(candidates, "support_id")]
             estimate_tokens = [(token, entries) for token, entries in estimate_tokens if entries]
+            # one unit per comparison: two supports now carry different
+            # measured units --- kcal/mol and log2 enrichment --- and a
+            # difference between them is not a quantity at all.
+            unit_tokens = [(token, [entry for entry in candidates
+                                    if entry["unit"] in MEASURED_SCALES])
+                           for token, candidates, inside, _ in matched if not inside]
+            unit_tokens = [(token, entries) for token, entries in unit_tokens if entries]
+            if len(unit_tokens) > 1 and not exempt(policy, "cross_unit_exceptions", scope):
+                shared_units = None
+                for _, entries in unit_tokens:
+                    units = {entry["unit"] for entry in entries}
+                    shared_units = units if shared_units is None else (shared_units & units)
+                if not shared_units:
+                    findings.append({
+                        "check": "cross_unit_comparison", "source": name, "scope_kind": kind,
+                        "tokens": [token for token, _ in unit_tokens],
+                        "units": sorted({entry["unit"] for _, entries in unit_tokens
+                                         for entry in entries}),
+                        "detail": "two quantities in different measured units are quoted in one "
+                                  "sentence or row; a difference between them is not a quantity",
+                        "context": scope.strip()[:260],
+                    })
             if len(estimate_tokens) > 1 and not exempt(policy, "cross_support_exceptions", scope):
                 shared = None
                 for _, entries in estimate_tokens:
                     ids = {entry["support_id"] for entry in entries}
                     shared = ids if shared is None else (shared & ids)
-                if not shared:
+                involved = sorted({entry["support_id"]
+                                   for _, entries in estimate_tokens for entry in entries})
+                if not shared and not supports_named(
+                        [supports[key] for key in involved if key in supports], scope_words):
                     findings.append({
                         "check": "cross_support_comparison", "source": name, "scope_kind": kind,
                         "tokens": [token for token, _ in estimate_tokens],

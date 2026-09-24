@@ -2681,6 +2681,318 @@ def _constant_reductions(ledger: Ledger, sources: dict[str, str]) -> None:
             ))
 
 
+# --------------------------------------------------------------------------- #
+# Family 14 --- the remote-homology gate and the Domainome endpoint
+# --------------------------------------------------------------------------- #
+
+REMOTE_ROOT = "results/remote_homology_20260924"
+REMOTE_QUALIFICATION = f"{REMOTE_ROOT}/endpoint_qualification.json"
+REMOTE_PANEL = f"{REMOTE_ROOT}/panel/panel.json"
+DOMAINOME_QUALIFICATION = "results/external_confirmation_20260924/endpoint_qualification.json"
+
+#: The unit a channel-decomposition field is measured in, read from its own
+#: name. A ratio is dimensionless and its components are not, which is the
+#: distinction this table exists to keep: a shared component that shrinks is
+#: not noise that rises, and only separate rows make the two impossible to
+#: restate as one another.
+DECOMPOSITION_UNITS = (
+    ("_log2_enrichment", "log2 enrichment"),
+    ("_kcal_mol", "kcal/mol"),
+    ("ratio", "dimensionless ratio"),
+    ("pearson_r", "dimensionless"),
+)
+
+
+def _decomposition_unit(field: str) -> str:
+    for suffix, unit in DECOMPOSITION_UNITS:
+        if field.endswith(suffix) or suffix == field:
+            return unit
+    return ""
+
+
+def _emit_decomposition(ledger: Ledger, *, prefix: str, claim_prefix: str, family: str, path: str,
+                        pointer: tuple[str, ...], block: dict, support_id: str,
+                        resampling_unit: str, level: str = "measurement") -> None:
+    draws = int(block.get("draws") or 2000)
+    for field, value in sorted(block.items()):
+        if not isinstance(value, dict) or value.get("point") is None:
+            continue
+        unit = _decomposition_unit(field)
+        if not unit:
+            continue
+        interval = _interval(value)
+        ledger.add(Quantity(
+            id=f"{prefix}/{field}",
+            claim=f"{claim_prefix}: {field.replace('_', ' ')}", family=family,
+            value=_point(value), unit=unit, kind="estimate", support_id=support_id,
+            interval=interval, interval_kind=PERCENTILE_95 if interval else None,
+            resampling_unit=resampling_unit if interval else None,
+            resampling_draws=draws if interval else None,
+            no_interval_reason=None if interval else "the artifact retains no interval",
+            seed_set=(SPLIT_SEEDS[0],), level=level,
+            source_path=path, source_sha256=ledger.artifacts.sha256(path),
+            source_pointer=pointer + (field,),
+        ))
+
+
+def family_remote_homology(ledger: Ledger) -> None:
+    """The remote-homology gate, from its qualification and panel receipts."""
+    if not ledger.artifacts.exists(REMOTE_QUALIFICATION):
+        ledger.gap(id="remote_homology/endpoint", claim="the remote-homology endpoint's qualification",
+                   family="remote_homology", reason="the qualification receipt is not staged here",
+                   looked_in=REMOTE_QUALIFICATION, reachability="cluster_only")
+        return
+    payload = ledger.artifacts.json(REMOTE_QUALIFICATION)
+    grouping = payload["grouping"]
+    cohort = ledger.declare_support(
+        "remote_homology_cohort",
+        f"the staged remote-homology cohort: {grouping['backgrounds']} backgrounds in "
+        f"{grouping['groups']} family groups at 30% identity and 80% coverage, on a combined "
+        "free-energy scale in kcal/mol",
+    )
+    _emit_decomposition(
+        ledger, prefix="remote_homology/level_scale", family="remote_homology",
+        claim_prefix="the endpoint's level-scale channel disagreement",
+        path=REMOTE_QUALIFICATION, pointer=("level_scale_channel_disagreement",),
+        block={key: {"point": value} for key, value in
+               payload["level_scale_channel_disagreement"].items()
+               if isinstance(value, (int, float)) and not isinstance(value, bool)},
+        support_id=cohort, resampling_unit="family group",
+    )
+    for stratum, block in sorted(payload["effect_scale_agreement"].items()):
+        support = ledger.declare_support(
+            f"remote_homology_{stratum}",
+            f"the {stratum.replace('stratum_', '')} identity stratum of the remote-homology cohort: "
+            f"{block['backgrounds']} backgrounds in {block['units']} {block['unit']}s over "
+            f"{block['variants']} variants",
+        )
+        _emit_decomposition(
+            ledger, prefix=f"remote_homology/effect_scale/{stratum}", family="remote_homology",
+            claim_prefix=f"the effect-scale channel decomposition on the {stratum} support",
+            path=REMOTE_QUALIFICATION,
+            pointer=("effect_scale_agreement", stratum, "decomposition"),
+            block=block["decomposition"], support_id=support,
+            resampling_unit=str(block["unit"]),
+        )
+        for field, unit, kind in (("backgrounds", "backgrounds", "support_count"),
+                                  ("units", "resampling units", "support_count"),
+                                  ("sites", "sites", "support_count"),
+                                  ("variants", "variants", "support_count")):
+            ledger.add(Quantity(
+                id=f"remote_homology/effect_scale/{stratum}/{field}",
+                claim=f"{field} on the {stratum} support of the remote-homology cohort",
+                family="remote_homology", value=float(block[field]), unit=unit, kind=kind,
+                support_id=support, level="measurement",
+                source_path=REMOTE_QUALIFICATION,
+                source_sha256=ledger.artifacts.sha256(REMOTE_QUALIFICATION),
+                source_pointer=("effect_scale_agreement", stratum, field),
+            ))
+    for field, count in sorted(payload["identity_bands"]["backgrounds_per_band"].items()):
+        ledger.add(Quantity(
+            id=f"remote_homology/identity_band/{field}",
+            claim=f"backgrounds in the {field.replace('_', ' ')} identity band",
+            family="remote_homology", value=float(count), unit="backgrounds", kind="support_count",
+            support_id=cohort, level="measurement",
+            source_path=REMOTE_QUALIFICATION,
+            source_sha256=ledger.artifacts.sha256(REMOTE_QUALIFICATION),
+            source_pointer=("identity_bands", "backgrounds_per_band", field),
+        ))
+    _remote_homology_panel(ledger, cohort)
+
+
+def _remote_homology_panel(ledger: Ledger, cohort: str) -> None:
+    if not ledger.artifacts.exists(REMOTE_PANEL):
+        ledger.gap(id="remote_homology/panel", claim="the remote-homology panel's per-arm increments",
+                   family="remote_homology", reason="the panel receipt is not staged here",
+                   looked_in=REMOTE_PANEL, reachability="cluster_only")
+        return
+    payload = ledger.artifacts.json(REMOTE_PANEL)
+    effective = payload["effective_units"]
+    for field in ("kish_effective_domains", "kish_effective_groups", "kish_effective_sites"):
+        ledger.add(Quantity(
+            id=f"remote_homology/panel/{field}",
+            claim=f"{field.replace('kish_effective_', 'Kish effective ')} behind the "
+                  "remote-homology panel",
+            family="remote_homology", value=float(effective[field]),
+            unit=f"effective {field.rsplit('_', 1)[-1]}", kind="effective_count",
+            support_id=cohort, weighting_convention=str(effective["weighting"]),
+            level="measurement",
+            source_path=REMOTE_PANEL, source_sha256=ledger.artifacts.sha256(REMOTE_PANEL),
+            source_pointer=("effective_units", field),
+        ))
+    for contrast, block in sorted(payload["panel"].items()):
+        median = block.get("panel_median_three_seed_mean")
+        if median is None:
+            continue
+        level = "representation" if "representation" in contrast else "likelihood"
+        ledger.add(Quantity(
+            id=f"remote_homology/panel/{contrast}/median",
+            claim=f"panel median of the three-seed mean {contrast.replace('_', ' ')} increment",
+            family="remote_homology", value=float(median),
+            unit="dimensionless Spearman" if contrast.endswith("spearman")
+                 else "squared normalised effect", kind="estimate", support_id=cohort,
+            no_interval_reason="a median over arms, not a resampled estimate",
+            seed_set=SPLIT_SEEDS, level=level,
+            source_path=REMOTE_PANEL, source_sha256=ledger.artifacts.sha256(REMOTE_PANEL),
+            source_pointer=("panel", contrast, "panel_median_three_seed_mean"),
+        ))
+    flagged: dict[str, list[str]] = {}
+    for arm, block in sorted(payload["arms"].items()):
+        for side, outcome in sorted((block.get("outcome") or {}).items()):
+            if not isinstance(outcome, dict):
+                continue
+            flag = bool(outcome.get("remote_resolved_without_its_positive_control"))
+            for field in ("close_resolved", "remote_resolved", "positive_control_fired",
+                          "remote_resolved_without_its_positive_control"):
+                if field not in outcome:
+                    continue
+                ledger.add(Quantity(
+                    id=f"remote_homology/outcome/{arm}/{side}/{field}",
+                    claim=f"{arm}, {side} control set: {field.replace('_', ' ')} on the "
+                          "remote-homology gate",
+                    family="remote_homology", value=float(bool(outcome[field])),
+                    unit="flag", kind="constant", support_id=cohort,
+                    verdict="unresolved" if flag else None, level="likelihood",
+                    source_path=REMOTE_PANEL, source_sha256=ledger.artifacts.sha256(REMOTE_PANEL),
+                    source_pointer=("arms", arm, "outcome", side, field),
+                ))
+            if flag:
+                flagged.setdefault(side, []).append(arm)
+        for contrast, cell in sorted((block.get("cells") or {}).items()):
+            level = "representation" if "representation" in contrast else "likelihood"
+            for seed, per_seed in sorted((cell.get("per_seed") or {}).items()):
+                if per_seed.get("point") is None:
+                    continue
+                remote_only = any(arm in arms for arms in flagged.values())
+                ledger.add(Quantity(
+                    id=f"remote_homology/{arm}/{contrast}/{seed}",
+                    claim=f"{arm} at split seed {seed}: {cell['description']}"
+                          + (", on an arm whose remote stratum resolves without its own positive "
+                             "control firing, which is not a resolution" if remote_only else ""),
+                    family="remote_homology", value=float(per_seed["point"]),
+                    unit=str(per_seed.get("unit") or "squared normalised effect"), kind="estimate",
+                    support_id=cohort,
+                    interval=tuple(map(float, per_seed["interval"])) if per_seed.get("interval")
+                             else None,
+                    interval_kind=PERCENTILE_95 if per_seed.get("interval") else None,
+                    resampling_unit="family group" if per_seed.get("interval") else None,
+                    resampling_draws=2000 if per_seed.get("interval") else None,
+                    no_interval_reason=None if per_seed.get("interval") else
+                    "the panel records no interval for this cell",
+                    seed_set=(int(seed),), level=level,
+                    verdict="unresolved" if remote_only else None,
+                    source_path=REMOTE_PANEL, source_sha256=ledger.artifacts.sha256(REMOTE_PANEL),
+                    source_pointer=("arms", arm, "cells", contrast, "per_seed", seed, "point"),
+                ))
+    for side, arms in sorted(flagged.items()):
+        ledger.add(Quantity(
+            id=f"remote_homology/panel/{side}/arms_remote_resolved_without_positive_control",
+            claim=f"arms whose remote stratum resolves while their own positive control does not "
+                  f"fire, on the {side} control set; these are flagged and are not resolutions",
+            family="remote_homology", value=float(len(arms)), unit="checkpoints", kind="count",
+            support_id=cohort, verdict="unresolved", seed_set=SPLIT_SEEDS, level="likelihood",
+            source_path=REMOTE_PANEL, source_sha256=ledger.artifacts.sha256(REMOTE_PANEL),
+            source_pointer=("arms", "<reduction>", "outcome", side,
+                            "remote_resolved_without_its_positive_control"),
+        ))
+    for field, unit, claim in (("qualified_control_set", "control blocks",
+                                "blocks in the gate's qualified control set"),
+                               ("secondary_control_set", "control blocks",
+                                "blocks in the gate's secondary control set"),
+                               ("split_seeds", "split seeds", "declared split seeds"),
+                               ("roster_arms", "checkpoints", "arms on the declared roster"),
+                               ("arms_fitted", "checkpoints", "arms fitted")):
+        value = payload.get(field)
+        if value is None:
+            continue
+        ledger.add(Quantity(
+            id=f"remote_homology/panel/{field}",
+            claim=claim, family="remote_homology",
+            value=float(len(value) if isinstance(value, list) else value), unit=unit,
+            kind="support_count", support_id=cohort, level="measurement",
+            source_path=REMOTE_PANEL, source_sha256=ledger.artifacts.sha256(REMOTE_PANEL),
+            source_pointer=(field,),
+        ))
+
+
+def family_domainome_endpoint(ledger: Ledger) -> None:
+    """The Domainome endpoint's qualification, whose channel unit is log2 enrichment.
+
+    No likelihood or confirmation result exists on this endpoint, so only the
+    qualification is registered. Its unit differs from every other support in
+    the table, which is what makes a cross-unit comparison refusable.
+    """
+    if not ledger.artifacts.exists(DOMAINOME_QUALIFICATION):
+        ledger.gap(id="domainome/endpoint", claim="the Domainome endpoint's qualification",
+                   family="domainome", reason="the qualification receipt is not staged here",
+                   looked_in=DOMAINOME_QUALIFICATION, reachability="cluster_only")
+        return
+    payload = ledger.artifacts.json(DOMAINOME_QUALIFICATION)
+    declared = payload["declared_cohort"]["effective_units_over_replicate_rows"]
+    support = ledger.declare_support(
+        "domainome_declared_cohort",
+        f"the declared Domainome cohort: {declared['domains']} domains in {declared['groups']} "
+        f"family groups over {declared['variants']} substitutions, measured as log2 enrichment in a "
+        "protein-fragment complementation assay and not on any free-energy scale",
+    )
+    for field, unit, kind in (("domains", "domains", "support_count"),
+                              ("groups", "family groups", "support_count"),
+                              ("sites", "sites", "support_count"),
+                              ("variants", "variants", "support_count")):
+        ledger.add(Quantity(
+            id=f"domainome/declared_cohort/{field}",
+            claim=f"{field} in the declared Domainome cohort", family="domainome",
+            value=float(declared[field]), unit=unit, kind=kind, support_id=support,
+            level="measurement",
+            source_path=DOMAINOME_QUALIFICATION,
+            source_sha256=ledger.artifacts.sha256(DOMAINOME_QUALIFICATION),
+            source_pointer=("declared_cohort", "effective_units_over_replicate_rows", field),
+        ))
+    for field in ("kish_effective_domains", "kish_effective_groups", "kish_effective_sites"):
+        ledger.add(Quantity(
+            id=f"domainome/declared_cohort/{field}",
+            claim=f"{field.replace('kish_effective_', 'Kish effective ')} in the declared "
+                  "Domainome cohort",
+            family="domainome", value=float(declared[field]),
+            unit=f"effective {field.rsplit('_', 1)[-1]}", kind="effective_count",
+            support_id=support, weighting_convention=str(declared["weighting"]),
+            level="measurement",
+            source_path=DOMAINOME_QUALIFICATION,
+            source_sha256=ledger.artifacts.sha256(DOMAINOME_QUALIFICATION),
+            source_pointer=("declared_cohort", "effective_units_over_replicate_rows", field),
+        ))
+    for scope, block in sorted(payload["replicate_floor"].items()):
+        if not isinstance(block, dict) or scope == "between_replicate_sd_over_three_replicates":
+            continue
+        _emit_decomposition(
+            ledger, prefix=f"domainome/replicate_floor/{scope}", family="domainome",
+            claim_prefix=f"the Domainome replicate floor on the {scope.replace('_', ' ')}",
+            path=DOMAINOME_QUALIFICATION, pointer=("replicate_floor", scope), block=block,
+            support_id=support, resampling_unit="family group",
+        )
+    for field, value in sorted(payload["clean_support"].get("declared", {}).items()):
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            continue
+        ledger.add(Quantity(
+            id=f"domainome/clean_support/{field}",
+            claim=f"{field.replace('_', ' ')} on the Domainome clean support",
+            family="domainome", value=float(value), unit=_leaf_unit(field, "domains") or "domains",
+            kind="support_count", support_id=support, level="measurement",
+            source_path=DOMAINOME_QUALIFICATION,
+            source_sha256=ledger.artifacts.sha256(DOMAINOME_QUALIFICATION),
+            source_pointer=("clean_support", "declared", field),
+        ))
+    ledger.gap(
+        id="domainome/control_contributions",
+        claim="the Domainome endpoint's control contributions and any model-side result",
+        family="domainome",
+        reason="no control ladder or likelihood result exists on this endpoint: the qualification "
+               "carries the support, the scale floor and the replicate floor only, and the "
+               "extraction cell stands at 8 of 33 arms",
+        looked_in=DOMAINOME_QUALIFICATION, reachability="not_measured",
+    )
+
+
 def build(out_dir: Path = OUT_DIR) -> dict[str, object]:
     artifacts = Artifacts()
     ledger = Ledger(artifacts)
@@ -2712,6 +3024,8 @@ def build(out_dir: Path = OUT_DIR) -> dict[str, object]:
     family_failed_block_cost(ledger)
     family_indel_evaluation(ledger)
     family_unrecorded_constants(ledger)
+    family_remote_homology(ledger)
+    family_domainome_endpoint(ledger)
     family_leaf_subtrees(ledger)
     family_generator_totals(ledger)
     family_derived_shares(ledger)

@@ -856,16 +856,46 @@ def test_the_gpu_estimate_is_the_measured_wall_clock_and_does_not_follow_depth_c
     measured wall clock of the extraction that already ran; only the retained
     storage grows, and it grows exactly in proportion to the depths hooked.
     """
-    for gate in TD.COHORTS:
+    for gate in TD.MEASURED_COHORTS:
         two = TD.arm_estimate(gate, 'proteinglm-7b-clm', (17, 35))
         three = TD.arm_estimate(gate, 'proteinglm-7b-clm', (17, 30, 35))
         assert two['gpu_hours'] == three['gpu_hours']
         assert two['measured_seconds'] == TD.ARM_COSTS['proteinglm-7b-clm'].seconds(gate)
         assert three['retained_bytes'] * 2 == two['retained_bytes'] * 3
-        whole = TD.estimate(gate)
-        assert whole['total_gpu_hours'] == pytest.approx(
+        assert TD.cohort_gpu_hours(gate)['gpu_hours'] == pytest.approx(
             sum(cost.seconds(gate) for cost in TD.ARM_COSTS.values()) / 3600.0, abs=5e-4)
+    for gate in TD.COHORTS:
+        whole = TD.estimate(gate)
         assert whole['arms'] == len(TD.ARM_COSTS) == 33
+        assert whole['gpu_cost']['gpu_hours'] == whole['total_gpu_hours']
+        # Storage follows the depth count exactly; GPU time does not follow it at all.
+        assert (sum(TD.retained_bytes(gate, arm, (0, 1, 2)) for arm in TD.ARM_COSTS) * 2
+                == sum(TD.retained_bytes(gate, arm, (0, 1)) for arm in TD.ARM_COSTS) * 3)
+
+
+def test_a_cohort_cost_is_measured_or_labelled_scaled_and_never_silently_either():
+    """Two of the four cohorts carry per-arm wall clock, three carry a measured
+    total, and the fourth is in flight. A scaled figure must say so, name what it
+    scaled from, and carry the calibration the one scaled-and-measured cohort
+    supplies -- which shows the state-count ratio understating by about 1.42, so
+    the plain scaling is a lower bound rather than the number to plan against."""
+    assert set(TD.MEASURED_COHORT_SECONDS) == set(TD.COHORTS) - {'external_confirmation'}
+    for gate in TD.MEASURED_COHORT_SECONDS:
+        record = TD.cohort_gpu_hours(gate)
+        assert record['basis'] == 'measured' and 'gpu_hours_calibrated' not in record
+        assert record['per_arm_measured'] is (gate in TD.MEASURED_COHORTS)
+    scaled = TD.cohort_gpu_hours('external_confirmation')
+    assert scaled['basis'] == 'scaled' and scaled['scaled_from'] == 'folding_stability'
+    assert scaled['calibration_factor'] == pytest.approx(1.42, abs=0.02)
+    assert scaled['gpu_hours_calibrated'] > scaled['gpu_hours']
+    assert 'lower bound' in scaled['note']
+    # The calibration is the measured cohort's own ratio, not a chosen number.
+    predicted = (TD.MEASURED_COHORT_SECONDS['folding_stability']
+                 * TD.COHORTS['remote_homology'].states / TD.COHORTS['folding_stability'].states)
+    assert scaled['calibration_factor'] == pytest.approx(
+        TD.MEASURED_COHORT_SECONDS['remote_homology'] / predicted, abs=5e-4)
+    with pytest.raises(ValueError, match='no per-arm measured wall clock'):
+        TD.ARM_COSTS['progen3-3b'].seconds('external_confirmation')
 
 
 def test_the_storage_model_reproduces_the_measured_two_depth_footprint():
