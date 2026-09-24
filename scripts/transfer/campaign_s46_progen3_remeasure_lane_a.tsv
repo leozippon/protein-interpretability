@@ -1,0 +1,20 @@
+# ProGen3 Stage-46 homologous-context remeasurement, lane A (cards 2 and 3).
+#
+# Replaces the withdrawn batched ProGen3 scores of frozen run
+# 20260918221340_b43d0e29e7de. Same cohort digest
+# 33707cee59c523dec945f9cc6f815bf5e5a1610eeff6e40ca2f16ce3134a7532, the same two
+# frozen plans, the same five conditions in the registration's order and the
+# same bfloat16 kernel -- and --batch-size 1, because ProGen3's expert mixture
+# reduces over the whole flattened batch and the score path now refuses any
+# larger batch on this packing.
+#
+# Three lanes share one code freeze, so every cell writes into the same results
+# run directory. Cards were chosen from the idle cards of this allocation at
+# dispatch time; the concurrent d1_readout_* queues own the rest, and the
+# queue's own idle-card gate refuses a card that is not free.
+#
+#	slot	key	gpu	stage	label	env	expect	args
+1	s46rm	2	46_context_homologue.py	s46rm_score_progen3-3b_position_only	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	scores_progen3-3b_position_only.json	--stage score --arm progen3-3b --condition position_only --dtype bfloat16 --batch-size 1 --cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260918090846_a99df73cac3e/cohort.json --plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260918090846_a99df73cac3e/s46x_plan_progen3-3b/plan_progen3-3b.json
+1	s46rm	3	46_context_homologue.py	s46rm_score_progen3-3b_mono_shuffled	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	scores_progen3-3b_mono_shuffled.json	--stage score --arm progen3-3b --condition mono_shuffled --dtype bfloat16 --batch-size 1 --cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260918090846_a99df73cac3e/cohort.json --plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260918090846_a99df73cac3e/s46x_plan_progen3-3b/plan_progen3-3b.json
+2	s46rm	2	46_context_homologue.py	s46rm_score_progen3-112m_position_only	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	scores_progen3-112m_position_only.json	--stage score --arm progen3-112m --condition position_only --dtype bfloat16 --batch-size 1 --cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260918090846_a99df73cac3e/cohort.json --plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260918090846_a99df73cac3e/s46x_plan_progen3-112m/plan_progen3-112m.json
+2	s46rm	3	46_context_homologue.py	s46rm_score_progen3-112m_mono_shuffled	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python	scores_progen3-112m_mono_shuffled.json	--stage score --arm progen3-112m --condition mono_shuffled --dtype bfloat16 --batch-size 1 --cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260918090846_a99df73cac3e/cohort.json --plan /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260918090846_a99df73cac3e/s46x_plan_progen3-112m/plan_progen3-112m.json

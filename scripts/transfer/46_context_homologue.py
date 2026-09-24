@@ -539,7 +539,40 @@ def _target_nll(logits: torch.Tensor, ids: torch.Tensor, start: int, end: int) -
 # ------------------------------------------------------------------ the score
 
 
+#: Packings whose scored NLL is not invariant to the batch it was scored in, with
+#: the measured size of that dependence. ProGen3's ``SparseMoeBlock`` flattens
+#: batch and position into one token axis and runs one gather-and-GEMM per expert
+#: over the whole flattened batch, so the accumulation a token's output comes out
+#: of depends on how many other tokens routed to its expert; the model has no
+#: kernel above float16, so that reduction order reaches the result. Measured in
+#: bfloat16 against singleton scoring of the same rows, the maximum absolute
+#: difference is 0.02464 nats per token for ProGen3-3B at batch size two and
+#: 0.02796 for ProGen3-112M at batch size eight. Eight identical 770-token rows
+#: agree exactly with each other while sitting 0.02444 nats per token from the
+#: same row scored alone, so this is batch extent rather than batch position, and
+#: equal-length rows disagree too, so it is not padding. This stage's endpoint is
+#: a paired difference of a few hundredths of a nat per token, so a batched
+#: ProGen3 row is not a measurement of this arm and the score path refuses one.
+#: ``docs/D1_PROGEN3_STAGE46_REMEASUREMENT.md`` holds the full measurement.
+SINGLETON_ONLY_PACKINGS: dict[str, str] = {
+    ch.PACKING_PROGEN3: (
+        "its expert mixture reduces over the whole flattened batch and the model "
+        "has no kernel above float16, so a batched row's scored NLL sits up to "
+        "0.0246 (3B, batch two) to 0.0280 (112M, batch eight) nats per token "
+        "from its singleton value -- larger than the paired difference this "
+        "stage reports"
+    )
+}
+
+
 def run_score(args: argparse.Namespace) -> dict[str, Any]:
+    packing = ch.packing_of(args.arm)
+    if packing in SINGLETON_ONLY_PACKINGS and args.batch_size != 1:
+        raise SystemExit(
+            f"{args.arm}: --batch-size {args.batch_size} is refused because "
+            f"{SINGLETON_ONLY_PACKINGS[packing]}. Score this arm with "
+            "--batch-size 1"
+        )
     cohort = ch.load_cohort(args.cohort)
     plan = ch.load_plan(args.plan, cohort=cohort, arm=args.arm)
     modality = plan["modality"]
@@ -611,6 +644,9 @@ def run_score(args: argparse.Namespace) -> dict[str, Any]:
             "modality": modality,
             "device": args.device,
             "dtype": args.dtype,
+            # Recorded, not reconstructed. The batch size of the withdrawn
+            # ProGen3 scores had to be recovered from a queue manifest.
+            "batch_size": args.batch_size,
             "cohort_digest": cohort["digest"],
             "plan_digest": plan["digest"],
             "caveats": ch.CAVEATS.get(args.arm),
@@ -657,6 +693,21 @@ def _forward_rows(arm: Arm, rows: list[list[int]]) -> tuple[torch.Tensor, torch.
 
 
 def _forward_progen3(arm: Arm, rows: list[list[int]]) -> tuple[torch.Tensor, torch.Tensor]:
+    """Packed rows through the MoE, at the native independent-sequence ids.
+
+    ``sequence_ids`` indexes a learned embedding that ``ProGen3Model.forward``
+    adds to every token embedding, and the native ``ProGen3BatchPreparer``
+    assigns zero to every token of an independent sequence and pads with zero.
+    Assigning the batch-row index instead -- which this function did until
+    2026-09-23 -- adds ``embed_seq_id.weight[i]`` to every token of row ``i``,
+    so every row after the first carried an input the native interface never
+    produces. That defect is the withdrawn ProGen3 Stage-46 measurement. Zero
+    is the value, for content and padding alike, at every batch position.
+
+    Building a native batch is not the same as being able to measure one; what
+    this stage's score path may batch is declared in :func:`run_score`.
+    """
+
     from src.transfer.progen3 import forward
 
     pg = (arm.serving_provenance or {}).get("progen3")
@@ -674,7 +725,6 @@ def _forward_progen3(arm: Arm, rows: list[list[int]]) -> tuple[torch.Tensor, tor
     for index, row in enumerate(rows):
         ids[index, : len(row)] = torch.tensor(row, dtype=torch.long, device=arm.device)
         position_ids[index, : len(row)] = torch.arange(len(row), device=arm.device)
-        sequence_ids[index, : len(row)] = index
     batch = {
         "input_ids": ids,
         "position_ids": position_ids,
