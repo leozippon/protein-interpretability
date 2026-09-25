@@ -292,6 +292,29 @@ The full-width per-state block outputs are retained, **126.24 GiB over 14,124 ar
 
 Panel median -0.004582. By interface: residue 11 arms at a median of -0.002164 (2 positive, 0 above zero, 0 below), BPE 19 arms at a median of -0.004987 (0 positive, 0 above zero, 0 below), byte 3 arms at a median of -0.003586 (0 positive, 0 above zero, 0 below).
 
+## The class-axis recomputation, and why the depth sweep's boundary cells cannot be read against this gate
+
+The readout reassessment selected a class and a depth per arm. This gate's fits were re-run from the inputs its records bind, over the **full 33-arm panel at all three split seeds — 99 cells, none missing**, and the published verdict **stands**.
+
+| Quantity family | Maximum point change | Maximum interval-endpoint change |
+| --- | ---: | ---: |
+| Likelihood | 7.66e-17 | 1.24e-16 |
+| Representation | 3.69e-16 | 1.41e-15 |
+
+**Zero resolved sign changes**, and no arm-and-metric pair changes at any seed, let alone all three. The comparison covers the four licensed quantities: the primary and secondary likelihood and representation increments.
+
+**The null is not silence, because the control could have fired.** 168 likelihood-family cells had an interval endpoint close enough to zero that the movement observed in their own cell could have carried it across, and none crossed. Across three gates now — 254 on crossed controls, 136 on folding and stability, 168 here — quantities at risk did not move, which makes that a property of the measurement rather than a feature of one gate.
+
+**And the depth sweep's boundary-lifted cells have no counterpart here.** This cohort renders **no position-resolved summaries at all**: its depth archives hold two summaries per block, mean and last, and no `mut` or `suffix`, because a position-resolved summary requires the wild type and each of its mutants to render to the same one-token-per-residue grid and this cohort does not. Any attempt to read the sweep's position-resolved findings — including its boundary-lifted cells — against this gate would be comparing against summaries these archives could not contain. The pooled half of the sweep transfers; the position-resolved half does not exist for this endpoint.
+
+A further consequence for the depth axis: the admitted design here pools four summaries across **two** depths, so selecting one depth is not a narrower version of it but a differently constructed measurement at half the capacity. That question is asked separately as a matched-capacity contrast and is reported as a new measurement, explicitly not comparable to the published increment.
+
+
+
+**Accounting.** 33 of 33 arms have a record and no arm failed. The screen ran at the four BLAS threads this gate's stage pins, which it enforces because the thread count sets a float32 reduction order.
+
+**This gate's representation verdict is completeness rather than load-bearing**: its contribution to the programme's claims rests on the likelihood half, which is complete and reported above. Its depth arm waits on an every-block extraction of this cohort and nothing waits on that.
+
 ## Artifacts, and the measurement identity they were produced under
 
 Each arm contributes two quantities, added separately and never only jointly: the likelihood difference M_mut - M_WT in nats, one column, and the projected representation difference R_mut - R_WT over the four pooled blocks, 1,024 columns at 256 coordinates per block. Each was offered to the qualified control set, and each arm's own tokenisation descriptors were offered to that baseline first under the same qualification rule the controls faced.
