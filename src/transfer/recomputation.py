@@ -101,7 +101,13 @@ def admitted_prediction_tolerance(receipt: Path | str = ADMITTED_RECEIPT) -> flo
 
 @dataclass(frozen=True)
 class ReadoutSelection:
-    """One arm's selected readout class and depth, as the reassessment returns it.
+    """One cell's selected readout class and depth, as the reassessment returns it.
+
+    Keyed by arm **and panel**, because the published selection is: ProGen3-3B
+    selects block 11 on the anchor panel and block 23 on the EC-conditioned one,
+    and ProtGPT2 selects block 21 on two panels. A selection keyed by arm alone
+    could not express that, and would have silently applied one panel's depth to
+    another's cells.
 
     ``depth_axis`` is ``admitted`` when the selection stays at the two blocks the
     admitted extraction hooked, and one of the depth sweep's own axes otherwise.
@@ -110,6 +116,7 @@ class ReadoutSelection:
     """
 
     arm: str
+    panel: str = ''
     class_name: str = REPRODUCTION_CLASS
     depth_axis: str = 'admitted'
     depth_index: int | None = None
@@ -148,39 +155,52 @@ class ReadoutSelection:
     def selection_kind(self) -> str:
         return 'readout_class' if self.depth_axis == 'admitted' else 'extraction_depth'
 
+    @property
+    def key(self) -> tuple[str, str]:
+        return (self.arm, self.panel)
+
     def as_dict(self) -> dict:
-        return dict(arm=self.arm, class_name=self.class_name, depth_axis=self.depth_axis,
+        return dict(arm=self.arm, panel=self.panel, class_name=self.class_name,
+                    depth_axis=self.depth_axis,
                     depth_index=self.depth_index, coordinates=self.coordinates,
                     projection_seed=self.projection_seed, blas_threads=self.blas_threads,
                     selection_kind=self.selection_kind,
                     is_admitted_pipeline=self.is_admitted_pipeline)
 
 
-def load_selection(path: Path | str) -> dict[str, ReadoutSelection]:
-    """The reassessment's per-arm selection, read from its declaration.
+def load_selection(path: Path | str) -> dict[tuple[str, str], ReadoutSelection]:
+    """The reassessment's per-cell selection, read from its declaration.
 
     Refused when the declaration is absent, because the readout reassessment's
     results are what the selection comes from: a recomputation run against a
     default selection would report a recomputed increment that no reassessment
-    chose.
+    chose. Cells are keyed ``arm|panel``, and a bare arm key is refused rather
+    than spread over that arm's panels, because the published selection differs
+    by panel for at least one arm and guessing which panel a bare key meant is
+    exactly the substitution this driver exists to prevent.
     """
     path = Path(path)
     if not path.is_file():
         raise RecomputationRefused(
             f'no readout selection at {path}; the recomputation runs only against the '
-            'reassessment\'s own declared class and depth per arm')
+            'reassessment\'s own declared class and depth per cell')
     record = json.loads(path.read_text())
-    entries = record.get('arms')
+    entries = record.get('cells')
     if not isinstance(entries, dict) or not entries:
-        raise RecomputationRefused(f'{path} declares no per-arm selection')
+        raise RecomputationRefused(f'{path} declares no per-cell selection under "cells"')
     selection = {}
-    for arm, fields in entries.items():
+    for key, fields in entries.items():
+        if '|' not in key:
+            raise RecomputationRefused(
+                f'{path}: selection key {key!r} names no panel. The published selection differs '
+                'by panel for at least one arm, so a key is "arm|panel"')
+        arm, panel = key.split('|', 1)
         if not isinstance(fields, dict):
-            raise RecomputationRefused(f'{path}: {arm} does not declare a selection record')
+            raise RecomputationRefused(f'{path}: {key} does not declare a selection record')
         try:
-            selection[arm] = ReadoutSelection(arm=arm, **fields)
+            selection[(arm, panel)] = ReadoutSelection(arm=arm, panel=panel, **fields)
         except (TypeError, ValueError) as error:
-            raise RecomputationRefused(f'{path}: {arm} declares an unusable selection: {error}') \
+            raise RecomputationRefused(f'{path}: {key} declares an unusable selection: {error}') \
                 from error
     return selection
 
@@ -473,6 +493,91 @@ def representation(selection: ReadoutSelection, *, admitted_blocks=None, depth_b
 # ------------------------------------------------------------------ comparison
 
 
+def code_digest_differences(published: dict) -> dict:
+    """Files whose bytes differ from the ones the published cell recorded.
+
+    Reported, not refused. A published cell records the digest of every file its
+    fit read, and some of those files have since moved -- the resampler among
+    them, for every published cell of both gate families. The published bytes are
+    not recoverable from the repository, so a file-level comparison can say that
+    something changed and cannot say whether it changed a reported number. The
+    binding that can is :func:`published_intervals_reproduce`.
+    """
+    recorded = published.get('analysis_code_sha256') or {}
+    root = Path(__file__).resolve().parents[2]
+    changed, absent = [], []
+    for name, digest in sorted(recorded.items()):
+        path = root / name
+        if not path.is_file():
+            absent.append(name)
+        elif hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+            changed.append(name)
+    return dict(recorded_files=len(recorded), changed=changed, absent=absent,
+                reading=('a changed file is reported rather than refused, because the published '
+                         'bytes cannot be recovered to diff against; whether the change reached a '
+                         'reported number is what the resampler agreement measures'))
+
+
+def published_intervals_reproduce(published: dict, metrics) -> dict:
+    """Refuse unless the current resampler reproduces the published intervals exactly.
+
+    This draws nothing itself. It invokes the declared resampler
+    ``profile_increment.summarize`` on an input the published report holds, so it
+    is a check on that resampler rather than a second one, and its name says so.
+
+    A published cell carries the per-assay rows every summary was formed from, so
+    the resampler is a deterministic function of an input the report itself holds.
+    Re-running it at the published draw count and seed and requiring the published
+    point, interval and unit back is a behavioural check on the code that forms
+    every interval. It is stricter than comparing the file's digest, because it
+    fails only when a change reached a reported number, and stronger, because it
+    fails then even if no digest was ever recorded.
+    """
+    from .profile_increment import summarize
+    rows = published.get('assays')
+    if not rows:
+        raise RecomputationRefused(
+            'the published cell carries no per-assay rows, so the resampler that formed its '
+            'intervals cannot be checked against it; a recomputed interval would be compared '
+            'against a published one with no evidence that the same resampler formed both')
+    if 'bootstrap_seed' not in published:
+        raise RecomputationRefused('the published cell declares no bootstrap seed, so its '
+                                   'intervals cannot be re-formed from its own rows')
+    seed = int(published['bootstrap_seed'])
+    checked, differences, worst = [], [], 0.0
+    for metric in metrics:
+        summary = (published.get('summaries') or {}).get(metric)
+        if summary is None:
+            continue
+        realised = summarize(rows, metric, bootstrap=int(summary['resamples']), seed=seed)
+        checked.append(metric)
+        if realised.get('unit') != summary.get('unit'):
+            differences.append(f"{metric}: unit {realised.get('unit')!r} against the published "
+                               f"{summary.get('unit')!r}")
+            continue
+        if realised.get('point') != summary.get('point') or \
+                realised.get('interval') != summary.get('interval'):
+            differences.append(f"{metric}: {realised.get('point')} {realised.get('interval')} "
+                               f"against the published {summary.get('point')} "
+                               f"{summary.get('interval')}")
+            continue
+        if summary.get('point') is not None and summary.get('interval') is not None:
+            worst = max([worst, abs(realised['point'] - summary['point'])]
+                        + [abs(a - b) for a, b in zip(realised['interval'], summary['interval'])])
+    if differences:
+        raise RecomputationRefused(
+            'the resampler no longer reproduces the published intervals from the published cell\'s '
+            'own rows, so a recomputed interval is not comparable with a published one:\n  - '
+            + '\n  - '.join(differences))
+    if not checked:
+        raise RecomputationRefused('none of this gate\'s declared metrics is present in the '
+                                   'published cell, so the resampler cannot be checked against it')
+    return dict(metrics_checked=len(checked), metrics=checked, resample_seed=seed,
+                max_absolute_difference=worst, exact=worst == 0.0,
+                control=('the current resampler re-formed each published summary from the '
+                         'published cell\'s own per-assay rows at its own draw count and seed'))
+
+
 def compare_increments(published: dict, recomputed: dict, metrics) -> list[dict]:
     """Each metric's recomputed increment beside the published one.
 
@@ -545,15 +650,182 @@ def prediction_agreement(published: dict, recomputed: dict, designs) -> dict:
     return worst
 
 
+def pipeline_agreement(worst: dict, tolerance: float) -> dict:
+    """Whether an admitted-selection replay reproduced the published predictions.
+
+    This decides and does not raise, so that a cell which fails it is still
+    carried through to its increments and intervals and the refusal arrives with
+    its evidence rather than in place of it. The question a reader has when a
+    replay departs is whether any *published quantity* moved, and suppressing the
+    comparison in order to raise earlier is the one way to make that
+    unanswerable. The refusal belongs to the caller: :func:`cell_report` marks the
+    verdict and the runner exits non-zero on it, so no cell that failed this gate
+    is reported as having passed it.
+    """
+    offenders = {design: value for design, value in sorted(worst.items()) if value > tolerance}
+    return dict(tolerance=tolerance, max_absolute_prediction_deviation=worst,
+                passed=not offenders, offenders=offenders,
+                refusal=(None if not offenders else
+                         'the admitted-selection replay does not reproduce the published held-out '
+                         f'predictions inside {tolerance}: '
+                         + ', '.join(f'{design} at {value:.6g}'
+                                     for design, value in offenders.items())))
+
+
 def refuse_on_pipeline_drift(worst: dict, tolerance: float) -> dict:
-    """Refuse an admitted-selection replay whose predictions leave the admitted tolerance."""
-    offenders = {design: value for design, value in worst.items() if value > tolerance}
-    if offenders:
-        raise RecomputationRefused(
-            'the admitted-selection replay does not reproduce the published held-out '
-            f'predictions inside {tolerance}: '
-            + ', '.join(f'{design} at {value:.6g}' for design, value in sorted(offenders.items())))
-    return dict(tolerance=tolerance, max_absolute_prediction_deviation=worst, passed=True)
+    """The raising form, for a caller with nothing further to report."""
+    record = pipeline_agreement(worst, tolerance)
+    if not record['passed']:
+        raise RecomputationRefused(record['refusal'])
+    return record
+
+
+def summary_agreement(published: dict, recomputed: dict) -> dict:
+    """Whether any published quantity moved, over every summary the two share.
+
+    The declared metrics are what a gate reports; this is every summary its cell
+    carries, because whether a recomputation is faithful is a question about the
+    estimand and not about the four numbers a record happens to headline. A point,
+    both interval endpoints, the resampling unit, the unit count and whether the
+    interval excludes zero are each compared, and a resolved sign that changes is
+    named individually.
+    """
+    left = published.get('summaries') or {}
+    right = recomputed.get('summaries') or {}
+    shared = sorted(set(left) & set(right))
+    moved, sign_changes = [], []
+    worst_point = worst_interval = 0.0
+    exact = 0
+    for metric in shared:
+        a, b = left[metric], right[metric]
+        differences = []
+        if a.get('unit') != b.get('unit'):
+            differences.append(f"unit {b.get('unit')!r} against {a.get('unit')!r}")
+        if a.get('n_units') != b.get('n_units'):
+            differences.append(f"n_units {b.get('n_units')} against {a.get('n_units')}")
+        if a.get('point') != b.get('point'):
+            differences.append(f"point {b.get('point')} against {a.get('point')}")
+            if a.get('point') is not None and b.get('point') is not None:
+                worst_point = max(worst_point, abs(b['point'] - a['point']))
+        if a.get('interval') != b.get('interval'):
+            differences.append(f"interval {b.get('interval')} against {a.get('interval')}")
+            if a.get('interval') is not None and b.get('interval') is not None:
+                worst_interval = max([worst_interval]
+                                     + [abs(x - y) for x, y in zip(b['interval'], a['interval'])])
+        if _sign(a) != _sign(b):
+            sign_changes.append(f'{metric}: {_sign(a)} to {_sign(b)}')
+        if differences:
+            moved.append(dict(metric=metric, differences=differences))
+        else:
+            exact += 1
+    return dict(shared_metrics=len(shared), recovered_exactly=exact, moved=moved,
+                resolved_sign_changes=sign_changes,
+                max_absolute_point_change=worst_point,
+                max_absolute_interval_endpoint_change=worst_interval,
+                every_published_quantity_bit_identical=not moved,
+                reading=('every summary both reports carry, compared on its point, both interval '
+                         'endpoints, its resampling unit, its unit count and whether it excludes '
+                         'zero. This is the estimand; the prediction departure is the arithmetic '
+                         'path to it, and the two can differ. Bit-identity is reported and is not '
+                         'the verdict: the floor is last-bit float64 arithmetic, reached even by '
+                         'quantities that carry no representation at all, so the two maxima and '
+                         'the resolved-sign list are what a reader should weigh against the '
+                         'precision the record reports'))
+
+
+#: Schema of the per-gate aggregation a batch writes beside its cell records.
+BATCH_SCHEMA = 'representation_recomputation_batch_v1'
+
+
+def aggregate_cells(records, *, failures=(), planned_refusals=()) -> dict:
+    """Per-gate aggregation over recomputed cells, with the verdict question first.
+
+    Two counts that mean opposite things are kept strictly apart. A **resolved
+    sign change** is a published quantity crossing zero-exclusion: it is a
+    scientific result. A **gate refusal with no sign change** is the
+    pipeline-identity control firing on an arithmetic departure that reached no
+    published number: it is a provenance fact. Collapsing them would report the
+    second as if it were the first.
+
+    A gate's verdict is read off its own declared metrics rather than a chosen
+    primary: if no declared metric's resolved sign moves in any cell, the verdict
+    stands; if one moves, the aggregation names the cell, the metric, the two
+    signs and the two intervals, and says nothing about what the gate should now
+    record. That assignment belongs to the gate's own record.
+    """
+    gates: dict[str, dict] = {}
+    for record in records:
+        gate = record['gate']
+        entry = gates.setdefault(gate, dict(
+            gate=gate, cells_attempted=0, cells_completed=0,
+            cells_whose_pipeline_gate_refused=0,
+            cells_refused_with_no_resolved_sign_change=0,
+            max_absolute_point_change=0.0, max_absolute_interval_endpoint_change=0.0,
+            resolved_sign_changes=[], summaries_compared=0, declared_metrics={},
+            selection_kinds=set(), cells=[]))
+        entry['cells_attempted'] += 1
+        entry['cells_completed'] += 1
+        entry['selection_kinds'].add(record['selection']['depth_axis'])
+        quantities = record.get('published_quantities') or {}
+        entry['summaries_compared'] = max(entry['summaries_compared'],
+                                         int(quantities.get('shared_metrics') or 0))
+        entry['max_absolute_point_change'] = max(
+            entry['max_absolute_point_change'],
+            float(quantities.get('max_absolute_point_change') or 0.0))
+        entry['max_absolute_interval_endpoint_change'] = max(
+            entry['max_absolute_interval_endpoint_change'],
+            float(quantities.get('max_absolute_interval_endpoint_change') or 0.0))
+        cell = f"{record['arm']}/{record['panel']}/{record['split_seed']}"
+        refused = record.get('verdict') == 'refused'
+        changes = []
+        for row in record.get('increments') or ():
+            if not row.get('comparable'):
+                continue
+            metric = row['metric']
+            seen = entry['declared_metrics'].setdefault(metric, dict(cells=0, sign_changes=0))
+            seen['cells'] += 1
+            if row.get('resolved_sign_changed'):
+                seen['sign_changes'] += 1
+                changes.append(dict(cell=cell, metric=metric,
+                                    published=row.get('published'),
+                                    recomputed=row.get('recomputed'),
+                                    point_change=row.get('point_change'),
+                                    unit=row.get('unit')))
+        entry['resolved_sign_changes'].extend(changes)
+        if refused:
+            entry['cells_whose_pipeline_gate_refused'] += 1
+            if not changes:
+                entry['cells_refused_with_no_resolved_sign_change'] += 1
+        entry['cells'].append(dict(cell=cell, verdict=record.get('verdict'),
+                                   resolved_sign_changes=len(changes)))
+    for entry in gates.values():
+        entry['selection_kinds'] = sorted(entry['selection_kinds'])
+        entry['verdict'] = 'changes' if entry['resolved_sign_changes'] else 'stands'
+    for failure in failures:
+        entry = gates.setdefault(failure['gate'], dict(
+            gate=failure['gate'], cells_attempted=0, cells_completed=0,
+            cells_whose_pipeline_gate_refused=0,
+            cells_refused_with_no_resolved_sign_change=0,
+            max_absolute_point_change=0.0, max_absolute_interval_endpoint_change=0.0,
+            resolved_sign_changes=[], summaries_compared=0, declared_metrics={},
+            selection_kinds=[], cells=[], verdict='incomplete'))
+        entry['cells_attempted'] += 1
+        entry.setdefault('failures', []).append(failure)
+        entry['verdict'] = 'incomplete'
+    return dict(
+        schema=BATCH_SCHEMA, gates=dict(sorted(gates.items())),
+        cells_completed=sum(g['cells_completed'] for g in gates.values()),
+        cells_failed=len(list(failures)),
+        any_cell_refused=any(g['cells_whose_pipeline_gate_refused'] for g in gates.values()),
+        any_verdict_changes=any(g['verdict'] == 'changes' for g in gates.values()),
+        gates_whose_verdict_changes=sorted(name for name, g in gates.items()
+                                           if g['verdict'] == 'changes'),
+        left_for_the_waves=[dict(gate=c['gate'], arm=c['arm'], panel=c['panel'],
+                                 refusal=c['refusal']) for c in planned_refusals],
+        reading=('a resolved sign change is a published quantity crossing zero-exclusion and is a '
+                 'scientific result; a pipeline-gate refusal with no sign change is an arithmetic '
+                 'departure that reached no published number. The two counts are reported '
+                 'separately because they mean opposite things'))
 
 
 # ----------------------------------------------------------------------- plans
@@ -576,6 +848,9 @@ class CellRequest:
         if self.selection.arm != self.arm:
             raise ValueError(f'{self.gate}/{self.arm}: the selection names arm '
                              f'{self.selection.arm!r}')
+        if self.selection.panel and self.selection.panel != self.panel:
+            raise ValueError(f'{self.gate}/{self.arm}: the selection is for panel '
+                             f'{self.selection.panel!r}, this cell is on {self.panel!r}')
 
     def as_dict(self) -> dict:
         return dict(gate=self.gate, arm=self.arm, panel=self.panel, split_seed=self.split_seed,
@@ -589,31 +864,61 @@ class CellRequest:
 IMPLEMENTED_ADAPTERS: dict[str, str] = {
     'readout_panel': 'src.transfer.readout_analysis.evaluate_readouts, on rows loaded from the '
                      'admitted readout extraction manifests',
+    'crossed_controls': 'src.transfer.recomputation_adapters.crossed_controls_cell, which calls '
+                        'the crossed-controls stage\'s own profile-store binding, block builders '
+                        'and src.transfer.crossed_controls.evaluate_crossed_controls unchanged',
+    'local_context': 'src.transfer.recomputation_adapters.local_context_cell, which calls the '
+                     'local-context stage\'s own block builders and '
+                     'src.transfer.local_context.evaluate_local_context unchanged, over the '
+                     'carried-forward local blocks the published cell names',
 }
 
 #: What each remaining adapter needs before it can be written and tested. Each is
 #: a retained artefact schema that is only readable on the remote allocation, so
 #: writing the loader now would be writing it against an unread layout.
 PENDING_ADAPTERS: dict[str, tuple[str, ...]] = {
-    'crossed_controls': (
-        'the retained column-frequency arrays the cohort\'s own profile scores were built from, '
-        'so the mutation-local profile block P reproduces its admitted values',
-        'the tokenisation descriptors T, which are read off the production packing'),
-    'local_context': (
-        'the same profile arrays, for the C+P control sets',
-        'the frozen local blocks, which src.transfer.local_context rebuilds from the cohort alone '
-        'and therefore need no artefact beyond it'),
     'folding_stability': (
-        'the per-background NPZ schema of results/external_baseline/<wave>/full-<arm>/, which the '
-        'full-width retention pass writes and which is not present on the workstation',
+        'one loader serves this gate, remote_homology and external_confirmation: all three declare '
+        'their designs in src.transfer.stability_gate and retain the same two archive kinds per '
+        'background, so writing three would be writing one three times',
+        'both archive kinds, measured in-pod: full_<arm>_<background>.npz holds a single `features` '
+        'array of (rows, 4, hidden width) float32, and <arm>_<background>.npz holds `projected` at '
+        '(rows, 4, 256) beside the `likelihood` column and the token descriptors. A refit at a new '
+        'class needs the first for the representation and the second for the likelihood, so a '
+        'loader reading one kind is silently wrong',
+        'the two kinds sit in one directory for the confirmation gates and in two separate runs for '
+        'this gate, so the layout is a per-gate fact rather than a family one',
         'the per-arm fit record\'s nuisance block, for the fold map and the purged training groups'),
+    'remote_homology': (
+        'the stability-family loader above; this gate needs no extraction of any kind for the class '
+        'axis, because a refit at a new readout class reads the already-hooked depths and runs no '
+        'forward pass, so its 99 class cells wait on code alone',
+        'its own 179 family groups and 6,291 substitutions, not the anchor panel: the support, the '
+        'fold map and the resampling unit are this cohort\'s',
+        '20,130 archives of both kinds over 33 arms, 8.51 GiB measured in-pod'),
+    'external_confirmation': (
+        'the same stability-family loader, and the same class-axis freedom: no forward pass, so its '
+        '99 class cells wait on code alone. Its representation panel currently resolves 0 of 33 '
+        'arms at the two hooked depths, which is the ambiguity L53 describes, and this endpoint is '
+        'the paper\'s external confirmation, so a null there must be distinguishable from a '
+        'breadth limit',
+        '28,248 archives of both kinds over 33 arm directories, 139.37 GiB measured in-pod, so a '
+        'whole-panel class pass reads that volume once',
+        'its tokenisation descriptors qualified in 23 of 33 arms, unlike either sibling, so the '
+        'control set a loader must reproduce is not the siblings\' control set'),
     'residue_interactions': (
         'the per-background array schema of results/pairwise_epistasis_20260924/extraction/<arm>/',
         'the per-arm fit record\'s row-identity and fold-identity digests, which the refit must '
         'reproduce through src.transfer.pairwise_epistasis.row_identity'),
     'evolution_adaptation': (
-        'no state loader at all: this gate re-aggregates the upstream cells\' recomputed per-assay '
-        'increments, so its adapter runs after crossed_controls and reads that output',),
+        'nothing to write: this gate needs no adapter at all. Its own analysis stage, '
+        '`scripts/transfer/analyse_retrieval_strata.py`, already takes the crossed-control cell '
+        'reports by directory through a repeatable --crossed-reports, re-aggregates their per-assay '
+        'increments over the frozen strata declaration it binds by digest, and checks each cell '
+        'against the cohort digest rather than against the published run. So the recomputed strata '
+        'are that stage pointed at the recomputed cells: `--crossed-reports <recomputed directory>` '
+        'with the same --strata-declaration and --expect-declaration-sha256. What it waits on is '
+        'the crossed-control recomputation, not code',),
 }
 
 
@@ -660,8 +965,17 @@ def plan(requests, *, roots=None) -> dict:
 def cell_report(request: CellRequest, *, identity: dict, provenance: dict,
                 comparison: list[dict], predictions: dict, blocking: dict,
                 extra: dict | None = None) -> dict:
-    """One recomputed cell, with the published increment beside the recomputed one."""
-    record = dict(schema=CELL_SCHEMA, **request.as_dict(), identity=identity,
+    """One recomputed cell, with the published increment beside the recomputed one.
+
+    ``verdict`` is ``refused`` when a gate this cell had to pass did not, and the
+    record is still complete: a refusal that carries its comparison is what lets a
+    reader see whether any published quantity moved, and a caller treating this
+    record as an accepted cell is contradicting a field it can read.
+    """
+    failed = predictions.get('passed') is False
+    record = dict(schema=CELL_SCHEMA, **request.as_dict(),
+                  verdict='refused' if failed else 'recomputed',
+                  refusal=predictions.get('refusal') if failed else None, identity=identity,
                   representation=provenance, product_blocking=blocking,
                   prediction_agreement=predictions, increments=comparison,
                   reading=('the recomputed increment is this selection\'s; the published one is '
@@ -735,7 +1049,7 @@ def readout_cell(request: CellRequest, rows: list[dict], published: dict, *,
     identity = refuse_on_drift(contract, identity_from_readout_report(recomputed))
     worst = prediction_agreement(published, recomputed, READOUT_DESIGNS)
     if request.selection.is_admitted_pipeline:
-        agreement = refuse_on_pipeline_drift(worst, admitted_prediction_tolerance(receipt))
+        agreement = pipeline_agreement(worst, admitted_prediction_tolerance(receipt))
         agreement['control'] = ('pipeline identity: the admitted selection must reproduce the '
                                 'published held-out predictions inside the admitted tolerance')
     else:
@@ -753,7 +1067,10 @@ def readout_cell(request: CellRequest, rows: list[dict], published: dict, *,
     return cell_report(request, identity=identity, provenance=provenance,
                        comparison=compare_increments(published, recomputed, metrics),
                        predictions=agreement, blocking=blocking,
-                       extra=dict(recomputed=dict(
+                       extra=dict(resampler=published_intervals_reproduce(published, metrics),
+                                  fitting_code=code_digest_differences(published),
+                                  published_quantities=summary_agreement(published, recomputed),
+                                  recomputed=dict(
                            n_assays=recomputed['n_assays'], n_families=recomputed['n_families'],
                            n_variants=recomputed['n_variants'],
                            feature_dimensions=recomputed['feature_dimensions'],

@@ -306,11 +306,21 @@ GATE_RETENTION: dict[str, GateRetention] = {
                              'with endpoint_qualification.json, endpoint_records.json, '
                              'support_declaration.json and controls_qualification.json beside it'),
             RetainedArtifact('full_width_states',
-                             'results/external_baseline/20260924081450_45cbf26d2945/rh-<arm>/',
-                             'cluster',
-                             'every cell carried --keep-full-features, so the unprojected '
-                             'per-state block outputs are retained; 33 of 33 cells exited ok and '
-                             '10,065 full-width archives are present, verified in-pod'),
+                             'results/external_baseline/20260924081450_45cbf26d2945/rh-<arm>/'
+                             'full_<arm>_<background>.npz', 'cluster',
+                             'every cell carried --keep-full-features; each background writes one '
+                             'full-width archive holding a single `features` array of (rows, 4, '
+                             'hidden width) float32 and its metadata, 10,065 of them over 33 arms, '
+                             'verified in-pod'),
+            RetainedArtifact('projected_states',
+                             'results/external_baseline/20260924081450_45cbf26d2945/rh-<arm>/'
+                             '<arm>_<background>.npz', 'cluster',
+                             'the second archive each background writes, and the one a class refit '
+                             'also needs: `projected` at (rows, 4, 256) float32 beside the '
+                             '`likelihood` column and the pooled, scored and packed token counts, '
+                             'the token ids and offsets, the variant states and positions, the '
+                             'hidden width and the two repeat controls. A loader reading only the '
+                             'full-width archives would have no likelihood column at all'),
             RetainedArtifact('fold_map', 'results/remote_homology_20260924/fits/fit_<arm>.json',
                              'cluster',
                              'each carrying its complete fold map and the first-stage diagnostics '
@@ -354,11 +364,20 @@ GATE_RETENTION: dict[str, GateRetention] = {
                              'support_declaration.json, profile_features.npz and the alignment '
                              'screen\'s own query and subject FASTA under screen/'),
             RetainedArtifact('full_width_states',
-                             'results/external_baseline/20260924085613_5f8d32cf0368/ec-<arm>/',
-                             'cluster',
-                             'every cell carries --keep-full-features; 8 of 33 cells complete when '
-                             'probed in-pod, the extraction being the long pole at 4.2 times the '
-                             'stability cohort\'s residue workload per arm'),
+                             'results/external_baseline/20260924085613_5f8d32cf0368/ec-<arm>/'
+                             'full_<arm>_<background>.npz', 'cluster',
+                             'every cell carries --keep-full-features; one full-width archive per '
+                             'background holding a single `features` array of (rows, 4, hidden '
+                             'width) float32, 14,124 of them over 33 arm directories, measured '
+                             'in-pod at 139.37 GiB for the whole run directory'),
+            RetainedArtifact('projected_states',
+                             'results/external_baseline/20260924085613_5f8d32cf0368/ec-<arm>/'
+                             '<arm>_<background>.npz', 'cluster',
+                             'the second archive each background writes, and the one a class refit '
+                             'also needs: `projected` at (rows, 4, 256) float32 beside the '
+                             '`likelihood` column and the token descriptors. The two kinds sit in '
+                             'one directory here and in two separate runs for the '
+                             'folding-and-stability gate, so a loader cannot assume either layout'),
             RetainedArtifact('fold_map', 'results/external_confirmation_20260924/fits/', 'cluster',
                              'the fits follow the extraction; the entry points are the ones that '
                              'produced the remote-homology gate\'s completed panel'),
@@ -506,7 +525,7 @@ GATE_RETENTION: dict[str, GateRetention] = {
         representation_cells=99,
         cell_shape='33 arms at three split seeds, each decomposed over six stratifications and '
                    '20 populated bands',
-        published_metrics=('stratified_profile_residual_representation_increment',),
+        published_metrics=('increment_R_C_P',),
         artifacts=(
             RetainedArtifact('cohort',
                              'logs/d1_gate_retrieval_20260923/strata_declaration.json', 'repository',
@@ -531,7 +550,11 @@ GATE_RETENTION: dict[str, GateRetention] = {
         ),
         supported_selections=frozenset(SELECTION_KINDS),
         depends_on=('crossed_controls',),
-        conditions=('this gate refits nothing: a stratum estimate is the same paired statistic over '
+        conditions=('its published record does not carry a flat summaries map: a stratum estimate '
+                    'is addressed as readout_anchor[arm][contrasts][increment_R_C_P][split seed]'
+                    '[stratum], so this gate is compared report against report through its own '
+                    'stage rather than metric by metric through the driver\'s comparison',
+                    'this gate refits nothing: a stratum estimate is the same paired statistic over '
                     'the same fitted held-out predictions on the units the stratum holds, so its '
                     'recomputation is a re-aggregation that consumes the upstream cells\' '
                     'recomputed per-assay increments',
@@ -719,9 +742,8 @@ GATE_RETENTION: dict[str, GateRetention] = {
         unit=_CLUSTER_UNIT,
         representation_cells=99,
         cell_shape='33 arms at three split seeds on the anchor panel',
-        published_metrics=('representation_increment_over_C', 'representation_increment_over_C_P',
-                           'representation_increment_over_C_L_P',
-                           'representation_rank_mse_reduction_over_C_L_P'),
+        published_metrics=('increment_R_C', 'increment_R_C_P', 'increment_R_C_L_P',
+                           'rank_mse_reduction_R_C_L_P'),
         artifacts=(
             RetainedArtifact('cohort', 'logs/d1_readout_20260923/cohort.json', 'repository',
                              'the same anchor cohort, digest 4093ac34…'),

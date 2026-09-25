@@ -198,6 +198,18 @@ Over that qualified control the **native likelihood's** increment is above zero 
 
 A surviving increment, provisional or not, is bounded by the declared controls, the experimental-label budget of 163 wild-type clusters and the readout class stated above. It identifies accessible predictive information beyond those controls on held-out wild-type clusters. **It locates no mechanism**, does not say which computation carries the information, does not establish an irreducible biological rule at any level of sequence organisation, and does not show that the information is local or non-local in any sense beyond "not reachable from these declared local descriptors under this readout".
 
+## The recomputation landed, and the verdict stays provisional
+
+The readout-class reassessment selected, for each arm and panel, a readout class and a depth; for this panel every selection is a depth selection at class `C4_full_random_feature`. All 21 of this gate's cells — seven arms at three split seeds — were refitted at that selection on identical support, folds, seeds, weighting and label budget, and the representation increments were compared against the published ones with the resampling unit carried through. **The verdict stays `provisional`**, and the counts that settle it are these.
+
+Over the six metrics this record reports, **10 of 126 metric-cells cross from an interval including zero to one excluding it**, always upward, with nine on `increment_R_after_M_C_P_wall` and one on `increment_R_C_P_wall`. `increment_R_C`, `increment_R_C_P`, `increment_R_C_wall` and `increment_R_C_P_rf3` change in no cell. Under this programme's all-three-seed rule, **exactly one arm-and-metric pair survives**: ProGen2-large on `increment_R_after_M_C_P_wall`, which moves from +0.005680 [−0.002578, +0.013799] to +0.012599 [+0.005283, +0.020329] at seed 20260924 and resolves above zero at all three seeds. That survivor is recorded; it does not promote the verdict. One pair out of 126 comparisons with no multiplicity adjustment, on a quantity that is not this gate's headline increment and while the headline increments do not move at all, is not a resolved verdict — and the increment it concerns is the one added over a baseline that already contains the likelihood, which is the most sensitive of the six to a change of representation.
+
+Two readings of this batch are **not** available and are recorded so that neither is reconstructed later. The count above ranges over the metrics this record reports, not over the data: the same 21 cells carry **111 crossings across 20 distinct metrics** over their full summary sets, so no claim that "the representation increments were stable" can be made from the declared count alone (catalogued as L56). And the crossed-controls gate is not a null against which these changes stand out — it carries 33 crossings of its own over its full summary set — so that gate cannot be cited as the control that makes this result readable.
+
+What does support reading these changes as specific to the selection is a measured negative control: across both gates, **254 likelihood-family metric-cells sat close enough to zero to cross under the interval movement their own cell showed, and none crossed**, against 144 crossings in 886 at-risk cells among the quantities the selection reaches. The selection replaces the representation block and no likelihood column, and the likelihood quantities did not move.
+
+Every bound stated above this section continues to apply, and the intervals remain unadjusted.
+
 ## Retained for recomputation
 
 The representation side is expected to be recomputed once the readout-class reassessment completes, so everything that makes a revisit cheap is retained rather than regenerated:

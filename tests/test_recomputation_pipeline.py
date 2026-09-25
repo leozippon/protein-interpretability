@@ -199,19 +199,42 @@ def test_a_recomputation_without_the_reassessments_selection_is_refused(tmp_path
     with pytest.raises(RC.RecomputationRefused, match='no readout selection at'):
         RC.load_selection(tmp_path / 'absent.json')
     empty = tmp_path / 'empty.json'
-    empty.write_text(json.dumps({'arms': {}}))
-    with pytest.raises(RC.RecomputationRefused, match='declares no per-arm selection'):
+    empty.write_text(json.dumps({'cells': {}}))
+    with pytest.raises(RC.RecomputationRefused, match='declares no per-cell selection'):
         RC.load_selection(empty)
     bad = tmp_path / 'bad.json'
-    bad.write_text(json.dumps({'arms': {'progen2-base': {'class_name': 'C9_invented'}}}))
+    bad.write_text(json.dumps({'cells': {'progen2-base|anchor201': {'class_name': 'C9_invented'}}}))
     with pytest.raises(RC.RecomputationRefused, match='unusable selection'):
         RC.load_selection(bad)
+    # A key naming no panel is refused rather than spread over that arm's panels:
+    # the published selection differs by panel for ProGen3-3B, so guessing which
+    # panel a bare key meant is the substitution this driver exists to prevent.
+    bare = tmp_path / 'bare.json'
+    bare.write_text(json.dumps({'cells': {'progen2-base': {'depth_axis': 'admitted'}}}))
+    with pytest.raises(RC.RecomputationRefused, match='names no panel'):
+        RC.load_selection(bare)
     good = tmp_path / 'good.json'
-    good.write_text(json.dumps({'arms': {'progen2-base': {'depth_axis': 'depth',
-                                                          'depth_index': 25, 'coordinates': 256,
-                                                          'projection_seed': 20261123}}}))
+    good.write_text(json.dumps({'cells': {'progen2-base|anchor201': {
+        'depth_axis': 'depth', 'depth_index': 25, 'coordinates': 256,
+        'projection_seed': 20261123}}}))
     selection = RC.load_selection(good)
-    assert selection['progen2-base'].selection_kind == 'extraction_depth'
+    assert selection[('progen2-base', 'anchor201')].selection_kind == 'extraction_depth'
+
+
+def test_the_published_selection_loads_and_differs_by_panel_for_one_arm():
+    """The real artefact, not a fixture: ten cells, one class, and two arms whose
+    selected block depends on which panel the cell is on."""
+    path = REPO_ROOT / 'logs/d1_recomputation_20260924/readout_selection.json'
+    if not path.is_file():
+        pytest.skip(f'{path} is not on this host')
+    selection = RC.load_selection(path)
+    assert len(selection) == 10
+    assert {choice.class_name for choice in selection.values()} == {'C4_full_random_feature'}
+    assert selection[('progen3-3b', 'anchor201')].depth_index == 11
+    assert selection[('progen3-3b', 'EC_conditioned40')].depth_index == 23
+    assert selection[('protgpt2', 'anchor201')].depth_index == 21
+    assert selection[('protgpt2', 'native_protgpt2')].depth_index == 21
+    assert all(choice.selection_kind == 'extraction_depth' for choice in selection.values())
 
 
 def test_the_tolerance_comes_from_the_admitted_receipt_and_is_never_defaulted(tmp_path):
@@ -483,11 +506,19 @@ def test_the_pipeline_identity_gate_refuses_a_replay_outside_the_admitted_tolera
     worst = RC.prediction_agreement(published, identical, ('B', 'R'))
     assert worst == {'B': 0.0, 'R': 0.0}
     assert RC.refuse_on_pipeline_drift(worst, 1e-8)['passed'] is True
+    assert RC.pipeline_agreement(worst, 1e-8) == dict(
+        tolerance=1e-8, max_absolute_prediction_deviation=worst, passed=True, offenders={},
+        refusal=None)
     moved = dict(predictions=[dict(assay='a', B=[0.0, 1.0], R=[9.085e-7, 1.0])])
     worst = RC.prediction_agreement(published, moved, ('B', 'R'))
     assert worst['R'] == pytest.approx(9.085e-7)
     with pytest.raises(RC.RecomputationRefused, match='R at 9.085e-07'):
         RC.refuse_on_pipeline_drift(worst, 1e-8)
+    # The deciding form does not raise, so a failing cell can still be carried
+    # through to its increments; the verdict is what refuses it.
+    record = RC.pipeline_agreement(worst, 1e-8)
+    assert record['passed'] is False and list(record['offenders']) == ['R']
+    assert 'R at 9.085e-07' in record['refusal']
     short = dict(predictions=[dict(assay='a', B=[0.0], R=[0.0])])
     with pytest.raises(RC.RecomputationRefused, match='predictions against'):
         RC.prediction_agreement(published, short, ('B',))
@@ -511,7 +542,7 @@ def test_a_plan_refuses_before_reading_an_array_and_names_what_is_missing(tmp_pa
         _request('readout_panel'),
         _request('higher_order'),
         _request('folding_stability', selection=deeper),
-        _request('local_context'),
+        _request('residue_interactions'),
         _request('readout_panel', published=tmp_path / 'absent.json'),
     ])
     assert schedule['cells'] == 5
@@ -520,11 +551,12 @@ def test_a_plan_refuses_before_reading_an_array_and_names_what_is_missing(tmp_pa
     refusals = {cell['gate']: cell['refusal'] for cell in schedule['refused']}
     assert 'no model quantity was read at all' in refusals['higher_order']
     assert 'no depth-resolved extraction' in refusals['folding_stability']
-    assert 'no adapter' in refusals['local_context']
+    assert 'no adapter' in refusals['residue_interactions']
     assert schedule['retention_declaration_sha256'] == GR.declaration_digest()
-    assert set(schedule['adapters']['pending']) >= {'local_context', 'folding_stability',
-                                                    'residue_interactions', 'crossed_controls',
+    assert set(schedule['adapters']['pending']) >= {'folding_stability', 'residue_interactions',
                                                     'evolution_adaptation'}
+    assert set(schedule['adapters']['implemented']) == {'readout_panel', 'crossed_controls',
+                                                        'local_context'}
 
 
 def test_a_cell_request_is_refused_for_an_undeclared_gate_or_a_mismatched_arm():
@@ -1224,3 +1256,47 @@ def test_a_wave_spreads_over_its_cards_with_one_cell_per_card_per_slot():
     with pytest.raises(ValueError, match='distinct and non-empty'):
         TD.campaign_rows('folding_stability', selection, project_root='/root',
                          runtime='ENV=1', gpus=[0, 0])
+
+
+def test_a_failed_pipeline_gate_still_produces_a_complete_record_marked_refused():
+    """A refusal that carries its comparison is what answers the real question.
+
+    The prediction departure is the arithmetic path; whether any published
+    quantity moved is the estimand. A gate that raised before the increments were
+    computed made the second question unanswerable from the artefact.
+    """
+    request = _request('readout_panel')
+    failed = RC.pipeline_agreement({'B_R': 2.9e-6}, 1e-8)
+    record = RC.cell_report(request, identity={'identical': True}, provenance={},
+                            comparison=[], predictions=failed, blocking={})
+    assert record['verdict'] == 'refused'
+    assert 'B_R at 2.9e-06' in record['refusal']
+    passed = RC.pipeline_agreement({'B_R': 0.0}, 1e-8)
+    assert RC.cell_report(request, identity={}, provenance={}, comparison=[],
+                          predictions=passed, blocking={})['verdict'] == 'recomputed'
+
+
+def test_summary_agreement_reports_every_shared_quantity_and_names_a_sign_change():
+    unit = 'wild-type family at 50% identity'
+    published = dict(summaries={
+        'a': dict(point=0.5, interval=[0.1, 0.9], unit=unit, n_units=163, excludes_zero=True,
+                  resamples=2000),
+        'b': dict(point=-0.2, interval=[-0.4, -0.05], unit=unit, n_units=163, excludes_zero=True,
+                  resamples=2000),
+        'c': dict(point=0.0, interval=[-0.1, 0.1], unit=unit, n_units=163, excludes_zero=False,
+                  resamples=2000)})
+    identical = dict(summaries={k: dict(v) for k, v in published['summaries'].items()})
+    exact = RC.summary_agreement(published, identical)
+    assert exact['every_published_quantity_bit_identical'] is True
+    assert exact['shared_metrics'] == exact['recovered_exactly'] == 3
+    assert exact['max_absolute_point_change'] == 0.0
+    assert exact['max_absolute_interval_endpoint_change'] == 0.0
+    assert exact['resolved_sign_changes'] == []
+    moved = dict(summaries={k: dict(v) for k, v in published['summaries'].items()})
+    moved['summaries']['b'] = dict(moved['summaries']['b'], point=0.3, interval=[0.05, 0.6])
+    changed = RC.summary_agreement(published, moved)
+    assert changed['every_published_quantity_bit_identical'] is False
+    assert changed['recovered_exactly'] == 2
+    assert changed['resolved_sign_changes'] == ['b: below_zero to above_zero']
+    assert changed['max_absolute_point_change'] == pytest.approx(0.5)
+    assert changed['max_absolute_interval_endpoint_change'] == pytest.approx(0.65)

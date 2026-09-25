@@ -215,6 +215,18 @@ For the composition rung, the verdict is that composition, mutation identity, po
 
 A surviving increment is bounded by the declared controls, the experimental-label budget and the readout class stated above. It identifies accessible predictive information beyond those controls on held-out wild-type clusters. It does not locate a mechanism, does not say which computation carries the information, and does not establish an irreducible biological rule at any level of sequence organisation.
 
+## The recomputation landed, and the verdict stays provisional
+
+All 21 of this gate's cells on the anchor panel — seven arms at three split seeds — were refitted at the reassessment's selection, a depth selection at class `C4_full_random_feature` for every arm of this panel, on identical support, folds, seeds, weighting and label budget. **The verdict stays `provisional`.**
+
+Over the four metrics this record reports, **no metric-cell crosses from an interval including zero to one excluding it** — 0 of 84 — while the numbers themselves move substantially, up to 0.06685 in a point estimate and 0.07017 in an interval endpoint. Movement of that size therefore does not by itself move a verdict here.
+
+That zero is a count over the declared metrics and **not over the data**, and the difference is a factor of eight: the same 21 cells carry **33 crossings across 5 distinct metrics** over their full 72-summary sets, concentrated in the representation-after-likelihood families. One arm-and-metric pair survives the all-three-seed rule over that wider set, ProtGPT2 on `increment_R_after_M_C`, which this record does not report. So this gate is **not a null under the new selection**, and it must not be cited as the control that makes another gate's changes readable; the general form of that error is catalogued as L56.
+
+The control that does hold is a measured one: across this gate and the local-context gate, **254 likelihood-family metric-cells sat close enough to zero to cross under the interval movement their own cell showed, and none crossed**, against 144 crossings in 886 at-risk cells among quantities the selection reaches. The per-design absolute correlations are not a control at all — they sit 0.21 or more from zero and only 78 of 2,310 are at risk.
+
+Every bound stated above continues to apply, and the intervals remain unadjusted.
+
 ## Tokenisation strata
 
 | Model | registry tokenisation | stratum | prefix tokens | tokens per residue | token-count cycle | assays with nonzero cycle | tokens outside the shared prefix and suffix, maximum |
