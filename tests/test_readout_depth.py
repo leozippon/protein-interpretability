@@ -30,6 +30,8 @@ if str(REPO_ROOT) not in sys.path:
 if str(REPO_ROOT / 'scripts' / 'transfer') not in sys.path:
     sys.path.insert(0, str(REPO_ROOT / 'scripts' / 'transfer'))
 
+import summarise_depth_panel
+
 from src.transfer import readout_depth as rd
 from src.transfer.readout_analysis import ALPHAS, evaluate_readouts, family_folds
 from src.transfer.readout_class_sweep import PROJECTION_BLAS_THREADS
@@ -544,6 +546,95 @@ class DepthContract(unittest.TestCase):
             np.testing.assert_array_equal(np.sort(first[index]), np.sort(measured[index]))
         self.assertGreater(float(np.max(np.abs(
             standardized_rank(first) - standardized_rank(measured)))), 0.0)
+
+
+class PanelAggregation(unittest.TestCase):
+    """The panel artifact must carry the cross-cell quantities the record quotes.
+
+    The falsification tally, the seed-consistent blocks, the per-arm breadth reading
+    and the ceilings are aggregates over cells, so no per-cell report can hold them.
+    An audit that reads only the cell files cannot check them, which is why they are
+    written as explicit fields rather than left to be recomputed.
+    """
+
+    @staticmethod
+    def _cell(arm, panel, stratum, profiles, admitted, direction):
+        """One collect()-shaped cell with a named profile per seed."""
+        seeds = {}
+        for seed, rows in profiles.items():
+            seeds[seed] = dict(
+                reproduced_admitted_delta_spearman=admitted,
+                reproduced_admitted_direction=direction,
+                axes=dict(depth=dict(
+                    depths=len(rows),
+                    profile=[dict(depth=d, delta_spearman=v, interval=[v - 0.01, v + 0.01],
+                                  direction=s, delta_rank_mse=0.0, r_spearman=0.1,
+                                  b_r_spearman=0.2, r_minus_raw_m=0.0,
+                                  r_minus_raw_m_interval=None)
+                             for d, v, s in rows],
+                    resolved_positive=sum(1 for _, _, s in rows if s == 'resolved_positive'),
+                    resolved_negative=sum(1 for _, _, s in rows if s == 'resolved_negative'),
+                    unresolved=sum(1 for _, _, s in rows if s == 'unresolved'),
+                    resolved_positive_depths=[d for d, _, s in rows if s == 'resolved_positive'],
+                    max_delta_spearman=max(v for _, v, _ in rows),
+                    max_delta_spearman_depth=0, max_delta_spearman_interval=None,
+                    max_delta_spearman_direction='unresolved')),
+                summaries={}, baseline_agreement=dict(max_absolute_deviation={'B_prediction': 0.0}))
+        return dict(arm=arm, panel=panel, stratum=stratum, depth=3, sha256='0' * 64,
+                    hidden_width=8, position_resolved=False, admitted_block_indices=[1, 2],
+                    support={}, extraction_agreement={}, prefix_control={}, seeds=seeds)
+
+    def test_the_tally_counts_every_depth_cell_of_a_stratum(self):
+        text = self._cell('textarm', 'anchor', 'literal_text_AA', {
+            s: [(0, -0.02, 'resolved_negative'), (1, -0.01, 'resolved_negative'),
+                (2, -0.005, 'unresolved')] for s in ('a', 'b')}, -0.02, 'resolved_negative')
+        tally = summarise_depth_panel.stratum_tally([text])['literal_text_AA']
+        self.assertEqual(tally['depth_cells'], 6)
+        self.assertEqual(tally['resolved_positive'], 0)
+        self.assertEqual(tally['resolved_negative'], 4)
+        self.assertEqual(tally['unresolved'], 2)
+        self.assertEqual(tally['best_point'], -0.005)
+        self.assertEqual(tally['best_cell']['direction'], 'unresolved')
+
+    def test_a_block_counts_as_seed_consistent_only_when_every_seed_resolves_it(self):
+        cell = self._cell('protarm', 'anchor', 'native_sequence', {
+            'a': [(0, 0.01, 'resolved_positive'), (1, 0.02, 'resolved_positive')],
+            'b': [(0, 0.011, 'resolved_positive'), (1, 0.001, 'unresolved')]},
+            0.001, 'unresolved')
+        rows = summarise_depth_panel.seed_consistent([cell])
+        self.assertEqual([row['depth'] for row in rows], [0])
+        self.assertEqual(rows[0]['minimum'], 0.01)
+        self.assertEqual(rows[0]['maximum'], 0.011)
+        reading = summarise_depth_panel.breadth([cell], rows)[0]
+        self.assertEqual(reading['selected_block'], 0)
+        self.assertEqual(reading['reading'], 'boundary lifted')
+        self.assertFalse(reading['selected_at_admitted_depth'])
+
+    def test_an_already_resolved_cell_is_not_called_a_lifted_boundary(self):
+        cell = self._cell('protarm', 'anchor', 'native_sequence', {
+            'a': [(1, 0.03, 'resolved_positive')], 'b': [(1, 0.02, 'resolved_positive')]},
+            0.025, 'resolved_positive')
+        rows = summarise_depth_panel.seed_consistent([cell])
+        reading = summarise_depth_panel.breadth([cell], rows)[0]
+        self.assertEqual(reading['reading'], 'already resolved')
+        self.assertTrue(reading['selected_at_admitted_depth'])
+        ceiling = summarise_depth_panel.ceilings([cell], rows)['anchor/native_sequence']
+        self.assertEqual(ceiling['single_cell_maximum'], 0.03)
+        self.assertEqual(ceiling['seed_consistent_maximum'], 0.03)
+
+    def test_two_reports_for_one_cell_are_refused(self):
+        cell = self._cell('protarm', 'anchor', 'native_sequence',
+                          {'a': [(0, 0.01, 'unresolved')]}, 0.0, 'unresolved')
+        other = self._cell('protarm', 'other', 'native_sequence',
+                           {'a': [(0, 0.01, 'unresolved')]}, 0.0, 'unresolved')
+        summarise_depth_panel.refuse_duplicate_cells([cell, other])
+        with self.assertRaises(ValueError) as caught:
+            summarise_depth_panel.refuse_duplicate_cells([cell, other, dict(cell)])
+        self.assertIn('protarm/anchor', str(caught.exception))
+        # A doubled cell would double every count that sums over cells.
+        doubled = summarise_depth_panel.stratum_tally([cell, dict(cell)])['native_sequence']
+        self.assertEqual(doubled['depth_cells'],
+                         2 * summarise_depth_panel.stratum_tally([cell])['native_sequence']['depth_cells'])
 
 
 class AdmittedDesignConstruction(unittest.TestCase):

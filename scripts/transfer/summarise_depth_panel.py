@@ -157,6 +157,151 @@ def panel_counts(cells: list[dict]) -> dict:
     return counts
 
 
+def refuse_duplicate_cells(cells: list[dict]) -> None:
+    """Refuse a report set that covers one (arm, panel) cell twice.
+
+    A cell can be computed twice — a killed lane's child may finish after its
+    runner, and a relocated lane may race the original — and two reports of one
+    cell would double every count that sums over cells.
+    """
+    seen: dict[tuple[str, str], int] = {}
+    for cell in cells:
+        key = (cell['arm'], cell['panel'])
+        seen[key] = seen.get(key, 0) + 1
+    repeated = sorted(key for key, count in seen.items() if count > 1)
+    if repeated:
+        listed = ', '.join(f'{arm}/{panel}' for arm, panel in repeated)
+        raise ValueError(f'{len(cells)} reports cover {len(seen)} distinct cells; '
+                         f'pass one report per cell rather than two for {listed}')
+
+
+def stratum_tally(cells: list[dict]) -> dict:
+    """Per stratum, the tally of depth cells resolved above and below zero.
+
+    This is the quantity that licenses reading the rest of the panel, and it is a
+    cross-cell aggregate, so no per-cell report can hold it. It is written here as
+    an explicit field rather than left for a reader to recompute from the counts.
+    """
+    tally: dict[str, dict] = {}
+    for cell in cells:
+        for seed, entry in cell['seeds'].items():
+            for axis, payload in entry['axes'].items():
+                bucket = tally.setdefault(cell['stratum'], dict(
+                    stratum=cell['stratum'], depth_cells=0, resolved_positive=0,
+                    resolved_negative=0, unresolved=0, degenerate=0, arms=set(), panels=set(),
+                    axes=set(), best_point=None, best_cell=None))
+                bucket['arms'].add(cell['arm'])
+                bucket['panels'].add(cell['panel'])
+                bucket['axes'].add(axis)
+                for row in payload['profile']:
+                    bucket['depth_cells'] += 1
+                    bucket[row['direction']] = bucket.get(row['direction'], 0) + 1
+                    point = row['delta_spearman']
+                    if point is not None and (bucket['best_point'] is None
+                                              or point > bucket['best_point']):
+                        bucket.update(best_point=point, best_cell=dict(
+                            arm=cell['arm'], panel=cell['panel'], seed=seed, axis=axis,
+                            depth=row['depth'], direction=row['direction'],
+                            interval=row['interval']))
+    for bucket in tally.values():
+        for key in ('arms', 'panels', 'axes'):
+            bucket[key] = sorted(bucket[key])
+    return tally
+
+
+def seed_consistent(cells: list[dict]) -> list[dict]:
+    """Blocks resolved above zero at every declared seed, per arm, panel and axis.
+
+    Reported because an unadjusted count over 1,004 blocks invites a tail artifact,
+    while a block that resolves at every split seed does not.
+    """
+    out = []
+    for cell in cells:
+        seeds = sorted(cell['seeds'])
+        for axis in AXES:
+            per_seed, points = [], {}
+            for seed in seeds:
+                payload = cell['seeds'][seed]['axes'].get(axis)
+                if payload is None:
+                    per_seed = None
+                    break
+                per_seed.append({row['depth'] for row in payload['profile']
+                                 if row['direction'] == 'resolved_positive'})
+                for row in payload['profile']:
+                    points.setdefault(row['depth'], []).append(row['delta_spearman'])
+            if not per_seed or len(per_seed) != len(seeds):
+                continue
+            for depth in sorted(set.intersection(*per_seed)):
+                values = points[depth]
+                out.append(dict(arm=cell['arm'], panel=cell['panel'], stratum=cell['stratum'],
+                                axis=axis, depth=depth, blocks=cell['depth'],
+                                relative_depth=round(depth / max(cell['depth'] - 1, 1), 4),
+                                admitted_block_indices=cell['admitted_block_indices'],
+                                at_admitted_depth=depth in cell['admitted_block_indices'],
+                                seeds=len(seeds), minimum=min(values), maximum=max(values)))
+    return sorted(out, key=lambda row: -row['minimum'])
+
+
+def breadth(cells: list[dict], consistent: list[dict]) -> list[dict]:
+    """Per arm and panel, the admitted two-depth increment against the selected block."""
+    pooled = {}
+    for row in consistent:
+        if row['axis'] != 'depth':
+            continue
+        key = (row['arm'], row['panel'])
+        if key not in pooled or row['minimum'] > pooled[key]['minimum']:
+            pooled[key] = row
+    out = []
+    for cell in cells:
+        seeds = sorted(cell['seeds'])
+        admitted = [cell['seeds'][s]['reproduced_admitted_delta_spearman'] for s in seeds]
+        resolved = sum(1 for s in seeds
+                       if cell['seeds'][s]['reproduced_admitted_direction'] == 'resolved_positive')
+        row = pooled.get((cell['arm'], cell['panel']))
+        out.append(dict(arm=cell['arm'], panel=cell['panel'], stratum=cell['stratum'],
+                        seeds=len(seeds), admitted_minimum=min(admitted),
+                        admitted_maximum=max(admitted), admitted_seeds_resolved=resolved,
+                        selected_block=None if row is None else row['depth'],
+                        selected_minimum=None if row is None else row['minimum'],
+                        selected_maximum=None if row is None else row['maximum'],
+                        selected_at_admitted_depth=None if row is None else row['at_admitted_depth'],
+                        reading=('no seed-consistent block' if row is None else
+                                 'boundary lifted' if resolved == 0 else 'already resolved')))
+    return sorted(out, key=lambda r: (r['selected_block'] is None, r['arm'], r['panel']))
+
+
+def ceilings(cells: list[dict], consistent: list[dict]) -> dict:
+    """Largest increment per panel and stratum, seed-consistent and single-cell alike."""
+    out: dict[str, dict] = {}
+    for cell in cells:
+        for seed, entry in cell['seeds'].items():
+            for axis, payload in entry['axes'].items():
+                key = f"{cell['panel']}/{cell['stratum']}"
+                bucket = out.setdefault(key, dict(panel=cell['panel'], stratum=cell['stratum'],
+                                                  single_cell_maximum=None, single_cell=None,
+                                                  seed_consistent_maximum=None,
+                                                  seed_consistent=None))
+                for row in payload['profile']:
+                    point = row['delta_spearman']
+                    if point is None or row['direction'] != 'resolved_positive':
+                        continue
+                    if (bucket['single_cell_maximum'] is None
+                            or point > bucket['single_cell_maximum']):
+                        bucket.update(single_cell_maximum=point, single_cell=dict(
+                            arm=cell['arm'], seed=seed, axis=axis, depth=row['depth'],
+                            interval=row['interval']))
+    for row in consistent:
+        key = f"{row['panel']}/{row['stratum']}"
+        bucket = out.setdefault(key, dict(panel=row['panel'], stratum=row['stratum'],
+                                          single_cell_maximum=None, single_cell=None,
+                                          seed_consistent_maximum=None, seed_consistent=None))
+        if (bucket['seed_consistent_maximum'] is None
+                or row['maximum'] > bucket['seed_consistent_maximum']):
+            bucket.update(seed_consistent_maximum=row['maximum'], seed_consistent=dict(
+                arm=row['arm'], axis=row['axis'], depth=row['depth'], minimum=row['minimum']))
+    return out
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--report', action='append', type=Path, required=True,
@@ -165,6 +310,8 @@ def main():
     parser.add_argument('--device', default='cpu', choices=['cpu'])
     args = parser.parse_args()
     cells = collect(args.report)
+    refuse_duplicate_cells(cells)
+    consistent = seed_consistent(cells)
     reproduction = [dict(arm=cell['arm'], panel=cell['panel'], seed=seed,
                          extraction_max_relative_l2=cell['extraction_agreement']['max_relative_l2'],
                          extraction_exactly_equal=cell['extraction_agreement']['exactly_equal'],
@@ -182,19 +329,31 @@ def main():
                    n_cells=len(cells), arms=sorted({cell['arm'] for cell in cells}),
                    panels=sorted({cell['panel'] for cell in cells}),
                    strata=sorted({cell['stratum'] for cell in cells}),
-                   reproduction=reproduction, counts=panel_counts(cells), cells=cells,
+                   reproduction=reproduction, counts=panel_counts(cells),
+                   falsification=stratum_tally(cells),
+                   seed_consistent=consistent, breadth=breadth(cells, consistent),
+                   ceilings=ceilings(cells, consistent), cells=cells,
+                   cell_sha256={f"{cell['arm']}/{cell['panel']}": cell['sha256'] for cell in cells},
                    summariser_sha256=digest(__file__))
     args.out.mkdir(parents=True, exist_ok=True)
     destination = args.out / 'readout_depth_panel.json'
     temporary = destination.with_suffix('.tmp')
     temporary.write_text(json.dumps(payload, indent=2, allow_nan=False, default=str) + '\n')
     temporary.replace(destination)
-    print(json.dumps(dict(cells=len(cells), arms=len(payload['arms']),
-                          counts={key: {name: bucket[name] for name in
-                                        ('arm_seed_cells', 'depth_cells', 'resolved_positive',
-                                         'resolved_negative', 'unresolved', 'max_delta_spearman',
-                                         'max_delta_spearman_arm', 'max_delta_spearman_depth')}
-                                  for key, bucket in payload['counts'].items()}), indent=1))
+    print(json.dumps(dict(
+        cells=len(cells), arms=len(payload['arms']), output=str(destination),
+        falsification={key: {name: bucket[name] for name in
+                             ('depth_cells', 'resolved_positive', 'resolved_negative',
+                              'unresolved', 'best_point')}
+                       for key, bucket in payload['falsification'].items()},
+        seed_consistent_blocks=len(consistent),
+        breadth={reading: sum(1 for row in payload['breadth'] if row['reading'] == reading)
+                 for reading in ('boundary lifted', 'already resolved', 'no seed-consistent block')},
+        counts={key: {name: bucket[name] for name in
+                      ('arm_seed_cells', 'depth_cells', 'resolved_positive',
+                       'resolved_negative', 'unresolved', 'max_delta_spearman',
+                       'max_delta_spearman_arm', 'max_delta_spearman_depth')}
+                for key, bucket in payload['counts'].items()}), indent=1))
 
 
 if __name__ == '__main__':

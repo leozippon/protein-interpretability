@@ -80,7 +80,14 @@ def load_arm(directory: Path, arm: str, units: list[dict], cohort_sha256: str):
             raise ValueError(f"{arm}: no extraction artefact for {row['name']}")
         with np.load(directory / record['file'], allow_pickle=False) as data:
             states = data['variant_states']
-            declared = np.asarray([v['state'] for v in row['variants']])
+            # A cohort's state index is its variant's position in that unit's own
+            # declared order, because that order is what the extraction plan turned
+            # into `sequences = [wild type] + variant sequences`. One cohort schema
+            # records the index and the other leaves it implicit; deriving it from
+            # the order reads both without either having to be re-declared, and the
+            # position check below binds the order itself.
+            declared = np.asarray([variant.get('state', index + 1)
+                                   for index, variant in enumerate(row['variants'])])
             if not np.array_equal(states, declared):
                 raise ValueError(f"{arm}: {row['name']} state indices differ from the cohort")
             if not np.array_equal(data['variant_positions'],

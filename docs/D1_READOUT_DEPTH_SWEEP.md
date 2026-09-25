@@ -74,17 +74,21 @@ The second repair is to the extraction receipt. Two of 6,834 written archives, o
 
 ## Results
 
+The panel artifact is `results/external_baseline/d1_readout_depth_panel_20260925/readout_depth_panel.json` on the shared filesystem, SHA256 `076b93525abbb126e6f5a828ad758c0b369eea198dda45f0af57fa916d197939`, built from the 54 cell reports by `scripts/transfer/summarise_depth_panel.py`. It carries the per-block fitted estimates with their intervals, resampling unit and draw count, the falsification tally, the seed-consistent blocks, the per-arm breadth reading, the ceilings and each cell's own digest, so every figure below can be checked without re-fitting. The per-cell reports hold the fits themselves: one cell's primary seed carries 707 named summaries and its three seeds 1,885, each with point, interval, unit, unit count, draw count and alpha, under `seeds` → `summaries`. The cross-cell aggregates exist only in the panel artifact, because no per-cell file can hold a count over cells.
+
 All 54 cells completed and every one passes both reproduction controls. The panel covers the 34 admitted arms on the 17 admitted panels at every declared seed, 132 (arm, panel, seed) fit rows, and 1,004 transformer blocks. Every quantity below is a cluster-equal mean within-assay Spearman difference against the matched admitted baseline, on the unit *wild-type family at 50% identity* — 163 families on the anchor panel and 30 on the EC-conditioned panel — with 2,000 paired bootstrap draws at seed 20260923 and alpha 0.05. Strata are never pooled, and no interval is adjusted across arms, depths, axes or seeds.
 
 ### The falsification control holds at every depth
 
-No literal-text arm places resolved additional information in any single block, on any axis. On the anchor panel the stratum's 13 arms give 1,098 depth cells with **0 resolved above zero and 1,055 resolved below**, and the largest point estimate anywhere in the stratum is +0.000772, at block 0 of ByGPT5-medium-en, itself unresolved. The `wide`, `pos` and `full` axes add 81, 66 and 15 further cells with 0 resolved above zero. Each of the ten native literal-text panels repeats it on its own support: GPT-2 0 of 12, GPT-2-medium 0 of 24, GPT-2-large 0 of 36, GPT-2-XL 0 of 48, Qwen2.5-0.5B 0 of 24, Qwen2.5-0.5B-Instruct 0 of 24, Qwen2.5-7B 0 of 28, Qwen2.5-32B 0 of 64, Qwen3-8B-base 0 of 36, Llama-3.2-3B 0 of 28, DialoGPT-small 0 of 12. Across roughly 1,600 literal-text depth cells the count of resolved positive increments is zero. The gains reported below are therefore protein-specific: a different depth does not recover them on literal text, so they cannot be an artifact of the readout reaching more of a shared string-level signal.
+No literal-text arm places resolved additional information in any single block, on any axis. Aggregated over every panel and every axis the stratum carries **1,638 depth cells on 14 arms and 12 panels, of which 0 resolve above zero, 1,573 resolve below and 65 are unresolved**, and its largest point estimate anywhere is +0.000771911134033733, at block 0 of ByGPT5-medium-en, itself unresolved. On the anchor panel alone its 13 arms give 1,098 depth cells with 0 above zero and 1,055 below. The `wide`, `pos` and `full` axes add 81, 66 and 15 further cells with 0 resolved above zero. Each of the ten native literal-text panels repeats it on its own support: GPT-2 0 of 12, GPT-2-medium 0 of 24, GPT-2-large 0 of 36, GPT-2-XL 0 of 48, Qwen2.5-0.5B 0 of 24, Qwen2.5-0.5B-Instruct 0 of 24, Qwen2.5-7B 0 of 28, Qwen2.5-32B 0 of 64, Qwen3-8B-base 0 of 36, Llama-3.2-3B 0 of 28, DialoGPT-small 0 of 12. Across roughly 1,600 literal-text depth cells the count of resolved positive increments is zero. The gains reported below are therefore protein-specific: a different depth does not recover them on literal text, so they cannot be an artifact of the readout reaching more of a shared string-level signal.
 
 The same asymmetry appears in the `union` axis, which supplies every depth at once. At the primary seed it resolves **above** zero for five cells, all protein interfaces — ProGen2-base +0.015760, ProGen2-small +0.014159, ProGen3-3B +0.015882 and ProteinGLM-7B-CLM +0.025387 on the anchor panel, and ProteinGLM-7B-CLM +0.034350 on the EC panel — and **below** zero for every literal-text arm on both its supports, from −0.010688 to −0.041688, for the Llama-2-7B parent on all three of its panels (−0.023933, −0.028417, −0.067585), for both ProLLaMA stages on the EC panel (−0.080010, −0.079516) and for ZymCTRL (−0.032995). Supplying more depth to an arm that carries nothing makes it worse, which is what adding uninformative columns to a well-supervised baseline does.
 
 ### Where the information sits, when it is there
 
-Counting resolved intervals over 1,004 blocks without adjustment would invite a tail artifact, so the table reports only blocks resolved above zero at **all three** declared split seeds. Ranges are the minimum-to-maximum point estimate over those seeds, not uncertainty intervals.
+Counting resolved intervals over 1,004 blocks without adjustment would invite a tail artifact, so the tables report only blocks resolved above zero at **every** declared split seed of their panel. Ranges are the minimum-to-maximum point estimate over those seeds, not uncertainty intervals. The two informative axes are reported separately, because they are different designs: `depth` is the two pooled rules at one block, and `pos` is the mutation-localized and suffix summaries at one block, defined only for the 19 arms whose rendering assigns one residue-bearing token per residue.
+
+The pooled `depth` axis gives 23 such blocks, on 8 arms:
 
 | Arm | Panel | Block | Relative depth | Increment across seeds |
 | --- | --- | ---: | ---: | --- |
@@ -92,31 +96,69 @@ Counting resolved intervals over 1,004 blocks without adjustment would invite a 
 | ProteinGLM-7B-CLM | EC_conditioned40 | 33 of 36 | 0.94 | +0.037016 to +0.043653 |
 | ProteinGLM-7B-CLM | EC_conditioned40 | 35 of 36 | 1.00 | +0.030321 to +0.035961 |
 | ProGen3-3B | EC_conditioned40 | 23 of 24 | 1.00 | +0.016251 to +0.018326 |
-| RITA-XL | anchor201 | 23 of 24 | 1.00 | +0.015119 to +0.019877 |
-| ProteinGLM-7B-CLM | anchor201 | 12 of 36 | 0.34 | +0.011899 to +0.019062 |
+| ProteinGLM-7B-CLM | anchor201 | 30 of 36 | 0.86 | +0.013499 to +0.016616 |
 | ProteinGLM-7B-CLM | anchor201 | 33 of 36 | 0.94 | +0.012705 to +0.018599 |
 | ProteinGLM-7B-CLM | anchor201 | 11 of 36 | 0.31 | +0.012088 to +0.016246 |
-| ProteinGLM-7B-CLM | anchor201 | 30 of 36 | 0.86 | +0.013499 to +0.016616 |
-| ProteinGLM-7B-CLM | anchor201 | 35 of 36 | 1.00 | +0.011073 to +0.016260 |
+| ProteinGLM-7B-CLM | anchor201 | 12 of 36 | 0.34 | +0.011899 to +0.019062 |
 | ProteinGLM-7B-CLM | anchor201 | 32 of 36 | 0.91 | +0.011563 to +0.015172 |
-| ProGen3-3B | anchor201 | 11 of 24 | 0.48 | +0.010343 to +0.016814 |
-| ProtGPT2 | anchor201 | 21 of 36 | 0.60 | +0.010775 to +0.016836 |
-| ProGen2-medium | anchor201 | 23 of 27 | 0.88 | +0.010690 to +0.017632 |
-| ProGen2-medium | anchor201 | 24 of 27 | 0.92 | +0.009331 to +0.014571 |
-| ProtGPT3-1.3B | anchor201 | 0 of 17 | 0.00 | +0.011911 to +0.014963 |
 | ProGen3-112M | anchor201 | 9 of 10 | 1.00 | +0.011416 to +0.013702 |
-| ProGen2-xlarge | anchor201 | 28 of 32 | 0.90 | +0.009763 to +0.012978 |
+| ProteinGLM-7B-CLM | anchor201 | 35 of 36 | 1.00 | +0.011073 to +0.016260 |
+| ProtGPT2 | anchor201 | 21 of 36 | 0.60 | +0.010775 to +0.016836 |
 | ProGen2-large | anchor201 | 25 of 32 | 0.81 | +0.010746 to +0.012079 |
+| ProGen2-medium | anchor201 | 23 of 27 | 0.88 | +0.010690 to +0.017632 |
+| ProGen3-3B | anchor201 | 11 of 24 | 0.48 | +0.010343 to +0.016814 |
+| ProGen2-xlarge | anchor201 | 28 of 32 | 0.90 | +0.009763 to +0.012978 |
+| ProGen2-medium | anchor201 | 24 of 27 | 0.92 | +0.009331 to +0.014571 |
+| ProtGPT2 | native_protgpt2 | 6 blocks, 18 to 25 | 0.51 to 0.71 | +0.009067 to +0.012232, one seed only |
 
-Nine arms appear, all of them protein interfaces, and no literal-text arm appears at all. Fourteen of the nineteen entries sit at relative depth 0.81 or deeper, so the information that exists is concentrated in the upper part of the stack; the two exceptions are ProteinGLM's blocks 11 and 12 of 36 and ProtGPT3-1.3B's block 0 of 17. Six of the nineteen are blocks the admitted extraction hooked, and thirteen are not.
+The position-resolved `pos` axis gives 16, on 6 arms, and reaches higher on the anchor panel than the pooled axis does:
 
-Unadjusted per-depth counts are reported for completeness and are not read as prevalence. On the anchor panel's `native_sequence` stratum, 19 arms and 1,539 depth cells give 89 resolved above zero, 251 resolved below and 1,199 unresolved; the `pos` axis gives 67 of 1,143 above zero with the panel's largest single-depth point estimate, +0.024514 at block 22 of ProGen3-3B; `full` gives 12 of 86 and `wide` 6 of 110. On the EC-conditioned panel's `native_sequence` stratum, 5 arms and 468 depth cells give 15 above zero and 264 below. ZymCTRL, the only arm on the `EC_conditioned` stratum, resolves nothing above zero at any of its 36 blocks on any of the four axes, its largest point estimate being +0.012335 and unresolved.
+| Arm | Panel | Block | Relative depth | Increment across seeds |
+| --- | --- | ---: | ---: | --- |
+| ProteinGLM-7B-CLM | EC_conditioned40 | 34 of 36 | 0.97 | +0.034720 to +0.040477 |
+| ProteinGLM-7B-CLM | EC_conditioned40 | 35 of 36 | 1.00 | +0.031473 to +0.037639 |
+| ProGen3-3B | EC_conditioned40 | 22 of 24 | 0.96 | +0.028442 to +0.032694 |
+| ProteinGLM-7B-CLM | anchor201 | 33 of 36 | 0.94 | +0.019177 to +0.022215 |
+| ProGen3-3B | EC_conditioned40 | 23 of 24 | 1.00 | +0.015988 to +0.017836 |
+| ProteinGLM-7B-CLM | anchor201 | 34 of 36 | 0.97 | +0.015951 to +0.019604 |
+| RITA-XL | anchor201 | 23 of 24 | 1.00 | +0.015119 to +0.019877 |
+| ProGen3-3B | anchor201 | 22 of 24 | 0.96 | +0.014607 to +0.024514 |
+| ProteinGLM-7B-CLM | anchor201 | 35 of 36 | 1.00 | +0.013130 to +0.018203 |
+| ProGen3-3B | anchor201 | 23 of 24 | 1.00 | +0.012918 to +0.017575 |
+| ProtGPT3-1.3B | anchor201 | 0 of 17 | 0.00 | +0.011911 to +0.014963 |
+| ProGen2-large | anchor201 | 28 of 32 | 0.90 | +0.010852 to +0.016373 |
+| ProGen2-xlarge | anchor201 | 28 of 32 | 0.90 | +0.010782 to +0.018143 |
+| ProteinGLM-7B-CLM | anchor201 | 30 of 36 | 0.86 | +0.010107 to +0.011859 |
+| ProGen2-xlarge | anchor201 | 25 of 32 | 0.81 | +0.009961 to +0.014246 |
+| ProGen2-medium | anchor201 | 0 of 27 | 0.00 | +0.006983 to +0.010573 |
 
+Nine arms appear across the two tables — ProGen2-large, ProGen2-medium, ProGen2-xlarge, ProGen3-112M, ProGen3-3B, ProteinGLM-7B-CLM, ProtGPT2, ProtGPT3-1.3B and RITA-XL — and every one is a protein interface. No literal-text arm appears in either table, and neither does ZymCTRL, the Llama-2-7B parent or either ProLLaMA stage. The blocks cluster in the upper stack: 26 of the 39 entries sit at relative depth 0.81 or deeper, with three low-depth exceptions, ProteinGLM's blocks 11 and 12 of 36, ProtGPT3-1.3B's block 0 of 17 and ProGen2-medium's block 0 of 27.
+
+The two widened designs add nothing. The `wide` axis, which repeats the pooled design at the admitted total width of 1,024 coordinates instead of 512, and the `full` axis, which supplies all four summaries at one block, each yield **zero** blocks resolved above zero at every declared seed. Doubling the per-block coordinate budget does not convert an unresolved block into a resolved one.
+
+### Per-arm depth selection
+
+This is the table downstream work needs. For each arm and panel where a block resolves above zero at every seed on the pooled axis, it gives the admitted two-depth increment for comparison and states whether the admitted extraction had already resolved that cell.
+
+| Arm | Panel | Blocks (admitted pair) | Admitted two-depth increment | Selected block | Increment there | Reading |
+| --- | --- | --- | --- | ---: | --- | --- |
+| ProGen2-large | anchor201 | 32 (15, 31) | +0.002565 to +0.009063, 0 of 3 resolved | 25 | +0.010746 to +0.012079 | boundary lifted |
+| ProGen2-medium | anchor201 | 27 (13, 26) | +0.002743 to +0.009809, 0 of 3 | 23 | +0.010690 to +0.017632 | boundary lifted |
+| ProGen2-xlarge | anchor201 | 32 (15, 31) | +0.000746 to +0.006475, 0 of 3 | 28 | +0.009763 to +0.012978 | boundary lifted |
+| ProGen3-112M | anchor201 | 10 (4, 9) | +0.002612 to +0.006659, 0 of 3 | 9 | +0.011416 to +0.013702 | boundary lifted |
+| ProGen3-3B | EC_conditioned40 | 24 (11, 23) | +0.003071 to +0.017990, 0 of 3 | 23 | +0.016251 to +0.018326 | boundary lifted |
+| ProtGPT2 | anchor201 | 36 (17, 35) | +0.001548 to +0.009622, 0 of 3 | 21 | +0.010775 to +0.016836 | boundary lifted |
+| ProtGPT2 | native_protgpt2 | 36 (17, 35) | +0.003693, 0 of 1 | 21 | +0.012232 | boundary lifted |
+| ProGen3-3B | anchor201 | 24 (11, 23) | +0.007388 to +0.017362, 2 of 3 | 11 | +0.010343 to +0.016814 | already resolved |
+| ProteinGLM-7B-CLM | anchor201 | 36 (17, 35) | +0.019700 to +0.022549, 3 of 3 | 30 | +0.013499 to +0.016616 | already resolved, and lower |
+| ProteinGLM-7B-CLM | EC_conditioned40 | 36 (17, 35) | +0.045421 to +0.051388, 3 of 3 | 34 | +0.042542 to +0.053010 | already resolved, no gain |
+
+Seven of the ten entries lift a boundary: the arm resolved nothing at the admitted pair at any seed and resolves at a single block at every seed. **Five** of those seven selected blocks are not members of the admitted pair. The other two are, and they say something different: ProGen3-112M's block 9 of 10 and ProGen3-3B's block 23 of 24 on the EC panel are both the final block, which the admitted extraction did hook. For those two arms what bounded the result was not the depth but the pooling across depths — the admitted design dilutes 1,024 coordinates over two depths and two rules, while the depth axis spends 512 on one block, and the narrower, better-targeted design resolves where the diluted one does not. The three remaining entries were already resolved by the admitted extraction, and for those the selection does **not** improve on it — for ProteinGLM on the anchor panel the best single block is *lower* than the admitted pooled pair, +0.013499 to +0.016616 against +0.019700 to +0.022549, and on the EC panel block 34's +0.042542 to +0.053010 straddles the admitted +0.045421 to +0.051388, exceeding it at one seed and falling below it at the other two.
 ### What this changes, and what it does not
 
-The admitted two-depth extraction was a partial measurement boundary, and the part it bounded was **breadth, not magnitude**. Breadth: the admitted panel resolves a positive increment for 3 arms of 34, and depth resolution finds seed-consistent resolved blocks for 9, adding ProGen2-large, ProGen2-medium, ProGen2-xlarge, ProGen3-112M, ProtGPT2, ProtGPT3-1.3B and RITA-XL — every one a protein interface, most of them at blocks the admitted extraction never hooked. Magnitude: the ceiling barely moves. The largest seed-consistent single-depth increment on the 163-family anchor panel is +0.019062, below the admitted panel maximum of +0.02255 on the same arm; the `union` design reaches +0.025387 for that arm, marginally above it; and on the 30-family EC panel the peak of +0.053010 at block 34 sits alongside the admitted +0.05139, which the same cell reproduces exactly.
+The admitted two-depth extraction was a partial measurement boundary, and the part it bounded was **breadth, not magnitude**. Breadth: the admitted panel resolves a positive increment for 3 arms of 34; depth resolution finds seed-consistent resolved blocks for 9, and for 7 arm-and-panel cells it converts a cell that resolved nothing at the admitted pair at any seed into one that resolves at a single other block at every seed. Every one of those arms is a protein interface and six of the seven selected blocks are not members of the admitted pair. Magnitude: the ceiling does not move. The largest seed-consistent increment anywhere on the 163-family anchor panel is +0.024514, on ProGen3-3B's position-resolved block 22 of 24, against the admitted panel maximum of +0.02255; the largest on the pooled axis is +0.019062, below that maximum; and on the 30-family EC panel the best block straddles the admitted pair rather than beating it, +0.042542 to +0.053010 against +0.045421 to +0.051388, higher at one seed and lower at the other two. For the two cells the admitted extraction had already resolved, the best single block is no better than the admitted pooled pair and on the anchor panel it is worse.
 
-So the panel-wide near-null survives as a statement about how much information the frozen states place beyond profile, likelihood and sequence descriptors, and it does not survive as a statement about how few arms place any. A representation-ceiling reading is strengthened on magnitude: 1,004 blocks, four summaries and two pooling rules per arm do not lift the anchor-panel increment beyond the +0.02 to +0.025 band the admitted two depths already reached. The competing reading, that the admitted extraction hooked the wrong blocks, is correct for which arms resolve and wrong for how much they resolve.
+So the panel-wide near-null survives as a statement about how much information the frozen states place beyond profile, likelihood and sequence descriptors, and it does not survive as a statement about how few arms place any. A representation-ceiling reading is strengthened on magnitude: 1,004 blocks, four summaries, two pooling rules and a design that supplies every depth at once do not lift the anchor-panel increment beyond the +0.02 to +0.025 band the admitted two depths already reached. The competing reading, that the admitted extraction hooked the wrong blocks, is correct for which arms resolve and wrong for how much they resolve. Anyone reading the EC panel's +0.053010 as a fivefold gain over the anchor-panel resolutions should note that it rests on 30 wild-type families rather than 163, that its interval is correspondingly about twice as wide, and that the admitted two-depth fit on that same panel already reached +0.045421 to +0.051388 — so it is the same quantity measured on a smaller support, not new information found at a new depth.
 
 None of this licenses a claim that the protein arms' resolved increments are large enough to matter biologically. On the anchor panel they are +0.009 to +0.020 Spearman against a matched baseline that already reaches +0.436 to +0.489 there, so the representation adds on the order of two to four percent of the baseline's own held-cluster correlation.
 

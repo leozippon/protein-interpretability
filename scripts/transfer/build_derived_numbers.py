@@ -341,6 +341,7 @@ def family_readout(ledger: Ledger, strata: dict[str, str]) -> dict[str, list[dic
                 support_id=support, interval=_interval(value), interval_kind=PERCENTILE_95,
                 resampling_unit=value["unit"], resampling_draws=int(value["resamples"]),
                 seed_set=(seed,), level=level,
+                conditioning="readout_selection" if level == "representation" else None,
                 source_path=relative, source_sha256=ledger.artifacts.sha256(relative),
                 source_pointer=("summaries", key),
             ))
@@ -646,6 +647,8 @@ def _pairwise_kish(ledger: Ledger, supports: dict[str, str]) -> None:
                "estimator applies, so a cycle-share count cannot be quoted as the power of these "
                "intervals from anything in the evidence",
         looked_in=path, reachability="not_recorded",
+        searched="every supports block of every retained pairwise fit record, and the whole epistasis "
+                 "results tree for a cycle-share field",
     )
 
 
@@ -1888,7 +1891,9 @@ def family_unrecorded_constants(ledger: Ledger) -> None:
         ledger.gap(id=identifier, claim=claim, family=family,
                    reason="the locator was pointed at the declaring artifact and it records no such "
                           "constant; the manuscript is not a source for this table",
-                   looked_in=looked_in, reachability="not_recorded")
+                   looked_in=looked_in, reachability="not_recorded",
+                   searched="every scalar leaf of the artifact to four levels, and its declaration "
+                            "strings")
 
 
 CONTROLS_QUALIFICATION = "logs/d1_gate_stability_20260924/controls/controls_qualification.json"
@@ -2313,7 +2318,8 @@ def family_recomputation(ledger: Ledger) -> None:
             ledger.gap(id=f"recomputation/formation/{name}", claim=claim, family="recomputation",
                        reason=f"the anchor matches {len(matches)} times in the pipeline record, so "
                               "the number cannot be bound to it",
-                       looked_in=RECOMPUTATION_RECORD)
+                       looked_in=RECOMPUTATION_RECORD,
+                       searched="the whole pipeline record for the declared anchor")
             continue
         ledger.add(Quantity(
             id=f"recomputation/formation/{name}", claim=claim, family="recomputation",
@@ -2332,6 +2338,7 @@ def family_recomputation(ledger: Ledger) -> None:
                f"{RECOMPUTATION_DIR}, which holds the gate contract and the retention declaration "
                "only, so these quantities are record-backed and not artifact-backed",
         looked_in=RECOMPUTATION_DIR, reachability="not_recorded",
+        searched="every file of the recomputation log directory",
     )
 
 
@@ -2603,6 +2610,8 @@ def _identity_band_rates(ledger: Ledger) -> None:
                "analysis holds per-sequence rows, neither with a compiler or stop-status accounting",
         looked_in="results/transfer/s48_diversity_census_3b/s48_unconditional_diversity_census.json",
         reachability="not_recorded",
+        searched="every numeric leaf of the census artifacts and of the generation analysis, and the "
+                 "column names of the retained per-attempt ledgers",
     )
 
 
@@ -2993,6 +3002,768 @@ def family_domainome_endpoint(ledger: Ledger) -> None:
     )
 
 
+# --------------------------------------------------------------------------- #
+# Family 15 --- the readout-class and depth sweeps that settle the readout
+# --------------------------------------------------------------------------- #
+
+SWEEP_EXCERPT = "results/readout_sweeps_20260924/sweep_cell_excerpt.json"
+
+#: The three endpoints the class axis reports per class, and what each answers.
+#: They are separate rows because they answer different questions and a count on
+#: one is not a count on another: how well the representation predicts on its
+#: own, how it compares with the checkpoint's own likelihood, and what it adds
+#: over the matched supervised baseline. Only the last is the biological one.
+SWEEP_ENDPOINTS = {
+    "R_spearman": ("the representation's own held-cluster Spearman as a predictor",
+                   "dimensionless Spearman"),
+    "R_minus_raw_M_spearman": ("the representation read against the checkpoint's own likelihood",
+                               "dimensionless Spearman"),
+    "delta_spearman": ("the representation's increment over the matched supervised baseline",
+                       "dimensionless Spearman"),
+}
+
+
+def family_readout_sweeps(ledger: Ledger) -> None:
+    """The reassessment that settles which boundary the readout null belongs to.
+
+    It licenses strengthening a statement about breadth --- how many cells carry
+    resolved information --- and licenses none about magnitude. The ceilings are
+    therefore registered as ceilings, with the admitted maximum beside them and
+    the difference as its own row, so no reading can turn them into a rise.
+    """
+    if not ledger.artifacts.exists(SWEEP_EXCERPT):
+        ledger.gap(id="readout_sweeps/cells", claim="the readout-class and depth sweeps' fitted cells",
+                   family="readout_sweeps",
+                   reason="the sweep cells are retained in the cluster store and no excerpt of them "
+                          "is staged here",
+                   looked_in=SWEEP_EXCERPT, reachability="cluster_only")
+        return
+    payload = ledger.artifacts.json(SWEEP_EXCERPT)
+    digest = ledger.artifacts.sha256(SWEEP_EXCERPT)
+    rows: list[dict] = []
+    seen: dict[str, float] = {}
+    for cell in payload["cells"]["class"]:
+        block = cell["block"]
+        summaries = block.get("summaries") or {}
+        classes = sorted({key.split("/")[0] for key in summaries if "/" in key})
+        support = ledger.declare_support(
+            f"sweep_panel_{block['panel']}",
+            f"the {block['panel']} panel of the readout reassessment, refitted on the same frozen "
+            "states with the cohort, supports, fold maps, seeds and resampling contract held fixed",
+        )
+        for readout_class in classes:
+            for endpoint, (claim, unit) in SWEEP_ENDPOINTS.items():
+                value = summaries.get(f"{readout_class}/{endpoint}")
+                if not isinstance(value, dict) or value.get("point") is None \
+                        or value.get("degenerate"):
+                    continue
+                interval = _interval(value)
+                seed = block.get("fold_seed")
+                identifier = (f"readout_sweeps/class/{block['arm']}/{block['panel']}/{seed}/"
+                              f"{readout_class}/{endpoint}")
+                # The retained set holds more cells than the admitted 132: a
+                # re-run writes a second file for the same (arm, panel, seed).
+                # The first is kept and the repeat is checked against it rather
+                # than silently dropped or silently doubled.
+                existing = seen.get(identifier)
+                if existing is not None:
+                    if abs(existing - _point(value)) > 1e-9:
+                        ledger.add(Quantity(
+                            id=f"{identifier}/superseded_snapshot_difference",
+                            claim="how far this cell's value in a superseded snapshot sits from the "
+                                  "admitted one; the admission receipt resolves every repeated cell "
+                                  "to the admitted snapshot, so this is a measured difference "
+                                  "between two runs and not an ambiguity about which was published",
+                            family="readout_sweeps", value=abs(existing - _point(value)),
+                            unit="dimensionless Spearman", kind="artifact_leaf",
+                            support_id=("class_sweep_admitted_cells"
+                                        if "class_sweep_admitted_cells" in ledger.supports
+                                        else support), level="representation",
+                            conditioning="readout_selection",
+                            source_path=SWEEP_EXCERPT, source_sha256=digest,
+                            source_pointer=("<difference>", "cells", "class", cell["path"]),
+                        ))
+                    continue
+                seen[identifier] = _point(value)
+                ledger.add(Quantity(
+                    id=identifier,
+                    claim=f"{block['arm']} on the {block['panel']} panel at split seed {seed} under "
+                          f"the {readout_class} readout class: {claim}",
+                    family="readout_sweeps", value=_point(value), unit=unit, kind="estimate",
+                    support_id=support, interval=interval,
+                    interval_kind=PERCENTILE_95 if interval else None,
+                    resampling_unit=str(value.get("unit")) if interval else None,
+                    resampling_draws=int(value["resamples"]) if interval and value.get("resamples")
+                                     else None,
+                    no_interval_reason=None if interval else "the cell records no interval",
+                    seed_set=(int(seed),) if seed else (), level="representation",
+                    conditioning="readout_selection",
+                    source_path=SWEEP_EXCERPT, source_sha256=digest,
+                    source_pointer=("cells", "class", cell["path"], "summaries",
+                                    f"{readout_class}/{endpoint}"),
+                ))
+                rows.append({"arm": block["arm"], "panel": block["panel"], "seed": seed,
+                             "class": readout_class, "endpoint": endpoint,
+                             "value": _point(value),
+                             "resolved": bool(value.get("excludes_zero")) and _point(value) > 0})
+    _sweep_reductions(ledger, rows, digest)
+    _sweep_depth_receipts(ledger, payload, digest)
+
+
+def _sweep_axis(readout_class: str) -> str:
+    """Which axis a fitted class belongs to.
+
+    The readout-class axis varies the fitted function; the pooled-depth axis
+    varies which retained block and pooling rule the representation comes from.
+    A count over one is not a count over the other, so they are never mixed in a
+    reduction.
+    """
+    return "class" if readout_class.startswith("C") else "pooled_depth"
+
+
+def _sweep_reductions(ledger: Ledger, rows: list[dict], digest: str) -> None:
+    """Breadth counts per class, and magnitude ceilings that stay ceilings."""
+    if not rows:
+        return
+    _sweep_arm_panel_counts(ledger, rows, digest)
+    _sweep_admitted_comparisons(ledger, rows, digest)
+    _sweep_breadth_comparisons(ledger, rows, digest)
+    panels = sorted({row["panel"] for row in rows})
+    for endpoint in SWEEP_ENDPOINTS:
+        for panel in panels:
+            support = f"sweep_panel_{panel}"
+            scoped = [row for row in rows if row["endpoint"] == endpoint and row["panel"] == panel]
+            if not scoped:
+                continue
+            per_class = {}
+            for readout_class in sorted({row["class"] for row in scoped}):
+                cells = [row for row in scoped if row["class"] == readout_class]
+                resolved = sum(row["resolved"] for row in cells)
+                per_class[readout_class] = resolved
+                ledger.add(Quantity(
+                    id=f"readout_sweeps/breadth/{panel}/{endpoint}/{readout_class}/resolved_cells",
+                    claim=f"cells resolving above zero on the {panel} panel for {endpoint} under the "
+                          f"{readout_class} readout class",
+                    family="readout_sweeps", value=float(resolved), unit="fit cells", kind="count",
+                    support_id=support, level="representation", conditioning="readout_selection",
+                    verdict="supported" if resolved else "not_detected",
+                    source_path=SWEEP_EXCERPT, source_sha256=digest,
+                    source_pointer=("cells", "class", "<reduction>", endpoint, readout_class),
+                ))
+                ledger.add(Quantity(
+                    id=f"readout_sweeps/breadth/{panel}/{endpoint}/{readout_class}/cells",
+                    claim=f"cells carrying {endpoint} on the {panel} panel under the "
+                          f"{readout_class} readout class",
+                    family="readout_sweeps", value=float(len(cells)), unit="fit cells",
+                    kind="support_count", support_id=support, level="representation",
+                    conditioning="readout_selection",
+                    source_path=SWEEP_EXCERPT, source_sha256=digest,
+                    source_pointer=("cells", "class", "<reduction>", endpoint, readout_class),
+                ))
+            for bound, value in (("min", min(per_class.values())), ("max", max(per_class.values()))):
+                ledger.add(Quantity(
+                    id=f"readout_sweeps/breadth/{panel}/{endpoint}/across_classes/{bound}",
+                    claim=f"{bound} over the swept readout classes of the cells resolving above zero "
+                          f"on the {panel} panel for {endpoint}",
+                    family="readout_sweeps", value=float(value), unit="fit cells",
+                    kind="range_bound", support_id=support, level="representation",
+                    conditioning="readout_selection",
+                    source_path=SWEEP_EXCERPT, source_sha256=digest,
+                    source_pointer=("cells", "class", "<reduction>", endpoint, "<across classes>"),
+                ))
+            # Arms resolving at every seed they carry, which is the breadth
+            # statement a panel count cannot make.
+            arms = sorted({row["arm"] for row in scoped})
+            at_all_seeds = sum(
+                all(row["resolved"] for row in scoped if row["arm"] == arm and row["class"] == cls)
+                and any(row["arm"] == arm and row["class"] == cls for row in scoped)
+                for arm in arms for cls in sorted({row["class"] for row in scoped})
+            )
+            ledger.add(Quantity(
+                id=f"readout_sweeps/breadth/{panel}/{endpoint}/arm_class_cells_at_every_seed",
+                claim=f"arm and class combinations on the {panel} panel whose {endpoint} resolves "
+                      "above zero at every seed they carry",
+                family="readout_sweeps", value=float(at_all_seeds), unit="arm--class cells",
+                kind="count", support_id=support, level="representation",
+                conditioning="readout_selection",
+                verdict="supported" if at_all_seeds else "not_detected",
+                source_path=SWEEP_EXCERPT, source_sha256=digest,
+                source_pointer=("cells", "class", "<reduction>", endpoint, "<every seed>"),
+            ))
+
+    # Magnitude: a ceiling over the swept classes, registered as a ceiling, with
+    # the admitted maximum beside it and the difference as its own row. A reading
+    # that the magnitude rose would have to contradict a row rather than infer.
+    admitted = next((quantity.value for quantity in ledger.quantities
+                     if quantity.id == "readout/panel/representation_increment/max"), None)
+    for panel in panels:
+        scoped = [row for row in rows if row["endpoint"] == "delta_spearman" and row["panel"] == panel]
+        if not scoped:
+            continue
+        support = f"sweep_panel_{panel}"
+        for axis in ("class", "pooled_depth"):
+            axis_rows = [row for row in scoped if _sweep_axis(row["class"]) == axis]
+            if not axis_rows:
+                continue
+            ceilings = {readout_class: max(row["value"] for row in axis_rows
+                                           if row["class"] == readout_class)
+                        for readout_class in sorted({row["class"] for row in axis_rows})}
+            for bound, value in (("min", min(ceilings.values())),
+                                 ("max", max(ceilings.values()))):
+                ledger.add(Quantity(
+                    id=f"readout_sweeps/magnitude/{panel}/{axis}/ceiling_across_classes/{bound}",
+                    claim=f"{bound} over the {axis} axis's classes of the largest representation "
+                          f"increment any cell of the {panel} panel reaches; this is a ceiling on "
+                          "magnitude and not a measured rise",
+                    family="readout_sweeps", value=float(value), unit="dimensionless Spearman",
+                    kind="range_bound", support_id=support, level="representation",
+                    conditioning="readout_selection",
+                    source_path=SWEEP_EXCERPT, source_sha256=digest,
+                    source_pointer=("cells", "class", "<reduction>", "delta_spearman", axis,
+                                    "<ceiling>"),
+                ))
+        ceilings = {readout_class: max(row["value"] for row in scoped
+                                       if row["class"] == readout_class)
+                    for readout_class in sorted({row["class"] for row in scoped})}
+        for bound, value in (("min", min(ceilings.values())), ("max", max(ceilings.values()))):
+            ledger.add(Quantity(
+                id=f"readout_sweeps/magnitude/{panel}/all_axes/ceiling_across_classes/{bound}",
+                claim=f"{bound} over every swept class of the largest representation increment any "
+                      f"cell of the {panel} panel reaches; this is a ceiling on magnitude and not a "
+                      "measured rise",
+                family="readout_sweeps", value=float(value), unit="dimensionless Spearman",
+                kind="range_bound", support_id=support, level="representation",
+                conditioning="readout_selection",
+                source_path=SWEEP_EXCERPT, source_sha256=digest,
+                source_pointer=("cells", "class", "<reduction>", "delta_spearman", "<ceiling>"),
+            ))
+        if admitted is not None and panel.startswith("anchor"):
+            ledger.add(Quantity(
+                id=f"readout_sweeps/magnitude/{panel}/ceiling_minus_admitted_maximum",
+                claim="the swept classes' largest representation increment minus the admitted "
+                      "panel's largest, on the same frozen states: the magnitude question stated as "
+                      "a difference rather than left to be inferred from two maxima",
+                family="readout_sweeps", value=float(max(ceilings.values())) - float(admitted),
+                unit="dimensionless Spearman", kind="artifact_leaf", support_id=support,
+                level="representation", conditioning="readout_selection",
+                source_path=SWEEP_EXCERPT, source_sha256=digest,
+                source_pointer=("<difference>", "cells", "class", "<ceiling>",
+                                "readout/panel/representation_increment/max"),
+            ))
+
+
+def _sweep_arm_panel_counts(ledger: Ledger, rows: list[dict], digest: str) -> None:
+    """Arm-panel cells whose increment resolves at every seed they carry.
+
+    This is the breadth statement the reassessment licenses: how many cells
+    carry resolved information, per fitted class, within one axis.
+    """
+    by_cell: dict[tuple[str, str, str, str], dict[object, bool]] = {}
+    for row in rows:
+        key = (row["arm"], row["panel"], row["class"], row["endpoint"])
+        by_cell.setdefault(key, {})[row["seed"]] = row["resolved"]
+    for endpoint in SWEEP_ENDPOINTS:
+        for axis in ("class", "pooled_depth"):
+            classes = sorted({key[2] for key in by_cell
+                              if key[3] == endpoint and _sweep_axis(key[2]) == axis})
+            if not classes:
+                continue
+            support = ledger.declare_support(
+                f"sweep_arm_panel_cells_{axis}",
+                f"the fitted arm-panel cells of the readout reassessment's {axis} axis, each read at "
+                "every split seed its panel declares",
+            )
+            counts = {}
+            for readout_class in classes:
+                cells = [seeds for key, seeds in by_cell.items()
+                         if key[2] == readout_class and key[3] == endpoint]
+                counts[readout_class] = sum(1 for seeds in cells if seeds and all(seeds.values()))
+                ledger.add(Quantity(
+                    id=f"readout_sweeps/arm_panel/{axis}/{endpoint}/{readout_class}/resolved",
+                    claim=f"arm-panel cells whose {endpoint} resolves above zero at every seed under "
+                          f"the {readout_class} class of the {axis} axis",
+                    family="readout_sweeps", value=float(counts[readout_class]),
+                    unit="arm--panel cells", kind="count", support_id=support,
+                    level="representation", conditioning="readout_selection",
+                    verdict="supported" if counts[readout_class] else "not_detected",
+                    source_path=SWEEP_EXCERPT, source_sha256=digest,
+                    source_pointer=("cells", "class", "<reduction>", endpoint, readout_class),
+                ))
+                identifier = f"readout_sweeps/arm_panel/{axis}/{endpoint}/cells"
+                if identifier not in {quantity.id for quantity in ledger.quantities}:
+                    ledger.add(Quantity(
+                        id=identifier,
+                        claim=f"arm-panel cells carrying {endpoint} on the {axis} axis",
+                        family="readout_sweeps", value=float(len(cells)), unit="arm--panel cells",
+                        kind="support_count", support_id=support, level="representation",
+                        conditioning="readout_selection",
+                        source_path=SWEEP_EXCERPT, source_sha256=digest,
+                        source_pointer=("cells", "class", "<reduction>", endpoint),
+                    ))
+            for bound, value in (("min", min(counts.values())), ("max", max(counts.values()))):
+                ledger.add(Quantity(
+                    id=f"readout_sweeps/arm_panel/{axis}/{endpoint}/across_classes/{bound}",
+                    claim=f"{bound} over the {axis} axis's classes of the arm-panel cells whose "
+                          f"{endpoint} resolves above zero at every seed",
+                    family="readout_sweeps", value=float(value), unit="arm--panel cells",
+                    kind="range_bound", support_id=support, level="representation",
+                    conditioning="readout_selection",
+                    source_path=SWEEP_EXCERPT, source_sha256=digest,
+                    source_pointer=("cells", "class", "<reduction>", endpoint, "<across classes>"),
+                ))
+
+
+def _sweep_admitted_comparisons(ledger: Ledger, rows: list[dict], digest: str) -> None:
+    """A range across classes and a comparison against the admitted class are
+    different quantities, so each gets its own row and the comparison is a
+    difference rather than two endpoints a reader must subtract.
+
+    Which class reproduces the admitted readout is read from the numbers: it is
+    the class whose value equals the admitted row for the same arm and seed. No
+    class is asserted to be the admitted one.
+    """
+    admitted = {(quantity.id.split("/")[1], quantity.seed_set[0] if quantity.seed_set else None):
+                quantity.value
+                for quantity in ledger.quantities
+                if quantity.id.startswith("readout/") and
+                quantity.id.endswith("/representation_increment") and quantity.seed_set}
+    if not admitted:
+        ledger.gap(id="readout_sweeps/comparison/admitted_reference",
+                   claim="the admitted readout's own increment, against which a class is compared",
+                   family="readout_sweeps",
+                   reason="no admitted readout row is in the table to compare a class against",
+                   looked_in=SWEEP_EXCERPT, reachability="not_recorded")
+        return
+    scoped = [row for row in rows
+              if row["endpoint"] == "delta_spearman" and _sweep_axis(row["class"]) == "class"]
+    reproducing: dict[str, int] = {}
+    for row in scoped:
+        reference = admitted.get((row["arm"], row["seed"]))
+        if reference is None:
+            continue
+        if abs(row["value"] - reference) <= 1e-9:
+            reproducing[row["class"]] = reproducing.get(row["class"], 0) + 1
+    if not reproducing:
+        ledger.gap(id="readout_sweeps/comparison/reproducing_class",
+                   claim="the swept class that reproduces the admitted readout, identified by its "
+                         "values rather than asserted",
+                   family="readout_sweeps",
+                   reason="no swept class reproduces an admitted cell to within 1e-9",
+                   looked_in=SWEEP_EXCERPT, reachability="not_recorded")
+        return
+    reference_class = max(reproducing, key=lambda name: reproducing[name])
+    for panel in sorted({row["panel"] for row in scoped}):
+        support = f"sweep_panel_{panel}"
+        for seed in sorted({row["seed"] for row in scoped if row["panel"] == panel and row["seed"]}):
+            cells = [row for row in scoped if row["panel"] == panel and row["seed"] == seed]
+            reference = [row for row in cells if row["class"] == reference_class]
+            if not reference:
+                continue
+            best = max(cells, key=lambda row: row["value"])
+            admitted_value = max(row["value"] for row in reference)
+            for name, value, claim, kind in (
+                ("admitted_class_value", admitted_value,
+                 f"the largest increment the admitted readout class ({reference_class}) reaches on "
+                 f"the {panel} panel at split seed {seed}", "artifact_leaf"),
+                ("best_class_value", best["value"],
+                 f"the largest increment any swept class reaches on the {panel} panel at split seed "
+                 f"{seed}, attained by {best['class']} on {best['arm']}", "artifact_leaf"),
+                ("best_minus_admitted_class", best["value"] - admitted_value,
+                 f"how much more than the admitted readout class the best swept class reaches on the "
+                 f"{panel} panel at split seed {seed}: the comparison as one quantity, not two "
+                 "endpoints to subtract", "artifact_leaf"),
+            ):
+                ledger.add(Quantity(
+                    id=f"readout_sweeps/comparison/{panel}/{seed}/{name}",
+                    claim=claim, family="readout_sweeps", value=float(value),
+                    unit="dimensionless Spearman", kind=kind, support_id=support,
+                    seed_set=(int(seed),), level="representation", conditioning="readout_selection",
+                    source_path=SWEEP_EXCERPT, source_sha256=digest,
+                    source_pointer=("cells", "class", "<comparison>", panel, str(seed), name),
+                ))
+        # Classes reaching less than the admitted one, which a range endpoint
+        # states and a comparison does not.
+        below = sorted({row["class"] for row in scoped if row["panel"] == panel
+                        and row["value"] < min(
+                            (other["value"] for other in scoped
+                             if other["panel"] == panel and other["class"] == reference_class),
+                            default=float("inf"))})
+        ledger.add(Quantity(
+            id=f"readout_sweeps/comparison/{panel}/classes_below_the_admitted_class",
+            claim=f"swept classes reaching less on the {panel} panel than the admitted readout class "
+                  "reaches at its weakest seed",
+            family="readout_sweeps", value=float(len(below)), unit="readout classes", kind="count",
+            support_id=support, level="representation", conditioning="readout_selection",
+            verdict="not_detected" if below else "supported",
+            source_path=SWEEP_EXCERPT, source_sha256=digest,
+            source_pointer=("cells", "class", "<comparison>", panel, "<below admitted>"),
+        ))
+
+
+def _sweep_breadth_comparisons(ledger: Ledger, rows: list[dict], digest: str) -> None:
+    """The same distinction for the breadth counts.
+
+    A range over the classes and a comparison against the admitted class are
+    separate rows, so a range endpoint cannot be quoted as a comparison.
+    """
+    admitted_resolved = {
+        (quantity.id.split("/")[1], quantity.seed_set[0] if quantity.seed_set else None)
+        for quantity in ledger.quantities
+        if quantity.id.startswith("readout/") and
+        quantity.id.endswith("/representation_increment") and quantity.seed_set and
+        quantity.interval is not None and quantity.interval[0] > 0
+    }
+    by_cell: dict[tuple[str, str, str], dict[object, bool]] = {}
+    for row in rows:
+        if row["endpoint"] != "delta_spearman" or _sweep_axis(row["class"]) != "class":
+            continue
+        by_cell.setdefault((row["arm"], row["panel"], row["class"]), {})[row["seed"]] = row["resolved"]
+    if not by_cell:
+        return
+    support = ledger.declare_support(
+        "sweep_arm_panel_cells_class",
+        "the fitted arm-panel cells of the readout reassessment's class axis, each read at every "
+        "split seed its panel declares",
+    )
+    counts = {}
+    for readout_class in sorted({key[2] for key in by_cell}):
+        counts[readout_class] = sum(1 for key, seeds in by_cell.items()
+                                    if key[2] == readout_class and seeds and all(seeds.values()))
+    admitted_arms = len({arm for arm, seed in admitted_resolved})
+    best_class = max(counts, key=lambda name: counts[name])
+    for name, value, claim in (
+        ("admitted_resolved_checkpoints", float(admitted_arms),
+         "checkpoints whose admitted readout increment resolves above zero in at least one seed, "
+         "which is the breadth the reassessment is read against"),
+        ("best_class_resolved_cells", float(counts[best_class]),
+         f"arm-panel cells resolving at every seed under the best swept class ({best_class})"),
+        ("best_minus_admitted_breadth", float(counts[best_class]) - float(admitted_arms),
+         "how many more cells the best swept class resolves than the admitted readout does "
+         "checkpoints: the comparison as one quantity, and not a range endpoint"),
+    ):
+        ledger.add(Quantity(
+            id=f"readout_sweeps/comparison/breadth/{name}",
+            claim=claim, family="readout_sweeps", value=value,
+            unit="arm--panel cells" if "cells" in name or "breadth" in name else "checkpoints",
+            kind="count" if "resolved" in name else "artifact_leaf", support_id=support,
+            seed_set=SPLIT_SEEDS, level="representation", conditioning="readout_selection",
+            source_path=SWEEP_EXCERPT, source_sha256=digest,
+            source_pointer=("cells", "class", "<comparison>", "breadth", name),
+        ))
+
+
+DEPTH_PANEL = ("results/external_baseline/d1_readout_depth_panel_20260925/readout_depth_panel.json")
+CLASS_ADMISSION = ("results/external_baseline/d1_readout_class_sweep_admission_20260925/"
+                   "class_sweep_admission.json")
+
+
+def _sweep_depth_cells(ledger: Ledger, payload: dict, digest: str, support: str) -> None:
+    """The per-block fitted increments, which sit under ``seeds`` in each cell.
+
+    They are one level below the cell's top-level keys. An enumeration that does
+    not descend there reads as an absence, which is how this family was first
+    recorded as a gap; the locator now names the nested path.
+    """
+    depth_seen: dict[str, float] = {}
+    for cell in payload["cells"]["depth"]:
+        block = cell["block"]
+        for seed, per_seed in sorted((block.get("seeds") or {}).items()):
+            summaries = (per_seed or {}).get("summaries") or {}
+            for name, value in sorted(summaries.items()):
+                if not name.endswith("delta_spearman") or not isinstance(value, dict):
+                    continue
+                if value.get("point") is None or value.get("degenerate"):
+                    continue
+                axis = name.rsplit("_delta_spearman", 1)[0].rstrip("/")
+                identifier = (f"readout_sweeps/depth/{block['arm']}/{block['panel']}/{seed}/{axis}")
+                # gpt2-large's depth cell was re-extracted, so two files carry
+                # the same (arm, panel, seed). The first is kept and the repeat
+                # checked against it, as on the class axis.
+                existing = depth_seen.get(identifier)
+                if existing is not None:
+                    if abs(existing - _point(value)) > 1e-9:
+                        ledger.gap(
+                            id=f"{identifier}/repeat_disagreement",
+                            claim="two retained depth cells for one (arm, panel, seed, axis) that do "
+                                  "not agree",
+                            family="readout_sweeps",
+                            reason=f"{existing!r} against {_point(value)!r} in {cell['path']}",
+                            looked_in=SWEEP_EXCERPT, reachability="not_recorded",
+                            searched="both files' seeds/<seed>/summaries blocks")
+                    continue
+                depth_seen[identifier] = _point(value)
+                interval = _interval(value)
+                ledger.add(Quantity(
+                    id=identifier,
+                    claim=f"{block['arm']} on the {block['panel']} panel at split seed {seed}, "
+                          f"{axis}: the representation's increment over the matched supervised "
+                          "baseline at that extraction depth",
+                    family="readout_sweeps", value=_point(value), unit="dimensionless Spearman",
+                    kind="estimate", support_id=support, interval=interval,
+                    interval_kind=PERCENTILE_95 if interval else None,
+                    resampling_unit=str(value.get("unit")) if interval else None,
+                    resampling_draws=int(value["resamples"]) if interval and value.get("resamples")
+                                     else None,
+                    no_interval_reason=None if interval else "the cell records no interval",
+                    seed_set=(int(seed),), level="representation",
+                    conditioning="readout_selection",
+                    source_path=SWEEP_EXCERPT, source_sha256=digest,
+                    source_pointer=("cells", "depth", cell["path"], "seeds", seed, "summaries", name),
+                ))
+
+
+def family_depth_panel(ledger: Ledger) -> None:
+    """The depth panel aggregate: the falsification tally, breadth and ceilings.
+
+    A cross-cell tally is a quantity no per-cell file can hold, which is why it
+    needed its own artifact rather than a reduction over cells.
+    """
+    if not ledger.artifacts.exists(DEPTH_PANEL):
+        ledger.gap(id="readout_sweeps/depth_panel", claim="the depth panel aggregate",
+                   family="readout_sweeps", reason="the aggregate is not staged here",
+                   looked_in=DEPTH_PANEL, reachability="cluster_only",
+                   searched="the declared path only")
+        return
+    payload = ledger.artifacts.json(DEPTH_PANEL)
+    digest = ledger.artifacts.sha256(DEPTH_PANEL)
+    support = ledger.declare_support(
+        "readout_depth_reextraction",
+        "the depth re-extraction: every transformer block of the extraction roster, refitted on the "
+        "same admitted panels, seeds and fold maps as the two pooled depths",
+    )
+    for stratum, block in sorted(payload["falsification"].items()):
+        stratum_support = ledger.declare_support(
+            f"depth_stratum_{stratum}",
+            f"the {stratum} interface stratum of the depth re-extraction, over "
+            f"{len(block.get('arms', []))} arms and {len(block.get('panels', []))} panels",
+        )
+        for field, unit, kind, claim in (
+            ("depth_cells", "depth cells", "support_count", "depth cells fitted in this stratum"),
+            ("resolved_positive", "depth cells", "count",
+             "depth cells whose increment resolves above zero"),
+            ("resolved_negative", "depth cells", "count",
+             "depth cells whose increment resolves below zero"),
+            ("unresolved", "depth cells", "count", "depth cells whose interval contains zero"),
+            ("degenerate", "depth cells", "count", "degenerate depth cells"),
+        ):
+            if block.get(field) is None:
+                continue
+            verdict = None
+            if field == "resolved_positive":
+                verdict = "supported" if block[field] else "not_detected"
+            elif field == "unresolved":
+                verdict = "unresolved"
+            ledger.add(Quantity(
+                id=f"readout_sweeps/depth_panel/{stratum}/{field}",
+                claim=f"{claim}, in the {stratum} stratum", family="readout_sweeps",
+                value=float(block[field]), unit=unit, kind=kind, support_id=stratum_support,
+                seed_set=SPLIT_SEEDS, level="representation", conditioning="readout_selection",
+                verdict=verdict,
+                source_path=DEPTH_PANEL, source_sha256=digest,
+                source_pointer=("falsification", stratum, field),
+            ))
+        best = block.get("best_cell") or {}
+        if block.get("best_point") is not None:
+            ledger.add(Quantity(
+                id=f"readout_sweeps/depth_panel/{stratum}/best_point",
+                claim=f"the largest increment any depth cell of the {stratum} stratum reaches, "
+                      f"attained by {best.get('arm')} at depth {best.get('depth')} and itself "
+                      f"{best.get('direction', 'unspecified').replace('_', ' ')}",
+                family="readout_sweeps", value=float(block["best_point"]),
+                unit="dimensionless Spearman", kind="estimate", support_id=stratum_support,
+                interval=tuple(map(float, best["interval"])) if best.get("interval") else None,
+                interval_kind=PERCENTILE_95 if best.get("interval") else None,
+                resampling_unit="wild-type family at 50% identity" if best.get("interval") else None,
+                resampling_draws=2000 if best.get("interval") else None,
+                no_interval_reason=None if best.get("interval") else "the aggregate records no interval",
+                seed_set=SPLIT_SEEDS, level="representation", conditioning="readout_selection",
+                verdict="unresolved" if best.get("direction") == "unresolved" else None,
+                source_path=DEPTH_PANEL, source_sha256=digest,
+                source_pointer=("falsification", stratum, "best_point"),
+            ))
+    lifted = [entry for entry in payload.get("breadth", [])
+              if entry.get("reading") == "boundary lifted"]
+    outside = [entry for entry in lifted if entry.get("selected_at_admitted_depth") is False]
+    ledger.add(Quantity(
+        id="readout_sweeps/depth_panel/boundary_lifted_cells",
+        claim="arm-panel cells where a depth resolves above zero at every seed while the admitted "
+              "pooled pair resolves at none",
+        family="readout_sweeps", value=float(len(lifted)), unit="arm--panel cells", kind="count",
+        support_id=support, seed_set=SPLIT_SEEDS, level="representation",
+        conditioning="readout_selection", verdict="supported" if lifted else "not_detected",
+        source_path=DEPTH_PANEL, source_sha256=digest,
+        source_pointer=("breadth", "<reading=boundary lifted>"),
+    ))
+    ledger.add(Quantity(
+        id="readout_sweeps/depth_panel/boundary_lifted_outside_the_admitted_pair",
+        claim="of those cells, the ones whose selected block is not a block the admitted extraction "
+              "hooked; the remainder select a block the admitted extraction did hook, so for them the "
+              "limit was the pooling across depths rather than the depth",
+        family="readout_sweeps", value=float(len(outside)), unit="arm--panel cells", kind="count",
+        support_id=support, seed_set=SPLIT_SEEDS, level="representation",
+        conditioning="readout_selection", verdict="supported" if outside else "not_detected",
+        source_path=DEPTH_PANEL, source_sha256=digest,
+        source_pointer=("breadth", "<selected_at_admitted_depth=false>"),
+    ))
+    for key, block in sorted(payload.get("ceilings", {}).items()):
+        for field in ("single_cell_maximum", "seed_consistent_maximum"):
+            if block.get(field) is None:
+                continue
+            cell = block.get(field.replace("_maximum", "")) or {}
+            ledger.add(Quantity(
+                id=f"readout_sweeps/depth_panel/ceiling/{key}/{field}",
+                claim=f"the {field.replace('_', ' ')} increment any depth cell of {key} reaches; a "
+                      "ceiling on magnitude and not a measured rise",
+                family="readout_sweeps", value=float(block[field]), unit="dimensionless Spearman",
+                kind="range_bound", support_id=support, seed_set=SPLIT_SEEDS,
+                level="representation", conditioning="readout_selection",
+                source_path=DEPTH_PANEL, source_sha256=digest,
+                source_pointer=("ceilings", key, field),
+            ))
+            if cell.get("interval") and field == "single_cell_maximum":
+                ledger.add(Quantity(
+                    id=f"readout_sweeps/depth_panel/ceiling/{key}/attaining_cell",
+                    claim=f"the cell attaining {key}'s largest single-cell increment, "
+                          f"{cell.get('arm')} on the {cell.get('axis')} axis at depth "
+                          f"{cell.get('depth')}",
+                    family="readout_sweeps", value=float(block[field]),
+                    unit="dimensionless Spearman", kind="estimate", support_id=support,
+                    interval=tuple(map(float, cell["interval"])), interval_kind=PERCENTILE_95,
+                    resampling_unit="wild-type family at 50% identity", resampling_draws=2000,
+                    seed_set=SPLIT_SEEDS, level="representation", conditioning="readout_selection",
+                    source_path=DEPTH_PANEL, source_sha256=digest,
+                    source_pointer=("ceilings", key, "single_cell"),
+                ))
+    for field, unit, claim in (("n_cells", "fit cells", "fitted cells the aggregate covers"),
+                               ("arms", "checkpoints", "arms the aggregate covers"),
+                               ("panels", "panels", "panels the aggregate covers"),
+                               ("strata", "interface strata", "strata the aggregate covers")):
+        value = payload.get(field)
+        if value is None:
+            continue
+        ledger.add(Quantity(
+            id=f"readout_sweeps/depth_panel/{field}",
+            claim=claim, family="readout_sweeps",
+            value=float(len(value) if isinstance(value, list) else value), unit=unit,
+            kind="support_count", support_id=support, level="measurement",
+            source_path=DEPTH_PANEL, source_sha256=digest, source_pointer=(field,),
+        ))
+    worst = [entry["worst_admitted_prediction_deviation"] for entry in payload.get("reproduction", [])
+             if entry.get("worst_admitted_prediction_deviation") is not None]
+    if worst:
+        ledger.add(Quantity(
+            id="readout_sweeps/depth_panel/worst_prediction_deviation",
+            claim="the worst deviation between a refitted prediction and the admitted one over every "
+                  "reproduction cell",
+            family="readout_sweeps", value=float(max(worst)), unit="dimensionless deviation",
+            kind="artifact_leaf", support_id=support, level="measurement",
+            source_path=DEPTH_PANEL, source_sha256=digest,
+            source_pointer=("reproduction", "<max>", "worst_admitted_prediction_deviation"),
+        ))
+
+
+def family_class_admission(ledger: Ledger) -> None:
+    """The class sweep's admission receipt, which resolves the repeated cells."""
+    if not ledger.artifacts.exists(CLASS_ADMISSION):
+        ledger.gap(id="readout_sweeps/class_admission",
+                   claim="the class sweep's admission receipt", family="readout_sweeps",
+                   reason="the receipt is not staged here", looked_in=CLASS_ADMISSION,
+                   reachability="cluster_only", searched="the declared path only")
+        return
+    payload = ledger.artifacts.json(CLASS_ADMISSION)
+    digest = ledger.artifacts.sha256(CLASS_ADMISSION)
+    support = ledger.declare_support(
+        "class_sweep_admitted_cells",
+        f"the {payload['admitted_cells']} admitted class-sweep fit cells, taken from snapshot "
+        f"{payload['admitted_snapshot']} where a cell appears in more than one",
+    )
+    for field, unit, kind, claim in (
+        ("admitted_cells", "fit cells", "support_count", "admitted class-sweep fit cells"),
+        ("expected_cells", "fit cells", "support_count", "fit cells the roster expects"),
+        ("duplicate_cells", "fit cells", "count",
+         "cells appearing in more than one snapshot, resolved to the admitted one"),
+        ("worst_prediction_deviation", "dimensionless deviation", "artifact_leaf",
+         "the worst deviation between a refitted prediction and the admitted one"),
+        ("baseline_tolerance", "dimensionless tolerance", "constant",
+         "the tolerance the admission verifies the reproducing class against"),
+    ):
+        value = payload.get(field)
+        if value is None:
+            continue
+        ledger.add(Quantity(
+            id=f"readout_sweeps/class_admission/{field}",
+            claim=claim, family="readout_sweeps", value=float(value), unit=unit, kind=kind,
+            support_id=support, level="measurement",
+            source_path=CLASS_ADMISSION, source_sha256=digest, source_pointer=(field,),
+        ))
+    ledger.add(Quantity(
+        id="readout_sweeps/class_admission/cells_only_in_superseded",
+        claim="cells existing only in a superseded snapshot, which would have to be taken from it",
+        family="readout_sweeps", value=float(len(payload.get("cells_only_in_superseded", []))),
+        unit="fit cells", kind="count", support_id=support, level="measurement",
+        verdict="not_detected",
+        source_path=CLASS_ADMISSION, source_sha256=digest,
+        source_pointer=("cells_only_in_superseded",),
+    ))
+
+
+def _sweep_depth_receipts(ledger: Ledger, payload: dict, digest: str) -> None:
+    """The depth axis's reproduction receipts, and a gap for its fitted cells."""
+    cells = payload["cells"]["depth"]
+    if not cells:
+        return
+    support = ledger.declare_support(
+        "readout_depth_reextraction",
+        "the depth re-extraction: every transformer block of the extraction roster, refitted on the "
+        "same admitted panels, seeds and fold maps as the two pooled depths",
+    )
+    agreements: list[float] = []
+    for cell in cells:
+        block = cell["block"]
+        agreement = block.get("extraction_agreement") or {}
+        for field, value in sorted(agreement.items()):
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                continue
+            if not any(token in field for token in ("_l2", "difference", "_nats")):
+                continue
+            agreements.append(float(value))
+            identifier = (f"readout_sweeps/depth/{block['arm']}/{block['panel']}/agreement/{field}")
+            if identifier in {quantity.id for quantity in ledger.quantities}:
+                continue
+            ledger.add(Quantity(
+                id=identifier,
+                claim=f"{block['arm']} on the {block['panel']} panel: {field.replace('_', ' ')} "
+                      "between the re-extraction and the admitted extraction",
+                family="readout_sweeps", value=float(value),
+                unit="dimensionless deviation", kind="artifact_leaf", support_id=support,
+                level="measurement",
+                source_path=SWEEP_EXCERPT, source_sha256=digest,
+                source_pointer=("cells", "depth", cell["path"], "extraction_agreement", field),
+            ))
+    if agreements:
+        ledger.add(Quantity(
+            id="readout_sweeps/depth/extraction_agreement_worst",
+            claim="the worst agreement between the depth re-extraction and the admitted extraction "
+                  "over every cell that reports one",
+            family="readout_sweeps", value=max(abs(value) for value in agreements),
+            unit="dimensionless deviation", kind="artifact_leaf", support_id=support,
+            level="measurement",
+            source_path=SWEEP_EXCERPT, source_sha256=digest,
+            source_pointer=("cells", "depth", "<reduction>", "extraction_agreement"),
+        ))
+    _sweep_depth_cells(ledger, payload, digest, support)
+    ledger.add(Quantity(
+        id="readout_sweeps/depth/cells",
+        claim="fitted (arm, panel) cells of the depth re-extraction",
+        family="readout_sweeps", value=float(len(cells)), unit="fit cells", kind="support_count",
+        support_id=support, level="measurement",
+        source_path=SWEEP_EXCERPT, source_sha256=digest,
+        source_pointer=("cells", "depth"),
+    ))
+
+
+
+
 def build(out_dir: Path = OUT_DIR) -> dict[str, object]:
     artifacts = Artifacts()
     ledger = Ledger(artifacts)
@@ -3026,6 +3797,9 @@ def build(out_dir: Path = OUT_DIR) -> dict[str, object]:
     family_unrecorded_constants(ledger)
     family_remote_homology(ledger)
     family_domainome_endpoint(ledger)
+    family_class_admission(ledger)
+    family_readout_sweeps(ledger)
+    family_depth_panel(ledger)
     family_leaf_subtrees(ledger)
     family_generator_totals(ledger)
     family_derived_shares(ledger)

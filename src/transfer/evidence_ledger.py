@@ -31,9 +31,22 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 #: direction, so the vocabulary is closed and a fifth name is a refusal.
 VERDICTS = frozenset({"supported", "not_detected", "unresolved", "measurement_limited"})
 
-#: Likelihood-level results are final. Representation-level results are
-#: provisional pending the readout-class sweep and the per-block re-extraction,
-#: and every row carrying ``level="representation"`` must say so.
+#: What a representation-level result is conditional on, and whether that
+#: condition has been settled. A row is provisional while its condition is open;
+#: when the experiment that decides it reports, the condition moves here and the
+#: rows that carried it stop being provisional. A condition is settled by an
+#: artifact, so the record names the experiment that closed it.
+CONDITIONS = {
+    "readout_selection": "the readout class and the extraction depth, decided by the readout-class "
+                         "sweep over 132 admitted fit cells and the depth sweep over 54 fitted "
+                         "(arm, panel) cells",
+    "gate_representation_recomputation": "the representation recomputation across the gates, which "
+                                         "has not run",
+}
+SETTLED_CONDITIONS = frozenset({"readout_selection"})
+
+#: Likelihood-level results are final. A representation-level result is
+#: provisional only while the condition it names is open.
 LEVELS = frozenset({"likelihood", "representation", "measurement", "control", "generation"})
 
 #: ``estimate`` is a resampled point estimate and must carry an interval or a
@@ -88,6 +101,7 @@ class Quantity:
     level: str = "measurement"
     verdict: str | None = None
     weighting_convention: str | None = None
+    conditioning: str | None = None
     source_kind: str = "artifact"
     source_path: str = ""
     source_sha256: str = ""
@@ -116,6 +130,8 @@ class Quantity:
                 raise LedgerError(f"{self.id}: an interval names what kind of interval it is")
         elif self.kind == "estimate" and not self.no_interval_reason:
             raise LedgerError(f"{self.id}: a point estimate with no interval states why it has none")
+        if self.conditioning is not None and self.conditioning not in CONDITIONS:
+            raise LedgerError(f"{self.id}: unknown conditioning {self.conditioning!r}")
         if self.kind == "effective_count" and not self.weighting_convention:
             raise LedgerError(f"{self.id}: an effective (Kish) count names the weighting it was computed under")
         if not self.source_path or not self.source_sha256:
@@ -123,8 +139,15 @@ class Quantity:
 
     @property
     def provisional(self) -> bool:
-        """Representation-level outcomes are conditional on the readout class."""
-        return self.level == "representation"
+        """A representation-level outcome whose condition is still open.
+
+        Defaulting to the open condition keeps a row provisional unless it says
+        which settled experiment released it, so a row cannot lose the marking
+        by omission.
+        """
+        if self.level != "representation":
+            return False
+        return (self.conditioning or "gate_representation_recomputation") not in SETTLED_CONDITIONS
 
     def as_row(self) -> dict[str, object]:
         return {
@@ -146,6 +169,9 @@ class Quantity:
             "provisional": self.provisional,
             "verdict": self.verdict,
             "weighting_convention": self.weighting_convention,
+            "conditioning": self.conditioning,
+            "conditioning_settled": None if self.conditioning is None
+                                    else self.conditioning in SETTLED_CONDITIONS,
             "source_kind": self.source_kind,
             "source_path": self.source_path,
             "source_sha256": self.source_sha256,
@@ -229,6 +255,12 @@ class Gap:
     reason: str
     looked_in: str
     reachability: str = "not_recorded"
+    #: How deep the search went. "No fitted estimate of any kind" and "no fitted
+    #: estimate among the top-level keys" are different claims, and only one of
+    #: them was true when this field was added: a gap recorded from a shallow
+    #: enumeration read as an absence in the evidence. A gap that does not say
+    #: how deep it looked is counted in the table's own summary.
+    searched: str = ""
 
     def __post_init__(self) -> None:
         if self.reachability not in REACHABILITY:
@@ -242,6 +274,7 @@ class Gap:
             "reason": self.reason,
             "looked_in": self.looked_in,
             "reachability": self.reachability,
+            "searched": self.searched,
         }
 
 
@@ -272,9 +305,9 @@ class Ledger:
         return quantity
 
     def gap(self, *, id: str, claim: str, family: str, reason: str, looked_in: str,
-            reachability: str = "not_recorded") -> None:
+            reachability: str = "not_recorded", searched: str = "") -> None:
         self.gaps.append(Gap(id=id, claim=claim, family=family, reason=reason,
-                             looked_in=looked_in, reachability=reachability))
+                             looked_in=looked_in, reachability=reachability, searched=searched))
 
     def payload(self, *, scope: str) -> dict[str, object]:
         by_family: dict[str, int] = {}
@@ -284,6 +317,9 @@ class Ledger:
             "schema": "manuscript_derived_numbers_v1",
             "scope": scope,
             "verdict_vocabulary": sorted(VERDICTS),
+            "conditions": {name: {"statement": statement,
+                                  "settled": name in SETTLED_CONDITIONS}
+                           for name, statement in sorted(CONDITIONS.items())},
             "supports": {key: value.description for key, value in sorted(self.supports.items())},
             "counts": {
                 "quantities": len(self.quantities),
@@ -292,6 +328,8 @@ class Ledger:
                 "gate_record_backed": sum(q.source_kind == "gate_record" for q in self.quantities),
                 "provisional": sum(q.provisional for q in self.quantities),
                 "gaps": len(self.gaps),
+                "gaps_without_a_stated_search_depth":
+                    sum(not gap.searched for gap in self.gaps),
                 "gaps_by_reachability": {
                     key: sum(gap.reachability == key for gap in self.gaps)
                     for key in sorted(REACHABILITY)

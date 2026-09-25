@@ -75,7 +75,52 @@ The repair moves work rather than restarting it. The last six pending cells of e
 
 ## Results
 
-Pending. This section is written only after the campaign completes and its cells pass their own C0 reproduction checks.
+Two artifacts on the shared filesystem carry these numbers. The panel summary is `results/external_baseline/d1_readout_class_sweep_admission_20260925/class_sweep_admission.json`, SHA256 `720b23327447ae9434e913512f90668c2473a125880dfe0f0dc68a65995033ce`, which is also the admission receipt: it names, per cell, the snapshot admitted and the digest of the admitted report, and records the pinned projection thread count for each. It reports 132 admitted cells of 132 expected, `complete`, worst prediction deviation 4.743e-13, and a pinned thread count of 4 in every cell.
+
+The receipt exists because the sweep ran twice and 12 cells have a report in both snapshots. It resolves every one the same way — the admitted snapshot `20260924024708_110acb30c7bf` wins, the first execution `20260923210003_de8af07336af` is superseded — and 0 cells exist only in the superseded tree, so nothing is lost by the rule. The difference between a duplicate pair is confined to the representation: on `galactica-30b`/`anchor201`/20260923, 39 of 155 shared summaries differ, the largest being the C3 class's representation-only correlation at 0.2322177979301245 admitted against 0.2322161479143406 superseded, a gap of 1.650e-06, with the rank-mean-squared-error quantities differing by about 8.6e-10. **The primary increment is identical in every class between the two files**, because a perturbation at 1e-06 changes no within-assay rank. So the published endpoint was never in doubt; what the receipt fixes is that a reader can now say which file any representation-only figure came from.
+
+All 132 cells completed and every one passes its own C0 reproduction control: the worst held-out prediction deviation against the admitted report is 4.743e-13, five orders of magnitude inside the declared 1e-8, and the panel summary is `complete`. Coverage is 53 cells on `literal_text_AA`, 76 on `native_sequence` and 3 on `EC_conditioned`. Every quantity is a cluster-equal mean within-assay Spearman difference against the matched supervised baseline on the unit *wild-type family at 50% identity*, 163 families on the anchor panel and 30 on the EC-conditioned panel, with 2,000 paired bootstrap draws at seed 20260923 and alpha 0.05. Strata are never pooled and no interval is adjusted across arms, classes, endpoints or seeds.
+
+### The penalty grid was never the binding constraint
+
+C1 returns increments **numerically identical to C0 in all 132 cells**, to every digit. Extending the ridge grid from the admitted five points to nine, reaching 1e6, changes no selected prediction anywhere in the panel. Whatever bounds the admitted result, it is not the penalty range, and the five-point grid needs no defence.
+
+### Uncompressed features are a better readout and a worse predictor at once
+
+C2 supplies the four block summaries at full hidden width, 1,536 to 28,672 columns instead of 1,024, and it is the only class that makes the primary endpoint markedly worse. On `native_sequence` the count of cells resolved above zero falls from 9 of 76 to 3, resolved-below rises from 20 to 44, and the median increment falls from +0.001548 to −0.018972, with a worst cell of −0.226747; at the arm level it retains one arm-and-panel cell of the four the admitted class resolves. On `literal_text_AA` the median falls from −0.024671 to −0.053581.
+
+The same class is simultaneously the better *readout*. On the representation-over-likelihood contrast its `native_sequence` count resolved above zero rises from 39 of 76 to 47, with no cell resolved below zero, and the stratum maximum rises from +0.176377 to +0.184405. The full-width states therefore rank mutations better against the native likelihood than the compressed projection does, while adding less to an equally supervised baseline. The extra coordinates carry signal the baseline already holds, plus variance that a 163-cluster label budget cannot absorb. That is a statement about the label budget and the design width, not about the states.
+
+### A nonlinear head widens the set of arms, and never creates one on text
+
+C3 and C4 approximate a radial-basis kernel with 2,048 random Fourier features, the bandwidth selected in inner folds. They are the only classes that improve on the admitted one. On `native_sequence` the count of cells resolved above zero rises from 9 of 76 under C0 to 13 under C3 and 16 under C4, while resolved-below falls from 20 to 10 and 13. At the arm level, counting only arm-and-panel cells resolved at **all three** split seeds, the admitted class resolves 2 — ProteinGLM-7B-CLM on the anchor and the EC-conditioned panel — C3 resolves 4, adding ProGen3-3B on both panels, and C4 resolves 5, adding ProGen2-xlarge on the anchor panel.
+
+| Class | `native_sequence` cells resolved above zero, of 76 | Arm-panel cells resolved at all three seeds | Stratum maximum |
+| --- | ---: | ---: | --- |
+| C0 admitted, C1 wider grid | 9 | 2 | +0.051388 [+0.025107, +0.077454] |
+| C2 uncompressed linear | 3 | 1 | +0.048624 |
+| C3 compressed random feature | 13 | 4 | +0.061644 [+0.038240, +0.087126] |
+| C4 uncompressed random feature | 16 | 5 | +0.059406 [+0.035788, +0.084613] |
+
+The largest cell anywhere is ProteinGLM-7B-CLM on the EC-conditioned panel at seed 20260924, where the admitted class gives +0.051388 [+0.025107, +0.077454] and C3 gives +0.061644 [+0.038240, +0.087126]. On the anchor panel the same arm moves from +0.022549 [+0.011958, +0.033015] to +0.026603 [+0.016576, +0.036525] under C3 and +0.028818 [+0.018414, +0.039207] under C4. The clearest single change of verdict is ProGen3-3B's anchor cell at seed 20260924: C0 leaves it unresolved at +0.007388 [−0.001541, +0.016357], C3 resolves it at +0.009728 [+0.001319, +0.018074] and C4 at +0.011986 [+0.001605, +0.021862].
+
+These are point-estimate comparisons, not resolved differences. The declared endpoint set contains no paired class-versus-class contrast and the C0 and C3 intervals overlap heavily in every cell, so the defensible statement is that more cells resolve above zero under the nonlinear head and that its point estimate is the larger wherever both are available — not that any individual increase is itself resolved.
+
+ZymCTRL, the only arm on the `EC_conditioned` stratum, is the one candidate outside that pattern. The admitted class leaves all three of its seeds unresolved at −0.009777 to −0.004099; C3 leaves all three unresolved but turns every point estimate positive, +0.006064 to +0.009169; C4 resolves two of the three above zero, +0.015987 to +0.021492, the seed-20260925 cell reading +0.021492 [+0.001830, +0.040566]. On 30 wild-type families and two of three seeds that is a candidate, not a result.
+
+### The falsification control holds across every class
+
+**No class produces an increment resolved above zero on any of the 53 `literal_text_AA` cells** — 0 of 53 under C0, C1, C2, C3 and C4 alike, and 0 at every seed. C0 and C1 resolve below zero in all 53, C2 in all 53 and more deeply, C3 in 44 with 9 unresolved, C4 in 48 with 5 unresolved; the stratum's best cell under any class is −0.003928, still negative. What a stronger class does on literal text is shrink the deficit, never turn it into a gain. Meanwhile the representation-over-likelihood contrast is resolved above zero in all 53 cells under every class, C0 spanning +0.069750 to +0.170272, which is the admitted range for that stratum reproduced exactly. The contrast that was already positive on literal text stays positive under a stronger class and the increment that was already negative stays negative, so the gains the nonlinear head finds on protein arms are not a capacity effect that a text arm would share.
+
+### Depth and pooling at the two retained blocks
+
+The D classes fit each retained block alone. Over the `native_sequence` cells carrying them, only the final block's residue-token mean resolves above zero on its own, with a maximum of +0.020432 [+0.008051, +0.032742] on ProGen3-3B at the primary seed; the final block's last-token state, the middle block's mean and the middle block's last-token state resolve above zero in no cell. Of the four summaries the admitted extraction retained, the final-block mean is the one carrying the information, which agrees with the depth sweep placing the same arms' resolved blocks in the upper stack.
+
+### Verdict
+
+The panel-wide near-null survives every class on the falsification stratum and on two of the three axes varied. It does not survive intact on the third. Stated precisely: the penalty grid changes nothing at all; widening to uncompressed features makes the increment worse while making the readout better; and a random-feature head raises the number of `native_sequence` cells resolved above zero from 9 of 76 to 16 of 76, and the number of arm-and-panel cells resolved at all three seeds from 2 to 5. The magnitude ceiling moves little — the anchor-panel maximum rises from +0.022549 to +0.028818, and the EC-conditioned maximum from +0.051388 to +0.061644 on 30 families.
+
+So the admitted readout class was a **partial** measurement boundary, in the same sense and to about the same degree as the admitted extraction depth: it bounded which arms show resolved information, not how much information there is. The reading that the frozen pooled states carry little resolved mutation-effect information beyond profile, likelihood and sequence descriptors is unchanged. The reading that only three arms carry any is not: under a nonlinear head, five arm-and-panel cells resolve at every seed, and under depth resolution nine arms do — in both cases every one of them a protein interface, and in neither case any literal-text arm at all.
 
 ## Limitations carried from the admitted panel
 

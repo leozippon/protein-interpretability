@@ -45,6 +45,15 @@ CORPUS_CONSTRUCTORS = (
 #: reason, so that a stage which stops calling them is a visible change rather
 #: than a silently passing test.
 NON_DRAWING_STAGES: dict[str, str] = {
+    "admit_class_sweep.py": (
+        "reads the readout-class sweep's existing cell reports and writes an admission "
+        "receipt naming, per cell, the snapshot admitted and its digest. It samples "
+        "nothing: its units are the 132 declared (arm, panel, split seed) cells of the "
+        "admitted readout panel, enumerated from the reports on disk, so rule 1's hazard "
+        "is absent rather than answered. Every cohort, support, fold map and seed it "
+        "records was fixed by the sweep it is receipting, and a draw here would describe "
+        "a different panel from the one the numbers came from."
+    ),
     "01_joint_context_information.py": (
         "DRAWS A COHORT and delegates the draw rather than constructing one, "
         "exactly as 24_component_swap.py does: build_cohort(args) and "

@@ -391,6 +391,24 @@ class PanelAndHeldGroupComparison(unittest.TestCase):
         self.assertEqual(len(values), 1)
 
 
+class StateIndicesAreReadFromEitherSchema(unittest.TestCase):
+    """One cohort records the state index and the other leaves it implicit."""
+
+    def test_an_implicit_state_index_is_its_position_in_the_declared_order(self):
+        fit = _load_entry_point('fit_nested_singles.py')
+        recorded = [{'state': 1, 'position': 3, 'mutant': 'A'},
+                    {'state': 2, 'position': 5, 'mutant': 'G'}]
+        implicit = [{'position': 3, 'mutant': 'A'}, {'position': 5, 'mutant': 'G'}]
+        derive = lambda variants: [v.get('state', i + 1) for i, v in enumerate(variants)]
+        self.assertEqual(derive(recorded), derive(implicit))
+        self.assertEqual(derive(implicit), [1, 2])
+        # The loader has to read the implicit form, which is what the Domainome
+        # cohort carries: every fit of it failed on a missing 'state' key.
+        source = (STAGE_DIR / 'fit_nested_singles.py').read_text()
+        self.assertIn("variant.get('state', index + 1)", source)
+        self.assertTrue(callable(fit.load_arm))
+
+
 class CohortLoading(unittest.TestCase):
     def test_both_declared_schemas_resolve_to_their_own_unit_key(self):
         for schema, key in ec.COHORT_SCHEMAS.items():
