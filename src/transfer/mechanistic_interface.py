@@ -70,6 +70,15 @@ ANCHOR: dict[str, Any] = {
     'wildtype_clusters': 163,
     'variants': 25_728,
     'cohort_sha256': '4093ac34368cd9e7be02e5c84a22655ce78cb9bb4e4d58d626f281868dbe7992',
+    # The assay-id digest over the 201 identifiers the admitted expansion roster
+    # declares for the anchor201 panel, that roster being bound at
+    # 1bf26a6ae8d71e3c0f790f12c92da7d3dd4a9add7be6f7ef807836297e12dd0c. Recorded
+    # here on 2026-09-25 after this module had carried the opposite claim: support
+    # identity is bindable to a manifest rather than to whatever a caller computes
+    # from the support it is about to score, which passes by construction.
+    'assay_id_sha256': '654c87a44d26f9a7cd59f64f30b9fb036df56bcc357b67d789d77eb30552ed4a',
+    'assay_id_source': ('logs/d1_readout_expansion_20260923/admission_bundle/expected.json, '
+                        'panels.anchor201.assay_ids'),
     'resampling_unit': 'wild-type family at 50% identity',
     'grouping': 'single-linkage at 50% identity with 80% coverage',
     'binding_control': 'C+P+wall',
@@ -320,15 +329,28 @@ def check_reconstruction(observed: Mapping[str, str], census: Mapping[str, Any],
         raise ValueError(f'an endpoint is floor or ceiling, not {end!r}')
     column = 0 if end == 'floor' else 1
     expected = {row['name']: row['fp32_sha256'][column] for row in census['tensors']}
-    missing = sorted(set(expected) - set(observed))
+    identical = {row['name']: row['fp32_bytes_equal'] for row in census['tensors']}
     extra = sorted(set(observed) - set(expected))
     mismatched = sorted(name for name in set(expected) & set(observed)
                         if observed[name] != expected[name])
-    if missing or extra or mismatched:
+    # A checkpoint tensor with no destination in the serving runtime cannot be
+    # digested off the loaded model -- the 32 stored rotary frequency buffers of
+    # this lineage are exactly that case. Skipping one is a no-op **only** if the
+    # census proves it byte-identical across the two checkpoints, so that is the
+    # condition, rather than demanding a live digest the runtime cannot produce.
+    # Refusing those outright was this function's own defect, found by running it
+    # against the admitted cells: it rejected a floor that does reconstruct the
+    # recipient exactly over every tensor the model holds.
+    skipped = sorted(set(expected) - set(observed))
+    unmoved = sorted(name for name in skipped if not identical[name])
+    if extra or mismatched or unmoved:
         raise ValueError(
             f'the {end} does not reconstruct its checkpoint bit-identically: '
-            f'missing {missing}, unexpected {extra}, mismatched {mismatched}')
-    return {'end': end, 'tensors': len(expected), 'bit_identical': True,
+            f'unexpected {extra}, mismatched {mismatched}, skipped but not '
+            f'byte-identical across the checkpoints {unmoved}')
+    return {'end': end, 'tensors_verified': len(observed), 'tensors_in_census': len(expected),
+            'skipped_without_a_destination': len(skipped),
+            'skipped_all_byte_identical': True, 'bit_identical': True,
             'checkpoint': census['checkpoint_order'][column]}
 
 

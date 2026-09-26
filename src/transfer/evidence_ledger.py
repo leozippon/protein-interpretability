@@ -40,10 +40,16 @@ CONDITIONS = {
     "readout_selection": "the readout class and the extraction depth, decided by the readout-class "
                          "sweep over 132 admitted fit cells and the depth sweep over 54 fitted "
                          "(arm, panel) cells",
-    "gate_representation_recomputation": "the representation recomputation across the gates, which "
-                                         "has not run",
+    "gate_representation_recomputation": "the class-axis representation recomputation across the "
+                                         "gates, closed on folding stability, external confirmation, "
+                                         "residue interactions and remote homology with every verdict "
+                                         "standing and no resolved sign change",
+    "local_context_gate_recomputation": "the local-context gate's own class-axis representation "
+                                        "recomputation, closed on its full panel of 99 cells with "
+                                        "every verdict standing and no resolved sign change",
 }
-SETTLED_CONDITIONS = frozenset({"readout_selection"})
+SETTLED_CONDITIONS = frozenset({"readout_selection", "gate_representation_recomputation",
+                                "local_context_gate_recomputation"})
 
 #: Likelihood-level results are final. A representation-level result is
 #: provisional only while the condition it names is open.
@@ -65,6 +71,13 @@ KINDS = frozenset(
 )
 
 SOURCE_KINDS = frozenset({"artifact", "gate_record"})
+
+#: How a control count came to exist. A control computed while the run happened
+#: and one recovered afterwards from what the run persisted are different
+#: quantities, and a count of the first is not interchangeable with a count of
+#: the second. Carrying this on the row is what makes a later sum across them
+#: visibly wrong rather than quietly plausible.
+CONTROL_PROVENANCE = frozenset({"computed_during_the_run", "derived_after_the_fact"})
 
 
 class LedgerError(RuntimeError):
@@ -102,6 +115,7 @@ class Quantity:
     verdict: str | None = None
     weighting_convention: str | None = None
     conditioning: str | None = None
+    control_provenance: str | None = None
     source_kind: str = "artifact"
     source_path: str = ""
     source_sha256: str = ""
@@ -130,6 +144,9 @@ class Quantity:
                 raise LedgerError(f"{self.id}: an interval names what kind of interval it is")
         elif self.kind == "estimate" and not self.no_interval_reason:
             raise LedgerError(f"{self.id}: a point estimate with no interval states why it has none")
+        if self.control_provenance is not None and self.control_provenance not in CONTROL_PROVENANCE:
+            raise LedgerError(
+                f"{self.id}: unknown control provenance {self.control_provenance!r}")
         if self.conditioning is not None and self.conditioning not in CONDITIONS:
             raise LedgerError(f"{self.id}: unknown conditioning {self.conditioning!r}")
         if self.kind == "effective_count" and not self.weighting_convention:
@@ -170,6 +187,7 @@ class Quantity:
             "verdict": self.verdict,
             "weighting_convention": self.weighting_convention,
             "conditioning": self.conditioning,
+            "control_provenance": self.control_provenance,
             "conditioning_settled": None if self.conditioning is None
                                     else self.conditioning in SETTLED_CONDITIONS,
             "source_kind": self.source_kind,
@@ -366,6 +384,25 @@ class Ledger:
                         "gaps": payload["gaps"]}, indent=2) + "\n"
         )
         return payload
+
+
+def checked_sum(quantities: list[Quantity], *, field: str) -> float:
+    """Sum quantities that agree on one declared property, and refuse otherwise.
+
+    A control several units appear to share is several controls unless one
+    implementation computed it. Summing their counts hides which was measured
+    how, which is the aggregation form of the same confusion a denominator or a
+    population hides. The refusal is the point: the caller records why the total
+    does not exist rather than publishing one that averages two kinds of thing.
+    """
+    values = {getattr(quantity, field) for quantity in quantities}
+    if len(values) > 1:
+        raise LedgerError(
+            "refusing to sum across rows that disagree on " + field + ": " +
+            ", ".join(sorted(str(value) for value in values)) +
+            "; these are several quantities and their total would hide which is which"
+        )
+    return sum(quantity.value for quantity in quantities)
 
 
 def load_table(path: Path) -> dict[str, object]:

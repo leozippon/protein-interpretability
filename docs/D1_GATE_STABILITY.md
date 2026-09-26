@@ -332,6 +332,47 @@ No arm's licensed increment is removed in magnitude by either purge. Three of th
 
 One arm changes label in the other direction. ProGen3-112M is unresolved at 20/80 with purged points of +0.00724, +0.01012 and +0.00790 kcal²/mol² against +0.00764, +0.00814 and +0.00939 unpurged, so its point estimates are unchanged and one of its three intervals widens across zero under a purge that removed 0 to 2 training groups per fold — a small perturbation of a borderline interval rather than a family-structure effect. The defensible reading is the one stated in the cohort section — the purge bounds dependence on nearest-detected training neighbours, which on this cohort is a chance-level neighbour set, and it certifies no remote-family disjointness.
 
+## The class-axis recomputation, and why the depth sweep's boundary cells cannot be read against this gate
+
+The readout reassessment selected a class and a depth per arm. This gate's fits were re-run from the inputs its records bind, over the **full 33-arm panel at all three split seeds — 99 cells, none missing**, and the published verdict **stands**.
+
+| Quantity family | Maximum point change | Maximum interval-endpoint change |
+| --- | ---: | ---: |
+| Likelihood | 1.46e-16 | 2.08e-16 |
+| Representation | 4.16e-16 | 7.91e-16 |
+
+**Zero resolved sign changes over 2,970 compared summary nodes**, and no arm-and-metric pair changes at any seed, let alone all three. The table above is the four licensed quantities — the primary and secondary likelihood and representation increments, 396 nodes. The comparison itself covers every node of both records carrying a point and an interval: 2,970 across the 33 arms, 1,188 likelihood, 1,188 representation and 594 baseline, null and tokenisation nodes, with no node present in one record and absent from the other in either direction. On that wider set the largest movement is **3.19e-14** in a point and **8.09e-14** in an interval endpoint — two orders above the licensed four, six below the 1e-8 pipeline tolerance, and concentrated where the licensed four do not reach: the `secondary_*` increments and the remote-stratification strata, `llama-3.2-3b` at identity20/coverage80 for the point and `gpt2-large`'s secondary representation increment for the interval endpoint.
+
+**The null is not silence, because the control could have fired.** 917 of the 2,970 compared nodes had an interval endpoint close enough to zero that the movement observed in their own cell could have carried it across — 747 likelihood, 74 representation and 96 other, of which 136 and 18 sit among the four licensed quantities — and none crossed. Read like for like on the licensed quantities across three gates — 254 on crossed controls, 136 here, 168 on external confirmation — quantities at risk did not move, which makes that a property of the measurement rather than a feature of one gate.
+
+**And the depth sweep's boundary-lifted cells have no counterpart here.** This cohort renders **no position-resolved summaries at all**: its depth archives hold two summaries per block, mean and last, and no `mut` or `suffix`, because a position-resolved summary requires the wild type and each of its mutants to render to the same one-token-per-residue grid and this cohort does not. Any attempt to read the sweep's position-resolved findings — including its boundary-lifted cells — against this gate would be comparing against summaries these archives could not contain. The pooled half of the sweep transfers; the position-resolved half does not exist for this endpoint.
+
+A further consequence for the depth axis: the admitted design here pools four summaries across **two** depths, so selecting one depth is not a narrower version of it but a differently constructed measurement at half the capacity. That question is asked separately as a matched-capacity contrast and is reported as a new measurement, explicitly not comparable to the published increment.
+
+## The equal-capacity depth contrast, and what it says about the selection
+
+This is the matched-capacity measurement that question asks for, and **four qualifications travel with every number in it**: it varies one axis, depth; it is unadjusted for multiplicity; its representation is **512 coordinates** — one block's `mean` and `last` at 256 each under the declared depth projection — against the published **1,024** pooled across two depths, so **it is not comparable to the published increment**; and it is this gate's own cohort, folds, control ladder, ridge grid and contrast form with nothing else changed. Seven arms, 45 blocks, three split seeds, 135 fits, no failures. The control that makes the comparison readable fired on every one of them: with only the representation block varying, the baseline predictions are identical across all depths of an arm at a given seed, **135 of 135**.
+
+| Arm | Admitted depths | Selected | Selected mean | Best admitted | Difference | Highest depth measured |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| ProGen2-large | 15, 31 | 25 | +0.013130 | +0.020825 | **−0.007695** | 8 at +0.025772 |
+| ProGen2-medium | 13, 26 | 23 | +0.027999 | +0.027008 | +0.000991 | 20 at +0.036033 |
+| ProGen2-xlarge | 15, 31 | 28 | +0.029989 | +0.014677 | **+0.015311** | 8 at +0.030091 |
+| ProGen3-112M | 4, 9 | 9 | +0.020453 | +0.021997 | — (selected is admitted) | 4 at +0.021997 |
+| ProGen3-3B | 11, 23 | 11 | +0.029823 | +0.036137 | — (selected is admitted) | 6 at +0.042170 |
+| ProteinGLM-7B-CLM | 17, 35 | 30 | +0.052462 | +0.047272 | +0.005189 | 30 at +0.052462 |
+| ProtGPT2 | 17, 35 | 21 | +0.035823 | +0.013471 | **+0.022351** | 21 at +0.035823 |
+
+**The transfer question is answered, and the answer is mostly yes.** On the five arms whose selected depth is distinct from both admitted ones, the selected depth carries **more** than the better admitted depth on four — ProtGPT2 by +0.022351, ProGen2-xlarge by +0.015311, ProteinGLM-7B-CLM by +0.005189, ProGen2-medium by +0.000991 — and **less** on one, ProGen2-large by −0.007695. So a depth chosen on the readout panel does, on this different cohort and at equal capacity, usually carry more representation information than the depths the admitted design pools. On the remaining two arms the selection landed on a depth the admitted design already uses, which is its own kind of agreement.
+
+**A second cohort answers the same question the other way, so the reading above is cohort-specific.** The remote-homology gate runs this identical contrast — same seven arms, same block rule, same 512 coordinates, same declared projection, its own cohort and control ladder — and there the selected depth carries **less** than the best admitted depth on four of the five arms where it is distinct, against more on four of five here. Only ProGen2-medium exceeds on both cohorts and only ProGen2-large falls short on both. What transfers from the readout panel is therefore not a property of the depth alone: it depends on the endpoint being predicted. That gate's record carries the table.
+
+**Two qualifications on that reading, both measured here.** The selected depth is the best depth measured on only two of seven arms (ProteinGLM-7B-CLM and ProtGPT2); on four others an unselected, unadmitted block carries more, by as much as +0.012 on ProGen3-3B — so the selection identifies a *better-than-admitted* depth rather than the best one. And these are point means over three seeds without an adjustment for the 45 blocks compared, so a single arm's margin is not a resolved claim; the pattern across arms is what the measurement supports.
+
+
+
+**Accounting.** 33 of 33 arms have a record. Two earlier attempts, `galactica-30b` and `qwen2.5-32b`, were **superseded rather than failed**: they were run against the wrong extraction run before this gate's arms were found to span two of them, and both were refit against their own. The screen ran at eight BLAS threads, which this gate's stage permits and which a single-cell replay reproduced at 1e-13 over 919 numbers.
+
 ## Verdict
 
 **The likelihood quantity carries information about single-substitution stability beyond the qualified controls, in 4 of 33 arms.** Those four are ProGen3-3B (+0.02260 [+0.01333, +0.03144], +0.01307 [+0.00690, +0.01879], +0.01335 [+0.00203, +0.02368] kcal²/mol² at the three seeds), ProteinGLM-7B-CLM (+0.01380, +0.01289, +0.01300), ProLLaMA Stage 2 (+0.00914, +0.00852, +0.00821) and ProGen3-112M (+0.00764, +0.00814, +0.00939), every one a residue-level protein-pretrained checkpoint. **No arm of the 33 is resolved below zero.** Against a qualified control set that already removes half of the no-effect null's squared error, the resolved increments are 1.2% to 3.5% of the remaining error, so the quantity is resolvable and small.

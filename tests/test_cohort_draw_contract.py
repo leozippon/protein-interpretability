@@ -79,6 +79,15 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "here would make the joint arms' context information incomparable with "
         "the cohorts every other stage-01 reader was scored on"
     ),
+    "audit_aggregation_endpoint.py": (
+        "audits one deposited release against its own record digests and reports its "
+        "library structure, its between-library channel decomposition and its "
+        "quality-control support. Its units are every quantified domain of that "
+        "release, enumerated from the deposited tables rather than sampled, so rule "
+        "1's hazard is absent rather than answered; a draw here would make a "
+        "qualification verdict depend on a seed. It loads no corpus and no model and "
+        "reads no model quantity"
+    ),
     "acquire_endpoint_datasets.py": (
         "fetches three pinned external files and refuses one whose bytes do not "
         "reproduce the upstream checksum and size the source declares. Its units "
@@ -190,6 +199,32 @@ NON_DRAWING_STAGES: dict[str, str] = {
         "artefact. It reads state keys and repeat structure only, never a measured "
         "stability, affinity or fitness value, and it loads no corpus and no model, runs "
         "no forward pass and schedules no GPU"
+    ),
+    "analyse_d2_pilot_anchor.py": (
+        "restricts already-extracted transplant cells from the ProLLaMA lineage's 211-assay "
+        "native support onto the 201-assay anchor and reports the endpoint there. Its rows "
+        "are every admitted variant of every anchor assay the cells already scored, so "
+        "there is no population left to sample and rule 1's hazard is absent rather than "
+        "answered -- a draw at this stage would make the endpoint incomparable with the "
+        "capability result it exists to compose with. It loads no corpus constructor, no "
+        "model and no checkpoint, and it runs no forward pass: the restriction is a "
+        "selection over records whose digests it verifies first. The stochastic quantities "
+        "it names are the three declared family-bootstrap seeds and the 2,000-draw count, "
+        "constants in the stage and carried into the artefact; split-seed stability is "
+        "undefined for a raw-likelihood endpoint and the stage says so rather than "
+        "reporting a seed axis the endpoint does not have"
+    ),
+    "assess_d2_pilot_conditions.py": (
+        "states each of the three declared integration conditions as met or not met against "
+        "quantities two analysis artefacts already carry, and stops at the first that fails "
+        "so a reader cannot reach a localisation claim past a condition that did not hold. It "
+        "reads two JSON reports and nothing else: no corpus, no cohort, no model, no "
+        "checkpoint, no forward pass and no GPU, and it resamples nothing -- the intervals it "
+        "reads were drawn by the analysis stage under seeds that stage declares. Rule 1's "
+        "hazard is absent because there is no population here at all, only the cells the "
+        "pilot already scored. The one verdict it declines to make mechanically is the third "
+        "condition's, because how much concentration counts as a mechanistic statement is a "
+        "judgement on the profile rather than a threshold"
     ),
     "census_mechanistic_pair.py": (
         "censuses candidate mechanism pairs in three stages: the configuration fields, "

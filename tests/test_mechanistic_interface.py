@@ -104,6 +104,26 @@ def test_the_endpoint_contract_is_assembled_from_the_admitted_modules():
     assert contract['pipeline_identity_tolerance'] == 1e-8
 
 
+def test_the_anchor_carries_a_manifest_bound_assay_id_digest():
+    """Support identity is bindable to a manifest, not to the caller's own support.
+
+    The digest is over the 201 identifiers the admitted expansion roster declares,
+    so a cell is checked against the anchor rather than against itself. Asserted
+    against the roster when it is present on this host, and asserted as a
+    well-formed declared constant either way.
+    """
+    digest = mi.ANCHOR['assay_id_sha256']
+    assert len(digest) == 64 and set(digest) <= set('0123456789abcdef')
+    roster = (Path(__file__).resolve().parents[1]
+              / 'logs/d1_readout_expansion_20260923/admission_bundle/expected.json')
+    if not roster.is_file():
+        pytest.skip('the admitted expansion roster is not staged on this host')
+    panel = json.loads(roster.read_text())['panels']['anchor201']
+    assert support_digest(panel['assay_ids']) == digest
+    assert len(panel['assay_ids']) == mi.ANCHOR['assays'] == 201
+    mi.check_support_identity(panel['assay_ids'], expected_digest=digest)
+
+
 def test_two_modules_declaring_the_split_seeds_must_agree(monkeypatch):
     """A second copy of a constant is a second source of truth until something compares them."""
     from src.transfer import local_context
@@ -221,13 +241,17 @@ def census_stub():
         },
         'tensors': [
             {'name': 'embed', 'group': 'embedding', 'n_elements': 40,
-             'fp32_sha256': [None, None], 'differing_elements_fp32': None},
+             'fp32_sha256': [None, None], 'differing_elements_fp32': None,
+             'fp32_bytes_equal': False},
             {'name': 'norm', 'group': 'norm', 'n_elements': 8,
-             'fp32_sha256': ['n0', 'n0'], 'differing_elements_fp32': 0},
+             'fp32_sha256': ['n0', 'n0'], 'differing_elements_fp32': 0,
+             'fp32_bytes_equal': True},
             {'name': 'attn', 'group': 'attention_q1', 'n_elements': 64,
-             'fp32_sha256': ['a0', 'a1'], 'differing_elements_fp32': 60},
+             'fp32_sha256': ['a0', 'a1'], 'differing_elements_fp32': 60,
+             'fp32_bytes_equal': False},
             {'name': 'mlp', 'group': 'mlp_q1', 'n_elements': 128,
-             'fp32_sha256': ['m0', 'm1'], 'differing_elements_fp32': 120},
+             'fp32_sha256': ['m0', 'm1'], 'differing_elements_fp32': 120,
+             'fp32_bytes_equal': False},
         ],
     }
 
@@ -240,8 +264,16 @@ def test_the_floor_and_the_ceiling_must_reconstruct_their_checkpoints_bit_identi
     assert mi.check_reconstruction(ceiling, census, end='ceiling')['checkpoint'] == 'source'
     with pytest.raises(ValueError, match='bit-identically'):
         mi.check_reconstruction(ceiling, census, end='floor')
-    with pytest.raises(ValueError, match='missing'):
-        mi.check_reconstruction({'norm': 'n0', 'attn': 'a0', 'mlp': 'm0'}, census, end='floor')
+    # A tensor the runtime cannot hold is skipped, and skipping is a no-op only
+    # when the census proves it byte-identical. `norm` is; `mlp` is not.
+    without_norm = {name: value for name, value in floor.items() if name != 'norm'}
+    record = mi.check_reconstruction(without_norm, census, end='floor')
+    assert record['bit_identical'] is True
+    assert record['skipped_without_a_destination'] == 1
+    assert record['tensors_verified'] == 3
+    with pytest.raises(ValueError, match='skipped but not byte-identical'):
+        mi.check_reconstruction({name: value for name, value in floor.items() if name != 'mlp'},
+                                census, end='floor')
     with pytest.raises(ValueError, match='unexpected'):
         mi.check_reconstruction(dict(floor, spare='x'), census, end='floor')
     with pytest.raises(ValueError, match='floor or ceiling'):

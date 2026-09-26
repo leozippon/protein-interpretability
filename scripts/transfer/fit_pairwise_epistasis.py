@@ -28,7 +28,7 @@ from src.transfer.pairwise_epistasis import (
     PROJECTION_DIM, ROSTER, SPLIT_SEEDS, TOKENISATION_STRATUM, cycle_contrast,
     cycle_control_features, design_blocks, design_names, group_errors, group_spearman,
     fold_identity, interval, kish_effective_site_pairs, nested_compare, plan_digest,
-    row_identity, state_features, tokenisation_features)
+    require_projected_width, row_identity, state_features, tokenisation_features)
 from src.transfer.profiles import Profile
 
 #: Declared contrasts. Each pair is (baseline, augmented) on one support: the
@@ -97,8 +97,11 @@ def load_arm(directory: Path, arm: str, plan: dict) -> tuple[dict, dict]:
             raise ValueError(f'{arm}: {record["file"]} does not match its manifest digest')
         with np.load(path, allow_pickle=False) as saved:
             offsets = saved['token_offsets']
+            projected = saved['projected'].astype(np.float64)
+            require_projected_width(projected.reshape(len(saved['likelihood']), -1).shape[1],
+                                    arm=arm, source=record['file'])
             data[record['background']] = {
-                'projected': saved['projected'].astype(np.float64),
+                'projected': projected,
                 'likelihood': saved['likelihood'].astype(np.float64),
                 'pooled_token_counts': saved['pooled_token_counts'],
                 'token_ids': [saved['token_ids'][offsets[i]:offsets[i + 1]].tolist()

@@ -25,6 +25,7 @@ from src.transfer.evidence_ledger import (  # noqa: E402
     Ledger,
     LedgerError,
     Quantity,
+    checked_sum,
     resolve,
 )
 
@@ -310,6 +311,40 @@ class TheTableRefusesARowWithAHoleInIt(unittest.TestCase):
         self.assertEqual(resolve(payload, ("summaries", "delta", "point")), 1.0)
         with self.assertRaises(KeyError):
             resolve(payload, ("summaries", "absent"))
+
+
+class ACountIsNotSummableAcrossImplementations(unittest.TestCase):
+    """A control several units appear to share is several controls.
+
+    Two cohorts computed their baseline-identity check while the run happened
+    and a third recovered an equivalent afterwards from what the run persisted.
+    Totalling those counts would state as one measurement what three
+    implementations produced differently, so the sum refuses and the caller
+    records why the total does not exist.
+    """
+
+    def _control(self, provenance: str, value: float) -> Quantity:
+        return Quantity(id=f"c/{provenance}/{value}", claim="a control count", family="f",
+                        value=value, unit="checks", kind="support_count", support_id="s",
+                        control_provenance=provenance, source_path="p", source_sha256="d")
+
+    def test_counts_from_one_implementation_sum(self):
+        rows = [self._control("computed_during_the_run", 135.0),
+                self._control("computed_during_the_run", 135.0)]
+        self.assertEqual(checked_sum(rows, field="control_provenance"), 270.0)
+
+    def test_counts_from_different_implementations_refuse_to_sum(self):
+        rows = [self._control("computed_during_the_run", 135.0),
+                self._control("derived_after_the_fact", 2025.0)]
+        with self.assertRaises(LedgerError) as refusal:
+            checked_sum(rows, field="control_provenance")
+        self.assertIn("control_provenance", str(refusal.exception))
+
+    def test_an_unknown_control_provenance_is_refused(self):
+        with self.assertRaises(LedgerError):
+            Quantity(id="x", claim="c", family="f", value=1.0, unit="checks", kind="support_count",
+                     support_id="s", control_provenance="assumed", source_path="p",
+                     source_sha256="d")
 
 
 class TheLivePipelineRuns(unittest.TestCase):

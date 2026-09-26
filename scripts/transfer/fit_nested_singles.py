@@ -51,7 +51,8 @@ from src.transfer.external_confirmation import (
     require_blas_threads, row_identity, secondary_control_set, spearman_increment,
     tokenisation_block)
 from src.transfer.io import sha256_file, write_json
-from src.transfer.pairwise_epistasis import FEATURE_BLOCKS, ROSTER, TOKENISATION_STRATUM
+from src.transfer.pairwise_epistasis import (  # noqa: E402
+    ROSTER, TOKENISATION_STRATUM, require_projected_width)
 from src.transfer.remote_homology import (
     OUTCOME_HOMOLOGY_DEPENDENT, OUTCOME_SURVIVES, OUTCOME_UNRESOLVED, STRATUM_UNIT_FLOOR,
     outcome_record, stratum_keep)
@@ -107,8 +108,8 @@ def load_arm(directory: Path, arm: str, units: list[dict], cohort_sha256: str):
     blocks = {'M': np.asarray(likelihood, dtype=float)[:, None],
               'R': np.asarray(representation, dtype=float),
               'T': np.asarray(tokens, dtype=float)}
-    if blocks['R'].shape[1] != len(FEATURE_BLOCKS) * PROJECTION_DIM:
-        raise ValueError(f'{arm}: representation width is not four projected blocks')
+    require_projected_width(blocks['R'].shape[1], arm=arm,
+                            source=f'the assembled representation of {directory.name}')
     if blocks['T'].shape[1] != len(TOKENISATION_FEATURE_ORDER):
         raise ValueError(f'{arm}: tokenisation descriptor width changed')
     return blocks, manifest

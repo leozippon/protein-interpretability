@@ -189,6 +189,30 @@ Both sensitivities still leave the affected states in **training**, including `2
 
 Every increment measured here is small against the endpoint's scale. The sequence/profile control removes 45.6% of the additive null's squared error; the largest reproducible model increment anywhere in the panel is 1.5% of what that control removes.
 
+## The equal-capacity depth contrast on this cohort
+
+The same measurement the folding-stability and remote-homology gates report, run here through this gate's own plan, cohort, baseline Q, profiles, nested folds, control ladder and `nested_compare` / `evaluate` pair, with only the representation block replaced: one hidden block's `mean` and `last` summaries, each projected to 256 coordinates under the declared depth-projection rule and concatenated to **512**, substituted for the admitted `projected` states. Seven arms, 45 blocks, three split seeds, 135 fits, no failures, support `all`. **Four qualifications travel with every number**: one axis; unadjusted for multiplicity; 512 coordinates against the published **1,024**, so **not comparable to the published increment**; and everything but the representation block is this gate's own.
+
+Counts name their population: **seven arms are measured and five produce a comparison**, because ProGen3-112M and ProGen3-3B were selected at a depth the admitted extraction already hooked, which yields no selected-minus-admitted difference.
+
+| Arm | Admitted depths | Selected | Selected mean | Best admitted | Difference | Seeds resolved |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| ProGen2-large | 15, 31 | 25 | −0.000652 | −0.000648 | −0.000004 | 0/3 |
+| ProGen2-medium | 13, 26 | 23 | −0.006142 | −0.002705 | −0.003438 | 1/3 |
+| ProGen2-xlarge | 15, 31 | 28 | −0.005907 | +0.001998 | −0.007905 | 2/3 |
+| ProGen3-112M | 4, 9 | 9 | +0.005863 | +0.005863 | — (selected is admitted) | 1/3 |
+| ProGen3-3B | 11, 23 | 11 | −0.007474 | −0.001896 | — (selected is admitted) | 2/3 |
+| ProteinGLM-7B-CLM | 17, 35 | 30 | −0.013578 | −0.004481 | −0.009098 | 3/3 |
+| ProtGPT2 | 17, 35 | 21 | +0.002083 | −0.000942 | **+0.003026** | 0/3 |
+
+Points are group-equal held-out squared-error reductions in kcal²/mol² over this gate's fullest control ladder; the three narrower R-contrasts are in the artefact and agree in sign.
+
+**The depth-invariance control on this cohort is a derived one and is labelled as such.** The other two cohorts checksum their baseline predictions across an arm's depths; this gate's adapter did not, so that count was never measured here. What is recoverable from the persisted artefacts is the same property by another route: every contrast whose augmented design does not carry R must be unchanged across depths, and every depth must carry the same fold identity. Measured after the fact: **2,025 contrast comparisons at a largest absolute difference of exactly 0.0, and 135 fold-identity comparisons, with no mismatch of either kind**.
+
+**The selected depth beats both admitted depths on one of the five comparison arms**, ProtGPT2, and falls short on four. That matches remote homology's one of five and not folding stability's four of five, so across the three cohorts the readout panel's selection transfers on one and not on the other two, and **no arm is above on all three**.
+
+**One feature of this cohort is worth separating from the depth question.** Most increments here are **negative** at most depths: on this endpoint the 512-coordinate representation generally *worsens* group-equal held-out error rather than reducing it, at admitted and selected depths alike. That is a statement about this endpoint at this capacity — the published 1,024-coordinate result is not affected by it and is not comparable to it — and it means the differences above are mostly between quantities that sit at or below zero, which is why the resolved-seed column matters more than the ranking.
+
 ## Limitations that bound this result
 
 - The nonlinear-additive nuisance is weak on this endpoint because absolute stability transfers poorly across held-out families: median held-out weighted R² 0.141 over 15 folds. The label instrument measured roughly half of epsilon's variance as a global response to the *measured* additive prediction; the primary task forbids measured singles as predictor inputs, so G absorbs only the part of that response reachable from cross-family sequence/profile prediction. A model increment over G is adjusted for that part and no more. The singles-assisted variant, which would supply measured singles to every comparator under a separately declared label budget, was not executed.

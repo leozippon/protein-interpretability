@@ -520,6 +520,341 @@ def transplant(model, source: Path, census_record: dict[str, Any], selected: Seq
     }
 
 
+#: Seed for the destination permutation of the scrambled control. Declared so the
+#: permutation is a fixed property of the cell rather than of a run.
+SCRAMBLE_SEED = 20260925
+
+#: Bounded attempts to draw a derangement before falling back to a rotation. A
+#: uniform permutation of n items is a derangement with probability about 1/e, so
+#: a hundred attempts fail with probability around 1e-16; the rotation is there so
+#: the function is total rather than probabilistic.
+SCRAMBLE_ATTEMPTS = 100
+
+
+def shape_classes(census_record: dict[str, Any], names: Sequence[str]) -> dict[tuple, list[str]]:
+    """Tensor names grouped by shape, which is the most a permutation may cross."""
+
+    rows = {row["name"]: row for row in census_record["tensors"]}
+    out: dict[tuple, list[str]] = {}
+    for name in names:
+        out.setdefault(tuple(rows[name]["shape"]), []).append(name)
+    return {shape: sorted(members) for shape, members in out.items()}
+
+
+def destination_permutation(census_record: dict[str, Any], selected: Sequence[str], *,
+                            seed: int = SCRAMBLE_SEED) -> dict[str, str]:
+    """Which source tensor each destination slot receives under the scrambled control.
+
+    A permutation may only move a tensor to a slot of identical shape, so it is
+    drawn within each shape class. It must be a **derangement**: a fixed point
+    would leave that slot holding its own source tensor, which is a correct
+    partial transplant rather than a scramble, and would weaken the control by
+    exactly the fraction of slots left in place. A class of one tensor cannot be
+    deranged and is refused rather than silently left alone -- the embedding and
+    the head are single tensors, so the scrambled control is defined on the body
+    groups only.
+    """
+
+    import numpy as np
+
+    chosen = sorted(set(selected))
+    members = [name for group in chosen
+               for name in census_record["groups"][group]["tensor_names"]]
+    mapping: dict[str, str] = {}
+    rng = np.random.default_rng(seed)
+    for shape, names in sorted(shape_classes(census_record, members).items()):
+        if len(names) < 2:
+            raise ValueError(
+                f"shape class {shape} holds {len(names)} tensor(s) and cannot be deranged; "
+                "the scrambled control is undefined for a single-tensor group such as the "
+                "embedding or the head")
+        order = None
+        for _ in range(SCRAMBLE_ATTEMPTS):
+            candidate = rng.permutation(len(names))
+            if all(candidate[index] != index for index in range(len(names))):
+                order = candidate
+                break
+        if order is None:  # pragma: no cover - probability about 1e-16
+            order = np.roll(np.arange(len(names)), 1)
+        for index, name in enumerate(names):
+            mapping[name] = names[int(order[index])]
+    if any(destination == source for destination, source in mapping.items()):
+        raise ValueError("destination permutation has a fixed point")
+    return mapping
+
+
+def transplant_null(model, census_record: dict[str, Any], selected: Sequence[str],
+                    *, chunk_elements: int = CHUNK_ELEMENTS) -> dict[str, Any]:
+    """Copy the **recipient's own** tensors for ``selected`` back over themselves.
+
+    The control that establishes the intervention machinery contributes nothing of
+    its own: it performs every step a treatment cell performs -- the same reads,
+    the same copies, the same live-tensor verification -- and must leave the model
+    bit-identical to the untouched recipient, so its endpoint must equal the
+    floor's exactly.
+
+    This is the one cell exempt from the byte-identity refusal, and the exemption
+    does not weaken that refusal for any treatment cell: the refusal exists to
+    stop a no-op being reported as a localisation, not to stop a no-op being
+    reported as a no-op.
+    """
+
+    import torch
+    from safetensors import safe_open
+
+    destination_root = Path(census_record["sources"][0]["checkpoint"])
+    chosen = set(selected)
+    undeclared = chosen - set(group_names())
+    if undeclared:
+        raise ValueError(f"undeclared groups: {sorted(undeclared)}")
+    mapping = _weight_map(destination_root)
+    live = {**dict(model.named_parameters()), **dict(model.named_buffers())}
+    copied = []
+    with torch.no_grad():
+        for row in census_record["tensors"]:
+            if row["group"] not in chosen:
+                continue
+            target = live.get(row["name"])
+            if target is None:
+                continue
+            with safe_open(destination_root / mapping[row["name"]], framework="pt",
+                           device="cpu") as handle:
+                value = handle.get_tensor(row["name"])
+            if tuple(value.shape) != tuple(target.shape):
+                raise ValueError(f"{row['name']}: shape mismatch against the loaded model")
+            target.copy_(value.to(torch.float32))
+            copied.append(row)
+    # The expectation is the floor's: every live tensor must carry the recipient's
+    # digest, including the ones just written.
+    expected = census_expectations(census_record, ())
+    observed, mismatched = {}, []
+    for row in census_record["tensors"]:
+        target = live.get(row["name"])
+        if target is None:
+            continue
+        observed[row["name"]] = fp32_digest(target, chunk_elements=chunk_elements)
+        if observed[row["name"]] != expected[row["name"]]:
+            mismatched.append(row["name"])
+    if mismatched:
+        raise ValueError(f"the null control did not reproduce the recipient: {mismatched}")
+    return {
+        "control": "null",
+        "selected_groups": sorted(chosen),
+        "n_transplanted_tensors": len(copied),
+        "n_transplanted_elements": sum(row["n_elements"] for row in copied),
+        "transplanted_tensors": sorted(row["name"] for row in copied),
+        "verified_tensor_fp32_sha256": observed,
+        "byte_identity_refusal": ("exempt as a declared control; the refusal stops a no-op "
+                                  "being reported as a localisation, not a no-op being "
+                                  "reported as a no-op"),
+        "verification": ("every live checkpoint tensor digested off the loaded model and "
+                         "matched against the recipient's own census digest, so the model is "
+                         "the untouched recipient and the endpoint must equal the floor's"),
+    }
+
+
+def transplant_scrambled(model, source: Path, census_record: dict[str, Any],
+                         selected: Sequence[str], *, seed: int = SCRAMBLE_SEED,
+                         chunk_elements: int = CHUNK_ELEMENTS) -> dict[str, Any]:
+    """Install ``selected``'s donor tensors at permuted destinations of the same shape.
+
+    What this control measures, stated so it is not read as something else: it
+    changes exactly as many parameters as the matching treatment cell, from
+    exactly the same donor, and destroys only the *assignment* of values to
+    slots. Its excursion is therefore the magnitude attributable to perturbing
+    this many parameters at all, as against installing these particular values in
+    their own places. It is **not** a symmetric error bar, and a treatment effect
+    is not required to exceed it in absolute value -- a scramble may move the
+    endpoint far down while a treatment moves it up, which is itself the finding
+    that the effect depends on the assignment.
+    """
+
+    import torch
+    from safetensors import safe_open
+
+    chosen = sorted(set(selected))
+    undeclared = set(chosen) - set(group_names())
+    if undeclared:
+        raise ValueError(f"undeclared groups: {sorted(undeclared)}")
+    permutation = destination_permutation(census_record, chosen, seed=seed)
+    rows = {row["name"]: row for row in census_record["tensors"]}
+    mapping = _weight_map(source)
+    live = {**dict(model.named_parameters()), **dict(model.named_buffers())}
+    copied = []
+    with torch.no_grad():
+        for destination_name, source_name in sorted(permutation.items()):
+            target = live.get(destination_name)
+            if target is None:
+                raise ValueError(f"{destination_name}: no destination in the loaded model")
+            with safe_open(source / mapping[source_name], framework="pt",
+                           device="cpu") as handle:
+                value = handle.get_tensor(source_name)
+            if tuple(value.shape) != tuple(target.shape):
+                raise ValueError(f"{destination_name}: shape mismatch under the permutation")
+            target.copy_(value.to(torch.float32))
+            copied.append(destination_name)
+    # A permuted slot must carry the donor digest of the tensor it received, and
+    # every unselected tensor must still carry the recipient's.
+    expected = dict(census_expectations(census_record, ()))
+    for destination_name, source_name in permutation.items():
+        expected[destination_name] = rows[source_name]["fp32_sha256"][1]
+    observed, mismatched = {}, []
+    for name, target in live.items():
+        if name not in expected:
+            continue
+        observed[name] = fp32_digest(target, chunk_elements=chunk_elements)
+        if observed[name] != expected[name]:
+            mismatched.append(name)
+    if mismatched:
+        raise ValueError(f"the scrambled control is not the declared permutation: {mismatched}")
+    return {
+        "control": "scrambled",
+        "selected_groups": chosen,
+        "permutation_seed": int(seed),
+        "permutation": permutation,
+        "n_transplanted_tensors": len(copied),
+        "n_transplanted_elements": sum(rows[name]["n_elements"] for name in copied),
+        "fixed_points": 0,
+        "shape_classes": {str(shape): len(names) for shape, names
+                          in shape_classes(census_record, sorted(permutation)).items()},
+        "verified_tensor_fp32_sha256": observed,
+        "measures": ("the magnitude attributable to perturbing this many parameters at all, "
+                     "as against installing these particular values in their own places; not "
+                     "a symmetric error bar"),
+        "verification": ("every permuted slot digested off the loaded model and matched "
+                         "against the donor digest of the tensor it received"),
+    }
+
+
+#: Seed for the random orthogonal factors of the spectrum-matched control.
+#: Separate from :data:`SCRAMBLE_SEED` so the two controls' randomness is
+#: separately traceable.
+SPECTRUM_MATCHED_SEED = 20260926
+
+#: Relative tolerance on the singular values of a synthesised tensor against the
+#: donor's. The construction preserves them exactly in exact arithmetic; what is
+#: allowed for is the float32 round trip through two QR factorisations and a
+#: product, which on a 4096-square matrix moves the largest singular value in the
+#: seventh significant figure.
+SPECTRUM_TOLERANCE = 1e-4
+
+
+def transplant_spectrum_matched(model, source: Path, census_record: dict[str, Any],
+                               selected: Sequence[str], *, seed: int = SPECTRUM_MATCHED_SEED,
+                               chunk_elements: int = CHUNK_ELEMENTS) -> dict[str, Any]:
+    """Install tensors with the donor's exact singular values and random directions.
+
+    The control that separates the two readings the scrambled control leaves open.
+    A within-group derangement recovered 0.210 of the ceiling-minus-floor gap
+    while the correctly assigned group recovered 0.066, so the endpoint responded
+    to installing donor-derived parameters rather than to installing them in their
+    own places. Two hypotheses survive that: the movement is driven by a
+    *distributional* property of the donor's parameters -- their scale and
+    spectrum -- or by their learned *content*, which a derangement happens to
+    preserve because it keeps every tensor intact and only moves it.
+
+    This construction separates them. For each selected tensor it takes the
+    donor's singular value decomposition, keeps the singular values exactly, and
+    replaces both orthogonal factors with random ones drawn under a declared seed.
+    The result has the donor's Frobenius norm, operator norm, effective rank and
+    full singular-value spectrum, and no learned direction whatever. If it moves
+    the endpoint as far as the donor's own tensors do, the movement is a scale
+    effect and localisation by single-group transplant is unavailable at any
+    granularity; if it moves it nowhere, the donor's content matters and the
+    pilot's failure is one of granularity and power.
+
+    A synthesised tensor cannot be matched against a precomputed digest, so the
+    verification is spectral rather than by digest: each slot's singular values
+    must reproduce the donor's within :data:`SPECTRUM_TOLERANCE`, its digest must
+    differ from both checkpoints', and every tensor outside the selection must
+    still carry the recipient's digest.
+    """
+
+    import torch
+    from safetensors import safe_open
+
+    chosen = sorted(set(selected))
+    undeclared = set(chosen) - set(group_names())
+    if undeclared:
+        raise ValueError(f"undeclared groups: {sorted(undeclared)}")
+    rows = {row["name"]: row for row in census_record["tensors"]}
+    members = [name for group in chosen
+               for name in census_record["groups"][group]["tensor_names"]]
+    mapping = _weight_map(source)
+    live = {**dict(model.named_parameters()), **dict(model.named_buffers())}
+    generator = torch.Generator().manual_seed(int(seed))
+    spectra, copied = {}, []
+    with torch.no_grad():
+        for name in sorted(members):
+            target = live.get(name)
+            if target is None:
+                raise ValueError(f"{name}: no destination in the loaded model")
+            with safe_open(source / mapping[name], framework="pt", device="cpu") as handle:
+                donor = handle.get_tensor(name).to(torch.float32)
+            if donor.ndim != 2:
+                raise ValueError(
+                    f"{name}: the spectrum-matched control is defined for matrices, not "
+                    f"{donor.ndim}-dimensional tensors")
+            singular = torch.linalg.svdvals(donor)
+            rank = int(singular.numel())
+            left, _ = torch.linalg.qr(torch.randn(donor.shape[0], rank, generator=generator))
+            right, _ = torch.linalg.qr(torch.randn(donor.shape[1], rank, generator=generator))
+            synthetic = (left * singular) @ right.transpose(0, 1)
+            observed = torch.linalg.svdvals(synthetic)
+            scale = float(singular.max())
+            departure = float((observed - singular).abs().max() / scale) if scale > 0 else 0.0
+            if departure > SPECTRUM_TOLERANCE:
+                raise ValueError(
+                    f"{name}: synthesised spectrum departs from the donor's by {departure:.3e} "
+                    f"relative, above {SPECTRUM_TOLERANCE}")
+            if tuple(synthetic.shape) != tuple(target.shape):
+                raise ValueError(f"{name}: shape mismatch against the loaded model")
+            target.copy_(synthetic)
+            spectra[name] = {
+                "relative_spectrum_departure": departure,
+                "donor_frobenius": float(torch.linalg.vector_norm(singular)),
+                "donor_operator_norm": scale,
+                "synthetic_frobenius": float(torch.linalg.vector_norm(observed)),
+            }
+            copied.append(name)
+            del donor, synthetic, left, right
+    expected = census_expectations(census_record, ())
+    observed_digests, wrong, unchanged = {}, [], []
+    for name, target in live.items():
+        if name not in expected:
+            continue
+        observed_digests[name] = fp32_digest(target, chunk_elements=chunk_elements)
+        if name in set(copied):
+            if observed_digests[name] in (rows[name]["fp32_sha256"][0],
+                                          rows[name]["fp32_sha256"][1]):
+                unchanged.append(name)
+        elif observed_digests[name] != expected[name]:
+            wrong.append(name)
+    if wrong or unchanged:
+        raise ValueError(
+            f"the spectrum-matched control did not install what it declares: tensors outside "
+            f"the selection that moved {wrong}, synthesised tensors identical to a checkpoint "
+            f"{unchanged}")
+    return {
+        "control": "spectrum_matched",
+        "selected_groups": chosen,
+        "spectrum_seed": int(seed),
+        "n_transplanted_tensors": len(copied),
+        "n_transplanted_elements": sum(rows[name]["n_elements"] for name in copied),
+        "spectrum_tolerance": SPECTRUM_TOLERANCE,
+        "max_relative_spectrum_departure": max(
+            entry["relative_spectrum_departure"] for entry in spectra.values()),
+        "per_tensor_spectrum": spectra,
+        "verified_tensor_fp32_sha256": observed_digests,
+        "measures": ("whether the endpoint responds to the donor's parameter scale and "
+                     "spectrum or to its learned content: this installs the former exactly "
+                     "and destroys the latter completely"),
+        "verification": ("each synthesised slot's singular values reproduce the donor's within "
+                         "the declared tolerance and its digest matches neither checkpoint, and "
+                         "every tensor outside the selection still carries the recipient's"),
+    }
+
+
 def select_screen_panel(assay_rows: Sequence[dict[str, Any]], *, families: int,
                         seed: int) -> dict[str, Any]:
     """A label-blind family subsample for the screen, one assay per family.

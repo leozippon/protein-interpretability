@@ -87,6 +87,22 @@ class RetainedArtifact:
             raise ValueError(f'{self.role}: a retained artefact needs a location')
 
 
+    def fixed_prefix(self) -> str:
+        """The leading path of this location that carries no placeholder.
+
+        Locations are declared with placeholders -- ``<arm>``, ``<wave>`` -- because
+        one entry covers a panel. The part before the first placeholder is still a
+        concrete path, and it is the part a build-time check can verify: a location
+        whose fixed prefix does not exist names nothing, whatever the placeholders
+        would have expanded to.
+        """
+        parts = []
+        for part in self.location.split('/'):
+            if '<' in part or '*' in part:
+                break
+            parts.append(part)
+        return '/'.join(parts)
+
 @dataclass(frozen=True)
 class GateRetention:
     """One gate's representation cells and what it retained for their refit.
@@ -260,6 +276,9 @@ GATE_RETENTION: dict[str, GateRetention] = {
                              'all 33 arms: every manifest reads status complete at 101 of 101 '
                              'backgrounds and 25,957 sequences scored, with 101 projected and 101 '
                              'full-width archives per arm'),
+            RetainedArtifact('depth_states',
+                             'results/external_baseline/<depth3-fs-<arm> wave>/depth3-fs-<arm>/', 'cluster',
+                             'the every-block extraction of this gate\'s own 101-background single-mutant stability cohort, dispatched 2026-09-24 and 2026-09-25 in runs 20260924211249_dfb821c212da and 20260924234500_d832d46b7fb0: 32 of 32 cells reconciled against disk, 6,464 archives, the 8 of the first dispatch and the 24 of the rerun. Its one-arm gate compared the admitted block summaries against the retained two-depth archives of the same backgrounds and found them byte-identical at a maximum absolute difference of 0.0'),
             RetainedArtifact('fold_map',
                              'results/external_baseline/20260924024010_7caaa5ac6216/fit-<arm>/'
                              'fit_<arm>.json', 'cluster',
@@ -278,8 +297,7 @@ GATE_RETENTION: dict[str, GateRetention] = {
             RetainedArtifact('published_increments', 'logs/d1_gate_stability_20260924', 'repository',
                              'the local pull, including panel.json and the fits directory'),
         ),
-        supported_selections=frozenset({'readout_class'}),
-        missing_for={'extraction_depth': _NO_DEPTH_ON_OWN_COHORT},
+        supported_selections=frozenset(SELECTION_KINDS),
         conditions=('the full-width retention pass is complete: verified in-pod for all 33 arms '
                     'at 101 of 101 backgrounds and 25,957 sequences scored each, so the class-level '
                     'recomputation of this gate has no outstanding retention prerequisite',
@@ -321,23 +339,25 @@ GATE_RETENTION: dict[str, GateRetention] = {
                              'the token ids and offsets, the variant states and positions, the '
                              'hidden width and the two repeat controls. A loader reading only the '
                              'full-width archives would have no likelihood column at all'),
+            RetainedArtifact('depth_states',
+                             'results/external_baseline/<depth3-rh-<arm> wave>/depth3-rh-<arm>/', 'cluster',
+                             'the every-block extraction of this gate\'s own 305-background MGnify-derived cohort, dispatched 2026-09-24 and 2026-09-25 in runs 20260924211249_dfb821c212da: 32 of 32 cells reconciled against disk, 19,520 archives. Its one-arm gate compared the admitted block summaries against the retained two-depth archives of the same backgrounds and found them byte-identical at a maximum absolute difference of 0.0'),
             RetainedArtifact('fold_map', 'results/remote_homology_20260924/fits/fit_<arm>.json',
-                             'cluster',
+                             'repository',
                              'each carrying its complete fold map and the first-stage diagnostics '
                              'of the nonlinear response'),
             RetainedArtifact('penalty_grid', 'results/remote_homology_20260924/fits/fit_<arm>.json',
-                             'cluster',
+                             'repository',
                              'the selected ridge penalty of every design in every fold, with the '
                              'declared design names and their column dimensions'),
             RetainedArtifact('declared_designs', 'src/transfer/stability_gate.py', 'repository',
                              'every feature block is imported from the stability gate rather than '
                              'reimplemented'),
             RetainedArtifact('published_increments',
-                             'results/remote_homology_20260924/panel/panel.json', 'cluster',
+                             'results/remote_homology_20260924/panel/panel.json', 'repository',
                              'with a digest of every fit it reads'),
         ),
-        supported_selections=frozenset({'readout_class'}),
-        missing_for={'extraction_depth': _NO_DEPTH_ON_OWN_COHORT},
+        supported_selections=frozenset(SELECTION_KINDS),
         conditions=('the extraction shares extract_stability_singles.py with the '
                     'folding-and-stability gate, so the repeatable depth option already reaches '
                     'this cohort and only its manifests are missing',
@@ -423,6 +443,9 @@ GATE_RETENTION: dict[str, GateRetention] = {
                              'results/pairwise_epistasis_20260924/extraction/<arm>/', 'cluster',
                              'per-state block outputs at full hidden width, beside the projected '
                              'ones, so a different projection replays without model inference'),
+            RetainedArtifact('depth_states',
+                             'results/external_baseline/<depth3-ri-<arm> wave>/depth3-ri-<arm>/', 'cluster',
+                             'the every-block extraction of this gate\'s own 64-background double-mutant cycle cohort, dispatched 2026-09-24 and 2026-09-25 in runs 20260924211249_dfb821c212da: 32 of 32 cells reconciled against disk, 4,096 archives. Its one-arm gate compared the admitted block summaries against the retained two-depth archives of the same backgrounds and found them byte-identical at a maximum absolute difference of 0.0'),
             RetainedArtifact('fold_map', 'results/pairwise_epistasis_20260924/fits/', 'cluster',
                              '33 per-arm fit records with held-group membership per support and '
                              'seed, and the row-identity and fold-identity digests'),
@@ -433,8 +456,7 @@ GATE_RETENTION: dict[str, GateRetention] = {
             RetainedArtifact('published_increments', 'logs/d1_pairwise_epistasis_20260924/panel',
                              'repository', 'the aggregated panel reports'),
         ),
-        supported_selections=frozenset({'readout_class'}),
-        missing_for={'extraction_depth': _NO_DEPTH_ON_OWN_COHORT},
+        supported_selections=frozenset(SELECTION_KINDS),
         conditions=('the row-identity digest renders each target through Python float before repr, '
                     'so a refit reproduces the admitted digest under both NumPy 1.26 and NumPy 2; a '
                     'NumPy-scalar rendering hashes the same rows to different values',
@@ -856,22 +878,41 @@ def probe_artifacts(gate: str, roots: dict[str, Path | None]) -> list[dict]:
     """Presence of one gate's declared artefacts under the given per-store roots.
 
     A location containing ``<`` is a pattern over arms or cells rather than one
-    path, and is reported as declared without a presence claim: expanding it
-    would need the arm roster, which belongs to the driver's plan and not to this
-    probe. A store with no root is ``unreachable_from_this_host``, which is
-    deliberately not ``missing``: the substantive artefacts live on the remote
-    allocation, and reporting them absent from the workstation would turn a
-    location into a defect.
+    path, so its expansion is not claimed here -- that would need the arm roster,
+    which belongs to the driver's plan. Its **fixed prefix** is claimed, because
+    that part carries no placeholder and is a concrete path: a pattern whose prefix
+    is absent names nothing whatever it would have expanded to. Exempting patterns
+    entirely is how six declared locations reached a driver instead of a build --
+    `results/remote_homology_20260924/fits/fit_<arm>.json` among them, whose
+    directory does not exist -- so an absent prefix is now ``absent`` and counts
+    toward the non-zero exit the inventory script already returns for one.
+
+    A store with no root is ``unreachable_from_this_host``, which is deliberately
+    not ``absent``: the substantive artefacts live on the remote allocation, and
+    reporting them missing from the workstation would turn a location into a
+    defect. The corollary is that a clean run proves nothing about a store whose
+    root was not given, so the inventory must be run on the allocation with
+    ``--cluster-root`` for its cluster locations to be checked at all.
     """
     records = []
     for artifact in GATE_RETENTION[gate].artifacts:
         root = roots.get(artifact.store)
+        pattern = '<' in artifact.location or '*' in artifact.location
         if root is None:
             status = 'unreachable_from_this_host'
             detail = f'no root given for the {artifact.store} store'
-        elif '<' in artifact.location or '*' in artifact.location:
-            status = 'pattern_not_probed'
-            detail = 'a per-arm or per-cell pattern; the driver expands it against its plan'
+        elif pattern:
+            prefix = artifact.fixed_prefix()
+            if not prefix:
+                status = 'pattern_not_probed'
+                detail = 'the location begins with a placeholder, so it has no fixed prefix'
+            elif (Path(root) / prefix).exists():
+                status = 'pattern_prefix_present'
+                detail = (f'fixed prefix {prefix} exists; the per-arm expansion is the '
+                          "driver's to check against its plan")
+            else:
+                status = 'absent'
+                detail = f'the fixed prefix {prefix} does not exist under this root'
         else:
             path = Path(root) / artifact.location
             if path.exists():

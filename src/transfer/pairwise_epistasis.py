@@ -86,6 +86,30 @@ FEATURE_BLOCKS = ('middle_mean', 'middle_last', 'final_mean', 'final_last')
 PROJECTION_SEED = 20260923
 PROJECTION_DIM = 256
 
+
+def require_projected_width(width: int, *, arm: str, source: str) -> int:
+    """Refuse a projected representation that is not the admitted four-block design.
+
+    The admitted design pools four summaries across two depths, so its width is
+    fixed at ``len(FEATURE_BLOCKS) * PROJECTION_DIM``. A narrower array is not a
+    narrower version of that design -- one depth's summaries are a differently
+    constructed measurement, at different capacity -- so a stage handed one must
+    refuse rather than fit it and report the result beside the published number.
+
+    ``fit_stability_singles.load_arm`` has always refused this. The pairwise stage
+    did not, so the same substitution failed loudly on three gates and silently on
+    the fourth; the silent direction is the one that produces a plausible wrong
+    number, which is why this lives here and is called from both.
+    """
+    expected = len(FEATURE_BLOCKS) * PROJECTION_DIM
+    if int(width) != expected:
+        raise ValueError(
+            f'{arm}: {source} carries a {int(width)}-coordinate projected representation and this '
+            f'design is {expected} coordinates, {len(FEATURE_BLOCKS)} pooled summaries at '
+            f'{PROJECTION_DIM} each. A different width is a different design at a different '
+            'capacity, not a replay of this one')
+    return expected
+
 #: Outer held-group split seeds and the inner seed rule, both unchanged from the
 #: admitted Readout recipe; only the group universe changes.
 SPLIT_SEEDS = (20260923, 20260924, 20260925)

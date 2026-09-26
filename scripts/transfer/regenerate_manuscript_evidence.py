@@ -36,7 +36,8 @@ from check_manuscript_evidence import check  # noqa: E402
 
 COMPARED_FIELDS = ("value", "unit", "interval_low", "interval_high", "interval_kind",
                    "resampling_unit", "resampling_draws", "support_id", "seed_set", "level",
-                   "provisional", "verdict", "weighting_convention", "source_sha256")
+                   "provisional", "conditioning", "conditioning_settled", "verdict",
+                   "weighting_convention", "source_sha256")
 
 
 def rows(payload: dict) -> dict[str, dict]:

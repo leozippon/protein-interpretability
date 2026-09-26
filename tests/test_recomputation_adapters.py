@@ -26,6 +26,7 @@ if str(ROOT) not in sys.path:
 from src.transfer import recomputation as RC  # noqa: E402
 from src.transfer import recomputation_adapters as AD  # noqa: E402
 from src.transfer.crossed_controls import CONTROL_SETS  # noqa: E402
+from src.transfer import gate_retention as GR  # noqa: E402
 from src.transfer.gate_retention import GATE_RETENTION  # noqa: E402
 from src.transfer.local_context import control_sets  # noqa: E402
 
@@ -650,3 +651,104 @@ def test_a_refusal_that_also_changed_a_sign_is_not_counted_as_provenance_only():
     assert gate['cells_whose_pipeline_gate_refused'] == 1
     assert gate['cells_refused_with_no_resolved_sign_change'] == 0
     assert gate['verdict'] == 'changes'
+
+
+# ------------------------------------------- the width a stage is allowed to fit
+
+
+def test_a_projected_representation_of_the_wrong_width_is_refused():
+    """The defect this closes: one stage refused a wrong width and its sibling did not.
+
+    `fit_stability_singles.load_arm` has always refused a representation that is
+    not the admitted four-block design. `fit_pairwise_epistasis.load_arm` did not,
+    so the same substitution failed loudly on three gates and silently on the
+    fourth. A narrower array is not a narrower version of this design: one depth's
+    two summaries are a differently constructed measurement at a different
+    capacity, so a stage handed one must refuse rather than fit it and report the
+    result beside a published number.
+    """
+    from src.transfer.pairwise_epistasis import (FEATURE_BLOCKS, PROJECTION_DIM,
+                                                 require_projected_width)
+    expected = len(FEATURE_BLOCKS) * PROJECTION_DIM
+    assert expected == 1024
+    assert require_projected_width(expected, arm='gpt2-large', source='x.npz') == expected
+    # The width a depth selection would hand it: two summaries at 256 each.
+    with pytest.raises(ValueError, match='512-coordinate projected representation'):
+        require_projected_width(512, arm='gpt2-large', source='x.npz')
+    with pytest.raises(ValueError, match='different design at a different capacity'):
+        require_projected_width(2048, arm='gpt2-large', source='x.npz')
+    # The refusal names the arm and the file, because a campaign refusing on one
+    # background of one arm should not require a search to locate it.
+    with pytest.raises(ValueError, match='progen3-3b: bg7.npz'):
+        require_projected_width(512, arm='progen3-3b', source='bg7.npz')
+
+
+def test_every_fit_stage_calls_the_shared_width_condition():
+    """One condition, three stages, no inline copies.
+
+    Two of the three asserted the width inline with their own copy of the message
+    and the third did not assert it at all. Adding a shared helper beside two
+    copies would have made three expressions of one condition, so both copies now
+    call it and this asserts that none came back.
+    """
+    stages = ('fit_stability_singles.py', 'fit_nested_singles.py', 'fit_pairwise_epistasis.py')
+    for stage in stages:
+        source = (ROOT / 'scripts/transfer' / stage).read_text()
+        assert 'require_projected_width(' in source, stage
+        assert source.count('require_projected_width') >= 2, stage  # imported and called
+        assert 'representation width is not four projected blocks' not in source, stage
+    for path in (ROOT / 'src/transfer').glob('*.py'):
+        if path.name != 'pairwise_epistasis.py':
+            assert 'representation width is not four projected blocks' not in path.read_text()
+
+
+# --------------------------------------- the inventory checking its own declarations
+
+
+def test_a_declared_pattern_with_an_absent_prefix_is_reported_absent(tmp_path):
+    """The hole six declared locations went through.
+
+    `probe_artifacts` exempted any location containing a placeholder as
+    `pattern_not_probed`, so a pattern whose directory does not exist made no
+    presence claim at all and reached a driver hours later instead of a build.
+    A pattern's fixed prefix carries no placeholder and is a concrete path, so it
+    is claimed; the per-arm expansion still is not, because that needs the roster.
+    """
+    gate = 'remote_homology'
+    records = {r['role']: r for r in GR.probe_artifacts(gate, {'cluster': tmp_path,
+                                                               'repository': tmp_path})}
+    fold = records['fold_map']
+    assert '<arm>' in fold['location']
+    assert fold['status'] == 'absent', fold
+    assert 'fixed prefix' in fold['detail'] and 'does not exist' in fold['detail']
+
+    # With the prefix present, the pattern is reported as prefix-present and the
+    # expansion is explicitly left to the driver.
+    (tmp_path / 'results/remote_homology_20260924/fits').mkdir(parents=True)
+    records = {r['role']: r for r in GR.probe_artifacts(gate, {'cluster': tmp_path,
+                                                               'repository': tmp_path})}
+    fold = records['fold_map']
+    assert fold['status'] == 'pattern_prefix_present', fold
+    assert "driver's to check" in fold['detail']
+
+
+def test_a_store_with_no_root_is_unreachable_and_not_absent(tmp_path):
+    """A clean run proves nothing about a store whose root was not given."""
+    records = GR.probe_artifacts('remote_homology', {'repository': tmp_path})
+    cluster = [r for r in records if r['store'] == 'cluster']
+    assert cluster, 'this gate declares cluster locations'
+    assert {r['status'] for r in cluster} == {'unreachable_from_this_host'}
+    assert all('no root given' in r['detail'] for r in cluster)
+
+
+def test_the_inventory_has_exactly_one_location_checker():
+    """The three-copies lesson applied to this checker itself.
+
+    A standalone `verify_locations` was added beside `probe_artifacts`, which would
+    have made two checkers for one condition. It was folded in rather than shipped.
+    """
+    import src.transfer.gate_retention as module
+    assert not hasattr(module, 'verify_locations')
+    assert not hasattr(module, 'refuse_on_missing_locations')
+    assert hasattr(module, 'probe_artifacts')
+    assert hasattr(module.RetainedArtifact, 'fixed_prefix')

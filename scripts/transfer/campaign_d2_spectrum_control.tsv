@@ -1,0 +1,22 @@
+# D2 spectrum-matched control: does the endpoint respond to the donor's parameter scale and
+# spectrum, or to its learned content? Four cells in one slot on four cards.
+# The pilot's within-group derangement recovered 0.210 of the ceiling-minus-floor gap while
+# the correctly assigned attention_q1 recovered 0.066, which leaves two readings open. These
+# cells install the donor's exact singular values with random orthogonal factors: its scale
+# and spectrum exactly, its content not at all. Recovering about 0.2 makes the movement a
+# scale effect and closes single-group transplant as a localisation route at any granularity;
+# recovering nothing makes the donor's content operative and the pilot's failure one of
+# granularity and power.
+# The floor and ceiling are re-derived here because this dispatch carries a different code
+# digest from the pilot's: a control at a different digest from what it calibrates is the
+# ambiguity a control exists to remove.
+# attention_q1 matches the derangement directly; mlp_q3 is the largest MLP share and a
+# different shape class, so the reading is not specific to one group's geometry.
+# These are controls, not treatments. They interpret a negative and cannot convert one:
+# the ten single-group cells still cross zero at every seed, so condition 2 still fails and
+# the pilot still does not enter Paper 1 whichever way this falls.
+# slot	key	gpu	stage	label	env	expect	args
+1	d2s	0	d2_transplant_likelihood.py	d2s_sfloor	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1	d2_transplant_sfloor.json	--cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/context_mutation_rescue/cohort.json --support-manifest /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260923103322_004fdfab72bf/readout_llama2_parent/manifest_llama-2-7b.json --census /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260924010633_98d48d6930ac/d2_transplant_census/d2_transplant_census.json --source-checkpoint ${TRANSFER_MODEL_BASE_DIR}/ProLLaMA_Stage_1 --cell sfloor --groups none
+1	d2s	1	d2_transplant_likelihood.py	d2s_sceiling	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1	d2_transplant_sceiling.json	--cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/context_mutation_rescue/cohort.json --support-manifest /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260923103322_004fdfab72bf/readout_llama2_parent/manifest_llama-2-7b.json --census /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260924010633_98d48d6930ac/d2_transplant_census/d2_transplant_census.json --source-checkpoint ${TRANSFER_MODEL_BASE_DIR}/ProLLaMA_Stage_1 --cell sceiling --groups all
+1	d2s	2	d2_transplant_likelihood.py	d2s_spectrum_attention_q1	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1	d2_transplant_spectrum_attention_q1.json	--cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/context_mutation_rescue/cohort.json --support-manifest /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260923103322_004fdfab72bf/readout_llama2_parent/manifest_llama-2-7b.json --census /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260924010633_98d48d6930ac/d2_transplant_census/d2_transplant_census.json --source-checkpoint ${TRANSFER_MODEL_BASE_DIR}/ProLLaMA_Stage_1 --cell spectrum_attention_q1 --groups attention_q1 --control spectrum_matched
+1	d2s	3	d2_transplant_likelihood.py	d2s_spectrum_mlp_q3	TRANSFER_PYTHON=/gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/runtimes/ct-20260905/bin/python PYTHONDONTWRITEBYTECODE=1	d2_transplant_spectrum_mlp_q3.json	--cohort /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/data/context_mutation_rescue/cohort.json --support-manifest /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260923103322_004fdfab72bf/readout_llama2_parent/manifest_llama-2-7b.json --census /gpfs/jiaotongdamoxing/zhk_zip/InterpretabilityTransfer/results/external_baseline/20260924010633_98d48d6930ac/d2_transplant_census/d2_transplant_census.json --source-checkpoint ${TRANSFER_MODEL_BASE_DIR}/ProLLaMA_Stage_1 --cell spectrum_mlp_q3 --groups mlp_q3 --control spectrum_matched

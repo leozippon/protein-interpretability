@@ -33,7 +33,9 @@ from src.transfer.evidence_ledger import (  # noqa: E402
     REPO_ROOT,
     Artifacts,
     Ledger,
+    LedgerError,
     Quantity,
+    checked_sum,
     resolve,
 )
 
@@ -3764,6 +3766,649 @@ def _sweep_depth_receipts(ledger: Ledger, payload: dict, digest: str) -> None:
 
 
 
+CONSOLIDATION_DIR = "logs/d1_recomputation_20260924"
+CONSOLIDATION_FILES = (
+    ("class_axis_consolidation.json", None),
+    ("class_axis_consolidation_residue_interactions.json", "residue_interactions"),
+    ("class_axis_consolidation_remote_homology.json", "remote_homology"),
+    ("class_axis_consolidation_local_context.json", "local_context"),
+    ("class_axis_consolidation_crossed_controls.json", "crossed_controls"),
+)
+
+
+DEPTH_CONTRAST_FILES = (
+    ("depth_contrast/consolidation_folding_stability.json", "folding_stability"),
+    ("depth_contrast/consolidation_remote_homology.json", "remote_homology"),
+    ("depth_contrast/consolidation_residue_interactions.json", "residue_interactions"),
+)
+
+#: What the crossed-controls panel's reports bind that cannot be reached, and
+#: what had to be recovered by reproducing a number rather than by reading a
+#: record. Both are L55's territory and neither is a quantity.
+CROSSED_CONTROL_PROVENANCE = [
+    ("readout_sweeps/crossed_controls/analysis_code_version",
+     "the exact analysis code the crossed-controls panel's published cells ran under",
+     "the published reports record an analysis_code_sha256 that is not the committed script's, "
+     "because the commit creating that file postdates the run; the digest survives and the version "
+     "it binds does not, so what differs between them is knowable only by its numerical effect, "
+     "which is inert across all 1,080 compared nodes",
+     "logs/d1_crossed_controls_20260923/reports",
+     "every retained crossed-control report's analysis_code_sha256 against the committed script"),
+    ("readout_sweeps/crossed_controls/anchor_arm",
+     "the anchor arm the crossed-controls panel's published cells ran under",
+     "the published reports record no anchor_arm at all; passing progen3-3b explicitly reproduces "
+     "every quantity exactly, so the default in force is established by reproduction rather than by "
+     "record, which is a weaker kind of provenance than a recorded parameter",
+     "logs/d1_crossed_controls_20260923/reports",
+     "every retained crossed-control report's top-level fields for an anchor declaration"),
+]
+
+
+def family_depth_contrast(ledger: Ledger) -> None:
+    """The depth-at-equal-capacity contrast, which is a new measurement.
+
+    Its representation is 512 coordinates at one depth against the published
+    1,024 spread over two depths and two pooling rules, so its increments are
+    not comparable with the published ones and the support says so. The finding
+    lives in the comparison between the two gates, so the per-arm difference
+    between the selected depth and the best admitted one is registered for each.
+    """
+    for name, gate in DEPTH_CONTRAST_FILES:
+        path = f"{CONSOLIDATION_DIR}/{name}"
+        if not ledger.artifacts.exists(path):
+            ledger.gap(id=f"depth_contrast/{gate}", claim="the depth-at-equal-capacity contrast",
+                       family="depth_contrast", reason="the consolidation is not staged here",
+                       looked_in=path, reachability="cluster_only",
+                       searched="the declared path only")
+            continue
+        payload = ledger.artifacts.json(path)
+        digest = ledger.artifacts.sha256(path)
+        measured = payload.get("arms_measured")
+        if measured is None:
+            measured = (payload.get("populations") or {}).get("arms_measured", len(payload["arms"]))
+        support = ledger.declare_support(
+            f"depth_contrast_{gate}",
+            f"the {gate.replace('_', ' ')} gate's depth-at-equal-capacity contrast over "
+            f"{measured} arms: {payload['coordinates']} representation coordinates at "
+            f"one block, against the published {payload['admitted_published_width']} spread over two "
+            "blocks and two pooling rules, so its increments are a separate measurement and not "
+            "comparable with the published ones",
+        )
+        for field, unit, kind, claim in (
+            ("arms_measured", "checkpoints", "support_count", "arms the contrast measures"),
+            ("coordinates", "projection coordinates", "constant",
+             "representation coordinates the contrast fits at one depth"),
+            ("admitted_published_width", "projection coordinates", "constant",
+             "representation coordinates the published increment spreads over two depths"),
+        ):
+            value = payload.get(field)
+            if value is None and field == "arms_measured":
+                value = measured
+            if value is None:
+                ledger.gap(id=f"depth_contrast/{gate}/{field}",
+                           claim=f"{claim}, on the {gate} gate", family="depth_contrast",
+                           reason="the consolidation does not record this field",
+                           looked_in=path, reachability="not_recorded",
+                           searched="every top-level field of the consolidation")
+                continue
+            ledger.add(Quantity(
+                id=f"depth_contrast/{gate}/{field}", claim=f"{claim}, on the {gate} gate",
+                family="depth_contrast", value=float(value), unit=unit, kind=kind,
+                support_id=support, level="representation",
+                conditioning="readout_selection",
+                source_path=path, source_sha256=digest, source_pointer=(field,),
+            ))
+        resolved_at_every_seed = 0
+        highest_unselected = 0
+        for arm, block in sorted(payload["arms"].items()):
+            admitted = set(block.get("admitted_depths") or [])
+            if block.get("selected_resolved_seeds") == 3:
+                resolved_at_every_seed += 1
+            if block.get("highest_depth") is not None and \
+                    block["highest_depth"] not in admitted and \
+                    block["highest_depth"] != block.get("selected_depth"):
+                highest_unselected += 1
+            for field, unit, kind, claim in (
+                ("selected_mean_point", "dimensionless increment", "artifact_leaf",
+                 "the seed-mean increment at the depth the contrast selects"),
+                ("best_admitted_mean_point", "dimensionless increment", "artifact_leaf",
+                 "the best seed-mean increment at a depth the admitted extraction hooked"),
+                ("selected_minus_best_admitted", "dimensionless increment", "artifact_leaf",
+                 "the selected depth's increment minus the best admitted one: the comparison as one "
+                 "quantity"),
+                ("highest_mean_point", "dimensionless increment", "artifact_leaf",
+                 "the highest seed-mean increment any depth reaches"),
+                ("selected_depth", "block index", "constant", "the block the contrast selects"),
+                ("highest_depth", "block index", "constant", "the highest-reading block"),
+                ("selected_resolved_seeds", "split seeds", "count",
+                 "split seeds at which the selected depth's increment resolves above zero"),
+            ):
+                if block.get(field) is None:
+                    continue
+                ledger.add(Quantity(
+                    id=f"depth_contrast/{gate}/{arm}/{field}",
+                    claim=f"{arm} on the {gate} gate: {claim}", family="depth_contrast",
+                    value=float(block[field]), unit=unit, kind=kind, support_id=support,
+                    seed_set=SPLIT_SEEDS, level="representation", conditioning="readout_selection",
+                    source_path=path, source_sha256=digest,
+                    source_pointer=("arms", arm, field),
+                ))
+        declared = payload.get("populations") or {}
+        recorded = {
+            "arms_resolving_at_every_seed":
+                (declared.get("selected_resolves_at_all_three_seeds") or {}).get("over_arms_measured"),
+            "arms_whose_highest_depth_is_unselected_and_unadmitted":
+                declared.get("highest_depth_is_unselected_and_unadmitted"),
+        }
+        for name_, computed in (("arms_resolving_at_every_seed", resolved_at_every_seed),
+                                ("arms_whose_highest_depth_is_unselected_and_unadmitted",
+                                 highest_unselected)):
+            stated = recorded.get(name_)
+            if stated is not None and int(stated) != int(computed):
+                ledger.gap(
+                    id=f"depth_contrast/{gate}/{name_}/disagreement",
+                    claim=f"whether {name_.replace('_', ' ')} on the {gate} gate is what the "
+                          "consolidation states or what its own per-arm blocks give",
+                    family="depth_contrast",
+                    reason=f"the populations block states {int(stated)} and the per-arm blocks give "
+                           f"{int(computed)}; the artifact's own figure is registered and the "
+                           "disagreement is recorded rather than resolved here",
+                    looked_in=path, reachability="not_recorded",
+                    searched="the populations block against every per-arm block")
+        for name_, value, claim, verdict in (
+            ("arms_resolving_at_every_seed",
+             recorded["arms_resolving_at_every_seed"]
+             if recorded["arms_resolving_at_every_seed"] is not None else resolved_at_every_seed,
+             "arms whose selected depth's increment resolves above zero at all three seeds; the "
+             "differences on the other arms are between quantities that do not separate from zero",
+             "supported" if resolved_at_every_seed else "not_detected"),
+            ("arms_whose_highest_depth_is_unselected_and_unadmitted",
+             recorded["arms_whose_highest_depth_is_unselected_and_unadmitted"]
+             if recorded["arms_whose_highest_depth_is_unselected_and_unadmitted"] is not None
+             else highest_unselected,
+             "arms whose highest-reading depth is neither the selected block nor one the admitted "
+             "extraction hooked, so the reading rests on a block no declaration picked",
+             "unresolved" if highest_unselected else "not_detected"),
+        ):
+            ledger.add(Quantity(
+                id=f"depth_contrast/{gate}/{name_}", claim=claim, family="depth_contrast",
+                value=float(value), unit="checkpoints", kind="count", support_id=support,
+                seed_set=SPLIT_SEEDS, level="representation", conditioning="readout_selection",
+                verdict=verdict,
+                source_path=path, source_sha256=digest,
+                source_pointer=("arms", "<reduction>", name_),
+            ))
+        # Whether the quantities a difference is taken between are themselves
+        # above or below zero. An ordering between two negative increments is
+        # not the same statement as an ordering between two positive ones, and
+        # quoting it without the sign is the same error as a zero without its
+        # denominator.
+        points = [seed_block["point"]
+                  for arm_block in payload["arms"].values()
+                  for depth_block in (arm_block.get("depths") or {}).values()
+                  for seed_block in (depth_block.get("seeds") or {}).values()
+                  if isinstance(seed_block, dict) and seed_block.get("point") is not None]
+        if points:
+            negative = sum(1 for value in points if value < 0)
+            for name_, value, unit, kind, claim in (
+                ("underlying_points", float(len(points)), "fitted points", "support_count",
+                 "fitted depth-and-seed points behind this cohort's differences"),
+                ("underlying_points_below_zero", float(negative), "fitted points", "count",
+                 "of those, the points at which the representation worsens the held-out error "
+                 "rather than improving it"),
+                ("underlying_points_below_zero_share", 100.0 * negative / len(points), "percent",
+                 "ratio",
+                 "the share of this cohort's fitted points that sit below zero, which is what a "
+                 "difference between two of its increments is a difference between"),
+            ):
+                ledger.add(Quantity(
+                    id=f"depth_contrast/{gate}/{name_}", claim=claim, family="depth_contrast",
+                    value=value, unit=unit, kind=kind, support_id=support, seed_set=SPLIT_SEEDS,
+                    level="representation", conditioning="readout_selection",
+                    source_path=path, source_sha256=digest,
+                    source_pointer=("arms", "<reduction>", "depths", "seeds", "point"),
+                ))
+        for verdict_name in sorted({value for value in payload["verdicts"].values()}):
+            ledger.add(Quantity(
+                id=f"depth_contrast/{gate}/verdict/{verdict_name}",
+                claim=f"arms whose selected depth is {verdict_name.replace('_', ' ')} on the {gate} "
+                      "gate",
+                family="depth_contrast",
+                value=float(sum(1 for value in payload["verdicts"].values()
+                                if value == verdict_name)),
+                unit="checkpoints", kind="count", support_id=support, seed_set=SPLIT_SEEDS,
+                level="representation", conditioning="readout_selection",
+                source_path=path, source_sha256=digest, source_pointer=("verdicts", verdict_name),
+            ))
+
+
+def family_depth_contrast_controls(ledger: Ledger) -> None:
+    """Each cohort's control, with the provenance that makes it its own quantity.
+
+    Two cohorts checksum each arm's baseline predictions across its depths while
+    the run happens. The third never did: its adapter recorded increments and a
+    fold identity only, so its control is an equivalent recovered afterwards
+    from what the run persisted. Three controls, not one, and the table refuses
+    to total them.
+    """
+    controls: list[Quantity] = []
+    for name, gate in DEPTH_CONTRAST_FILES:
+        path = f"{CONSOLIDATION_DIR}/{name}"
+        if not ledger.artifacts.exists(path):
+            continue
+        payload = ledger.artifacts.json(path)
+        digest = ledger.artifacts.sha256(path)
+        support = f"depth_contrast_{gate}"
+        checks = payload.get("baseline_checks")
+        if checks is not None:
+            controls.append(ledger.add(Quantity(
+                id=f"depth_contrast/{gate}/control/baseline_identity_checks",
+                claim=f"baseline-identity checks the {gate} adapter computed while the run happened, "
+                      "each confirming an arm's control ladder is identical across its depths",
+                family="depth_contrast", value=float(checks), unit="checks",
+                kind="support_count", support_id=support, seed_set=SPLIT_SEEDS,
+                level="representation", conditioning="readout_selection",
+                control_provenance="computed_during_the_run",
+                source_path=path, source_sha256=digest, source_pointer=("baseline_checks",),
+            )))
+            continue
+        block = payload.get("depth_invariance_control")
+        if not isinstance(block, dict):
+            ledger.gap(id=f"depth_contrast/{gate}/control",
+                       claim=f"the control that establishes the {gate} cohort's depths share one "
+                             "baseline", family="depth_contrast",
+                       reason="the adapter recorded no baseline checksum and the consolidation "
+                              "carries no derived equivalent",
+                       looked_in=path, reachability="not_measured",
+                       searched="every top-level field of the consolidation")
+            continue
+        for field, unit, kind, claim in (
+            ("contrast_comparisons", "comparisons", "support_count",
+             "contrast comparisons showing every design that omits the representation is unchanged "
+             "across an arm's depths"),
+            ("contrast_mismatches", "comparisons", "count",
+             "of those, the comparisons that disagree"),
+            ("largest_absolute_difference", "dimensionless difference", "artifact_leaf",
+             "the largest absolute difference any of those comparisons shows"),
+            ("fold_identity_comparisons", "comparisons", "support_count",
+             "fold-identity comparisons showing every depth of an arm and seed carries one fold map"),
+            ("fold_identity_mismatches", "comparisons", "count",
+             "of those, the comparisons that disagree"),
+        ):
+            if block.get(field) is None:
+                continue
+            controls.append(ledger.add(Quantity(
+                id=f"depth_contrast/{gate}/control/{field}",
+                claim=f"{claim}, on the {gate} cohort; recovered after the fact from the retained "
+                      "outputs because this adapter never computed a baseline checksum, so it is an "
+                      "equivalent of the other cohorts' control and not the same measurement",
+                family="depth_contrast", value=float(block[field]), unit=unit, kind=kind,
+                support_id=support, seed_set=SPLIT_SEEDS, level="representation",
+                conditioning="readout_selection",
+                control_provenance="derived_after_the_fact",
+                verdict="not_detected" if field.endswith("mismatches") else None,
+                source_path=path, source_sha256=digest,
+                source_pointer=("depth_invariance_control", field),
+            )))
+    if len({quantity.control_provenance for quantity in controls}) > 1:
+        try:
+            checked_sum(controls, field="control_provenance")
+        except LedgerError as refusal:
+            ledger.gap(
+                id="depth_contrast/controls/total",
+                claim="a single count of the control checks across the three depth cohorts",
+                family="depth_contrast",
+                reason=f"{refusal}. Two cohorts' counts were computed while the run happened and the "
+                       "third's was recovered afterwards from what the run persisted, so a total "
+                       "would state as one measurement what three implementations produced "
+                       "differently",
+                looked_in=CONSOLIDATION_DIR, reachability="not_measured",
+                searched="every cohort's consolidation for a control the same implementation "
+                         "computed",
+            )
+
+
+def family_depth_contrast_population(ledger: Ledger) -> None:
+    """The cross-gate comparison, on the population it can be made over.
+
+    An arm whose selected depth is one the admitted extraction already hooked
+    contributes no comparison, so a count over all measured arms and a count
+    over the arms that can be compared are different quantities and both are
+    registered.
+    """
+    gates = {}
+    for name, gate in DEPTH_CONTRAST_FILES:
+        path = f"{CONSOLIDATION_DIR}/{name}"
+        if ledger.artifacts.exists(path):
+            gates[gate] = (ledger.artifacts.json(path), path, ledger.artifacts.sha256(path))
+    if len(gates) < 2:
+        return
+    names = sorted(gates)
+    shared = sorted(set.intersection(*(set(gates[g][0]["arms"]) for g in names)))
+    population = [arm for arm in shared
+                  if all(gates[g][0]["verdicts"].get(arm) != "selected_is_admitted" for g in names)]
+    path, digest = gates[names[0]][1], gates[names[0]][2]
+    support = ledger.declare_support(
+        "depth_contrast_comparison_population",
+        "the arms measured on both depth-contrast cohorts whose selected depth is not one the "
+        "admitted extraction already hooked, which are the arms a cross-cohort comparison can be "
+        "made over",
+    )
+    def difference(gate: str, arm: str) -> float:
+        return float(gates[gate][0]["arms"][arm]["selected_minus_best_admitted"])
+    exceeding = [arm for arm in population if all(difference(g, arm) > 0 for g in names)]
+    falling = [arm for arm in population if all(difference(g, arm) < 0 for g in names)]
+    cohorts = len(names)
+    for name_, value, claim, verdict in (
+        ("cohorts", float(cohorts), "depth-contrast cohorts compared", None),
+        ("arms_measured_on_every_cohort", float(len(shared)),
+         "arms measured on every depth-contrast cohort", None),
+        ("comparison_population", float(len(population)),
+         "arms of those whose selected depth is not one the admitted extraction hooked, so a "
+         "cross-cohort comparison can be made over them", None),
+        (f"exceeding_on_all_{cohorts}", float(len(exceeding)),
+         f"arms of the comparison population whose selected depth exceeds the best admitted one on "
+         f"all {cohorts} cohorts", "supported" if exceeding else "not_detected"),
+        (f"falling_short_on_all_{cohorts}", float(len(falling)),
+         f"arms of the comparison population whose selected depth falls short of the best admitted "
+         f"one on all {cohorts} cohorts", "supported" if falling else "not_detected"),
+    ):
+        ledger.add(Quantity(
+            id=f"depth_contrast/comparison/{name_}", claim=claim, family="depth_contrast",
+            value=value, unit="checkpoints",
+            kind="support_count" if "population" in name_ or "measured" in name_ else "count",
+            support_id=support, seed_set=SPLIT_SEEDS, level="representation",
+            conditioning="readout_selection", verdict=verdict,
+            source_path=path, source_sha256=digest,
+            source_pointer=("<cross-gate reduction>", "verdicts", name_),
+        ))
+    for gate in names:
+        payload = gates[gate][0]
+        ledger.add(Quantity(
+            id=f"depth_contrast/comparison/{gate}/exceeding_both_admitted",
+            claim=f"arms of the comparison population whose selected depth exceeds both admitted "
+                  f"depths on the {gate} cohort alone",
+            family="depth_contrast",
+            value=float(sum(1 for arm in population if difference(gate, arm) > 0)),
+            unit="checkpoints", kind="count", support_id=support, seed_set=SPLIT_SEEDS,
+            level="representation", conditioning="readout_selection",
+            source_path=gates[gate][1], source_sha256=gates[gate][2],
+            source_pointer=("<cross-gate reduction>", "arms", "selected_minus_best_admitted"),
+        ))
+        ledger.add(Quantity(
+            id=f"depth_contrast/comparison/{gate}/arms_resolving_at_every_seed",
+            claim=f"arms of the comparison population whose selected depth resolves above zero at "
+                  f"all three seeds on the {gate} cohort; the count over every measured arm is a "
+                  "different quantity and is registered separately",
+            family="depth_contrast",
+            value=float(sum(1 for arm in population
+                            if payload["arms"][arm]["selected_resolved_seeds"] == 3)),
+            unit="checkpoints", kind="count", support_id=support, seed_set=SPLIT_SEEDS,
+            level="representation", conditioning="readout_selection",
+            source_path=gates[gate][1], source_sha256=gates[gate][2],
+            source_pointer=("<cross-gate reduction>", "arms", "selected_resolved_seeds"),
+        ))
+
+
+def family_crossed_control_provenance(ledger: Ledger) -> None:
+    for identifier, claim, reason, looked_in, searched in CROSSED_CONTROL_PROVENANCE:
+        ledger.gap(id=identifier, claim=claim, family="readout_sweeps", reason=reason,
+                   looked_in=looked_in, reachability="not_recorded", searched=searched)
+
+
+def _consolidation_integrity(ledger: Ledger, gate: str, block: dict, support: str, path: str,
+                             digest: str) -> None:
+    """The recomputation's own integrity counts, which are per gate and not per walk."""
+    for field, unit, claim in (
+        ("cells_missing", "fit cells", "cells the recomputation could not reach"),
+        ("published_digest_failures", "fit cells",
+         "cells whose published artifact failed its own digest check"),
+    ):
+        value = block.get(field)
+        if value is None:
+            continue
+        ledger.add(Quantity(
+            id=f"class_axis/{gate}/{field}", claim=f"{claim}, on the {gate} gate",
+            family="class_axis", value=float(len(value) if isinstance(value, list) else value),
+            unit=unit, kind="count", support_id=support, level="measurement",
+            verdict="not_detected",
+            source_path=path, source_sha256=digest, source_pointer=(gate, field),
+        ))
+    check = block.get("published_digest_check")
+    if isinstance(check, dict):
+        for field, unit, claim in (
+            ("checked", "fit cells", "published reports verified against the digest their admission "
+                                     "binds before being compared"),
+            ("failures", "fit cells", "published reports failing that digest check"),
+        ):
+            if check.get(field) is None:
+                continue
+            ledger.add(Quantity(
+                id=f"class_axis/{gate}/published_digest_check/{field}",
+                claim=f"{claim}, on the {gate} gate", family="class_axis",
+                value=float(check[field]), unit=unit,
+                kind="count" if field == "failures" else "support_count", support_id=support,
+                level="measurement", verdict="not_detected" if field == "failures" else None,
+                source_path=path, source_sha256=digest,
+                source_pointer=(gate, "published_digest_check", field),
+            ))
+    for side, count in sorted((block.get("nodes_unpaired") or {}).items()):
+        ledger.add(Quantity(
+            id=f"class_axis/{gate}/nodes_unpaired/{side}",
+            claim=f"summary nodes present on the {side.replace('_', ' ')} side with no counterpart to "
+                  f"compare, on the {gate} gate",
+            family="class_axis", value=float(count), unit="summary nodes", kind="count",
+            support_id=support, level="measurement", verdict="not_detected",
+            source_path=path, source_sha256=digest,
+            source_pointer=(gate, "nodes_unpaired", side),
+        ))
+
+
+def family_class_axis_total(ledger: Ledger) -> None:
+    """The programme-level line across every gate on one convention.
+
+    Each total is registered beside the totals that give it meaning: a zero
+    sign-change count over 28,611 compared nodes with 7,122 at risk of crossing
+    says something a bare zero does not.
+    """
+    scoped = [quantity for quantity in ledger.quantities
+              if quantity.family == "class_axis" and "/every_node/" in quantity.id]
+    if not scoped:
+        return
+    gates = sorted({quantity.id.split("/")[1] for quantity in scoped})
+    support = ledger.declare_support(
+        "class_axis_recomputation_all_gates",
+        f"every gate whose class-axis recomputation has closed --- {', '.join(gates)} --- read on one "
+        "convention, the depth-agnostic walk over every compared node",
+    )
+    def total(suffix: str) -> float:
+        return sum(quantity.value for quantity in scoped if quantity.id.endswith(suffix))
+    cells = total("/every_node/cells")
+    nodes = total("/every_node/nodes_compared")
+    at_risk = sum(quantity.value for quantity in scoped if "/every_node/at_risk/" in quantity.id)
+    sign_changes = total("/every_node/resolved_sign_changes")
+    for name, value, unit, kind, claim in (
+        ("gates", float(len(gates)), "gates", "support_count",
+         "gates whose class-axis recomputation has closed"),
+        ("cells", cells, "fit cells", "support_count", "fitted cells recompared across those gates"),
+        ("nodes_compared", nodes, "summary nodes", "support_count",
+         "summary nodes compared across those gates"),
+        ("at_risk", at_risk, "summary nodes", "count",
+         "nodes close enough to zero that a movement of the size measured here could have crossed it"),
+        ("resolved_sign_changes", sign_changes, "summary nodes", "count",
+         f"nodes whose resolved sign changes, out of {int(nodes)} compared across {int(cells)} cells "
+         f"with {int(at_risk)} of them at risk of crossing"),
+    ):
+        ledger.add(Quantity(
+            id=f"class_axis/all_gates/{name}", claim=claim, family="class_axis", value=value,
+            unit=unit, kind=kind, support_id=support, level="measurement",
+            verdict="not_detected" if name == "resolved_sign_changes" else None,
+            source_path=f"{CONSOLIDATION_DIR}/class_axis_consolidation.json",
+            source_sha256=ledger.artifacts.sha256(
+                f"{CONSOLIDATION_DIR}/class_axis_consolidation.json"),
+            source_pointer=("<sum over gates>", "every_node", name),
+        ))
+
+
+def family_class_axis_consolidation(ledger: Ledger) -> None:
+    """The class-axis recomputation's own quantities, gate by gate.
+
+    A count of zero is registered beside the count it is zero out of, because a
+    zero over 9,801 compared nodes and a zero over nothing read identically once
+    the denominator is dropped.
+    """
+    found = False
+    for name, single in CONSOLIDATION_FILES:
+        path = f"{CONSOLIDATION_DIR}/{name}"
+        if not ledger.artifacts.exists(path):
+            continue
+        found = True
+        payload = ledger.artifacts.json(path)
+        digest = ledger.artifacts.sha256(path)
+        gates = {single: payload} if single else payload
+        for gate, block in sorted(gates.items()):
+            if not isinstance(block, dict) or block.get("verdict") is None:
+                continue
+            walks = [("every_node", block)]
+            licensed = block.get("licensed_quantities")
+            if isinstance(licensed, dict):
+                # The rewrite keeps the superseded scope beside the new one and
+                # reproduces it exactly, so both are registered and neither is a
+                # correction of the other.
+                walks.append(("licensed_four", licensed))
+            support = ledger.declare_support(
+                f"class_axis_recomputation_{gate}",
+                f"the {gate.replace('_', ' ')} gate's fitted cells, refitted under the settled "
+                "readout class on the same states, cohorts, folds, seeds and resampling contract",
+            )
+            _consolidation_integrity(ledger, gate, block, support, path, digest)
+            for walk, scoped in walks:
+              nodes = scoped.get("total_nodes_compared", scoped.get("total_nodes"))
+              for field, value, unit, kind, claim in (
+                  ("cells", block.get("cells"), "fit cells", "support_count",
+                   "fitted cells the recomputation covers"),
+                  ("arms", block.get("arms"), "checkpoints", "support_count",
+                   "arms the recomputation covers"),
+                  ("nodes_compared", nodes, "summary nodes", "support_count",
+                   "summary nodes compared between the admitted fit and the recomputation"),
+                  ("threads", block.get("threads"), "BLAS threads", "constant",
+                   "the BLAS thread count the recomputation pinned"),
+              ):
+                  if value is None:
+                      continue
+                  identifier = f"class_axis/{gate}/{walk}/{field}"
+                  if identifier in {quantity.id for quantity in ledger.quantities}:
+                      continue
+                  ledger.add(Quantity(
+                      id=identifier,
+                      claim=f"{claim}, on the {gate} gate over the {walk.replace('_', ' ')} walk",
+                      family="class_axis", value=float(value), unit=unit, kind=kind,
+                      support_id=support, level="measurement",
+                      source_path=path, source_sha256=digest, source_pointer=(gate, walk, field),
+                  ))
+              for group, count in sorted((scoped.get("summary_nodes_compared") or {}).items()):
+                ledger.add(Quantity(
+                    id=f"class_axis/{gate}/{walk}/nodes_compared/{group}",
+                    claim=f"{group} summary nodes compared on the {gate} gate over the "
+                          f"{walk.replace('_', ' ')} walk",
+                    family="class_axis", value=float(count), unit="summary nodes",
+                    kind="support_count", support_id=support, level="measurement",
+                    source_path=path, source_sha256=digest,
+                    source_pointer=(gate, "summary_nodes_compared", group),
+                ))
+              for group, count in sorted((scoped.get("at_risk") or {}).items()):
+                ledger.add(Quantity(
+                    id=f"class_axis/{gate}/{walk}/at_risk/{group}",
+                    claim=f"{group} cells close enough to zero that a movement of the size measured "
+                          f"here could have crossed it, on the {gate} gate: the control that makes a "
+                          "zero sign-change count informative rather than silent",
+                    family="class_axis", value=float(count), unit="fit cells", kind="count",
+                    support_id=support, level="measurement",
+                    source_path=path, source_sha256=digest,
+                    source_pointer=(gate, "at_risk", group),
+                ))
+              for group, movement in sorted((scoped.get("max_point_change") or {}).items()):
+                ledger.add(Quantity(
+                    id=f"class_axis/{gate}/{walk}/max_point_change/{group}",
+                    claim=f"the largest movement of a {group} point estimate between the admitted fit "
+                          f"and the recomputation, on the {gate} gate",
+                    family="class_axis", value=float(movement), unit="dimensionless movement",
+                    kind="artifact_leaf", support_id=support, level="measurement",
+                    source_path=path, source_sha256=digest,
+                    source_pointer=(gate, "max_point_change", group),
+                ))
+              for group, movement in sorted((scoped.get("max_interval_endpoint_change") or {}).items()):
+                ledger.add(Quantity(
+                    id=f"class_axis/{gate}/{walk}/max_interval_endpoint_change/{group}",
+                    claim=f"the largest movement of a {group} interval endpoint between the admitted "
+                          f"fit and the recomputation, on the {gate} gate",
+                    family="class_axis", value=float(movement), unit="dimensionless movement",
+                    kind="artifact_leaf", support_id=support, level="measurement",
+                    source_path=path, source_sha256=digest,
+                    source_pointer=(gate, "max_interval_endpoint_change", group),
+                ))
+              ledger.add(Quantity(
+                id=f"class_axis/{gate}/{walk}/resolved_sign_changes",
+                claim=f"cells whose resolved sign changes between the admitted fit and the "
+                      f"recomputation on the {gate} gate, out of "
+                      + (f"{int(nodes)} summary nodes compared across "
+                         if nodes else "the licensed nodes of ")
+                      + f"{int(block.get('cells') or 0)} cells, with "
+                      f"{sum(int(v) for v in (block.get('at_risk') or {}).values())} of them at risk "
+                      "of crossing zero under a movement of the size measured here",
+                family="class_axis", value=float(block["resolved_sign_changes"]), unit="fit cells",
+                kind="count", support_id=support, level="measurement",
+                verdict="not_detected",
+                source_path=path, source_sha256=digest,
+                source_pointer=(gate, "resolved_sign_changes"),
+            ))
+              ledger.add(Quantity(
+                id=f"class_axis/{gate}/{walk}/arms_missing",
+                claim=f"arms the recomputation could not cover on the {gate} gate",
+                family="class_axis", value=float(len(block.get("arms_missing") or [])),
+                unit="checkpoints", kind="count", support_id=support, level="measurement",
+                verdict="not_detected",
+                source_path=path, source_sha256=digest, source_pointer=(gate, "arms_missing"),
+            ))
+    if not found:
+        ledger.gap(id="class_axis/consolidation",
+                   claim="the class-axis recomputation's per-gate cell, node, at-risk and movement "
+                         "counts and its resolved sign-change count",
+                   family="class_axis", reason="no consolidation artifact is staged here",
+                   looked_in=CONSOLIDATION_DIR, reachability="cluster_only",
+                   searched="every file of the recomputation log directory")
+
+
+#: Which recomputation each family's representation rows wait on. Assigning this
+#: in one place rather than at every call site makes the release auditable and
+#: makes a new representation family refuse rather than inherit a settled
+#: condition by default: a row must not stop being provisional because nobody
+#: named what it was waiting for.
+REPRESENTATION_CONDITIONS = {
+    "depth_contrast": "readout_selection",
+    "readout": "readout_selection",
+    "readout_sweeps": "readout_selection",
+    "pairwise": "gate_representation_recomputation",
+    "remote_homology": "gate_representation_recomputation",
+    "local_context": "local_context_gate_recomputation",
+}
+
+
+def assign_representation_conditions(ledger: Ledger) -> None:
+    unmapped = sorted({quantity.family for quantity in ledger.quantities
+                       if quantity.level == "representation"
+                       and quantity.family not in REPRESENTATION_CONDITIONS})
+    if unmapped:
+        raise LedgerError(
+            "representation families with no declared condition: " + ", ".join(unmapped) +
+            "; name what each is waiting on before it can be read as settled"
+        )
+    for quantity in ledger.quantities:
+        if quantity.level != "representation":
+            continue
+        quantity.conditioning = REPRESENTATION_CONDITIONS[quantity.family]
+
+
 def build(out_dir: Path = OUT_DIR) -> dict[str, object]:
     artifacts = Artifacts()
     ledger = Ledger(artifacts)
@@ -3798,12 +4443,19 @@ def build(out_dir: Path = OUT_DIR) -> dict[str, object]:
     family_remote_homology(ledger)
     family_domainome_endpoint(ledger)
     family_class_admission(ledger)
+    family_class_axis_consolidation(ledger)
+    family_class_axis_total(ledger)
+    family_depth_contrast(ledger)
+    family_depth_contrast_controls(ledger)
+    family_depth_contrast_population(ledger)
+    family_crossed_control_provenance(ledger)
     family_readout_sweeps(ledger)
     family_depth_panel(ledger)
     family_leaf_subtrees(ledger)
     family_generator_totals(ledger)
     family_derived_shares(ledger)
 
+    assign_representation_conditions(ledger)
     payload = ledger.write(out_dir, scope=(
         "Every quantity the Direction-1 manuscript cites that a retained artifact or gate record "
         "supports, read out of that file rather than transcribed. No model run, no cohort draw, no fit "

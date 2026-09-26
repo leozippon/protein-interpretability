@@ -36,7 +36,7 @@ sys.path.insert(0, str(ROOT))
 
 from src.transfer.io import sha256_file, write_json
 from src.transfer.pairwise_epistasis import (
-    FEATURE_BLOCKS, PROJECTION_DIM, ROSTER, TOKENISATION_STRATUM)
+    ROSTER, TOKENISATION_STRATUM, require_projected_width)
 from src.transfer.stability_gate import (
     ENDPOINT, QUALIFICATION_SEEDS, SPLIT_SEEDS, TOKENISATION_FEATURE_ORDER, build_panel,
     fold_predictions, group_errors, group_spearman, interval, load_profiles,
@@ -82,8 +82,8 @@ def load_arm(directory: Path, arm: str, cohort: dict) -> tuple[dict, dict]:
     blocks = {'M': np.asarray(likelihood, dtype=float)[:, None],
               'R': np.asarray(representation, dtype=float),
               'T': np.asarray(tokens, dtype=float)}
-    if blocks['R'].shape[1] != len(FEATURE_BLOCKS) * PROJECTION_DIM:
-        raise ValueError(f'{arm}: representation width is not four projected blocks')
+    require_projected_width(blocks['R'].shape[1], arm=arm,
+                            source=f'the assembled representation of {directory.name}')
     if blocks['T'].shape[1] != len(TOKENISATION_FEATURE_ORDER):
         raise ValueError(f'{arm}: tokenisation descriptor width changed')
     return blocks, manifest

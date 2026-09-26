@@ -105,15 +105,24 @@ def test_the_gates_that_need_a_fresh_extraction_for_a_depth_selection_are_named(
     blocked = {gate for gate in GR.GATE_RETENTION
                if GR.recomputability(gate, 'extraction_depth')['verdict']
                == 'requires_re_extraction'}
-    # Four gates, not two. The last two arrived after this inventory was first
-    # written, and an inventory that claims to cover every gate has to be extended
-    # when one arrives or its central verdict is quietly wrong.
-    assert blocked == {'folding_stability', 'residue_interactions',
-                       'remote_homology', 'external_confirmation'}
+    # Four gates were blocked this way when the inventory was written. Three of the
+    # four cohorts were extracted on 2026-09-24 and 2026-09-25, so this asserts the
+    # property and the one gate still waiting, rather than a roster the campaigns
+    # are changing underneath it.
+    assert blocked == {'external_confirmation'}, blocked
     for gate in blocked:
         assert GR.recomputability(gate, 'readout_class')['verdict'] == 'recomputable'
         missing = GR.recomputability(gate, 'extraction_depth')['missing']
         assert any('no depth-resolved extraction' in reason for reason in missing)
+        assert not [a for a in GR.GATE_RETENTION[gate].artifacts if a.role == 'depth_states']
+    # A gate whose wave has landed names where those states are. Claiming the
+    # selection without naming the archives would be the inventory describing what
+    # a gate wrote rather than what a recomputation reads.
+    for gate in ('folding_stability', 'residue_interactions', 'remote_homology'):
+        assert GR.recomputability(gate, 'extraction_depth')['verdict'] == 'recomputable'
+        states = [a for a in GR.GATE_RETENTION[gate].artifacts if a.role == 'depth_states']
+        assert len(states) == 1, gate
+        assert 'byte-identical' in states[0].note
 
 
 def test_a_declaration_that_accounts_for_neither_selection_kind_is_refused():
@@ -550,7 +559,9 @@ def test_a_plan_refuses_before_reading_an_array_and_names_what_is_missing(tmp_pa
     assert schedule['runnable'][0]['gate'] == 'readout_panel'
     refusals = {cell['gate']: cell['refusal'] for cell in schedule['refused']}
     assert 'no model quantity was read at all' in refusals['higher_order']
-    assert 'no depth-resolved extraction' in refusals['folding_stability']
+    # Its cohort's depth archives have landed, so what blocks it now is the
+    # loader rather than the extraction, and the refusal says so.
+    assert 'no adapter' in refusals['folding_stability']
     assert 'no adapter' in refusals['residue_interactions']
     assert schedule['retention_declaration_sha256'] == GR.declaration_digest()
     assert set(schedule['adapters']['pending']) >= {'folding_stability', 'residue_interactions',

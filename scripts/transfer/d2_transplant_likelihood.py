@@ -112,6 +112,14 @@ def main():
     p.add_argument('--source-checkpoint', type=Path, required=True)
     p.add_argument('--cell', required=True, help='Declared cell label')
     p.add_argument('--groups', required=True, help="'none', 'all', a group list, or 'complement:<list>'")
+    p.add_argument('--control', choices=('none', 'null', 'scrambled', 'spectrum_matched'),
+                   default='none',
+                   help="'null' copies the recipient's own tensors for the selected groups back "
+                        "over themselves and must leave the model bit-identical to the floor; "
+                        "'scrambled' installs the donor's tensors at a declared derangement of "
+                        "same-shape destinations; 'spectrum_matched' installs tensors "
+                        "carrying the donor's exact singular values with random orthogonal "
+                        "factors. All three are controls, not treatments.")
     p.add_argument('--screen-families', type=int, default=0,
                    help='Label-blind family subsample size; 0 scores the full admitted support')
     p.add_argument('--screen-seed', type=int, default=20260923)
@@ -158,7 +166,8 @@ def main():
     destination = Path(census['sources'][0]['checkpoint'])
     identity = dict(
         schema_version='d2_transplant_likelihood_v1', cell=args.cell, groups=args.groups,
-        selected_groups=list(selected_groups), arm=ARM, dtype='float32', batch_size=1, budget=BUDGET,
+        control=args.control, selected_groups=list(selected_groups), arm=ARM, dtype='float32',
+        batch_size=1, budget=BUDGET,
         destination_checkpoint=str(destination.resolve()),
         source_checkpoint=str(args.source_checkpoint.resolve()),
         cohort_sha256=sha(args.cohort), census_sha256=sha(args.census),
@@ -201,7 +210,16 @@ def main():
     arm = load_readout_arm(ARM, stage46, device=args.device, dtype='float32')
     arm.model.eval().requires_grad_(False)
     ch.require_position_budget(arm.model.config, arm=ARM)
-    receipt = ct.transplant(arm.model, args.source_checkpoint, census, selected_groups)
+    if args.control == 'null':
+        receipt = ct.transplant_null(arm.model, census, selected_groups)
+    elif args.control == 'scrambled':
+        receipt = ct.transplant_scrambled(arm.model, args.source_checkpoint, census,
+                                          selected_groups)
+    elif args.control == 'spectrum_matched':
+        receipt = ct.transplant_spectrum_matched(arm.model, args.source_checkpoint, census,
+                                                 selected_groups)
+    else:
+        receipt = ct.transplant(arm.model, args.source_checkpoint, census, selected_groups)
     print(json.dumps(dict(cell=args.cell, transplanted_tensors=receipt['n_transplanted_tensors'],
                           transplanted_elements=receipt['n_transplanted_elements'])), flush=True)
     blocks = len(representation_blocks(arm))
