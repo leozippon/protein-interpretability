@@ -96,7 +96,7 @@ On the provenance axis, two of the 64 shared-source ranking clusters also hold a
 
 ## Results
 
-The declared bands and their support counts are final: they are properties of the two cohorts and of the frozen controls, not of any readout. The stability gain's stratified survival is final. The representation gain's stratified estimates are computed and reported here as **provisional**, because the readout-class sweep and the full-depth re-extraction that bound the representation readout are still running, and until they land a stratified representation null cannot be separated from a limit of the compressed linear readout class. No verdict about what the representations carry is drawn below.
+The declared bands and their support counts are final: they are properties of the two cohorts and of the frozen controls, not of any readout. The stability gain's stratified survival is final. The representation gain's stratified estimates are computed and reported here as **provisional**, because a stratified representation null cannot be separated from a limit of the compressed linear readout class. The two sweeps that bound that readout have since closed — the class sweep at 132 admitted cells of 132 expected, panel artifact SHA256 `720b23327447ae9434e913512f90668c2473a125880dfe0f0dc68a65995033ce`, and the depth sweep at 54 of 54 cells, panel artifact SHA256 `076b93525abbb126e6f5a828ad758c0b369eea198dda45f0af57fa916d197939` — and whether their closure lifts the provisional label on these estimates is a separate decision not taken here. No verdict about what the representations carry is drawn below.
 
 ### The stability gain: first-order likelihood differences, final
 
