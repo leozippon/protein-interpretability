@@ -25,7 +25,7 @@ Study what pure-text, pure-protein, and joint language–protein generative mode
 - Use the validated `ct` environment for Python and GPU tools; conda is not initialized in non-interactive shells.
 - Validated Compute runtime: Python 3.11.14, PyTorch 2.9.1+cu128, Transformers 4.57.3, nnsight 0.5.15, and wandb 0.24.0. `requirements.txt` declares the active transfer package's direct Python dependencies; CUDA runtimes remain host-provisioned.
 - Structure folding is a separate runtime: `requirements-esmfold2.txt` plus `transformers.EsmFold2Model`. Do not install that stack into `ct`, and do not fold with `facebook/esmfold_v1`.
-- LaTeX at ~/.conda/envs/latex.
+- LaTeX is Tectonic 0.17.0 at `/home/lzp/miniconda3/envs/latex/bin/tectonic`; `pdflatex` is not installed. The `ct` interpreter is `/home/lzp/miniconda3/envs/ct/bin/python`; the `~/.conda/envs` path is absent.
 
 
 ## Compute
